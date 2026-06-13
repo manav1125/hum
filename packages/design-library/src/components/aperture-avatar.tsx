@@ -105,11 +105,11 @@ export function ApertureAvatar({
             cy="50"
             r="29"
             stroke="var(--content-on-ink)"
-            strokeOpacity="0.92"
-            strokeWidth="10"
+            strokeOpacity="0.94"
+            strokeWidth="16"
             strokeLinecap="round"
-            strokeDasharray="139.7 42.5"
-            transform="rotate(87 50 50)"
+            strokeDasharray="139.6 42.7"
+            transform="rotate(36 50 50)"
           />
         </g>
 
