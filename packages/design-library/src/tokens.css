@@ -207,20 +207,9 @@
   --content-on-ink: #FFFFFF;
   --content-on-ink-muted: #9DB4E6;
 
-  /* 8-type memory palette — SourceTag colors each memory by type. Blue and
-   * violet lead (per the v0.2/design-book mocks: semantic = blue, prospective
-   * = violet); the rest are drawn to stay mutually distinct while avoiding
-   * success-green. Theme-independent so a memory reads the same hue in every
-   * theme. (Provisional hues — safe for design to refine; the component only
-   * references these tokens.) */
-  --memory-episodic: #0E9B8B;
-  --memory-semantic: #3D6EE8;
-  --memory-procedural: #534AB7;
-  --memory-prospective: #7F77DD;
-  --memory-emotional: #DB4B77;
-  --memory-behavioral: #2B8FB3;
-  --memory-narrative: #C9760F;
-  --memory-shared: #5A6672;
+  /* The 8-type memory palette (SourceTag) is theme-aware — defined as
+   * --mem-<type>-text / --mem-<type>-bg pairs in each theme block below
+   * (co-work CUE-SPEC-sourcetag-avatar-home.md §1), not here. */
 
   /* Font tokens — DM Sans across the board, matching the Swift macOS
    * client's VFont (TypographyTokens.swift). */
@@ -335,6 +324,17 @@
   --system-info-strong: #3D6EE8;
   --system-info-weak: #DBE4FB;
 
+  /* 8-type memory palette (SourceTag) — light. semantic=blue, prospective=
+   * violet are fixed; the rest are mutually distinct and avoid success-green. */
+  --mem-semantic-text: #2B53C4;     --mem-semantic-bg: #DBE4FB;
+  --mem-prospective-text: #534AB7;  --mem-prospective-bg: #E7E5FB;
+  --mem-episodic-text: #8C6A0A;     --mem-episodic-bg: #F7ECCB;
+  --mem-procedural-text: #0A6E62;   --mem-procedural-bg: #CFEDE8;
+  --mem-emotional-text: #993556;    --mem-emotional-bg: #F8DCE6;
+  --mem-behavioral-text: #8A4226;   --mem-behavioral-bg: #F6DDD2;
+  --mem-narrative-text: #722B62;    --mem-narrative-bg: #F2D9EC;
+  --mem-shared-text: #424A54;       --mem-shared-bg: #E3E7EC;
+
   /* Feed identifier */
   --feed-nudge-strong: #DB4B77;
   --feed-nudge-weak: #F0D9E0;
@@ -416,6 +416,16 @@
   --system-mid-weak: #4B3D1E;
   --system-info-strong: #3D6EE8;
   --system-info-weak: #2A3A50;
+
+  /* 8-type memory palette (SourceTag) — dark. */
+  --mem-semantic-text: #9DBBF5;     --mem-semantic-bg: #1E2C45;
+  --mem-prospective-text: #B6AFF0;  --mem-prospective-bg: #2A2748;
+  --mem-episodic-text: #E6C257;     --mem-episodic-bg: #3A2E0C;
+  --mem-procedural-text: #4FD0C0;   --mem-procedural-bg: #0C2E2A;
+  --mem-emotional-text: #F0A0BD;    --mem-emotional-bg: #3A1A26;
+  --mem-behavioral-text: #E8987A;   --mem-behavioral-bg: #371C12;
+  --mem-narrative-text: #D98FCB;    --mem-narrative-bg: #2E1228;
+  --mem-shared-text: #AEB7C2;       --mem-shared-bg: #232A31;
 
   /* Feed identifier */
   --feed-nudge-strong: #DB4B77;
@@ -502,6 +512,16 @@
   --system-mid-weak: #42321C;
   --system-info-strong: #3D6EE8;
   --system-info-weak: #2A3A50;
+
+  /* 8-type memory palette (SourceTag) — velvet reuses the dark values. */
+  --mem-semantic-text: #9DBBF5;     --mem-semantic-bg: #1E2C45;
+  --mem-prospective-text: #B6AFF0;  --mem-prospective-bg: #2A2748;
+  --mem-episodic-text: #E6C257;     --mem-episodic-bg: #3A2E0C;
+  --mem-procedural-text: #4FD0C0;   --mem-procedural-bg: #0C2E2A;
+  --mem-emotional-text: #F0A0BD;    --mem-emotional-bg: #3A1A26;
+  --mem-behavioral-text: #E8987A;   --mem-behavioral-bg: #371C12;
+  --mem-narrative-text: #D98FCB;    --mem-narrative-bg: #2E1228;
+  --mem-shared-text: #AEB7C2;       --mem-shared-bg: #232A31;
 
   /* Feed identifier — reuses the dark palette; velvet's accent colors
    * apply at the chrome level (primary, surface) rather than swapping

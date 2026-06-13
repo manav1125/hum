@@ -4,11 +4,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MEMORY_TYPES, SourceTag } from "./source-tag";
 
 describe("SourceTag", () => {
-  test("colors by memory type via the --memory-* token and defaults its label", () => {
+  test("colors by memory type via the --mem-*-text/bg tokens and defaults its label", () => {
     const html = renderToStaticMarkup(<SourceTag memoryType="semantic" />);
     expect(html).toContain('data-slot="source-tag"');
     expect(html).toContain('data-memory-type="semantic"');
-    expect(html).toContain("var(--memory-semantic)");
+    expect(html).toContain("var(--mem-semantic-text)");
+    expect(html).toContain("var(--mem-semantic-bg)");
     expect(html).toContain("semantic");
     expect(html).toContain("font-mono");
   });
@@ -18,14 +19,14 @@ describe("SourceTag", () => {
       <SourceTag memoryType="prospective">prospective · Acme Q3</SourceTag>,
     );
     expect(html).toContain("prospective · Acme Q3");
-    expect(html).toContain("var(--memory-prospective)");
+    expect(html).toContain("var(--mem-prospective-text)");
   });
 
   test("without a memory type it renders a neutral source label", () => {
     const html = renderToStaticMarkup(<SourceTag>source: gmail</SourceTag>);
     expect(html).toContain("source: gmail");
     expect(html).toContain("var(--tag-bg-neutral)");
-    expect(html).not.toContain("var(--memory-");
+    expect(html).not.toContain("var(--mem-");
   });
 
   test("showDot=false omits the leading dot", () => {
@@ -46,7 +47,8 @@ describe("SourceTag", () => {
       </div>,
     );
     for (const t of MEMORY_TYPES) {
-      expect(html).toContain(`var(--memory-${t})`);
+      expect(html).toContain(`var(--mem-${t}-text)`);
+      expect(html).toContain(`var(--mem-${t}-bg)`);
     }
     expect(html).not.toMatch(/#[0-9A-Fa-f]{6}\b/);
   });
