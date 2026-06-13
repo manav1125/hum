@@ -3,20 +3,20 @@ import { publicAsset } from "@/utils/public-asset";
 /**
  * Decorative background for the branded `/account/login` screen.
  *
- * Renders the full-white Vellum wordmark and the login background characters
- * SVG anchored to the bottom edge. Purely presentational (`pointer-events-none`)
+ * Renders the white `cue.` wordmark and the login background characters SVG
+ * anchored to the bottom edge. Purely presentational (`pointer-events-none`)
  * so the form above stays fully interactive.
  */
 export function LoginBackground() {
   return (
     <>
       <div className="pointer-events-none absolute top-[120px] left-1/2 z-0 -translate-x-1/2">
-        <img
-          src={publicAsset("/vellum-logo-white.svg")}
-          alt="Vellum"
-          width={92}
-          height={28}
-        />
+        <span
+          className="select-none text-[28px] font-medium leading-none tracking-[-1px] text-white"
+          style={{ fontFamily: "var(--font-sans)" }}
+        >
+          cue<span style={{ color: "var(--accent-cue)" }}>.</span>
+        </span>
       </div>
       <div
         aria-hidden

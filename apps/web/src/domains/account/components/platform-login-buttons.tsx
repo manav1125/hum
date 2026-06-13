@@ -45,7 +45,7 @@ export function PlatformLoginButtons({
 
   return (
     <>
-      <LoginHeading>Sign in to Vellum</LoginHeading>
+      <LoginHeading>Sign in to Cue</LoginHeading>
       {errorMessage && <LoginErrorText>{errorMessage}</LoginErrorText>}
       <div className="flex flex-col items-center gap-3">
         <Button

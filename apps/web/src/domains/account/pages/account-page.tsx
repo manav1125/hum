@@ -49,7 +49,7 @@ export function AccountPage() {
     return (
       <AccountShell>
         <AccountHeading
-          title="Welcome to Vellum"
+          title="Welcome to Cue"
           subtitle="Sign in to get started."
         />
         {errorMessage && (
