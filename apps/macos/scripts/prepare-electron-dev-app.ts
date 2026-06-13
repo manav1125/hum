@@ -18,8 +18,8 @@ const ELECTRON_INFO_PLIST = path.join(
 );
 
 const REQUIRED_PLIST_STRINGS: Record<string, string> = {
-  CFBundleDisplayName: "Vellum Electron",
-  CFBundleName: "Vellum Electron",
+  CFBundleDisplayName: "Cue Electron",
+  CFBundleName: "Cue Electron",
   NSUserNotificationAlertStyle: "alert",
 };
 
