@@ -4,6 +4,7 @@ import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-lay
 import { useOnboardingLogin } from "@/hooks/use-onboarding-login";
 import { hasAssistants } from "@/lib/local-mode";
 import { routes } from "@/utils/routes";
+import { ApertureAvatar } from "@vellumai/design-library";
 import { Button } from "@vellumai/design-library/components/button";
 
 export function WelcomeScreen() {
@@ -23,11 +24,18 @@ export function WelcomeScreen() {
     <OnboardingLayout>
       <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col items-center px-6 pb-40 text-[var(--content-default)]">
         <div className="flex flex-1 flex-col items-center justify-center">
+          <ApertureAvatar
+            state="listening"
+            size={72}
+            label="Cue"
+            className="mb-6"
+            style={{ animation: "fadeInUp 0.5s ease-out both" }}
+          />
           <h1
             className="text-3xl font-semibold tracking-tight"
             style={{ animation: "fadeInUp 0.5s ease-out 0.1s both" }}
           >
-            Welcome to Vellum
+            Meet Cue
           </h1>
           <p
             className="mt-3 text-body-medium-lighter text-[var(--content-tertiary)]"
