@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cue — Design v0.2 · Full surface inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1A2230;--ink2:#24303F;--slate:#2D3A4D;
+  --blue:#3D6EE8;--blue-s:#2B53C4;--blue-w:#DBE4FB;--violet:#7F77DD;--violet-s:#534AB7;
+  --bg:#F4F6F9;--surface:#FFFFFF;--sunken:#EEF1F6;--line:#E5E9F0;--line2:#D7DDE7;
+  --t1:#1A2230;--t2:#5A6672;--t3:#8D99A5;--green:#277E41;--amber:#F1B21E;--danger:#DA491A;
+  --sans:"DM Sans",system-ui,sans-serif;--mono:"DM Mono",ui-monospace,monospace;--serif:"Instrument Serif",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--t1);line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+section{padding:52px 0;border-top:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue-s);margin-bottom:10px}
+.path{font-family:var(--mono);font-size:11.5px;color:var(--t3);margin-top:6px}
+h1{font-size:58px;font-weight:500;letter-spacing:-2.5px;line-height:1.03}
+h2{font-size:27px;font-weight:500;letter-spacing:-1px}
+h2 .n{font-family:var(--mono);font-size:14px;color:var(--t3);letter-spacing:0;vertical-align:6px;margin-right:10px}
+.lede{font-size:17px;color:var(--t2);max-width:720px;margin-top:8px}
+.muted{color:var(--t2)}.small{font-size:12.5px}.mono{font-family:var(--mono)}
+.dot{color:var(--blue)}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--t2)}
+/* ---- aperture avatar (Cue face) ---- */
+.face{position:relative;border-radius:26%;background:var(--ink);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.face .eye{border:none;border-radius:50%;box-shadow:0 0 0 4px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);position:relative;transform:rotate(40deg);animation:look 6s ease-in-out infinite}
+.face .eye::after{content:"";position:absolute;border-radius:50%;background:var(--blue);width:26%;height:26%;top:8%;left:8%;animation:blink 4s infinite}
+.face.lg{width:108px;height:108px}.face.lg .eye{width:62px;height:62px}
+.face.md{width:40px;height:40px}.face.md .eye{width:24px;height:24px}
+.face.sm{width:30px;height:30px}.face.sm .eye{width:18px;height:18px}
+.face .ping{position:absolute;inset:0;border-radius:26%;border:2px solid rgba(61,110,232,.5);animation:facepulse 2.6s ease-out infinite}
+@keyframes look{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+@keyframes blink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+@keyframes facepulse{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.35);opacity:0}}
+.states{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+.stbox{background:#161D29;border-radius:14px;width:150px;height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff}
+.stbox .lab{font-family:var(--mono);font-size:11px;color:#8D99A5}
+.eq{display:flex;gap:4px;align-items:flex-end;height:20px}
+.eq b{width:4px;background:var(--violet);border-radius:3px;height:7px;animation:bar .9s ease-in-out infinite}
+.eq b:nth-child(2){animation-delay:.15s}.eq b:nth-child(3){animation-delay:.3s}.eq b:nth-child(4){animation-delay:.45s}
+@keyframes bar{0%,100%{height:6px}50%{height:20px}}
+/* ---- frames ---- */
+.frame{background:var(--surface);border:1px solid var(--line2);border-radius:14px;overflow:hidden;box-shadow:0 22px 54px -30px rgba(26,34,48,.32);margin-top:22px}
+.tbar{height:40px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#F7F8FB;border-bottom:1px solid var(--line)}
+.tl{width:11px;height:11px;border-radius:50%}.r{background:#ED6A5E}.y{background:#F4BF50}.g{background:#61C554}
+.tbt{margin-left:10px;font-size:12px;color:var(--t3);font-family:var(--mono)}
+.app{display:grid;grid-template-columns:206px 1fr;min-height:480px}
+.app.rail3{grid-template-columns:206px 1fr 260px}
+.side{background:var(--ink);color:#fff;padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+.side .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 14px}
+.side .brand b{font-size:21px;font-weight:500;letter-spacing:-1px}
+.nav{display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA}
+.nav .ic{width:16px;text-align:center;opacity:.85}
+.nav.on{background:rgba(255,255,255,.09);color:#fff}.nav.on .ic{color:var(--blue)}
+.side .sec{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#6B788C;padding:14px 11px 6px}
+.chan{display:flex;align-items:center;gap:9px;padding:5px 11px;font-size:12.5px;color:#AEB7C7}
+.live{width:7px;height:7px;border-radius:50%;background:var(--green)}.off{background:#8D99A5}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid rgba(255,255,255,.08);font-size:12.5px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500}
+.main{background:var(--surface);display:flex;flex-direction:column}
+.top{padding:14px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.body{padding:20px 22px;flex:1;overflow:hidden}
+.rail{background:var(--bg);border-left:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:14px}
+.rail h4,.body h4{font-size:11px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:9px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px 15px}
+.card .t{font-size:13.5px;font-weight:500}.card .s{font-size:12px;color:var(--t2);margin-top:3px}
+.src{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:5px;background:#EEEDFB;color:var(--violet-s)}
+.src.b{background:var(--blue-w);color:var(--blue-s)}.src.g{background:#E2F0E7;color:var(--green)}
+.chip{font-size:12px;border:1px solid var(--line2);background:var(--surface);border-radius:8px;padding:5px 10px;display:inline-flex;gap:6px;align-items:center}
+.chip.pri{background:var(--blue);border-color:var(--blue);color:#fff}.chip.ink{background:var(--ink);border-color:var(--ink);color:#fff}
+.pill2{font-size:12px;background:var(--sunken);border-radius:999px;padding:5px 11px;color:var(--t2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.bubble{padding:10px 13px;border-radius:13px;font-size:13.5px;max-width:80%}
+.bubble.ai{background:var(--sunken);border-bottom-left-radius:4px}
+.bubble.you{background:var(--ink);color:#fff;border-bottom-right-radius:4px;margin-left:auto}
+.tag{font-family:var(--mono);font-size:10px;color:var(--t3)}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tabs span{padding:0 0 10px;font-size:13.5px;color:var(--t3)}
+.tabs .on{color:var(--ink);border-bottom:2px solid var(--blue);font-weight:500}
+.memtype{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:7px 0}
+.mt-dot{width:9px;height:9px;border-radius:3px}
+/* phone */
+.phones{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:22px}
+.phone{background:#0B0E14;border-radius:36px;padding:8px}
+.screen{background:var(--surface);border-radius:28px;overflow:hidden;height:512px;position:relative;display:flex;flex-direction:column}
+.notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:104px;height:22px;background:#0B0E14;border-radius:13px;z-index:5}
+.sbar{padding:13px 18px 6px;display:flex;justify-content:space-between;font-size:11.5px;font-weight:500}
+.phead{padding:4px 18px 12px}.phead .h{font-size:21px;font-weight:500;letter-spacing:-.7px}
+.pcards{padding:0 14px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.tabbar{margin-top:auto;display:flex;justify-content:space-around;padding:11px 0 16px;border-top:1px solid var(--line);color:var(--t3);font-size:17px}.tabbar .on{color:var(--blue)}
+.voice{background:var(--ink);height:512px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:26px}
+.cap{font-family:var(--mono);font-size:11px;color:var(--t3);text-align:center;margin-top:11px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--t2);margin-top:14px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+footer{padding:44px 0 70px;color:var(--t3);font-size:12.5px;font-family:var(--mono)}
+.note{background:#fff;border:1px solid var(--line);border-left:3px solid var(--violet);border-radius:0 12px 12px 0;padding:11px 14px;font-size:13px;color:var(--t2);margin-top:18px}
+</style>
+</head>
+<body>
+
+<div class="wrap" style="padding-top:72px;padding-bottom:18px">
+  <div class="pill" style="margin-bottom:22px"><span class="dot">●</span> Cue · design v0.2 · full surface inventory · avatar: aperture</div>
+  <div style="display:flex;align-items:center;gap:22px">
+    <div class="face lg"><span class="ping"></span><span class="eye"></span></div>
+    <div>
+      <h1>Every surface,<br>one assistant that <span class="muted">sees you.</span></h1>
+    </div>
+  </div>
+  <p class="lede" style="margin-top:20px">v0.1 set the brand. v0.2 follows the <em>real</em> functionality in the code — one designed screen per domain (<span class="mono">apps/web/src/domains/*</span>), with Cue's aperture avatar living across all of them. Repo paths are noted under each surface so this maps straight to the build.</p>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">The avatar · living states</div>
+    <h2>Cue's face reacts to what it's doing</h2>
+    <p class="path">components/avatar · driven by assistant/src/avatar + live-voice signals</p>
+    <div class="states">
+      <div class="stbox"><div class="face md"><span class="eye"></span></div><span class="lab">idle · looks around</span></div>
+      <div class="stbox"><div class="face md"><span class="ping"></span><span class="eye"></span></div><span class="lab">listening</span></div>
+      <div class="stbox"><div class="face md"><span class="eye" style="animation-duration:1.4s"></span></div><span class="lab">thinking</span></div>
+      <div class="stbox"><div class="eq"><b></b><b></b><b></b><b></b></div><span class="lab">speaking</span></div>
+      <div class="stbox"><div class="face md" style="--ink:var(--violet-s)"><span class="eye"></span></div><span class="lab">acting</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 01 · first run</div>
+    <h2><span class="n">01</span>Onboarding · hatching</h2>
+    <p class="path">apps/web/src/domains/onboarding · welcome → select → hatching → api-key → hosting → privacy → terms</p>
+    <div class="phones">
+      <div><div class="phone"><div class="screen"><div class="notch"></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:28px;text-align:center">
+          <div class="face lg"><span class="ping"></span><span class="eye"></span></div>
+          <div style="font-size:24px;font-weight:500;letter-spacing:-.8px">Meet Cue</div>
+          <p class="small muted">An assistant that learns how you work and never drops a thing. Let's hatch yours.</p>
+          <div class="chip pri" style="padding:11px 22px">Begin</div>
+        </div>
+      </div></div><div class="cap">Welcome</div></div>
+      <div><div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>2 / 5</span></div>
+        <div class="phead"><div class="mono small muted">Hatching</div><div class="h">How do you talk?</div></div>
+        <div class="pcards">
+          <div class="card"><div class="t">Tone</div><div class="s">Concise & direct · learned from your replies</div></div>
+          <div class="card"><div class="t">Working hours</div><div class="s">Weekdays · 8:00–19:00</div></div>
+          <div class="card"><div class="t">What matters now</div><div class="s">Acme renewal · hiring · Q3 plan</div></div>
+        </div>
+        <div style="padding:16px"><div class="chip ink" style="width:100%;justify-content:center;padding:11px">Continue</div></div>
+      </div></div><div class="cap">Hatching · observes your style</div></div>
+      <div><div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>4 / 5</span></div>
+        <div class="phead"><div class="mono small muted">Privacy & hosting</div><div class="h">Where it runs</div></div>
+        <div class="pcards">
+          <div class="card" style="border:2px solid var(--blue)"><div class="t">Self-host · your cloud <span class="src b">chosen</span></div><div class="s">Your data, your infrastructure</div></div>
+          <div class="card"><div class="t">Managed</div><div class="s">We run it for you</div></div>
+          <div class="note" style="margin-top:6px">You are the guardian. Trusted contacts and always-on capture are off until you turn them on.</div>
+        </div>
+        <div style="padding:16px"><div class="chip pri" style="width:100%;justify-content:center;padding:11px">Hatch Cue</div></div>
+      </div></div><div class="cap">Privacy-first setup</div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 02 · the daily surface</div>
+    <h2><span class="n">02</span>Home · feed</h2>
+    <p class="path">apps/web/src/domains/home · greeting-header · recap-row · suggestion-pill-bar · feed-list · detail-panel</p>
+    <div class="frame">
+      <div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Cue</span></div>
+      <div class="app rail3">
+        <aside class="side">
+          <div class="brand"><div class="face sm"><span class="eye"></span></div><b>cue<span class="dot">.</span></b></div>
+          <div class="nav on"><span class="ic">◉</span> Home</div>
+          <div class="nav"><span class="ic">✦</span> Intelligence</div>
+          <div class="nav"><span class="ic">▤</span> Library</div>
+          <div class="nav"><span class="ic">◳</span> Workspace</div>
+          <div class="nav"><span class="ic">☷</span> Contacts</div>
+          <div class="nav"><span class="ic">›_</span> Terminal</div>
+          <div class="sec">Channels · one memory</div>
+          <div class="chan"><span class="live"></span> Voice</div><div class="chan"><span class="live"></span> Email · Slack</div><div class="chan"><span class="off live"></span> Phone</div>
+          <div class="me"><span class="av">M</span> Manav · guardian</div>
+        </aside>
+        <div class="main">
+          <div class="top"><div><div class="tag">Saturday · 09:41</div><div style="font-size:18px;font-weight:500;letter-spacing:-.5px">Good morning, Manav</div></div><div style="display:flex;gap:8px"><span class="pill2">All</span><span class="pill2">Needs you</span><span class="pill2">Done</span></div></div>
+          <div class="body" style="display:flex;flex-direction:column;gap:14px">
+            <div><h4>Recap · while you were away</h4><div class="grid3">
+              <div class="card"><div class="t">3 emails handled</div><div class="s">2 drafted, 1 archived</div></div>
+              <div class="card"><div class="t">Acme moved to 10:30</div><div class="s">calendar updated</div></div>
+              <div class="card"><div class="t">2 action items captured</div><div class="s">from yesterday's call</div></div>
+            </div></div>
+            <div><h4>Suggested next moves</h4><div style="display:flex;gap:8px;flex-wrap:wrap">
+              <span class="chip pri">Review Acme follow-up</span><span class="chip">Reply to Dana</span><span class="chip">Share Q3 forecast</span><span class="chip">Snooze standup</span>
+            </div></div>
+            <div><h4>Feed</h4>
+              <div class="card" style="border-left:3px solid var(--blue);border-radius:0 12px 12px 0;margin-bottom:9px"><div class="t">Dana hasn't replied to Tuesday's thread <span class="src b">email</span></div><div class="s">Nudge before the renewal call? · 2h ago</div></div>
+              <div class="card" style="border-left:3px solid var(--violet);border-radius:0 12px 12px 0"><div class="t">You promised Sam the deck "by Friday" <span class="src">slack</span></div><div class="s">It's Friday · captured commitment</div></div>
+            </div>
+          </div>
+        </div>
+        <aside class="rail">
+          <div><h4>Next move</h4><div class="card" style="background:var(--ink);color:#fff;border:none"><div style="font-size:15px;font-weight:500">Review Acme follow-up</div><div class="small" style="color:#9DB4E6;margin-top:4px">due 10:30 · 1 of 3</div></div></div>
+          <div><h4>Detail</h4><div class="card"><div class="t">Acme follow-up (draft)</div><div class="s">To: Dana · pricing one-pager attached · 3 action items</div><div style="margin-top:9px;display:flex;gap:6px"><span class="chip pri">Send</span><span class="chip">Edit</span></div></div></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 03 · conversation</div>
+    <h2><span class="n">03</span>Chat · with inline approvals & subagents</h2>
+    <p class="path">apps/web/src/domains/chat · composer · inspector · confirmation-actions · subagent chips · document-viewer</p>
+    <div class="frame">
+      <div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Cue · Chat</span></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><div class="face sm"><span class="eye"></span></div><b>cue<span class="dot">.</span></b></div>
+          <div class="nav"><span class="ic">◉</span> Home</div><div class="nav on"><span class="ic">▮</span> Chat</div><div class="nav"><span class="ic">✦</span> Intelligence</div>
+          <div class="sec">Recent</div><div class="chan">Acme renewal</div><div class="chan">Hiring · JD review</div><div class="chan">Trip to NYC</div>
+          <div class="me"><span class="av">M</span> Manav</div>
+        </aside>
+        <div class="main">
+          <div class="top"><div style="display:flex;align-items:center;gap:10px"><div class="face sm"><span class="eye"></span></div><span style="font-weight:500">Cue</span><span class="tag">· acting</span></div></div>
+          <div class="body" style="display:flex;flex-direction:column;gap:13px">
+            <div class="bubble you">Book me a table near the office Thursday 7pm, 4 people.</div>
+            <div><div class="tag" style="margin-bottom:5px">cue · spawned a subagent</div><div class="bubble ai">On it. <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px"><span class="face sm" style="width:16px;height:16px"><span class="eye" style="width:9px;height:9px"></span></span> reservations</span> is checking options.</div></div>
+            <div class="card" style="border:2px solid var(--blue);max-width:80%"><div class="tag" style="color:var(--blue-s)">Approval needed · books a reservation</div><div class="t" style="margin-top:4px">Bottega · Thu 7:00pm · table for 4</div><div class="s">Uses your saved card · $0 hold</div><div style="margin-top:10px;display:flex;gap:7px"><span class="chip pri">Approve</span><span class="chip">Once</span><span class="chip">Deny</span></div></div>
+            <div class="tag">Permission model: guardian approval · grant once / 10 min / always — assistant/src/approvals</div>
+          </div>
+          <div style="margin:0 22px 18px;border:1px solid var(--line2);border-radius:13px;padding:11px 14px;display:flex;align-items:center;gap:12px;color:var(--t3);font-size:13.5px">Message Cue, or hold to talk… <span style="margin-left:auto;width:34px;height:34px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center">🎙</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 04 · knows you inside out</div>
+    <h2><span class="n">04</span>Intelligence hub</h2>
+    <p class="path">apps/web/src/domains/intelligence · identity (SOUL) · memories / memory-v2 · skills · plugins</p>
+    <div class="frame">
+      <div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Cue · Intelligence</span></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><div class="face sm"><span class="eye"></span></div><b>cue<span class="dot">.</span></b></div>
+          <div class="nav"><span class="ic">◉</span> Home</div><div class="nav on"><span class="ic">✦</span> Intelligence</div><div class="nav"><span class="ic">▤</span> Library</div>
+          <div class="me"><span class="av">M</span> Manav</div>
+        </aside>
+        <div class="main">
+          <div class="top"><div class="tabs" style="border:none;margin:0"><span class="on">Identity</span><span>Memory</span><span>Skills</span><span>Plugins</span></div></div>
+          <div class="body grid2" style="align-items:start">
+            <div><h4>Identity · SOUL</h4>
+              <div class="card" style="margin-bottom:10px"><div class="t">Personality</div><div class="s">Sharp, concise, proactive. Writes the way you do. Reflects in a private journal.</div></div>
+              <div class="card"><div class="t">NOW · current focus</div><div class="s">Acme renewal · hiring two engineers · Q3 board prep</div></div>
+            </div>
+            <div><h4>Memory · 8 types</h4>
+              <div class="card">
+                <div class="memtype"><span class="mt-dot" style="background:var(--blue)"></span> Semantic — "prefers concise updates" <span class="src b" style="margin-left:auto">14 src</span></div>
+                <div class="memtype"><span class="mt-dot" style="background:var(--violet)"></span> Prospective — "Acme closes Q3"</div>
+                <div class="memtype"><span class="mt-dot" style="background:var(--green)"></span> Procedural — "standup M/W/F 9:00"</div>
+                <div class="memtype"><span class="mt-dot" style="background:var(--amber)"></span> Episodic — "call with Dana, Jun 12"</div>
+                <div class="memtype"><span class="mt-dot" style="background:#E24B4A"></span> Emotional · Behavioral · Narrative · Shared</div>
+              </div>
+              <div class="note">Every item carries source attribution + confidence. Hybrid local retrieval. Editable & forgettable.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surfaces 05–07 · capabilities</div>
+    <h2><span class="n">05–07</span>Library · Workspace · Contacts & A2A</h2>
+    <p class="path">domains/library · domains/workspace · domains/contacts (a2a-invite, trusted-contact access)</p>
+    <div class="grid3" style="margin-top:22px;gap:18px">
+      <div class="frame" style="margin:0"><div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Library</span></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px;min-height:300px">
+          <h4>Install apps & skills · 67 in catalog</h4>
+          <div class="card"><div class="t">Gmail <span class="src g">connected</span></div><div class="s">inbox triage, drafts, send</div></div>
+          <div class="card"><div class="t">Linear</div><div class="s">issues & sprints · install</div></div>
+          <div class="card"><div class="t">DoorDash · Amazon</div><div class="s">order on your behalf</div></div>
+          <div class="card"><div class="t">Meet-join · Reservations</div><div class="s">joins calls, books tables</div></div>
+        </div>
+      </div>
+      <div class="frame" style="margin:0"><div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Workspace</span></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px;min-height:300px">
+          <h4>Files Cue reads & writes</h4>
+          <div class="card"><div class="t">📄 Acme follow-up.md</div><div class="s">edited 4m ago · by Cue</div></div>
+          <div class="card"><div class="t">📊 Q3 forecast.xlsx</div><div class="s">shared from meeting</div></div>
+          <div class="card"><div class="t">📁 Hiring</div><div class="s">3 JDs · 1 scorecard</div></div>
+          <div class="note" style="margin-top:auto">Sandboxed. Computer use is permission-gated.</div>
+        </div>
+      </div>
+      <div class="frame" style="margin:0"><div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Contacts</span></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px;min-height:300px">
+          <h4>People & agent-to-agent</h4>
+          <div class="card"><div class="t">Dana Reyes <span class="src b">trusted</span></div><div class="s">can reach Cue via email</div></div>
+          <div class="card"><div class="t">Sam Cho <span class="src">guardian-set</span></div><div class="s">scoped access</div></div>
+          <div class="card" style="border:2px solid var(--violet)"><div class="t">Invite an agent (A2A)</div><div class="s">Cue ↔ their assistant, scoped</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surfaces 08–10 · voice, calls, terminal</div>
+    <h2><span class="n">08–10</span>Voice mode · Active call · Terminal</h2>
+    <p class="path">live-voice · stt/tts · calls (Twilio) · domains/terminal (computer-use stream)</p>
+    <div class="phones">
+      <div><div class="phone"><div class="voice">
+        <div class="face lg"><span class="ping"></span><span class="eye"></span></div>
+        <div class="eq" style="height:26px"><b></b><b></b><b></b><b></b><b></b></div>
+        <div style="font-size:16px;text-align:center;max-width:78%;color:#E7ECF5">"Move my 3pm and tell Sam <span style="color:var(--blue)">the deck is ready</span>"</div>
+        <div class="mono" style="font-size:11px;letter-spacing:.16em;color:#7E8BA3">● listening</div>
+      </div></div><div class="cap">Voice mode · hands-free</div></div>
+      <div><div class="phone"><div class="screen" style="background:var(--ink)">
+        <div class="sbar" style="color:#fff"><span>9:41</span><span style="color:#9DB4E6">● 04:12</span></div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;color:#fff;padding:24px;text-align:center">
+          <div class="face lg" style="--ink:var(--violet-s)"><span class="ping"></span><span class="eye"></span></div>
+          <div style="font-size:20px;font-weight:500">Calling Bottega…</div>
+          <p class="small" style="color:#9DB4E6">Cue is booking your table · live transcript below</p>
+          <div style="background:rgba(255,255,255,.06);border-radius:12px;padding:10px 12px;font-size:12px;color:#C4CCDA;text-align:left;width:100%">"Hi, I'd like a table for four on Thursday at seven…"</div>
+        </div>
+        <div style="padding:16px;display:flex;gap:10px;justify-content:center"><div class="chip" style="background:#E24B4A;border:none;color:#fff;padding:11px 20px">End</div><div class="chip" style="background:rgba(255,255,255,.1);border:none;color:#fff;padding:11px 20px">Take over</div></div>
+      </div></div><div class="cap">Cue places a real call</div></div>
+      <div><div class="phone"><div class="screen" style="background:#0E1116">
+        <div class="sbar" style="color:#fff"><span>9:41</span><span style="color:#8D99A5">terminal</span></div>
+        <div style="padding:16px;font-family:var(--mono);font-size:11px;color:#C9D4E3;line-height:1.7;flex:1">
+          <div style="color:#6ECF87">$ cue run inbox-cleanup</div>
+          <div class="muted" style="color:#8D99A5">→ scanning 142 threads…</div>
+          <div>archived 38 · labeled 17</div>
+          <div>drafted 4 replies <span style="color:#3D6EE8">[needs approval]</span></div>
+          <div style="color:#6ECF87;margin-top:8px">$ ▍</div>
+        </div>
+        <div style="padding:14px;border-top:1px solid #1E2530"><div class="chip pri" style="width:100%;justify-content:center;padding:10px">Review 4 drafts</div></div>
+      </div></div><div class="cap">Terminal · computer use, visible</div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 11 · control</div>
+    <h2><span class="n">11</span>Settings · Voice & trust</h2>
+    <p class="path">domains/settings · voice-page · devices · schedules · notifications · privacy</p>
+    <div class="grid2" style="margin-top:22px;gap:18px">
+      <div class="frame" style="margin:0"><div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Settings · Voice</span></div>
+        <div style="padding:18px;min-height:240px;display:flex;flex-direction:column;gap:12px">
+          <h4>Voice & persona</h4>
+          <div class="card"><div class="t">Voice</div><div class="s">"Even" · warm, low · ElevenLabs <span class="src b">open decision</span></div></div>
+          <div class="card"><div class="t">Wake style</div><div class="s">Hold-to-talk · or hands-free (VAD)</div></div>
+          <div class="card"><div class="t">Speaking rate</div><div class="s">●———○——— 1.0×</div></div>
+        </div>
+      </div>
+      <div class="frame" style="margin:0"><div class="tbar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tbt">Settings · Trust & privacy</span></div>
+        <div style="padding:18px;min-height:240px;display:flex;flex-direction:column;gap:12px">
+          <h4>Trust · privacy · devices</h4>
+          <div class="card"><div class="t">Always-on capture <span class="src">off</span></div><div class="s">Mic capture in meetings · you control when</div></div>
+          <div class="card"><div class="t">Devices</div><div class="s">MacBook · iPhone · web · one memory</div></div>
+          <div class="note" style="margin-top:auto">Trust console is a headline feature — prerequisite for the wearable (Phase 5).</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">The differentiator</div>
+    <h2><span class="n">12</span>One memory · clean handoffs</h2>
+    <p class="path">channels + memory + multi-local instance isolation — made visible in UX</p>
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:24px;align-items:center;margin-top:22px">
+      <div class="card"><div class="tag">10:36 · on Mac</div><div style="font-size:15px;font-weight:500;margin-top:6px">"Draft the Acme follow-up."</div><p class="small muted" style="margin-top:6px">Cue writes it and remembers the 3 action items.</p></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px"><span class="tag">syncs</span><div style="width:1px;height:30px;background:var(--line2)"></div><span style="background:var(--ink);color:#fff;border-radius:999px;padding:8px 14px;font-size:12.5px;display:inline-flex;gap:8px;align-items:center"><span class="face sm" style="width:16px;height:16px"><span class="eye" style="width:9px;height:9px"></span></span> one memory</span><div style="width:1px;height:30px;background:var(--line2)"></div><span class="tag">instantly</span></div>
+      <div class="card"><div class="tag">10:52 · phone, by voice</div><div style="font-size:15px;font-weight:500;margin-top:6px">"Send it and move my 3pm."</div><p class="small muted" style="margin-top:6px">Same draft, same context — sent on the walk to your next meeting.</p></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--blue)"></i>Action / info</span><span><i style="background:var(--violet)"></i>Decision / commitment</span><span><i style="background:var(--green)"></i>Done / connected</span><span><i style="background:var(--ink)"></i>Cue focus / voice</span>
+    </div>
+  </div>
+</section>
+
+<footer><div class="wrap">cue. · design v0.2 · surfaces: onboarding · home · chat · intelligence · library · workspace · contacts/a2a · voice · calls · terminal · settings · handoff · avatar=aperture · grounded in FUNCTIONALITY-MAP.md · next: world-class layer (meeting capture, unified next-moves queue, trust console)</div></footer>
+
+</body>
+</html>

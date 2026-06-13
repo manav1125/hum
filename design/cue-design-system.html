@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cue — Design System & Surfaces</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#1A2230; --ink-2:#24303F; --slate:#2D3A4D;
+  --blue:#3D6EE8; --blue-strong:#2B53C4; --blue-weak:#DBE4FB;
+  --violet:#7F77DD; --violet-strong:#534AB7;
+  --bg:#F4F6F9; --surface:#FFFFFF; --sunken:#EEF1F6;
+  --line:#E5E9F0; --line-2:#D7DDE7;
+  --t1:#1A2230; --t2:#5A6672; --t3:#8D99A5;
+  --green:#277E41; --amber:#F1B21E; --danger:#DA491A;
+  --r-sm:8px; --r:12px; --r-lg:16px; --r-xl:22px;
+  --sans:"DM Sans",system-ui,sans-serif; --mono:"DM Mono",ui-monospace,monospace; --serif:"Instrument Serif",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--t1);line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+section{padding:64px 0;border-top:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue-strong);margin-bottom:14px}
+h1{font-size:60px;font-weight:500;letter-spacing:-2.5px;line-height:1.02}
+h2{font-size:30px;font-weight:500;letter-spacing:-1px;margin-bottom:8px}
+h2 .num{font-family:var(--mono);font-size:15px;color:var(--t3);letter-spacing:0;vertical-align:6px;margin-right:12px}
+.lede{font-size:18px;color:var(--t2);max-width:680px}
+.muted{color:var(--t2)} .small{font-size:13px}
+.dot{display:inline-block;color:var(--blue)}
+/* hero */
+.hero{padding:84px 0 40px}
+.mark{font-size:118px;font-weight:500;letter-spacing:-6px;line-height:1}
+.pill{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font-size:13px;color:var(--t2)}
+.swatches{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.sw{width:64px}.sw i{display:block;height:48px;border-radius:10px;border:1px solid rgba(0,0,0,.05)}
+.sw span{font-family:var(--mono);font-size:11px;color:var(--t3);display:block;margin-top:6px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px 22px}
+/* device chrome */
+.frame{background:var(--surface);border:1px solid var(--line-2);border-radius:14px;overflow:hidden;box-shadow:0 24px 60px -28px rgba(26,34,48,.32)}
+.titlebar{height:42px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#F7F8FB;border-bottom:1px solid var(--line)}
+.tl{width:11px;height:11px;border-radius:50%} .tl.r{background:#ED6A5E}.tl.y{background:#F4BF50}.tl.g{background:#61C554}
+.tb-title{margin-left:10px;font-size:12.5px;color:var(--t3);font-family:var(--mono)}
+/* app layout */
+.app{display:grid;grid-template-columns:212px 1fr 268px;min-height:560px}
+.side{background:var(--ink);color:#fff;padding:18px 14px;display:flex;flex-direction:column;gap:6px}
+.side .logo{font-size:24px;font-weight:500;letter-spacing:-1.2px;padding:6px 8px 16px}
+.nav{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;font-size:14px;color:#C4CCDA;cursor:default}
+.nav .ic{width:17px;text-align:center;opacity:.85}
+.nav.active{background:rgba(255,255,255,.09);color:#fff}
+.nav.active .ic{color:var(--blue)}
+.side .sec{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:#6B788C;padding:18px 11px 8px}
+.chan{display:flex;align-items:center;gap:9px;padding:6px 11px;font-size:13px;color:#AEB7C7}
+.chan .live{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.side .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid rgba(255,255,255,.08)}
+.av{width:30px;height:30px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:#fff}
+.main{display:flex;flex-direction:column;background:var(--surface)}
+.main .top{padding:16px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.thread{padding:22px 24px;display:flex;flex-direction:column;gap:16px;flex:1}
+.msg{max-width:78%}
+.msg .who{font-size:11px;color:var(--t3);font-family:var(--mono);margin-bottom:5px}
+.bubble{padding:11px 14px;border-radius:14px;font-size:14px}
+.msg.you{align-self:flex-end;text-align:right}
+.msg.you .bubble{background:var(--ink);color:#fff;border-bottom-right-radius:5px;text-align:left}
+.msg.ai .bubble{background:var(--sunken);border-bottom-left-radius:5px}
+.actionrow{display:flex;gap:8px;margin-top:10px}
+.chipbtn{font-size:12.5px;border:1px solid var(--line-2);background:var(--surface);border-radius:9px;padding:6px 11px;color:var(--ink);display:inline-flex;gap:7px;align-items:center}
+.chipbtn.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+.composer{margin:0 24px 22px;border:1px solid var(--line-2);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px;color:var(--t3);font-size:14px}
+.mic{margin-left:auto;width:38px;height:38px;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px}
+.rail{background:var(--bg);border-left:1px solid var(--line);padding:18px 18px;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+.rail h4{font-size:12px;font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:10px}
+.focus{background:var(--ink);color:#fff;border-radius:14px;padding:15px 16px}
+.focus .lbl{font-size:11px;color:#93B4FF;font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em}
+.focus .big{font-size:16px;font-weight:500;margin-top:4px}
+.nudge{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:0 12px 12px 0;padding:11px 13px;font-size:13px}
+.nudge.v{border-left-color:var(--violet)} .nudge .meta{font-size:11px;color:var(--t3);font-family:var(--mono);margin-top:6px}
+.task{display:flex;gap:10px;align-items:flex-start;font-size:13px;padding:8px 0;border-bottom:1px solid var(--line)}
+.ck{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--line-2);flex-shrink:0;margin-top:1px}
+.ck.done{background:var(--green);border-color:var(--green)}
+.src{font-family:var(--mono);font-size:10.5px;color:var(--violet-strong);background:#EEEDFB;padding:1px 6px;border-radius:5px}
+/* phones */
+.phones{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.phone{background:#0B0E14;border-radius:38px;padding:9px;box-shadow:0 30px 60px -30px rgba(26,34,48,.45)}
+.screen{background:var(--surface);border-radius:30px;overflow:hidden;height:520px;position:relative;display:flex;flex-direction:column}
+.notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:108px;height:24px;background:#0B0E14;border-radius:14px;z-index:5}
+.sbar{padding:14px 20px 8px;display:flex;justify-content:space-between;font-size:12px;font-weight:500;color:var(--ink)}
+.pcap{font-family:var(--mono);font-size:11px;color:var(--t3);text-align:center;margin-top:12px}
+.phead{padding:6px 20px 14px}.phead .h{font-size:22px;font-weight:500;letter-spacing:-.8px}
+.pcards{padding:0 16px;display:flex;flex-direction:column;gap:11px;overflow:hidden}
+.pcard{border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+.pcard .t{font-size:14px;font-weight:500} .pcard .s{font-size:12px;color:var(--t2);margin-top:3px}
+.tabbar{margin-top:auto;display:flex;justify-content:space-around;padding:12px 0 18px;border-top:1px solid var(--line);color:var(--t3);font-size:18px}
+.tabbar .on{color:var(--blue)}
+/* voice */
+.voicewrap{background:var(--ink);border-radius:30px;height:520px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;position:relative;overflow:hidden}
+.orb{position:relative;width:150px;height:150px;display:flex;align-items:center;justify-content:center}
+.ring{position:absolute;border-radius:50%;border:1.5px solid rgba(61,110,232,.55)}
+.r1{width:70px;height:70px;background:var(--blue)}
+.r2{width:108px;height:108px;animation:pulse 2.6s ease-out infinite}
+.r3{width:150px;height:150px;animation:pulse 2.6s ease-out .8s infinite}
+@keyframes pulse{0%{transform:scale(.7);opacity:.9}100%{transform:scale(1.25);opacity:0}}
+.eq{display:flex;gap:5px;align-items:flex-end;height:30px;margin-top:36px}
+.eq b{width:5px;background:var(--violet);border-radius:3px;animation:bar 1s ease-in-out infinite}
+.eq b:nth-child(2){animation-delay:.15s}.eq b:nth-child(3){animation-delay:.3s}.eq b:nth-child(4){animation-delay:.45s}.eq b:nth-child(5){animation-delay:.6s}
+@keyframes bar{0%,100%{height:8px}50%{height:30px}}
+.vtrans{margin-top:30px;font-size:17px;text-align:center;max-width:78%;color:#E7ECF5}
+.vtrans .live{color:var(--blue)}
+.vstate{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#7E8BA3;margin-top:18px}
+/* handoff */
+.handoff{display:grid;grid-template-columns:1fr auto 1fr;gap:26px;align-items:center}
+.hbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px}
+.hbox .k{font-family:var(--mono);font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em}
+.flow{display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--blue-strong)}
+.flow .line{width:1px;height:40px;background:var(--line-2)}
+.memlink{background:var(--ink);color:#fff;border-radius:999px;padding:9px 16px;font-size:13px;display:inline-flex;gap:9px;align-items:center}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--t2);margin-top:8px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+footer{padding:48px 0 70px;color:var(--t3);font-size:13px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<div class="wrap hero">
+  <div class="pill" style="margin-bottom:24px"><span class="dot">●</span> Cue · design system v0.1 · Cue brand</div>
+  <div class="mark">cue<span class="dot">.</span></div>
+  <h1 style="margin-top:18px">One assistant.<br>Every surface. <span class="muted">Nothing dropped.</span></h1>
+  <p class="lede" style="margin-top:20px">Desktop, web, and mobile share one memory and one identity. Start a thought on your Mac, finish it by voice on your phone, and the action items from your last meeting are already waiting — captured, organized, and ready to act on.</p>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Design language</div>
+    <h2>Calm, sharp, decisive</h2>
+    <p class="lede" style="margin-bottom:26px">Slate ink and an electric-blue accent. Green means success, never brand. Generous whitespace, soft 12–16px corners, one quiet hairline. DM Sans throughout, DM Mono for the machine voice — timestamps, sources, states.</p>
+    <div class="cols">
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">Palette</div>
+        <div class="swatches">
+          <div class="sw"><i style="background:#1A2230"></i><span>ink</span></div>
+          <div class="sw"><i style="background:#3D6EE8"></i><span>blue</span></div>
+          <div class="sw"><i style="background:#7F77DD"></i><span>violet</span></div>
+          <div class="sw"><i style="background:#DBE4FB"></i><span>blue-wk</span></div>
+          <div class="sw"><i style="background:#277E41"></i><span>success</span></div>
+          <div class="sw"><i style="background:#F4F6F9;border-color:#D7DDE7"></i><span>bg</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">Type</div>
+        <div style="font-size:30px;font-weight:500;letter-spacing:-1px">Aa Cue</div>
+        <div class="muted small" style="margin-top:4px">DM Sans · 300–700 variable</div>
+        <div style="font-family:var(--mono);font-size:14px;margin-top:12px;color:var(--t2)">09:41 · source: gmail</div>
+        <div style="font-family:var(--serif);font-size:22px;margin-top:8px">An editorial moment.</div>
+      </div>
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">Voice</div>
+        <p class="small muted">Never miss your next move. Cue speaks in short, confident lines — tells you what changed and what's next, then gets out of the way.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 01</div>
+    <h2><span class="num">01</span>macOS desktop</h2>
+    <p class="lede" style="margin-bottom:26px">The home base. Conversation in the center, a live <strong>Now</strong> rail on the right surfacing what's due and what Cue noticed, and one sidebar tying every channel into a single memory.</p>
+    <div class="frame">
+      <div class="titlebar"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span><span class="tb-title">Cue</span></div>
+      <div class="app">
+        <aside class="side">
+          <div class="logo">cue<span class="dot">.</span></div>
+          <div class="nav active"><span class="ic">◉</span> Today</div>
+          <div class="nav"><span class="ic">✦</span> Memory</div>
+          <div class="nav"><span class="ic">✓</span> Tasks</div>
+          <div class="nav"><span class="ic">⚙</span> Connections</div>
+          <div class="sec">Channels · one memory</div>
+          <div class="chan"><span class="live"></span> Voice</div>
+          <div class="chan"><span class="live"></span> Email</div>
+          <div class="chan"><span class="live"></span> Slack</div>
+          <div class="chan"><span class="live" style="background:#8D99A5"></span> Phone</div>
+          <div class="me"><span class="av">M</span><div><div style="font-size:13px">Manav</div><div style="font-size:11px;color:#8D99A5">Guardian</div></div></div>
+        </aside>
+        <div class="main">
+          <div class="top"><div style="font-weight:500">Today</div><div class="small muted" style="font-family:var(--mono)">Sat · 13 Jun · 09:41</div></div>
+          <div class="thread">
+            <div class="msg ai"><div class="who">cue</div><div class="bubble">Morning. Your 10:00 with Acme moved to 10:30. I drafted the follow-up from yesterday's call — 3 action items, want to review?</div>
+              <div class="actionrow"><span class="chipbtn pri">Review draft</span><span class="chipbtn">Snooze</span></div></div>
+            <div class="msg you"><div class="who">you</div><div class="bubble">Send it, and add the pricing doc.</div></div>
+            <div class="msg ai"><div class="who">cue</div><div class="bubble">Sent to Dana with the pricing one-pager attached. I added “share Q3 forecast” to your tasks — it came up twice in the call.</div></div>
+          </div>
+          <div class="composer">Message Cue, or hold to talk… <span class="mic">🎙</span></div>
+        </div>
+        <aside class="rail">
+          <div>
+            <h4>Now · focus</h4>
+            <div class="focus"><div class="lbl">Next move</div><div class="big">Review Acme follow-up</div><div class="small" style="color:#9DB4E6;margin-top:6px">Due before 10:30 · 1 of 3 today</div></div>
+          </div>
+          <div>
+            <h4>Cue noticed</h4>
+            <div class="nudge">Dana hasn’t replied to Tuesday’s thread. Nudge her before the renewal call?<div class="meta">from email · 2h ago</div></div>
+            <div class="nudge v" style="margin-top:9px">You promised Sam the deck “by Friday.” It’s Friday.<div class="meta">from slack · captured</div></div>
+          </div>
+          <div>
+            <h4>From your last meeting</h4>
+            <div class="task"><span class="ck done"></span><div>Send Acme pricing <span class="src">done</span></div></div>
+            <div class="task"><span class="ck"></span><div>Share Q3 forecast <span class="src">meeting</span></div></div>
+            <div class="task"><span class="ck"></span><div>Intro Dana ↔ Legal <span class="src">meeting</span></div></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 02</div>
+    <h2><span class="num">02</span>Web app</h2>
+    <p class="lede" style="margin-bottom:26px">The same brain in the browser — identical layout and memory, framed for the web. For anyone not on a Mac, and the fastest surface to iterate and demo.</p>
+    <div class="frame">
+      <div class="titlebar" style="background:#fff"><span class="tl r"></span><span class="tl y"></span><span class="tl g"></span>
+        <div style="margin-left:14px;flex:1;background:var(--sunken);border-radius:8px;height:24px;display:flex;align-items:center;padding:0 12px;font-family:var(--mono);font-size:12px;color:var(--t3)">app.cue.so/today</div>
+      </div>
+      <div class="app" style="min-height:430px;grid-template-columns:200px 1fr 250px">
+        <aside class="side">
+          <div class="logo">cue<span class="dot">.</span></div>
+          <div class="nav active"><span class="ic">◉</span> Today</div>
+          <div class="nav"><span class="ic">✦</span> Memory</div>
+          <div class="nav"><span class="ic">✓</span> Tasks</div>
+          <div class="nav"><span class="ic">⚙</span> Connections</div>
+          <div class="me"><span class="av" style="background:var(--violet)">M</span><div><div style="font-size:13px">Manav</div><div style="font-size:11px;color:#8D99A5">Web session</div></div></div>
+        </aside>
+        <div class="main">
+          <div class="top"><div style="font-weight:500">Memory</div><div class="small muted" style="font-family:var(--mono)">8 types · synced</div></div>
+          <div class="thread" style="gap:11px">
+            <div class="pcard" style="border-color:var(--line)"><div class="t">Prefers concise, direct updates <span class="src">semantic</span></div><div class="s">Learned from 14 conversations · high confidence</div></div>
+            <div class="pcard" style="border-color:var(--line)"><div class="t">Renewal with Acme · closes Q3 <span class="src">prospective</span></div><div class="s">Surfaces this before every Acme touchpoint</div></div>
+            <div class="pcard" style="border-color:var(--line)"><div class="t">Standup cadence: Mon/Wed/Fri 9:00 <span class="src">procedural</span></div><div class="s">From calendar · drives proactive nudges</div></div>
+          </div>
+        </div>
+        <aside class="rail">
+          <div><h4>Continuity</h4><div class="nudge">Picked up from your Mac session 4 min ago.<div class="meta">one memory · all devices</div></div></div>
+          <div><h4>Connected</h4>
+            <div class="task"><span class="ck done"></span><div>Gmail <span class="src">live</span></div></div>
+            <div class="task"><span class="ck done"></span><div>Calendar <span class="src">live</span></div></div>
+            <div class="task"><span class="ck done"></span><div>Slack · Notion · Linear <span class="src">live</span></div></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">Surface 03</div>
+    <h2><span class="num">03</span>Mobile · in your pocket</h2>
+    <p class="lede" style="margin-bottom:26px">Voice-first, takes meetings with you. Talk or type, drop into a full voice mode, and watch a live meeting turn into action items the moment it ends.</p>
+    <div class="phones">
+      <div>
+        <div class="phone"><div class="screen"><div class="notch"></div>
+          <div class="sbar"><span>9:41</span><span>✦ ▦ ⚡</span></div>
+          <div class="phead"><div class="muted small" style="font-family:var(--mono)">Saturday</div><div class="h">Today</div></div>
+          <div class="pcards">
+            <div class="pcard" style="background:var(--ink);color:#fff;border:none"><div class="t" style="color:#93B4FF;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em">Next move</div><div style="font-size:16px;font-weight:500;margin-top:4px">Review Acme follow-up</div><div style="font-size:12px;color:#9DB4E6;margin-top:4px">due 10:30</div></div>
+            <div class="pcard"><div class="t">Cue noticed</div><div class="s">Dana hasn’t replied to Tuesday’s thread →</div></div>
+            <div class="pcard"><div class="t">3 tasks from your last meeting</div><div class="s">1 done · 2 open</div></div>
+          </div>
+          <div class="tabbar"><span class="on">◉</span><span>✦</span><span>🎙</span><span>✓</span></div>
+        </div></div>
+        <div class="pcap">Home · one glance, next move</div>
+      </div>
+      <div>
+        <div class="phone"><div class="voicewrap">
+          <div class="orb"><span class="ring r3"></span><span class="ring r2"></span><span class="ring r1"></span></div>
+          <div class="eq"><b></b><b></b><b></b><b></b><b></b></div>
+          <div class="vtrans">“Move my 3pm and tell Sam <span class="live">the deck is ready</span>”</div>
+          <div class="vstate">● listening</div>
+        </div></div>
+        <div class="pcap">Voice mode · hold, or hands-free</div>
+      </div>
+      <div>
+        <div class="phone"><div class="screen"><div class="notch"></div>
+          <div class="sbar"><span>9:41</span><span>● rec 24:18</span></div>
+          <div class="phead"><div class="muted small" style="font-family:var(--mono)">Meeting capture</div><div class="h">Acme sync</div></div>
+          <div style="padding:0 16px"><div style="background:var(--ink);border-radius:14px;padding:14px;color:#fff;display:flex;align-items:center;gap:12px"><div class="eq" style="height:22px;margin:0"><b style="background:var(--blue)"></b><b style="background:var(--blue)"></b><b style="background:var(--blue)"></b><b style="background:var(--blue)"></b><b style="background:var(--blue)"></b></div><div style="font-size:12px;color:#9DB4E6;font-family:var(--mono)">recording · transcribing</div></div></div>
+          <div class="phead" style="padding-bottom:8px"><div class="muted small" style="font-family:var(--mono);margin-top:14px">Captured live →</div></div>
+          <div class="pcards">
+            <div class="pcard" style="border-left:3px solid var(--blue);border-radius:0 12px 12px 0"><div class="t">Action · share Q3 forecast</div><div class="s">owner: you · came up twice</div></div>
+            <div class="pcard" style="border-left:3px solid var(--violet);border-radius:0 12px 12px 0"><div class="t">Decision · pricing holds</div><div class="s">agreed by Dana</div></div>
+          </div>
+          <div class="tabbar"><span>◉</span><span>✦</span><span class="on">🎙</span><span>✓</span></div>
+        </div></div>
+        <div class="pcap">Meeting → action items, automatically</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="eyebrow">The thing that ties it together</div>
+    <h2><span class="num">04</span>Clean handoffs · one memory</h2>
+    <p class="lede" style="margin-bottom:30px">No re-explaining, no copy-paste between devices. Every surface reads and writes the same memory, so context follows you the moment you switch.</p>
+    <div class="handoff">
+      <div class="hbox"><div class="k">10:36 · on Mac</div><div style="font-size:16px;font-weight:500;margin-top:8px">“Draft the Acme follow-up.”</div><p class="small muted" style="margin-top:8px">Cue writes the draft and remembers the 3 action items.</p></div>
+      <div class="flow"><span class="small" style="font-family:var(--mono)">syncs</span><span class="line"></span><span class="memlink"><span class="dot">✦</span> one memory</span><span class="line"></span><span class="small" style="font-family:var(--mono)">instantly</span></div>
+      <div class="hbox"><div class="k">10:52 · on phone, by voice</div><div style="font-size:16px;font-weight:500;margin-top:8px">“Send it and move my 3pm.”</div><p class="small muted" style="margin-top:8px">Same draft, same context — sent on the walk to your next meeting.</p></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--blue)"></i>Action item</span>
+      <span><i style="background:var(--violet)"></i>Decision / nudge</span>
+      <span><i style="background:var(--green)"></i>Done</span>
+      <span><i style="background:var(--ink)"></i>Cue voice / focus</span>
+    </div>
+  </div>
+</section>
+
+<footer><div class="wrap">cue. · design system v0.1 · macOS · web · mobile · voice · built on the forked assistant runtime · see DESIGN-SPEC.md for the Claude Code handoff</div></footer>
+
+</body>
+</html>
