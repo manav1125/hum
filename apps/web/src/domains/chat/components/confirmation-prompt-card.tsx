@@ -55,11 +55,14 @@ export function ConfirmationPromptCard({
   const hasAllowlistOptions = (confirmation.allowlistOptions?.length ?? 0) > 0;
 
   return (
-    <Card>
+    <Card className="border-l-[3px] border-l-[var(--accent-cue)]">
+      <span className="mb-1 block font-mono text-label-medium-default uppercase tracking-[0.08em] text-[var(--accent-cue-strong)]">
+        Approval
+      </span>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex items-start gap-2">
-            <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[var(--content-disabled)]" />
+            <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-cue)]" />
             <span className="text-body-medium-default text-[var(--content-default)]">
               {confirmation.title || "Confirmation required"}
             </span>
