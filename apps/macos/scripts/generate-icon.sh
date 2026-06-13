@@ -281,6 +281,13 @@ rm -rf "$(dirname "$ICON_BUNDLE_DIR")"
 
 if [ "$ACTOOL_SUCCESS" = "1" ]; then
     echo "generate-icon: wrote $OUTPUT_DIR/Assets.car ($VELLUM_ENVIRONMENT)"
+elif ! xcrun --find actool >/dev/null 2>&1; then
+    # actool ships with full Xcode, not the Command Line Tools. On a CLT-only
+    # machine it's simply absent — the full-bleed icon.icns written above is a
+    # valid CFBundleIconFile fallback, so skip the Assets.car catalog with a
+    # warning instead of failing the build. (When actool IS present, a failure
+    # is still fatal — that signals a real problem, handled by the else below.)
+    echo "generate-icon: actool unavailable (full Xcode not installed); skipping Assets.car, using icon.icns fallback. ($VELLUM_ENVIRONMENT)" >&2
 else
     echo "generate-icon: actool failed to produce Assets.car after all attempts:" >&2
     echo "$ACTOOL_OUTPUT" >&2
