@@ -30,6 +30,7 @@ import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
 import type { Conversation } from "@/types/conversation-types";
 import { canMarkRead, canMarkUnread } from "@/utils/conversation-predicates";
 import {
+    ApertureAvatar,
     Button,
     ContextMenu,
     PanelItem,
@@ -412,6 +413,24 @@ export function AssistantSideMenu({
       className="h-full"
     >
       <SideMenu.Header>
+        {variant !== "overlay" ? (
+          <div
+            className={cn(
+              "flex items-center gap-2.5 pb-2",
+              collapsed ? "justify-center px-0" : "px-2",
+            )}
+          >
+            <ApertureAvatar size={24} />
+            {!collapsed ? (
+              <span
+                className="select-none text-[19px] font-medium leading-none tracking-[-0.5px] text-[color:var(--content-emphasised)]"
+                style={{ fontFamily: "var(--font-sans)" }}
+              >
+                cue<span style={{ color: "var(--accent-cue)" }}>.</span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {variant === "overlay" ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
