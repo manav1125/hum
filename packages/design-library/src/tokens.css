@@ -755,12 +755,12 @@
  * --------------------------------------------------------------------------- */
 
 @keyframes cue-aperture-look {
-  0%, 100% { transform: rotate(38deg); }
-  50% { transform: rotate(62deg); }
+  0%, 100% { transform: rotate(-16deg); }
+  50% { transform: rotate(16deg); }
 }
-@keyframes cue-aperture-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes cue-aperture-rock {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
 }
 @keyframes cue-pupil-blink {
   0%, 90%, 100% { opacity: 1; }
@@ -783,9 +783,13 @@
   transform-origin: center;
   animation: cue-aperture-look 6s var(--anim-ease-in-out) infinite;
 }
-@utility animate-cue-spin {
+@utility animate-cue-look-fast {
   transform-origin: center;
-  animation: cue-aperture-spin 3.2s linear infinite;
+  animation: cue-aperture-look 1.4s var(--anim-ease-in-out) infinite;
+}
+@utility animate-cue-rock {
+  transform-origin: center;
+  animation: cue-aperture-rock 2.4s var(--anim-ease-in-out) infinite;
 }
 @utility animate-cue-blink {
   animation: cue-pupil-blink 4s var(--anim-ease-in-out) infinite;
@@ -793,6 +797,10 @@
 @utility animate-cue-pulse {
   transform-origin: center;
   animation: cue-pupil-pulse 1.4s var(--anim-ease-in-out) infinite;
+}
+@utility animate-cue-pulse-fast {
+  transform-origin: center;
+  animation: cue-pupil-pulse 0.45s var(--anim-ease-in-out) infinite;
 }
 @utility animate-cue-ping {
   animation: cue-ping 2.6s var(--anim-ease-out) infinite;

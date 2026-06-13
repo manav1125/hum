@@ -64,7 +64,7 @@ export function ApertureAvatar({
       {/* Ink (or violet) field */}
       <span
         aria-hidden
-        className="absolute inset-0 rounded-[28%]"
+        className="absolute inset-0 rounded-[26%]"
         style={{
           background: acting
             ? "var(--accent-cue-violet-strong)"
@@ -76,7 +76,7 @@ export function ApertureAvatar({
       {listening ? (
         <span
           aria-hidden
-          className="absolute inset-0 rounded-[28%] animate-cue-ping motion-reduce:animate-none"
+          className="absolute inset-0 rounded-[26%] animate-cue-ping motion-reduce:animate-none"
           style={{
             border: "2px solid color-mix(in srgb, var(--accent-cue) 55%, transparent)",
           }}
@@ -90,11 +90,12 @@ export function ApertureAvatar({
         className="relative h-full w-full"
         fill="none"
       >
-        {/* Aperture ring — a near-full "c" arc */}
+        {/* Aperture ring — a near-full "c" arc, opening toward lower-right.
+            thinking rocks the ring ±6°; otherwise it's static. */}
         <g
           className={cn(
             state === "thinking"
-              ? "animate-cue-spin motion-reduce:animate-none"
+              ? "animate-cue-rock motion-reduce:animate-none"
               : null,
           )}
           style={{ transformOrigin: "center" }}
@@ -102,38 +103,41 @@ export function ApertureAvatar({
           <circle
             cx="50"
             cy="50"
-            r="27"
+            r="29"
             stroke="var(--content-on-ink)"
-            strokeOpacity="0.9"
-            strokeWidth="7"
+            strokeOpacity="0.92"
+            strokeWidth="10"
             strokeLinecap="round"
-            strokeDasharray="132 38"
-            transform="rotate(-58 50 50)"
+            strokeDasharray="139.7 42.5"
+            transform="rotate(87 50 50)"
           />
         </g>
 
-        {/* Pupil — drifts (idle/listening) or pulses (speaking) */}
+        {/* Pupil — rests up-left (opposite the opening). Drifts (idle/listening),
+            orbits faster (thinking), pulses to speech cadence (speaking). */}
         <g
           className={cn(
             state === "idle" || state === "listening"
               ? "animate-cue-look motion-reduce:animate-none"
-              : null,
+              : state === "thinking"
+                ? "animate-cue-look-fast motion-reduce:animate-none"
+                : null,
           )}
           style={{ transformOrigin: "center" }}
         >
           <circle
-            cx="67"
-            cy="63"
-            r="8"
+            cx="41"
+            cy="41"
+            r="7.5"
             fill="var(--accent-cue)"
             className={cn(
               state === "speaking"
-                ? "animate-cue-pulse motion-reduce:animate-none"
+                ? "animate-cue-pulse-fast motion-reduce:animate-none"
                 : state === "idle" || state === "listening"
                   ? "animate-cue-blink motion-reduce:animate-none"
                   : null,
             )}
-            style={{ transformOrigin: "67px 63px" }}
+            style={{ transformOrigin: "41px 41px" }}
           />
         </g>
       </svg>

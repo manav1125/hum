@@ -20,9 +20,10 @@ describe("ApertureAvatar", () => {
     expect(html).toContain("animate-cue-ping");
   });
 
-  test("thinking spins the aperture", () => {
+  test("thinking rocks the aperture and orbits the pupil faster", () => {
     const html = renderToStaticMarkup(<ApertureAvatar state="thinking" />);
-    expect(html).toContain("animate-cue-spin");
+    expect(html).toContain("animate-cue-rock");
+    expect(html).toContain("animate-cue-look-fast");
   });
 
   test("acting turns the field violet", () => {
