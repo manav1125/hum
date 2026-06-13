@@ -198,6 +198,30 @@
   --accent-cue-violet: #7F77DD;
   --accent-cue-violet-strong: #534AB7;
 
+  /* Ink hero surface — the slate "Next move" FocusCard, voice mode, and
+   * meeting capture. Theme-independent on purpose: the hero stays ink in
+   * light, dark, and velvet (unlike --primary-base, which inverts in dark).
+   * --content-on-ink-muted is the muted blue-grey used for sub-labels on ink. */
+  --surface-ink: #1A2230;
+  --surface-ink-raised: #24303F;
+  --content-on-ink: #FFFFFF;
+  --content-on-ink-muted: #9DB4E6;
+
+  /* 8-type memory palette — SourceTag colors each memory by type. Blue and
+   * violet lead (per the v0.2/design-book mocks: semantic = blue, prospective
+   * = violet); the rest are drawn to stay mutually distinct while avoiding
+   * success-green. Theme-independent so a memory reads the same hue in every
+   * theme. (Provisional hues — safe for design to refine; the component only
+   * references these tokens.) */
+  --memory-episodic: #0E9B8B;
+  --memory-semantic: #3D6EE8;
+  --memory-procedural: #534AB7;
+  --memory-prospective: #7F77DD;
+  --memory-emotional: #DB4B77;
+  --memory-behavioral: #2B8FB3;
+  --memory-narrative: #C9760F;
+  --memory-shared: #5A6672;
+
   /* Font tokens — DM Sans across the board, matching the Swift macOS
    * client's VFont (TypographyTokens.swift). */
   --font-sans: "DM Sans", system-ui, sans-serif;
@@ -697,6 +721,65 @@
 }
 .collapsible-content[data-state="closed"] {
   animation: collapsible-slide-up var(--anim-fast) var(--anim-spring);
+}
+
+/* ---------------------------------------------------------------------------
+ * Cue aperture avatar + voice orb motion.
+ *
+ * The avatar is the brand character — an ink squircle with a light aperture
+ * ("it sees and listens") and an electric-blue pupil. These keyframes drive
+ * its states (idle look + blink, listening ping, thinking spin, speaking
+ * pulse) and the VoiceOrb's expanding rings + equalizer. Components apply the
+ * matching `animate-cue-*` utility and pair it with `motion-reduce:animate-none`
+ * so reduced-motion users get a calm, static mark.
+ * --------------------------------------------------------------------------- */
+
+@keyframes cue-aperture-look {
+  0%, 100% { transform: rotate(38deg); }
+  50% { transform: rotate(62deg); }
+}
+@keyframes cue-aperture-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes cue-pupil-blink {
+  0%, 90%, 100% { opacity: 1; }
+  94% { opacity: 0.15; }
+}
+@keyframes cue-pupil-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.28); opacity: 0.85; }
+}
+@keyframes cue-ping {
+  0% { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+@keyframes cue-eq-bar {
+  0%, 100% { transform: scaleY(0.28); }
+  50% { transform: scaleY(1); }
+}
+
+@utility animate-cue-look {
+  transform-origin: center;
+  animation: cue-aperture-look 6s var(--anim-ease-in-out) infinite;
+}
+@utility animate-cue-spin {
+  transform-origin: center;
+  animation: cue-aperture-spin 3.2s linear infinite;
+}
+@utility animate-cue-blink {
+  animation: cue-pupil-blink 4s var(--anim-ease-in-out) infinite;
+}
+@utility animate-cue-pulse {
+  transform-origin: center;
+  animation: cue-pupil-pulse 1.4s var(--anim-ease-in-out) infinite;
+}
+@utility animate-cue-ping {
+  animation: cue-ping 2.6s var(--anim-ease-out) infinite;
+}
+@utility animate-cue-eq {
+  transform-origin: bottom;
+  animation: cue-eq-bar 0.9s var(--anim-ease-in-out) infinite;
 }
 
 

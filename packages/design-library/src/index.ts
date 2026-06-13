@@ -13,6 +13,34 @@ export {
   CardFooter,
   type CardRootProps,
 } from "./components/card";
+export { FocusCard, type FocusCardProps } from "./components/focus-card";
+export {
+  Nudge,
+  type NudgeProps,
+  type NudgeTone,
+} from "./components/nudge";
+export {
+  Chip,
+  chipVariants,
+  type ChipProps,
+  type ChipSize,
+} from "./components/chip";
+export {
+  SourceTag,
+  MEMORY_TYPES,
+  type SourceTagProps,
+  type MemoryType,
+} from "./components/source-tag";
+export {
+  ApertureAvatar,
+  type ApertureAvatarProps,
+  type ApertureAvatarState,
+} from "./components/aperture-avatar";
+export {
+  VoiceOrb,
+  type VoiceOrbProps,
+  type VoiceOrbState,
+} from "./components/voice-orb";
 export {
   Notice,
   type NoticeProps,
