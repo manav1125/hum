@@ -1,11 +1,13 @@
 import { motion, useReducedMotion } from "motion/react";
-import { memo, useCallback, useMemo, useState, type CSSProperties } from "react";
+import { memo, useCallback, useState, type CSSProperties } from "react";
 
 import type { CharacterComponents, CharacterTraits } from "@/types/avatar";
-import { AnimatedAvatar } from "./animated-avatar";
+import { ApertureAvatar, type ApertureAvatarState } from "@vellumai/design-library";
 
 export interface ChatAvatarProps {
+  /** Legacy Vellum character data — accepted for API compatibility, no longer rendered. */
   components: CharacterComponents | null;
+  /** Legacy Vellum character data — accepted for API compatibility, no longer rendered. */
   traits: CharacterTraits | null;
   customImageUrl: string | null;
   size?: number;
@@ -20,13 +22,9 @@ const RING_THICKNESS = 1; // border thickness in px
 const RING_GAP_RATIO = 0.04; // gap between avatar edge and ring inner edge / size
 
 /**
- * Spinning semicircular ring traced just outside the avatar's circular edge,
- * shown while the assistant is streaming/loading. Only used for custom
- * uploaded-image avatars — character avatars already signal streaming through
- * their morph animation. The arc + rotation live in CSS (`.avatar-streaming-ring`);
- * thickness/inset are inline so the ring scales with `size`. It sits in a gap
- * outside the image (negative inset) so it reads as a ring around the avatar
- * rather than covering the picture.
+ * Spinning semicircular ring traced just outside a custom uploaded-image
+ * avatar's edge while the assistant is streaming/loading. (The ApertureAvatar
+ * signals activity through its own `thinking` state instead.)
  */
 function AvatarStreamingRing({ size }: { size: number }) {
   const thickness = RING_THICKNESS;
@@ -49,25 +47,20 @@ function AvatarStreamingRing({ size }: { size: number }) {
 }
 
 /**
- * Displays the assistant's avatar in chat messages.
+ * The assistant's avatar — Cue's aperture mark.
  *
- * Priority:
- * 1. Animated character avatar from saved traits
- * 2. Custom uploaded image
- * 3. Default animated character avatar from first component of each type
- * 4. Vellum "V" fallback
+ * Cue's identity is the single, consistent aperture (BRAND.md), not a
+ * per-assistant creature, so this renders ApertureAvatar by default and maps
+ * activity to its states (streaming/processing → thinking). A user-uploaded
+ * `customImageUrl` is still honored as an override. The legacy Vellum
+ * `components`/`traits` props are accepted for API compatibility but no longer
+ * rendered (and the "V" fallback is gone).
  *
- * Animation:
- *   - Mount plays an entrance spring (scale 0.6 → 1, opacity 0 → 1).
- *   - When `interactive`, click triggers a spring bounce.
- *   - `prefers-reduced-motion` short-circuits both.
- *   - For custom uploaded-image avatars, a spinning semicircular ring traces
- *     just outside the avatar's edge while `isStreaming`/`isProcessing` is on
- *     (character avatars already signal streaming via their morph animation).
+ * Animation: a mount entrance spring (scale 0.6 → 1, opacity 0 → 1); when
+ * `interactive`, click triggers a spring bounce; `prefers-reduced-motion`
+ * short-circuits both.
  */
 function ChatAvatarComponent({
-  components,
-  traits,
   customImageUrl,
   size = 28,
   className,
@@ -85,19 +78,8 @@ function ChatAvatarComponent({
   }, [reduce]);
 
   const handleClick = interactive ? triggerBounce : undefined;
-
-  const effectiveTraits = useMemo(() => {
-    if (traits) return traits;
-    if (!components) return null;
-    const body = components.bodyShapes[0];
-    const eyes = components.eyeStyles[0];
-    const color = components.colors[0];
-    if (!body || !eyes || !color) return null;
-    return { bodyShape: body.id, eyeStyle: eyes.id, color: color.id };
-  }, [traits, components]);
-
-  const hasCharacter = !!components && !!effectiveTraits;
-  const preferCharacter = hasCharacter && (!!traits || !customImageUrl);
+  const active = isStreaming || isProcessing;
+  const state: ApertureAvatarState = active ? "thinking" : "idle";
 
   const wrapperStyle: CSSProperties = {
     width: size,
@@ -111,31 +93,8 @@ function ChatAvatarComponent({
   const transition = reduce
     ? { duration: 0 }
     : { type: "spring" as const, visualDuration: 0.3, bounce: 0.5 };
-
-  const initial = reduce
-    ? { scale: 1, opacity: 1 }
-    : { scale: 0.6, opacity: 0 };
+  const initial = reduce ? { scale: 1, opacity: 1 } : { scale: 0.6, opacity: 0 };
   const animate = { scale: isPoking ? 1.15 : 1, opacity: 1 };
-
-  if (preferCharacter) {
-    return (
-      <motion.div
-        className={className}
-        style={wrapperStyle}
-        onClick={handleClick}
-        initial={initial}
-        animate={animate}
-        transition={transition}
-      >
-        <AnimatedAvatar
-          components={components}
-          traits={effectiveTraits}
-          size={size}
-          isStreaming={isStreaming}
-        />
-      </motion.div>
-    );
-  }
 
   if (customImageUrl) {
     return (
@@ -144,14 +103,7 @@ function ChatAvatarComponent({
         initial={initial}
         animate={animate}
         transition={transition}
-        style={{
-          cursor: interactive ? "pointer" : undefined,
-          transformOrigin: "center",
-          position: "relative",
-          width: size,
-          height: size,
-          flexShrink: 0,
-        }}
+        style={wrapperStyle}
       >
         <img
           src={customImageUrl}
@@ -161,32 +113,28 @@ function ChatAvatarComponent({
           className={`rounded-full object-cover ${className ?? ""}`}
           style={{ width: size, height: size, flexShrink: 0 }}
         />
-        {(isStreaming || isProcessing) && <AvatarStreamingRing size={size} />}
+        {active && <AvatarStreamingRing size={size} />}
       </motion.div>
     );
   }
 
   return (
     <motion.div
-      className={`flex items-center justify-center rounded-full bg-[var(--primary-base)] text-[var(--content-inset)] ${className ?? ""}`}
-      style={{ ...wrapperStyle, fontSize: size * 0.45 }}
+      className={className}
+      style={wrapperStyle}
       onClick={handleClick}
       initial={initial}
       animate={animate}
       transition={transition}
     >
-      V
+      <ApertureAvatar state={state} size={size} />
     </motion.div>
   );
 }
 
 /**
- * Memoized so the avatar subtree only re-renders when its own props change
- * (components/traits/image, size, the streaming/processing flags) rather than
- * on every parent transcript re-render. `Transcript` is a `forwardRef` (not
- * memoized) and re-renders frequently during streaming, while the avatar runs
- * per-frame animation work — so skipping unrelated re-renders matters. All
- * props are primitives or stable references (avatar data is React-Query-cached
- * with `staleTime: Infinity`), so the default shallow comparison is correct.
+ * Memoized so the avatar subtree only re-renders when its own props change.
+ * `Transcript` re-renders frequently during streaming while the avatar runs
+ * animation work, so skipping unrelated re-renders matters.
  */
 export const ChatAvatar = memo(ChatAvatarComponent);
