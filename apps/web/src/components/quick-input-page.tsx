@@ -2,7 +2,7 @@ import { ArrowUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { dismissQuickInput, submitQuickInput } from "@/runtime/quick-input";
-import { publicAsset } from "@/utils/public-asset";
+import { ApertureAvatar } from "@vellumai/design-library";
 
 /**
  * Lightweight input page rendered inside the Electron quick input
@@ -50,29 +50,14 @@ export function QuickInputPage() {
         onSubmit={handleSubmit}
         className="flex w-full items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-base)] px-4 py-3 shadow-lg"
       >
-        <img
-          src={publicAsset("/vellum-logo.svg")}
-          alt="Vellum"
-          width={24}
-          height={24}
-          className="shrink-0 dark:hidden"
-          draggable={false}
-        />
-        <img
-          src={publicAsset("/vellum-logo-white.svg")}
-          alt="Vellum"
-          width={24}
-          height={24}
-          className="hidden shrink-0 dark:block"
-          draggable={false}
-        />
+        <ApertureAvatar size={24} className="shrink-0" />
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask Vellum anything..."
+          placeholder="Ask Cue anything..."
           className="min-w-0 flex-1 bg-transparent text-sm text-[var(--content-default)] placeholder:text-[var(--content-tertiary)] outline-none"
         />
         <button

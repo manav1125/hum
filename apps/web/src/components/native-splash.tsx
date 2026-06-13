@@ -8,26 +8,18 @@ import { publicAsset } from "@/utils/public-asset";
  * - Biometric session recovery (while Face ID / Touch ID is prompting)
  * - Session validation (while checking if the user is still logged in)
  *
- * Centers the Vellum wordmark vertically and displays the character
+ * Centers the `cue.` wordmark vertically and displays the character
  * illustrations flush at the bottom of the screen.
  */
 export function NativeSplash({ children }: { children?: ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[var(--surface-base)] text-[var(--content-default)]">
-      <img
-        src={publicAsset("/vellum-logo.svg")}
-        alt="Vellum"
-        width={220}
-        height={66}
-        className="block dark:hidden"
-      />
-      <img
-        src={publicAsset("/vellum-logo-white.svg")}
-        alt="Vellum"
-        width={220}
-        height={66}
-        className="hidden dark:block"
-      />
+      <span
+        className="select-none text-[56px] font-medium leading-none tracking-[-2px] text-[var(--content-emphasised)]"
+        style={{ fontFamily: "var(--font-sans)" }}
+      >
+        cue<span style={{ color: "var(--accent-cue)" }}>.</span>
+      </span>
       {children}
       <div
         aria-hidden

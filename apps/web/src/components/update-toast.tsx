@@ -67,7 +67,7 @@ function UpdateToastContent({
         {state.status === "downloaded" && (
           <>
             <p className="text-body-medium-default">
-              Vellum {state.version ?? "update"} is ready.
+              Cue {state.version ?? "update"} is ready.
             </p>
             <button
               type="button"

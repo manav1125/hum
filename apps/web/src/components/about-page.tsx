@@ -69,9 +69,9 @@ export function AboutPage() {
 }
 
 const FALLBACK: AppVersionInfo = {
-  appName: "Vellum",
+  appName: "Cue",
   version: "—",
   commitSha: "—",
-  copyright: `© ${new Date().getFullYear()} Vellum`,
+  copyright: `© ${new Date().getFullYear()} Cue`,
   website: "https://vellum.ai",
 };
