@@ -11,11 +11,11 @@ import { ResizablePanel } from "@vellumai/design-library";
 import { HomeDetailPanel } from "./detail-panel/home-detail-panel";
 import { HomeFeedList } from "./home-feed-list";
 import { HomeGreetingHeader } from "./home-greeting-header";
-import { HomeNextMoveCard } from "./home-next-move-card";
+import { HomeNowRail } from "./home-now-rail";
 import { HomeSuggestionPillBar } from "./home-suggestion-pill-bar";
 import { useHomeFeedQuery } from "./hooks/use-home-feed-query";
 import { useHomeStateQuery } from "./hooks/use-home-state-query";
-import { selectNextMove } from "./utils";
+import { selectNextMove, selectNoticed } from "./utils";
 
 function HomePageSkeleton() {
   return (
@@ -71,6 +71,11 @@ export function HomePage({
   const nextMove = useMemo(
     () => selectNextMove(feedQuery.data?.items ?? []),
     [feedQuery.data?.items],
+  );
+
+  const noticed = useMemo(
+    () => selectNoticed(feedQuery.data?.items ?? [], nextMove?.id),
+    [feedQuery.data?.items, nextMove?.id],
   );
 
   const handleSelectItem = useCallback(
@@ -157,9 +162,6 @@ export function HomePage({
             : "."}
         </div>
       ) : null}
-      {nextMove ? (
-        <HomeNextMoveCard item={nextMove} onSelect={handleSelectItem} />
-      ) : null}
       <HomeSuggestionPillBar
         suggestions={feedQuery.data?.suggestedPrompts ?? []}
         maxVisible={isMobile ? 2 : 3}
@@ -229,12 +231,21 @@ export function HomePage({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-[960px] px-[var(--app-spacing-xl)] py-[var(--app-spacing-xxl)]">
-        <div className="flex flex-col gap-[var(--app-spacing-xl)]">
-          {feedContent}
+    <div className="flex min-h-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[680px] px-[var(--app-spacing-xl)] py-[var(--app-spacing-xxl)]">
+          <div className="flex flex-col gap-[var(--app-spacing-xl)]">
+            {feedContent}
+          </div>
         </div>
       </div>
+      {!isMobile ? (
+        <HomeNowRail
+          nextMove={nextMove}
+          noticed={noticed}
+          onSelect={handleSelectItem}
+        />
+      ) : null}
     </div>
   );
 }

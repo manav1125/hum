@@ -84,13 +84,32 @@ export function excludeHighUrgency(items: FeedItem[]): FeedItem[] {
  * so featuring the top one here surfaces it without duplicating it below.
  */
 export function selectNextMove(items: FeedItem[]): FeedItem | null {
+  return sortUrgent(items)[0] ?? null;
+}
+
+/**
+ * The remaining urgent items (after the next move) for the Now rail's "Cue
+ * noticed" section. Like the next move, these are excluded from the recap feed,
+ * so surfacing them here doesn't duplicate anything below.
+ */
+export function selectNoticed(
+  items: FeedItem[],
+  excludeId: string | undefined,
+  limit = 2,
+): FeedItem[] {
+  return sortUrgent(items)
+    .filter((item) => item.id !== excludeId)
+    .slice(0, limit);
+}
+
+function sortUrgent(items: FeedItem[]): FeedItem[] {
   const urgent = items.filter(
     (item) =>
       (item.urgency === "high" || item.urgency === "critical") &&
       item.status !== "dismissed" &&
       item.status !== "acted_on",
   );
-  return sortFeedItems(urgent)[0] ?? null;
+  return sortFeedItems(urgent);
 }
 
 /**

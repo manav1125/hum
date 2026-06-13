@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { FeedItem, FeedItemUrgency } from "@vellumai/assistant-api";
 
-import { selectNextMove } from "./utils";
+import { selectNextMove, selectNoticed } from "./utils";
 
 let seq = 0;
 function item(overrides: Partial<FeedItem> = {}): FeedItem {
@@ -63,5 +63,32 @@ describe("selectNextMove", () => {
         urgent("critical", { status: "acted_on" }),
       ]),
     ).toBeNull();
+  });
+});
+
+describe("selectNoticed", () => {
+  test("returns the remaining urgent items, excluding the next move", () => {
+    const top = urgent("critical", { id: "top", priority: 90 });
+    const second = urgent("high", { id: "second", priority: 60 });
+    const third = urgent("high", { id: "third", priority: 40 });
+    const noticed = selectNoticed([third, top, second, item()], "top");
+    expect(noticed.map((i) => i.id)).toEqual(["second", "third"]);
+  });
+
+  test("honors the limit and skips dismissed/acted-on", () => {
+    const items = [
+      urgent("high", { id: "a", priority: 80 }),
+      urgent("high", { id: "b", priority: 70 }),
+      urgent("high", { id: "c", priority: 60 }),
+      urgent("high", { id: "gone", status: "dismissed" }),
+    ];
+    expect(selectNoticed(items, "a", 1).map((i) => i.id)).toEqual(["b"]);
+    expect(selectNoticed(items, "a").map((i) => i.id)).toEqual(["b", "c"]);
+  });
+
+  test("is empty when nothing else is urgent", () => {
+    expect(selectNoticed([urgent("high", { id: "only" }), item()], "only")).toEqual(
+      [],
+    );
   });
 });
