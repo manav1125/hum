@@ -76,6 +76,24 @@ export function excludeHighUrgency(items: FeedItem[]): FeedItem[] {
 }
 
 /**
+ * Pick the single "next move" to feature in the Home hero (FocusCard): the
+ * highest-priority high/critical-urgency item that hasn't been dismissed or
+ * acted on. Returns null when nothing is urgent — the hero is then omitted.
+ *
+ * These urgent items are excluded from the recap feed (`excludeHighUrgency`),
+ * so featuring the top one here surfaces it without duplicating it below.
+ */
+export function selectNextMove(items: FeedItem[]): FeedItem | null {
+  const urgent = items.filter(
+    (item) =>
+      (item.urgency === "high" || item.urgency === "critical") &&
+      item.status !== "dismissed" &&
+      item.status !== "acted_on",
+  );
+  return sortFeedItems(urgent)[0] ?? null;
+}
+
+/**
  * Return deduplicated list of categories present in the items.
  */
 export function getPresentCategories(items: FeedItem[]): FeedItemCategory[] {

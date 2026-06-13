@@ -52,7 +52,7 @@ import {
 import { useState } from "react";
 
 import type { SuggestedPrompt } from "@vellumai/assistant-api";
-import { Typography } from "@vellumai/design-library";
+import { Chip, Typography } from "@vellumai/design-library";
 
 // Curated set of Lucide icons that suggestion prompts may reference by name.
 // The daemon sends bare camelCase identifiers (e.g. "mail", "fileText"); a
@@ -177,23 +177,13 @@ export function HomeSuggestionPillBar({
         {visible.map((suggestion) => {
           const Icon = resolveIcon(suggestion.icon);
           return (
-            <button
+            <Chip
               key={suggestion.id}
-              type="button"
+              leftIcon={<Icon aria-hidden="true" />}
               onClick={() => onSelect(suggestion)}
-              className="flex cursor-pointer items-center gap-[var(--app-spacing-xs)] rounded-full bg-[var(--surface-active)] py-1 pl-1 pr-3 text-[var(--content-default)] transition-colors hover:text-[var(--content-secondary)]"
             >
-              <span
-                className="flex shrink-0 items-center justify-center rounded-full bg-[var(--surface-active)]"
-                style={{ width: 26, height: 26 }}
-                aria-hidden="true"
-              >
-                <Icon className="size-[18px]" />
-              </span>
-              <span className="text-body-small-default">
-                {suggestion.label}
-              </span>
-            </button>
+              {suggestion.label}
+            </Chip>
           );
         })}
       </div>
