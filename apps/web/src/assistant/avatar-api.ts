@@ -10,6 +10,7 @@ import { client } from "@/generated/api/client.gen";
 import {
   avatarCharactercomponentsGet,
   avatarImagePost,
+  avatarRemovePost,
   avatarRenderfromtraitsPost,
   avatarStateGet,
   workspaceDeletePost,
@@ -171,6 +172,29 @@ async function uploadAvatarImageLegacy(
   });
 
   return true;
+}
+
+/**
+ * Remove the custom avatar image, restoring Cue's default aperture mark.
+ *
+ * Targets the daemon's `POST /avatar/remove` endpoint, which deletes the
+ * uploaded PNG (and any character sidecar) and resets the avatar state to
+ * `none` — which `ChatAvatar` renders as the brand ApertureAvatar.
+ * Returns `false` on transport failure.
+ */
+export async function removeAvatarImage(
+  assistantId: string,
+): Promise<boolean> {
+  try {
+    const { error, response } = await avatarRemovePost({
+      path: { assistant_id: assistantId },
+      throwOnError: false,
+    });
+    assertHasResponse(response, error, "Failed to remove avatar image");
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchAvatarImageUrl(

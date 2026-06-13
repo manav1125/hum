@@ -396,11 +396,8 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
         open={modalOpen}
         onClose={handleCloseModal}
         assistantId={assistantId}
-        components={components}
-        traits={traits}
         customImageUrl={customImageUrl}
-        onSaveCharacter={handleAvatarChange}
-        onUploadImage={handleAvatarChange}
+        onAvatarChange={handleAvatarChange}
         onGenerateWithAI={onOpenThread ? handleGenerateWithAI : undefined}
       />
       {removalDialog}

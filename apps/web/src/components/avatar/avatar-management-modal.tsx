@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Image as ImageIcon, Sparkles, Wrench, X } from "lucide-react";
+import { Image as ImageIcon, RotateCcw, Sparkles, X } from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -11,42 +11,40 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { AvatarCustomizationPanel } from "@/components/avatar/avatar-customization-panel";
 import { ChatAvatar } from "@/components/avatar/chat-avatar";
-import { uploadAvatarImage } from "@/assistant/avatar-api";
-import type { CharacterComponents, CharacterTraits } from "@/types/avatar";
-
-type ModalView = "actions" | "character-builder";
+import { removeAvatarImage, uploadAvatarImage } from "@/assistant/avatar-api";
 
 interface AvatarManagementModalProps {
   open: boolean;
   onClose: () => void;
   assistantId: string;
-  components: CharacterComponents | null;
-  traits: CharacterTraits | null;
   customImageUrl: string | null;
-  onSaveCharacter: (traits: CharacterTraits) => void;
-  onUploadImage: () => void;
+  /** Invalidate cached avatar data after an upload or reset. */
+  onAvatarChange: () => void;
   onGenerateWithAI?: () => void;
 }
 
+/**
+ * Cue avatar panel. Cue's identity is the single aperture mark (BRAND.md), so
+ * there is no per-assistant "creature" to customize — `ChatAvatar` renders the
+ * aperture by default and only honors a user-uploaded `customImageUrl`. This
+ * modal therefore offers just three actions: upload a custom image, optionally
+ * generate one via chat, and reset back to the aperture.
+ */
 export function AvatarManagementModal({
   open,
   onClose,
   assistantId,
-  components,
-  traits,
   customImageUrl,
-  onSaveCharacter,
-  onUploadImage,
+  onAvatarChange,
   onGenerateWithAI,
 }: AvatarManagementModalProps) {
   const titleId = useId();
   const overlayRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [view, setView] = useState<ModalView>("actions");
   const [isUploading, setIsUploading] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -64,40 +62,23 @@ export function AvatarManagementModal({
     }
   }, [open]);
 
-  const handleClose = useCallback(() => {
-    setView("actions");
-    onClose();
-  }, [onClose]);
-
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (view === "character-builder") {
-          setView("actions");
-        } else {
-          handleClose();
-        }
+        onClose();
       }
     },
-    [handleClose, view],
+    [onClose],
   );
 
   const handleBackdropClick = useCallback(
     (e: MouseEvent) => {
       if (e.target === overlayRef.current) {
-        handleClose();
+        onClose();
       }
     },
-    [handleClose],
+    [onClose],
   );
-
-  const handleBack = useCallback(() => {
-    setView("actions");
-  }, []);
-
-  const handleBuildCharacter = useCallback(() => {
-    setView("character-builder");
-  }, []);
 
   const handleFileSelect = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
@@ -111,15 +92,15 @@ export function AvatarManagementModal({
       setIsUploading(false);
 
       if (ok) {
-        onUploadImage();
-        handleClose();
+        onAvatarChange();
+        onClose();
       }
 
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     },
-    [assistantId, onUploadImage, handleClose],
+    [assistantId, onAvatarChange, onClose],
   );
 
   const handleUploadClick = useCallback(() => {
@@ -127,17 +108,20 @@ export function AvatarManagementModal({
   }, []);
 
   const handleGenerateWithAI = useCallback(() => {
-    handleClose();
+    onClose();
     onGenerateWithAI?.();
-  }, [handleClose, onGenerateWithAI]);
+  }, [onClose, onGenerateWithAI]);
 
-  const handleCharacterSave = useCallback(
-    (savedTraits: CharacterTraits) => {
-      onSaveCharacter(savedTraits);
-      handleClose();
-    },
-    [onSaveCharacter, handleClose],
-  );
+  const handleReset = useCallback(async () => {
+    setIsRemoving(true);
+    const ok = await removeAvatarImage(assistantId);
+    setIsRemoving(false);
+
+    if (ok) {
+      onAvatarChange();
+      onClose();
+    }
+  }, [assistantId, onAvatarChange, onClose]);
 
   if (!open) {
     return null;
@@ -165,29 +149,17 @@ export function AvatarManagementModal({
           className="flex items-center justify-between border-b px-6 py-4"
           style={{ borderColor: "var(--border-base)" }}
         >
-          <div className="flex items-center gap-2">
-            {view === "character-builder" && (
-              <button
-                type="button"
-                onClick={handleBack}
-                className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                aria-label="Back"
-              >
-                <ChevronLeft className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
-              </button>
-            )}
-            <h2
-              id={titleId}
-              className="text-title-small"
-              style={{ color: "var(--content-default)" }}
-            >
-              {view === "character-builder" ? "Build a Character" : "Update Avatar"}
-            </h2>
-          </div>
+          <h2
+            id={titleId}
+            className="text-title-small"
+            style={{ color: "var(--content-default)" }}
+          >
+            Update Avatar
+          </h2>
           <button
             ref={closeButtonRef}
             type="button"
-            onClick={handleClose}
+            onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10"
             aria-label="Close"
           >
@@ -196,20 +168,52 @@ export function AvatarManagementModal({
         </div>
 
         <div className="overflow-y-auto p-6">
-          {view === "actions" ? (
-            <div className="flex flex-col items-center gap-6">
-              <ChatAvatar
-                components={components}
-                traits={traits}
-                customImageUrl={customImageUrl}
-                size={120}
-                interactive
-              />
+          <div className="flex flex-col items-center gap-6">
+            <ChatAvatar
+              components={null}
+              traits={null}
+              customImageUrl={customImageUrl}
+              size={120}
+              interactive
+            />
 
-              <div className="w-full space-y-2">
+            <div className="w-full space-y-2">
+              <button
+                type="button"
+                onClick={handleUploadClick}
+                disabled={isUploading}
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+                style={{
+                  borderColor: "var(--border-base)",
+                  backgroundColor: "var(--surface-lift)",
+                }}
+              >
+                <div
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
+                >
+                  <ImageIcon className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+                </div>
+                <div className="flex-1 text-left">
+                  <p
+                    className="text-body-medium-default"
+                    style={{ color: "var(--content-default)" }}
+                  >
+                    {isUploading ? "Uploading..." : "Upload Image"}
+                  </p>
+                  <p
+                    className="text-body-small-default"
+                    style={{ color: "var(--content-tertiary)" }}
+                  >
+                    Choose an image from your computer
+                  </p>
+                </div>
+              </button>
+
+              {onGenerateWithAI && (
                 <button
                   type="button"
-                  onClick={handleBuildCharacter}
+                  onClick={handleGenerateWithAI}
                   className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:opacity-80"
                   style={{
                     borderColor: "var(--border-base)",
@@ -220,29 +224,30 @@ export function AvatarManagementModal({
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                     style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
                   >
-                    <Wrench className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+                    <Sparkles className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
                   </div>
                   <div className="flex-1 text-left">
                     <p
                       className="text-body-medium-default"
                       style={{ color: "var(--content-default)" }}
                     >
-                      Build a Character
+                      Generate with AI
                     </p>
                     <p
                       className="text-body-small-default"
                       style={{ color: "var(--content-tertiary)" }}
                     >
-                      Build your own character
+                      Create an avatar through chat
                     </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--content-tertiary)" }} />
                 </button>
+              )}
 
+              {customImageUrl && (
                 <button
                   type="button"
-                  onClick={handleUploadClick}
-                  disabled={isUploading}
+                  onClick={handleReset}
+                  disabled={isRemoving}
                   className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
                     borderColor: "var(--border-base)",
@@ -253,68 +258,26 @@ export function AvatarManagementModal({
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
                     style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
                   >
-                    <ImageIcon className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+                    <RotateCcw className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
                   </div>
                   <div className="flex-1 text-left">
                     <p
                       className="text-body-medium-default"
                       style={{ color: "var(--content-default)" }}
                     >
-                      {isUploading ? "Uploading..." : "Upload Image"}
+                      {isRemoving ? "Resetting..." : "Reset to Cue aperture"}
                     </p>
                     <p
                       className="text-body-small-default"
                       style={{ color: "var(--content-tertiary)" }}
                     >
-                      Choose an image from your computer
+                      Remove the custom image and use Cue's default mark
                     </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--content-tertiary)" }} />
                 </button>
-
-                {onGenerateWithAI && (
-                  <button
-                    type="button"
-                    onClick={handleGenerateWithAI}
-                    className="flex w-full cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:opacity-80"
-                    style={{
-                      borderColor: "var(--border-base)",
-                      backgroundColor: "var(--surface-lift)",
-                    }}
-                  >
-                    <div
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                      style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
-                    >
-                      <Sparkles className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
-                    </div>
-                    <div className="flex-1 text-left">
-                      <p
-                        className="text-body-medium-default"
-                        style={{ color: "var(--content-default)" }}
-                      >
-                        Generate with AI
-                      </p>
-                      <p
-                        className="text-body-small-default"
-                        style={{ color: "var(--content-tertiary)" }}
-                      >
-                        Create an avatar through chat
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0" style={{ color: "var(--content-tertiary)" }} />
-                  </button>
-                )}
-              </div>
+              )}
             </div>
-          ) : (
-            <AvatarCustomizationPanel
-              assistantId={assistantId}
-              initialTraits={traits}
-              onSave={handleCharacterSave}
-              onCancel={handleBack}
-            />
-          )}
+          </div>
         </div>
       </div>
 
