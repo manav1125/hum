@@ -39,7 +39,7 @@ type CreateWindowOptions = {
   navigation: unknown;
 };
 
-const appState = { isPackaged: false, name: "Vellum" };
+const appState = { isPackaged: false, name: "Cue" };
 const created: Array<{ opts: CreateWindowOptions; win: StubWindow }> = [];
 const ipcHandlers = new Map<string, (...args: unknown[]) => unknown>();
 

@@ -298,7 +298,7 @@ export class PermissionsService {
       let settled = false;
       let timeout: ReturnType<typeof setTimeout> | null = null;
       const notification = new Notification({
-        title: "Vellum",
+        title: "Cue",
         body: "Notifications are enabled.",
         silent: false,
       });

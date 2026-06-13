@@ -42,8 +42,8 @@ const VELLUM_ENV: string =
 
 const APP_NAME =
   VELLUM_ENV === "production"
-    ? "Vellum"
-    : `Vellum ${VELLUM_ENV.charAt(0).toUpperCase() + VELLUM_ENV.slice(1)}`;
+    ? "Cue"
+    : `Cue ${VELLUM_ENV.charAt(0).toUpperCase() + VELLUM_ENV.slice(1)}`;
 
 const COMMIT_SHA: string =
   typeof __VELLUM_BUILD_SHA__ === "string" ? __VELLUM_BUILD_SHA__ : "unknown";

@@ -281,7 +281,7 @@ const buildTemplate = (): MenuItemConstructorOptions[] => {
         },
         { type: "separator" },
         {
-          label: "Vellum Documentation",
+          label: "Cue Documentation",
           click: () => {
             void shell.openExternal("https://docs.vellum.ai");
           },

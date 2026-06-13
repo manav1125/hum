@@ -73,7 +73,7 @@ const openPopout = (conversationId: string): void => {
       ...sizing,
       minWidth: POPOUT_MIN_WIDTH,
       minHeight: POPOUT_MIN_HEIGHT,
-      title: "Vellum",
+      title: "Cue",
       show: false,
     },
     navigation: {

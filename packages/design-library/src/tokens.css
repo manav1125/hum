@@ -189,6 +189,15 @@
   --color-amber-200: #FCF3DD;
   --color-amber-100: #FDF8EE;
 
+  /* Cue brand accent — electric blue + violet. The chrome accent (links,
+   * focus rings, active/selected states) tracks --accent-cue. Green is
+   * reserved for success semantics only (system-positive / emerald). */
+  --accent-cue: #3D6EE8;
+  --accent-cue-strong: #2B53C4;
+  --accent-cue-weak: #DBE4FB;
+  --accent-cue-violet: #7F77DD;
+  --accent-cue-violet-strong: #534AB7;
+
   /* Font tokens — DM Sans across the board, matching the Swift macOS
    * client's VFont (TypographyTokens.swift). */
   --font-sans: "DM Sans", system-ui, sans-serif;
@@ -225,7 +234,7 @@
   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
   --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.16);
   --shadow-glow: 0 0 12px rgba(241, 178, 30, 0.3);
-  --shadow-accent-glow: 0 0 8px rgba(39, 126, 65, 0.3);
+  --shadow-accent-glow: 0 0 8px rgba(61, 110, 232, 0.3);
 
   /* Layout: shared max-width for the chat surface (transcript + composer +
    * panel surfaces). The chat column is centered and clamped to this width
@@ -257,9 +266,9 @@
   --surface-hover: rgba(185, 180, 172, 0.08);
 
   /* Primary */
-  --primary-base: #17191C;
-  --primary-hover: #24292E;
-  --primary-active: #2D3339;
+  --primary-base: #1A2230;
+  --primary-hover: #24303F;
+  --primary-active: #2D3A4D;
   --primary-disabled: #F6F5F4;
   --primary-second-hover: #B9B4AC;
 
@@ -299,8 +308,8 @@
   --system-negative-weak: #F7DAC9;
   --system-mid-strong: #F1B21E;
   --system-mid-weak: #FCF3DD;
-  --system-info-strong: #467CC8;
-  --system-info-weak: #CEDAEC;
+  --system-info-strong: #3D6EE8;
+  --system-info-weak: #DBE4FB;
 
   /* Feed identifier */
   --feed-nudge-strong: #DB4B77;
@@ -319,7 +328,7 @@
   --shadow-popover: 0 1px 3px 0 rgba(0, 0, 0, 0.10), 0 4px 12px 0 rgba(0, 0, 0, 0.10);
 
   /* Derived */
-  --ring: color-mix(in srgb, var(--system-positive-strong) 30%, transparent);
+  --ring: color-mix(in srgb, var(--system-info-strong) 35%, transparent);
   --border-overlay: var(--border-disabled);
   --ghost-hover: var(--surface-active);
   --ghost-pressed: var(--border-disabled);
@@ -381,7 +390,7 @@
   --system-negative-weak: #4F2D24;
   --system-mid-strong: #F1B21E;
   --system-mid-weak: #4B3D1E;
-  --system-info-strong: #467CC8;
+  --system-info-strong: #3D6EE8;
   --system-info-weak: #2A3A50;
 
   /* Feed identifier */
@@ -403,7 +412,7 @@
   /* Derived. Re-declared (rather than inherited from the light block) so
    * --ring tracks the dark --system-positive-strong even when data-theme is
    * applied to a non-root ancestor. */
-  --ring: color-mix(in srgb, var(--system-positive-strong) 30%, transparent);
+  --ring: color-mix(in srgb, var(--system-info-strong) 35%, transparent);
   --border-overlay: var(--border-hover);
   --ghost-hover: var(--border-base);
   --ghost-pressed: var(--primary-active);
@@ -467,7 +476,7 @@
   --system-negative-weak: #3A2024;
   --system-mid-strong: #F1B21E;
   --system-mid-weak: #42321C;
-  --system-info-strong: #467CC8;
+  --system-info-strong: #3D6EE8;
   --system-info-weak: #2A3A50;
 
   /* Feed identifier — reuses the dark palette; velvet's accent colors

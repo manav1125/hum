@@ -6,8 +6,8 @@ const targetArch = process.env.ELECTRON_TARGET_ARCH || "arm64";
 
 const productName =
   env === "production"
-    ? "Vellum"
-    : `Vellum ${env.charAt(0).toUpperCase() + env.slice(1)}`;
+    ? "Cue"
+    : `Cue ${env.charAt(0).toUpperCase() + env.slice(1)}`;
 
 const appId =
   env === "production"
@@ -44,14 +44,14 @@ module.exports = {
   afterSign: "./scripts/afterSign.js",
   protocols: [
     {
-      name: "Vellum Deep Links",
+      name: "Cue Deep Links",
       schemes,
     },
   ],
   fileAssociations: [
     {
       ext: "vellum",
-      name: "Vellum Bundle",
+      name: "Cue Bundle",
       role: "Viewer",
     },
   ],
@@ -64,13 +64,13 @@ module.exports = {
     extendInfo: {
       CFBundleIconName: "AppIcon",
       NSMicrophoneUsageDescription:
-        "Vellum uses the microphone to record voice input for chat.",
+        "Cue uses the microphone to record voice input for chat.",
       NSCameraUsageDescription:
-        "Vellum uses the camera to capture photos when you ask your assistant to use the camera.",
+        "Cue uses the camera to capture photos when you ask your assistant to use the camera.",
       NSSpeechRecognitionUsageDescription:
-        "Vellum uses speech recognition to transcribe dictated voice input.",
+        "Cue uses speech recognition to transcribe dictated voice input.",
       NSAppleEventsUsageDescription:
-        "Vellum uses Automation to paste dictated voice input into the app you are using.",
+        "Cue uses Automation to paste dictated voice input into the app you are using.",
       NSUserNotificationAlertStyle: "alert",
       // Register the .vellum UTI so Quick Look extensions can provide
       // thumbnails and previews for .vellum bundle files in Finder.
@@ -78,7 +78,7 @@ module.exports = {
         {
           UTTypeIdentifier: "com.vellum.app-bundle",
           UTTypeConformsTo: ["public.data", "public.content"],
-          UTTypeDescription: "Vellum App Bundle",
+          UTTypeDescription: "Cue App Bundle",
           UTTypeTagSpecification: {
             "public.filename-extension": ["vellum"],
             "public.mime-type": "application/x-vellum",

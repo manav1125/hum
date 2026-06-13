@@ -73,7 +73,7 @@ import { installTray } from "./tray";
 import { hardenedWebPreferences } from "./windows";
 
 // Dev-only: override the workspace `name` (`@vellumai/macos`) so the
-// menu bar's first submenu reads "Vellum Electron", and — more
+// menu bar's first submenu reads "Cue Electron", and — more
 // importantly — so `app.getPath("userData")` resolves to
 // `~/Library/Application Support/Vellum Electron/`, cleanly separate
 // from the Swift `Vellum.app` / `Vellum Local.app` / `Vellum Dev.app`
@@ -95,7 +95,7 @@ import { hardenedWebPreferences } from "./windows";
 // first IPC call, so this timing holds as long as `app.setName` runs
 // before `app.whenReady`.
 if (!app.isPackaged) {
-  app.setName("Vellum Electron");
+  app.setName("Cue Electron");
 }
 const isDev = !app.isPackaged;
 

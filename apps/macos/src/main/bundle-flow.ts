@@ -82,7 +82,7 @@ export async function handleBundleFile(filePath: string): Promise<void> {
   if (!gateway) {
     dialog.showErrorBox(
       "Cannot open bundle",
-      "Vellum assistant is not running. Please start Vellum first.",
+      "Cue assistant is not running. Please start Cue first.",
     );
     return;
   }
