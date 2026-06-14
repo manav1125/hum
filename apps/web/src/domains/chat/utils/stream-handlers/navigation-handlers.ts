@@ -41,7 +41,7 @@ export function handleOpenUrl(
   const popup = window.open(url, "_blank");
   if (popup === null) {
     ctx.setError({
-      message: "Popup blocked. Please allow popups for Vellum and try again.",
+      message: "Popup blocked. Please allow popups for Cue and try again.",
     });
     return;
   }

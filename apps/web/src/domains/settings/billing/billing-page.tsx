@@ -17,9 +17,9 @@ import { ReferralPanel } from "@/domains/settings/components/referral-panel";
 import { TierUpgradeResizeModal } from "@/domains/settings/components/tier-upgrade-resize-modal";
 import { organizationsBillingSummaryRetrieveOptions } from "@/generated/api/@tanstack/react-query.gen";
 import {
-    useActiveAssistantIsPlatformHosted,
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -39,9 +39,12 @@ function BillingStatusHandler() {
     if (!billingStatus) return;
 
     if (billingStatus === "success") {
-      toast.success("Payment received! Your credit balance will update shortly.", {
-        id: "billing-status",
-      });
+      toast.success(
+        "Payment received! Your credit balance will update shortly.",
+        {
+          id: "billing-status",
+        },
+      );
       queryClient.invalidateQueries({
         queryKey: organizationsBillingSummaryRetrieveOptions().queryKey,
       });
@@ -74,21 +77,27 @@ export function BillingPage() {
   useEffect(() => {
     if (searchParams.has("adjust_plan")) {
       setPlanModalOpen(true);
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("adjust_plan");
-        return next;
-      }, { replace: true });
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("adjust_plan");
+          return next;
+        },
+        { replace: true },
+      );
     }
   }, [searchParams, setSearchParams]);
 
   const hasSessionId = searchParams.has("session_id");
   const closeOnboarding = useCallback(() => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("session_id");
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("session_id");
+        return next;
+      },
+      { replace: true },
+    );
   }, [setSearchParams]);
 
   if (billingGate === "gated") {
@@ -99,7 +108,7 @@ export function BillingPage() {
     return (
       <div className="space-y-4">
         <Notice tone="info">
-          Log in to the Vellum platform to manage billing and usage.
+          Log in to the Cue platform to manage billing and usage.
         </Notice>
       </div>
     );
@@ -137,7 +146,11 @@ export function BillingPage() {
       {showPlanManagement && <GracePeriodBanner />}
       {showPlanManagement && <PlanCard onManage={openPlanModal} />}
       {showPlanManagement && (
-        <AdjustPlanModal open={planModalOpen} onClose={closePlanModal} onTierUpgraded={onTierUpgraded} />
+        <AdjustPlanModal
+          open={planModalOpen}
+          onClose={closePlanModal}
+          onTierUpgraded={onTierUpgraded}
+        />
       )}
       <PaymentMethodsCard />
       <Suspense fallback={null}>

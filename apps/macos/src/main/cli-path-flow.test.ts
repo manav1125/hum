@@ -41,8 +41,9 @@ const getCliPathInstallStateMock = mock(
   }),
 );
 const installWrapperMock = mock(
-  (_opts: { overwriteForeign: boolean }): "installed" | "needs-overwrite-confirmation" =>
-    "installed",
+  (_opts: {
+    overwriteForeign: boolean;
+  }): "installed" | "needs-overwrite-confirmation" => "installed",
 );
 const uninstallWrapperMock = mock(
   (): "removed" | "not-ours" | "absent" => "removed",
@@ -103,7 +104,10 @@ beforeEach(() => {
 describe("runInstallCliCommandFlow", () => {
   test("foreign file + Cancel leaves the file untouched", async () => {
     installWrapperMock.mockReturnValue("needs-overwrite-confirmation");
-    showMessageBoxMock.mockResolvedValue({ response: 1, checkboxChecked: false });
+    showMessageBoxMock.mockResolvedValue({
+      response: 1,
+      checkboxChecked: false,
+    });
 
     await runInstallCliCommandFlow();
 
@@ -112,7 +116,9 @@ describe("runInstallCliCommandFlow", () => {
       "Replace existing vellum file?",
     );
     expect(installWrapperMock).toHaveBeenCalledTimes(1);
-    expect(installWrapperMock).toHaveBeenCalledWith({ overwriteForeign: false });
+    expect(installWrapperMock).toHaveBeenCalledWith({
+      overwriteForeign: false,
+    });
     expect(ensureCliInstalledMock).not.toHaveBeenCalled();
   });
 
@@ -141,7 +147,7 @@ describe("runInstallCliCommandFlow", () => {
     expect(ensureCliInstalledMock).toHaveBeenCalledTimes(1);
     // State is only checked once, after install, for the success dialog.
     expect(getCliPathInstallStateMock).toHaveBeenCalledTimes(1);
-    expect(lastDialog()?.message).toBe("Vellum CLI installed");
+    expect(lastDialog()?.message).toBe("Cue CLI installed");
   });
 
   test("CLI runtime download failure points at the Repair menu item", async () => {
@@ -153,7 +159,9 @@ describe("runInstallCliCommandFlow", () => {
     expect(showErrorBoxMock).toHaveBeenCalledTimes(1);
     const [title, message] = showErrorBoxMock.mock.calls[0]!;
     expect(title).toBe("Failed to install vellum command");
-    expect(message).toContain(`The vellum command was installed at ${WRAPPER_PATH}`);
+    expect(message).toContain(
+      `The vellum command was installed at ${WRAPPER_PATH}`,
+    );
     expect(message).toContain("registry unreachable");
     expect(message).toContain('"Repair vellum Command"');
     expect(message).toContain("retried automatically");
@@ -164,9 +172,11 @@ describe("runInstallCliCommandFlow", () => {
 
     await runInstallCliCommandFlow();
 
-    expect(installWrapperMock).toHaveBeenCalledWith({ overwriteForeign: false });
+    expect(installWrapperMock).toHaveBeenCalledWith({
+      overwriteForeign: false,
+    });
     expect(writeTextMock).not.toHaveBeenCalled();
-    expect(lastDialog()?.message).toBe("Vellum CLI installed");
+    expect(lastDialog()?.message).toBe("Cue CLI installed");
     expect(lastDialog()?.detail).toContain(WRAPPER_PATH);
     expect(lastDialog()?.detail).toContain('run "vellum"');
   });
@@ -259,7 +269,10 @@ describe("runInstallCliCommandFlow", () => {
 
 describe("runUninstallCliCommandFlow", () => {
   test("Cancel skips uninstallWrapper", async () => {
-    showMessageBoxMock.mockResolvedValue({ response: 1, checkboxChecked: false });
+    showMessageBoxMock.mockResolvedValue({
+      response: 1,
+      checkboxChecked: false,
+    });
 
     await runUninstallCliCommandFlow();
 
@@ -283,7 +296,7 @@ describe("runUninstallCliCommandFlow", () => {
 
     await runUninstallCliCommandFlow();
 
-    expect(lastDialog()?.detail).toContain("wasn't installed by Vellum");
+    expect(lastDialog()?.detail).toContain("wasn't installed by Cue");
     expect(lastDialog()?.detail).toContain("not removing it");
   });
 
@@ -314,7 +327,10 @@ describe("flow re-entrancy guard", () => {
   const parkInstallFlow = () => {
     let release!: () => void;
     ensureCliInstalledMock.mockImplementation(
-      () => new Promise<void>((resolve) => { release = resolve; }),
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
     );
     const flow = runInstallCliCommandFlow();
     return { flow, release: () => release() };

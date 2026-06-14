@@ -52,13 +52,12 @@ mock.module("@/runtime/is-electron", () => ({
   isElectron: () => true,
 }));
 
-const { KeyboardShortcutsPage } = await import(
-  "@/domains/settings/keyboard-shortcuts/keyboard-shortcuts-page"
-);
+const { KeyboardShortcutsPage } =
+  await import("@/domains/settings/keyboard-shortcuts/keyboard-shortcuts-page");
 
 beforeEach(() => {
   catalog = [
-    hotkey("globalHotkey", "Open Vellum", "global", "CmdOrCtrl+Shift+G"),
+    hotkey("globalHotkey", "Open Cue", "global", "CmdOrCtrl+Shift+G"),
     hotkey("newConversation", "New chat", "menu", "CmdOrCtrl+N"),
     hotkey("home", "Home", "menu", "CmdOrCtrl+Alt+H", "CmdOrCtrl+Alt+H"),
     // Reserved (non-rebindable) — must not render a row but must block binds.
@@ -77,7 +76,7 @@ describe("KeyboardShortcutsPage", () => {
   test("renders each command grouped under its scope section", async () => {
     render(<KeyboardShortcutsPage />);
 
-    expect(await screen.findByText("Open Vellum")).toBeDefined();
+    expect(await screen.findByText("Open Cue")).toBeDefined();
     expect(screen.getByText("New chat")).toBeDefined();
     expect(screen.getByText("Global shortcuts")).toBeDefined();
     expect(screen.getByText("App shortcuts")).toBeDefined();
@@ -85,7 +84,9 @@ describe("KeyboardShortcutsPage", () => {
 
   test("records a keypress into a setHotkey write", async () => {
     render(<KeyboardShortcutsPage />);
-    fireEvent.click(await screen.findByLabelText("Record shortcut for New chat"));
+    fireEvent.click(
+      await screen.findByLabelText("Record shortcut for New chat"),
+    );
 
     fireEvent.keyDown(document.body, {
       code: "KeyT",
@@ -94,24 +95,31 @@ describe("KeyboardShortcutsPage", () => {
     });
 
     expect(setHotkey).toHaveBeenCalledTimes(1);
-    expect(setHotkey).toHaveBeenCalledWith("newConversation", "CmdOrCtrl+Alt+T");
+    expect(setHotkey).toHaveBeenCalledWith(
+      "newConversation",
+      "CmdOrCtrl+Alt+T",
+    );
   });
 
   test("blocks a conflicting capture and surfaces a warning", async () => {
     render(<KeyboardShortcutsPage />);
-    fireEvent.click(await screen.findByLabelText("Record shortcut for Open Vellum"));
+    fireEvent.click(
+      await screen.findByLabelText("Record shortcut for Open Cue"),
+    );
 
     // CmdOrCtrl+N is already bound to "New chat".
     fireEvent.keyDown(document.body, { code: "KeyN", metaKey: true });
 
     expect(setHotkey).not.toHaveBeenCalled();
     // Surfaced both in the page-level Notice and inline under the row.
-    expect(screen.getAllByText(/already used by New chat/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/already used by New chat/i).length,
+    ).toBeGreaterThan(0);
   });
 
   test("does not render a row for a reserved command", async () => {
     render(<KeyboardShortcutsPage />);
-    await screen.findByText("Open Vellum");
+    await screen.findByText("Open Cue");
     expect(screen.queryByText("Find")).toBeNull();
   });
 
@@ -130,7 +138,9 @@ describe("KeyboardShortcutsPage", () => {
 
   test("Escape cancels recording without writing", async () => {
     render(<KeyboardShortcutsPage />);
-    fireEvent.click(await screen.findByLabelText("Record shortcut for New chat"));
+    fireEvent.click(
+      await screen.findByLabelText("Record shortcut for New chat"),
+    );
 
     fireEvent.keyDown(document.body, { code: "Escape" });
     fireEvent.keyDown(document.body, { code: "KeyT", metaKey: true });

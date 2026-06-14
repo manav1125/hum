@@ -1,4 +1,3 @@
-
 import { type ReactNode, useEffect, useState } from "react";
 
 import { useHintRotation } from "@/domains/chat/hooks/use-hint-rotation";
@@ -42,7 +41,7 @@ export function CleanupScreen() {
           Cleanup is taking longer than expected
         </h2>
         <p className="mt-3 max-w-md text-center text-body-medium-lighter text-[var(--content-tertiary)]">
-          Try running Vellum Doctor to diagnose the issue, or{" "}
+          Try running Cue Doctor to diagnose the issue, or{" "}
           <a
             href={VELLUM_COMMUNITY_URL}
             target="_blank"

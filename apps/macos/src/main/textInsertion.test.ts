@@ -39,7 +39,8 @@ const createHarness = ({
   initialClipboardSnapshot?: ClipboardSnapshot;
   runAppleScript?: () => Promise<unknown>;
 } = {}): Harness => {
-  let clipboardSnapshot = initialClipboardSnapshot ?? textSnapshot(initialClipboard);
+  let clipboardSnapshot =
+    initialClipboardSnapshot ?? textSnapshot(initialClipboard);
   let clipboardText = snapshotText(clipboardSnapshot);
   const timers: Array<() => void> = [];
   const writes: string[] = [];
@@ -92,7 +93,7 @@ const createHarness = ({
 };
 
 describe("typeIntoFrontApp", () => {
-  test("skips paste when a Vellum window is focused", async () => {
+  test("skips paste when a Cue window is focused", async () => {
     const harness = createHarness({ focused: true });
 
     await expect(

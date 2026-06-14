@@ -1,11 +1,11 @@
 import {
-    AlertTriangle,
-    Bell,
-    BellOff,
-    Check,
-    CheckCheck,
-    Loader2,
-    Moon,
+  AlertTriangle,
+  Bell,
+  BellOff,
+  Check,
+  CheckCheck,
+  Loader2,
+  Moon,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Navigate } from "react-router";
@@ -13,27 +13,27 @@ import { Navigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-    SNOOZE_OPTIONS,
-    formatRelativeDate,
-    invalidateNotificationQueries,
-    isSnoozed,
+  SNOOZE_OPTIONS,
+  formatRelativeDate,
+  invalidateNotificationQueries,
+  isSnoozed,
 } from "@/domains/settings/utils/notification";
 import {
-    organizationsNotificationsAcknowledgeCreateMutation,
-    organizationsNotificationsListOptions,
-    organizationsNotificationsPauseRulesCreateMutation,
-    organizationsNotificationsPauseRulesDestroyMutation,
-    organizationsNotificationsSnoozeCreateMutation,
+  organizationsNotificationsAcknowledgeCreateMutation,
+  organizationsNotificationsListOptions,
+  organizationsNotificationsPauseRulesCreateMutation,
+  organizationsNotificationsPauseRulesDestroyMutation,
+  organizationsNotificationsSnoozeCreateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type {
-    NotificationList,
-    PauseRuleRead,
+  NotificationList,
+  PauseRuleRead,
 } from "@/generated/api/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
-    useActiveAssistantIsPlatformHosted,
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { BottomSheet } from "@vellumai/design-library/components/bottom-sheet";
@@ -490,9 +490,7 @@ export function NotificationsPage() {
   // `isPlatformHosted &&` checks across the render tree.
   const isError = isPlatformHosted ? queryIsError : false;
   const notifications = isPlatformHosted ? (data?.results ?? []) : [];
-  const unreadOpen = notifications.filter(
-    (n) => !n.is_read && !n.is_resolved,
-  );
+  const unreadOpen = notifications.filter((n) => !n.is_read && !n.is_resolved);
 
   const ackMutation = useMutation(
     organizationsNotificationsAcknowledgeCreateMutation(),
@@ -588,7 +586,7 @@ export function NotificationsPage() {
           </div>
         </div>
         <Notice tone="info">
-          Log in to the Vellum platform to view notifications.
+          Log in to the Cue platform to view notifications.
         </Notice>
       </div>
     );
@@ -622,8 +620,8 @@ export function NotificationsPage() {
           user loaded notifications while hosted then transitioned to a
           resolved non-hosted state in the same session.)
         */}
-        {isPlatformHosted && (
-          isMobile ? (
+        {isPlatformHosted &&
+          (isMobile ? (
             <BottomSheet.Root open={pauseOpen} onOpenChange={setPauseOpen}>
               <BottomSheet.Trigger asChild>{pauseButton}</BottomSheet.Trigger>
               <BottomSheet.Content>
@@ -654,8 +652,7 @@ export function NotificationsPage() {
                 {pauseContent}
               </Popover.Content>
             </Popover.Root>
-          )
-        )}
+          ))}
       </div>
 
       <div className="flex items-center gap-2">
@@ -673,9 +670,7 @@ export function NotificationsPage() {
                   color: active
                     ? "var(--content-default)"
                     : "var(--content-secondary)",
-                  boxShadow: active
-                    ? "0 1px 2px rgba(0,0,0,0.08)"
-                    : undefined,
+                  boxShadow: active ? "0 1px 2px rgba(0,0,0,0.08)" : undefined,
                 }}
               >
                 {f}

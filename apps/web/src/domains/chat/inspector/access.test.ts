@@ -20,7 +20,7 @@ describe("canUseLlmInspector", () => {
     expect(canUseLlmInspector(user({ isStaff: true }), false)).toBe(true);
   });
 
-  test("allows Vellum email users case-insensitively", () => {
+  test("allows Cue email users case-insensitively", () => {
     expect(
       canUseLlmInspector(user({ email: "alice@" + "VELLUM.AI" }), false),
     ).toBe(true);

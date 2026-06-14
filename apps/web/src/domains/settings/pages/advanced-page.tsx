@@ -4,7 +4,11 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { DetailCard } from "@/components/detail-card";
 import { useAssistantWithHealthz } from "@/domains/settings/components/assistant-status-panel";
 import { UpdateWindowPolicy } from "@/domains/settings/components/update-window-policy";
-import { configGetOptions, configGetSetQueryData, useConfigPatchMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  configGetOptions,
+  configGetSetQueryData,
+  useConfigPatchMutation,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { captureError } from "@/lib/sentry/capture-error";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -27,7 +31,11 @@ export function AdvancedPage() {
 
   const configMutation = useConfigPatchMutation({
     onSuccess: (data) => {
-      configGetSetQueryData(queryClient, { path: { assistant_id: assistantId } }, data);
+      configGetSetQueryData(
+        queryClient,
+        { path: { assistant_id: assistantId } },
+        data,
+      );
     },
   });
   const memoryEnabled = config?.memory?.enabled !== false;
@@ -61,7 +69,7 @@ export function AdvancedPage() {
           subtitle="Configure when automatic updates are applied."
         >
           <Notice tone="info">
-            Log in to the Vellum platform to manage update window policy.
+            Log in to the Cue platform to manage update window policy.
           </Notice>
         </DetailCard>
       )}

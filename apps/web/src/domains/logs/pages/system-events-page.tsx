@@ -3,8 +3,8 @@ import { Navigate } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { SystemEventsTab } from "@/domains/logs/components/system-events-tab";
 import {
-    useActiveAssistantIsPlatformHosted,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -21,7 +21,7 @@ export function SystemEventsPage() {
   if (platformGate === "disabled") {
     return (
       <Notice tone="info">
-        Log in to the Vellum platform to view system events.
+        Log in to the Cue platform to view system events.
       </Notice>
     );
   }

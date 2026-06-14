@@ -5,8 +5,8 @@ import { getAssistant } from "@/assistant/api";
 import { TerminalPanel } from "@/components/terminal-panel";
 import type { MaintenanceMode } from "@/generated/api/types.gen";
 import {
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { captureError } from "@/lib/sentry/capture-error";
 import { toast } from "@vellumai/design-library";
@@ -119,7 +119,7 @@ export function AssistantTerminalPanel() {
 
       {platformGate === "disabled" ? (
         <Notice tone="info">
-          Log in to the Vellum platform to open a terminal session.
+          Log in to the Cue platform to open a terminal session.
         </Notice>
       ) : showLoading ? (
         <div className="flex items-center gap-2 text-body-medium-lighter text-[var(--content-tertiary)]">

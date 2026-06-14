@@ -21,8 +21,7 @@ export type ResolvedAssistantLifecycleState =
  */
 export const PROXY_NETWORK_ERROR_CODE = "proxy_network_error";
 
-export const TRANSPORT_ERROR_MESSAGE =
-  "Connection interrupted. Reconnecting…";
+export const TRANSPORT_ERROR_MESSAGE = "Connection interrupted. Reconnecting…";
 
 /**
  * Does this failed `/assistant/` result look like a transport failure
@@ -104,7 +103,7 @@ export function shouldRecoverFromHatchFailure(status?: number): boolean {
 export const PLATFORM_HOSTED_DISABLED_CODE = "platform_hosted_disabled";
 
 export const PLATFORM_HOSTED_DISABLED_MESSAGE =
-  "We are at capacity for Vellum Managed Assistants, more will be available soon!";
+  "We are at capacity for Cue Managed Assistants, more will be available soon!";
 
 export function isPlatformHostedDisabled(
   status: number | undefined,

@@ -3,9 +3,9 @@ import { useEffect } from "react";
 import { Navigate, useNavigate } from "react-router";
 
 import {
-    useActiveAssistantIsPlatformHosted,
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { Button } from "@vellumai/design-library/components/button";
@@ -70,7 +70,7 @@ export function UpgradeCancelPage() {
     return (
       <div className="max-w-4xl space-y-6">
         <Notice tone="info">
-          Log in to the Vellum platform to manage billing and usage.
+          Log in to the Cue platform to manage billing and usage.
         </Notice>
       </div>
     );
@@ -90,9 +90,7 @@ export function UpgradeCancelPage() {
         <div className="flex justify-end">
           <Button
             variant="primary"
-            onClick={() =>
-              navigate(routes.settings.billing, { replace: true })
-            }
+            onClick={() => navigate(routes.settings.billing, { replace: true })}
           >
             Return to billing
           </Button>
@@ -107,11 +105,7 @@ export function UpgradeCancelPage() {
         <Typography as="h1" variant="title-large">
           Upgrade canceled
         </Typography>
-        <Typography
-          as="p"
-          variant="body-medium-default"
-          className="mt-2"
-        >
+        <Typography as="p" variant="body-medium-default" className="mt-2">
           Returning you to billing settings…
         </Typography>
       </Card>

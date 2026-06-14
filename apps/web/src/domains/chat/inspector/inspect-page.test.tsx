@@ -243,7 +243,7 @@ describe("InspectPage — gating", () => {
 
     const html = renderInspector();
 
-    expect(html).toContain("Inspector is available to Vellum staff");
+    expect(html).toContain("Inspector is available to Cue staff");
     // header chrome shouldn't render
     expect(html).not.toContain("LLM Context Inspector");
   });
@@ -272,7 +272,7 @@ describe("InspectPage — gating", () => {
 
     const html = renderInspector();
 
-    expect(html).not.toContain("Inspector is available to Vellum staff");
+    expect(html).not.toContain("Inspector is available to Cue staff");
     expect(html).toContain("LLM Context Inspector");
   });
 
@@ -285,7 +285,7 @@ describe("InspectPage — gating", () => {
     const html = renderInspector();
 
     expect(html).toContain("Loading…");
-    expect(html).not.toContain("Inspector is available to Vellum staff");
+    expect(html).not.toContain("Inspector is available to Cue staff");
   });
 
   test("allows staff users even without a vellum.ai email", () => {
@@ -309,7 +309,7 @@ describe("InspectPage — gating", () => {
 
     const html = renderInspector();
 
-    expect(html).not.toContain("Inspector is available to Vellum staff");
+    expect(html).not.toContain("Inspector is available to Cue staff");
     // Real CallRail emits one row per log — assert the page reached the
     // loaded state, not the empty/loading/error branches.
     expect(html).toContain("LLM Context Inspector");

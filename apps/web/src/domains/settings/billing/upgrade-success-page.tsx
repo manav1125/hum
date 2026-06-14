@@ -6,13 +6,13 @@ import { Navigate, useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-    organizationsBillingSubscriptionRetrieveOptions,
-    organizationsBillingSubscriptionRetrieveQueryKey,
+  organizationsBillingSubscriptionRetrieveOptions,
+  organizationsBillingSubscriptionRetrieveQueryKey,
 } from "@/generated/api/@tanstack/react-query.gen";
 import {
-    useActiveAssistantIsPlatformHosted,
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { Button } from "@vellumai/design-library/components/button";
@@ -126,7 +126,8 @@ export function UpgradeSuccessPage() {
     return () => clearTimeout(t);
   }, [reachedPro, navigate]);
 
-  const goToBilling = () => navigate(routes.settings.billing, { replace: true });
+  const goToBilling = () =>
+    navigate(routes.settings.billing, { replace: true });
 
   // Whole-page gates: same Navigate/chrome pattern as `billing-page.tsx`. The
   // hooks above all ran (with `enabled: false` for the query) so React's
@@ -138,7 +139,7 @@ export function UpgradeSuccessPage() {
     return (
       <div className="max-w-4xl space-y-6">
         <Notice tone="info">
-          Log in to the Vellum platform to manage billing and usage.
+          Log in to the Cue platform to manage billing and usage.
         </Notice>
       </div>
     );
@@ -155,8 +156,8 @@ export function UpgradeSuccessPage() {
     return (
       <div className="max-w-4xl space-y-6">
         <Notice tone="warning">
-          We can&apos;t confirm your upgrade for the current assistant.
-          Return to billing to retry.
+          We can&apos;t confirm your upgrade for the current assistant. Return
+          to billing to retry.
         </Notice>
         <div className="flex justify-end">
           <Button

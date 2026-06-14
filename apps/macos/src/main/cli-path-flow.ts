@@ -35,7 +35,7 @@ async function confirmReplaceForeignFile(): Promise<boolean> {
     message: "Replace existing vellum file?",
     detail:
       `A "vellum" file already exists at ${getWrapperPath()} but wasn't ` +
-      "installed by Vellum (it may have been installed by npm with a custom " +
+      "installed by Cue (it may have been installed by npm with a custom " +
       "prefix). Do you want to replace it with the Vellum-managed command?",
     buttons: ["Replace", "Cancel"],
     defaultId: 1,
@@ -89,7 +89,7 @@ async function showInstallSuccessDialog(): Promise<void> {
 
   await dialog.showMessageBox({
     type: "info",
-    message: "Vellum CLI installed",
+    message: "Cue CLI installed",
     detail,
   });
 }
@@ -98,7 +98,10 @@ export async function runInstallCliCommandFlow(): Promise<void> {
   if (flowInFlight) return;
   flowInFlight = true;
   try {
-    if (installWrapper({ overwriteForeign: false }) === "needs-overwrite-confirmation") {
+    if (
+      installWrapper({ overwriteForeign: false }) ===
+      "needs-overwrite-confirmation"
+    ) {
       if (!(await confirmReplaceForeignFile())) return;
       installWrapper({ overwriteForeign: true });
     }
@@ -109,7 +112,7 @@ export async function runInstallCliCommandFlow(): Promise<void> {
       throw new Error(
         `The vellum command was installed at ${getWrapperPath()}, but ` +
           `downloading the CLI runtime failed: ${errorMessage(err)}. Use ` +
-          '"Repair vellum Command" in the Vellum menu to retry now — or it ' +
+          '"Repair vellum Command" in the Cue menu to retry now — or it ' +
           "will be retried automatically the next time it's needed.",
       );
     }
@@ -139,14 +142,14 @@ export async function runUninstallCliCommandFlow(): Promise<void> {
     const resultDialogs = {
       removed: {
         type: "info",
-        message: "Vellum command uninstalled",
+        message: "Cue command uninstalled",
         detail: "The vellum command was removed.",
       },
       "not-ours": {
         type: "warning",
-        message: "Vellum command not removed",
+        message: "Cue command not removed",
         detail:
-          `The file at ${getWrapperPath()} wasn't installed by Vellum — ` +
+          `The file at ${getWrapperPath()} wasn't installed by Cue — ` +
           "not removing it.",
       },
       absent: {
@@ -157,7 +160,10 @@ export async function runUninstallCliCommandFlow(): Promise<void> {
     } as const;
     await dialog.showMessageBox(resultDialogs[uninstallWrapper()]);
   } catch (err) {
-    dialog.showErrorBox("Failed to uninstall vellum command", errorMessage(err));
+    dialog.showErrorBox(
+      "Failed to uninstall vellum command",
+      errorMessage(err),
+    );
   } finally {
     flowInFlight = false;
   }

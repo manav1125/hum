@@ -8,9 +8,9 @@ import { DeviceRow } from "@/domains/settings/components/device-row";
 import { assistantsListOptions } from "@/generated/api/@tanstack/react-query.gen";
 import type { Assistant } from "@/generated/api/types.gen";
 import {
-    useActiveAssistantIsPlatformHosted,
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -35,7 +35,7 @@ export function DevicesPage() {
     return (
       <div className="space-y-4">
         <Notice tone="info">
-          Log in to the Vellum platform to manage self-hosted assistants.
+          Log in to the Cue platform to manage self-hosted assistants.
         </Notice>
       </div>
     );

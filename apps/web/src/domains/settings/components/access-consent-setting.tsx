@@ -2,14 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
 import {
-    assistantsAccessConsentRetrieveOptions,
-    assistantsAccessConsentRetrieveSetQueryData,
+  assistantsAccessConsentRetrieveOptions,
+  assistantsAccessConsentRetrieveSetQueryData,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { assistantsAccessConsentPartialUpdate } from "@/generated/api/sdk.gen";
 import {
-    useActiveAssistantIsPlatformHosted,
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { Notice } from "@vellumai/design-library/components/notice";
 import { toast } from "@vellumai/design-library/components/toast";
@@ -101,9 +101,8 @@ export function AccessConsentSetting() {
             Allow admin access to assistant data
           </div>
           <p className="mt-1 text-body-small-default text-[var(--content-tertiary)]">
-            Lets Vellum administrators reach privileged data on your assistant
-            pod for debugging — today this means tailing the daily assistant log
-            at{" "}
+            Lets Cue administrators reach privileged data on your assistant pod
+            for debugging — today this means tailing the daily assistant log at{" "}
             <code className="rounded bg-[var(--surface-base)] px-1.5 font-mono text-[var(--content-secondary)] dark:bg-[var(--surface-lift)] dark:text-[var(--content-default)]">
               /workspace/data/logs/assistant-YYYY-MM-DD.log
             </code>
@@ -133,7 +132,7 @@ export function AccessConsentSetting() {
       </div>
       {platformGate === "disabled" && (
         <Notice tone="info" className="mt-3">
-          Log in to the Vellum platform to manage admin data access.
+          Log in to the Cue platform to manage admin data access.
         </Notice>
       )}
     </div>

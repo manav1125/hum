@@ -115,11 +115,7 @@ function getInitiatorTrust(
   const referer = headers.get("referer");
   if (!referer) {
     return {
-      trusted: hasTrustedSourceLessRendererSignal(
-        requestUrl,
-        headers,
-        allowed,
-      ),
+      trusted: hasTrustedSourceLessRendererSignal(requestUrl, headers, allowed),
       rejected: false,
     };
   }
@@ -192,7 +188,7 @@ export const PROXY_NETWORK_ERROR_CODE = "proxy_network_error";
 export const PROXY_ERROR_HEADER = "X-Vellum-Proxy-Error";
 
 const PROXY_NETWORK_ERROR_DETAIL =
-  "Couldn't reach Vellum. Check your internet connection and try again.";
+  "Couldn't reach Cue. Check your internet connection and try again.";
 
 /**
  * Chromium net-stack failures that resolve on their own within seconds —

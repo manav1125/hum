@@ -104,7 +104,9 @@ function resolveCliPath(baseDir: string, importMetaUrl?: string): string {
   const _require = createRequire(importMetaUrl ?? `file://${baseDir}/`);
   try {
     const pkgPath = _require.resolve(`${CLI_PACKAGE_NAME}/package.json`);
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { bin?: Record<string, string> };
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
+      bin?: Record<string, string>;
+    };
     const binEntry = pkg.bin?.["vellum"];
     if (binEntry) {
       const entryPoint = path.resolve(path.dirname(pkgPath), binEntry);
@@ -118,7 +120,7 @@ function resolveCliPath(baseDir: string, importMetaUrl?: string): string {
   }
 
   throw new Error(
-    `Vellum CLI not found. Looked for source tree at ${sourceTreePath} and npm package ${CLI_PACKAGE_NAME}.`,
+    `Cue CLI not found. Looked for source tree at ${sourceTreePath} and npm package ${CLI_PACKAGE_NAME}.`,
   );
 }
 
@@ -131,5 +133,8 @@ export function resolveDevCliInvocation(
   baseDir: string,
   importMetaUrl?: string,
 ): CliInvocation {
-  return { command: "bun", baseArgs: ["run", resolveCliPath(baseDir, importMetaUrl)] };
+  return {
+    command: "bun",
+    baseArgs: ["run", resolveCliPath(baseDir, importMetaUrl)],
+  };
 }

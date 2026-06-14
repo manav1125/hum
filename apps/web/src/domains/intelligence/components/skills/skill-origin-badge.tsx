@@ -4,12 +4,13 @@ import { createElement } from "react";
 import type { SkillOrigin } from "@/domains/intelligence/skills/types";
 import { Tag } from "@vellumai/design-library";
 
-const ORIGIN_META: Record<SkillOrigin, { label: string; icon: typeof Globe }> = {
-  vellum: { label: "Vellum", icon: Box },
-  clawhub: { label: "Clawhub", icon: Globe },
-  skillssh: { label: "skills.sh", icon: Terminal },
-  custom: { label: "Custom", icon: User },
-};
+const ORIGIN_META: Record<SkillOrigin, { label: string; icon: typeof Globe }> =
+  {
+    vellum: { label: "Cue", icon: Box },
+    clawhub: { label: "Clawhub", icon: Globe },
+    skillssh: { label: "skills.sh", icon: Terminal },
+    custom: { label: "Custom", icon: User },
+  };
 
 export function SkillOriginBadge({ origin }: { origin: SkillOrigin | string }) {
   const meta =
@@ -18,7 +19,11 @@ export function SkillOriginBadge({ origin }: { origin: SkillOrigin | string }) {
       : { label: origin.replace(/-/g, " "), icon: Puzzle };
 
   return (
-    <Tag tone="neutral" leftIcon={createElement(meta.icon)} className="capitalize">
+    <Tag
+      tone="neutral"
+      leftIcon={createElement(meta.icon)}
+      className="capitalize"
+    >
       {meta.label}
     </Tag>
   );

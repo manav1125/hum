@@ -1,12 +1,12 @@
 import {
-    ArrowLeft,
-    Check,
-    Copy,
-    CreditCard,
-    Gift,
-    Loader2,
-    Share2,
-    Users,
+  ArrowLeft,
+  Check,
+  Copy,
+  CreditCard,
+  Gift,
+  Loader2,
+  Share2,
+  Users,
 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 
@@ -34,9 +34,9 @@ function buildSubtitle(
   const referrerAmount = stripDecimals(referrerCreditAmount);
   const refereeAmount = stripDecimals(creditAmount);
   if (referrerAmount === refereeAmount) {
-    return `Share Vellum with friends — you'll each earn ${referrerAmount} credits when they sign up, up to ${cap} total.`;
+    return `Share Cue with friends — you'll each earn ${referrerAmount} credits when they sign up, up to ${cap} total.`;
   }
-  return `Share Vellum with friends — you'll earn ${referrerAmount} credits and they'll get ${refereeAmount} when they sign up, up to ${cap} total.`;
+  return `Share Cue with friends — you'll earn ${referrerAmount} credits and they'll get ${refereeAmount} when they sign up, up to ${cap} total.`;
 }
 
 export function EarnCreditsModal({ open, onClose }: EarnCreditsModalProps) {

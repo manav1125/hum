@@ -107,7 +107,7 @@ export function writeCliLocator(): void {
     mkdirSync(path.dirname(locatorPath), { recursive: true });
 
     const content =
-      "# Written by Vellum.app on every launch. Do not edit.\n" +
+      "# Written by Cue.app on every launch. Do not edit.\n" +
       `VELLUM_BUN=${shQuote(getBundledBunPath())}\n` +
       `VELLUM_CLI_BIN=${shQuote(getCliBinPath())}\n`;
 
@@ -200,9 +200,7 @@ function bunInstallCli(): Promise<void> {
 
     child.on("error", (err: Error) => {
       reject(
-        new Error(
-          `Failed to spawn bun for package install: ${err.message}`,
-        ),
+        new Error(`Failed to spawn bun for package install: ${err.message}`),
       );
     });
 
@@ -274,7 +272,10 @@ export function cleanupOldVersions(): void {
       if (!entry.isDirectory()) continue;
 
       try {
-        rmSync(path.join(cliRoot, entry.name), { recursive: true, force: true });
+        rmSync(path.join(cliRoot, entry.name), {
+          recursive: true,
+          force: true,
+        });
       } catch {
         // Individual entry cleanup failure is non-fatal.
       }

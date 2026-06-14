@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { DetailCard } from "@/components/detail-card";
 import { useUserDeletionRequestCreateMutation } from "@/generated/api/@tanstack/react-query.gen";
 import {
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { hardNavigate } from "@/lib/auth/hard-navigate";
 import { useAuthStore } from "@/stores/auth-store";
@@ -82,7 +82,7 @@ export function DeleteAccountSection() {
       >
         {platformGate === "disabled" ? (
           <Notice tone="info">
-            Log in to the Vellum platform to delete your account.
+            Log in to the Cue platform to delete your account.
           </Notice>
         ) : (
           <div className="flex items-center gap-2">

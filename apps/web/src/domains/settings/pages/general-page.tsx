@@ -4,13 +4,16 @@ import { useNavigate } from "react-router";
 
 import { useDiskPressureMonitor } from "@/assistant/use-disk-pressure-monitor";
 import { DetailCard } from "@/components/detail-card";
-import { DiskPressureBanner, type DiskPressureBannerMode } from "@/components/disk-pressure-banner";
+import {
+  DiskPressureBanner,
+  type DiskPressureBannerMode,
+} from "@/components/disk-pressure-banner";
 import { ProfileCard } from "@/components/profile-card";
 import { AssistantPicker } from "@/domains/settings/components/assistant-picker";
 import { AssistantSleepPolicy } from "@/domains/settings/components/assistant-sleep-policy";
 import {
-    AssistantStatusPanel,
-    useAssistantWithHealthz,
+  AssistantStatusPanel,
+  useAssistantWithHealthz,
 } from "@/domains/settings/components/assistant-status-panel";
 import { AssistantUpgrades } from "@/domains/settings/components/assistant-upgrades";
 import { ComposerSendCard } from "@/domains/settings/components/composer-send-card";
@@ -27,17 +30,20 @@ import { SegmentControl } from "@vellumai/design-library/components/segment-cont
 
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import {
-    applyThemePreference,
-    readStoredThemePreference,
-    type ThemePreference,
-    writeStoredThemePreference,
+  applyThemePreference,
+  readStoredThemePreference,
+  type ThemePreference,
+  writeStoredThemePreference,
 } from "@/domains/settings/utils/theme-preferences";
 import { client } from "@/generated/api/client.gen";
-import { useActiveAssistantIsPlatformHosted, usePlatformGate } from "@/hooks/use-platform-gate";
 import {
-    getSelectedAssistant,
-    isLocalAssistant,
-    isLocalMode,
+  useActiveAssistantIsPlatformHosted,
+  usePlatformGate,
+} from "@/hooks/use-platform-gate";
+import {
+  getSelectedAssistant,
+  isLocalAssistant,
+  isLocalMode,
 } from "@/lib/local-mode";
 import { isElectron } from "@/runtime/is-electron";
 import { captureError } from "@/lib/sentry/capture-error";
@@ -45,9 +51,9 @@ import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-st
 import { useIsAuthenticated } from "@/stores/auth-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import {
-    getDeviceSetting,
-    setDeviceSetting,
-    watchDeviceSetting,
+  getDeviceSetting,
+  setDeviceSetting,
+  watchDeviceSetting,
 } from "@/utils/device-settings";
 import { routes } from "@/utils/routes";
 
@@ -220,8 +226,10 @@ export function GeneralPage() {
     refetch,
     refetchUntilResized,
   } = useAssistantWithHealthz();
-  const multiPlatformAssistant = useClientFeatureFlagStore.use.multiPlatformAssistant();
-  const settingsSleepPolicy = useAssistantFeatureFlagStore.use.settingsSleepPolicy();
+  const multiPlatformAssistant =
+    useClientFeatureFlagStore.use.multiPlatformAssistant();
+  const settingsSleepPolicy =
+    useAssistantFeatureFlagStore.use.settingsSleepPolicy();
   const isAuthenticated = useIsAuthenticated();
   const navigate = useNavigate();
   const platformGate = usePlatformGate();
@@ -232,7 +240,8 @@ export function GeneralPage() {
     enabled: infraGate === "full" && isPlatformHosted,
   });
 
-  const platformAssistant = assistant?.is_local && !isLocalMode() ? null : assistant;
+  const platformAssistant =
+    assistant?.is_local && !isLocalMode() ? null : assistant;
   const selected = getSelectedAssistant();
   const canRetireLocally =
     isLocalMode() && !!assistant && !!selected && isLocalAssistant(selected);
@@ -258,7 +267,9 @@ export function GeneralPage() {
           isAcknowledging={diskPressure.isAcknowledging}
           acknowledgeError={diskPressure.acknowledgeError?.message ?? null}
           onAcknowledge={() => void diskPressure.acknowledge()}
-          onReviewWorkspaceData={() => void navigate(`${routes.workspace}?sort=size`)}
+          onReviewWorkspaceData={() =>
+            void navigate(`${routes.workspace}?sort=size`)
+          }
           onUpgradeStorage={
             infraGate === "full"
               ? () => void navigate(`${routes.settings.billing}?adjust_plan=1`)
@@ -297,7 +308,7 @@ export function GeneralPage() {
           subtitle="Monitor resource usage and manage your assistant's compute profile."
         >
           <Notice tone="info">
-            Log in to the Vellum platform to manage compute resources.
+            Log in to the Cue platform to manage compute resources.
           </Notice>
         </DetailCard>
       )}
@@ -333,7 +344,7 @@ export function GeneralPage() {
       {infraGate === "disabled" && (
         <DetailCard title="Software Updates">
           <Notice tone="info">
-            Log in to the Vellum platform to manage software updates.
+            Log in to the Cue platform to manage software updates.
           </Notice>
         </DetailCard>
       )}
@@ -354,7 +365,7 @@ export function GeneralPage() {
           subtitle="Control how long this assistant stays awake when idle."
         >
           <Notice tone="info">
-            Log in to the Vellum platform to manage sleep policy.
+            Log in to the Cue platform to manage sleep policy.
           </Notice>
         </DetailCard>
       )}
@@ -381,7 +392,7 @@ export function GeneralPage() {
           subtitle="Permanently retire this assistant and delete all associated data."
         >
           <Notice tone="info">
-            Log in to the Vellum platform to retire this assistant.
+            Log in to the Cue platform to retire this assistant.
           </Notice>
         </DetailCard>
       )}

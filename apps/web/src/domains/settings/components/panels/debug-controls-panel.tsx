@@ -24,7 +24,10 @@ export function DebugControlsPanel() {
   const navigate = useNavigate();
   const user = useAuthStore.use.user();
   const platformGate = usePlatformGate();
-  const showInternalControls = isInternalUser(user?.email ?? null, user?.isStaff ?? false);
+  const showInternalControls = isInternalUser(
+    user?.email ?? null,
+    user?.isStaff ?? false,
+  );
 
   const [assistant, setAssistant] = useState<Assistant | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,7 +92,7 @@ export function DebugControlsPanel() {
         <div className="space-y-4">
           {platformGate === "disabled" && (
             <Notice tone="info">
-              Log in to the Vellum platform to manage backups.
+              Log in to the Cue platform to manage backups.
             </Notice>
           )}
           {platformGate !== "disabled" && (

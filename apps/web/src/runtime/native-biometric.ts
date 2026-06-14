@@ -33,7 +33,8 @@ interface NativeBiometricPlugin {
   deleteToken(opts: { server: string }): Promise<void>;
 }
 
-const NativeBiometric = registerPlugin<NativeBiometricPlugin>("NativeBiometric");
+const NativeBiometric =
+  registerPlugin<NativeBiometricPlugin>("NativeBiometric");
 
 const BIOMETRIC_SERVER = "vellum.ai";
 
@@ -86,7 +87,7 @@ export async function retrieveBiometricToken(): Promise<string | null> {
     try {
       const { token } = await NativeBiometric.retrieveToken({
         server: BIOMETRIC_SERVER,
-        reason: "Sign in to Vellum",
+        reason: "Sign in to Cue",
       });
       return token;
     } catch {

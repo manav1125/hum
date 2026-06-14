@@ -6,26 +6,26 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useCanUseLlmInspector } from "@/domains/chat/inspector/access";
 import {
-    useConversationCallNumbering,
-    useConversationMessageList,
-    useLlmContext,
+  useConversationCallNumbering,
+  useConversationMessageList,
+  useLlmContext,
 } from "@/domains/chat/inspector/inspector-api";
 import {
-    buildInspectorExportFilename,
-    buildInspectorExportZipBlob,
+  buildInspectorExportFilename,
+  buildInspectorExportZipBlob,
 } from "@/domains/chat/inspector/inspector-export";
 import {
-    llmCallDetailQueryOptions,
-    useLlmCallDetail,
+  llmCallDetailQueryOptions,
+  useLlmCallDetail,
 } from "@/domains/chat/inspector/inspector-detail-api";
 import {
-    llmLogPayloadQueryOptions,
-    type LlmLogPayload,
+  llmLogPayloadQueryOptions,
+  type LlmLogPayload,
 } from "@/domains/chat/inspector/inspector-payload-api";
 import { normalizeContentBlocks } from "@/domains/chat/api/messages";
 import {
-    supportsLlmContextSummaryView,
-    useSupportsLlmContextSummaryView,
+  supportsLlmContextSummaryView,
+  useSupportsLlmContextSummaryView,
 } from "@/lib/backwards-compat/llm-context-summary-view";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { useIsSessionInitializing } from "@/stores/auth-store";
@@ -90,8 +90,8 @@ export function InspectPage(): ReactNode {
   if (!canInspect) {
     return (
       <CenteredMessage tone="muted">
-        Inspector is available to Vellum staff, or when the
-        settings-developer-nav developer flag is enabled.
+        Inspector is available to Cue staff, or when the settings-developer-nav
+        developer flag is enabled.
       </CenteredMessage>
     );
   }
@@ -102,9 +102,7 @@ export function InspectPage(): ReactNode {
     return <CenteredMessage tone="muted">Loading…</CenteredMessage>;
   }
 
-  return (
-    <Inspector conversationId={conversationId} messageId={messageId} />
-  );
+  return <Inspector conversationId={conversationId} messageId={messageId} />;
 }
 
 interface InspectorProps {
@@ -229,8 +227,7 @@ function Header({
     conversationId,
   );
   const turnPosition = useMemo(
-    () =>
-      messageId ? findTurnPosition(scopeMessages ?? [], messageId) : null,
+    () => (messageId ? findTurnPosition(scopeMessages ?? [], messageId) : null),
     [scopeMessages, messageId],
   );
 
@@ -260,9 +257,7 @@ function Header({
       const { saveFile } = await import("@/runtime/native-file");
       await saveFile(
         blob,
-        buildInspectorExportFilename(
-          context.conversationId ?? conversationId,
-        ),
+        buildInspectorExportFilename(context.conversationId ?? conversationId),
       );
     } catch (err) {
       setExportError(
@@ -489,7 +484,9 @@ interface ScopeOption {
 // A "turn" is headed by a user message: the user message plus every
 // assistant response it produced map to the same group of LLM calls,
 // so only user messages are offered as scope options.
-function buildMessageScopeOptions(messages: ConversationMessage[]): ScopeOption[] {
+function buildMessageScopeOptions(
+  messages: ConversationMessage[],
+): ScopeOption[] {
   const seen = new Set<string>();
   const options: ScopeOption[] = [];
   let index = 1;
@@ -585,7 +582,8 @@ function Loaded({
   // return sections inline and the list entry is used as-is.
   const supportsSummaryView = useSupportsLlmContextSummaryView();
   const selectedLogHasSections = Boolean(
-    selectedLog && (selectedLog.requestSections || selectedLog.responseSections),
+    selectedLog &&
+    (selectedLog.requestSections || selectedLog.responseSections),
   );
   const shouldFetchDetail = supportsSummaryView && !selectedLogHasSections;
   const {

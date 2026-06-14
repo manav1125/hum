@@ -1,11 +1,10 @@
-
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 import { assistantsMaintenanceModeExitCreate } from "@/generated/api/sdk.gen";
 import {
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { Button } from "@vellumai/design-library";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -91,7 +90,7 @@ export function MaintenanceModeBanner({
       {showExitAction ? (
         platformGate === "disabled" ? (
           <Notice tone="info">
-            Log in to the Vellum platform to exit Recovery Mode.
+            Log in to the Cue platform to exit Recovery Mode.
           </Notice>
         ) : (
           <Button

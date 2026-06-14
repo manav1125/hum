@@ -44,15 +44,15 @@ export function buildWrapperScript(): string {
   return [
     "#!/bin/sh",
     WRAPPER_MARKER,
-    '# Installed by Vellum.app ("Install vellum Command"). Safe to delete.',
+    '# Installed by Cue.app ("Install vellum Command"). Safe to delete.',
     `LOCATOR=${shQuote(getCliLocatorPath())}`,
     'if [ ! -f "$LOCATOR" ]; then',
-    '  echo "vellum: CLI not set up yet. Launch Vellum.app once to finish setup." >&2',
+    '  echo "vellum: CLI not set up yet. Launch Cue.app once to finish setup." >&2',
     "  exit 1",
     "fi",
     '. "$LOCATOR"',
     'if [ ! -x "$VELLUM_BUN" ] || [ ! -e "$VELLUM_CLI_BIN" ]; then',
-    '  echo "vellum: installation is incomplete. Launch Vellum.app once to repair it." >&2',
+    '  echo "vellum: installation is incomplete. Launch Cue.app once to repair it." >&2',
     "  exit 1",
     "fi",
     'exec "$VELLUM_BUN" "$VELLUM_CLI_BIN" "$@"',
@@ -162,7 +162,8 @@ export async function getCliPathInstallState(): Promise<CliPathInstallState> {
   const [firstHit] = findExecutablesInPath("vellum", shellPath);
   const firstHitIsWrapper =
     firstHit !== undefined &&
-    (firstHit === wrapperPath || realpathOr(firstHit) === realpathOr(wrapperPath));
+    (firstHit === wrapperPath ||
+      realpathOr(firstHit) === realpathOr(wrapperPath));
 
   const inPath =
     firstHitIsWrapper || splitPathEntries(shellPath).includes(getWrapperDir());

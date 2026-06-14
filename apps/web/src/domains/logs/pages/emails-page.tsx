@@ -16,9 +16,7 @@ export function EmailsPage() {
 
   if (platformGate === "disabled") {
     return (
-      <Notice tone="info">
-        Log in to the Vellum platform to view emails.
-      </Notice>
+      <Notice tone="info">Log in to the Cue platform to view emails.</Notice>
     );
   }
 

@@ -50,7 +50,8 @@ export function buildAuthorizeUrl(options: AuthorizeUrlOptions): string {
   // No `prompt`: lets the browser's existing IdP session be reused.
   url.searchParams.set("provider", options.providerHint || "authkit");
   if (options.loginHint) url.searchParams.set("login_hint", options.loginHint);
-  if (options.intent === "signup") url.searchParams.set("screen_hint", "sign-up");
+  if (options.intent === "signup")
+    url.searchParams.set("screen_hint", "sign-up");
   return url.toString();
 }
 
@@ -68,7 +69,7 @@ interface HeadlessProviderEntry {
  * During the coexistence window the platform lists two entries
  * with the same "workos-oidc" provider ID.
  * The OAuth2 one is distinguished by having no OIDC discovery URL.
- * Returns null when the platform doesn't support token auth yet - 
+ * Returns null when the platform doesn't support token auth yet -
  * callers should surface that as a clear error.
  */
 export function selectWorkosClientId(
@@ -83,7 +84,9 @@ export function selectWorkosClientId(
   return entry?.client_id ?? null;
 }
 
-export async function fetchWorkosClientId(platformUrl: string): Promise<string> {
+export async function fetchWorkosClientId(
+  platformUrl: string,
+): Promise<string> {
   const url = `${new URL(platformUrl).origin}/_allauth/app/v1/config`;
   const response = await net.fetch(url);
   if (!response.ok) {
@@ -108,11 +111,11 @@ const CALLBACK_PATH = "/auth/callback";
 
 const SUCCESS_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Signed in</title></head>
 <body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-<p>Signed in — you can close this tab and return to Vellum.</p></body></html>`;
+<p>Signed in — you can close this tab and return to Cue.</p></body></html>`;
 
 const ERROR_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Sign-in failed</title></head>
 <body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-<p>Sign-in failed — you can close this tab and try again from Vellum.</p></body></html>`;
+<p>Sign-in failed — you can close this tab and try again from Cue.</p></body></html>`;
 
 export interface LoopbackListener {
   redirectUri: string;
@@ -122,16 +125,24 @@ export interface LoopbackListener {
 }
 
 /** Bind an ephemeral loopback listener and wait for the OAuth redirect. */
-export function startLoopbackListener(expectedState: string): Promise<LoopbackListener> {
+export function startLoopbackListener(
+  expectedState: string,
+): Promise<LoopbackListener> {
   return new Promise((resolveListener, rejectListener) => {
-    let settle: { resolve: (code: string) => void; reject: (err: Error) => void };
+    let settle: {
+      resolve: (code: string) => void;
+      reject: (err: Error) => void;
+    };
     const waitForCode = new Promise<string>((resolve, reject) => {
       settle = { resolve, reject };
     });
 
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
-      if (url.pathname !== CALLBACK_PATH || url.searchParams.get("state") !== expectedState) {
+      if (
+        url.pathname !== CALLBACK_PATH ||
+        url.searchParams.get("state") !== expectedState
+      ) {
         res.writeHead(404).end();
         return;
       }
@@ -140,7 +151,9 @@ export function startLoopbackListener(expectedState: string): Promise<LoopbackLi
       if (error || !code) {
         res.writeHead(200, { "Content-Type": "text/html" }).end(ERROR_HTML);
         settle.reject(
-          new Error(`Authentication failed: ${error ?? "no authorization code received"}`),
+          new Error(
+            `Authentication failed: ${error ?? "no authorization code received"}`,
+          ),
         );
         return;
       }
@@ -184,7 +197,9 @@ export async function exchangeCodeWithWorkos(options: {
   );
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`WorkOS code exchange failed (${response.status}): ${body}`);
+    throw new Error(
+      `WorkOS code exchange failed (${response.status}): ${body}`,
+    );
   }
   const data = (await response.json()) as { access_token?: string };
   if (!data.access_token) {

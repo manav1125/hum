@@ -9,7 +9,7 @@ import { create } from "storybook/theming";
 const lightManagerTheme = create({
   base: "light",
 
-  brandTitle: "Vellum Design Library",
+  brandTitle: "Cue Design Library",
   brandUrl: "https://github.com/vellum-ai/vellum-assistant",
   appBorderRadius: 8,
 

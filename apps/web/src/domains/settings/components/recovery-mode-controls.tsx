@@ -2,13 +2,13 @@ import { Loader2, Wrench } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import {
-    assistantsMaintenanceModeEnterCreate,
-    assistantsMaintenanceModeExitCreate,
+  assistantsMaintenanceModeEnterCreate,
+  assistantsMaintenanceModeExitCreate,
 } from "@/generated/api/sdk.gen";
 import type { MaintenanceMode } from "@/generated/api/types.gen";
 import {
-    useActiveAssistantLifecycleIsLoading,
-    usePlatformGate,
+  useActiveAssistantLifecycleIsLoading,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { captureError } from "@/lib/sentry/capture-error";
 import { Button } from "@vellumai/design-library/components/button";
@@ -145,7 +145,8 @@ export function RecoveryModeControls({
 
       {platformGate === "disabled" && (
         <Notice tone="info">
-          Log in to the Vellum platform to {isActive ? "exit" : "enter"} Recovery Mode.
+          Log in to the Cue platform to {isActive ? "exit" : "enter"} Recovery
+          Mode.
         </Notice>
       )}
       {error && <Notice tone="error">{error}</Notice>}

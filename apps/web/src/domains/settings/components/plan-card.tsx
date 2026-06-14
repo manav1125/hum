@@ -1,16 +1,22 @@
-import { Crown, FileText, Loader2, Palmtree, type LucideIcon } from "lucide-react";
+import {
+  Crown,
+  FileText,
+  Loader2,
+  Palmtree,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 
 import {
-    formatGraceDate,
-    getEffectiveCancelDate,
+  formatGraceDate,
+  getEffectiveCancelDate,
 } from "@/domains/settings/hooks/use-billing-portal-session";
 import {
-    organizationsBillingPlansRetrieveOptions,
-    organizationsBillingSubscriptionRetrieveOptions,
+  organizationsBillingPlansRetrieveOptions,
+  organizationsBillingSubscriptionRetrieveOptions,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { ProPlan } from "@/generated/api/types.gen";
 import type { ButtonProps } from "@vellumai/design-library/components/button";
@@ -68,7 +74,7 @@ function PlanHeading() {
         variant="body-small-default"
         className="mt-2 text-[var(--content-tertiary)]"
       >
-        Manage which Vellum plan you&apos;re on.
+        Manage which Cue plan you&apos;re on.
       </Typography>
     </div>
   );
@@ -119,14 +125,20 @@ export function PlanCard({ onManage }: PlanCardProps) {
       Boolean(subscription.cancel_at));
   const isCanceled = subscription.status === "canceled";
   const cancelDate = getEffectiveCancelDate(subscription);
-  const showRenewal = display.showsRenewal && !isCancelling && !isCanceled && subscription.current_period_end;
-  const showCancellation = display.showsRenewal && isCancelling && !isCanceled && cancelDate;
+  const showRenewal =
+    display.showsRenewal &&
+    !isCancelling &&
+    !isCanceled &&
+    subscription.current_period_end;
+  const showCancellation =
+    display.showsRenewal && isCancelling && !isCanceled && cancelDate;
 
   // Catalog-gated current credit bundle, shown only for a Pro org with a
   // non-null selected tier when the catalog advertises `credit_tiers`. Resolve
   // the label/price from the catalog, falling back to the raw tier key. A null
   // selection (no bundle / $0) renders nothing.
-  const proPlan = currentPlan.id === "pro" ? (currentPlan as ProPlan) : undefined;
+  const proPlan =
+    currentPlan.id === "pro" ? (currentPlan as ProPlan) : undefined;
   const selectedCreditTier = subscription.selected_credit_tier ?? null;
   const creditTiers =
     selectedCreditTier != null ? proPlan?.credit_tiers : undefined;
@@ -159,11 +171,22 @@ export function PlanCard({ onManage }: PlanCardProps) {
             <PlanIcon className="h-4 w-4 text-[var(--content-default)]" />
           </span>
           <div className="min-w-0 flex-1 space-y-0.5">
-            <Typography variant="body-medium-default" as="div" data-testid="plan-card-name">
+            <Typography
+              variant="body-medium-default"
+              as="div"
+              data-testid="plan-card-name"
+            >
               {planName}
             </Typography>
-            <Typography variant="body-small-default" as="div" className="leading-snug text-[var(--content-tertiary)]">
-              <PlanFeatureList features={currentPlan.included_features} variant="inline" />
+            <Typography
+              variant="body-small-default"
+              as="div"
+              className="leading-snug text-[var(--content-tertiary)]"
+            >
+              <PlanFeatureList
+                features={currentPlan.included_features}
+                variant="inline"
+              />
             </Typography>
           </div>
           <Button

@@ -1,14 +1,14 @@
 import {
-    ArrowUpRight,
-    Bug,
-    ExternalLink,
-    GitPullRequest,
-    Globe,
-    Heart,
-    Play,
-    Sparkles,
-    Star,
-    Users,
+  ArrowUpRight,
+  Bug,
+  ExternalLink,
+  GitPullRequest,
+  Globe,
+  Heart,
+  Play,
+  Sparkles,
+  Star,
+  Users,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 
@@ -44,7 +44,7 @@ function HeroBanner() {
             Build with us, in the open.
           </h1>
           <p className="max-w-xl text-body-medium-default text-[color:var(--content-tertiary)]">
-            Vellum is built in the open with a growing community of developers,
+            Cue is built in the open with a growing community of developers,
             designers, and tinkerers. Here&apos;s how to get involved.
           </p>
         </div>
@@ -182,10 +182,7 @@ function ResourceCard({
       rel="noopener noreferrer"
       className="flex flex-1 cursor-pointer"
     >
-      <Card
-        className="flex-1 transition-shadow hover:shadow-md"
-        padding="lg"
-      >
+      <Card className="flex-1 transition-shadow hover:shadow-md" padding="lg">
         <div className="flex flex-col gap-4">
           <div className="flex items-start justify-between">
             <span
@@ -267,9 +264,7 @@ export function CommunityPage() {
           ]}
           primaryAction={{
             label: "Join Discord",
-            icon: (
-              <DiscordLogo size={16} style={{ color: "currentColor" }} />
-            ),
+            icon: <DiscordLogo size={16} style={{ color: "currentColor" }} />,
             onClick: joinDiscord,
           }}
         />
@@ -277,7 +272,7 @@ export function CommunityPage() {
 
       <div className="flex flex-col gap-4">
         <h2 className="text-label-medium-default uppercase tracking-wider text-[color:var(--content-tertiary)]">
-          More from Vellum
+          More from Cue
         </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <ResourceCard

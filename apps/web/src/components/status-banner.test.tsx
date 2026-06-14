@@ -11,8 +11,11 @@ let activeAssistantIdMock: string | null = "assistant-123";
 let operationalStatusAssistantIdMock: string | null = null;
 let assistantStateMock:
   | { kind: "loading" }
-  | { kind: "active"; isLocal: boolean; maintenanceMode?: { enabled: boolean } } =
-  { kind: "active", isLocal: false };
+  | {
+      kind: "active";
+      isLocal: boolean;
+      maintenanceMode?: { enabled: boolean };
+    } = { kind: "active", isLocal: false };
 let requestedOperationalStatusAssistantId: string | null | undefined;
 let operationalStatusQueryMock: {
   data: { state: string } | null | undefined;
@@ -338,7 +341,7 @@ describe("StatusBanner", () => {
 
       const html = renderToStaticMarkup(<StatusBanner />);
 
-      expect(html).toContain("Trying to reach Vellum");
+      expect(html).toContain("Trying to reach Cue");
       expect(html).toContain("Retry now");
       expect(html).not.toContain("crash looping");
     });
