@@ -30,11 +30,18 @@ const CUE_LIVE_SHOW_CARD = "cuelive.showCard";
 const CUE_LIVE_HIGHLIGHT = "cuelive.highlight";
 const CUE_LIVE_HIDE = "cuelive.hide";
 const CUE_LIVE_SUMMONED = "cuelive.summoned";
+const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
 
 /** `cuelive.summoned` notification — cursor position in AX top-left coords. */
 const SUMMONED_SCHEMA = z.object({
   x: z.number(),
   y: z.number(),
+});
+
+/** `cuelive.accessibilityTrusted` — emitted when the helper observes
+ *  Accessibility being granted at runtime and arms the summon hotkey. */
+const TRUSTED_SCHEMA = z.object({
+  trusted: z.boolean(),
 });
 
 /** `cuelive.readElementAtCursor` result — the AX element under the cursor. */
@@ -79,6 +86,7 @@ const AUTO_HIDE_MS = 6_000;
 
 let started = false;
 let unsubscribeSummoned: (() => void) | null = null;
+let unsubscribeTrusted: (() => void) | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
 const clearHideTimer = (): void => {
@@ -213,6 +221,19 @@ export const start = async (): Promise<void> => {
     },
   );
 
+  // The helper arms the summon hotkey the moment Accessibility is granted at
+  // runtime (no relaunch needed); surface that transition for diagnosability.
+  unsubscribeTrusted = client.onNotification(
+    CUE_LIVE_ACCESSIBILITY_TRUSTED,
+    TRUSTED_SCHEMA,
+    () => {
+      log.info(
+        "[cue-live] Accessibility granted — summon hotkey is now armed " +
+          "(Control+Option+Space).",
+      );
+    },
+  );
+
   try {
     const raw = await client.call(CUE_LIVE_START);
     const parsed = START_RESULT_SCHEMA.safeParse(raw);
@@ -246,6 +267,8 @@ export const stop = async (): Promise<void> => {
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
+  unsubscribeTrusted?.();
+  unsubscribeTrusted = null;
 
   const client = getMacHelperClient();
   try {
@@ -275,6 +298,8 @@ export const dispose = (): void => {
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
+  unsubscribeTrusted?.();
+  unsubscribeTrusted = null;
 };
 
 export const __resetForTesting = (): void => {
@@ -282,4 +307,6 @@ export const __resetForTesting = (): void => {
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
+  unsubscribeTrusted?.();
+  unsubscribeTrusted = null;
 };

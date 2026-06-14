@@ -28,6 +28,7 @@ final class CueLiveController: @unchecked Sendable {
     @MainActor private var highlightView: CueHighlightView?
     @MainActor private var hotkeyMonitor: Any?
     @MainActor private var localHotkeyMonitor: Any?
+    @MainActor private var trustPollTimer: Timer?
 
     init(emit: @escaping (String, [String: Any]?) -> Void) {
         self.emit = emit
@@ -46,9 +47,41 @@ final class CueLiveController: @unchecked Sendable {
         let trusted = ensureAccessibilityTrust()
         MainActor.assumeIsolated {
             ensureOverlay()
-            installHotkeyMonitors()
+            if trusted {
+                installHotkeyMonitors()
+            } else {
+                // The global monitor only receives events once the helper is
+                // trusted, and a monitor installed while untrusted stays dead
+                // even after the user flips the toggle — so don't install it
+                // yet. Poll instead and install the moment trust is granted,
+                // so the summon hotkey works without a relaunch.
+                startTrustPolling()
+            }
         }
         return ["enabled": true, "accessibilityTrusted": trusted]
+    }
+
+    /// Watch for Accessibility trust being granted at runtime and install the
+    /// hotkey monitors as soon as it is, then stop polling. Uses the
+    /// non-prompting `AXIsProcessTrusted()` so the system dialog isn't shown
+    /// again on every tick.
+    @MainActor
+    private func startTrustPolling() {
+        guard trustPollTimer == nil else { return }
+        // The block runs on the main run loop (this timer is scheduled from a
+        // main-actor context), so hop back onto the main actor and drive
+        // everything through `self` — never touch the passed `Timer`, which
+        // Swift 6 won't let us send across the isolation boundary.
+        trustPollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, AXIsProcessTrusted() else { return }
+                self.trustPollTimer?.invalidate()
+                self.trustPollTimer = nil
+                self.installHotkeyMonitors()
+                self.emit("cuelive.accessibilityTrusted", ["trusted": true])
+            }
+        }
     }
 
     /// Trigger / read the Accessibility trust state for this helper process.
@@ -64,6 +97,8 @@ final class CueLiveController: @unchecked Sendable {
 
     func stop() -> [String: Any] {
         MainActor.assumeIsolated {
+            trustPollTimer?.invalidate()
+            trustPollTimer = nil
             removeHotkeyMonitors()
             overlay?.orderOut(nil)
             overlay = nil
