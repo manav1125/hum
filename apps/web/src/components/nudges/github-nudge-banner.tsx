@@ -24,12 +24,12 @@ export function GitHubNudgeBanner({ onStar, onDismiss }: GitHubNudgeBannerProps)
           size={16}
         />
       }
-      title="Vellum is open source"
+      title="Cue is open source"
       subtitle="Star us on GitHub or contribute"
       ctaLabel="Star us"
       ctaLeftIcon={<Star />}
       ctaAriaLabel="Star Vellum on GitHub"
-      ariaLabel="Vellum is open source on GitHub"
+      ariaLabel="Cue is open source on GitHub"
       onAction={onStar}
       onDismiss={onDismiss}
     />

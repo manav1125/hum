@@ -227,7 +227,7 @@ export function CommunityPage() {
           iconColor="var(--surface-base)"
           label="Open Source"
           icon={<GitHubLogo size={20} />}
-          title="Vellum is open source"
+          title="Cue is open source"
           subtitle="Read the source, star the repo, and contribute fixes and features on GitHub."
           benefits={[
             { icon: Star, text: "Star the repo to follow updates" },

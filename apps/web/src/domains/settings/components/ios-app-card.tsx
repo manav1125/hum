@@ -17,7 +17,7 @@ export function IOSAppCard() {
   return (
     <NudgeSettingsCard
       title="Get the iOS App"
-      subtitle="The Vellum iOS app gives you a native experience."
+      subtitle="The Cue iOS app gives you a native experience."
       benefits={[
         { icon: Bell, text: "Push notifications" },
         { icon: Fingerprint, text: "Biometric login" },

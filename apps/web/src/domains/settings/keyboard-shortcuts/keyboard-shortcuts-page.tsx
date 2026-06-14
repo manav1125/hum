@@ -26,7 +26,7 @@ const SCOPE_SECTIONS: { scope: ResolvedHotkey["scope"]; title: string; descripti
     {
       scope: "global",
       title: "Global shortcuts",
-      description: "Work anywhere, even when Vellum is in the background.",
+      description: "Work anywhere, even when Cue is in the background.",
     },
     {
       scope: "menu",

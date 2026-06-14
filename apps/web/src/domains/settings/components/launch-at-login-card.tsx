@@ -23,7 +23,7 @@ export function LaunchAtLoginCard() {
   return (
     <DetailCard
       title="Launch at Login"
-      subtitle="Automatically start Vellum when you log in to your Mac."
+      subtitle="Automatically start Cue when you log in to your Mac."
     >
       <Toggle checked={enabled} onChange={(next) => void handleToggle(next)} aria-label="Launch at Login" />
     </DetailCard>

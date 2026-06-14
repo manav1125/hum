@@ -43,12 +43,12 @@ export function ReferralPanel() {
   }, []);
 
   const subtitle = data
-    ? `Share Vellum with friends - you'll each earn ${stripDecimals(
+    ? `Share Cue with friends - you'll each earn ${stripDecimals(
         data.referrer_credit_amount,
       )} credits when they sign up, up to ${stripDecimals(
         data.earning_cap,
       )} total.`
-    : "Share Vellum with friends and earn credits for every signup.";
+    : "Share Cue with friends and earn credits for every signup.";
 
   return (
     <Card padding="md" id={REFERRAL_PANEL_ANCHOR_ID}>
