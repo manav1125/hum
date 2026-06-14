@@ -93,6 +93,11 @@ final class MacHelper: @unchecked Sendable {
     // error callback — read by the on-device watchdog on the main queue.
     private var dictationSawActivity = false
 
+    // Cue Live (Stage 1 companion overlay) — created lazily on first
+    // `cuelive.start`. Only ever touched on the main thread, where the
+    // JSON-RPC router dispatches every command.
+    private var cueLive: CueLiveController?
+
     init(isDisclaimed: Bool) {
         self.isDisclaimed = isDisclaimed
     }
@@ -181,8 +186,51 @@ final class MacHelper: @unchecked Sendable {
                 sampleRate: object["sampleRate"] as? Double ?? 16000
             )
         }
+        // Cue Live (Stage 1 companion): overlay + AX-at-cursor + summon. The
+        // daemon drives these; the helper renders + reports (no model here).
+        router.register("cuelive.start") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.ensureCueLive().start()
+        }
+        router.register("cuelive.stop") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.cueLive?.stop() ?? ["enabled": false]
+        }
+        router.register("cuelive.readElementAtCursor") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.ensureCueLive().readElementAtCursor()
+        }
+        router.register("cuelive.showCard") { [weak self] params in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            guard let object = params as? [String: Any] else {
+                throw JsonRpcDispatchError.invalidParams("cuelive.showCard requires params")
+            }
+            return self.ensureCueLive().showCard(params: object)
+        }
+        router.register("cuelive.highlight") { [weak self] params in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            guard let object = params as? [String: Any] else {
+                throw JsonRpcDispatchError.invalidParams("cuelive.highlight requires params")
+            }
+            return self.ensureCueLive().highlight(params: object)
+        }
+        router.register("cuelive.hide") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.cueLive?.hide() ?? ["ok": true]
+        }
         return router
     }()
+
+    /// Lazily build the Cue Live controller, wiring its notifications back to
+    /// the daemon over the same JSON-RPC channel the rest of the helper uses.
+    private func ensureCueLive() -> CueLiveController {
+        if let cueLive { return cueLive }
+        let controller = CueLiveController(emit: { [weak self] method, params in
+            self?.writeNotification(method: method, params: params)
+        })
+        cueLive = controller
+        return controller
+    }
 
     @MainActor
     func run() {
