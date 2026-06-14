@@ -54,6 +54,10 @@ type ReadElementResult = z.infer<typeof READ_ELEMENT_SCHEMA>;
 /** `cuelive.start` result. */
 const START_RESULT_SCHEMA = z.object({
   enabled: z.boolean(),
+  // Whether the helper is trusted for Accessibility. The global summon hotkey
+  // and the AX element read both require it; when false the overlay never
+  // appears on summon. Older helpers omit it.
+  accessibilityTrusted: z.boolean().optional(),
 });
 
 // --- Gating ------------------------------------------------------------------
@@ -221,6 +225,14 @@ export const start = async (): Promise<void> => {
       "[cue-live] overlay started (summon: Control+Option+Space). " +
         "Requires Accessibility permission at runtime.",
     );
+    if (parsed.data.accessibilityTrusted === false) {
+      log.warn(
+        "[cue-live] helper is NOT trusted for Accessibility — the summon " +
+          "hotkey and element reads will do nothing until the user enables " +
+          "the Cue helper in System Settings → Privacy & Security → " +
+          "Accessibility. A system prompt was requested.",
+      );
+    }
   } catch (err) {
     log.warn(`[cue-live] cuelive.start failed: ${errMessage(err)}`);
   }

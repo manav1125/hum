@@ -36,11 +36,30 @@ final class CueLiveController: @unchecked Sendable {
     // MARK: - Lifecycle (JSON-RPC entry points)
 
     func start() -> [String: Any] {
+        // The summon hotkey is a *global* NSEvent monitor and
+        // `readElementAtCursor` calls `AXUIElementCopyElementAtPosition` —
+        // both silently no-op until this helper is trusted for Accessibility.
+        // Nothing else surfaces that, so trigger the system prompt here: when
+        // untrusted it registers the helper in System Settings → Privacy &
+        // Security → Accessibility and asks the user to enable it. Once trusted
+        // it's a no-op (no repeat prompt).
+        let trusted = ensureAccessibilityTrust()
         MainActor.assumeIsolated {
             ensureOverlay()
             installHotkeyMonitors()
         }
-        return ["enabled": true]
+        return ["enabled": true, "accessibilityTrusted": trusted]
+    }
+
+    /// Trigger / read the Accessibility trust state for this helper process.
+    /// Passing the prompt option shows the system grant dialog only while
+    /// untrusted; returns the current trust state either way.
+    private func ensureAccessibilityTrust() -> Bool {
+        // Literal value of `kAXTrustedCheckOptionPrompt`; referencing the
+        // imported global directly trips Swift 6 strict-concurrency (shared
+        // mutable state), same dodge as the "AXSecureTextField" literal below.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 
     func stop() -> [String: Any] {
