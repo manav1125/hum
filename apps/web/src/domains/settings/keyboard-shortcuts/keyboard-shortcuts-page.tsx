@@ -31,7 +31,7 @@ const SCOPE_SECTIONS: { scope: ResolvedHotkey["scope"]; title: string; descripti
     {
       scope: "menu",
       title: "App shortcuts",
-      description: "Work while a Vellum window is focused.",
+      description: "Work while a Cue window is focused.",
     },
   ];
 

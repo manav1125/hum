@@ -432,8 +432,8 @@ function getEmptyStateCopy(
       };
     case "vellum":
       return {
-        title: "No Vellum Skills",
-        subtitle: "No bundled Vellum skills found.",
+        title: "No Cue Skills",
+        subtitle: "No bundled Cue skills found.",
         Icon: Package,
       };
     case "clawhub":
@@ -457,7 +457,7 @@ function getEmptyStateCopy(
     default:
       return {
         title: "No Skills Available",
-        subtitle: "Check your connection to the Vellum catalog.",
+        subtitle: "Check your connection to the Cue catalog.",
         Icon: CloudOff,
       };
   }

@@ -198,7 +198,7 @@ function useAssistantBannerConfig(): BannerConfig | null {
   if (electron && connectivityState === "backend-unreachable") {
     return {
       tone: "warning",
-      title: "Trying to reach Vellum…",
+      title: "Trying to reach Cue…",
       icon: <CloudOff className="h-4 w-4" aria-hidden="true" />,
       actions: (
         <Button variant="outlined" size="compact" onClick={retryConnectivity}>

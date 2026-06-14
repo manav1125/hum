@@ -28,7 +28,7 @@ export function GitHubNudgeBanner({ onStar, onDismiss }: GitHubNudgeBannerProps)
       subtitle="Star us on GitHub or contribute"
       ctaLabel="Star us"
       ctaLeftIcon={<Star />}
-      ctaAriaLabel="Star Vellum on GitHub"
+      ctaAriaLabel="Star Cue on GitHub"
       ariaLabel="Cue is open source on GitHub"
       onAction={onStar}
       onDismiss={onDismiss}

@@ -34,8 +34,8 @@ export function DiscordNudgeBanner({ onJoin, onDismiss }: DiscordNudgeBannerProp
           </span>
         </>
       }
-      ctaAriaLabel="Join the Vellum Discord community"
-      ariaLabel="Join the Vellum Discord community"
+      ctaAriaLabel="Join the Cue Discord community"
+      ariaLabel="Join the Cue Discord community"
       onAction={onJoin}
       onDismiss={onDismiss}
     />
