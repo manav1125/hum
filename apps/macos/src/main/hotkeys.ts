@@ -30,7 +30,7 @@ interface HotkeyCommand {
  * input, Find, Command Palette, Settings) are intentionally absent.
  */
 const HOTKEY_CATALOG: readonly HotkeyCommand[] = [
-  { key: "globalHotkey", label: "Open Vellum", scope: "global" },
+  { key: "globalHotkey", label: "Open Cue", scope: "global" },
   { key: "quickInput", label: "Quick Input", scope: "global" },
   { key: "newConversation", label: "New chat", scope: "menu" },
   { key: "currentConversation", label: "Current conversation", scope: "menu" },

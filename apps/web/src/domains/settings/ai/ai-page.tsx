@@ -1,4 +1,3 @@
-import { ExternalLink, Info } from "lucide-react";
 import { useEffect } from "react";
 
 import { LanguageModelCard } from "@/domains/settings/ai/language-model-card";
@@ -24,24 +23,10 @@ export function AiPage() {
 
   return (
     <div className="space-y-5">
-      {/* Managed services billing banner */}
-      <div className="flex items-start gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--surface-base)] px-4 py-2.5">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--content-tertiary)]" />
-        <p className="text-body-medium-lighter text-[var(--content-secondary)]">
-          Managed services are metered and deducted from your Cue Cloud account
-          balance.{" "}
-          <a
-            href="https://www.vellum.ai/docs/pricing"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[var(--primary-base)] hover:underline"
-          >
-            View pricing
-            <ExternalLink className="h-3.5 w-3.5" />
-          </a>
-        </p>
-      </div>
-
+      {/* Cue runs on your own provider keys (BYOK); a managed Cue Cloud billing
+          banner belongs here once that service exists. Until then, no banner —
+          the previous one advertised metered Cue Cloud billing that isn't
+          available yet and linked to upstream Vellum pricing. */}
       <LanguageModelCard />
       <WebSearchCard />
       <EmailServiceCard />

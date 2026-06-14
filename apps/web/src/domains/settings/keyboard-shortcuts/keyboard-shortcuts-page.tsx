@@ -21,19 +21,22 @@ import {
 } from "@/domains/settings/keyboard-shortcuts/electron-accelerator";
 
 /** Section copy keyed by the command scope, ordered global-first. */
-const SCOPE_SECTIONS: { scope: ResolvedHotkey["scope"]; title: string; description: string }[] =
-  [
-    {
-      scope: "global",
-      title: "Global shortcuts",
-      description: "Work anywhere, even when Cue is in the background.",
-    },
-    {
-      scope: "menu",
-      title: "App shortcuts",
-      description: "Work while a Cue window is focused.",
-    },
-  ];
+const SCOPE_SECTIONS: {
+  scope: ResolvedHotkey["scope"];
+  title: string;
+  description: string;
+}[] = [
+  {
+    scope: "global",
+    title: "Global shortcuts",
+    description: "Work anywhere, even when Cue is in the background.",
+  },
+  {
+    scope: "menu",
+    title: "App shortcuts",
+    description: "Work while a Cue window is focused.",
+  },
+];
 
 interface ShortcutRowProps {
   hotkey: ResolvedHotkey;
@@ -136,9 +139,10 @@ function ShortcutRow({
 export function KeyboardShortcutsPage() {
   const [catalog, setCatalog] = useState<ResolvedHotkey[]>([]);
   const [recordingKey, setRecordingKey] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<{ key: string; label: string } | null>(
-    null,
-  );
+  const [conflict, setConflict] = useState<{
+    key: string;
+    label: string;
+  } | null>(null);
 
   const refresh = useCallback(() => {
     void getHotkeys().then(setCatalog);
@@ -243,7 +247,7 @@ export function KeyboardShortcutsPage() {
           Keyboard Shortcuts
         </h2>
         <p className="text-body-medium-lighter text-[var(--content-secondary)]">
-          Customize the shortcuts for Vellum&apos;s commands.
+          Customize the shortcuts for Cue&apos;s commands.
         </p>
       </div>
 

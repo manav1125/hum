@@ -9,27 +9,27 @@ import { Typography } from "@vellumai/design-library/components/typography";
 
 import { useStoredCredentialPresence } from "@/domains/settings/ai/use-stored-credential-presence";
 import {
-    inferenceProviderconnectionsByNamePatch,
-    secretsPost,
+  inferenceProviderconnectionsByNamePatch,
+  secretsPost,
 } from "@/generated/daemon/sdk.gen";
 
 import { providerSupportsPlatformAuth } from "@/assistant/llm-model-catalog";
 import { ChatgptOAuthSection } from "@/domains/settings/ai/chatgpt-oauth-section";
 import {
-    type Auth,
-    type ConnectionProvider,
-    PROVIDER_DISPLAY_NAMES,
-    type ProviderConnection,
-    type UpdateConnectionInput,
+  type Auth,
+  type ConnectionProvider,
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderConnection,
+  type UpdateConnectionInput,
 } from "@/domains/settings/ai/provider-connections-client";
 import { ProviderCreateForm } from "@/domains/settings/ai/provider-create-form";
 import { ProviderEditorApiKeySection } from "@/domains/settings/ai/provider-editor-api-key-section";
 import {
-    AUTH_TYPE_DISPLAY_NAMES,
-    type AuthType,
-    CONNECTION_PROVIDERS,
-    connectionSaveErrorMessage,
-    parseCredentialRef,
+  AUTH_TYPE_DISPLAY_NAMES,
+  type AuthType,
+  CONNECTION_PROVIDERS,
+  connectionSaveErrorMessage,
+  parseCredentialRef,
 } from "@/domains/settings/ai/provider-editor-constants";
 import { secretPlaceholder } from "@/domains/settings/ai/secret-placeholder";
 import { useLabelKeySync } from "@/domains/settings/ai/use-label-key-sync";
@@ -128,15 +128,21 @@ export function ProviderEditorContent({
     return CONNECTION_PROVIDERS;
   }, [provider]);
 
-  const { handleLabelChange, resetDirty } =
-    useLabelKeySync(effectiveMode, setLabel, setName);
+  const { handleLabelChange, resetDirty } = useLabelKeySync(
+    effectiveMode,
+    setLabel,
+    setName,
+  );
 
   const [apiKeyValue, setApiKeyValue] = useState("");
   const [isSavingKey, setIsSavingKey] = useState(false);
   const queryClient = useQueryClient();
 
   // --- Credential presence (shared hook) ---
-  const parsedCredRef = useMemo(() => parseCredentialRef(credential), [credential]);
+  const parsedCredRef = useMemo(
+    () => parseCredentialRef(credential),
+    [credential],
+  );
   const needsCredentialCheck = authType === "api_key" && parsedCredRef !== null;
 
   const {
@@ -146,7 +152,9 @@ export function ProviderEditorContent({
   } = useStoredCredentialPresence({
     assistantId,
     credentialKind: "credential",
-    credentialName: parsedCredRef ? `${parsedCredRef.service}:${parsedCredRef.field}` : "",
+    credentialName: parsedCredRef
+      ? `${parsedCredRef.service}:${parsedCredRef.field}`
+      : "",
     enabled: needsCredentialCheck,
     errorContext: "settings-provider-editor-credential-presence",
   });
@@ -156,13 +164,11 @@ export function ProviderEditorContent({
   // the only reachable path here is edit / managed-edit — gate purely on auth.
   const needsCredentialsList = authType === "api_key";
 
-  const {
-    credentials: availableCredentials,
-    queryKey: credentialsListKey,
-  } = useProviderCredentialsList({
-    assistantId,
-    enabled: needsCredentialsList,
-  });
+  const { credentials: availableCredentials, queryKey: credentialsListKey } =
+    useProviderCredentialsList({
+      assistantId,
+      enabled: needsCredentialsList,
+    });
 
   // Reset form when connection prop changes (e.g. switching between edit
   // targets). `effectiveMode` doesn't need a sync line here — it's
@@ -254,7 +260,9 @@ export function ProviderEditorContent({
             // Optimistically mark credential as present and invalidate
             // the credentials list so TQ caches stay in sync.
             queryClient.setQueryData(credentialPresenceKey, true);
-            void queryClient.invalidateQueries({ queryKey: credentialsListKey });
+            void queryClient.invalidateQueries({
+              queryKey: credentialsListKey,
+            });
           } catch {
             setError("Failed to save API key. Please try again.");
             return;
@@ -272,7 +280,9 @@ export function ProviderEditorContent({
         } else {
           // OAuth subscription connections are created by the OAuth flow
           // (handleChatgptUrlSubmit), not through Save.
-          setError("Use the \"Sign in with ChatGPT\" button to connect your subscription.");
+          setError(
+            'Use the "Sign in with ChatGPT" button to connect your subscription.',
+          );
           return;
         }
       } else if (authType === "none") {
@@ -299,10 +309,14 @@ export function ProviderEditorContent({
             : null,
         }),
       };
-      const { data: updated, response: updateRes } = await inferenceProviderconnectionsByNamePatch({
-        path: { assistant_id: assistantId, name: connection?.name ?? name.trim() },
-        body: input,
-      });
+      const { data: updated, response: updateRes } =
+        await inferenceProviderconnectionsByNamePatch({
+          path: {
+            assistant_id: assistantId,
+            name: connection?.name ?? name.trim(),
+          },
+          body: input,
+        });
       if (!updateRes?.ok) {
         setError(connectionSaveErrorMessage(updateRes?.status, name.trim()));
         return;
@@ -335,8 +349,7 @@ export function ProviderEditorContent({
   const isEditingApiKeyConnection =
     effectiveMode !== "create" && connection?.auth.type === "api_key";
   const shouldShowAdvancedSection =
-    providerCredentials.length > 0 ||
-    isEditingApiKeyConnection;
+    providerCredentials.length > 0 || isEditingApiKeyConnection;
   const apiKeyPlaceholder = secretPlaceholder(
     "Enter your API key",
     hasStoredCredential,
@@ -370,7 +383,7 @@ export function ProviderEditorContent({
         <Modal.Title>Edit Connection</Modal.Title>
         <Modal.Description>
           {isAuthLocked
-            ? `Managed by Vellum — auth is locked, but you can rename "${connection?.name}".`
+            ? `Managed by Cue Cloud — auth is locked, but you can rename "${connection?.name}".`
             : `Editing "${connection?.name}".`}
         </Modal.Description>
       </Modal.Header>
@@ -513,10 +526,7 @@ export function ProviderEditorContent({
 
         {/* ChatGPT Subscription OAuth — shown when auth type is oauth_subscription */}
         {authType === "oauth_subscription" && (
-          <ChatgptOAuthSection
-            assistantId={assistantId}
-            onConnected={onSave}
-          />
+          <ChatgptOAuthSection assistantId={assistantId} onConnected={onSave} />
         )}
 
         {error && (
