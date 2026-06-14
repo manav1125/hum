@@ -573,6 +573,8 @@ async function generateEmptyStateGreetings(
         `Generate ${GENERATED_GREETING_LIMIT} short first-person greeting options for the empty new-chat screen. ` +
         "Use the assistant identity, voice, and relationship guidance from IDENTITY.md and SOUL.md. " +
         "Each greeting should feel personal and inviting, not like a generic assistant introduction. " +
+        "Never use bracketed placeholders such as [Name], [User], or [Assistant Name]; " +
+        "if a name is unknown, greet warmly without one. " +
         "Return only a JSON array of strings. No markdown, keys, or explanation. " +
         "Generated greetings are cached for 4 hours, so do not mention the current time " +
         "or use explicit time-of-day words like morning, afternoon, evening, or tonight." +
@@ -624,10 +626,39 @@ function parseGeneratedGreetings(text: string): string[] {
       );
     }
   } catch {
-    // Fall through to line parsing for non-JSON model output.
+    // JSON.parse failed — fall through to salvage / line parsing below.
+  }
+
+  // A JSON array the model truncated mid-element at the token/time limit won't
+  // parse. Salvage the COMPLETE quoted strings (dropping any unterminated
+  // trailing one) so the greeting line never shows raw `["...` brackets.
+  if (cleaned.startsWith("[") || cleaned.startsWith("{")) {
+    const salvaged = salvageQuotedStrings(cleaned);
+    if (salvaged.length > 0) {
+      return normalizeGeneratedGreetings(salvaged);
+    }
   }
 
   return normalizeGeneratedGreetings(cleaned.split("\n"));
+}
+
+/**
+ * Extract the complete double-quoted strings from a JSON-ish blob, ignoring an
+ * unterminated trailing one. Recovers greetings from an array the model
+ * truncated before it closed.
+ */
+function salvageQuotedStrings(text: string): string[] {
+  const out: string[] = [];
+  const re = /"((?:[^"\\]|\\.)*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    try {
+      out.push(JSON.parse(`"${match[1]}"`) as string);
+    } catch {
+      out.push(match[1]);
+    }
+  }
+  return out;
 }
 
 function normalizeGeneratedGreetings(values: unknown[]): string[] {
