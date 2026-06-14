@@ -39,10 +39,16 @@ function useHostingOptions(): HostingOption[] {
 
   return [
     {
+      // Internal mode id stays "vellum-cloud" (deferred identifier rename); the
+      // user-facing label is "Cue Cloud". The managed plumbing here is intact
+      // and ready, but its backend is the hosted inference + billing stack from
+      // CUE-INFRA-SPEC, which we stand up in the deploy phase — until then this
+      // option gates itself off (no platform session). BYOK / Local is the
+      // working path today.
       mode: "vellum-cloud",
-      label: "Vellum Cloud",
+      label: "Cue Cloud",
       subtitle:
-        "Always on, 24/7, even when your computer is off. Runs on Vellum's secure infrastructure.",
+        "Always on, 24/7 — even when your computer is off. Managed inference on Cue's cloud.",
       icon: <Cloud className={ICON_CLASS} />,
       ...(cloudDisabled
         ? {
