@@ -6,7 +6,7 @@ import type {
     FeedItemCategory,
     FeedItemStatus,
 } from "@vellumai/assistant-api";
-import { Collapsible, Typography } from "@vellumai/design-library";
+import { ApertureAvatar, Collapsible, Typography } from "@vellumai/design-library";
 import { HomeFeedFilterBar } from "./home-feed-filter-bar";
 import { HomeRecapRow } from "./home-recap-row";
 import type { FeedTimeGroup } from "./utils";
@@ -88,14 +88,31 @@ export function HomeFeedList({
       />
 
       {grouped.size === 0 ? (
-        <Typography
-          variant="body-medium-lighter"
-          className="py-[var(--app-spacing-xl)] text-center text-[var(--content-disabled)]"
-        >
-          {effectiveFilter
-            ? "No items match the selected filter."
-            : "No items to show."}
-        </Typography>
+        effectiveFilter ? (
+          <Typography
+            variant="body-medium-lighter"
+            className="py-[var(--app-spacing-xl)] text-center text-[var(--content-disabled)]"
+          >
+            No items match the selected filter.
+          </Typography>
+        ) : (
+          <div className="flex flex-col items-center gap-[var(--app-spacing-md)] py-[var(--app-spacing-xxxl)] text-center">
+            <ApertureAvatar state="idle" size={56} />
+            <Typography
+              variant="title-small"
+              className="text-[var(--content-default)]"
+            >
+              Nothing needs you
+            </Typography>
+            <Typography
+              variant="body-medium-lighter"
+              className="max-w-[280px] text-[var(--content-tertiary)]"
+            >
+              All caught up. I&apos;ll surface the next move the moment something
+              comes in.
+            </Typography>
+          </div>
+        )
       ) : (
         [...grouped.entries()].map(([group, groupItems]) => (
           <section
