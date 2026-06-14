@@ -67,7 +67,7 @@ export function DevicesPage() {
     <div className="space-y-4">
       <DetailCard
         title="Self-Hosted Assistants"
-        subtitle="Self-hosted assistants registered with your Vellum account. Registration lets these assistants use Vellum managed services — inference, web search, integrations — so that you don't have to bring your own API keys."
+        subtitle="Self-hosted assistants registered with your Cue account. Registration lets these assistants use Cue managed services — inference, web search, integrations — so that you don't have to bring your own API keys."
       >
         {isLoading ? (
           <div className="flex items-center gap-2 text-body-medium-lighter text-[var(--content-tertiary)]">

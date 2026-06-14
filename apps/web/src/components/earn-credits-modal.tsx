@@ -246,7 +246,7 @@ function StatItem({
 function TermsContent({ cap }: { cap: string }) {
   const bullets = [
     "This promotion is available to new users who sign up through your referral link only.",
-    "Rewards are earned once your invitee completes the creation of their Vellum account.",
+    "Rewards are earned once your invitee completes the creation of their Cue account.",
     `You may earn up to ${cap} free credits through the Referral Program. We may change this limit at any time.`,
     "We do not grant credits for disposable or high-risk email accounts.",
     "Each new user can generate only one (1) reward. No stacking or loophole hunting.",
