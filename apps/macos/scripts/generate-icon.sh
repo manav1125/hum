@@ -33,6 +33,22 @@ mkdir -p "$ICONSET_DIR"
 
 trap 'rm -rf "$MASTER_PNG" "$(dirname "$ICONSET_DIR")"' EXIT
 
+# Two render paths:
+#   - If the env provides `Assets/full-icon.svg`, it's a complete, pre-composed
+#     icon (background + multi-color foreground, strokes/circles, etc.) that the
+#     minimal single-filled-path Swift renderer below can't reproduce. Rasterize
+#     it straight to the 1024px master via Quick Look, which renders full SVG.
+#   - Otherwise fall back to the Icon Composer manifest path: a solid `fill`
+#     background composited with a single filled-path foreground glyph.
+FULL_ICON_SVG="$ICON_SOURCE_DIR/Assets/full-icon.svg"
+if [ -f "$FULL_ICON_SVG" ]; then
+    echo "generate-icon: rasterizing full-icon.svg via Quick Look ($VELLUM_ENVIRONMENT)"
+    QL_TMP=$(mktemp -d)
+    qlmanage -t -s 1024 -o "$QL_TMP" "$FULL_ICON_SVG" >/dev/null 2>&1 || true
+    QL_PNG=$(ls "$QL_TMP"/*.png 2>/dev/null | head -1)
+    [ -n "$QL_PNG" ] && cp "$QL_PNG" "$MASTER_PNG"
+    rm -rf "$QL_TMP"
+else
 swift - "$ICON_SOURCE_DIR" "$MASTER_PNG" <<'SWIFT_SCRIPT'
 import CoreGraphics
 import Foundation
@@ -230,6 +246,7 @@ guard let dest = CGImageDestinationCreateWithURL(
 CGImageDestinationAddImage(dest, image, nil)
 guard CGImageDestinationFinalize(dest) else { fatalError("Failed to write PNG") }
 SWIFT_SCRIPT
+fi
 
 if [ ! -f "$MASTER_PNG" ]; then
     echo "generate-icon: failed to render master PNG" >&2
