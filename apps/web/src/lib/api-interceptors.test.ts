@@ -24,16 +24,25 @@ import {
 } from "bun:test";
 
 const isPlatformDisabledMock = mock(() => false);
+const remintGatewayTokenOnceMock = mock(async () => true);
 mock.module("@/lib/local-mode", () => ({
   isLocalMode: () => !process.env.VITE_PLATFORM_MODE,
   isPlatformDisabled: isPlatformDisabledMock,
+  remintGatewayTokenOnce: remintGatewayTokenOnceMock,
+}));
+
+const isGatewayAuthEnabledMock = mock(() => true);
+mock.module("@/lib/auth/gateway-session", () => ({
+  isGatewayAuthEnabled: isGatewayAuthEnabledMock,
 }));
 
 import {
   daemonRequestInterceptor,
+  daemonUnreachableInterceptor,
   platformFeaturesGate,
   requestInterceptor,
 } from "@/lib/api-interceptors";
+import { subscribeAssistantUnreachable } from "@/assistant/unreachable-bus";
 import { setSelfHostedConnection } from "@/lib/self-hosted/connection";
 import { getClientId } from "@/lib/telemetry/client-identity";
 import { __resetForTesting as resetSessionToken } from "@/runtime/session-token";
@@ -50,7 +59,10 @@ function clearCsrfCookie(): void {
   document.cookie = "csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
 }
 
-async function intercept(method: string, url = "https://example.test/v1/probe") {
+async function intercept(
+  method: string,
+  url = "https://example.test/v1/probe",
+) {
   const request = new Request(url, { method });
   const result = await requestInterceptor(request);
   return result.headers;
@@ -112,7 +124,9 @@ describe("api-interceptors / requestInterceptor", () => {
   });
 
   test("returns a new Request, leaving the input headers untouched", async () => {
-    const input = new Request("https://example.test/v1/probe", { method: "POST" });
+    const input = new Request("https://example.test/v1/probe", {
+      method: "POST",
+    });
     expect(input.headers.get("X-Vellum-Client-Id")).toBeNull();
 
     const output = await requestInterceptor(input);
@@ -221,7 +235,9 @@ describe("api-interceptors / self-hosted rewriting", () => {
 
   test("rewrites the URL origin to the configured ingress", async () => {
     setSelfHostedConnection({ url: INGRESS, token: ACTOR_TOKEN });
-    const input = new Request(`https://platform.test${RUNTIME_PROXIED_PATH}?limit=50`);
+    const input = new Request(
+      `https://platform.test${RUNTIME_PROXIED_PATH}?limit=50`,
+    );
     const output = await requestInterceptor(input);
     const outUrl = new URL(output.url);
     expect(outUrl.origin).toBe(INGRESS);
@@ -388,7 +404,11 @@ describe("api-interceptors / daemon client self-hosted rewriting", () => {
 
   test("rewrites daemon paths that are NOT in the platform allowlist", async () => {
     setSelfHostedConnection({ url: INGRESS, token: ACTOR_TOKEN });
-    for (const path of [DAEMON_SKILLS_PATH, DAEMON_PLUGINS_PATH, DAEMON_MEMORY_PATH]) {
+    for (const path of [
+      DAEMON_SKILLS_PATH,
+      DAEMON_PLUGINS_PATH,
+      DAEMON_MEMORY_PATH,
+    ]) {
       const input = new Request(`https://platform.test${path}`);
       const output = await daemonRequestInterceptor(input);
       const outUrl = new URL(output.url);
@@ -487,5 +507,96 @@ describe("api-interceptors / platform features gate", () => {
     const input = new Request("https://platform.test/v1/organizations/");
     const output = platformFeaturesGate(input);
     expect(output.signal.aborted).toBe(false);
+  });
+});
+
+describe("api-interceptors / daemonUnreachableInterceptor 401 self-heal", () => {
+  const GW = "https://gw.test/v1/assistants/a1/conversations";
+  let originalFetch: typeof globalThis.fetch;
+  let fetchMock: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    remintGatewayTokenOnceMock.mockClear();
+    remintGatewayTokenOnceMock.mockImplementation(async () => true);
+    isGatewayAuthEnabledMock.mockClear();
+    isGatewayAuthEnabledMock.mockImplementation(() => true);
+    // Fresh gateway token the retry should attach.
+    setSelfHostedConnection({ url: "https://gw.test", token: "fresh-token" });
+    originalFetch = globalThis.fetch;
+    fetchMock = mock(async () => new Response("ok", { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    setSelfHostedConnection(null);
+  });
+
+  test("502 fires the unreachable bus and passes the response through untouched", async () => {
+    let notified = false;
+    const unsub = subscribeAssistantUnreachable(() => {
+      notified = true;
+    });
+    const res = new Response(null, { status: 502 });
+    const out = await daemonUnreachableInterceptor(res, new Request(GW));
+    unsub();
+    expect(notified).toBe(true);
+    expect(out.status).toBe(502);
+    expect(remintGatewayTokenOnceMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("401 on a GET re-mints once and transparently retries with the fresh token", async () => {
+    const res = new Response(null, { status: 401 });
+    const out = await daemonUnreachableInterceptor(res, new Request(GW));
+    expect(remintGatewayTokenOnceMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const retried = fetchMock.mock.calls[0][0] as Request;
+    expect(retried.headers.get("Authorization")).toBe("Bearer fresh-token");
+    expect(retried.headers.get("X-Cue-Gw-Retry")).toBe("1");
+    expect(out.status).toBe(200);
+  });
+
+  test("does not loop: a request already carrying the retry header falls through", async () => {
+    const req = new Request(GW, { headers: { "X-Cue-Gw-Retry": "1" } });
+    const out = await daemonUnreachableInterceptor(
+      new Response(null, { status: 401 }),
+      req,
+    );
+    expect(remintGatewayTokenOnceMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(out.status).toBe(401);
+  });
+
+  test("when re-mint is skipped/fails, returns the original 401 without retrying", async () => {
+    remintGatewayTokenOnceMock.mockImplementation(async () => false);
+    const out = await daemonUnreachableInterceptor(
+      new Response(null, { status: 401 }),
+      new Request(GW),
+    );
+    expect(remintGatewayTokenOnceMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(out.status).toBe(401);
+  });
+
+  test("non-idempotent methods re-mint but do not retry (body already consumed)", async () => {
+    const req = new Request(GW, { method: "POST", body: "x" });
+    const out = await daemonUnreachableInterceptor(
+      new Response(null, { status: 401 }),
+      req,
+    );
+    expect(remintGatewayTokenOnceMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(out.status).toBe(401);
+  });
+
+  test("outside gateway-auth mode, a 401 is left alone", async () => {
+    isGatewayAuthEnabledMock.mockImplementation(() => false);
+    const out = await daemonUnreachableInterceptor(
+      new Response(null, { status: 401 }),
+      new Request(GW),
+    );
+    expect(remintGatewayTokenOnceMock).not.toHaveBeenCalled();
+    expect(out.status).toBe(401);
   });
 });

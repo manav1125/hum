@@ -8,6 +8,7 @@ import {
   ensureGatewayToken,
   getGatewayToken,
   getLocalTokenUrl,
+  isGatewayAuthEnabled,
 } from "@/lib/auth/gateway-session";
 import { setSelfHostedConnection } from "@/lib/self-hosted/connection";
 import { useLockfileStore } from "@/stores/lockfile-store";
@@ -152,9 +153,14 @@ export function getLockfile(): Lockfile {
  * making it the active assistant. Silently no-ops on a write failure: the
  * cache only advances once the on-disk write succeeds.
  */
-export async function saveLockfileAssistant(
-  assistant: { assistantId: string; name?: string; cloud: string; runtimeUrl: string; hatchedAt: string; organizationId?: string },
-): Promise<void> {
+export async function saveLockfileAssistant(assistant: {
+  assistantId: string;
+  name?: string;
+  cloud: string;
+  runtimeUrl: string;
+  hatchedAt: string;
+  organizationId?: string;
+}): Promise<void> {
   const result = await saveLockfileAssistantHost(
     assistant,
     assistant.assistantId,
@@ -194,7 +200,12 @@ export async function setActiveLockfileAssistant(
  * in `assistants` belongs to that org.
  */
 export async function syncPlatformAssistantsToLockfile(
-  assistants: Array<{ id: string; name?: string; is_local: boolean; created: string }>,
+  assistants: Array<{
+    id: string;
+    name?: string;
+    is_local: boolean;
+    created: string;
+  }>,
   organizationId?: string,
   shouldApply: () => boolean = () => true,
 ): Promise<void> {
@@ -427,4 +438,58 @@ export async function primeLocalGatewayConnectionWithRepair(
     if (!repair.ok) throw error;
     await primeLocalGatewayConnection(target);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Stale-token 401 self-heal
+// ---------------------------------------------------------------------------
+
+let remintInFlight: Promise<boolean> | null = null;
+let lastRemintAt = 0;
+
+/** Min spacing between re-mint attempts — caps churn when the gateway is
+ *  genuinely down (every request 401s) rather than merely rotated. */
+export const REMINT_COOLDOWN_MS = 3_000;
+
+/** @internal Test-only reset of the single-flight / cooldown latches. */
+export function __resetRemintStateForTesting(): void {
+  remintInFlight = null;
+  lastRemintAt = 0;
+}
+
+/**
+ * Re-mint the local gateway token after a stale-token 401 — single-flight
+ * across concurrent callers and rate-limited to once per
+ * {@link REMINT_COOLDOWN_MS}.
+ *
+ * A gateway restart rotates its signing key, which invalidates the cached
+ * gateway token's *signature* while it stays *time*-valid — so `getGatewayToken`
+ * keeps handing back the dead token and every authed request 401s with no
+ * self-heal. This clears the dead token and re-primes the connection (which
+ * re-fetches the guardian token — itself self-healing via relink — and
+ * re-exchanges it for a fresh gateway token). The request interceptor then
+ * reads the refreshed token from the self-hosted connection slot.
+ *
+ * Returns true when a re-mint ran to completion, false when it is skipped
+ * (not in gateway-auth mode, or still cooling down) or fails. Never throws.
+ */
+export function remintGatewayTokenOnce(): Promise<boolean> {
+  if (!isGatewayAuthEnabled()) return Promise.resolve(false);
+  if (remintInFlight) return remintInFlight;
+  if (Date.now() - lastRemintAt < REMINT_COOLDOWN_MS) {
+    return Promise.resolve(false);
+  }
+  remintInFlight = (async () => {
+    clearGatewayToken();
+    try {
+      await primeLocalGatewayConnectionWithRepair();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      lastRemintAt = Date.now();
+      remintInFlight = null;
+    }
+  })();
+  return remintInFlight;
 }

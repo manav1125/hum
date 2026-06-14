@@ -33,10 +33,15 @@ import { client as platformClient } from "@/generated/api/client.gen";
 import { client as authClient } from "@/generated/auth/client.gen";
 import { client as daemonClient } from "@/generated/daemon/client.gen";
 import { ensureCsrfCookie, getCsrfToken } from "@/lib/auth/csrf";
-import { isLocalMode, isPlatformDisabled } from "@/lib/local-mode";
+import { isGatewayAuthEnabled } from "@/lib/auth/gateway-session";
 import {
-    getSelfHostedActorToken,
-    getSelfHostedIngressUrl,
+  isLocalMode,
+  isPlatformDisabled,
+  remintGatewayTokenOnce,
+} from "@/lib/local-mode";
+import {
+  getSelfHostedActorToken,
+  getSelfHostedIngressUrl,
 } from "@/lib/self-hosted/connection";
 import { getClientRegistrationHeaders } from "@/lib/telemetry/client-identity";
 import { getDeviceId } from "@/runtime/device-id";
@@ -68,8 +73,7 @@ function getRendererTupleOrigin(): string {
  */
 const RUNTIME_PROXIED_FIRST_SEGMENTS = new Set<string>(["conversations"]);
 
-const ASSISTANT_PATH_RE =
-  /^\/v1\/assistants\/[^/]+\/([^/?#]+)(?:\/.*)?$/;
+const ASSISTANT_PATH_RE = /^\/v1\/assistants\/[^/]+\/([^/?#]+)(?:\/.*)?$/;
 
 /**
  * Rewrites a request bound for `/v1/assistants/{id}/{runtime-segment}/...`
@@ -144,7 +148,9 @@ export async function rewriteForSelfHostedIngress(
   // the Request carries a finite-length payload. Platform self-hosted
   // uses TLS, so keep the streaming body to avoid buffering large uploads.
   const body = isLocalMode()
-    ? (request.body ? await request.arrayBuffer() : null)
+    ? request.body
+      ? await request.arrayBuffer()
+      : null
     : request.body;
 
   const init: RequestInit = {
@@ -245,17 +251,66 @@ export const daemonRequestInterceptor = createInterceptor({
 });
 
 /**
- * Daemon-only response interceptor — fires the unreachable bus on
- * gateway-class errors. No URL filtering needed because every daemon
- * SDK request targets the assistant runtime by definition. Not
- * installed on platform/auth clients (a 502 from Django is a
+ * Header that marks a request already retried with a freshly minted gateway
+ * token, so a second 401 (the new token is genuinely unauthorized, not just
+ * stale) falls through instead of looping.
+ */
+const GATEWAY_RETRY_HEADER = "X-Cue-Gw-Retry";
+
+/**
+ * Daemon-only response interceptor. Two jobs:
+ *
+ *   1. Fire the unreachable bus on gateway-class errors (502/503/504 — the
+ *      request reached the platform/gateway but not the runtime pod).
+ *
+ *   2. Self-heal a stale-token 401. A gateway restart rotates its signing key,
+ *      which invalidates the cached gateway token's signature while it stays
+ *      time-valid — so nothing re-mints it and every authed request 401s
+ *      ("Failed to load …" everywhere). On the first 401 of a self-hosted
+ *      gateway request we re-mint once (single-flight + cooldown) and, for
+ *      idempotent reads, transparently retry with the fresh token so the
+ *      original query recovers without a visible error. Non-idempotent methods
+ *      (whose body the first fetch already consumed) only re-mint, so the
+ *      *next* request succeeds; the current one surfaces its 401.
+ *
+ * No URL filtering: every daemon SDK request targets the assistant runtime by
+ * definition. Not installed on platform/auth clients (a Django 401/502 is a
  * different failure domain).
  */
-export function daemonUnreachableInterceptor(response: Response): Response {
+export async function daemonUnreachableInterceptor(
+  response: Response,
+  request: Request,
+): Promise<Response> {
   if (UNREACHABLE_STATUS_CODES.has(response.status)) {
     notifyAssistantUnreachable();
+    return response;
   }
-  return response;
+
+  if (
+    response.status !== 401 ||
+    !isGatewayAuthEnabled() ||
+    request.headers.has(GATEWAY_RETRY_HEADER)
+  ) {
+    return response;
+  }
+
+  const reminted = await remintGatewayTokenOnce();
+  if (!reminted) return response;
+
+  const token = getSelfHostedActorToken();
+  const isIdempotent = request.method === "GET" || request.method === "HEAD";
+  if (!token || !isIdempotent) return response;
+
+  const retried = new Request(request, {
+    headers: new Headers(request.headers),
+  });
+  retried.headers.set("Authorization", `Bearer ${token}`);
+  retried.headers.set(GATEWAY_RETRY_HEADER, "1");
+  try {
+    return await fetch(retried);
+  } catch {
+    return response;
+  }
 }
 
 daemonClient.interceptors.request.use(daemonRequestInterceptor);
