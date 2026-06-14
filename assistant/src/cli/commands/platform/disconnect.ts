@@ -8,7 +8,7 @@ export function registerPlatformDisconnectCommand(platform: Command): void {
   platform
     .command("disconnect")
     .description(
-      "Disconnect from the Vellum Platform by removing stored credentials",
+      "Disconnect from the Cue Platform by removing stored credentials",
     )
     .addHelpText(
       "after",
@@ -30,15 +30,17 @@ Examples:
         disconnected: boolean;
         previousBaseUrl: string | null;
       }>("platform_disconnect", {});
-      if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+      if (!r.ok)
+        return exitFromIpcResult(
+          { ok: false, error: r.error, statusCode: r.statusCode },
+          cmd,
+        );
 
       writeOutput(cmd, { ok: true, ...r.result });
 
       if (!shouldOutputJson(cmd)) {
         const prev = r.result?.previousBaseUrl;
-        log.info(
-          `Disconnected from platform${prev ? ` at ${prev}` : ""}`,
-        );
+        log.info(`Disconnected from platform${prev ? ` at ${prev}` : ""}`);
       }
     });
 }

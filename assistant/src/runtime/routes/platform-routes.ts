@@ -377,7 +377,7 @@ export const ROUTES: RouteDefinition[] = [
       requiredScopes: ["settings.write"],
       allowedPrincipalTypes: LOCAL_PRINCIPALS,
     },
-    summary: "Connect to the Vellum Platform",
+    summary: "Connect to the Cue Platform",
     description:
       "Checks existing credentials and emits the show_platform_login signal for connected clients to show a login UI.",
     tags: ["platform"],
@@ -392,7 +392,7 @@ export const ROUTES: RouteDefinition[] = [
       requiredScopes: ["settings.write"],
       allowedPrincipalTypes: LOCAL_PRINCIPALS,
     },
-    summary: "Disconnect from the Vellum Platform",
+    summary: "Disconnect from the Cue Platform",
     description:
       "Deletes stored platform credentials and emits platform_disconnected signal to connected clients.",
     tags: ["platform"],

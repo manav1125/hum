@@ -77,12 +77,12 @@ async function requirePlatformClient(): Promise<VellumPlatformClient> {
   const client = await VellumPlatformClient.create();
   if (!client) {
     throw new BadRequestError(
-      "Not connected to Vellum platform. Run `vellum platform connect` to connect first.",
+      "Not connected to Cue platform. Run `vellum platform connect` to connect first.",
     );
   }
   if (!client.platformAssistantId) {
     throw new BadRequestError(
-      "Connected to Vellum platform but no assistant ID is configured. Ensure the assistant is registered on the platform.",
+      "Connected to Cue platform but no assistant ID is configured. Ensure the assistant is registered on the platform.",
     );
   }
   return client;
@@ -432,7 +432,7 @@ async function handleModeSet({ body = {} }: RouteHandlerArgs) {
     const client = await VellumPlatformClient.create();
     if (!client) {
       throw new BadRequestError(
-        "Not connected to Vellum platform. Run `vellum platform connect` to connect first.",
+        "Not connected to Cue platform. Run `vellum platform connect` to connect first.",
       );
     }
   }
@@ -648,7 +648,7 @@ async function handleToken({ body = {} }: RouteHandlerArgs) {
   if (isManagedMode(b.provider)) {
     throw new BadRequestError(
       "Token retrieval is not supported for platform-managed providers. " +
-        "When a provider is in managed mode, Vellum handles OAuth tokens on your behalf — " +
+        "When a provider is in managed mode, Cue handles OAuth tokens on your behalf — " +
         "they are not exposed directly.\n\n" +
         `To verify your connection is working, run 'assistant oauth ping ${b.provider}'.\n` +
         `To make authenticated requests, use 'assistant oauth request --provider ${b.provider} <url>'.`,

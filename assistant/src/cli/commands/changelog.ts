@@ -419,7 +419,7 @@ export function registerChangelogCommand(program: Command): void {
     name: "changelog",
     transport: "local",
     description:
-      "Show release notes of the Vellum Assistant to see what new capabilities you have!",
+      "Show release notes of the Cue Assistant to see what new capabilities you have!",
     build: (cmd) => {
       cmd.addHelpText(
         "after",

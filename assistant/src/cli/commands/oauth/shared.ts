@@ -32,7 +32,7 @@ export async function requirePlatformConnection(
     writeOutput(cmd, {
       ok: false,
       error:
-        "Not connected to Vellum platform. Run `vellum platform connect` to connect first.",
+        "Not connected to Cue platform. Run `vellum platform connect` to connect first.",
     });
     process.exitCode = 1;
     return false;

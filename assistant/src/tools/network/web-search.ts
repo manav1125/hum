@@ -396,8 +396,7 @@ function errorResult(
  */
 function rawBodyDetail(body: unknown): { message: string } | undefined {
   if (body == null) return undefined;
-  const text =
-    typeof body === "string" ? body : safeStringifyBody(body);
+  const text = typeof body === "string" ? body : safeStringifyBody(body);
   const trimmed = text.trim();
   return trimmed ? { message: trimmed } : undefined;
 }
@@ -602,10 +601,7 @@ async function executeManagedBraveSearch(
   if (!proxyResult.ok) {
     // Keep billing/auth/unavailable mapping as specific copy; route genuine
     // platform 5xx (transport-level failures) to the friendly backend helper.
-    if (
-      proxyResult.kind === "platform-error" &&
-      proxyResult.status >= 500
-    ) {
+    if (proxyResult.kind === "platform-error" && proxyResult.status >= 500) {
       return backendFailureResult(
         query,
         "brave",
@@ -638,7 +634,7 @@ async function executeManagedBraveSearch(
       query,
       "brave",
       startedAt,
-      "Managed Brave Search is not authenticated correctly. This is a Vellum platform configuration issue.",
+      "Managed Brave Search is not authenticated correctly. This is a Cue platform configuration issue.",
     );
   }
 
@@ -669,11 +665,11 @@ function managedSearchProxyErrorMessage(
   result: Exclude<ManagedSearchProxyResult, { ok: true }>,
 ): string {
   if (result.kind === "unavailable") {
-    return `${result.message} Log in to Vellum or switch web search to Your Own mode.`;
+    return `${result.message} Log in to Cue or switch web search to Your Own mode.`;
   }
 
   if (result.kind === "platform-error" && result.status === 402) {
-    return "Managed web search is unavailable because your Vellum account balance is too low. Add funds or switch web search to Your Own mode.";
+    return "Managed web search is unavailable because your Cue account balance is too low. Add funds or switch web search to Your Own mode.";
   }
 
   if (result.kind === "platform-error") {

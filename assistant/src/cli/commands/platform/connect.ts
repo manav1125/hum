@@ -8,7 +8,7 @@ export function registerPlatformConnectCommand(platform: Command): void {
   platform
     .command("connect")
     .description(
-      "Connect this assistant to the Vellum Platform by storing credentials",
+      "Connect this assistant to the Cue Platform by storing credentials",
     )
     .addHelpText(
       "after",
@@ -29,7 +29,11 @@ Examples:
         baseUrl?: string;
         showPlatformLogin?: boolean;
       }>("platform_connect", {});
-      if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+      if (!r.ok)
+        return exitFromIpcResult(
+          { ok: false, error: r.error, statusCode: r.statusCode },
+          cmd,
+        );
 
       writeOutput(cmd, { ok: true, ...r.result });
 

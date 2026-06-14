@@ -34,7 +34,7 @@ export function registerDomainCommand(program: Command): void {
         "after",
         `
 Each assistant can register its own subdomain (e.g. velly.${baseDomain})
-for email and web presence. DNS managed by the Vellum platform.
+for email and web presence. DNS managed by the Cue platform.
 
 Examples:
   $ assistant domain register velly
@@ -64,7 +64,7 @@ Options:
                                (e.g. --email-username hello → hello@velly.${baseDomain})
 
 Registers a subdomain at <subdomain>.${baseDomain}. DNS managed by the
-Vellum platform — no manual DNS changes needed.
+Cue platform — no manual DNS changes needed.
 
 Examples:
   $ assistant domain register velly
@@ -181,9 +181,7 @@ Examples:
 
           const data = r.result!;
           const domains = data.results ?? [];
-          const d = domains.find(
-            (entry) => entry.subdomain === subdomain,
-          );
+          const d = domains.find((entry) => entry.subdomain === subdomain);
 
           if (!d) {
             if (shouldOutputJson(cmd)) {

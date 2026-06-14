@@ -29,14 +29,14 @@ export function registerPlatformCommand(program: Command): void {
   registerCommand(program, {
     name: "platform",
     transport: "ipc",
-    description: "Manage Vellum Platform integration",
+    description: "Manage Cue Platform integration",
     build: (platform) => {
       platform.option("--json", "Machine-readable compact JSON output");
 
       platform.addHelpText(
         "after",
         `
-The platform subsystem manages the connection to Vellum Platform. Use
+The platform subsystem manages the connection to Cue Platform. Use
 'connect', 'status', and 'disconnect' to manage platform credentials.
 Any assistant using the managed LLM proxy can use these commands.
 
@@ -95,7 +95,11 @@ Examples:
             "platform_status",
             {},
           );
-          if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+          if (!r.ok)
+            return exitFromIpcResult(
+              { ok: false, error: r.error, statusCode: r.statusCode },
+              cmd,
+            );
 
           const result = r.result!;
 
@@ -114,7 +118,9 @@ Examples:
             log.info(
               `Callback registration available: ${result.available ? "yes" : "no"}`,
             );
-            log.info(`Organization ID: ${result.organizationId || "(not set)"}`);
+            log.info(
+              `Organization ID: ${result.organizationId || "(not set)"}`,
+            );
             log.info(`User ID: ${result.userId || "(not set)"}`);
             if (result.velayTunnel !== null) {
               const tunnelState = result.velayTunnel.connected
@@ -209,7 +215,11 @@ Examples:
           }>("platform_callback_routes_register", {
             body: { path: opts.path, type: opts.type },
           });
-          if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+          if (!r.ok)
+            return exitFromIpcResult(
+              { ok: false, error: r.error, statusCode: r.statusCode },
+              cmd,
+            );
 
           writeOutput(cmd, { ok: true, ...r.result });
 
@@ -248,7 +258,11 @@ Examples:
               callback_url: string;
             }>;
           }>("platform_callback_routes_list", {});
-          if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+          if (!r.ok)
+            return exitFromIpcResult(
+              { ok: false, error: r.error, statusCode: r.statusCode },
+              cmd,
+            );
 
           const routes = r.result!.routes;
 
