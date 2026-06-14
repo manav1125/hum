@@ -95,6 +95,7 @@ export const routes = {
   plugins: r("/assistant/plugins"),
   plugin: (name: string) => dyn(r("/assistant/plugins"), name),
   skills: r("/assistant/skills"),
+  memory: r("/assistant/memory"),
   workspace: r("/assistant/workspace"),
   library: {
     root: r("/assistant/library"),

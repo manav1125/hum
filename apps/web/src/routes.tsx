@@ -296,6 +296,7 @@ export const routeTree = [
                     { path: "plugins", lazy: { Component: () => import("@/domains/intelligence/plugins-page").then((m) => m.PluginsPage) } },
                     { path: "plugins/:name", lazy: { Component: () => import("@/domains/intelligence/plugin-detail-page").then((m) => m.PluginDetailPage) } },
                     { path: "skills", lazy: { Component: () => import("@/domains/intelligence/skills-page").then((m) => m.SkillsPage) } },
+                    { path: "memory", lazy: { Component: () => import("@/domains/intelligence/memories-page").then((m) => m.MemoriesPage) } },
                     { path: "workspace", lazy: { Component: () => import("@/domains/workspace/workspace-page").then((m) => m.WorkspacePage) } },
                     { path: "contacts", lazy: { Component: () => import("@/contacts-page-route").then((m) => m.ContactsPageRoute) } },
                   ],
