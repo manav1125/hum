@@ -10682,6 +10682,53 @@ paths:
                 required:
                   - backend
                 additionalProperties: false
+  /v1/cuelive/guidance:
+    post:
+      operationId: cuelive_guidance_post
+      summary: Synthesize a next-move hint for the Cue Live overlay
+      description:
+        "Run one ephemeral, tool-free LLM call to suggest the user's next action for the accessibility element
+        under their cursor. Returns { nextMove: null } when no model is configured so the overlay can fall back to its
+        local heuristic."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nextMove:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                required:
+                  - nextMove
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  description: Accessibility role of the element under the cursor
+                label:
+                  description: The element's accessible label
+                  type: string
+                value:
+                  description: The element's value (already redacted for secure fields)
+                  type: string
+                appName:
+                  description: Frontmost application name
+                  type: string
+              required:
+                - role
+              additionalProperties: false
   /v1/debug:
     get:
       operationId: debug_get
