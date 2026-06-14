@@ -121,10 +121,15 @@ if (app.isPackaged) {
     typeof __VELLUM_ENVIRONMENT__ === "string"
       ? __VELLUM_ENVIRONMENT__
       : "production";
-  if (env !== "production") {
-    const base = app.getPath("userData");
-    app.setPath("userData", `${base}-${env}`);
-  }
+  // `app.name` comes from the bundled package.json `name` (`@vellumai/macos`),
+  // which is what surfaces in the menu bar (About/Hide/Quit) and the Logs dir.
+  // Present "Cue" there instead — but capture the existing userData path FIRST
+  // (it's derived from the old name) and restore it after the rename, so a
+  // packaged build never strands the user's settings/tokens. Non-production
+  // builds keep their env-suffixed dir for side-by-side installs.
+  const base = app.getPath("userData");
+  app.setName("Cue");
+  app.setPath("userData", env !== "production" ? `${base}-${env}` : base);
 }
 
 // Single-instance lock: relaunches focus the existing window instead of
