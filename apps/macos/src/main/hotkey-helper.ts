@@ -23,6 +23,8 @@ import {
   type MacHelperState,
 } from "./sidecar/mac-helper";
 
+export type { MacHelperClient };
+
 export type {
   DictationPartialEvent,
   DictationPartialsResult,
@@ -126,6 +128,16 @@ const makeClient = (): MacHelperClient =>
   });
 
 let client = makeClient();
+
+/**
+ * The shared mac-helper IPC client — the single helper process every
+ * main-process service talks to (hotkeys, dictation, permissions, Cue Live).
+ * Exposed so sibling services (e.g. `cue-live-service.ts`) reuse this one
+ * supervised process rather than spawning a second helper. The reference is
+ * stable for the lifetime of the app but is reassigned by `__resetForTesting`,
+ * so callers must fetch it through this accessor rather than capturing it.
+ */
+export const getMacHelperClient = (): MacHelperClient => client;
 
 const fnPushToTalk = async (
   enable: boolean,

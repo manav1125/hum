@@ -46,32 +46,47 @@ export function getGuardianAccessToken(
   try {
     raw = fs.readFileSync(tokenPath, "utf-8");
   } catch {
-    return Promise.resolve({ ok: false, status: 404, error: "Guardian token not found" });
+    return Promise.resolve({
+      ok: false,
+      status: 404,
+      error: "Guardian token not found",
+    });
   }
 
   let data: GuardianTokenData;
   try {
     data = JSON.parse(raw) as GuardianTokenData;
   } catch {
-    return Promise.resolve({ ok: false, status: 500, error: "Malformed guardian token file" });
+    return Promise.resolve({
+      ok: false,
+      status: 500,
+      error: "Malformed guardian token file",
+    });
   }
 
   if (!isAccessTokenExpired(data)) {
     return Promise.resolve({ ok: true, accessToken: data.accessToken });
   }
 
+  // The refresh token outlives the access token, but a gateway restart rotates
+  // the signing key and invalidates both. So: try refresh while the refresh
+  // token is live; on any failure (or an already-expired refresh token),
+  // recover by re-leasing from scratch via the stored bootstrap secret
+  // (`relink`) rather than bricking the connection until the user re-hatches.
   if (isRefreshTokenExpired(data)) {
-    return Promise.resolve({
-      ok: false,
-      status: 401,
-      error: "Guardian token expired — re-run `vellum hatch` or `vellum wake`",
-    });
+    return runTokenSubcommand("relink", assistantId, invocation, env);
   }
 
-  return refreshToken(assistantId, invocation, env);
+  return runTokenSubcommand("refresh", assistantId, invocation, env).then(
+    (refreshed) =>
+      refreshed.ok
+        ? refreshed
+        : runTokenSubcommand("relink", assistantId, invocation, env),
+  );
 }
 
-function refreshToken(
+function runTokenSubcommand(
+  subcommand: "refresh" | "relink",
   assistantId: string,
   invocation: CliInvocation,
   env?: Record<string, string>,
@@ -79,7 +94,7 @@ function refreshToken(
   return new Promise((resolve) => {
     const child = spawn(
       invocation.command,
-      [...invocation.baseArgs, "gateway", "token", "refresh", assistantId],
+      [...invocation.baseArgs, "gateway", "token", subcommand, assistantId],
       { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } },
     );
 
@@ -95,7 +110,11 @@ function refreshToken(
 
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      finish({ ok: false, status: 500, error: "Guardian token refresh timed out" });
+      finish({
+        ok: false,
+        status: 500,
+        error: `Guardian token ${subcommand} timed out`,
+      });
     }, GUARDIAN_TOKEN_REFRESH_TIMEOUT_MS);
 
     child.stdout.on("data", (chunk: Buffer) => {
@@ -111,12 +130,20 @@ function refreshToken(
           finish({ ok: false, status: 500, error: "CLI returned empty token" });
         }
       } else {
-        finish({ ok: false, status: 401, error: "Failed to refresh guardian token" });
+        finish({
+          ok: false,
+          status: 401,
+          error: `Failed to ${subcommand} guardian token`,
+        });
       }
     });
 
     child.on("error", (err) => {
-      finish({ ok: false, status: 500, error: `Failed to spawn CLI: ${err.message}` });
+      finish({
+        ok: false,
+        status: 500,
+        error: `Failed to spawn CLI: ${err.message}`,
+      });
     });
   });
 }

@@ -5,6 +5,8 @@ import {
 import {
   loadGuardianToken,
   refreshGuardianToken,
+  leaseGuardianToken,
+  resetGuardianBootstrap,
 } from "../../lib/guardian-token.js";
 
 function printUsage(): void {
@@ -15,6 +17,9 @@ function printUsage(): void {
   console.log("Subcommands:");
   console.log("  get       Print the current guardian access token");
   console.log("  refresh   Refresh an expired access token and print it");
+  console.log(
+    "  relink    Re-lease the guardian token from scratch and print it",
+  );
 }
 
 export async function gatewayToken(): Promise<void> {
@@ -26,7 +31,11 @@ export async function gatewayToken(): Promise<void> {
     process.exit(0);
   }
 
-  if (subcommand !== "get" && subcommand !== "refresh") {
+  if (
+    subcommand !== "get" &&
+    subcommand !== "refresh" &&
+    subcommand !== "relink"
+  ) {
     console.error(`Unknown subcommand: ${subcommand}`);
     printUsage();
     process.exit(1);
@@ -46,13 +55,12 @@ export async function gatewayToken(): Promise<void> {
   }
   const entry = result.entry;
 
-  const tokenData = loadGuardianToken(entry.assistantId);
-  if (!tokenData) {
-    console.error("No guardian token found for this assistant.");
-    process.exit(1);
-  }
-
   if (subcommand === "get") {
+    const tokenData = loadGuardianToken(entry.assistantId);
+    if (!tokenData) {
+      console.error("No guardian token found for this assistant.");
+      process.exit(1);
+    }
     console.log(tokenData.accessToken);
     return;
   }
@@ -63,11 +71,29 @@ export async function gatewayToken(): Promise<void> {
     process.exit(1);
   }
 
-  const refreshed = await refreshGuardianToken(gatewayUrl, entry.assistantId);
-  if (!refreshed) {
-    console.error("Failed to refresh guardian token.");
-    process.exit(1);
+  if (subcommand === "refresh") {
+    const refreshed = await refreshGuardianToken(gatewayUrl, entry.assistantId);
+    if (!refreshed) {
+      console.error("Failed to refresh guardian token.");
+      process.exit(1);
+    }
+    console.log(refreshed.accessToken);
+    return;
   }
 
-  console.log(refreshed.accessToken);
+  // relink: re-lease the guardian token from scratch using the stored bootstrap
+  // secret. Recovers after a gateway restart invalidates the stored token (the
+  // refresh path then fails). The reset clears any consumed-secret lock so the
+  // single-use secret can claim guardianship again.
+  try {
+    await resetGuardianBootstrap(gatewayUrl, entry.guardianBootstrapSecret);
+  } catch {
+    // Lock may already be clear; the lease below is the real check.
+  }
+  const leased = await leaseGuardianToken(
+    gatewayUrl,
+    entry.assistantId,
+    entry.guardianBootstrapSecret,
+  );
+  console.log(leased.accessToken);
 }

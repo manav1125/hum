@@ -18,6 +18,7 @@ import { resolveAllowedOrigin } from "./app-origin";
 import { writeCliLocator } from "./cli-installer";
 import { provisionCliForWrapper } from "./cli-path-installer";
 import { installCsp } from "./csp";
+import { dispose as disposeCueLive, installCueLive } from "./cue-live-service";
 import { getDeviceId } from "./device-id";
 import { handleSync } from "./ipc";
 import { resolveAppProtocolPath } from "./app-protocol";
@@ -359,6 +360,12 @@ app
     installLoginItem();
     installLoginItemIpc();
     installHotkeyHelper();
+    // Cue Live drives the native overlay companion over the same supervised
+    // helper process that installHotkeyHelper just brought up, so it installs
+    // right after. Gated behind the CUE_LIVE_ENABLED env var (off by default)
+    // and requires macOS Accessibility permission at runtime.
+    installCueLive();
+    app.on("before-quit", disposeCueLive);
     installPermissionsService();
     installAbout();
     installAutoUpdate();
