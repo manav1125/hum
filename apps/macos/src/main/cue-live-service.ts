@@ -111,21 +111,62 @@ const errMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
 /**
+ * Map an AX role to the verb a user would apply to it, so the hint reads as an
+ * action ("Click \"Save\"") rather than a bare label. Covers the common
+ * interactive roles; everything else falls back to a neutral "inspect".
+ */
+const ROLE_ACTIONS: Record<string, string> = {
+  AXButton: "Click",
+  AXMenuButton: "Open menu",
+  AXPopUpButton: "Open menu",
+  AXMenuItem: "Choose",
+  AXLink: "Open",
+  AXCheckBox: "Toggle",
+  AXRadioButton: "Select",
+  AXTextField: "Type into",
+  AXTextArea: "Type into",
+  AXSearchField: "Search in",
+  AXComboBox: "Pick from",
+  AXSlider: "Adjust",
+  AXTab: "Switch to",
+  AXDisclosureTriangle: "Expand",
+};
+
+/**
  * Build the guide-card subtitle from the AX element.
  *
- * Stage 2a uses a simple AX-derived hint (the element's label, falling back to
- * its role). The richer "next move" is a deliberate later stage.
+ * Stage 2b turns the raw AX role/label into an action-oriented hint (the verb
+ * for the role + the element's label, with the current value for fields). This
+ * is a heuristic — no model involved — so it works offline and with any brain.
  *
- * TODO(cue-live-daemon-synthesis): replace this AX-only hint with a real
- * "next move" synthesized by the assistant daemon. This is the seam where a
- * daemon call goes: pass the element context ({ role, label, value, bounds })
- * to the assistant daemon, await the suggested next action, and use that as
- * the card subtitle (and potentially a richer card body). Until that lands,
- * the AX label/role is the hint we surface.
+ * TODO(cue-live-daemon-synthesis): Stage 3 replaces this heuristic with a real
+ * "next move" reasoned by the assistant daemon. The clean implementation:
+ *   1. Daemon: add a route (e.g. `POST /v1/assistants/{id}/cuelive/guidance`)
+ *      to the shared ROUTES array whose handler builds a guidance system prompt
+ *      from { role, label, value, appName } and runs ONE off-conversation LLM
+ *      call via `getConfiguredProvider(...)` + `runBtwSidechain(...)` (the same
+ *      lightweight primitive `home/suggested-prompts.ts` uses), returning
+ *      `{ nextMove }`. Regenerate the spec (`assistant/scripts/generate-openapi.ts`).
+ *   2. Main: call it from here over the loopback gateway, reusing the
+ *      host-proxy's `exchangeForGatewayToken`/guardian auth (no renderer hop).
+ *   3. Fall back to `describeNextMove` below on timeout/error/no-key so the
+ *      overlay never regresses. Verify end-to-end once a real model (BYOK key)
+ *      is driving — Ollama guidance reads as poorly as its chat output.
  */
-const describeNextMove = (element: ReadElementResult): string => {
-  const hint = element.label ?? element.role ?? "this element";
-  return `Next move: ${hint}`;
+export const describeNextMove = (element: ReadElementResult): string => {
+  const label = element.label?.trim();
+  const role = element.role ?? "AXUnknown";
+  const action = ROLE_ACTIONS[role];
+
+  if (action) {
+    return label ? `${action} "${label}"` : action;
+  }
+  // Static text / images: surface the content itself when we have it.
+  if (role === "AXStaticText" && element.value) {
+    return `Text: "${element.value.slice(0, 60)}"`;
+  }
+  if (label) return label;
+  return "Hover an element to inspect it";
 };
 
 /**

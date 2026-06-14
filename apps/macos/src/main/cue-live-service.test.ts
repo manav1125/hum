@@ -68,16 +68,15 @@ Object.defineProperty(process, "resourcesPath", {
   writable: true,
 });
 
-const {
-  __setPlatformForTesting,
-  __resetForTesting: resetHotkeyHelper,
-} = await import("./hotkey-helper");
+const { __setPlatformForTesting, __resetForTesting: resetHotkeyHelper } =
+  await import("./hotkey-helper");
 
 const {
   start,
   stop,
   installCueLive,
   isCueLiveEnabled,
+  describeNextMove,
   __resetForTesting,
 } = await import("./cue-live-service");
 
@@ -86,10 +85,7 @@ const wait = (ms: number) =>
 
 /** Emit a JSON-RPC frame from the helper to the main-process client. */
 const emit = (frame: unknown) => {
-  lastChild?.stdout.emit(
-    "data",
-    Buffer.from(`${JSON.stringify(frame)}\n`),
-  );
+  lastChild?.stdout.emit("data", Buffer.from(`${JSON.stringify(frame)}\n`));
 };
 
 /** The id the client assigned to the Nth request it wrote (1-based). */
@@ -221,7 +217,7 @@ describe("summon → read → show orchestration", () => {
     expect(card).toBeDefined();
     expect(card?.params).toEqual({
       title: "Cue",
-      subtitle: "Next move: Send",
+      subtitle: 'Click "Send"',
       x: 10,
       y: 20,
     });
@@ -273,5 +269,49 @@ describe("stop", () => {
     });
     await wait(0);
     expect(lastChild?.stdin.writes.length).toBe(writesAfterStop);
+  });
+});
+
+describe("describeNextMove (Stage 2b action hints)", () => {
+  test("maps interactive roles to an action verb + label", () => {
+    expect(
+      describeNextMove({ found: true, role: "AXButton", label: "Save" }),
+    ).toBe('Click "Save"');
+    expect(
+      describeNextMove({ found: true, role: "AXLink", label: "Docs" }),
+    ).toBe('Open "Docs"');
+    expect(
+      describeNextMove({ found: true, role: "AXTextField", label: "Email" }),
+    ).toBe('Type into "Email"');
+    expect(
+      describeNextMove({
+        found: true,
+        role: "AXCheckBox",
+        label: "Remember me",
+      }),
+    ).toBe('Toggle "Remember me"');
+  });
+
+  test("uses the action alone when an interactive element has no label", () => {
+    expect(describeNextMove({ found: true, role: "AXButton" })).toBe("Click");
+  });
+
+  test("surfaces static text content", () => {
+    expect(
+      describeNextMove({
+        found: true,
+        role: "AXStaticText",
+        value: "Welcome back",
+      }),
+    ).toBe('Text: "Welcome back"');
+  });
+
+  test("falls back to the label, then a neutral prompt, for unknown roles", () => {
+    expect(
+      describeNextMove({ found: true, role: "AXGroup", label: "Sidebar" }),
+    ).toBe("Sidebar");
+    expect(describeNextMove({ found: true, role: "AXUnknown" })).toBe(
+      "Hover an element to inspect it",
+    );
   });
 });
