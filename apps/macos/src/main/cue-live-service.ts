@@ -88,6 +88,24 @@ let started = false;
 let unsubscribeSummoned: (() => void) | null = null;
 let unsubscribeTrusted: (() => void) | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
+// Bumped on every summon so a slow daemon guidance response from a previous
+// summon can't overwrite the card for a newer one.
+let summonGeneration = 0;
+
+/** Daemon route (relative to /v1/assistants/{id}) for synthesized guidance. */
+const CUE_LIVE_GUIDANCE_PATH = "/cuelive/guidance";
+
+/**
+ * Injected (by `index.ts`) authenticated POST to the local daemon. Kept as a
+ * setter rather than a direct import so this module doesn't pull in the
+ * host-proxy router (and its native/local-mode deps) — important for unit
+ * tests, which inject a fake. Null until wired / outside the desktop app.
+ */
+type GuidanceFetcher = (path: string, body: unknown) => Promise<unknown>;
+let guidanceFetcher: GuidanceFetcher | null = null;
+export const setGuidanceFetcher = (fetcher: GuidanceFetcher | null): void => {
+  guidanceFetcher = fetcher;
+};
 
 const clearHideTimer = (): void => {
   if (hideTimer) {
@@ -137,21 +155,11 @@ const ROLE_ACTIONS: Record<string, string> = {
  *
  * Stage 2b turns the raw AX role/label into an action-oriented hint (the verb
  * for the role + the element's label, with the current value for fields). This
- * is a heuristic — no model involved — so it works offline and with any brain.
- *
- * TODO(cue-live-daemon-synthesis): Stage 3 replaces this heuristic with a real
- * "next move" reasoned by the assistant daemon. The clean implementation:
- *   1. Daemon: add a route (e.g. `POST /v1/assistants/{id}/cuelive/guidance`)
- *      to the shared ROUTES array whose handler builds a guidance system prompt
- *      from { role, label, value, appName } and runs ONE off-conversation LLM
- *      call via `getConfiguredProvider(...)` + `runBtwSidechain(...)` (the same
- *      lightweight primitive `home/suggested-prompts.ts` uses), returning
- *      `{ nextMove }`. Regenerate the spec (`assistant/scripts/generate-openapi.ts`).
- *   2. Main: call it from here over the loopback gateway, reusing the
- *      host-proxy's `exchangeForGatewayToken`/guardian auth (no renderer hop).
- *   3. Fall back to `describeNextMove` below on timeout/error/no-key so the
- *      overlay never regresses. Verify end-to-end once a real model (BYOK key)
- *      is driving — Ollama guidance reads as poorly as its chat output.
+ * is a heuristic — no model involved — so it works offline and with any brain,
+ * and it's what the card shows INSTANTLY on summon. Stage 3 ({@link
+ * requestGuidance}) then asks the daemon to reason a richer "next move" and
+ * upgrades the card when it arrives; this heuristic is the guaranteed fallback
+ * when there's no model / the call times out / errors.
  */
 export const describeNextMove = (element: ReadElementResult): string => {
   const label = element.label?.trim();
@@ -169,6 +177,34 @@ export const describeNextMove = (element: ReadElementResult): string => {
   return "Hover an element to inspect it";
 };
 
+/** Daemon `cuelive/guidance` response shape. */
+const GUIDANCE_SCHEMA = z.object({ nextMove: z.string().nullable() });
+
+/**
+ * Ask the assistant daemon to synthesize a contextual "next move" for the
+ * element under the cursor (Stage 3). Best-effort: returns null when there is
+ * no local assistant, no configured model, or the call fails/times out — the
+ * caller keeps the instant heuristic in that case.
+ */
+const requestGuidance = async (
+  element: ReadElementResult,
+): Promise<string | null> => {
+  if (!guidanceFetcher) return null;
+  try {
+    const result = await guidanceFetcher(CUE_LIVE_GUIDANCE_PATH, {
+      role: element.role ?? "AXUnknown",
+      label: element.label,
+      value: element.value,
+    });
+    const parsed = GUIDANCE_SCHEMA.safeParse(result);
+    if (!parsed.success) return null;
+    return parsed.data.nextMove?.trim() || null;
+  } catch (err) {
+    log.warn(`[cue-live] guidance request failed: ${errMessage(err)}`);
+    return null;
+  }
+};
+
 /**
  * On summon: read the element under the cursor, and if found, ring it and show
  * the Cue guide card next to it. Best-effort throughout — a missing element or
@@ -181,6 +217,7 @@ const handleSummon = async (
   // Each summon resets the linger window; a fresh summon should not be hidden
   // by a timer armed for a previous one.
   clearHideTimer();
+  const gen = ++summonGeneration;
 
   let element: ReadElementResult;
   try {
@@ -225,14 +262,19 @@ const handleSummon = async (
     }
   }
 
-  // Show the guide card near the cursor. Anchor to the element's top-left when
-  // available, otherwise fall back to the summon cursor position.
+  // Anchor the card to the element's top-left when available, otherwise the
+  // summon cursor position.
+  const cardX = element.x ?? cursor.x;
+  const cardY = element.y ?? cursor.y;
+
+  // Show the instant heuristic card immediately (Stage 2b) so there's never a
+  // wait for the overlay to appear.
   try {
     await client.call(CUE_LIVE_SHOW_CARD, {
       title: "Cue",
       subtitle: describeNextMove(element),
-      x: element.x ?? cursor.x,
-      y: element.y ?? cursor.y,
+      x: cardX,
+      y: cardY,
     });
   } catch (err) {
     log.warn(`[cue-live] showCard failed: ${errMessage(err)}`);
@@ -240,6 +282,24 @@ const handleSummon = async (
 
   // Auto-dismiss after the linger window if no further summon arrives.
   scheduleHide(client);
+
+  // Stage 3: upgrade the card with the daemon-synthesized "next move" when it
+  // lands — unless a newer summon has superseded this one, or it came back
+  // empty (no model / error), in which case the heuristic card stands.
+  void requestGuidance(element).then((nextMove) => {
+    if (!nextMove || gen !== summonGeneration) return;
+    client
+      .call(CUE_LIVE_SHOW_CARD, {
+        title: "Cue",
+        subtitle: nextMove,
+        x: cardX,
+        y: cardY,
+      })
+      .then(() => scheduleHide(client))
+      .catch((err: unknown) => {
+        log.warn(`[cue-live] guidance card update failed: ${errMessage(err)}`);
+      });
+  });
 };
 
 /**

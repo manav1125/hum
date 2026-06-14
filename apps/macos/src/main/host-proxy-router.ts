@@ -74,10 +74,19 @@ export function removeExecutor(kind: string): void {
 // Message dispatch
 // ---------------------------------------------------------------------------
 
-const EXECUTOR_KINDS = ["host_bash", "host_file", "host_transfer", "host_browser", "host_cu", "host_app_control"] as const;
+const EXECUTOR_KINDS = [
+  "host_bash",
+  "host_file",
+  "host_transfer",
+  "host_browser",
+  "host_cu",
+  "host_app_control",
+] as const;
 
 /** Route type → executor kind. Returns null for unknown types. */
-function executorKindForType(type: string): { kind: string; action: "request" | "cancel" } | null {
+function executorKindForType(
+  type: string,
+): { kind: string; action: "request" | "cancel" } | null {
   for (const kind of EXECUTOR_KINDS) {
     if (type === `${kind}_request`) return { kind, action: "request" };
     if (type === `${kind}_cancel`) return { kind, action: "cancel" };
@@ -85,7 +94,10 @@ function executorKindForType(type: string): { kind: string; action: "request" | 
   return null;
 }
 
-function dispatchMessage(message: HostProxySseMessage, poster: HostProxyPoster): void {
+function dispatchMessage(
+  message: HostProxySseMessage,
+  poster: HostProxyPoster,
+): void {
   const { type } = message;
   const route = executorKindForType(type);
   if (!route) {
@@ -107,7 +119,10 @@ function dispatchMessage(message: HostProxySseMessage, poster: HostProxyPoster):
   // No executor registered — post an error result so the daemon doesn't hang.
   const requestId = message.requestId as string | undefined;
   if (!requestId) {
-    log.warn("[host-proxy-router] message missing requestId, cannot post stub error", { type });
+    log.warn(
+      "[host-proxy-router] message missing requestId, cannot post stub error",
+      { type },
+    );
     return;
   }
 
@@ -181,7 +196,9 @@ async function exchangeForGatewayToken(
       },
     });
     if (!res.ok) {
-      log.warn("[host-proxy-router] gateway token exchange failed", { status: res.status });
+      log.warn("[host-proxy-router] gateway token exchange failed", {
+        status: res.status,
+      });
       return null;
     }
     const body = (await res.json()) as { token: string; expiresAt: number };
@@ -204,7 +221,10 @@ async function acquireGatewayToken(
   try {
     invocation = await resolveCliInvocation();
   } catch (err) {
-    log.error("[host-proxy-router] failed to resolve CLI invocation", { assistantId, err });
+    log.error("[host-proxy-router] failed to resolve CLI invocation", {
+      assistantId,
+      err,
+    });
     return null;
   }
 
@@ -223,7 +243,10 @@ async function acquireGatewayToken(
     return null;
   }
 
-  const exchanged = await exchangeForGatewayToken(gatewayPort, tokenResult.accessToken);
+  const exchanged = await exchangeForGatewayToken(
+    gatewayPort,
+    tokenResult.accessToken,
+  );
   if (!exchanged) return null;
 
   return exchanged.token;
@@ -233,9 +256,118 @@ async function acquireGatewayToken(
 // reconnect. Single-sourced here so the value set on connect and the value
 // recomputed in `handleLockfileChange` can never drift (a mismatch would loop
 // connect/disconnect forever).
-const localFingerprint = (gatewayPort: number): string => `local:${gatewayPort}`;
-const cloudFingerprint = (runtimeUrl: string, organizationId?: string): string =>
-  `cloud:${runtimeUrl}:${organizationId ?? ""}`;
+const localFingerprint = (gatewayPort: number): string =>
+  `local:${gatewayPort}`;
+const cloudFingerprint = (
+  runtimeUrl: string,
+  organizationId?: string,
+): string => `cloud:${runtimeUrl}:${organizationId ?? ""}`;
+
+// ---------------------------------------------------------------------------
+// Authenticated daemon requests (for main-process features like Cue Live)
+// ---------------------------------------------------------------------------
+
+let cachedGatewayToken: {
+  key: string;
+  token: string;
+  fetchedAt: number;
+} | null = null;
+const GATEWAY_TOKEN_TTL_MS = 4 * 60 * 1000;
+
+async function getCachedGatewayToken(
+  assistantId: string,
+  gatewayPort: number,
+  forceFresh = false,
+): Promise<string | null> {
+  const key = `${assistantId}:${gatewayPort}`;
+  if (
+    !forceFresh &&
+    cachedGatewayToken &&
+    cachedGatewayToken.key === key &&
+    Date.now() - cachedGatewayToken.fetchedAt < GATEWAY_TOKEN_TTL_MS
+  ) {
+    return cachedGatewayToken.token;
+  }
+  const token = await acquireGatewayToken(assistantId, gatewayPort);
+  cachedGatewayToken = token ? { key, token, fetchedAt: Date.now() } : null;
+  return token;
+}
+
+/** The connected local assistant (id + gateway port), if any. */
+function activeLocalConnection(): {
+  assistantId: string;
+  gatewayPort: number;
+} | null {
+  for (const [assistantId, conn] of connections) {
+    const match = /^local:(\d+)$/.exec(conn.fingerprint);
+    if (match) return { assistantId, gatewayPort: Number(match[1]) };
+  }
+  return null;
+}
+
+/**
+ * POST to a route on the connected local daemon, authenticated with the same
+ * guardian→gateway token exchange the SSE/poster connection uses (short-lived
+ * token cache + a single 401 re-mint). Returns the parsed JSON body, or null
+ * when there is no local assistant, auth fails, or the request errors — callers
+ * treat it as best-effort.
+ */
+export async function requestLocalDaemon<T = unknown>(
+  routePath: string,
+  body: unknown,
+  timeoutMs = 9_000,
+): Promise<T | null> {
+  const target = activeLocalConnection();
+  if (!target) return null;
+  const url = `http://127.0.0.1:${target.gatewayPort}/v1/assistants/${encodeURIComponent(
+    target.assistantId,
+  )}${routePath}`;
+  const origin = `http://127.0.0.1:${target.gatewayPort}`;
+
+  const attempt = async (token: string): Promise<Response | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Origin: origin,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let token = await getCachedGatewayToken(
+    target.assistantId,
+    target.gatewayPort,
+  );
+  if (!token) return null;
+  let res = await attempt(token);
+  if (res && res.status === 401) {
+    // Stale gateway token → re-mint once and retry.
+    token = await getCachedGatewayToken(
+      target.assistantId,
+      target.gatewayPort,
+      true,
+    );
+    if (!token) return null;
+    res = await attempt(token);
+  }
+  if (!res || !res.ok) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
 // -- Local assistant connection ---------------------------------------------
 
@@ -247,7 +379,10 @@ async function connectLocalAssistant(
 
   const gatewayToken = await acquireGatewayToken(assistantId, gatewayPort);
   if (!gatewayToken) {
-    log.warn("[host-proxy-router] could not acquire gateway token, skipping connection", { assistantId });
+    log.warn(
+      "[host-proxy-router] could not acquire gateway token, skipping connection",
+      { assistantId },
+    );
     return;
   }
 
@@ -263,14 +398,25 @@ async function connectLocalAssistant(
   const eventsUrl = `http://127.0.0.1:${gatewayPort}/v1/events`;
   const endpointBase = `http://127.0.0.1:${gatewayPort}/v1`;
 
-  const sse = new HostProxySseClient({ eventsUrl, authHeaders, onRefreshToken });
+  const sse = new HostProxySseClient({
+    eventsUrl,
+    authHeaders,
+    onRefreshToken,
+  });
   const poster = new HostProxyPoster({ endpointBase, authHeaders });
 
   sse.setMessageCallback((msg) => dispatchMessage(msg, poster));
   sse.connect();
 
-  connections.set(assistantId, { sse, poster, fingerprint: localFingerprint(gatewayPort) });
-  log.info("[host-proxy-router] connected to local assistant", { assistantId, gatewayPort });
+  connections.set(assistantId, {
+    sse,
+    poster,
+    fingerprint: localFingerprint(gatewayPort),
+  });
+  log.info("[host-proxy-router] connected to local assistant", {
+    assistantId,
+    gatewayPort,
+  });
 }
 
 // -- Cloud assistant connection ---------------------------------------------
@@ -284,7 +430,10 @@ function connectCloudAssistant(
 
   const sessionToken = getSessionToken();
   if (!sessionToken) {
-    log.warn("[host-proxy-router] no session token, skipping cloud connection", { assistantId });
+    log.warn(
+      "[host-proxy-router] no session token, skipping cloud connection",
+      { assistantId },
+    );
     return;
   }
 
@@ -312,7 +461,11 @@ function connectCloudAssistant(
     poster,
     fingerprint: cloudFingerprint(runtimeUrl, organizationId),
   });
-  log.info("[host-proxy-router] connected to cloud assistant", { assistantId, runtimeUrl, organizationId });
+  log.info("[host-proxy-router] connected to cloud assistant", {
+    assistantId,
+    runtimeUrl,
+    organizationId,
+  });
 }
 
 // -- Disconnect -------------------------------------------------------------
@@ -334,7 +487,8 @@ function handleLockfileChange(lockfile: Lockfile): void {
 
   for (const assistant of lockfile.assistants) {
     const port = assistant.resources?.gatewayPort;
-    const isCloud = !port && assistant.cloud === "vellum" && assistant.runtimeUrl;
+    const isCloud =
+      !port && assistant.cloud === "vellum" && assistant.runtimeUrl;
     if (!port && !isCloud) continue;
 
     activeIds.add(assistant.assistantId);

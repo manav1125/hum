@@ -63,6 +63,10 @@ mock.module("./logger", () => ({
   },
 }));
 
+// The guidance fetcher is dependency-injected (no host-proxy import), so tests
+// drive Stage 3 guidance by setting this fake via setGuidanceFetcher.
+const requestLocalDaemonMock = mock(async (): Promise<unknown> => null);
+
 Object.defineProperty(process, "resourcesPath", {
   value: "/mock/resources",
   writable: true,
@@ -77,6 +81,7 @@ const {
   installCueLive,
   isCueLiveEnabled,
   describeNextMove,
+  setGuidanceFetcher,
   __resetForTesting,
 } = await import("./cue-live-service");
 
@@ -112,6 +117,13 @@ beforeEach(() => {
   lastChild = null;
   exists = true;
   delete process.env.CUE_LIVE_ENABLED;
+  requestLocalDaemonMock.mockClear();
+  requestLocalDaemonMock.mockImplementation(async () => null);
+  setGuidanceFetcher(requestLocalDaemonMock);
+});
+
+afterEach(() => {
+  setGuidanceFetcher(null);
 });
 
 afterEach(() => {
@@ -313,5 +325,72 @@ describe("describeNextMove (Stage 2b action hints)", () => {
     expect(describeNextMove({ found: true, role: "AXUnknown" })).toBe(
       "Hover an element to inspect it",
     );
+  });
+});
+
+describe("Stage 3 daemon guidance upgrade", () => {
+  const allCards = () =>
+    (lastChild?.stdin.writes ?? [])
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .filter((f) => f.method === "cuelive.showCard");
+
+  // Drive a summon through read → highlight → heuristic card, answering each
+  // RPC so handleSummon proceeds to request daemon guidance.
+  async function summonThroughHeuristicCard() {
+    void start();
+    await wait(0);
+    emit({ jsonrpc: "2.0", id: requestIdAt(0), result: { enabled: true } });
+    await wait(0);
+    const before = lastChild?.stdin.writes.length ?? 0;
+    emit({
+      jsonrpc: "2.0",
+      method: "cuelive.summoned",
+      params: { x: 100, y: 200 },
+    });
+    await wait(0);
+    emit({
+      jsonrpc: "2.0",
+      id: requestIdAt(before),
+      result: {
+        found: true,
+        role: "AXButton",
+        label: "New",
+        x: 10,
+        y: 20,
+        width: 80,
+        height: 30,
+      },
+    });
+    await wait(0);
+    const highlight = writeFor("cuelive.highlight");
+    emit({ jsonrpc: "2.0", id: (highlight as { id: number }).id, result: {} });
+    await wait(0);
+    // Answer the heuristic showCard so handleSummon proceeds past its await.
+    const card = allCards()[0];
+    expect(card.params).toMatchObject({ subtitle: 'Click "New"' });
+    emit({ jsonrpc: "2.0", id: (card as { id: number }).id, result: {} });
+    await wait(0);
+    await wait(0);
+  }
+
+  test("upgrades the card with the synthesized next move", async () => {
+    requestLocalDaemonMock.mockImplementation(async () => ({
+      nextMove: "Compose a new email",
+    }));
+    await summonThroughHeuristicCard();
+
+    const cards = allCards();
+    expect(cards.length).toBe(2);
+    expect(cards[1].params).toMatchObject({ subtitle: "Compose a new email" });
+    expect(requestLocalDaemonMock).toHaveBeenCalledWith(
+      "/cuelive/guidance",
+      expect.objectContaining({ role: "AXButton", label: "New" }),
+    );
+  });
+
+  test("keeps the heuristic card when guidance returns null (no model/error)", async () => {
+    requestLocalDaemonMock.mockImplementation(async () => null);
+    await summonThroughHeuristicCard();
+    expect(allCards().length).toBe(1);
   });
 });

@@ -13,12 +13,21 @@ import {
 
 import { installAbout, openAboutWindow } from "./about";
 import { installAutoUpdate } from "./auto-update";
-import { APP_HOST, APP_PROTOCOL, BUNDLES_DIR_NAME, VELLUMAPP_PROTOCOL } from "./app-config";
+import {
+  APP_HOST,
+  APP_PROTOCOL,
+  BUNDLES_DIR_NAME,
+  VELLUMAPP_PROTOCOL,
+} from "./app-config";
 import { resolveAllowedOrigin } from "./app-origin";
 import { writeCliLocator } from "./cli-installer";
 import { provisionCliForWrapper } from "./cli-path-installer";
 import { installCsp } from "./csp";
-import { dispose as disposeCueLive, installCueLive } from "./cue-live-service";
+import {
+  dispose as disposeCueLive,
+  installCueLive,
+  setGuidanceFetcher,
+} from "./cue-live-service";
 import { getDeviceId } from "./device-id";
 import { handleSync } from "./ipc";
 import { resolveAppProtocolPath } from "./app-protocol";
@@ -39,10 +48,7 @@ import { installAvatarIpc } from "./avatar";
 import { installCommandPaletteWindow } from "./command-palette-window";
 import { installDictationOverlay } from "./dictation-overlay-window";
 import { installDock } from "./dock";
-import {
-  installEscapeMonitor,
-  setDictationRecording,
-} from "./escape-monitor";
+import { installEscapeMonitor, setDictationRecording } from "./escape-monitor";
 import { installFeatureFlagsIpc } from "./feature-flags";
 import { installFeedbackIpc } from "./feedback";
 import { installGlobalShortcuts } from "./global-shortcuts";
@@ -53,7 +59,10 @@ import { installQuickInput } from "./quick-input-window";
 import { installLocalMode, resolveCliInvocation } from "./local-mode";
 import { installLoginItem, installLoginItemIpc } from "./login-item";
 import { installLockfileWatcher } from "./lockfile-watcher";
-import { installHostProxyBridge } from "./host-proxy-router";
+import {
+  installHostProxyBridge,
+  requestLocalDaemon,
+} from "./host-proxy-router";
 import "./executors/host-bash-executor"; // side-effect: registers host_bash executor
 import log from "./logger";
 import {
@@ -196,7 +205,10 @@ const registerAppProtocol = (): void => {
     // secure renderer never touches an insecure `http://127.0.0.1` origin
     // directly; the lockfile allowlist is the security boundary. Mirrors the
     // Vite dev-server proxy (`apps/web/vite-plugin-local-mode.ts`).
-    const proxied = await forwardGatewayRequest(request, getAllowedGatewayPorts);
+    const proxied = await forwardGatewayRequest(
+      request,
+      getAllowedGatewayPorts,
+    );
     if (proxied) return proxied;
 
     // Platform API routes (`/v1/*`, `/_allauth/*`, `/accounts/*`) forward to
@@ -352,7 +364,9 @@ app
       // version bump rewrites the locator now (and prunes old versions)
       // rather than after the next in-app CLI action.
       void provisionCliForWrapper()
-        .then((provisioned) => (provisioned ? refreshCliPathMenuState() : undefined))
+        .then((provisioned) =>
+          provisioned ? refreshCliPathMenuState() : undefined,
+        )
         .catch((err: unknown) => {
           log.error("[app] startup CLI provisioning failed:", err);
         });
@@ -364,6 +378,9 @@ app
     // helper process that installHotkeyHelper just brought up, so it installs
     // right after. Gated behind the CUE_LIVE_ENABLED env var (off by default)
     // and requires macOS Accessibility permission at runtime.
+    // Wire Stage 3 guidance: the overlay asks the local daemon for a
+    // synthesized "next move" through the host-proxy's authenticated channel.
+    setGuidanceFetcher((path, body) => requestLocalDaemon(path, body));
     installCueLive();
     app.on("before-quit", disposeCueLive);
     installPermissionsService();
