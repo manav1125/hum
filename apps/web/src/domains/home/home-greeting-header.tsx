@@ -25,6 +25,16 @@ function clientComputeGreeting(now: Date): string {
   return "Welcome back";
 }
 
+/** DM Mono date eyebrow above the greeting, e.g. "Saturday · 14 June". */
+function formatDateEyebrow(now: Date): string {
+  const weekday = now.toLocaleDateString(undefined, { weekday: "long" });
+  const date = now.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "long",
+  });
+  return `${weekday} · ${date}`;
+}
+
 export function HomeGreetingHeader({
   avatarComponents,
   avatarTraits,
@@ -42,9 +52,14 @@ export function HomeGreetingHeader({
           customImageUrl={avatarImageUrl}
           size={36}
         />
-        <Typography variant="title-large" as="h1" className="truncate">
-          {greeting || clientComputeGreeting(new Date())}
-        </Typography>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-mono text-label-medium-default uppercase tracking-[0.08em] text-[color:var(--content-tertiary)]">
+            {formatDateEyebrow(new Date())}
+          </span>
+          <Typography variant="title-large" as="h1" className="truncate">
+            {greeting || clientComputeGreeting(new Date())}
+          </Typography>
+        </div>
       </div>
 
       {isMobile ? (
