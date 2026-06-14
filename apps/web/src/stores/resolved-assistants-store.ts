@@ -104,6 +104,7 @@ const useResolvedAssistantsStoreBase = create<ResolvedAssistantsStore>(
     assistantsHydrated: false,
 
     setFromLockfile: (lockfile) => {
+      const wasHydrated = get().assistantsHydrated;
       const assistants = lockfile.assistants.map((a) => ({
         id: a.assistantId,
         name: a.name,
@@ -118,6 +119,22 @@ const useResolvedAssistantsStoreBase = create<ResolvedAssistantsStore>(
       // `setFromApi` deliberately does NOT reconcile; a cross-org selection
       // there is filtered out on read, not deleted.)
       reconcileSelection(get, set);
+      // First lockfile load in local mode: a selection persisted from a prior
+      // session can point at a local assistant that is still *present* in the
+      // lockfile but is no longer its `activeAssistant` — e.g. a newer
+      // assistant was hatched/activated via onboarding or the CLI while the old
+      // id sat stale in localStorage. `reconcileSelection` only prunes ghosts
+      // (ids absent from the list), so it leaves this present-but-superseded id
+      // in place, and the lifecycle then tries to connect to a gateway that may
+      // no longer be running and hangs on "Connecting to your assistant…".
+      // The lockfile `activeAssistant` is the machine-level source of truth for
+      // local mode (tray, CLI, and native client all agree on it), so defer to
+      // it on hydration. Only at hydration: later in-app selections keep the
+      // two in sync via `setSelectedAssistant`, and must not be clobbered by a
+      // background lockfile refresh that lands mid-switch.
+      if (!wasHydrated && isLocalMode()) {
+        adoptActiveAssistantOnDivergence(get, set, lockfile.activeAssistant);
+      }
     },
 
     // The platform `Assistant` API carries no org field, so API-sourced
@@ -209,6 +226,28 @@ function reconcileSelection(
   if (assistants.some((a) => a.id === selectedAssistantId)) return;
   clearSelectedAssistantId();
   set({ selectedAssistantId: null });
+}
+
+/**
+ * Local mode, hydration only: when a persisted selection diverges from the
+ * lockfile's `activeAssistant`, adopt the active one. The active id is only
+ * trusted when it is present in the resolved list (a dangling `activeAssistant`
+ * is ignored, leaving the existing selection / fallback chain to resolve). This
+ * mirrors the selection into the same localStorage key `getSelectedAssistant`
+ * reads, so the connect flow targets the live gateway instead of a stale —
+ * possibly stopped — one.
+ */
+function adoptActiveAssistantOnDivergence(
+  get: () => ResolvedAssistantsStore,
+  set: (partial: Partial<ResolvedAssistantsState>) => void,
+  activeAssistantId: string | null,
+): void {
+  if (activeAssistantId == null) return;
+  const { assistants, selectedAssistantId } = get();
+  if (selectedAssistantId === activeAssistantId) return;
+  if (!assistants.some((a) => a.id === activeAssistantId)) return;
+  writeSelectedAssistantId(activeAssistantId);
+  set({ selectedAssistantId: activeAssistantId });
 }
 
 export const useResolvedAssistantsStore = createSelectors(

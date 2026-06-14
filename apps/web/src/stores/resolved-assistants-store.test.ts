@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import {
   assistantsValidForOrg,
@@ -161,7 +161,9 @@ describe("setSelectedAssistant", () => {
     expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBe("asst-1");
 
     useResolvedAssistantsStore.getState().setSelectedAssistant(null);
-    expect(useResolvedAssistantsStore.getState().selectedAssistantId).toBeNull();
+    expect(
+      useResolvedAssistantsStore.getState().selectedAssistantId,
+    ).toBeNull();
     expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBeNull();
   });
 });
@@ -173,7 +175,9 @@ describe("selection reconcile on hydration", () => {
       assistants: [localAssistant],
       activeAssistant: null,
     });
-    expect(useResolvedAssistantsStore.getState().selectedAssistantId).toBeNull();
+    expect(
+      useResolvedAssistantsStore.getState().selectedAssistantId,
+    ).toBeNull();
     expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBeNull();
   });
 
@@ -199,10 +203,84 @@ describe("selection reconcile on hydration", () => {
     } as Parameters<
       ReturnType<typeof useResolvedAssistantsStore.getState>["upsertFromApi"]
     >[0];
-    useResolvedAssistantsStore.getState().setSelectedAssistant("asst-other-org");
+    useResolvedAssistantsStore
+      .getState()
+      .setSelectedAssistant("asst-other-org");
     useResolvedAssistantsStore.getState().setFromApi([apiEntry]);
     expect(useResolvedAssistantsStore.getState().selectedAssistantId).toBe(
       "asst-other-org",
+    );
+  });
+});
+
+describe("selection adopt activeAssistant (local mode, hydration)", () => {
+  // The store gates the adopt step on `isLocalMode()`, which reads
+  // `import.meta.env.VITE_PLATFORM_MODE` live; test-setup forces platform mode,
+  // so flip the env to local for this block and restore it after.
+  let prevMode: string | undefined;
+  beforeEach(() => {
+    prevMode = process.env.VITE_PLATFORM_MODE;
+    delete process.env.VITE_PLATFORM_MODE;
+  });
+  afterEach(() => {
+    if (prevMode === undefined) delete process.env.VITE_PLATFORM_MODE;
+    else process.env.VITE_PLATFORM_MODE = prevMode;
+  });
+
+  const newer: LockfileAssistant = {
+    assistantId: "asst-newer",
+    name: "Newer",
+    cloud: "local",
+    resources: { gatewayPort: 7831, daemonPort: 7832 },
+  };
+
+  it("adopts the lockfile activeAssistant when a present-but-stale local selection diverges", () => {
+    // The stuck-on-"Connecting" bug: a selection persisted from a prior session
+    // points at a local assistant that is still listed but is no longer the
+    // active one (a newer assistant was hatched/activated since). `reconcile`
+    // leaves the present id alone, so without the adopt step the lifecycle would
+    // try to connect to the superseded — possibly stopped — gateway and hang.
+    useResolvedAssistantsStore.getState().setSelectedAssistant("asst-local");
+    useResolvedAssistantsStore.getState().setFromLockfile({
+      assistants: [localAssistant, newer],
+      activeAssistant: "asst-newer",
+    });
+    expect(useResolvedAssistantsStore.getState().selectedAssistantId).toBe(
+      "asst-newer",
+    );
+    // Mirrored into the key getSelectedAssistant reads, so the connect flow
+    // targets the live gateway.
+    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBe(
+      "asst-newer",
+    );
+  });
+
+  it("ignores a dangling activeAssistant absent from the list", () => {
+    useResolvedAssistantsStore.getState().setSelectedAssistant("asst-local");
+    useResolvedAssistantsStore.getState().setFromLockfile({
+      assistants: [localAssistant],
+      activeAssistant: "asst-gone",
+    });
+    expect(useResolvedAssistantsStore.getState().selectedAssistantId).toBe(
+      "asst-local",
+    );
+  });
+
+  it("does not re-adopt the active over an in-app switch after hydration", () => {
+    // First load hydrates and aligns selection with the active assistant.
+    useResolvedAssistantsStore.getState().setFromLockfile({
+      assistants: [localAssistant, newer],
+      activeAssistant: "asst-newer",
+    });
+    // The user switches to another assistant in-app; a background lockfile
+    // refresh still carrying the old active must not clobber that choice.
+    useResolvedAssistantsStore.getState().setSelectedAssistant("asst-local");
+    useResolvedAssistantsStore.getState().setFromLockfile({
+      assistants: [localAssistant, newer],
+      activeAssistant: "asst-newer",
+    });
+    expect(useResolvedAssistantsStore.getState().selectedAssistantId).toBe(
+      "asst-local",
     );
   });
 });
