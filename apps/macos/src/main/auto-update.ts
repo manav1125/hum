@@ -14,7 +14,16 @@ const ENVIRONMENT: string =
     ? __VELLUM_ENVIRONMENT__
     : "production";
 
-const BUCKET_ENV = ENVIRONMENT === "production" ? "prod" : ENVIRONMENT;
+/**
+ * Update feed for Cue. Cue has no release channel of its own yet, so the
+ * auto-updater is OFF by default: the previous hard-coded default pointed at
+ * the upstream vellum-ai releases bucket, which spammed the log with signature
+ * failures every launch and — worse — could have replaced the Cue app with an
+ * unrelated upstream Vellum build if a signature ever matched. Set
+ * CUE_UPDATE_FEED_URL (a full generic-provider URL) to opt back in once Cue
+ * publishes its own signed builds.
+ */
+const CUE_UPDATE_FEED_URL = process.env.CUE_UPDATE_FEED_URL?.trim();
 
 export type { UpdateState, UpdateStatus };
 
@@ -44,15 +53,20 @@ export const installAutoUpdate = (): void => {
 
   if (!app.isPackaged) return;
 
+  // No Cue release channel configured → don't wire the updater at all. Keeps
+  // the IPC handlers above (the renderer's update UI just sees "idle"), but no
+  // network checks, no log noise, and no risk of pulling the upstream build.
+  if (!CUE_UPDATE_FEED_URL) {
+    log.info("[auto-update] disabled — no CUE_UPDATE_FEED_URL configured");
+    return;
+  }
+
   autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.channel = ENVIRONMENT;
   autoUpdater.allowDowngrade = false;
-  autoUpdater.setFeedURL({
-    provider: "generic",
-    url: `https://storage.googleapis.com/vellum-ai-${BUCKET_ENV}-releases/mac-electron/${process.arch}/`,
-  });
+  autoUpdater.setFeedURL({ provider: "generic", url: CUE_UPDATE_FEED_URL });
 
   autoUpdater.on("checking-for-update", () => {
     setState({ status: "checking" });
