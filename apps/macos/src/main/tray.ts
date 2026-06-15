@@ -13,6 +13,7 @@ import {
 } from "./assets/menu-icons";
 import { onAvatarChange } from "./avatar";
 import { acceleratorOption } from "./commands";
+import { isCueLiveEnabled, triggerSummon } from "./cue-live-service";
 import { getWatchedLockfile } from "./lockfile-watcher";
 import { dispatchToMain } from "./main-window";
 import { menuIcon } from "./menu-icon";
@@ -113,7 +114,10 @@ const isDeveloperMenuEnabled = (): boolean => {
   return flags?.["developer-menu-items"] === true;
 };
 
-const buildTrayMenu = (handlers: TrayHandlers, status: AssistantStatus): Menu => {
+const buildTrayMenu = (
+  handlers: TrayHandlers,
+  status: AssistantStatus,
+): Menu => {
   const onboarding = readOnboardingActive();
 
   const items: Electron.MenuItemConstructorOptions[] = [
@@ -200,6 +204,20 @@ const buildTrayMenu = (handlers: TrayHandlers, status: AssistantStatus): Menu =>
         dispatchToMain({ kind: "rePair" });
       },
     });
+  }
+
+  // Cue Live: a hotkey-independent way to summon the overlay (the global
+  // Control+Option+Space monitor needs Accessibility; this works regardless).
+  if (isCueLiveEnabled()) {
+    items.push(
+      { type: "separator" },
+      {
+        label: "Summon Cue Live",
+        click: () => {
+          void triggerSummon();
+        },
+      },
+    );
   }
 
   items.push(

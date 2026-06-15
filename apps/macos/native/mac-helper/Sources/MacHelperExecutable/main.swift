@@ -218,6 +218,13 @@ final class MacHelper: @unchecked Sendable {
             guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
             return self.cueLive?.hide() ?? ["ok": true]
         }
+        // Fire the same summon the global hotkey does — used by the tray "Summon
+        // Cue Live" fallback and the self-test, so the overlay is reachable even
+        // when the global key monitor isn't.
+        router.register("cuelive.summonNow") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.ensureCueLive().summonNow()
+        }
         return router
     }()
 

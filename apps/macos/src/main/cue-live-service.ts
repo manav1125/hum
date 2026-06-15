@@ -31,6 +31,7 @@ const CUE_LIVE_HIGHLIGHT = "cuelive.highlight";
 const CUE_LIVE_HIDE = "cuelive.hide";
 const CUE_LIVE_SUMMONED = "cuelive.summoned";
 const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
+const CUE_LIVE_SUMMON_NOW = "cuelive.summonNow";
 
 /** `cuelive.summoned` notification — cursor position in AX top-left coords. */
 const SUMMONED_SCHEMA = z.object({
@@ -276,6 +277,11 @@ const handleSummon = async (
       x: cardX,
       y: cardY,
     });
+    log.info(
+      `[cue-live] summon: ${role}` +
+        `${element.label ? ` "${element.label}"` : ""} → card "${describeNextMove(element)}"` +
+        ` @ (${Math.round(cardX)},${Math.round(cardY)})`,
+    );
   } catch (err) {
     log.warn(`[cue-live] showCard failed: ${errMessage(err)}`);
   }
@@ -295,11 +301,57 @@ const handleSummon = async (
         x: cardX,
         y: cardY,
       })
-      .then(() => scheduleHide(client))
+      .then(() => {
+        log.info(`[cue-live] guidance upgrade → "${nextMove}"`);
+        scheduleHide(client);
+      })
       .catch((err: unknown) => {
         log.warn(`[cue-live] guidance card update failed: ${errMessage(err)}`);
       });
   });
+};
+
+/**
+ * Trigger a summon programmatically — the same flow as the Control+Option+Space
+ * hotkey — so Cue Live is reachable even when the global key monitor isn't
+ * (Accessibility not yet granted, or a flaky grant). Backs the tray menu
+ * fallback and the self-test. No-op when Cue Live isn't started.
+ */
+export const triggerSummon = async (): Promise<void> => {
+  if (!started) return;
+  try {
+    await getMacHelperClient().call(CUE_LIVE_SUMMON_NOW);
+  } catch (err) {
+    log.warn(`[cue-live] triggerSummon failed: ${errMessage(err)}`);
+  }
+};
+
+/**
+ * One-shot diagnostic (gated on CUE_LIVE_SELFTEST): a few seconds after start,
+ * draw a fixed card to prove the overlay renders, then fire a real summon at
+ * the cursor to exercise the full read → highlight → card → guidance chain.
+ * Everything it does is logged so the chain is verifiable without a keypress.
+ */
+const runSelfTest = (client: MacHelperClient): void => {
+  setTimeout(() => {
+    void (async () => {
+      log.info(
+        "[cue-live] self-test: drawing a fixed card (overlay render check)",
+      );
+      try {
+        await client.call(CUE_LIVE_SHOW_CARD, {
+          title: "Cue Live",
+          subtitle: "self-test ✓ overlay is rendering",
+          x: 200,
+          y: 200,
+        });
+      } catch (err) {
+        log.warn(`[cue-live] self-test card failed: ${errMessage(err)}`);
+      }
+      log.info("[cue-live] self-test: firing a summon at the cursor");
+      await triggerSummon();
+    })();
+  }, 2_500);
 };
 
 /**
@@ -354,6 +406,13 @@ export const start = async (): Promise<void> => {
           "the Cue helper in System Settings → Privacy & Security → " +
           "Accessibility. A system prompt was requested.",
       );
+    }
+    if (
+      ["1", "true", "yes", "on"].includes(
+        (process.env.CUE_LIVE_SELFTEST ?? "").trim().toLowerCase(),
+      )
+    ) {
+      runSelfTest(client);
     }
   } catch (err) {
     log.warn(`[cue-live] cuelive.start failed: ${errMessage(err)}`);

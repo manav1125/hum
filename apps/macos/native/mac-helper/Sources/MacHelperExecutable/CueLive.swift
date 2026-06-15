@@ -95,6 +95,18 @@ final class CueLiveController: @unchecked Sendable {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Trigger a summon programmatically (same effect as the global hotkey):
+    /// emits `cuelive.summoned` at the current cursor so the daemon runs the
+    /// full read → highlight → card → guidance flow. Backs the tray fallback
+    /// and the self-test.
+    func summonNow() -> [String: Any] {
+        MainActor.assumeIsolated {
+            ensureOverlay()
+            emitSummon()
+        }
+        return ["ok": true]
+    }
+
     func stop() -> [String: Any] {
         MainActor.assumeIsolated {
             trustPollTimer?.invalidate()
