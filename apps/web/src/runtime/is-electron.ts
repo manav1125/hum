@@ -19,6 +19,8 @@ import type {
   BundleScanData,
   ConnectivityState,
   CueLiveStatus,
+  CueLiveVoiceKeyField,
+  CueLiveVoiceKeysStatus,
   DeepLink,
   DictationOverlayMessage,
   DictationOverlayState,
@@ -53,6 +55,8 @@ export type {
   BundleScanData,
   ConnectivityState,
   CueLiveStatus,
+  CueLiveVoiceKeyField,
+  CueLiveVoiceKeysStatus,
   DeepLink,
   DictationOverlayMessage,
   DictationOverlayState,
@@ -116,6 +120,11 @@ declare global {
         status(): Promise<CueLiveStatus>;
         setEnabled(enabled: boolean): Promise<CueLiveStatus>;
         summon(): Promise<void>;
+        voiceKeysStatus?(): Promise<CueLiveVoiceKeysStatus>;
+        setVoiceKey?(
+          field: CueLiveVoiceKeyField,
+          value: string | null,
+        ): Promise<CueLiveVoiceKeysStatus>;
       };
       featureFlags?: {
         set(flags: Record<string, boolean>): void;

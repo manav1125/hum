@@ -21,6 +21,16 @@ export interface AppSettings {
   launchAtLogin: boolean;
   /** Whether the Cue Live overlay + summon hotkey run. Defaults ON. */
   cueLiveEnabled: boolean;
+  /**
+   * Cue Live voice keys. `assemblyAi`/`elevenLabs` are base64 of
+   * safeStorage-encrypted API keys (never stored plaintext);
+   * `elevenLabsVoiceId` is a non-secret voice id. Absent keys mean "not set".
+   */
+  voiceKeys: {
+    assemblyAi?: string;
+    elevenLabs?: string;
+    elevenLabsVoiceId?: string;
+  };
 }
 
 const schema: Schema<AppSettings> = {
@@ -45,6 +55,16 @@ const schema: Schema<AppSettings> = {
   cueLiveEnabled: {
     type: "boolean",
     default: true,
+  },
+  voiceKeys: {
+    type: "object",
+    properties: {
+      assemblyAi: { type: "string" },
+      elevenLabs: { type: "string" },
+      elevenLabsVoiceId: { type: "string" },
+    },
+    additionalProperties: false,
+    default: {},
   },
 };
 

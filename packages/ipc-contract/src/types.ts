@@ -115,8 +115,7 @@ export const SYSTEM_PERMISSION_KINDS = [
   "notifications",
 ] as const;
 
-export type SystemPermissionKind =
-  (typeof SYSTEM_PERMISSION_KINDS)[number];
+export type SystemPermissionKind = (typeof SYSTEM_PERMISSION_KINDS)[number];
 
 export const SYSTEM_PERMISSION_STATUSES = [
   "unknown",
@@ -366,6 +365,19 @@ export interface CueLiveStatus {
   /** The summon hotkey, for display (e.g. "Control+Option+Space"). */
   hotkey: string;
 }
+
+/** Which Cue Live voice keys are configured (never the secret values). */
+export interface CueLiveVoiceKeysStatus {
+  hasAssemblyAi: boolean;
+  hasElevenLabs: boolean;
+  elevenLabsVoiceId: string | null;
+}
+
+/** A settable Cue Live voice key field. */
+export type CueLiveVoiceKeyField =
+  | "assemblyAi"
+  | "elevenLabs"
+  | "elevenLabsVoiceId";
 
 // ---------------------------------------------------------------------------
 // Lockfile (bridge-facing subset of @vellumai/local-mode/contract)

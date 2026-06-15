@@ -24,6 +24,7 @@ import { writeCliLocator } from "./cli-installer";
 import { provisionCliForWrapper } from "./cli-path-installer";
 import { installCsp } from "./csp";
 import { installCueLiveIpc } from "./cue-live-ipc";
+import { getVoiceConfig } from "./cue-voice-keys";
 import { readSetting } from "./settings";
 import {
   dispose as disposeCueLive,
@@ -31,6 +32,7 @@ import {
   isCueLiveEnabled,
   setCueLiveEnabledGetter,
   setGuidanceFetcher,
+  setVoiceConfigProvider,
 } from "./cue-live-service";
 import { getDeviceId } from "./device-id";
 import { handleSync } from "./ipc";
@@ -390,6 +392,8 @@ app
     // macOS Accessibility permission at runtime.
     // Resolve the default-on enabled state from the persisted user setting.
     setCueLiveEnabledGetter(() => readSetting("cueLiveEnabled") ?? true);
+    // Hand Cue Live the (decrypted) voice keys on demand for the native helper.
+    setVoiceConfigProvider(() => getVoiceConfig());
     // Wire Stage 3 guidance: the overlay asks the local daemon for a
     // synthesized "next move" through the host-proxy's authenticated channel.
     setGuidanceFetcher((path, body) => requestLocalDaemon(path, body));

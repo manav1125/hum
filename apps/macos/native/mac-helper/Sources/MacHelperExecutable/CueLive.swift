@@ -48,6 +48,9 @@ final class CueLiveController: @unchecked Sendable {
     @MainActor private var hotkeyMonitor: Any?
     @MainActor private var localHotkeyMonitor: Any?
     @MainActor private var trustPollTimer: Timer?
+    @MainActor private let voice = CueVoiceController()
+    @MainActor private var pttMonitor: CuePushToTalkMonitor?
+    @MainActor private var voiceWired = false
 
     init(emit: @escaping (String, [String: Any]?) -> Void) {
         self.emit = emit
@@ -131,6 +134,11 @@ final class CueLiveController: @unchecked Sendable {
             trustPollTimer?.invalidate()
             trustPollTimer = nil
             removeHotkeyMonitors()
+            pttMonitor?.stop()
+            pttMonitor = nil
+            voiceWired = false
+            voice.stopListening()
+            voice.stopSpeaking()
             overlay?.orderOut(nil)
             overlay = nil
             cardView = nil
@@ -488,8 +496,65 @@ final class CueLiveController: @unchecked Sendable {
         overlay = panel
     }
 
+    /// Voice configuration (API keys) pushed from the app. Keys are never
+    /// embedded — the user enters them in Cue's settings.
+    func setVoiceConfig(params: [String: Any]) -> [String: Any] {
+        let assemblyAiKey = params["assemblyAiKey"] as? String
+        let elevenLabsKey = params["elevenLabsKey"] as? String
+        let voiceId = params["elevenLabsVoiceId"] as? String
+        MainActor.assumeIsolated {
+            voice.setConfig(
+                assemblyAiKey: assemblyAiKey,
+                elevenLabsKey: elevenLabsKey,
+                voiceId: voiceId)
+        }
+        return ["ok": true]
+    }
+
+    /// Speak text aloud via ElevenLabs (no-op if no key configured).
+    func speak(params: [String: Any]) -> [String: Any] {
+        let text = params["text"] as? String ?? ""
+        MainActor.assumeIsolated {
+            if !text.isEmpty { voice.speak(text) }
+        }
+        return ["ok": voice.canSpeak]
+    }
+
+    /// Wire push-to-talk: hold ctrl+option to talk, release to ask. Gated on
+    /// Accessibility (same as the hotkey), so it's set up from
+    /// `installHotkeyMonitors`. Idempotent.
+    @MainActor
+    private func installVoice() {
+        guard !voiceWired else { return }
+        voiceWired = true
+        voice.onTranscript = { [weak self] question in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // Empty transcript → fall back to the default screen look.
+                    self.ensureOverlay()
+                    self.emitSummon(question: question.isEmpty ? nil : question)
+                }
+            }
+        }
+        let monitor = CuePushToTalkMonitor()
+        monitor.onPressed = { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.voice.startListening() }
+            }
+        }
+        monitor.onReleased = { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.voice.stopListening() }
+            }
+        }
+        monitor.start()
+        pttMonitor = monitor
+    }
+
     @MainActor
     private func installHotkeyMonitors() {
+        installVoice()
         guard hotkeyMonitor == nil else { return }
         // Control+Option+Space summons Cue (mirrors clicky's Control+Option).
         func matches(_ event: NSEvent) -> Bool {
@@ -517,13 +582,15 @@ final class CueLiveController: @unchecked Sendable {
     }
 
     @MainActor
-    private func emitSummon() {
+    private func emitSummon(question: String? = nil) {
         let mouse = NSEvent.mouseLocation
         let screenHeight = NSScreen.screens.first?.frame.height ?? 0
-        emit("cuelive.summoned", [
+        var params: [String: Any] = [
             "x": mouse.x,
             "y": screenHeight - mouse.y, // report AX top-left coords
-        ])
+        ]
+        if let question, !question.isEmpty { params["question"] = question }
+        emit("cuelive.summoned", params)
     }
 
     /// Convert AX (top-left) element rect to AppKit (bottom-left) screen rect.

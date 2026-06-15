@@ -1,21 +1,30 @@
 import {
+  Check,
   Eye,
   Keyboard,
   Lightbulb,
   Lock,
+  Mic,
   MousePointer2,
   ShieldCheck,
   Sparkles,
+  Volume2,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import type { CueLiveStatus } from "@vellumai/ipc-contract";
+import type {
+  CueLiveStatus,
+  CueLiveVoiceKeyField,
+  CueLiveVoiceKeysStatus,
+} from "@vellumai/ipc-contract";
 
 import {
   getCueLiveStatus,
+  getVoiceKeysStatus,
   isCueLiveAvailable,
   setCueLiveEnabled,
+  setVoiceKey,
   summonCueLive,
 } from "@/runtime/cue-live";
 
@@ -56,23 +65,23 @@ interface FlowStep {
 const FLOW: readonly FlowStep[] = [
   {
     icon: Keyboard,
-    title: "Summon",
-    body: "Press the hotkey anywhere on your Mac, over any app.",
+    title: "Ask",
+    body: "Hold ⌃⌥ and speak your question, over any app on your Mac.",
   },
   {
     icon: Eye,
-    title: "Read",
-    body: "Cue reads the accessibility element under your cursor — its role, label, and value.",
+    title: "See",
+    body: "Cue takes a screenshot and sends it, with your question, to your assistant.",
   },
   {
     icon: Lightbulb,
     title: "Reason",
-    body: "Your local Claude assistant decides the single best next move for that element.",
+    body: "Your local Claude looks at the screen and works out the answer and what to point at.",
   },
   {
     icon: Sparkles,
-    title: "Guide",
-    body: "A small card appears beside the element with the suggested next step.",
+    title: "Point & speak",
+    body: "The cursor flies to each thing it mentions and Cue answers out loud.",
   },
 ];
 
@@ -301,17 +310,181 @@ function UnavailableNotice() {
 const PRIVACY_POINTS: readonly { icon: typeof Lock; text: string }[] = [
   {
     icon: Eye,
-    text: "Accessibility-first: Cue reads the UI element's role and label — it does not take screenshots.",
+    text: "When you ask, Cue takes one screenshot of your screen and sends it — with your question — to your configured model (Claude) to answer.",
   },
   {
     icon: Lock,
-    text: "Password and secure fields are never read — their value is always withheld.",
+    text: "It only captures on a summon, never continuously. Your voice goes to AssemblyAI for transcription and replies are voiced by ElevenLabs, using the keys you provide.",
   },
   {
     icon: ShieldCheck,
-    text: "Reasoning runs through your own local assistant and configured model — nothing is sent to a third party by Cue Live itself.",
+    text: "Keys are stored encrypted in your macOS Keychain and handed only to the local helper — never shown back in the app. Cue Live guides and points; it doesn't click or type for you.",
   },
 ];
+
+function SecretKeyField({
+  field,
+  icon: Icon,
+  label,
+  help,
+  link,
+  configured,
+  onSaved,
+}: {
+  field: CueLiveVoiceKeyField;
+  icon: typeof Mic;
+  label: string;
+  help: string;
+  link: string;
+  configured: boolean;
+  onSaved: (status: CueLiveVoiceKeysStatus | null) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async (next: string | null) => {
+    setBusy(true);
+    onSaved(await setVoiceKey(field, next));
+    setValue("");
+    setBusy(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-border bg-background p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Icon className="size-4 text-sky-500" />
+          <span className="text-sm font-semibold text-foreground">{label}</span>
+        </div>
+        {configured && (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-sky-500">
+            <Check className="size-3.5" /> Saved
+          </span>
+        )}
+      </div>
+      <p className="text-xs leading-snug text-muted-foreground">
+        {help}{" "}
+        <a
+          href={link}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sky-500 underline"
+        >
+          Get a key
+        </a>
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="password"
+          value={value}
+          disabled={busy}
+          placeholder={configured ? "•••••••• (saved)" : "Paste API key"}
+          onChange={(e) => setValue(e.target.value)}
+          className="min-w-0 flex-1 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-sm text-foreground outline-none focus:border-sky-500"
+        />
+        <button
+          type="button"
+          disabled={busy || !value.trim()}
+          onClick={() => void save(value)}
+          className="rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-600 disabled:opacity-50"
+        >
+          Save
+        </button>
+        {configured && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save(null)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VoiceKeysSection() {
+  const [status, setStatus] = useState<CueLiveVoiceKeysStatus | null>(null);
+  const [voiceId, setVoiceId] = useState("");
+  const [savingVoiceId, setSavingVoiceId] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const s = await getVoiceKeysStatus();
+      setStatus(s);
+      setVoiceId(s?.elevenLabsVoiceId ?? "");
+    })();
+  }, []);
+
+  // Voice keys IPC absent (older preload) — hide the section entirely.
+  if (status === null) return null;
+
+  const saveVoiceId = async () => {
+    setSavingVoiceId(true);
+    setStatus(await setVoiceKey("elevenLabsVoiceId", voiceId || null));
+    setSavingVoiceId(false);
+  };
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-semibold text-foreground">Voice setup</h2>
+        <p className="text-sm text-muted-foreground">
+          Cue Live talks with you using your own API keys. Paste them once —
+          they're stored encrypted in your Keychain. Until they're set, summon
+          still works silently (it shows the answer as a card).
+        </p>
+      </div>
+      <SecretKeyField
+        field="assemblyAi"
+        icon={Mic}
+        label="AssemblyAI — speech to text"
+        help="Lets you hold ⌃⌥ and ask out loud."
+        link="https://www.assemblyai.com/dashboard/api-keys"
+        configured={status.hasAssemblyAi}
+        onSaved={setStatus}
+      />
+      <SecretKeyField
+        field="elevenLabs"
+        icon={Volume2}
+        label="ElevenLabs — text to speech"
+        help="Lets Cue answer back in a natural voice."
+        link="https://elevenlabs.io/app/settings/api-keys"
+        configured={status.hasElevenLabs}
+        onSaved={setStatus}
+      />
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-background p-4">
+        <span className="text-sm font-semibold text-foreground">
+          ElevenLabs voice (optional)
+        </span>
+        <p className="text-xs leading-snug text-muted-foreground">
+          A voice ID from your ElevenLabs voice library. Leave blank for the
+          default voice.
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={voiceId}
+            disabled={savingVoiceId}
+            placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+            onChange={(e) => setVoiceId(e.target.value)}
+            className="min-w-0 flex-1 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-sm text-foreground outline-none focus:border-sky-500"
+          />
+          <button
+            type="button"
+            disabled={savingVoiceId}
+            onClick={() => void saveVoiceId()}
+            className="rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-600 disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export function CueLivePage() {
   const available = isCueLiveAvailable();
@@ -325,17 +498,20 @@ export function CueLivePage() {
           Cue Live
         </span>
         <h1 className="text-2xl font-semibold text-foreground">
-          Real-time guidance, right where you're working
+          An AI teacher that lives next to your cursor
         </h1>
         <p className="text-base leading-relaxed text-muted-foreground">
-          Summon Cue over any app on your Mac and it reads the control under
-          your cursor, then suggests your next move — a guide, not a take-over.
-          No screenshots, no clicking on your behalf.
+          Hold ⌃⌥ and ask out loud — Cue looks at your screen, answers in your
+          ear, and flies the cursor to whatever it's talking about. A guide that
+          points, not a take-over.
         </p>
       </header>
 
       {/* Live controls (desktop) or notice */}
       {available ? <LiveControls /> : <UnavailableNotice />}
+
+      {/* Voice keys */}
+      {available && <VoiceKeysSection />}
 
       {/* How it works */}
       <section className="flex flex-col gap-4">

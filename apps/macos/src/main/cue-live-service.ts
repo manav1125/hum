@@ -34,11 +34,15 @@ const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
 const CUE_LIVE_SUMMON_NOW = "cuelive.summonNow";
 const CUE_LIVE_CAPTURE_SCREEN = "cuelive.captureScreen";
 const CUE_LIVE_POINT_AT = "cuelive.pointAt";
+const CUE_LIVE_SET_VOICE_CONFIG = "cuelive.setVoiceConfig";
+const CUE_LIVE_SPEAK = "cuelive.speak";
 
-/** `cuelive.summoned` notification — cursor position in AX top-left coords. */
+/** `cuelive.summoned` — cursor in AX top-left coords + optional spoken question
+ *  (present when the user summoned via push-to-talk). */
 const SUMMONED_SCHEMA = z.object({
   x: z.number(),
   y: z.number(),
+  question: z.string().optional(),
 });
 
 /** `cuelive.accessibilityTrusted` — emitted when the helper observes
@@ -140,6 +144,41 @@ type GuidanceFetcher = (path: string, body: unknown) => Promise<unknown>;
 let guidanceFetcher: GuidanceFetcher | null = null;
 export const setGuidanceFetcher = (fetcher: GuidanceFetcher | null): void => {
   guidanceFetcher = fetcher;
+};
+
+/**
+ * Voice keys provider, injected by `index.ts` so this module stays decoupled
+ * from electron-store/safeStorage (same seam as the guidance fetcher). Returns
+ * plaintext keys for the helper; null fields mean "not configured".
+ */
+type VoiceConfig = {
+  assemblyAiKey: string | null;
+  elevenLabsKey: string | null;
+  elevenLabsVoiceId: string | null;
+};
+let voiceConfigProvider: (() => VoiceConfig) | null = null;
+export const setVoiceConfigProvider = (
+  fn: (() => VoiceConfig) | null,
+): void => {
+  voiceConfigProvider = fn;
+};
+
+/**
+ * Push the current voice keys to the helper. Called on start and whenever the
+ * user changes a key. No-op until Cue Live is started and a provider is wired.
+ */
+export const pushVoiceConfig = async (): Promise<void> => {
+  if (!started || !voiceConfigProvider) return;
+  const cfg = voiceConfigProvider();
+  try {
+    await getMacHelperClient().call(CUE_LIVE_SET_VOICE_CONFIG, {
+      assemblyAiKey: cfg.assemblyAiKey ?? "",
+      elevenLabsKey: cfg.elevenLabsKey ?? "",
+      elevenLabsVoiceId: cfg.elevenLabsVoiceId ?? "",
+    });
+  } catch (err) {
+    log.warn(`[cue-live] setVoiceConfig failed: ${errMessage(err)}`);
+  }
 };
 
 const clearHideTimer = (): void => {
@@ -303,11 +342,12 @@ export const getLastAnswer = (): string => lastAnswer;
  */
 const handleSummon = async (
   client: MacHelperClient,
-  cursor: { x: number; y: number },
+  cursor: { x: number; y: number; question?: string },
 ): Promise<void> => {
   clearHideTimer();
   const gen = ++summonGeneration;
-  const question = pendingQuestion ?? DEFAULT_LOOK_QUESTION;
+  // The spoken question (push-to-talk) wins; then an in-app ask; then default.
+  const question = cursor.question ?? pendingQuestion ?? DEFAULT_LOOK_QUESTION;
   pendingQuestion = null;
 
   // 1. Capture the screen.
@@ -387,6 +427,16 @@ const handleSummon = async (
     `[cue-live] look → "${look.answer.slice(0, 80)}" ` +
       `(${look.points.length} point(s))`,
   );
+
+  // Speak the answer (ElevenLabs, in the helper) while the cursor points —
+  // concurrent, like clicky. No-op when no TTS key is configured.
+  if (look.answer) {
+    void client
+      .call(CUE_LIVE_SPEAK, { text: look.answer })
+      .catch((err: unknown) =>
+        log.warn(`[cue-live] speak failed: ${errMessage(err)}`),
+      );
+  }
 
   // 3. Map points from screenshot-pixels → screen-points and fly the cursor.
   const scaleX = (cap.screenWidth ?? cap.width ?? 1) / (cap.width || 1);
@@ -512,6 +562,8 @@ export const start = async (): Promise<void> => {
       return;
     }
     lastKnownTrusted = parsed.data.accessibilityTrusted === true;
+    // Hand the helper the voice keys (push-to-talk STT + TTS) now that it's up.
+    void pushVoiceConfig();
     log.info(
       "[cue-live] overlay started (summon: Control+Option+Space). " +
         "Requires Accessibility permission at runtime.",

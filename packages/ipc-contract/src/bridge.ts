@@ -19,6 +19,8 @@ import type {
   BundleScanData,
   ConnectivityState,
   CueLiveStatus,
+  CueLiveVoiceKeyField,
+  CueLiveVoiceKeysStatus,
   DeepLink,
   DictationOverlayMessage,
   DictationOverlayState,
@@ -85,6 +87,11 @@ export interface VellumBridge {
     status(): Promise<CueLiveStatus>;
     setEnabled(enabled: boolean): Promise<CueLiveStatus>;
     summon(): Promise<void>;
+    voiceKeysStatus(): Promise<CueLiveVoiceKeysStatus>;
+    setVoiceKey(
+      field: CueLiveVoiceKeyField,
+      value: string | null,
+    ): Promise<CueLiveVoiceKeysStatus>;
   };
   featureFlags: {
     set(flags: Record<string, boolean>): void;
@@ -121,7 +128,9 @@ export interface VellumBridge {
        * PCM — the offline transcript authority. Result arrives via
        * `onTranscribed`.
        */
-      transcribe?(audio: ArrayBuffer): Promise<{ ok: boolean; reason?: string }>;
+      transcribe?(
+        audio: ArrayBuffer,
+      ): Promise<{ ok: boolean; reason?: string }>;
       onTranscribed?(
         callback: (event: DictationPartialEvent) => void,
       ): () => void;
