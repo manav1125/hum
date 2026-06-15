@@ -80,6 +80,7 @@ const {
   stop,
   installCueLive,
   isCueLiveEnabled,
+  setCueLiveEnabledGetter,
   describeNextMove,
   setGuidanceFetcher,
   __resetForTesting,
@@ -132,7 +133,14 @@ afterEach(() => {
 });
 
 describe("isCueLiveEnabled", () => {
-  test("is off by default", () => {
+  test("is on by default", () => {
+    expect(isCueLiveEnabled()).toBe(true);
+  });
+
+  test("env CUE_LIVE_ENABLED can force it off", () => {
+    process.env.CUE_LIVE_ENABLED = "0";
+    expect(isCueLiveEnabled()).toBe(false);
+    process.env.CUE_LIVE_ENABLED = "false";
     expect(isCueLiveEnabled()).toBe(false);
   });
 
@@ -142,10 +150,18 @@ describe("isCueLiveEnabled", () => {
     process.env.CUE_LIVE_ENABLED = "true";
     expect(isCueLiveEnabled()).toBe(true);
   });
+
+  test("falls back to the injected persisted getter when env is unset", () => {
+    setCueLiveEnabledGetter(() => false);
+    expect(isCueLiveEnabled()).toBe(false);
+    setCueLiveEnabledGetter(() => true);
+    expect(isCueLiveEnabled()).toBe(true);
+  });
 });
 
 describe("installCueLive", () => {
   test("does nothing when disabled", async () => {
+    process.env.CUE_LIVE_ENABLED = "0";
     installCueLive();
     await wait(0);
     expect(spawnCalls).toHaveLength(0);

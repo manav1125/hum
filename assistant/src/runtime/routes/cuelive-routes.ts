@@ -24,12 +24,20 @@ const GuidanceBody = z.object({
   role: z
     .string()
     .describe("Accessibility role of the element under the cursor"),
+  roleDescription: z
+    .string()
+    .optional()
+    .describe("Human-readable role description (e.g. 'text field')"),
   label: z.string().optional().describe("The element's accessible label"),
   value: z
     .string()
     .optional()
     .describe("The element's value (already redacted for secure fields)"),
   appName: z.string().optional().describe("Frontmost application name"),
+  actions: z
+    .array(z.string())
+    .optional()
+    .describe("AX actions the element supports, e.g. AXPress, AXConfirm"),
 });
 
 const GUIDANCE_SYSTEM_PROMPT =
@@ -49,7 +57,7 @@ async function handleGuidance({
   if (!parsed.success) {
     throw new BadRequestError("Invalid Cue Live guidance request body");
   }
-  const { role, label, value, appName } = parsed.data;
+  const { role, roleDescription, label, value, appName, actions } = parsed.data;
 
   const provider = await getConfiguredProvider("mainAgent");
   if (!provider) {
@@ -60,9 +68,10 @@ async function handleGuidance({
 
   const context = [
     appName ? `App: ${appName}` : null,
-    `Element: ${role}`,
+    `Element: ${role}${roleDescription ? ` (${roleDescription})` : ""}`,
     label ? `Label: ${label}` : null,
     value ? `Value: ${value.slice(0, 160)}` : null,
+    actions && actions.length ? `Supports: ${actions.join(", ")}` : null,
   ]
     .filter(Boolean)
     .join("\n");

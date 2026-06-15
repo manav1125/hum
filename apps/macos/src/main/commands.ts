@@ -36,6 +36,7 @@ export const DEFAULT_ACCELERATORS: Record<VellumCommandKind, string> = {
   openConversation: "",
   openLibrary: "",
   openIdentity: "",
+  openCueLive: "",
   navigateBack: "",
   navigateForward: "",
   zoomIn: "",

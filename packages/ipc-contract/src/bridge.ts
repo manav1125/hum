@@ -18,6 +18,7 @@ import type {
   AssistantStatus,
   BundleScanData,
   ConnectivityState,
+  CueLiveStatus,
   DeepLink,
   DictationOverlayMessage,
   DictationOverlayState,
@@ -79,6 +80,11 @@ export interface VellumBridge {
   launchAtLogin: {
     get(): Promise<boolean>;
     set(enabled: boolean): Promise<void>;
+  };
+  cueLive: {
+    status(): Promise<CueLiveStatus>;
+    setEnabled(enabled: boolean): Promise<CueLiveStatus>;
+    summon(): Promise<void>;
   };
   featureFlags: {
     set(flags: Record<string, boolean>): void;

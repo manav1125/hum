@@ -49,8 +49,11 @@ const TRUSTED_SCHEMA = z.object({
 const READ_ELEMENT_SCHEMA = z.object({
   found: z.boolean(),
   role: z.string().optional(),
+  roleDescription: z.string().optional(),
   label: z.string().optional(),
   value: z.string().optional(),
+  appName: z.string().optional(),
+  actions: z.array(z.string()).optional(),
   x: z.number().optional(),
   y: z.number().optional(),
   width: z.number().optional(),
@@ -71,16 +74,32 @@ const START_RESULT_SCHEMA = z.object({
 // --- Gating ------------------------------------------------------------------
 
 /**
- * Cue Live is gated behind the `CUE_LIVE_ENABLED` env var so it does not
- * auto-run for everyone yet (Stage 2 is opt-in). There is no renderer-owned
- * feature flag for a main-process-only, pre-launch capability — the existing
- * `featureFlags` map is published by the renderer for assistant features — so
- * an env toggle is the right seam until Cue Live graduates to a real flag.
+ * Resolver for the persisted user toggle. Injected by `index.ts` (which owns
+ * the electron-store settings) so this module stays decoupled from persistence
+ * and test-isolated — same DI seam as `setGuidanceFetcher`. Defaults to ON so
+ * that even before injection (and in the default product build) Cue Live runs.
  */
-export const isCueLiveEnabled = (): boolean =>
-  ["1", "true", "yes", "on"].includes(
-    (process.env.CUE_LIVE_ENABLED ?? "").trim().toLowerCase(),
-  );
+let persistedEnabledGetter: () => boolean = () => true;
+
+/** Wire the persisted-setting reader. See `persistedEnabledGetter`. */
+export const setCueLiveEnabledGetter = (fn: () => boolean): void => {
+  persistedEnabledGetter = fn;
+};
+
+/**
+ * Whether Cue Live should run. Cue Live is ON by default (so the summon hotkey
+ * works on a normal double-click launch). Resolution order:
+ *   1. `CUE_LIVE_ENABLED` env var, when explicitly set — force on (`1/true/...`)
+ *      or off (`0/false/...`). Used by tests and `--no-cue-live` style launches.
+ *   2. Otherwise the persisted user setting (via the injected getter), which
+ *      itself defaults to ON.
+ */
+export const isCueLiveEnabled = (): boolean => {
+  const env = (process.env.CUE_LIVE_ENABLED ?? "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(env)) return true;
+  if (["0", "false", "no", "off"].includes(env)) return false;
+  return persistedEnabledGetter();
+};
 
 /** How long the card/ring linger after the last summon before auto-hiding. */
 const AUTO_HIDE_MS = 6_000;
@@ -92,6 +111,19 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null;
 // Bumped on every summon so a slow daemon guidance response from a previous
 // summon can't overwrite the card for a newer one.
 let summonGeneration = 0;
+// Last Accessibility-trust state the helper reported (from cuelive.start and
+// the runtime "trusted" notification). Surfaced to the renderer status page so
+// the user can see whether the summon hotkey is actually armed.
+let lastKnownTrusted = false;
+
+/** The summon hotkey, for display in the UI. */
+export const CUE_LIVE_HOTKEY = "Control+Option+Space";
+
+/** Whether the helper last reported it was trusted for Accessibility. */
+export const isAccessibilityTrusted = (): boolean => lastKnownTrusted;
+
+/** Whether Cue Live is currently running (overlay up, subscriptions live). */
+export const isStarted = (): boolean => started;
 
 /** Daemon route (relative to /v1/assistants/{id}) for synthesized guidance. */
 const CUE_LIVE_GUIDANCE_PATH = "/cuelive/guidance";
@@ -194,8 +226,11 @@ const requestGuidance = async (
   try {
     const result = await guidanceFetcher(CUE_LIVE_GUIDANCE_PATH, {
       role: element.role ?? "AXUnknown",
+      roleDescription: element.roleDescription,
       label: element.label,
       value: element.value,
+      appName: element.appName,
+      actions: element.actions,
     });
     const parsed = GUIDANCE_SCHEMA.safeParse(result);
     if (!parsed.success) return null;
@@ -387,6 +422,7 @@ export const start = async (): Promise<void> => {
     CUE_LIVE_ACCESSIBILITY_TRUSTED,
     TRUSTED_SCHEMA,
     () => {
+      lastKnownTrusted = true;
       log.info(
         "[cue-live] Accessibility granted — summon hotkey is now armed " +
           "(Control+Option+Space).",
@@ -402,6 +438,7 @@ export const start = async (): Promise<void> => {
       // Leave the subscription in place; the helper may enable on retry.
       return;
     }
+    lastKnownTrusted = parsed.data.accessibilityTrusted === true;
     log.info(
       "[cue-live] overlay started (summon: Control+Option+Space). " +
         "Requires Accessibility permission at runtime.",
@@ -476,4 +513,5 @@ export const __resetForTesting = (): void => {
   unsubscribeSummoned = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
+  persistedEnabledGetter = () => true;
 };

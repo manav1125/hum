@@ -190,22 +190,83 @@ final class CueLiveController: @unchecked Sendable {
             return ["found": false]
         }
 
-        let role = axString(element, kAXRoleAttribute) ?? "AXUnknown"
+        // Drill deeper: the hit-test can stop at a shallow container — an
+        // AXApplication / AXWindow / AXGroup with no useful label — especially
+        // over Electron/Chromium apps whose AX tree is sparse. When that
+        // happens, fall back to the app's *focused* UI element (the text field,
+        // button, or control the user is actually in), which is almost always
+        // the meaningful target. Keep the original hit element otherwise.
+        let resolved = Self.refineElement(element, appPid: hitPid)
+
+        let role = axString(resolved, kAXRoleAttribute) ?? "AXUnknown"
         let isSecure = role == "AXSecureTextField"
-        let label = axString(element, kAXTitleAttribute)
-            ?? axString(element, kAXDescriptionAttribute)
-        let value = isSecure ? nil : axString(element, kAXValueAttribute)
+        let roleDescription = axString(resolved, "AXRoleDescription")
+        let label = axString(resolved, kAXTitleAttribute)
+            ?? axString(resolved, kAXDescriptionAttribute)
+            ?? axString(resolved, "AXPlaceholderValue")
+        let value = isSecure ? nil : axString(resolved, kAXValueAttribute)
+        let appName = Self.appName(forPid: hitPid)
+        let actions = Self.supportedActions(resolved)
 
         var result: [String: Any] = ["found": true, "role": role]
+        if let roleDescription { result["roleDescription"] = roleDescription }
         if let label { result["label"] = label }
         if let value { result["value"] = String(value.prefix(240)) }
-        if let frame = axFrame(element) {
+        if let appName { result["appName"] = appName }
+        if !actions.isEmpty { result["actions"] = actions }
+        if let frame = axFrame(resolved) {
             result["x"] = frame.origin.x
             result["y"] = frame.origin.y
             result["width"] = frame.size.width
             result["height"] = frame.size.height
         }
         return result
+    }
+
+    /// Roles that carry no actionable meaning on their own — when the hit-test
+    /// lands on one of these we prefer the app's focused UI element instead.
+    private static let containerRoles: Set<String> = [
+        "AXApplication", "AXWindow", "AXGroup", "AXScrollArea",
+        "AXSplitGroup", "AXUnknown", "AXLayoutArea", "AXGenericElement",
+    ]
+
+    /// If `element` is a bare container, substitute the focused UI element of
+    /// its application (the control the user is actually interacting with).
+    /// Returns the better of the two; never returns nil.
+    private static func refineElement(
+        _ element: AXUIElement, appPid: pid_t
+    ) -> AXUIElement {
+        let role = {
+            var v: CFTypeRef?
+            AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &v)
+            return v as? String ?? "AXUnknown"
+        }()
+        guard containerRoles.contains(role), appPid != 0 else { return element }
+        let app = AXUIElementCreateApplication(appPid)
+        var focused: CFTypeRef?
+        if AXUIElementCopyAttributeValue(
+            app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+            let focused, CFGetTypeID(focused) == AXUIElementGetTypeID()
+        {
+            return (focused as! AXUIElement)
+        }
+        return element
+    }
+
+    /// The names of AX actions an element supports (e.g. `AXPress`), so the
+    /// daemon can tell whether the target is clickable, editable, etc.
+    private static func supportedActions(_ element: AXUIElement) -> [String] {
+        var names: CFArray?
+        guard AXUIElementCopyActionNames(element, &names) == .success,
+            let names = names as? [String]
+        else { return [] }
+        return names
+    }
+
+    /// The localized name of the running app with the given pid.
+    private static func appName(forPid pid: pid_t) -> String? {
+        guard pid != 0 else { return nil }
+        return NSRunningApplication(processIdentifier: pid)?.localizedName
     }
 
     /// PID of the frontmost normal (layer 0) app window containing the given

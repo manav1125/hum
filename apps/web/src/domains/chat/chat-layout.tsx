@@ -445,6 +445,9 @@ export function ChatLayout() {
     openIdentity: () => {
       void navigate(routes.identity);
     },
+    openCueLive: () => {
+      void navigate(routes.cueLive);
+    },
     navigateBack: () => {
       navigate(-1);
     },

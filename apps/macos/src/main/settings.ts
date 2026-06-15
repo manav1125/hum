@@ -19,6 +19,8 @@ export interface AppSettings {
   theme: "light" | "dark" | "system";
   featureFlags: Record<string, boolean>;
   launchAtLogin: boolean;
+  /** Whether the Cue Live overlay + summon hotkey run. Defaults ON. */
+  cueLiveEnabled: boolean;
 }
 
 const schema: Schema<AppSettings> = {
@@ -39,6 +41,10 @@ const schema: Schema<AppSettings> = {
   },
   launchAtLogin: {
     type: "boolean",
+  },
+  cueLiveEnabled: {
+    type: "boolean",
+    default: true,
   },
 };
 

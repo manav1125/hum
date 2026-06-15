@@ -23,10 +23,13 @@ import { resolveAllowedOrigin } from "./app-origin";
 import { writeCliLocator } from "./cli-installer";
 import { provisionCliForWrapper } from "./cli-path-installer";
 import { installCsp } from "./csp";
+import { installCueLiveIpc } from "./cue-live-ipc";
+import { readSetting } from "./settings";
 import {
   dispose as disposeCueLive,
   installCueLive,
   isCueLiveEnabled,
+  setCueLiveEnabledGetter,
   setGuidanceFetcher,
 } from "./cue-live-service";
 import { getDeviceId } from "./device-id";
@@ -382,8 +385,11 @@ app
     installHotkeyHelper();
     // Cue Live drives the native overlay companion over the same supervised
     // helper process that installHotkeyHelper just brought up, so it installs
-    // right after. Gated behind the CUE_LIVE_ENABLED env var (off by default)
-    // and requires macOS Accessibility permission at runtime.
+    // right after. ON by default (persisted setting; the user can toggle it
+    // from the tray, or force it via the CUE_LIVE_ENABLED env var). Requires
+    // macOS Accessibility permission at runtime.
+    // Resolve the default-on enabled state from the persisted user setting.
+    setCueLiveEnabledGetter(() => readSetting("cueLiveEnabled") ?? true);
     // Wire Stage 3 guidance: the overlay asks the local daemon for a
     // synthesized "next move" through the host-proxy's authenticated channel.
     setGuidanceFetcher((path, body) => requestLocalDaemon(path, body));
@@ -395,6 +401,7 @@ app
       app.setAccessibilitySupportEnabled(true);
     }
     installCueLive();
+    installCueLiveIpc();
     app.on("before-quit", disposeCueLive);
     installPermissionsService();
     installAbout();

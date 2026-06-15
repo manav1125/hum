@@ -206,19 +206,26 @@ const buildTrayMenu = (
     });
   }
 
-  // Cue Live: a hotkey-independent way to summon the overlay (the global
-  // Control+Option+Space monitor needs Accessibility; this works regardless).
+  // Cue Live. "Summon" is a hotkey-independent way to fire the overlay (the
+  // global Control+Option+Space monitor needs Accessibility; this works
+  // regardless). The guide opens the in-app "How it works" page, where the
+  // user can also toggle it on/off — so it shows even when Cue Live is off.
+  items.push({ type: "separator" });
   if (isCueLiveEnabled()) {
-    items.push(
-      { type: "separator" },
-      {
-        label: "Summon Cue Live",
-        click: () => {
-          void triggerSummon();
-        },
+    items.push({
+      label: "Summon Cue Live",
+      click: () => {
+        void triggerSummon();
       },
-    );
+    });
   }
+  items.push({
+    label: "Cue Live Guide…",
+    click: async () => {
+      await handlers.ensureMainWindow();
+      dispatchToMain({ kind: "openCueLive" });
+    },
+  });
 
   items.push(
     { type: "separator" },

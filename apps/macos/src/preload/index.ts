@@ -6,6 +6,7 @@ import type {
   AssistantStatus,
   BundleScanData,
   ConnectivityState,
+  CueLiveStatus,
   DeepLink,
   DictationOverlayMessage,
   DictationOverlayState,
@@ -34,6 +35,7 @@ export type {
   AssistantStatus,
   BundleScanData,
   ConnectivityState,
+  CueLiveStatus,
   DeepLink,
   DictationOverlayMessage,
   DictationOverlayState,
@@ -136,6 +138,17 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:launchAtLogin:get") as Promise<boolean>,
     set: (enabled: boolean): Promise<void> =>
       ipcRenderer.invoke("vellum:launchAtLogin:set", enabled) as Promise<void>,
+  },
+  cueLive: {
+    status: (): Promise<CueLiveStatus> =>
+      ipcRenderer.invoke("vellum:cueLive:status") as Promise<CueLiveStatus>,
+    setEnabled: (enabled: boolean): Promise<CueLiveStatus> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:setEnabled",
+        enabled,
+      ) as Promise<CueLiveStatus>,
+    summon: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:cueLive:summon") as Promise<void>,
   },
   featureFlags: {
     set: (flags: Record<string, boolean>): void => {

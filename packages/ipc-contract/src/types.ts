@@ -44,6 +44,7 @@ export type VellumCommand =
   | { kind: "openConversation"; conversationId: string }
   | { kind: "openLibrary" }
   | { kind: "openIdentity" }
+  | { kind: "openCueLive" }
   | { kind: "navigateBack" }
   | { kind: "navigateForward" }
   | { kind: "zoomIn" }
@@ -348,6 +349,22 @@ export interface AppVersionInfo {
   commitSha: string;
   copyright: string;
   website: string;
+}
+
+// ---------------------------------------------------------------------------
+// Cue Live
+// ---------------------------------------------------------------------------
+
+/** Live status of the Cue Live overlay, for the in-app "How it works" page. */
+export interface CueLiveStatus {
+  /** Whether the user has Cue Live enabled (persisted, default ON). */
+  enabled: boolean;
+  /** Whether the overlay + summon subscriptions are currently running. */
+  running: boolean;
+  /** Whether the helper is trusted for macOS Accessibility (hotkey armed). */
+  accessibilityTrusted: boolean;
+  /** The summon hotkey, for display (e.g. "Control+Option+Space"). */
+  hotkey: string;
 }
 
 // ---------------------------------------------------------------------------
