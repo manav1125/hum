@@ -24,6 +24,7 @@ import {
   getVoiceKeysStatus,
   isCueLiveAvailable,
   setCueLiveEnabled,
+  setCueLiveTakeControl,
   setVoiceKey,
   summonCueLive,
 } from "@/runtime/cue-live";
@@ -223,6 +224,13 @@ function LiveControls() {
     setBusy(false);
   };
 
+  const handleTakeControl = async (next: boolean) => {
+    setBusy(true);
+    const updated = await setCueLiveTakeControl(next);
+    if (updated) setStatus(updated);
+    setBusy(false);
+  };
+
   const handleSummon = async () => {
     setSummonNote(null);
     await summonCueLive();
@@ -260,6 +268,28 @@ function LiveControls() {
           Summon
           <Keycaps hotkey={status.hotkey} />
         </span>
+      </div>
+
+      {/* Take control */}
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/30 p-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Zap className="size-4 text-sky-500" />
+            <span className="text-sm font-semibold text-foreground">
+              Let Cue act for me (full auto)
+            </span>
+          </div>
+          <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+            When on, holding ⌃⌥ and asking Cue to <em>do</em> something lets it
+            click and type to carry it out. Press <strong>Esc</strong> any time
+            to stop. Off = it only points and explains.
+          </p>
+        </div>
+        <Toggle
+          on={status.takeControl}
+          busy={busy}
+          onChange={handleTakeControl}
+        />
       </div>
 
       {status.enabled && !status.accessibilityTrusted && (

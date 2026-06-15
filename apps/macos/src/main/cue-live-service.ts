@@ -36,6 +36,9 @@ const CUE_LIVE_CAPTURE_SCREEN = "cuelive.captureScreen";
 const CUE_LIVE_POINT_AT = "cuelive.pointAt";
 const CUE_LIVE_SET_VOICE_CONFIG = "cuelive.setVoiceConfig";
 const CUE_LIVE_SPEAK = "cuelive.speak";
+const CUE_LIVE_PERFORM_ACTION = "cuelive.performAction";
+const CUE_LIVE_ABORT = "cuelive.abort";
+const CUE_LIVE_ACT_PATH = "/cuelive/act";
 
 /** `cuelive.summoned` — cursor in AX top-left coords + optional spoken question
  *  (present when the user summoned via push-to-talk). */
@@ -113,6 +116,7 @@ const AUTO_HIDE_MS = 6_000;
 let started = false;
 let unsubscribeSummoned: (() => void) | null = null;
 let unsubscribeTrusted: (() => void) | null = null;
+let unsubscribeAbort: (() => void) | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 // Bumped on every summon so a slow daemon guidance response from a previous
 // summon can't overwrite the card for a newer one.
@@ -305,6 +309,47 @@ const LOOK_SCHEMA = z.object({
   ),
 });
 
+/** Daemon `cuelive/act` response: the single next action (or done). */
+const ACT_SCHEMA = z.object({
+  say: z.string().nullable(),
+  done: z.boolean(),
+  action: z
+    .object({
+      type: z.enum([
+        "click",
+        "doubleclick",
+        "type",
+        "key",
+        "scroll",
+        "move",
+        "none",
+      ]),
+      x: z.number().nullish(),
+      y: z.number().nullish(),
+      text: z.string().nullish(),
+      key: z.string().nullish(),
+      dx: z.number().nullish(),
+      dy: z.number().nullish(),
+    })
+    .nullable(),
+});
+
+/**
+ * Whether full-auto take-control is enabled (persisted; injected by index.ts).
+ * Only voice-initiated summons (a spoken goal) ever trigger it.
+ */
+let takeControlEnabledGetter: () => boolean = () => true;
+export const setTakeControlEnabledGetter = (fn: () => boolean): void => {
+  takeControlEnabledGetter = fn;
+};
+
+/** Set by the helper's Escape signal to abort an in-progress auto run. */
+let abortRequested = false;
+
+/** Max actions per auto run, and the pause between them (UI settle time). */
+const MAX_ACT_STEPS = 15;
+const ACT_STEP_DELAY_MS = 750;
+
 /** Default question when the user summons without speaking one (pre-voice). */
 const DEFAULT_LOOK_QUESTION =
   "What's on my screen right now, and what should I do next?";
@@ -334,11 +379,157 @@ export const setPendingQuestion = (q: string | null): void => {
 let lastAnswer = "";
 export const getLastAnswer = (): string => lastAnswer;
 
+/** One-line summary of an action for the spoken/log history. */
+const describeAction = (a: z.infer<typeof ACT_SCHEMA>["action"]): string => {
+  if (!a) return "done";
+  switch (a.type) {
+    case "click":
+    case "doubleclick":
+    case "move":
+      return `${a.type} (${Math.round(a.x ?? 0)},${Math.round(a.y ?? 0)})`;
+    case "type":
+      return `type "${(a.text ?? "").slice(0, 40)}"`;
+    case "key":
+      return `press ${a.key}`;
+    case "scroll":
+      return `scroll (${a.dx ?? 0},${a.dy ?? 0})`;
+    default:
+      return a.type;
+  }
+};
+
 /**
- * On summon (clicky-style): screenshot the screen, ask the model what the user
- * should do, then fly the cursor to each thing it points at and show its spoken
- * answer. Best-effort throughout — a permission gap or transient error degrades
- * to a card explaining why, never a crash.
+ * Full-auto take-control loop: screenshot → ask the model for the next action →
+ * perform it → repeat, until the model says done, the step cap is hit, a newer
+ * summon supersedes this one, or the user presses Escape. Each `say` is shown +
+ * spoken. Coordinates come back in screenshot pixels and are scaled to screen
+ * points before being performed.
+ */
+const runActLoop = async (
+  client: MacHelperClient,
+  gen: number,
+  goal: string,
+  cursor: { x: number; y: number },
+): Promise<void> => {
+  abortRequested = false;
+  log.info(`[cue-live] auto run: "${goal.slice(0, 80)}"`);
+  let history = "";
+  for (let step = 1; step <= MAX_ACT_STEPS; step++) {
+    if (gen !== summonGeneration || abortRequested) {
+      log.info(`[cue-live] auto run aborted before step ${step}`);
+      return;
+    }
+
+    let cap: z.infer<typeof CAPTURE_SCHEMA>;
+    try {
+      const raw = await client.call(CUE_LIVE_CAPTURE_SCREEN, {
+        maxWidth: 1280,
+      });
+      const parsed = CAPTURE_SCHEMA.safeParse(raw);
+      if (!parsed.success) return;
+      cap = parsed.data;
+    } catch (err) {
+      log.warn(`[cue-live] auto capture failed: ${errMessage(err)}`);
+      return;
+    }
+    if (!cap.ok || !cap.data) {
+      if (cap.reason === "screen-recording-permission") {
+        await client
+          .call(CUE_LIVE_SHOW_CARD, {
+            title: "Cue Live needs Screen Recording",
+            subtitle:
+              "Enable Cue under System Settings → Privacy & Security → " +
+              "Screen Recording, then try again.",
+            x: cursor.x,
+            y: cursor.y,
+          })
+          .catch(() => {});
+        scheduleHide(client);
+      }
+      return;
+    }
+
+    if (step === 1) {
+      await client
+        .call(CUE_LIVE_SHOW_CARD, {
+          title: "Cue",
+          subtitle: "Working on it…  (press Esc to stop)",
+          x: cursor.x,
+          y: cursor.y,
+        })
+        .catch(() => {});
+    }
+    if (!guidanceFetcher) return;
+
+    let act: z.infer<typeof ACT_SCHEMA>;
+    try {
+      const raw = await guidanceFetcher(CUE_LIVE_ACT_PATH, {
+        goal,
+        imageBase64: cap.data,
+        mediaType: cap.mediaType ?? "image/png",
+        imageWidth: cap.width ?? 0,
+        imageHeight: cap.height ?? 0,
+        step,
+        history,
+      });
+      const parsed = ACT_SCHEMA.safeParse(raw);
+      if (!parsed.success) {
+        log.warn("[cue-live] act returned invalid payload");
+        return;
+      }
+      act = parsed.data;
+    } catch (err) {
+      log.warn(`[cue-live] act failed: ${errMessage(err)}`);
+      return;
+    }
+    if (gen !== summonGeneration || abortRequested) return;
+
+    if (act.say) {
+      lastAnswer = act.say;
+      await client
+        .call(CUE_LIVE_SHOW_CARD, {
+          title: "Cue",
+          subtitle: act.say,
+          x: cursor.x,
+          y: cursor.y,
+        })
+        .catch(() => {});
+      void client.call(CUE_LIVE_SPEAK, { text: act.say }).catch(() => {});
+    }
+
+    if (act.done || !act.action || act.action.type === "none") {
+      log.info(`[cue-live] auto run finished at step ${step}`);
+      break;
+    }
+
+    const a = act.action;
+    const scaleX = (cap.screenWidth ?? cap.width ?? 1) / (cap.width || 1);
+    const scaleY = (cap.screenHeight ?? cap.height ?? 1) / (cap.height || 1);
+    const payload: Record<string, unknown> = { type: a.type };
+    if (a.x != null) payload.x = a.x * scaleX;
+    if (a.y != null) payload.y = a.y * scaleY;
+    if (a.text != null) payload.text = a.text;
+    if (a.key != null) payload.key = a.key;
+    if (a.dx != null) payload.dx = a.dx;
+    if (a.dy != null) payload.dy = a.dy;
+    await client
+      .call(CUE_LIVE_PERFORM_ACTION, payload)
+      .catch((err: unknown) =>
+        log.warn(`[cue-live] performAction failed: ${errMessage(err)}`),
+      );
+    log.info(`[cue-live] auto step ${step}: ${describeAction(a)}`);
+    history += `Step ${step}: ${describeAction(a)}\n`;
+    await delay(ACT_STEP_DELAY_MS);
+  }
+  scheduleHide(client);
+};
+
+/**
+ * On summon: a spoken goal with take-control on runs the full-auto act loop;
+ * otherwise screenshot the screen, answer the (default or spoken) question, fly
+ * the cursor to each thing it points at, and speak the answer. Best-effort
+ * throughout — a permission gap or transient error degrades to a card, never a
+ * crash.
  */
 const handleSummon = async (
   client: MacHelperClient,
@@ -347,8 +538,15 @@ const handleSummon = async (
   clearHideTimer();
   const gen = ++summonGeneration;
   // The spoken question (push-to-talk) wins; then an in-app ask; then default.
-  const question = cursor.question ?? pendingQuestion ?? DEFAULT_LOOK_QUESTION;
+  const spokenGoal = cursor.question?.trim();
+  const question = spokenGoal ?? pendingQuestion ?? DEFAULT_LOOK_QUESTION;
   pendingQuestion = null;
+
+  // A spoken goal + take-control enabled → actually do the task.
+  if (spokenGoal && takeControlEnabledGetter()) {
+    await runActLoop(client, gen, spokenGoal, cursor);
+    return;
+  }
 
   // 1. Capture the screen.
   let cap: z.infer<typeof CAPTURE_SCHEMA>;
@@ -553,6 +751,11 @@ export const start = async (): Promise<void> => {
     },
   );
 
+  // Escape (from the helper) aborts an in-progress full-auto run.
+  unsubscribeAbort = client.onNotification(CUE_LIVE_ABORT, z.unknown(), () => {
+    abortRequested = true;
+  });
+
   try {
     const raw = await client.call(CUE_LIVE_START);
     const parsed = START_RESULT_SCHEMA.safeParse(raw);
@@ -594,10 +797,13 @@ export const stop = async (): Promise<void> => {
   started = false;
 
   clearHideTimer();
+  abortRequested = true;
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
+  unsubscribeAbort?.();
+  unsubscribeAbort = null;
 
   const client = getMacHelperClient();
   try {
@@ -624,19 +830,26 @@ export const installCueLive = (): void => {
 /** Synchronous teardown for app shutdown — drops timers + subscription. */
 export const dispose = (): void => {
   started = false;
+  abortRequested = true;
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
+  unsubscribeAbort?.();
+  unsubscribeAbort = null;
 };
 
 export const __resetForTesting = (): void => {
   started = false;
+  abortRequested = false;
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
+  unsubscribeAbort?.();
+  unsubscribeAbort = null;
   persistedEnabledGetter = () => true;
+  takeControlEnabledGetter = () => true;
 };

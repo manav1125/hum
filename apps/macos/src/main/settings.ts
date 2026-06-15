@@ -21,6 +21,8 @@ export interface AppSettings {
   launchAtLogin: boolean;
   /** Whether the Cue Live overlay + summon hotkey run. Defaults ON. */
   cueLiveEnabled: boolean;
+  /** Whether a spoken goal lets Cue Live actually click/type (full auto). */
+  cueLiveTakeControl: boolean;
   /**
    * Cue Live voice keys. `assemblyAi`/`elevenLabs` are base64 of
    * safeStorage-encrypted API keys (never stored plaintext);
@@ -53,6 +55,10 @@ const schema: Schema<AppSettings> = {
     type: "boolean",
   },
   cueLiveEnabled: {
+    type: "boolean",
+    default: true,
+  },
+  cueLiveTakeControl: {
     type: "boolean",
     default: true,
   },

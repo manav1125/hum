@@ -32,6 +32,7 @@ import {
   isCueLiveEnabled,
   setCueLiveEnabledGetter,
   setGuidanceFetcher,
+  setTakeControlEnabledGetter,
   setVoiceConfigProvider,
 } from "./cue-live-service";
 import { getDeviceId } from "./device-id";
@@ -392,6 +393,9 @@ app
     // macOS Accessibility permission at runtime.
     // Resolve the default-on enabled state from the persisted user setting.
     setCueLiveEnabledGetter(() => readSetting("cueLiveEnabled") ?? true);
+    setTakeControlEnabledGetter(
+      () => readSetting("cueLiveTakeControl") ?? true,
+    );
     // Hand Cue Live the (decrypted) voice keys on demand for the native helper.
     setVoiceConfigProvider(() => getVoiceConfig());
     // Wire Stage 3 guidance: the overlay asks the local daemon for a

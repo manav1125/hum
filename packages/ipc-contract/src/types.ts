@@ -364,6 +364,8 @@ export interface CueLiveStatus {
   accessibilityTrusted: boolean;
   /** The summon hotkey, for display (e.g. "Control+Option+Space"). */
   hotkey: string;
+  /** Whether a spoken goal lets Cue Live click/type for you (full auto). */
+  takeControl: boolean;
 }
 
 /** Which Cue Live voice keys are configured (never the secret values). */

@@ -29,6 +29,8 @@ export interface CueLiveStatus {
   accessibilityTrusted: boolean;
   /** The summon hotkey, for display. */
   hotkey: string;
+  /** Whether a spoken goal lets Cue Live click/type for you (full auto). */
+  takeControl: boolean;
 }
 
 const cueLiveStatus = (): CueLiveStatus => ({
@@ -36,6 +38,7 @@ const cueLiveStatus = (): CueLiveStatus => ({
   running: isStarted(),
   accessibilityTrusted: isAccessibilityTrusted(),
   hotkey: CUE_LIVE_HOTKEY,
+  takeControl: readSetting("cueLiveTakeControl") ?? true,
 });
 
 /**
@@ -70,6 +73,15 @@ export const installCueLiveIpc = (): void => {
   handle("vellum:cueLive:summon", z.tuple([]), async (): Promise<void> => {
     await triggerSummon();
   });
+
+  handle(
+    "vellum:cueLive:setTakeControl",
+    z.tuple([z.boolean()]),
+    ([enabled]): CueLiveStatus => {
+      writeSetting("cueLiveTakeControl", enabled);
+      return cueLiveStatus();
+    },
+  );
 
   // Voice keys: the renderer reads presence (never the secret values) and sets
   // them. Setting re-pushes the (decrypted) config to the running helper.

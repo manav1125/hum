@@ -12,7 +12,10 @@
  * `window.vellum`, `isNativePlatform()` calls Capacitor, and the web branch
  * uses `localStorage` — so consumers stay platform-agnostic.
  */
-import type { Lockfile, LockfileWriteResult } from "@vellumai/local-mode/contract";
+import type {
+  Lockfile,
+  LockfileWriteResult,
+} from "@vellumai/local-mode/contract";
 import type {
   AppVersionInfo,
   AssistantStatus,
@@ -119,6 +122,7 @@ declare global {
       cueLive?: {
         status(): Promise<CueLiveStatus>;
         setEnabled(enabled: boolean): Promise<CueLiveStatus>;
+        setTakeControl?(enabled: boolean): Promise<CueLiveStatus>;
         summon(): Promise<void>;
         voiceKeysStatus?(): Promise<CueLiveVoiceKeysStatus>;
         setVoiceKey?(
@@ -161,9 +165,7 @@ declare global {
       };
       permissions?: {
         getState(): Promise<SystemPermissionsState>;
-        request(
-          kind: SystemPermissionKind,
-        ): Promise<SystemPermissionStateItem>;
+        request(kind: SystemPermissionKind): Promise<SystemPermissionStateItem>;
         openSettings(
           kind: SystemPermissionKind,
         ): Promise<SystemPermissionStateItem>;
@@ -187,7 +189,10 @@ declare global {
         setPlatformSession(has: boolean): Promise<void>;
       };
       localMode: {
-        hatch(species: string, remote?: string): Promise<{
+        hatch(
+          species: string,
+          remote?: string,
+        ): Promise<{
           ok: boolean;
           assistantId?: string;
           error?: string;
@@ -228,9 +233,7 @@ declare global {
         setOnboarding(active: boolean): Promise<void>;
       };
       power: {
-        onEvent(
-          callback: (event: PowerEvent) => void,
-        ): () => void;
+        onEvent(callback: (event: PowerEvent) => void): () => void;
       };
       deepLinks: {
         drain(): Promise<DeepLink[]>;
@@ -245,9 +248,7 @@ declare global {
         logs(): Promise<string>;
       };
       connectivity?: {
-        onState(
-          callback: (state: ConnectivityState) => void,
-        ): () => void;
+        onState(callback: (state: ConnectivityState) => void): () => void;
         get(): Promise<ConnectivityState>;
         setDevice(online: boolean): void;
         retry(): Promise<ConnectivityState>;
@@ -263,9 +264,7 @@ declare global {
       };
       dictationOverlay?: {
         setState(state: DictationOverlayMessage): void;
-        onState(
-          callback: (state: DictationOverlayState) => void,
-        ): () => void;
+        onState(callback: (state: DictationOverlayState) => void): () => void;
         getState(): Promise<DictationOverlayState | null>;
       };
       notifications?: {
@@ -303,5 +302,7 @@ declare global {
  * use `isNativePlatform` from `@/runtime/native-auth.js` instead.
  */
 export function isElectron(): boolean {
-  return typeof window !== "undefined" && window.vellum?.platform === "electron";
+  return (
+    typeof window !== "undefined" && window.vellum?.platform === "electron"
+  );
 }

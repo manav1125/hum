@@ -214,7 +214,163 @@ async function handleLook({
   }
 }
 
+// --- Agentic "act" route (full-auto take control) ----------------------------
+
+const ActBody = z.object({
+  goal: z.string().describe("What the user asked Cue to accomplish"),
+  imageBase64: z.string().describe("Current screenshot, base64 (no data URI)"),
+  mediaType: z.string().default("image/png"),
+  imageWidth: z.number(),
+  imageHeight: z.number(),
+  step: z.number().describe("1-based step number in this run"),
+  history: z
+    .string()
+    .optional()
+    .describe("Short log of actions already taken this run"),
+});
+
+const ActionSchema = z.object({
+  type: z.enum([
+    "click",
+    "doubleclick",
+    "type",
+    "key",
+    "scroll",
+    "move",
+    "none",
+  ]),
+  x: z.number().nullish(),
+  y: z.number().nullish(),
+  text: z.string().nullish(),
+  key: z.string().nullish(),
+  dx: z.number().nullish(),
+  dy: z.number().nullish(),
+});
+
+const ActResult = z.object({
+  say: z.string().nullable(),
+  done: z.boolean(),
+  action: ActionSchema.nullable(),
+});
+type ActResultT = z.infer<typeof ActResult>;
+
+const actSystemPrompt = (w: number, h: number): string =>
+  "You are Cue, operating the user's Mac to accomplish their goal by " +
+  "controlling the mouse and keyboard. You are shown a screenshot " +
+  `(${w}x${h} pixels, origin top-left). Decide the SINGLE next action and ` +
+  "output ONLY a JSON object, no prose, no code fences:\n" +
+  '{"say": <a short spoken update, <=10 words, or null>, ' +
+  '"done": <true when the goal is achieved OR you cannot safely proceed>, ' +
+  '"action": {"type": "click"|"doubleclick"|"type"|"key"|"scroll"|"move"|"none", ' +
+  '"x": <pixel>, "y": <pixel>, "text": <for type>, "key": <return|tab|escape|up|down|left|right|delete|space>, ' +
+  '"dx": <for scroll>, "dy": <for scroll>}}\n' +
+  "x,y are the pixel center of the target in the screenshot. One action per " +
+  "step. After typing into a field, the next step is usually key=return when " +
+  "submitting. When the goal is complete, set done=true with action=null.\n" +
+  "If the goal is just a question rather than a task to perform, answer it in " +
+  "'say' and set done=true with action=null — do not click or type.\n" +
+  "Safety: never type passwords, card numbers, or other credentials, and never " +
+  "perform irreversible deletions, sends, or purchases unless the goal " +
+  "explicitly and unambiguously asks for it — in that case set done=true and " +
+  "say why instead.";
+
+function parseActJson(text: string): ActResultT {
+  let raw = text.trim();
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) raw = fence[1].trim();
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
+  try {
+    const parsed = ActResult.safeParse(JSON.parse(raw));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // fall through
+  }
+  // Couldn't parse a valid action — stop the run rather than flail.
+  return { say: null, done: true, action: null };
+}
+
+const MAX_ACT_TOKENS = 300;
+const ACT_TIMEOUT_MS = 20_000;
+
+async function handleAct({
+  body,
+  abortSignal,
+}: RouteHandlerArgs): Promise<ActResultT> {
+  const parsed = ActBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live act request body");
+  }
+  const {
+    goal,
+    imageBase64,
+    mediaType,
+    imageWidth,
+    imageHeight,
+    step,
+    history,
+  } = parsed.data;
+
+  const provider = await getConfiguredProvider("mainAgent");
+  if (!provider) return { say: null, done: true, action: null };
+
+  const userText =
+    `Goal: ${goal}\nStep: ${step}` +
+    (history ? `\nSo far:\n${history}` : "") +
+    "\nWhat is the single next action? Respond with the JSON object only.";
+
+  const messages: Message[] = [
+    {
+      role: "user",
+      content: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: mediaType, data: imageBase64 },
+        },
+        { type: "text", text: userText },
+      ],
+    },
+  ];
+
+  try {
+    const result = await runBtwSidechain({
+      content: "",
+      messages,
+      provider,
+      systemPrompt: actSystemPrompt(imageWidth, imageHeight),
+      tools: [],
+      maxTokens: MAX_ACT_TOKENS,
+      callSite: "mainAgent",
+      timeoutMs: ACT_TIMEOUT_MS,
+      signal: abortSignal,
+    });
+    return parseActJson(result.text);
+  } catch (err) {
+    log.warn({ err }, "Cue Live act generation failed");
+    return { say: null, done: true, action: null };
+  }
+}
+
 export const ROUTES: RouteDefinition[] = [
+  {
+    operationId: "cuelive_act",
+    endpoint: "cuelive/act",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleAct,
+    summary: "Decide the next UI action to accomplish the user's goal",
+    description:
+      "Full-auto take-control step: given a screenshot + goal, return the " +
+      "single next mouse/keyboard action (or done). Returns done when no model " +
+      "is configured.",
+    tags: ["cuelive"],
+    requestBody: ActBody,
+    responseBody: ActResult,
+  },
   {
     operationId: "cuelive_look",
     endpoint: "cuelive/look",

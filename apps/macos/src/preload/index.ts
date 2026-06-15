@@ -149,6 +149,11 @@ const bridge: VellumBridge = {
         "vellum:cueLive:setEnabled",
         enabled,
       ) as Promise<CueLiveStatus>,
+    setTakeControl: (enabled: boolean): Promise<CueLiveStatus> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:setTakeControl",
+        enabled,
+      ) as Promise<CueLiveStatus>,
     summon: (): Promise<void> =>
       ipcRenderer.invoke("vellum:cueLive:summon") as Promise<void>,
     voiceKeysStatus: (): Promise<CueLiveVoiceKeysStatus> =>

@@ -25,6 +25,16 @@ export async function setCueLiveEnabled(
   return window.vellum!.cueLive!.setEnabled(enabled);
 }
 
+/** Toggle full-auto take-control; returns the fresh status, or `null`. */
+export async function setCueLiveTakeControl(
+  enabled: boolean,
+): Promise<CueLiveStatus | null> {
+  if (!isCueLiveAvailable() || !window.vellum?.cueLive?.setTakeControl) {
+    return null;
+  }
+  return window.vellum.cueLive.setTakeControl(enabled);
+}
+
 /** Fire a summon (same flow as the hotkey) — the in-app "Try it" action. */
 export async function summonCueLive(): Promise<void> {
   if (!isCueLiveAvailable()) return;

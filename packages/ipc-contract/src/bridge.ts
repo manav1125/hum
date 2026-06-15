@@ -86,6 +86,7 @@ export interface VellumBridge {
   cueLive: {
     status(): Promise<CueLiveStatus>;
     setEnabled(enabled: boolean): Promise<CueLiveStatus>;
+    setTakeControl(enabled: boolean): Promise<CueLiveStatus>;
     summon(): Promise<void>;
     voiceKeysStatus(): Promise<CueLiveVoiceKeysStatus>;
     setVoiceKey(

@@ -458,6 +458,87 @@ final class CueLiveController: @unchecked Sendable {
         return ["ok": true]
     }
 
+    // MARK: - Take control (synthesized input)
+
+    /// Perform a single UI action by synthesizing real input events. Coordinates
+    /// are screen points (top-left). Requires Accessibility (already granted for
+    /// Cue Live). Used by the full-auto agentic loop.
+    func performAction(params: [String: Any]) -> [String: Any] {
+        let type = (params["type"] as? String ?? "").lowercased()
+        switch type {
+        case "click", "doubleclick", "move":
+            guard let x = params["x"] as? Double, let y = params["y"] as? Double
+            else { return ["ok": false, "reason": "missing-coords"] }
+            let pt = CGPoint(x: x, y: y)
+            CGWarpMouseCursorPosition(pt)
+            CGEvent(
+                mouseEventSource: nil, mouseType: .mouseMoved,
+                mouseCursorPosition: pt, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+            if type == "click" || type == "doubleclick" {
+                Self.clickMouse(at: pt, count: type == "doubleclick" ? 2 : 1)
+            }
+        case "type":
+            Self.typeText(params["text"] as? String ?? "")
+        case "key":
+            Self.pressKey(params["key"] as? String ?? "")
+        case "scroll":
+            let dx = Int32((params["dx"] as? Double) ?? 0)
+            let dy = Int32((params["dy"] as? Double) ?? 0)
+            CGEvent(
+                scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+                wheel1: dy, wheel2: dx, wheel3: 0)?
+                .post(tap: .cghidEventTap)
+        default:
+            return ["ok": false, "reason": "unknown-action:\(type)"]
+        }
+        return ["ok": true]
+    }
+
+    private static func clickMouse(at pt: CGPoint, count: Int) {
+        for _ in 0..<max(1, count) {
+            let down = CGEvent(
+                mouseEventSource: nil, mouseType: .leftMouseDown,
+                mouseCursorPosition: pt, mouseButton: .left)
+            down?.post(tap: .cghidEventTap)
+            let up = CGEvent(
+                mouseEventSource: nil, mouseType: .leftMouseUp,
+                mouseCursorPosition: pt, mouseButton: .left)
+            up?.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Type arbitrary text by posting Unicode key events (layout-independent).
+    private static func typeText(_ s: String) {
+        for scalar in s.unicodeScalars {
+            var utf16 = Array(String(scalar).utf16)
+            if let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {
+                down.keyboardSetUnicodeString(
+                    stringLength: utf16.count, unicodeString: &utf16)
+                down.post(tap: .cghidEventTap)
+            }
+            if let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) {
+                up.keyboardSetUnicodeString(
+                    stringLength: utf16.count, unicodeString: &utf16)
+                up.post(tap: .cghidEventTap)
+            }
+        }
+    }
+
+    /// Press a named special key (return, tab, escape, arrows, …).
+    private static func pressKey(_ name: String) {
+        let map: [String: CGKeyCode] = [
+            "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51,
+            "backspace": 51, "escape": 53, "esc": 53, "up": 126, "down": 125,
+            "left": 123, "right": 124, "home": 115, "end": 119,
+        ]
+        guard let code = map[name.lowercased()] else { return }
+        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)?
+            .post(tap: .cghidEventTap)
+        CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)?
+            .post(tap: .cghidEventTap)
+    }
+
     // MARK: - Main-actor internals
 
     @MainActor
@@ -563,11 +644,20 @@ final class CueLiveController: @unchecked Sendable {
                     .isSuperset(of: [.control, .option])
         }
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, matches(event) else { return }
-            self.emitSummon()
+            guard let self else { return }
+            if event.keyCode == 53 {  // Escape aborts an in-progress auto run
+                self.emit("cuelive.abort", nil)
+                return
+            }
+            if matches(event) { self.emitSummon() }
         }
         localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, matches(event) else { return event }
+            guard let self else { return event }
+            if event.keyCode == 53 {
+                self.emit("cuelive.abort", nil)
+                return event
+            }
+            guard matches(event) else { return event }
             self.emitSummon()
             return nil
         }
