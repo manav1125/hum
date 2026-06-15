@@ -350,6 +350,13 @@ const runSelfTest = (client: MacHelperClient): void => {
       }
       log.info("[cue-live] self-test: firing a summon at the cursor");
       await triggerSummon();
+      // A second summon ~2s later: over a Chromium/Electron app the first
+      // summon only primes the AX tree (AXManualAccessibility), so the second
+      // is what actually reads. Exercises the prime-then-read path.
+      setTimeout(() => {
+        log.info("[cue-live] self-test: second summon (post-prime read)");
+        void triggerSummon();
+      }, 2_000);
     })();
   }, 2_500);
 };

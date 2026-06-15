@@ -26,6 +26,7 @@ import { installCsp } from "./csp";
 import {
   dispose as disposeCueLive,
   installCueLive,
+  isCueLiveEnabled,
   setGuidanceFetcher,
 } from "./cue-live-service";
 import { getDeviceId } from "./device-id";
@@ -386,6 +387,13 @@ app
     // Wire Stage 3 guidance: the overlay asks the local daemon for a
     // synthesized "next move" through the host-proxy's authenticated channel.
     setGuidanceFetcher((path, body) => requestLocalDaemon(path, body));
+    // Chromium exposes its accessibility tree only when an AX client is
+    // detected. Cue Live reads the AX element under the cursor; enabling this
+    // lets it read Cue's OWN window on the first summon (the helper coaxes
+    // other Electron apps via AXManualAccessibility on demand).
+    if (isCueLiveEnabled()) {
+      app.setAccessibilitySupportEnabled(true);
+    }
     installCueLive();
     app.on("before-quit", disposeCueLive);
     installPermissionsService();

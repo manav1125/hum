@@ -145,10 +145,40 @@ final class CueLiveController: @unchecked Sendable {
 
         let system = AXUIElementCreateSystemWide()
         var element: AXUIElement?
-        let err = AXUIElementCopyElementAtPosition(
+        var err = AXUIElementCopyElementAtPosition(
             system, Float(axX), Float(axY), &element
         )
+        // Chromium/Electron apps (Cue, Chrome, VS Code, Slack, …) don't expose
+        // their accessibility tree until an AX client asks for it, so the
+        // system-wide hit-test fails over their windows. Set AXManualAccessibility
+        // on the app under the cursor to coax the tree to build, then retry. The
+        // tree builds asynchronously, so the first summon over a fresh Electron
+        // app may still miss but primes it for the next one.
+        if err != .success || element == nil {
+            if let pid = Self.appPidAtScreenPoint(x: axX, y: axY) {
+                let appEl = AXUIElementCreateApplication(pid)
+                AXUIElementSetAttributeValue(
+                    appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+                AXUIElementSetAttributeValue(
+                    appEl, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+                err = AXUIElementCopyElementAtPosition(
+                    system, Float(axX), Float(axY), &element)
+            }
+        }
         guard err == .success, let element else {
+            // Grant-only probe: reading the focused application needs the
+            // Accessibility grant but does NOT depend on the cursor or the
+            // target app's AX tree. If THIS succeeds, the grant is fine and the
+            // miss is a hit-test/no-AX-tree (e.g. Electron) issue; if it fails
+            // with apiDisabled, the grant itself is the problem.
+            var probe: AnyObject?
+            let probeErr = AXUIElementCopyAttributeValue(
+                system, kAXFocusedApplicationAttribute as CFString, &probe)
+            let msg = "[cue-live] readElement miss: AXerr=\(err.rawValue)"
+                + " grantProbe=\(probeErr.rawValue)(\(probe != nil))"
+                + " trusted=\(AXIsProcessTrusted())"
+                + " cursorAX=(\(Int(axX)),\(Int(axY)))\n"
+            FileHandle.standardError.write(Data(msg.utf8))
             return ["found": false]
         }
 
@@ -168,6 +198,33 @@ final class CueLiveController: @unchecked Sendable {
             result["height"] = frame.size.height
         }
         return result
+    }
+
+    /// PID of the frontmost normal (layer 0) app window containing the given
+    /// screen point (AX top-left coords), skipping this helper's own overlay.
+    /// Used to target AXManualAccessibility at the app the cursor is over.
+    private static func appPidAtScreenPoint(x: Double, y: Double) -> pid_t? {
+        guard
+            let wins = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        let selfPid = ProcessInfo.processInfo.processIdentifier
+        let point = CGPoint(x: x, y: y)
+        // CGWindowList is front-to-back: the first containing window wins.
+        for w in wins {
+            guard let opid = w[kCGWindowOwnerPID as String] as? pid_t,
+                opid != selfPid
+            else { continue }
+            let layer = w[kCGWindowLayer as String] as? Int ?? 0
+            if layer != 0 { continue }
+            guard let b = w[kCGWindowBounds as String] as? [String: CGFloat]
+            else { continue }
+            let rect = CGRect(
+                x: b["X"] ?? 0, y: b["Y"] ?? 0,
+                width: b["Width"] ?? 0, height: b["Height"] ?? 0)
+            if rect.contains(point) { return opid }
+        }
+        return nil
     }
 
     // MARK: - Overlay rendering (daemon-driven)
