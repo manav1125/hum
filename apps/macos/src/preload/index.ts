@@ -156,6 +156,12 @@ const bridge: VellumBridge = {
       ) as Promise<CueLiveStatus>,
     summon: (): Promise<void> =>
       ipcRenderer.invoke("vellum:cueLive:summon") as Promise<void>,
+    runGoal: (goal: string, takeControl: boolean): Promise<void> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:runGoal",
+        goal,
+        takeControl,
+      ) as Promise<void>,
     voiceKeysStatus: (): Promise<CueLiveVoiceKeysStatus> =>
       ipcRenderer.invoke(
         "vellum:cueLive:voiceKeysStatus",

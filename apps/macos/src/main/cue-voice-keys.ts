@@ -1,34 +1,77 @@
-import { safeStorage } from "electron";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { app } from "electron";
 
 import log from "./logger";
 import { readSetting, writeSetting } from "./settings";
 
 /**
  * Cue Live voice API keys (AssemblyAI for speech-to-text, ElevenLabs for
- * text-to-speech). Stored encrypted at rest via Electron's safeStorage (backed
- * by the macOS Keychain) and only ever handed to the native helper in memory
- * over the local JSON-RPC pipe. The renderer can set them and read their
- * presence, but never reads the secret values back.
+ * text-to-speech). Encrypted at rest with AES-256-GCM under a random key kept
+ * in a 0600 file in userData, and only ever handed to the native helper in
+ * memory over the local JSON-RPC pipe. The renderer can set them and read
+ * their presence, but never reads the secret values back.
+ *
+ * Why a keyfile and not Electron `safeStorage`: safeStorage's macOS key is
+ * bound to the app's code signature, so every re-pack (re-sign) silently makes
+ * previously-stored keys undecryptable. The keyfile lives in userData and
+ * survives re-packs, so the user enters their keys once.
  */
 
 type EncryptedField = "assemblyAi" | "elevenLabs";
 
-const encrypt = (plain: string): string =>
-  safeStorage.isEncryptionAvailable()
-    ? safeStorage.encryptString(plain).toString("base64")
-    : // Fallback when the OS keychain is unavailable: still not plaintext in
-      // the JSON, but not truly encrypted. safeStorage is available on macOS.
-      Buffer.from(plain, "utf8").toString("base64");
+let cachedMasterKey: Buffer | null = null;
+
+/** Load (or create) the 32-byte master key from userData. */
+const masterKey = (): Buffer => {
+  if (cachedMasterKey) return cachedMasterKey;
+  const keyPath = join(app.getPath("userData"), "cue-voice.key");
+  if (existsSync(keyPath)) {
+    cachedMasterKey = readFileSync(keyPath);
+  } else {
+    cachedMasterKey = randomBytes(32);
+    writeFileSync(keyPath, cachedMasterKey, { mode: 0o600 });
+    try {
+      chmodSync(keyPath, 0o600);
+    } catch {
+      // best-effort; the mode on write usually suffices
+    }
+  }
+  return cachedMasterKey;
+};
+
+const encrypt = (plain: string): string => {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", masterKey(), iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(plain, "utf8"),
+    cipher.final(),
+  ]);
+  // layout: iv(12) | authTag(16) | ciphertext
+  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString(
+    "base64",
+  );
+};
 
 const decrypt = (b64: string): string => {
-  const buf = Buffer.from(b64, "base64");
   try {
-    return safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(buf)
-      : buf.toString("utf8");
+    const buf = Buffer.from(b64, "base64");
+    const iv = buf.subarray(0, 12);
+    const authTag = buf.subarray(12, 28);
+    const ciphertext = buf.subarray(28);
+    const decipher = createDecipheriv("aes-256-gcm", masterKey(), iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString("utf8");
   } catch (err) {
+    // Old safeStorage-encrypted blobs (pre-migration) land here — treat as
+    // absent so the user re-enters once into the stable scheme.
     log.warn(
-      `[cue-voice-keys] decrypt failed: ${
+      `[cue-voice-keys] decrypt failed (re-enter the key): ${
         err instanceof Error ? err.message : String(err)
       }`,
     );

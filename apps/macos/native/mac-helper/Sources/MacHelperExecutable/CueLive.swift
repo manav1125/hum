@@ -129,6 +129,17 @@ final class CueLiveController: @unchecked Sendable {
         return ["ok": true]
     }
 
+    /// Summon with an explicit typed goal — the in-app test box. Behaves like a
+    /// spoken goal (carries `question`), so take-control engages when enabled.
+    func summonWithGoal(params: [String: Any]) -> [String: Any] {
+        let question = params["question"] as? String
+        MainActor.assumeIsolated {
+            ensureOverlay()
+            emitSummon(question: question)
+        }
+        return ["ok": true]
+    }
+
     func stop() -> [String: Any] {
         MainActor.assumeIsolated {
             trustPollTimer?.invalidate()

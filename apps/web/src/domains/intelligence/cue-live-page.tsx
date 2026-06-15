@@ -4,11 +4,13 @@ import {
   Keyboard,
   Lightbulb,
   Lock,
+  MessageSquare,
   Mic,
   MousePointer2,
   ShieldCheck,
   Sparkles,
   Volume2,
+  Wand2,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -23,6 +25,8 @@ import {
   getCueLiveStatus,
   getVoiceKeysStatus,
   isCueLiveAvailable,
+  isRunGoalSupported,
+  runGoal,
   setCueLiveEnabled,
   setCueLiveTakeControl,
   setVoiceKey,
@@ -516,6 +520,111 @@ function VoiceKeysSection() {
   );
 }
 
+const GOAL_EXAMPLES: readonly {
+  label: string;
+  goal: string;
+  control: boolean;
+}[] = [
+  {
+    label: "Notes — write a note",
+    goal: "Open the Notes app, create a new note, and type a short three-item grocery list.",
+    control: true,
+  },
+  {
+    label: "Finder — make a folder",
+    goal: "In Finder, on the Desktop, create a new folder and name it Test.",
+    control: true,
+  },
+  {
+    label: "Explain this screen",
+    goal: "What's on my screen right now, and what can I do here?",
+    control: false,
+  },
+];
+
+function GoalRunner() {
+  const [goal, setGoal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  if (!isRunGoalSupported()) return null;
+
+  const run = async (text: string, takeControl: boolean) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setNote(null);
+    await runGoal(trimmed, takeControl);
+    setBusy(false);
+    setNote(
+      takeControl
+        ? "Running — watch the screen. Press Esc to stop it at any time."
+        : "Looking — watch for the cursor to point and a card to appear.",
+    );
+  };
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-background p-5">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-semibold text-foreground">
+          Test it by typing
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Type a goal and run it — no microphone needed (this uses your
+          assistant's model only). “Do it” lets Cue click and type to complete
+          the task; “Explain” just points and describes.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {GOAL_EXAMPLES.map((ex) => (
+          <button
+            key={ex.label}
+            type="button"
+            onClick={() => setGoal(ex.goal)}
+            className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-sky-500 hover:text-foreground"
+          >
+            {ex.label}
+          </button>
+        ))}
+      </div>
+
+      <textarea
+        value={goal}
+        disabled={busy}
+        rows={2}
+        placeholder="e.g. Open Notes and write a grocery list"
+        onChange={(e) => setGoal(e.target.value)}
+        className="w-full resize-none rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-foreground outline-none focus:border-sky-500"
+      />
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          disabled={busy || !goal.trim()}
+          onClick={() => void run(goal, true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-600 disabled:opacity-50"
+        >
+          <Wand2 className="size-4" />
+          Do it
+        </button>
+        <button
+          type="button"
+          disabled={busy || !goal.trim()}
+          onClick={() => void run(goal, false)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+        >
+          <MessageSquare className="size-4" />
+          Explain
+        </button>
+        {note && (
+          <span className="text-xs text-muted-foreground">{note}</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function CueLivePage() {
   const available = isCueLiveAvailable();
 
@@ -539,6 +648,9 @@ export function CueLivePage() {
 
       {/* Live controls (desktop) or notice */}
       {available ? <LiveControls /> : <UnavailableNotice />}
+
+      {/* Typed-goal test box (no mic needed) */}
+      {available && <GoalRunner />}
 
       {/* Voice keys */}
       {available && <VoiceKeysSection />}

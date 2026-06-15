@@ -41,6 +41,22 @@ export async function summonCueLive(): Promise<void> {
   await window.vellum!.cueLive!.summon();
 }
 
+/** Whether the typed-goal test box is available (newer preloads only). */
+export function isRunGoalSupported(): boolean {
+  return (
+    isCueLiveAvailable() && typeof window.vellum?.cueLive?.runGoal === "function"
+  );
+}
+
+/** Run a typed goal. takeControl=true engages the act loop; false explains. */
+export async function runGoal(
+  goal: string,
+  takeControl: boolean,
+): Promise<void> {
+  if (!isRunGoalSupported()) return;
+  await window.vellum!.cueLive!.runGoal!(goal, takeControl);
+}
+
 /** Whether the voice-keys IPC is present (older preloads may lack it). */
 function voiceKeysSupported(): boolean {
   return (

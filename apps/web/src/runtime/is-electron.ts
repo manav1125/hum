@@ -124,6 +124,7 @@ declare global {
         setEnabled(enabled: boolean): Promise<CueLiveStatus>;
         setTakeControl?(enabled: boolean): Promise<CueLiveStatus>;
         summon(): Promise<void>;
+        runGoal?(goal: string, takeControl: boolean): Promise<void>;
         voiceKeysStatus?(): Promise<CueLiveVoiceKeysStatus>;
         setVoiceKey?(
           field: CueLiveVoiceKeyField,

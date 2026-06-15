@@ -32,6 +32,7 @@ const CUE_LIVE_HIDE = "cuelive.hide";
 const CUE_LIVE_SUMMONED = "cuelive.summoned";
 const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
 const CUE_LIVE_SUMMON_NOW = "cuelive.summonNow";
+const CUE_LIVE_SUMMON_GOAL = "cuelive.summonGoal";
 const CUE_LIVE_CAPTURE_SCREEN = "cuelive.captureScreen";
 const CUE_LIVE_POINT_AT = "cuelive.pointAt";
 const CUE_LIVE_SET_VOICE_CONFIG = "cuelive.setVoiceConfig";
@@ -679,6 +680,33 @@ export const triggerSummon = async (): Promise<void> => {
     await getMacHelperClient().call(CUE_LIVE_SUMMON_NOW);
   } catch (err) {
     log.warn(`[cue-live] triggerSummon failed: ${errMessage(err)}`);
+  }
+};
+
+/**
+ * Run a typed goal — the in-app test box. `takeControl: true` drives it like a
+ * spoken goal (so the act loop engages when take-control is enabled);
+ * `false` runs a look-only "explain" pass with the goal as the question. Lets
+ * the click loop be tested with just the Anthropic key — no mic / voice keys.
+ */
+export const runTypedGoal = async (
+  goal: string,
+  takeControl: boolean,
+): Promise<void> => {
+  if (!started) return;
+  const trimmed = goal.trim();
+  if (!trimmed) return;
+  try {
+    if (takeControl) {
+      await getMacHelperClient().call(CUE_LIVE_SUMMON_GOAL, {
+        question: trimmed,
+      });
+    } else {
+      pendingQuestion = trimmed;
+      await getMacHelperClient().call(CUE_LIVE_SUMMON_NOW);
+    }
+  } catch (err) {
+    log.warn(`[cue-live] runTypedGoal failed: ${errMessage(err)}`);
   }
 };
 

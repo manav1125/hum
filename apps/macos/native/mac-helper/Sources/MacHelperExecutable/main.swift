@@ -254,6 +254,11 @@ final class MacHelper: @unchecked Sendable {
             guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
             return self.ensureCueLive().summonNow()
         }
+        router.register("cuelive.summonGoal") { [weak self] params in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            let object = (params as? [String: Any]) ?? [:]
+            return self.ensureCueLive().summonWithGoal(params: object)
+        }
         return router
     }()
 

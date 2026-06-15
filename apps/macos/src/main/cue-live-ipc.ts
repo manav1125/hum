@@ -5,6 +5,7 @@ import {
   isAccessibilityTrusted,
   isStarted,
   pushVoiceConfig,
+  runTypedGoal,
   start as startCueLive,
   stop as stopCueLive,
   triggerSummon,
@@ -73,6 +74,16 @@ export const installCueLiveIpc = (): void => {
   handle("vellum:cueLive:summon", z.tuple([]), async (): Promise<void> => {
     await triggerSummon();
   });
+
+  // Typed-goal test box: run a goal by text (no mic/voice). takeControl=true
+  // engages the act loop; false runs a look-only "explain" pass.
+  handle(
+    "vellum:cueLive:runGoal",
+    z.tuple([z.string(), z.boolean()]),
+    async ([goal, takeControl]): Promise<void> => {
+      await runTypedGoal(goal, takeControl);
+    },
+  );
 
   handle(
     "vellum:cueLive:setTakeControl",
