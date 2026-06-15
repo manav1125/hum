@@ -118,6 +118,7 @@ beforeEach(() => {
   lastChild = null;
   exists = true;
   delete process.env.CUE_LIVE_ENABLED;
+  delete process.env.CUE_LIVE_POINT_DWELL_MS;
   requestLocalDaemonMock.mockClear();
   requestLocalDaemonMock.mockImplementation(async () => null);
   setGuidanceFetcher(requestLocalDaemonMock);
@@ -185,18 +186,15 @@ describe("start", () => {
   });
 });
 
-describe("summon → read → show orchestration", () => {
-  test("reads the element, highlights it, and shows the card", async () => {
+describe("summon → capture → look → point orchestration", () => {
+  // Answer cuelive.start, emit a summon, and answer cuelive.captureScreen with
+  // the given result. Returns once the screenshot is in hand.
+  async function summonAndCapture(capture: Record<string, unknown>) {
     void start();
     await wait(0);
-
-    // Answer cuelive.start.
     emit({ jsonrpc: "2.0", id: requestIdAt(0), result: { enabled: true } });
     await wait(0);
 
-    const writesBeforeSummon = lastChild?.stdin.writes.length ?? 0;
-
-    // Helper reports a summon at the cursor.
     emit({
       jsonrpc: "2.0",
       method: "cuelive.summoned",
@@ -204,76 +202,77 @@ describe("summon → read → show orchestration", () => {
     });
     await wait(0);
 
-    // The service should have called readElementAtCursor.
-    const readFrame = writeFor("cuelive.readElementAtCursor");
-    expect(readFrame).toBeDefined();
+    const cap = writeFor("cuelive.captureScreen");
+    expect(cap).toBeDefined();
+    emit({ jsonrpc: "2.0", id: (cap as { id: number }).id, result: capture });
+    await wait(0);
+  }
 
-    // Answer the read with a found element + bounds.
-    emit({
-      jsonrpc: "2.0",
-      id: requestIdAt(writesBeforeSummon),
-      result: {
-        found: true,
-        role: "AXButton",
-        label: "Send",
-        x: 10,
-        y: 20,
-        width: 80,
-        height: 30,
-      },
+  test("captures the screen, asks the model, and flies to the points", async () => {
+    process.env.CUE_LIVE_POINT_DWELL_MS = "0";
+    requestLocalDaemonMock.mockImplementation(async () => ({
+      answer: "Click Send to send your message.",
+      points: [{ x: 640, y: 400, label: "Send" }],
+    }));
+
+    await summonAndCapture({
+      ok: true,
+      data: "QkFTRTY0", // "BASE64"
+      mediaType: "image/png",
+      width: 1280,
+      height: 800,
+      screenWidth: 2560, // 2x scale vs the image
+      screenHeight: 1600,
     });
+
+    // A "thinking" card shows immediately; answer it so the flow proceeds.
+    const thinking = writeFor("cuelive.showCard");
+    expect(thinking?.params).toMatchObject({
+      subtitle: "Looking at your screen…",
+    });
+    emit({ jsonrpc: "2.0", id: (thinking as { id: number }).id, result: {} });
+    await wait(0);
     await wait(0);
 
-    // Highlight with the AX role as the mono label, anchored to bounds.
-    const highlight = writeFor("cuelive.highlight");
-    expect(highlight).toBeDefined();
-    expect(highlight?.params).toEqual({
-      x: 10,
-      y: 20,
-      width: 80,
-      height: 30,
-      label: "AXButton",
-    });
+    // The model was asked via the vision route, with the screenshot.
+    expect(requestLocalDaemonMock).toHaveBeenCalledWith(
+      "/cuelive/look",
+      expect.objectContaining({
+        imageBase64: "QkFTRTY0",
+        imageWidth: 1280,
+        imageHeight: 800,
+      }),
+    );
 
-    // Resolve the highlight call so the chained showCard call fires.
-    const highlightId = (highlight as { id: number }).id;
-    emit({ jsonrpc: "2.0", id: highlightId, result: {} });
+    // The cursor flies to the point, scaled from image px (640,400) to screen
+    // points (×2 → 1280,800).
+    const point = writeFor("cuelive.pointAt");
+    expect(point?.params).toEqual({ x: 1280, y: 800, label: "Send" });
+
+    // Drain the rest of the flow (pointAt ack → final answer card) so the
+    // summon completes cleanly and doesn't leak into the next test.
+    emit({ jsonrpc: "2.0", id: (point as { id: number }).id, result: {} });
     await wait(0);
-
-    // Card titled "Cue" with an AX-derived next-move subtitle.
-    const card = writeFor("cuelive.showCard");
-    expect(card).toBeDefined();
-    expect(card?.params).toEqual({
-      title: "Cue",
-      subtitle: 'Click "Send"',
-      x: 10,
-      y: 20,
-    });
+    const answer = lastChild?.stdin.writes
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .reverse()
+      .find((f) => f.method === "cuelive.showCard");
+    if (answer) emit({ jsonrpc: "2.0", id: answer.id as number, result: {} });
+    await wait(0);
   });
 
-  test("does nothing when no element is found", async () => {
-    void start();
-    await wait(0);
-    emit({ jsonrpc: "2.0", id: requestIdAt(0), result: { enabled: true } });
-    await wait(0);
-
-    const writesBeforeSummon = lastChild?.stdin.writes.length ?? 0;
-    emit({
-      jsonrpc: "2.0",
-      method: "cuelive.summoned",
-      params: { x: 5, y: 5 },
+  test("shows a permission card and skips the model when capture is denied", async () => {
+    await summonAndCapture({
+      ok: false,
+      reason: "screen-recording-permission",
     });
-    await wait(0);
 
-    emit({
-      jsonrpc: "2.0",
-      id: requestIdAt(writesBeforeSummon),
-      result: { found: false },
+    const card = writeFor("cuelive.showCard");
+    expect(card?.params).toMatchObject({
+      title: "Cue Live needs Screen Recording",
     });
-    await wait(0);
-
-    expect(writeFor("cuelive.highlight")).toBeUndefined();
-    expect(writeFor("cuelive.showCard")).toBeUndefined();
+    expect(requestLocalDaemonMock).not.toHaveBeenCalled();
+    expect(writeFor("cuelive.pointAt")).toBeUndefined();
   });
 });
 
@@ -341,72 +340,5 @@ describe("describeNextMove (Stage 2b action hints)", () => {
     expect(describeNextMove({ found: true, role: "AXUnknown" })).toBe(
       "Hover an element to inspect it",
     );
-  });
-});
-
-describe("Stage 3 daemon guidance upgrade", () => {
-  const allCards = () =>
-    (lastChild?.stdin.writes ?? [])
-      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
-      .filter((f) => f.method === "cuelive.showCard");
-
-  // Drive a summon through read → highlight → heuristic card, answering each
-  // RPC so handleSummon proceeds to request daemon guidance.
-  async function summonThroughHeuristicCard() {
-    void start();
-    await wait(0);
-    emit({ jsonrpc: "2.0", id: requestIdAt(0), result: { enabled: true } });
-    await wait(0);
-    const before = lastChild?.stdin.writes.length ?? 0;
-    emit({
-      jsonrpc: "2.0",
-      method: "cuelive.summoned",
-      params: { x: 100, y: 200 },
-    });
-    await wait(0);
-    emit({
-      jsonrpc: "2.0",
-      id: requestIdAt(before),
-      result: {
-        found: true,
-        role: "AXButton",
-        label: "New",
-        x: 10,
-        y: 20,
-        width: 80,
-        height: 30,
-      },
-    });
-    await wait(0);
-    const highlight = writeFor("cuelive.highlight");
-    emit({ jsonrpc: "2.0", id: (highlight as { id: number }).id, result: {} });
-    await wait(0);
-    // Answer the heuristic showCard so handleSummon proceeds past its await.
-    const card = allCards()[0];
-    expect(card.params).toMatchObject({ subtitle: 'Click "New"' });
-    emit({ jsonrpc: "2.0", id: (card as { id: number }).id, result: {} });
-    await wait(0);
-    await wait(0);
-  }
-
-  test("upgrades the card with the synthesized next move", async () => {
-    requestLocalDaemonMock.mockImplementation(async () => ({
-      nextMove: "Compose a new email",
-    }));
-    await summonThroughHeuristicCard();
-
-    const cards = allCards();
-    expect(cards.length).toBe(2);
-    expect(cards[1].params).toMatchObject({ subtitle: "Compose a new email" });
-    expect(requestLocalDaemonMock).toHaveBeenCalledWith(
-      "/cuelive/guidance",
-      expect.objectContaining({ role: "AXButton", label: "New" }),
-    );
-  });
-
-  test("keeps the heuristic card when guidance returns null (no model/error)", async () => {
-    requestLocalDaemonMock.mockImplementation(async () => null);
-    await summonThroughHeuristicCard();
-    expect(allCards().length).toBe(1);
   });
 });

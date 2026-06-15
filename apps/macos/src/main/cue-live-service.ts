@@ -32,6 +32,8 @@ const CUE_LIVE_HIDE = "cuelive.hide";
 const CUE_LIVE_SUMMONED = "cuelive.summoned";
 const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
 const CUE_LIVE_SUMMON_NOW = "cuelive.summonNow";
+const CUE_LIVE_CAPTURE_SCREEN = "cuelive.captureScreen";
+const CUE_LIVE_POINT_AT = "cuelive.pointAt";
 
 /** `cuelive.summoned` notification — cursor position in AX top-left coords. */
 const SUMMONED_SCHEMA = z.object({
@@ -241,109 +243,180 @@ const requestGuidance = async (
   }
 };
 
+/** Daemon route for the clicky-style vision ask. */
+const CUE_LIVE_LOOK_PATH = "/cuelive/look";
+
+/** Helper `captureScreen` result. */
+const CAPTURE_SCHEMA = z.object({
+  ok: z.boolean(),
+  data: z.string().optional(),
+  mediaType: z.string().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  screenWidth: z.number().optional(),
+  screenHeight: z.number().optional(),
+  reason: z.string().optional(),
+});
+
+/** Daemon `cuelive/look` response: a spoken answer + on-screen points. */
+const LOOK_SCHEMA = z.object({
+  answer: z.string(),
+  points: z.array(
+    z.object({ x: z.number(), y: z.number(), label: z.string() }),
+  ),
+});
+
+/** Default question when the user summons without speaking one (pre-voice). */
+const DEFAULT_LOOK_QUESTION =
+  "What's on my screen right now, and what should I do next?";
+
+/** At most this many points get pointed at, so a long answer doesn't drag. */
+const MAX_POINTS = 5;
+/** Dwell on each pointed element so the user can follow the cursor. */
+const pointDwellMs = (): number => {
+  const v = Number(process.env.CUE_LIVE_POINT_DWELL_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 1100;
+};
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
- * On summon: read the element under the cursor, and if found, ring it and show
- * the Cue guide card next to it. Best-effort throughout — a missing element or
- * a transient helper error degrades to "no card", never a crash.
+ * The next question to ask on summon. Voice (push-to-talk) and the in-app "ask"
+ * box set this; it falls back to {@link DEFAULT_LOOK_QUESTION} and is consumed
+ * (reset to null) on each summon.
+ */
+let pendingQuestion: string | null = null;
+export const setPendingQuestion = (q: string | null): void => {
+  pendingQuestion = q && q.trim() ? q.trim() : null;
+};
+
+/** Surface the last spoken answer to the renderer / TTS stage. */
+let lastAnswer = "";
+export const getLastAnswer = (): string => lastAnswer;
+
+/**
+ * On summon (clicky-style): screenshot the screen, ask the model what the user
+ * should do, then fly the cursor to each thing it points at and show its spoken
+ * answer. Best-effort throughout — a permission gap or transient error degrades
+ * to a card explaining why, never a crash.
  */
 const handleSummon = async (
   client: MacHelperClient,
   cursor: { x: number; y: number },
 ): Promise<void> => {
-  // Each summon resets the linger window; a fresh summon should not be hidden
-  // by a timer armed for a previous one.
   clearHideTimer();
   const gen = ++summonGeneration;
+  const question = pendingQuestion ?? DEFAULT_LOOK_QUESTION;
+  pendingQuestion = null;
 
-  let element: ReadElementResult;
+  // 1. Capture the screen.
+  let cap: z.infer<typeof CAPTURE_SCHEMA>;
   try {
-    const raw = await client.call(CUE_LIVE_READ_ELEMENT);
-    const parsed = READ_ELEMENT_SCHEMA.safeParse(raw);
+    const raw = await client.call(CUE_LIVE_CAPTURE_SCREEN, { maxWidth: 1280 });
+    const parsed = CAPTURE_SCHEMA.safeParse(raw);
     if (!parsed.success) {
-      log.warn("[cue-live] readElementAtCursor returned invalid payload");
+      log.warn("[cue-live] captureScreen returned invalid payload");
       return;
     }
-    element = parsed.data;
+    cap = parsed.data;
   } catch (err) {
-    log.warn(`[cue-live] readElementAtCursor failed: ${errMessage(err)}`);
+    log.warn(`[cue-live] captureScreen failed: ${errMessage(err)}`);
     return;
   }
 
-  if (!element.found) {
-    // Nothing actionable under the cursor (or Accessibility not yet granted).
-    log.info("[cue-live] summon: no AX element under cursor");
-    return;
-  }
-
-  const role = element.role ?? "AXUnknown";
-
-  // Ring the element bounds when the helper gave us geometry. A mono label of
-  // the AX role (e.g. "AXButton") rides along on the ring.
-  if (
-    element.x !== undefined &&
-    element.y !== undefined &&
-    element.width !== undefined &&
-    element.height !== undefined
-  ) {
-    try {
-      await client.call(CUE_LIVE_HIGHLIGHT, {
-        x: element.x,
-        y: element.y,
-        width: element.width,
-        height: element.height,
-        label: role,
-      });
-    } catch (err) {
-      log.warn(`[cue-live] highlight failed: ${errMessage(err)}`);
+  if (!cap.ok || !cap.data) {
+    if (cap.reason === "screen-recording-permission") {
+      await client
+        .call(CUE_LIVE_SHOW_CARD, {
+          title: "Cue Live needs Screen Recording",
+          subtitle:
+            "Enable Cue under System Settings → Privacy & Security → Screen " +
+            "Recording, then summon again.",
+          x: cursor.x,
+          y: cursor.y,
+        })
+        .catch(() => {});
+      scheduleHide(client);
+      log.warn("[cue-live] capture blocked: Screen Recording not granted");
+    } else {
+      log.warn(`[cue-live] capture failed: ${cap.reason ?? "unknown"}`);
     }
+    return;
   }
 
-  // Anchor the card to the element's top-left when available, otherwise the
-  // summon cursor position.
-  const cardX = element.x ?? cursor.x;
-  const cardY = element.y ?? cursor.y;
-
-  // Show the instant heuristic card immediately (Stage 2b) so there's never a
-  // wait for the overlay to appear.
-  try {
-    await client.call(CUE_LIVE_SHOW_CARD, {
+  // Immediate "thinking" card so the summon feels responsive.
+  await client
+    .call(CUE_LIVE_SHOW_CARD, {
       title: "Cue",
-      subtitle: describeNextMove(element),
-      x: cardX,
-      y: cardY,
-    });
-    log.info(
-      `[cue-live] summon: ${role}` +
-        `${element.label ? ` "${element.label}"` : ""} → card "${describeNextMove(element)}"` +
-        ` @ (${Math.round(cardX)},${Math.round(cardY)})`,
-    );
-  } catch (err) {
-    log.warn(`[cue-live] showCard failed: ${errMessage(err)}`);
-  }
-
-  // Auto-dismiss after the linger window if no further summon arrives.
+      subtitle: "Looking at your screen…",
+      x: cursor.x,
+      y: cursor.y,
+    })
+    .catch(() => {});
   scheduleHide(client);
 
-  // Stage 3: upgrade the card with the daemon-synthesized "next move" when it
-  // lands — unless a newer summon has superseded this one, or it came back
-  // empty (no model / error), in which case the heuristic card stands.
-  void requestGuidance(element).then((nextMove) => {
-    if (!nextMove || gen !== summonGeneration) return;
-    client
+  if (!guidanceFetcher) {
+    log.info("[cue-live] no daemon fetcher wired; cannot ask the model");
+    return;
+  }
+
+  // 2. Ask the model (vision): screenshot + question → answer + points.
+  let look: z.infer<typeof LOOK_SCHEMA>;
+  try {
+    const raw = await guidanceFetcher(CUE_LIVE_LOOK_PATH, {
+      question,
+      imageBase64: cap.data,
+      mediaType: cap.mediaType ?? "image/png",
+      imageWidth: cap.width ?? 0,
+      imageHeight: cap.height ?? 0,
+    });
+    const parsed = LOOK_SCHEMA.safeParse(raw);
+    if (!parsed.success) {
+      log.warn("[cue-live] look returned invalid payload");
+      return;
+    }
+    look = parsed.data;
+  } catch (err) {
+    log.warn(`[cue-live] look failed: ${errMessage(err)}`);
+    return;
+  }
+  if (gen !== summonGeneration) return; // a newer summon superseded this one
+  lastAnswer = look.answer;
+  log.info(
+    `[cue-live] look → "${look.answer.slice(0, 80)}" ` +
+      `(${look.points.length} point(s))`,
+  );
+
+  // 3. Map points from screenshot-pixels → screen-points and fly the cursor.
+  const scaleX = (cap.screenWidth ?? cap.width ?? 1) / (cap.width || 1);
+  const scaleY = (cap.screenHeight ?? cap.height ?? 1) / (cap.height || 1);
+  for (const p of look.points.slice(0, MAX_POINTS)) {
+    if (gen !== summonGeneration) return;
+    await client
+      .call(CUE_LIVE_POINT_AT, {
+        x: p.x * scaleX,
+        y: p.y * scaleY,
+        label: p.label,
+      })
+      .catch((err: unknown) =>
+        log.warn(`[cue-live] pointAt failed: ${errMessage(err)}`),
+      );
+    await delay(pointDwellMs());
+  }
+
+  // 4. Show the spoken answer (TTS speaks it in a later stage).
+  if (gen === summonGeneration && look.answer) {
+    await client
       .call(CUE_LIVE_SHOW_CARD, {
         title: "Cue",
-        subtitle: nextMove,
-        x: cardX,
-        y: cardY,
+        subtitle: look.answer,
+        x: cursor.x,
+        y: cursor.y,
       })
-      .then(() => {
-        log.info(`[cue-live] guidance upgrade → "${nextMove}"`);
-        scheduleHide(client);
-      })
-      .catch((err: unknown) => {
-        log.warn(`[cue-live] guidance card update failed: ${errMessage(err)}`);
-      });
-  });
+      .catch(() => {});
+    scheduleHide(client);
+  }
 };
 
 /**

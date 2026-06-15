@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import ScreenCaptureKit
 
 /// Cue Live — Stage 1 companion (guide-only, AX-first).
 ///
@@ -19,6 +20,24 @@ import Foundation
 /// Marked `@unchecked Sendable`: every public method is invoked on the main
 /// thread (the JSON-RPC router dispatches there) and hops to `@MainActor` for
 /// the AppKit work, returning only Sendable values across the boundary.
+/// Sendable result of a ScreenCaptureKit capture, marshaled back to the
+/// synchronous RPC handler across the Task boundary.
+private struct CaptureResult: Sendable {
+    var ok: Bool = false
+    var data: String?
+    var width: Int = 0
+    var height: Int = 0
+    var screenWidth: Double = 0
+    var screenHeight: Double = 0
+    var reason: String?
+}
+
+/// Carries a `CaptureResult` from the capture Task to the semaphore-blocked RPC
+/// thread. Safe by construction: the semaphore is the happens-before edge.
+private final class CaptureBox: @unchecked Sendable {
+    var value: CaptureResult?
+}
+
 final class CueLiveController: @unchecked Sendable {
     /// Emits a JSON-RPC notification back to the daemon.
     private let emit: (String, [String: Any]?) -> Void
@@ -329,6 +348,103 @@ final class CueLiveController: @unchecked Sendable {
             ensureOverlay()
             let rect = appKitRect(axX: x, axY: y, width: w, height: h)
             highlightView?.show(rect: rect, label: label)
+            overlay?.orderFrontRegardless()
+        }
+        return ["ok": true]
+    }
+
+    // MARK: - Vision capture + pointing (clicky-style)
+
+    /// Capture the main display as a downscaled PNG, base64-encoded. Requires
+    /// the Screen Recording permission; prompts and returns `ok:false` the
+    /// first time so the caller can tell the user. `width`/`height` are the
+    /// OUTPUT pixel size (the space the model's [POINT] coords come back in);
+    /// `screenWidth`/`screenHeight` are the display's size in points, so the
+    /// caller can map image pixels → on-screen cursor position.
+    func captureScreen(params: [String: Any]) -> [String: Any] {
+        let maxWidth = (params["maxWidth"] as? Double) ?? 1280
+        if !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+            return ["ok": false, "reason": "screen-recording-permission"]
+        }
+        // ScreenCaptureKit's screenshot API is async; the RPC handler is sync.
+        // Bridge with a semaphore — SCK delivers on its own queue, so blocking
+        // the caller (even main) can't deadlock. Carry the result across the
+        // Task boundary in an @unchecked-Sendable box (the semaphore is the
+        // happens-before edge).
+        let box = CaptureBox()
+        let sem = DispatchSemaphore(value: 0)
+        Task {
+            box.value = await Self.captureViaSCK(maxWidth: maxWidth)
+            sem.signal()
+        }
+        if sem.wait(timeout: .now() + 8) == .timedOut {
+            return ["ok": false, "reason": "capture-timeout"]
+        }
+        guard let r = box.value, r.ok, let data = r.data else {
+            return ["ok": false, "reason": box.value?.reason ?? "capture-failed"]
+        }
+        return [
+            "ok": true, "data": data, "mediaType": "image/png",
+            "width": r.width, "height": r.height,
+            "screenWidth": r.screenWidth, "screenHeight": r.screenHeight,
+        ]
+    }
+
+    /// One-shot main-display capture via ScreenCaptureKit, downscaled so the
+    /// longest edge is ~`maxWidth`px and PNG-encoded. Returns a Sendable struct.
+    private static func captureViaSCK(maxWidth: Double) async -> CaptureResult {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: false)
+            guard let display = content.displays.first else {
+                return CaptureResult(reason: "no-display")
+            }
+            let ptW = Double(display.width)
+            let ptH = Double(display.height)
+            let scale = ptW > maxWidth ? maxWidth / ptW : 1.0
+            let outW = max(1, Int(ptW * scale))
+            let outH = max(1, Int(ptH * scale))
+            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let config = SCStreamConfiguration()
+            config.width = outW
+            config.height = outH
+            config.showsCursor = false
+            let cg = try await SCScreenshotManager.captureImage(
+                contentFilter: filter, configuration: config)
+            guard
+                let png = NSBitmapImageRep(cgImage: cg)
+                    .representation(using: .png, properties: [:])
+            else { return CaptureResult(reason: "encode-failed") }
+            return CaptureResult(
+                ok: true, data: png.base64EncodedString(),
+                width: cg.width, height: cg.height,
+                screenWidth: ptW, screenHeight: ptH)
+        } catch {
+            return CaptureResult(reason: "sck:\(error.localizedDescription)")
+        }
+    }
+
+    /// Fly the cursor to a screen point (top-left points) and pin a labeled
+    /// ring there — the visible "pointing" gesture.
+    func pointAt(params: [String: Any]) -> [String: Any] {
+        guard let x = params["x"] as? Double, let y = params["y"] as? Double
+        else { return ["ok": false] }
+        let label = params["label"] as? String ?? ""
+        MainActor.assumeIsolated {
+            ensureOverlay()
+            // CGWarp uses global top-left display points — our point space.
+            CGWarpMouseCursorPosition(CGPoint(x: x, y: y))
+            let ring = 46.0
+            let rect = appKitRect(
+                axX: x - ring / 2, axY: y - ring / 2, width: ring, height: ring)
+            highlightView?.show(rect: rect, label: label.isEmpty ? nil : label)
+            if let card = cardView, !label.isEmpty {
+                card.configure(title: label, subtitle: nil)
+                card.setFrameOrigin(
+                    anchorOrigin(axX: x, axY: y, cardSize: card.frame.size))
+                card.isHidden = false
+            }
             overlay?.orderFrontRegardless()
         }
         return ["ok": true]

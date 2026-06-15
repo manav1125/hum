@@ -20,6 +20,7 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("Carbon"),
                 .linkedFramework("IOKit"),
+                .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Speech"),
             ]
         ),
