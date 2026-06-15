@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { getConfiguredProvider } from "../../providers/provider-send-message.js";
+import type { Message } from "../../providers/types.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { runBtwSidechain } from "../btw-sidechain.js";
@@ -98,7 +99,141 @@ async function handleGuidance({
   }
 }
 
+// --- Vision "look" route (clicky-style: screenshot + spoken question) --------
+
+const LookBody = z.object({
+  question: z
+    .string()
+    .describe("The user's spoken (transcribed) question about their screen"),
+  imageBase64: z.string().describe("Screenshot, base64-encoded (no data URI)"),
+  mediaType: z
+    .string()
+    .default("image/png")
+    .describe("MIME type of the screenshot"),
+  imageWidth: z
+    .number()
+    .describe("Pixel width of the screenshot (POINT coords are in this space)"),
+  imageHeight: z.number().describe("Pixel height of the screenshot"),
+});
+
+const LookPoint = z.object({
+  x: z.number(),
+  y: z.number(),
+  label: z.string(),
+});
+
+const LookResult = z.object({
+  /** Spoken answer with the [POINT] tags stripped out. */
+  answer: z.string(),
+  /** Where to point on screen, in screenshot-pixel coordinates. */
+  points: z.array(LookPoint),
+});
+type LookResultT = z.infer<typeof LookResult>;
+
+const lookSystemPrompt = (w: number, h: number): string =>
+  "You are Cue, an AI teacher who lives next to the user's cursor. You can see " +
+  "their screen and you talk to them like a friendly buddy looking over their " +
+  "shoulder. Answer their question about what's on screen in 1-3 short, spoken " +
+  "sentences — natural and conversational, no markdown, no lists.\n\n" +
+  `The screenshot is ${w}x${h} pixels, origin at the top-left. Whenever you ` +
+  "refer to something the user should look at or click, emit a tag of the form " +
+  "[POINT:x,y:label] inline, where x,y are pixel coordinates of the CENTER of " +
+  "that element in the screenshot and label is 1-3 words. Emit one tag per " +
+  "element you call out; you may use several. Keep the tags inline where you " +
+  "mention the thing — they are stripped from what the user hears.";
+
+const POINT_TAG =
+  /\[POINT:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*:\s*([^\]]*?)\s*\]/g;
+
+/** Pull [POINT:x,y:label] tags out of the model text; return cleaned text + points. */
+function parsePoints(text: string): LookResultT {
+  const points: LookResultT["points"] = [];
+  let m: RegExpExecArray | null;
+  POINT_TAG.lastIndex = 0;
+  while ((m = POINT_TAG.exec(text)) !== null) {
+    points.push({ x: Number(m[1]), y: Number(m[2]), label: m[3].trim() });
+  }
+  const answer = text
+    .replace(POINT_TAG, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return { answer, points };
+}
+
+const MAX_LOOK_TOKENS = 320;
+const LOOK_TIMEOUT_MS = 20_000;
+
+async function handleLook({
+  body,
+  abortSignal,
+}: RouteHandlerArgs): Promise<LookResultT> {
+  const parsed = LookBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live look request body");
+  }
+  const { question, imageBase64, mediaType, imageWidth, imageHeight } =
+    parsed.data;
+
+  const provider = await getConfiguredProvider("mainAgent");
+  if (!provider) {
+    return { answer: "", points: [] };
+  }
+
+  const messages: Message[] = [
+    {
+      role: "user",
+      content: [
+        {
+          type: "image",
+          source: { type: "base64", media_type: mediaType, data: imageBase64 },
+        },
+        {
+          type: "text",
+          text: question.trim() || "What's on my screen and what should I do?",
+        },
+      ],
+    },
+  ];
+
+  try {
+    const result = await runBtwSidechain({
+      content: "", // unused — messages carries the image + question
+      messages,
+      provider,
+      systemPrompt: lookSystemPrompt(imageWidth, imageHeight),
+      tools: [],
+      maxTokens: MAX_LOOK_TOKENS,
+      callSite: "mainAgent",
+      timeoutMs: LOOK_TIMEOUT_MS,
+      signal: abortSignal,
+    });
+    return parsePoints(result.text);
+  } catch (err) {
+    log.warn({ err }, "Cue Live look generation failed");
+    return { answer: "", points: [] };
+  }
+}
+
 export const ROUTES: RouteDefinition[] = [
+  {
+    operationId: "cuelive_look",
+    endpoint: "cuelive/look",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleLook,
+    summary: "Answer a spoken question about the user's screen and point at it",
+    description:
+      "Send a screenshot + the user's transcribed question to the configured " +
+      "model. Returns a short spoken answer plus on-screen points (in " +
+      "screenshot-pixel coordinates) to fly the cursor to. Returns empty when " +
+      "no model is configured.",
+    tags: ["cuelive"],
+    requestBody: LookBody,
+    responseBody: LookResult,
+  },
   {
     operationId: "cuelive_guidance",
     endpoint: "cuelive/guidance",
