@@ -136,6 +136,12 @@ final class CueLiveController: @unchecked Sendable {
         // mouse + screen height need the main actor; AX is a nonisolated C API.
         let (mouseX, mouseY, screenHeight): (Double, Double, Double) =
             MainActor.assumeIsolated {
+                // The overlay is a full-screen window at the cursor, so it would
+                // shadow the system-wide AX hit-test below — making every read
+                // (native or Electron) return nothing. Order it out for the
+                // hit-test; the caller re-shows it via highlight/showCard when
+                // there's something to draw.
+                overlay?.orderOut(nil)
                 let m = NSEvent.mouseLocation
                 return (Double(m.x), Double(m.y), Double(NSScreen.screens.first?.frame.height ?? 0))
             }
@@ -154,27 +160,29 @@ final class CueLiveController: @unchecked Sendable {
         // on the app under the cursor to coax the tree to build, then retry. The
         // tree builds asynchronously, so the first summon over a fresh Electron
         // app may still miss but primes it for the next one.
+        var hitVia = "systemwide"
+        var hitPid: pid_t = 0
         if err != .success || element == nil {
             if let pid = Self.appPidAtScreenPoint(x: axX, y: axY) {
+                hitPid = pid
                 let appEl = AXUIElementCreateApplication(pid)
                 AXUIElementSetAttributeValue(
                     appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
                 AXUIElementSetAttributeValue(
                     appEl, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+                // Hit-test within the app element itself — the system-wide
+                // hit-test can fail where a per-application one succeeds.
                 err = AXUIElementCopyElementAtPosition(
-                    system, Float(axX), Float(axY), &element)
+                    appEl, Float(axX), Float(axY), &element)
+                hitVia = "perapp"
             }
         }
         guard err == .success, let element else {
-            // Grant-only probe: reading the focused application needs the
-            // Accessibility grant but does NOT depend on the cursor or the
-            // target app's AX tree. If THIS succeeds, the grant is fine and the
-            // miss is a hit-test/no-AX-tree (e.g. Electron) issue; if it fails
-            // with apiDisabled, the grant itself is the problem.
             var probe: AnyObject?
             let probeErr = AXUIElementCopyAttributeValue(
                 system, kAXFocusedApplicationAttribute as CFString, &probe)
             let msg = "[cue-live] readElement miss: AXerr=\(err.rawValue)"
+                + " via=\(hitVia) pid=\(hitPid)"
                 + " grantProbe=\(probeErr.rawValue)(\(probe != nil))"
                 + " trusted=\(AXIsProcessTrusted())"
                 + " cursorAX=(\(Int(axX)),\(Int(axY)))\n"
