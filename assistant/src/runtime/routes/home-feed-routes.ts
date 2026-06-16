@@ -380,6 +380,66 @@ export async function handleDraftReply({
   return result as unknown as Record<string, unknown>;
 }
 
+/** Hard cap on a single batch draft run, so a click can't fan out unbounded. */
+const MAX_BATCH_DRAFTS = 10;
+
+const draftRepliesResponseSchema = z.object({
+  drafted: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  results: z.array(
+    z.object({
+      messageId: z.string(),
+      ok: z.boolean(),
+      draftId: z.string().optional(),
+      subject: z.string().optional(),
+      error: z.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * Draft replies for every email card on today's action board (cards that carry
+ * a `sourceMessageId`). Explicit, user-invoked, capped — it never runs on its
+ * own. Drafts are saved to Gmail Drafts and never sent.
+ */
+export async function handleDraftRepliesForBoard(): Promise<
+  Record<string, unknown>
+> {
+  const messageIds = readHomeFeed()
+    .items.filter((i) => i.id.startsWith("action-board:"))
+    .map(
+      (i) =>
+        (i.metadata as { sourceMessageId?: string } | undefined)
+          ?.sourceMessageId,
+    )
+    .filter((id): id is string => typeof id === "string" && id.length > 0)
+    .slice(0, MAX_BATCH_DRAFTS);
+
+  const results: Array<{
+    messageId: string;
+    ok: boolean;
+    draftId?: string;
+    subject?: string;
+    error?: string;
+  }> = [];
+  for (const messageId of messageIds) {
+    const r = await draftReplyForMessage(messageId);
+    results.push({
+      messageId,
+      ok: r.ok,
+      ...(r.draftId ? { draftId: r.draftId } : {}),
+      ...(r.subject ? { subject: r.subject } : {}),
+      ...(r.error ? { error: r.error } : {}),
+    });
+  }
+  const drafted = results.filter((r) => r.ok).length;
+  log.info(
+    { drafted, failed: results.length - drafted },
+    "POST /v1/home/draft-replies",
+  );
+  return { drafted, failed: results.length - drafted, results };
+}
+
 // ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
@@ -475,6 +535,21 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["home"],
     requestBody: draftReplyRequestSchema,
     responseBody: draftReplyResponseSchema,
+  },
+  {
+    operationId: "draft_replies_for_board",
+    endpoint: "home/draft-replies",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleDraftRepliesForBoard,
+    summary: "Auto-draft replies for all action-board emails",
+    description:
+      "Compose reply drafts (saved to Drafts, never sent) for every email card on today's action board. Explicit, user-invoked, capped at 10. Returns per-message results.",
+    tags: ["home"],
+    responseBody: draftRepliesResponseSchema,
   },
   {
     operationId: "trigger_home_feed_action",
