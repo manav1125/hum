@@ -28,6 +28,7 @@ import {
   type FeedItemStatus,
   HomeFeedResponseSchema,
 } from "../../api/responses/home.js";
+import { buildDailyActionBoard } from "../../home/action-board.js";
 import { patchFeedItemStatus, readHomeFeed } from "../../home/feed-writer.js";
 import { revalidateHomeContentInBackground } from "../../home/home-content-refresh.js";
 import { getPersonalizedGreeting } from "../../home/home-greeting.js";
@@ -335,6 +336,21 @@ export async function handlePostFeedAction({
   }
 }
 
+const actionBoardResponseSchema = z.object({
+  written: z.number().int().nonnegative(),
+  skipped: z.string().optional(),
+  emailsScanned: z.number().int().nonnegative(),
+  eventsScanned: z.number().int().nonnegative(),
+});
+
+export async function handleBuildActionBoard(): Promise<
+  Record<string, unknown>
+> {
+  const result = await buildDailyActionBoard();
+  log.info(result, "POST /v1/home/action-board/build");
+  return result as unknown as Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
@@ -399,6 +415,21 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["home"],
     requestBody: listHomeFeedRequestSchema,
     responseBody: listHomeFeedResponseSchema,
+  },
+  {
+    operationId: "build_action_board",
+    endpoint: "home/action-board/build",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleBuildActionBoard,
+    summary: "Build the daily action board",
+    description:
+      "Gather connected data (Gmail unread + today's Calendar), synthesize prioritized action items, and write them to the Home feed. Idempotent per day. Returns counts of items written and data scanned.",
+    tags: ["home"],
+    responseBody: actionBoardResponseSchema,
   },
   {
     operationId: "trigger_home_feed_action",

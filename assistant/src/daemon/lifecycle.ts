@@ -35,6 +35,7 @@ import {
 } from "../credential-execution/startup-timeout.js";
 import { FilingService } from "../filing/filing-service.js";
 import { HeartbeatService } from "../heartbeat/heartbeat-service.js";
+import { startActionBoardScheduler } from "../home/action-board-scheduler.js";
 import { backfillRelationshipStateIfMissing } from "../home/relationship-state-writer.js";
 import { closeSentry, initSentry, setSentryDeviceId } from "../instrument.js";
 import {
@@ -915,6 +916,11 @@ export async function runDaemon(): Promise<void> {
 
       log.info("Daemon startup: starting memory worker");
       bgRefs.memoryWorker = startMemoryJobsWorker();
+
+      // Daily action board morning backstop — builds the board after the
+      // configured morning hour if the user hasn't opened Home yet today.
+      // Timers are unref'd, so no shutdown plumbing is needed.
+      startActionBoardScheduler();
 
       // Seed capability graph nodes (new memory graph system)
       try {

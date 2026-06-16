@@ -125,4 +125,15 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
     thinking: { enabled: false },
     disableCache: true,
   },
+  // Triage/synthesis of inbox + calendar into action items. Uses a forced
+  // tool call for structured output, so thinking is explicitly disabled
+  // (extended thinking is incompatible with forced tool_choice and would be
+  // stripped anyway) and we match the proven cost-optimized path that other
+  // forced-tool call sites (e.g. memoryExtraction) use reliably.
+  actionBoard: {
+    profile: "cost-optimized",
+    maxTokens: 4096,
+    thinking: { enabled: false },
+    disableCache: true,
+  },
 };

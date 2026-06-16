@@ -78,6 +78,7 @@ export const LLMCallSiteEnum = z.enum([
   "trustRuleSuggestion",
   "homeGreeting",
   "homeSuggestedPrompts",
+  "actionBoard",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 

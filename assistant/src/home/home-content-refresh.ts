@@ -17,6 +17,7 @@
 import { buildAssistantEvent } from "../runtime/assistant-event.js";
 import { assistantEventHub } from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
+import { maybeBuildActionBoardForToday } from "./action-board.js";
 import { refreshPersonalizedGreeting } from "./home-greeting.js";
 import { refreshAssistantSuggestedPrompts } from "./suggested-prompts.js";
 
@@ -51,6 +52,14 @@ async function revalidateAll(): Promise<void> {
  * Concurrent calls share a single in-flight revalidation.
  */
 export function revalidateHomeContentInBackground(): void {
+  // The daily action board has its own once-per-day + in-flight guards, so
+  // kick it off independently of the greeting/prompts revalidation. It builds
+  // at most once per local day (the board's summary card on disk gates it),
+  // so calling it on every feed fetch is cheap after the first build.
+  void maybeBuildActionBoardForToday().catch((err) => {
+    log.warn({ err }, "Action board background build failed");
+  });
+
   if (inFlight) {
     return;
   }

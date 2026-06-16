@@ -307,6 +307,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Generates contextual conversation-starter suggestions for the Home page.",
     domain: "ui",
   },
+  actionBoard: {
+    id: "actionBoard",
+    displayName: "Daily Action Board",
+    description:
+      "Synthesizes connected data (email, calendar) into prioritized daily action items for the Home feed.",
+    domain: "notifications",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage
