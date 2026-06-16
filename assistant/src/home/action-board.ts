@@ -71,6 +71,9 @@ interface SynthItem {
   category: "email" | "scheduling" | "background" | "system";
   actionLabel?: string;
   actionPrompt?: string;
+  /** Gmail message id this item is about, when it's an email — lets the card
+   *  deep-link to the thread and drives auto-draft for that exact message. */
+  sourceMessageId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +235,11 @@ const SYNTH_TOOL: ToolDefinition = {
               description:
                 "The exact instruction to hand the agent when the button is clicked, e.g. 'Draft a reply to the email from Jane about the Q3 budget'. Must be self-contained — name the person and subject. Omit if no useful action.",
             },
+            sourceMessageId: {
+              type: "string",
+              description:
+                "For email items only: copy the exact [id: …] value of the email this item is about, so the card can link to it. Omit for non-email items.",
+            },
           },
           required: ["title", "summary", "urgency", "category"],
         },
@@ -271,7 +279,7 @@ async function synthesize(
     `## Unread emails (${emails.length})`,
     ...emails.map(
       (e, i) =>
-        `${i + 1}. From: ${e.from}\n   Subject: ${e.subject}\n   Date: ${e.date}\n   Preview: ${e.snippet}`,
+        `${i + 1}. [id: ${e.id}] From: ${e.from}\n   Subject: ${e.subject}\n   Date: ${e.date}\n   Preview: ${e.snippet}`,
     ),
     "",
     `## Today's calendar (${events.length})`,
@@ -384,13 +392,17 @@ export async function buildDailyActionBoard(opts?: {
   // Cards expire at end of the following day so a missed glance still shows.
   const expiresAt = new Date(now.getTime() + 36 * 60 * 60 * 1000).toISOString();
 
-  // Header card summarizing the day.
+  // Header card summarizing the day — positive "caught up" framing when the
+  // synthesizer found nothing that needs the user.
+  const caughtUp = synth.items.length === 0;
   const headerItem: FeedItem = {
     id: `action-board:${dateKey}:summary`,
     type: "notification",
     priority: 100,
-    title: "Your daily action board",
-    summary: synth.headline,
+    title: caughtUp ? "You're all caught up" : "Your daily action board",
+    summary: caughtUp
+      ? synth.headline || "Nothing needs your attention right now."
+      : synth.headline,
     timestamp: nowIso,
     createdAt: nowIso,
     status: "new",
@@ -433,7 +445,15 @@ export async function buildDailyActionBoard(opts?: {
       fromAssistant: true,
       expiresAt,
       ...(actions.length ? { actions } : {}),
-      metadata: { kind: "action-board-item" },
+      metadata: {
+        kind: "action-board-item",
+        ...(it.sourceMessageId
+          ? {
+              sourceMessageId: it.sourceMessageId,
+              gmailMessageId: it.sourceMessageId,
+            }
+          : {}),
+      },
     };
     await appendFeedItem(item);
     written++;
