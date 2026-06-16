@@ -136,4 +136,12 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
     thinking: { enabled: false },
     disableCache: true,
   },
+  // Reply drafting — quality of writing matters, so use the balanced profile.
+  // Plain-text completion (no forced tool), so thinking is fine at the
+  // profile default.
+  autoDraft: {
+    profile: "balanced",
+    maxTokens: 1024,
+    disableCache: true,
+  },
 };

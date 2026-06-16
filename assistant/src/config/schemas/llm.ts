@@ -79,6 +79,7 @@ export const LLMCallSiteEnum = z.enum([
   "homeGreeting",
   "homeSuggestedPrompts",
   "actionBoard",
+  "autoDraft",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 

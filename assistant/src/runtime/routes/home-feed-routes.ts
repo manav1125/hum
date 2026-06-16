@@ -29,6 +29,7 @@ import {
   HomeFeedResponseSchema,
 } from "../../api/responses/home.js";
 import { buildDailyActionBoard } from "../../home/action-board.js";
+import { draftReplyForMessage } from "../../home/auto-draft.js";
 import { patchFeedItemStatus, readHomeFeed } from "../../home/feed-writer.js";
 import { revalidateHomeContentInBackground } from "../../home/home-content-refresh.js";
 import { getPersonalizedGreeting } from "../../home/home-greeting.js";
@@ -351,6 +352,34 @@ export async function handleBuildActionBoard(): Promise<
   return result as unknown as Record<string, unknown>;
 }
 
+const draftReplyRequestSchema = z.object({
+  messageId: z.string().min(1),
+});
+
+const draftReplyResponseSchema = z.object({
+  ok: z.boolean(),
+  draftId: z.string().optional(),
+  threadId: z.string().optional(),
+  to: z.string().optional(),
+  subject: z.string().optional(),
+  error: z.string().optional(),
+});
+
+export async function handleDraftReply({
+  body,
+}: RouteHandlerArgs): Promise<Record<string, unknown>> {
+  const parsed = draftReplyRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new BadRequestError("messageId is required");
+  }
+  const result = await draftReplyForMessage(parsed.data.messageId);
+  log.info(
+    { ok: result.ok, draftId: result.draftId },
+    "POST /v1/home/draft-reply",
+  );
+  return result as unknown as Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
@@ -430,6 +459,22 @@ export const ROUTES: RouteDefinition[] = [
       "Gather connected data (Gmail unread + today's Calendar), synthesize prioritized action items, and write them to the Home feed. Idempotent per day. Returns counts of items written and data scanned.",
     tags: ["home"],
     responseBody: actionBoardResponseSchema,
+  },
+  {
+    operationId: "draft_reply",
+    endpoint: "home/draft-reply",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleDraftReply,
+    summary: "Auto-draft a reply to an email",
+    description:
+      "Compose a reply to the given Gmail message in the user's voice and save it to Drafts (threaded, never sent). Returns the draft id.",
+    tags: ["home"],
+    requestBody: draftReplyRequestSchema,
+    responseBody: draftReplyResponseSchema,
   },
   {
     operationId: "trigger_home_feed_action",

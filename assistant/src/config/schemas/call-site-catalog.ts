@@ -314,6 +314,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Synthesizes connected data (email, calendar) into prioritized daily action items for the Home feed.",
     domain: "notifications",
   },
+  autoDraft: {
+    id: "autoDraft",
+    displayName: "Auto-draft Reply",
+    description:
+      "Composes a reply draft to an email in the user's voice, saved to drafts for review before sending.",
+    domain: "agentLoop",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage
