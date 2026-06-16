@@ -36,7 +36,7 @@ export interface DraftReplyResult {
   error?: string;
 }
 
-interface MessageHeaders {
+export interface MessageHeaders {
   from: string;
   to: string;
   subject: string;
@@ -63,13 +63,13 @@ function headerValue(
 }
 
 /** Extract a bare email address from a header like `Jane Doe <jane@x.com>`. */
-function bareAddress(headerValueRaw: string): string {
+export function bareAddress(headerValueRaw: string): string {
   const match = headerValueRaw.match(/<([^>]+)>/);
   return (match ? match[1] : headerValueRaw).trim();
 }
 
 /** Base64url-encode a UTF-8 string (Gmail `raw` wants URL-safe base64). */
-function base64UrlEncode(input: string): string {
+export function base64UrlEncode(input: string): string {
   return Buffer.from(input, "utf-8")
     .toString("base64")
     .replace(/\+/g, "-")
@@ -78,9 +78,39 @@ function base64UrlEncode(input: string): string {
 }
 
 /** Encode a header value containing non-ASCII as RFC 2047, else pass through. */
-function encodeHeader(value: string): string {
+export function encodeHeader(value: string): string {
   if (/^[\x00-\x7F]*$/.test(value)) return value;
   return `=?UTF-8?B?${Buffer.from(value, "utf-8").toString("base64")}?=`;
+}
+
+/**
+ * Build the reply envelope (recipient, subject, RFC-822 MIME) for a draft.
+ * Pure and exported so the threading/encoding contract can be unit-tested.
+ *
+ * - `Re:` is collapsed (no `Re: Re: …` stutter).
+ * - Threading: `In-Reply-To` the original and append it to `References`.
+ * - Non-ASCII To/Subject are RFC-2047 encoded.
+ */
+export function buildReplyMime(
+  headers: MessageHeaders,
+  replyBody: string,
+): { to: string; subject: string; mime: string } {
+  const to = bareAddress(headers.from);
+  const subject = `Re: ${headers.subject.replace(/^\s*(re:\s*)+/i, "")}`;
+  const references = [headers.references, headers.messageId]
+    .filter(Boolean)
+    .join(" ");
+  const mime = [
+    `To: ${encodeHeader(to)}`,
+    `Subject: ${encodeHeader(subject)}`,
+    ...(headers.messageId ? [`In-Reply-To: ${headers.messageId}`] : []),
+    ...(references ? [`References: ${references}`] : []),
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `MIME-Version: 1.0`,
+    "",
+    replyBody,
+  ].join("\r\n");
+  return { to, subject, mime };
 }
 
 async function fetchMessage(
@@ -171,24 +201,7 @@ export async function draftReplyForMessage(
   const replyBody = await composeReply(msg.headers, msg.snippet, opts?.signal);
   if (!replyBody) return { ok: false, error: "Could not compose a reply." };
 
-  const to = bareAddress(msg.headers.from);
-  const subject = msg.headers.subject.replace(/^\s*(re:\s*)+/i, "");
-  const replySubject = `Re: ${subject}`;
-  // Thread the reply: In-Reply-To the original, and append it to References.
-  const references = [msg.headers.references, msg.headers.messageId]
-    .filter(Boolean)
-    .join(" ");
-
-  const mime = [
-    `To: ${encodeHeader(to)}`,
-    `Subject: ${encodeHeader(replySubject)}`,
-    ...(msg.headers.messageId ? [`In-Reply-To: ${msg.headers.messageId}`] : []),
-    ...(references ? [`References: ${references}`] : []),
-    `Content-Type: text/plain; charset="UTF-8"`,
-    `MIME-Version: 1.0`,
-    "",
-    replyBody,
-  ].join("\r\n");
+  const { to, subject, mime } = buildReplyMime(msg.headers, replyBody);
 
   const create = await conn.request({
     method: "POST",
@@ -218,6 +231,6 @@ export async function draftReplyForMessage(
     draftId: draft.id,
     threadId: draft.message?.threadId ?? msg.threadId,
     to,
-    subject: replySubject,
+    subject,
   };
 }

@@ -174,6 +174,39 @@ const activeToolkits = async (creds: ComposioCreds): Promise<Set<string>> => {
   }
 };
 
+/**
+ * Build the Composio proxy `endpoint` + `parameters` for an OAuth request.
+ *
+ * Encoding rules (both learned the hard way against the live proxy):
+ *  - Query goes in the endpoint URL, encoded with `encodeURIComponent`
+ *    (spaces → "%20"). `URLSearchParams` uses "+", which the proxy re-encodes
+ *    to a literal "%2B" and corrupts values like Gmail's `q=is:unread in:inbox`.
+ *  - Header/query params use `{name, value, type}` — the field is `type`, NOT
+ *    `in`; sending `in` makes the proxy 400 on any request carrying a header.
+ *  - The Authorization header is dropped: Composio injects the live token, and
+ *    a caller-supplied Authorization would override it.
+ *
+ * Exported (and pure) so the encoding contract can be unit-tested.
+ */
+export function buildProxyArgs(req: OAuthConnectionRequest): {
+  endpoint: string;
+  params: Array<{ name: string; value: string; type: "header" | "query" }>;
+} {
+  const base = (req.baseUrl ?? "").replace(/\/$/, "");
+  const queryPairs: string[] = [];
+  for (const [k, v] of Object.entries(req.query ?? {})) {
+    for (const item of Array.isArray(v) ? v : [v]) {
+      queryPairs.push(`${encodeURIComponent(k)}=${encodeURIComponent(item)}`);
+    }
+  }
+  const endpoint =
+    base + req.path + (queryPairs.length ? `?${queryPairs.join("&")}` : "");
+  const params = Object.entries(req.headers ?? {})
+    .filter(([k]) => k.toLowerCase() !== "authorization")
+    .map(([name, value]) => ({ name, value, type: "header" as const }));
+  return { endpoint, params };
+}
+
 /** Pick the toolkit for a Google request by host (Gmail vs Calendar vs People). */
 const pickGoogleToolkit = (req: OAuthConnectionRequest): string => {
   const where = `${req.baseUrl ?? ""} ${req.path}`.toLowerCase();
@@ -209,31 +242,12 @@ class ComposioOAuthConnection implements OAuthConnection {
         `Composio has no active "${toolkit}" connection for this user. Connect it in Cue → Connectors.`,
       );
     }
-    // Build the absolute endpoint (base + path + query). Query is encoded
-    // into the URL with `encodeURIComponent` (spaces → "%20") rather than via
-    // `URLSearchParams` (spaces → "+"): Composio's proxy re-encodes a "+" to a
-    // literal "%2B", which corrupts values like Gmail's `q=is:unread in:inbox`.
-    // "%20" survives the round-trip intact. Composio attaches the live provider
-    // token itself, so no Authorization header is sent — it would override it.
-    const base = (req.baseUrl ?? "").replace(/\/$/, "");
-    const queryPairs: string[] = [];
-    for (const [k, v] of Object.entries(req.query ?? {})) {
-      for (const item of Array.isArray(v) ? v : [v]) {
-        queryPairs.push(`${encodeURIComponent(k)}=${encodeURIComponent(item)}`);
-      }
-    }
-    const endpoint =
-      base + req.path + (queryPairs.length ? `?${queryPairs.join("&")}` : "");
-
-    const headers = Object.entries(req.headers ?? {})
-      .filter(([k]) => k.toLowerCase() !== "authorization")
-      .map(([name, value]) => ({ name, value, type: "header" as const }));
-
+    const { endpoint, params } = buildProxyArgs(req);
     const resp = await proxyRequest(this.creds, connId, {
       endpoint,
       method: req.method,
       body: req.body,
-      headers,
+      headers: params,
       signal: req.signal,
     });
     return {
