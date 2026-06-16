@@ -19,6 +19,7 @@ import type {
   BundleScanData,
   ConnectivityState,
   ConnectorStatus,
+  ConnectorTool,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -89,6 +90,12 @@ export interface VellumBridge {
     list(): Promise<ConnectorStatus[]>;
     connect(slug: string): Promise<string | null>;
     disconnect(slug: string): Promise<ConnectorStatus[]>;
+    tools(slug: string): Promise<ConnectorTool[]>;
+    setTool(
+      slug: string,
+      tool: string,
+      enabled: boolean,
+    ): Promise<ConnectorTool[]>;
   };
   cueLive: {
     status(): Promise<CueLiveStatus>;

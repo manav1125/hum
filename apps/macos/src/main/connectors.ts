@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -25,11 +25,15 @@ const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
 // Local assistant workspace (where the connector catalog is written). For a
 // single local assistant this is deterministic; a multi-assistant build would
 // resolve the active assistant id instead.
+const workspaceDir = (): string =>
+  join(homedir(), ".local/share/vellum/assistants/cue-local/.vellum/workspace");
+
 const connectorsConfigPath = (): string =>
-  join(
-    homedir(),
-    ".local/share/vellum/assistants/cue-local/.vellum/workspace/connectors.json",
-  );
+  join(workspaceDir(), "connectors.json");
+
+/** The daemon's config.json — read/written for per-tool toggles (the
+ *  config-watcher hot-reloads MCP on change, so toggles apply instantly). */
+const daemonConfigPath = (): string => join(workspaceDir(), "config.json");
 
 interface CatalogEntry {
   slug: string;
@@ -147,6 +151,97 @@ const disconnectConnector = async (slug: string): Promise<void> => {
   }
 };
 
+// --- Per-tool toggles (write daemon config → config-watcher hot-reloads) ------
+
+export interface ConnectorTool {
+  slug: string;
+  name: string;
+  enabled: boolean;
+}
+
+const prettyToolName = (slug: string, toolkitSlug: string): string => {
+  const prefix = toolkitSlug.toUpperCase() + "_";
+  const bare = slug.startsWith(prefix) ? slug.slice(prefix.length) : slug;
+  return bare
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+};
+
+interface DaemonConfig {
+  mcp?: {
+    servers?: Record<string, { allowedTools?: string[]; maxTools?: number }>;
+  };
+}
+
+const readDaemonConfig = (): DaemonConfig | null => {
+  try {
+    return JSON.parse(readFileSync(daemonConfigPath(), "utf8")) as DaemonConfig;
+  } catch {
+    return null;
+  }
+};
+
+/** All of a connector's tools, each marked enabled per the daemon allowlist. */
+const listConnectorTools = async (slug: string): Promise<ConnectorTool[]> => {
+  const cfg = readConfig();
+  if (!cfg) return [];
+  let all: Array<{ slug: string }> = [];
+  try {
+    const data = (await composio(
+      cfg,
+      "GET",
+      `/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=100`,
+    )) as { items?: Array<{ slug: string }> };
+    all = data.items ?? [];
+  } catch (err) {
+    log.warn(`[connectors] tools fetch failed for ${slug}: ${String(err)}`);
+    return [];
+  }
+  const daemon = readDaemonConfig();
+  const server = daemon?.mcp?.servers?.[`composio_${slug}`];
+  // No allowlist set yet → treat the current daemon set as "all enabled".
+  const allowed = server?.allowedTools;
+  return all
+    .map((t) => ({
+      slug: t.slug,
+      name: prettyToolName(t.slug, slug),
+      enabled: allowed ? allowed.includes(t.slug) : true,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+};
+
+/** Toggle one tool on/off for a connector; writes the daemon allowlist so the
+ *  config-watcher hot-reloads that MCP server (no restart). */
+const setConnectorToolEnabled = async (
+  slug: string,
+  toolSlug: string,
+  enabled: boolean,
+): Promise<void> => {
+  const path = daemonConfigPath();
+  let d: {
+    mcp?: {
+      servers?: Record<string, { allowedTools?: string[]; maxTools?: number }>;
+    };
+  };
+  try {
+    d = JSON.parse(readFileSync(path, "utf8"));
+  } catch (err) {
+    log.warn(`[connectors] read daemon config failed: ${String(err)}`);
+    return;
+  }
+  const key = `composio_${slug}`;
+  const server = d.mcp?.servers?.[key];
+  if (!server) return;
+  const current = new Set(server.allowedTools ?? []);
+  if (enabled) current.add(toolSlug);
+  else current.delete(toolSlug);
+  server.allowedTools = [...current];
+  server.maxTools = Math.max(current.size, 1);
+  writeFileSync(path, JSON.stringify(d, null, 2));
+};
+
 /** Whether connectors are configured on this install at all. */
 const connectorsAvailable = (): boolean => readConfig() !== null;
 
@@ -164,6 +259,19 @@ export const installConnectorsIpc = (): void => {
     async ([slug]): Promise<ConnectorStatus[]> => {
       await disconnectConnector(slug);
       return listConnectors();
+    },
+  );
+  handle(
+    "vellum:connectors:tools",
+    z.tuple([z.string()]),
+    ([slug]): Promise<ConnectorTool[]> => listConnectorTools(slug),
+  );
+  handle(
+    "vellum:connectors:setTool",
+    z.tuple([z.string(), z.string(), z.boolean()]),
+    async ([slug, tool, enabled]): Promise<ConnectorTool[]> => {
+      await setConnectorToolEnabled(slug, tool, enabled);
+      return listConnectorTools(slug);
     },
   );
 };

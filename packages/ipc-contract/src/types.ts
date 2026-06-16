@@ -376,6 +376,13 @@ export interface ConnectorStatus {
   connected: boolean;
 }
 
+/** One tool of a connector, with whether it's enabled for the assistant. */
+export interface ConnectorTool {
+  slug: string;
+  name: string;
+  enabled: boolean;
+}
+
 /** Which Cue Live voice keys are configured (never the secret values). */
 export interface CueLiveVoiceKeysStatus {
   hasAssemblyAi: boolean;
