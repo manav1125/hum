@@ -401,7 +401,16 @@ final class CueLiveController: @unchecked Sendable {
             return ["ok": false, "reason": "capture-timeout"]
         }
         guard let r = box.value, r.ok, let data = r.data else {
-            return ["ok": false, "reason": box.value?.reason ?? "capture-failed"]
+            let reason = box.value?.reason ?? "capture-failed"
+            // ScreenCaptureKit returns *no displays* (rather than throwing) when
+            // Screen Recording isn't actually granted — common after a re-sign,
+            // which silently revokes the grant while CGPreflight may still read
+            // stale-true. Surface it as a permission issue + trigger the prompt.
+            if reason == "no-display" {
+                _ = CGRequestScreenCaptureAccess()
+                return ["ok": false, "reason": "screen-recording-permission"]
+            }
+            return ["ok": false, "reason": reason]
         }
         return [
             "ok": true, "data": data, "mediaType": "image/png",
