@@ -1,0 +1,277 @@
+/**
+ * Composio-backed OAuth connection.
+ *
+ * Bridges the existing `assistant oauth request --provider <X>` machinery (and
+ * therefore every connector skill that uses it) onto the Composio connector
+ * layer. When a provider has an ACTIVE Composio connection for the current
+ * user, the authenticated request is made *through Composio's request proxy*
+ * (`tools/execute/proxy`) — so the native managed-OAuth path (dead in this
+ * fork, needs the hosted platform) is no longer required for connected apps.
+ *
+ * Why the proxy and not the raw token: Composio refreshes provider tokens
+ * internally and only injects a live one on its own execute/proxy path. The
+ * `data.access_token` it exposes on a connected account is frequently stale
+ * and 401s when used directly. Routing through the proxy lets Composio attach
+ * the current token (and handle refresh) so calls succeed reliably.
+ *
+ * Composio's connections are per-toolkit (gmail, googlecalendar, …) while the
+ * native `google` provider spans Gmail/Calendar/People on one credential, so
+ * requests are mapped to the right toolkit by host.
+ */
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { getLogger } from "../util/logger.js";
+import type {
+  OAuthConnection,
+  OAuthConnectionRequest,
+  OAuthConnectionResponse,
+} from "./connection.js";
+
+const log = getLogger("composio-oauth");
+const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
+// The request proxy lives on the v3.1 surface.
+const COMPOSIO_PROXY_URL =
+  "https://backend.composio.dev/api/v3.1/tools/execute/proxy";
+const CONN_ID_TTL_MS = 5 * 60_000;
+
+/** Native provider key → candidate Composio toolkit slugs. */
+const PROVIDER_TOOLKITS: Record<string, string[]> = {
+  google: ["gmail", "googlecalendar"],
+  gmail: ["gmail"],
+  google_calendar: ["googlecalendar"],
+  notion: ["notion"],
+  slack: ["slack"],
+  slack_channel: ["slack"],
+  outlook: ["outlook"],
+  github: ["github"],
+  linear: ["linear"],
+  airtable: ["airtable"],
+  hubspot: ["hubspot"],
+};
+
+interface ComposioCreds {
+  apiKey: string;
+  userId: string;
+}
+
+let credsCache: ComposioCreds | null | undefined;
+
+const readCreds = (): ComposioCreds | null => {
+  if (credsCache !== undefined) return credsCache;
+  const ws = process.env.VELLUM_WORKSPACE_DIR;
+  try {
+    const raw = JSON.parse(
+      readFileSync(join(ws ?? "", "connectors.json"), "utf8"),
+    ) as { composioApiKey?: string; userId?: string };
+    credsCache =
+      raw.composioApiKey && raw.userId
+        ? { apiKey: raw.composioApiKey, userId: raw.userId }
+        : null;
+  } catch {
+    credsCache = null;
+  }
+  return credsCache;
+};
+
+const composioGet = async (
+  creds: ComposioCreds,
+  path: string,
+): Promise<unknown> => {
+  const res = await fetch(`${COMPOSIO_BASE}${path}`, {
+    headers: { "x-api-key": creds.apiKey },
+  });
+  if (!res.ok) throw new Error(`Composio GET ${path} -> ${res.status}`);
+  return res.json();
+};
+
+const connIdCache = new Map<string, { id: string; at: number }>();
+
+/** Active connected-account ID for a toolkit, or null. */
+const connectionIdForToolkit = async (
+  creds: ComposioCreds,
+  toolkit: string,
+): Promise<string | null> => {
+  const cached = connIdCache.get(toolkit);
+  if (cached && Date.now() - cached.at < CONN_ID_TTL_MS) return cached.id;
+  try {
+    const data = (await composioGet(
+      creds,
+      `/connected_accounts?user_ids=${encodeURIComponent(creds.userId)}` +
+        `&toolkit_slugs=${toolkit}&statuses=ACTIVE&limit=1`,
+    )) as { items?: Array<{ id: string }> };
+    const id = data.items?.[0]?.id;
+    if (!id) return null;
+    connIdCache.set(toolkit, { id, at: Date.now() });
+    return id;
+  } catch (err) {
+    log.warn({ err, toolkit }, "Composio connection lookup failed");
+    return null;
+  }
+};
+
+interface ComposioProxyResponse {
+  data?: unknown;
+  status?: number;
+  headers?: Record<string, string>;
+}
+
+/**
+ * Make an authenticated upstream request through Composio's request proxy.
+ * Composio attaches the live provider token to the call, so this succeeds
+ * even when the raw stored token has rotated.
+ */
+const proxyRequest = async (
+  creds: ComposioCreds,
+  connectedAccountId: string,
+  args: {
+    endpoint: string;
+    method: string;
+    body?: unknown;
+    headers?: Array<{ name: string; value: string; type: "header" | "query" }>;
+    signal?: AbortSignal;
+  },
+): Promise<ComposioProxyResponse> => {
+  const res = await fetch(COMPOSIO_PROXY_URL, {
+    method: "POST",
+    headers: {
+      "x-api-key": creds.apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      connected_account_id: connectedAccountId,
+      endpoint: args.endpoint,
+      method: args.method.toUpperCase(),
+      ...(args.body !== undefined ? { body: args.body } : {}),
+      ...(args.headers && args.headers.length
+        ? { parameters: args.headers }
+        : {}),
+    }),
+    signal: args.signal,
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(
+      `Composio proxy ${args.method} ${args.endpoint} -> ${res.status} ${detail.slice(0, 200)}`,
+    );
+  }
+  return (await res.json()) as ComposioProxyResponse;
+};
+
+/** Which active toolkits Composio has for this user (cached briefly). */
+const activeToolkits = async (creds: ComposioCreds): Promise<Set<string>> => {
+  try {
+    const data = (await composioGet(
+      creds,
+      `/connected_accounts?user_ids=${encodeURIComponent(creds.userId)}&statuses=ACTIVE&limit=100`,
+    )) as { items?: Array<{ toolkit?: { slug?: string } }> };
+    return new Set(
+      (data.items ?? []).map((c) => c.toolkit?.slug ?? "").filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
+};
+
+/** Pick the toolkit for a Google request by host (Gmail vs Calendar vs People). */
+const pickGoogleToolkit = (req: OAuthConnectionRequest): string => {
+  const where = `${req.baseUrl ?? ""} ${req.path}`.toLowerCase();
+  if (where.includes("calendar")) return "googlecalendar";
+  return "gmail"; // gmail, people/contacts ride the gmail connection
+};
+
+class ComposioOAuthConnection implements OAuthConnection {
+  readonly id: string;
+  readonly provider: string;
+  readonly accountInfo: string | null = "composio";
+  private readonly creds: ComposioCreds;
+  private readonly toolkits: string[];
+
+  constructor(provider: string, creds: ComposioCreds, toolkits: string[]) {
+    this.id = `composio:${provider}`;
+    this.provider = provider;
+    this.creds = creds;
+    this.toolkits = toolkits;
+  }
+
+  private toolkitFor(req?: OAuthConnectionRequest): string {
+    if (this.toolkits.length === 1) return this.toolkits[0];
+    if (this.provider === "google" && req) return pickGoogleToolkit(req);
+    return this.toolkits[0];
+  }
+
+  async request(req: OAuthConnectionRequest): Promise<OAuthConnectionResponse> {
+    const toolkit = this.toolkitFor(req);
+    const connId = await connectionIdForToolkit(this.creds, toolkit);
+    if (!connId) {
+      throw new Error(
+        `Composio has no active "${toolkit}" connection for this user. Connect it in Cue → Connectors.`,
+      );
+    }
+    // Build the absolute endpoint (base + path + query). Query is encoded
+    // into the URL with `encodeURIComponent` (spaces → "%20") rather than via
+    // `URLSearchParams` (spaces → "+"): Composio's proxy re-encodes a "+" to a
+    // literal "%2B", which corrupts values like Gmail's `q=is:unread in:inbox`.
+    // "%20" survives the round-trip intact. Composio attaches the live provider
+    // token itself, so no Authorization header is sent — it would override it.
+    const base = (req.baseUrl ?? "").replace(/\/$/, "");
+    const queryPairs: string[] = [];
+    for (const [k, v] of Object.entries(req.query ?? {})) {
+      for (const item of Array.isArray(v) ? v : [v]) {
+        queryPairs.push(`${encodeURIComponent(k)}=${encodeURIComponent(item)}`);
+      }
+    }
+    const endpoint =
+      base + req.path + (queryPairs.length ? `?${queryPairs.join("&")}` : "");
+
+    const headers = Object.entries(req.headers ?? {})
+      .filter(([k]) => k.toLowerCase() !== "authorization")
+      .map(([name, value]) => ({ name, value, type: "header" as const }));
+
+    const resp = await proxyRequest(this.creds, connId, {
+      endpoint,
+      method: req.method,
+      body: req.body,
+      headers,
+      signal: req.signal,
+    });
+    return {
+      status: resp.status ?? 200,
+      headers: resp.headers ?? {},
+      body: resp.data ?? null,
+    };
+  }
+
+  /**
+   * The raw-token escape hatch is not supported on the Composio path: Composio
+   * owns token refresh and only injects a live token on its proxy/execute
+   * surface (the token it exposes is frequently stale). Callers that need a
+   * bare token must use a native BYO connection instead. In practice every
+   * connector skill goes through `request()`, so this is not hit.
+   */
+  async withToken<T>(_fn: (token: string) => Promise<T>): Promise<T> {
+    throw new Error(
+      `Raw access tokens are not available for the Composio-backed "${this.provider}" connection. ` +
+        `Use request() (Composio injects the live token on its proxy), or connect a BYO OAuth app for raw-token access.`,
+    );
+  }
+}
+
+/**
+ * Build a Composio-backed connection for a provider when Composio has an
+ * active connection for it; otherwise null (caller falls back to native).
+ */
+export async function composioConnectionFor(
+  provider: string,
+): Promise<OAuthConnection | null> {
+  const creds = readCreds();
+  if (!creds) return null;
+  const candidates = PROVIDER_TOOLKITS[provider];
+  if (!candidates) return null;
+  const active = await activeToolkits(creds);
+  const usable = candidates.filter((t) => active.has(t));
+  if (usable.length === 0) return null;
+  log.info({ provider, toolkits: usable }, "Using Composio for OAuth provider");
+  return new ComposioOAuthConnection(provider, creds, usable);
+}

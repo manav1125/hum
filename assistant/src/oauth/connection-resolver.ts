@@ -7,6 +7,7 @@ import {
 import { VellumPlatformClient } from "../platform/client.js";
 import { getLogger } from "../util/logger.js";
 import { BYOOAuthConnection } from "./byo-connection.js";
+import { composioConnectionFor } from "./composio-oauth.js";
 import type { OAuthConnection } from "./connection.js";
 import { getConnectionAccessTokenResult } from "./credential-token-resolver.js";
 import { syncManualTokenConnection } from "./manual-token-connection.js";
@@ -49,6 +50,13 @@ export async function resolveOAuthConnection(
   const { clientId, account } = options ?? {};
   const providerRow = getProvider(provider);
   const managedKey = providerRow?.managedServiceConfigKey;
+
+  // Composio-first: if the user has connected this provider's app via the
+  // Composio connector layer, route through it. This is the working managed
+  // path in this fork (the native platform-managed path needs the hosted
+  // platform). Falls through to native managed/BYO when not Composio-connected.
+  const composio = await composioConnectionFor(provider);
+  if (composio) return composio;
 
   if (managedKey && managedKey in ServicesSchema.shape) {
     const services: Services = getConfig().services;
