@@ -295,10 +295,13 @@ const resolvedConfig = resolveLocalConfigFromEnv(process.env);
 handleSync("vellum:config:get", () => ({
   webUrl: resolvedConfig.webUrl,
   platformUrl: resolvedConfig.platformUrl,
-  disablePlatform:
-    ["true", "1"].includes(
-      (process.env.VELLUM_DISABLE_PLATFORM ?? "").toLowerCase(),
-    ) || undefined,
+  // Cue is a self-hosted fork with no hosted platform, so the platform-managed
+  // OAuth broker can't work (it 401s). Default this ON so the Integrations UI
+  // hides the dead "Managed" tab and defaults to "Your Own" (BYO) connections.
+  // Set VELLUM_DISABLE_PLATFORM=false to re-enable Managed if a broker is wired.
+  disablePlatform: !["false", "0"].includes(
+    (process.env.VELLUM_DISABLE_PLATFORM ?? "").toLowerCase(),
+  ),
   deviceId: getDeviceId(),
 }));
 
