@@ -190,6 +190,41 @@ async function fetchTodaysEvents(
 }
 
 // ---------------------------------------------------------------------------
+// Deterministic enrichment: calendar conflict detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Find pairs of timed events whose intervals overlap. All-day events (which
+ * carry a `date` but no `dateTime`, so their `start`/`end` don't parse as a
+ * timestamp) are ignored — they routinely "overlap" timed meetings without
+ * being conflicts. Pure and exported for unit testing.
+ */
+export function detectConflicts(
+  events: EventSummary[],
+): Array<[EventSummary, EventSummary]> {
+  const timed = events
+    // Only events with a full RFC-3339 timestamp (has a "T"). All-day events
+    // carry a date-only string like "2026-06-17", which Date.parse() happily
+    // turns into midnight UTC — so they'd false-positive against timed
+    // meetings if we didn't exclude them by shape first.
+    .filter((e) => e.start.includes("T") && e.end.includes("T"))
+    .map((e) => ({ e, start: Date.parse(e.start), end: Date.parse(e.end) }))
+    .filter((x) => !Number.isNaN(x.start) && !Number.isNaN(x.end));
+  const pairs: Array<[EventSummary, EventSummary]> = [];
+  for (let i = 0; i < timed.length; i++) {
+    for (let j = i + 1; j < timed.length; j++) {
+      const a = timed[i];
+      const b = timed[j];
+      // Half-open overlap: back-to-back (a.end === b.start) is NOT a conflict.
+      if (a.start < b.end && b.start < a.end) {
+        pairs.push([a.e, b.e]);
+      }
+    }
+  }
+  return pairs;
+}
+
+// ---------------------------------------------------------------------------
 // Synthesis (model triages raw data into action items)
 // ---------------------------------------------------------------------------
 
@@ -256,7 +291,19 @@ Rules:
 - At most ${MAX_ITEMS} items. Order by genuine importance.
 - For emails that warrant a reply, set actionLabel "Draft reply" and a self-contained actionPrompt naming the sender and subject so the agent can act with no extra context.
 - For meetings that need prep, set actionLabel "Prep" with an actionPrompt describing what to prepare.
-- Use urgency honestly: most things are low/medium. Reserve high/critical for deadlines, time-sensitive replies, or conflicts.`;
+- Use urgency honestly: most things are low/medium. Reserve high/critical for deadlines, time-sensitive replies, or conflicts.
+- If a "Scheduling conflicts detected" section is present, you MUST surface each conflict as a high-urgency scheduling item so the user can resolve the overlap.`;
+
+/** Render detected conflicts as a context section the model must surface. */
+function conflictsSection(events: EventSummary[]): string[] {
+  const conflicts = detectConflicts(events);
+  if (conflicts.length === 0) return [];
+  return [
+    "",
+    `## ⚠️ Scheduling conflicts detected (${conflicts.length})`,
+    ...conflicts.map(([a, b]) => `- "${a.summary}" overlaps "${b.summary}"`),
+  ];
+}
 
 async function synthesize(
   emails: EmailSummary[],
@@ -287,6 +334,7 @@ async function synthesize(
       (e, i) =>
         `${i + 1}. ${e.summary} — ${e.start} to ${e.end}${e.location ? ` @ ${e.location}` : ""} (${e.attendees} attendees)`,
     ),
+    ...conflictsSection(events),
   ].join("\n");
 
   const response = await provider.sendMessage([userMessage(dataBlock)], {
