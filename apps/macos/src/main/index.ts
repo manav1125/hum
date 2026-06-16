@@ -22,6 +22,7 @@ import {
 import { resolveAllowedOrigin } from "./app-origin";
 import { writeCliLocator } from "./cli-installer";
 import { provisionCliForWrapper } from "./cli-path-installer";
+import { installConnectorsIpc } from "./connectors";
 import { installCsp } from "./csp";
 import { installCueLiveIpc } from "./cue-live-ipc";
 import { getVoiceConfig } from "./cue-voice-keys";
@@ -413,6 +414,7 @@ app
     }
     installCueLive();
     installCueLiveIpc();
+    installConnectorsIpc();
     app.on("before-quit", disposeCueLive);
     installPermissionsService();
     installAbout();

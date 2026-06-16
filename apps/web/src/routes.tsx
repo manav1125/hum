@@ -294,6 +294,7 @@ export const routeTree = [
                   children: [
                     { path: "identity", lazy: { Component: () => import("@/identity-page-route").then((m) => m.IdentityPageRoute) } },
                     { path: "cue-live", lazy: { Component: () => import("@/domains/intelligence/cue-live-page").then((m) => m.CueLivePage) } },
+                    { path: "connectors", lazy: { Component: () => import("@/domains/intelligence/connectors-page").then((m) => m.ConnectorsPage) } },
                     { path: "plugins", lazy: { Component: () => import("@/domains/intelligence/plugins-page").then((m) => m.PluginsPage) } },
                     { path: "plugins/:name", lazy: { Component: () => import("@/domains/intelligence/plugin-detail-page").then((m) => m.PluginDetailPage) } },
                     { path: "skills", lazy: { Component: () => import("@/domains/intelligence/skills-page").then((m) => m.SkillsPage) } },

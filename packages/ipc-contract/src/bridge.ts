@@ -18,6 +18,7 @@ import type {
   AssistantStatus,
   BundleScanData,
   ConnectivityState,
+  ConnectorStatus,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -82,6 +83,12 @@ export interface VellumBridge {
   launchAtLogin: {
     get(): Promise<boolean>;
     set(enabled: boolean): Promise<void>;
+  };
+  connectors: {
+    available(): Promise<boolean>;
+    list(): Promise<ConnectorStatus[]>;
+    connect(slug: string): Promise<string | null>;
+    disconnect(slug: string): Promise<ConnectorStatus[]>;
   };
   cueLive: {
     status(): Promise<CueLiveStatus>;

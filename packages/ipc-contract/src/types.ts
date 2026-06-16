@@ -368,6 +368,14 @@ export interface CueLiveStatus {
   takeControl: boolean;
 }
 
+/** A third-party connector (Composio-backed) and this install's status. */
+export interface ConnectorStatus {
+  slug: string;
+  name: string;
+  category: string;
+  connected: boolean;
+}
+
 /** Which Cue Live voice keys are configured (never the secret values). */
 export interface CueLiveVoiceKeysStatus {
   hasAssemblyAi: boolean;

@@ -6,6 +6,7 @@ import type {
   AssistantStatus,
   BundleScanData,
   ConnectivityState,
+  ConnectorStatus,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -37,6 +38,7 @@ export type {
   AssistantStatus,
   BundleScanData,
   ConnectivityState,
+  ConnectorStatus,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -140,6 +142,22 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke("vellum:launchAtLogin:get") as Promise<boolean>,
     set: (enabled: boolean): Promise<void> =>
       ipcRenderer.invoke("vellum:launchAtLogin:set", enabled) as Promise<void>,
+  },
+  connectors: {
+    available: (): Promise<boolean> =>
+      ipcRenderer.invoke("vellum:connectors:available") as Promise<boolean>,
+    list: (): Promise<ConnectorStatus[]> =>
+      ipcRenderer.invoke("vellum:connectors:list") as Promise<
+        ConnectorStatus[]
+      >,
+    connect: (slug: string): Promise<string | null> =>
+      ipcRenderer.invoke("vellum:connectors:connect", slug) as Promise<
+        string | null
+      >,
+    disconnect: (slug: string): Promise<ConnectorStatus[]> =>
+      ipcRenderer.invoke("vellum:connectors:disconnect", slug) as Promise<
+        ConnectorStatus[]
+      >,
   },
   cueLive: {
     status: (): Promise<CueLiveStatus> =>
