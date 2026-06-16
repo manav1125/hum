@@ -94,6 +94,8 @@ export const routes = {
   identity: r("/assistant/identity"),
   cueLive: r("/assistant/cue-live"),
   connectors: r("/assistant/connectors"),
+  channels: r("/assistant/channels"),
+  agents: r("/assistant/agents"),
   plugins: r("/assistant/plugins"),
   plugin: (name: string) => dyn(r("/assistant/plugins"), name),
   skills: r("/assistant/skills"),
