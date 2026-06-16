@@ -11,8 +11,17 @@ import {
   base64UrlEncode,
   buildReplyMime,
   encodeHeader,
+  extractPlainTextBody,
+  type GmailPayload,
   type MessageHeaders,
 } from "./auto-draft.js";
+
+const b64url = (s: string): string =>
+  Buffer.from(s, "utf-8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
 describe("bareAddress", () => {
   it("extracts the address from a display-name header", () => {
@@ -98,5 +107,63 @@ describe("buildReplyMime", () => {
     );
     expect(mime).not.toContain("In-Reply-To:");
     expect(mime).not.toContain("References:");
+  });
+});
+
+describe("extractPlainTextBody", () => {
+  it("returns '' for an undefined payload", () => {
+    expect(extractPlainTextBody(undefined)).toBe("");
+  });
+
+  it("decodes a non-multipart text/plain body", () => {
+    const payload: GmailPayload = {
+      mimeType: "text/plain",
+      body: { data: b64url("Hello there.\nRegards") },
+    };
+    expect(extractPlainTextBody(payload)).toBe("Hello there.\nRegards");
+  });
+
+  it("prefers text/plain over text/html in a multipart message", () => {
+    const payload: GmailPayload = {
+      mimeType: "multipart/alternative",
+      parts: [
+        { mimeType: "text/plain", body: { data: b64url("plain wins") } },
+        { mimeType: "text/html", body: { data: b64url("<p>html</p>") } },
+      ],
+    };
+    expect(extractPlainTextBody(payload)).toBe("plain wins");
+  });
+
+  it("falls back to stripped text/html when no text/plain exists", () => {
+    const payload: GmailPayload = {
+      mimeType: "multipart/alternative",
+      parts: [
+        {
+          mimeType: "text/html",
+          body: {
+            data: b64url(
+              "<style>x{}</style><p>Hi&nbsp;<b>Jane</b></p><script>1</script>",
+            ),
+          },
+        },
+      ],
+    };
+    expect(extractPlainTextBody(payload)).toBe("Hi Jane");
+  });
+
+  it("recurses into nested multipart parts", () => {
+    const payload: GmailPayload = {
+      mimeType: "multipart/mixed",
+      parts: [
+        {
+          mimeType: "multipart/alternative",
+          parts: [
+            { mimeType: "text/plain", body: { data: b64url("nested body") } },
+          ],
+        },
+        { mimeType: "application/pdf", body: { data: b64url("PDFDATA") } },
+      ],
+    };
+    expect(extractPlainTextBody(payload)).toBe("nested body");
   });
 });

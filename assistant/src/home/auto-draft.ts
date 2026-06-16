@@ -83,6 +83,61 @@ export function encodeHeader(value: string): string {
   return `=?UTF-8?B?${Buffer.from(value, "utf-8").toString("base64")}?=`;
 }
 
+/** Decode a Gmail base64url part body to a UTF-8 string. */
+function decodeBase64Url(data: string): string {
+  return Buffer.from(
+    data.replace(/-/g, "+").replace(/_/g, "/"),
+    "base64",
+  ).toString("utf-8");
+}
+
+/** A Gmail message payload (or part) as returned by `format=full`. */
+export interface GmailPayload {
+  mimeType?: string;
+  body?: { data?: string };
+  parts?: GmailPayload[];
+}
+
+/**
+ * Walk a Gmail `format=full` payload and return the best plain-text body:
+ * the first `text/plain` part, else a tag-stripped `text/html` part, else "".
+ * Pure and exported for unit testing.
+ */
+export function extractPlainTextBody(
+  payload: GmailPayload | undefined,
+): string {
+  if (!payload) return "";
+
+  const findByMime = (node: GmailPayload, mime: string): string | null => {
+    if (node.mimeType === mime && node.body?.data) {
+      return decodeBase64Url(node.body.data);
+    }
+    for (const child of node.parts ?? []) {
+      const found = findByMime(child, mime);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const plain = findByMime(payload, "text/plain");
+  if (plain) return plain.trim();
+
+  const html = findByMime(payload, "text/html");
+  if (html) {
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Non-multipart message: body sits directly on the payload.
+  if (payload.body?.data) return decodeBase64Url(payload.body.data).trim();
+  return "";
+}
+
 /**
  * Build the reply envelope (recipient, subject, RFC-822 MIME) for a draft.
  * Pure and exported so the threading/encoding contract can be unit-tested.
@@ -113,22 +168,24 @@ export function buildReplyMime(
   return { to, subject, mime };
 }
 
+/** Max chars of original email body fed to the model (keeps the prompt bounded). */
+const MAX_BODY_CHARS = 6000;
+
 async function fetchMessage(
   conn: OAuthConnection,
   messageId: string,
 ): Promise<{
   headers: MessageHeaders;
-  snippet: string;
+  body: string;
   threadId: string;
 } | null> {
   const res = await conn.request({
     method: "GET",
     baseUrl: GMAIL_BASE,
     path: `/gmail/v1/users/me/messages/${messageId}`,
-    query: {
-      format: "metadata",
-      metadataHeaders: ["From", "To", "Subject", "Message-ID", "References"],
-    },
+    // `full` returns all headers plus the body parts, so we get real reply
+    // context (not just the ~280-char snippet).
+    query: { format: "full" },
   });
   if (res.status >= 400) {
     log.warn({ status: res.status, messageId }, "Gmail message fetch failed");
@@ -137,12 +194,15 @@ async function fetchMessage(
   const body = res.body as {
     threadId?: string;
     snippet?: string;
-    payload?: { headers?: Array<{ name?: string; value?: string }> };
+    payload?: GmailPayload & {
+      headers?: Array<{ name?: string; value?: string }>;
+    };
   };
   const h = body.payload?.headers;
+  const text = extractPlainTextBody(body.payload) || (body.snippet ?? "");
   return {
     threadId: body.threadId ?? "",
-    snippet: body.snippet ?? "",
+    body: text.slice(0, MAX_BODY_CHARS),
     headers: {
       from: headerValue(h, "From"),
       to: headerValue(h, "To"),
@@ -155,7 +215,7 @@ async function fetchMessage(
 
 async function composeReply(
   headers: MessageHeaders,
-  snippet: string,
+  emailBody: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
   const provider = await getConfiguredProvider("autoDraft");
@@ -168,7 +228,7 @@ async function composeReply(
     `Subject: ${headers.subject}`,
     "",
     `Email content:`,
-    snippet,
+    emailBody,
   ].join("\n");
 
   const response = await provider.sendMessage([userMessage(context)], {
@@ -198,7 +258,7 @@ export async function draftReplyForMessage(
   const msg = await fetchMessage(conn, messageId);
   if (!msg) return { ok: false, error: "Could not load the message." };
 
-  const replyBody = await composeReply(msg.headers, msg.snippet, opts?.signal);
+  const replyBody = await composeReply(msg.headers, msg.body, opts?.signal);
   if (!replyBody) return { ok: false, error: "Could not compose a reply." };
 
   const { to, subject, mime } = buildReplyMime(msg.headers, replyBody);
