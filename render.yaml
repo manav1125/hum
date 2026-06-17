@@ -60,29 +60,12 @@ services:
       mountPath: /qdrant/storage
       sizeGB: 5
 
-  # ── credential execution service (private, hard-isolated) ──────────────
-  - type: pserv
-    name: cue-ces
-    runtime: docker
-    dockerfilePath: ./credential-executor/Dockerfile
-    dockerContext: .
-    region: singapore
-    plan: starter
-    disk:
-      # The security volume. CES is the ONLY service that mounts it.
-      name: ces-security
-      mountPath: /ces-security
-      sizeGB: 5
-    envVars:
-      - fromGroup: cue-shared-tokens
-      - fromGroup: cue-secrets
-      - key: CES_MODE
-        value: managed
-      - key: CES_HEALTH_PORT
-        value: "8090"
-      # One-disk-per-service: keep CES data on the same persistent disk.
-      - key: CES_PRIVATE_DATA_DIR
-        value: /ces-security/data
+  # NOTE: CES is intentionally NOT a separate service. Managed CES is
+  # socket-only (no HTTP command API) and the daemon discovers it as a sidecar
+  # sharing /run/ces-bootstrap — which Render can't share across services. CES
+  # will be folded into the cue-app container (a third co-located process) in a
+  # follow-up; until then the daemon runs without it (connectors disabled, chat
+  # works).
 
   # ── cue-app: daemon + gateway, co-located (the ONLY public ingress) ─────
   # The gateway reaches the daemon over the Unix socket in the shared
