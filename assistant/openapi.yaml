@@ -14396,6 +14396,11 @@ paths:
                         - count
                         - hours
                       additionalProperties: false
+                  byDay:
+                    type: array
+                    items:
+                      type: number
+                      minimum: 0
                   recent:
                     type: array
                     items:
@@ -14417,6 +14422,7 @@ paths:
                   - hoursSaved
                   - taskCount
                   - byCategory
+                  - byDay
                   - recent
                 additionalProperties: false
       parameters:

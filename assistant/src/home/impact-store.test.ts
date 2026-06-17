@@ -81,6 +81,7 @@ describe("aggregateEvents", () => {
       hoursSaved: 0,
       taskCount: 0,
       byCategory: [],
+      byDay: [0, 0, 0, 0, 0, 0, 0],
       recent: [],
     });
   });

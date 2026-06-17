@@ -1,39 +1,114 @@
 import { useQuery } from "@tanstack/react-query";
-import { Mail, Phone, Sparkles, TrendingUp } from "lucide-react";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { homeImpactGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import { useNavigate } from "react-router";
+import { routes } from "@/utils/routes";
 
 /**
- * Impact — "your week with Cue".
+ * Impact — faithful translation of `surfaces/Impact.dc.html`.
  *
- * The weekly recap: hours saved, tasks handled, where the time went, and a few
- * concrete things Cue did. Wired to GET /v1/home/impact (real recorded events),
- * so the numbers reflect actual work — drafts composed, emails triaged, etc.
- *
- * Placement note: the design treats Impact as a Core surface reached from
- * Home's "Recap" button. It's mounted under the Intelligence tabs for now so
- * it's discoverable; the final entry point is the Home recap link.
+ * Full-bleed "your week with Cue": an ink hero (aperture avatar, the serif
+ * "Cue gave you back N hours", and a per-day sparkline), a "where the time
+ * went" category breakdown, the "a few things Cue handled" highlights + stat
+ * tiles, and the value CTA. Wired to GET /v1/home/impact (real recorded data).
  */
 
-const CATEGORY_LABEL: Record<string, string> = {
-  email: "Email triage",
-  meetings: "Meetings captured",
-  scheduling: "Scheduling",
-  calls: "Calls & errands",
-  research: "Research",
-  other: "Other",
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  blueS: "#2B53C4",
+  blueW: "#DBE4FB",
+  violet: "#7F77DD",
+  bg: "#F4F6F9",
+  sunken: "#EEF1F6",
+  line: "#E5E9F0",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+  green: "#277E41",
+  amber: "#C98A1B",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
+const serif = "'Instrument Serif', Georgia, serif";
+
+const CATEGORY: Record<string, { label: string; color: string }> = {
+  email: { label: "Email triage", color: C.blue },
+  meetings: { label: "Meetings captured", color: C.violet },
+  scheduling: { label: "Scheduling", color: "#0E8C8C" },
+  calls: { label: "Calls & errands", color: C.amber },
+  research: { label: "Research", color: "#5A57C4" },
+  other: { label: "Other", color: C.t3 },
 };
 
-function categoryIcon(category: string) {
-  if (category === "calls") return Phone;
-  if (category === "email") return Mail;
-  return Sparkles;
+const KEYFRAMES = `
+@keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+@keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+@keyframes cuePing{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+@media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
+`;
+
+function Aperture() {
+  return (
+    <span
+      className="cue-anim"
+      style={{
+        position: "relative",
+        width: 36,
+        height: 36,
+        borderRadius: 11,
+        background: "#0F1620",
+        border: "1px solid rgba(255,255,255,.1)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: 11,
+          border: "1.5px solid rgba(61,110,232,.5)",
+          animation: "cuePing 2.8s ease-out infinite",
+        }}
+      />
+      <span
+        style={{
+          width: 21,
+          height: 21,
+          borderRadius: "50%",
+          boxShadow: "0 0 0 3px #EEF2F7 inset",
+          WebkitMask: "radial-gradient(circle,transparent 56%,#000 57%)",
+          mask: "radial-gradient(circle,transparent 56%,#000 57%)",
+          transform: "rotate(40deg)",
+          animation: "cueLook 6s ease-in-out infinite",
+          position: "relative",
+          display: "block",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            borderRadius: "50%",
+            background: C.blue,
+            width: "26%",
+            height: "26%",
+            top: "8%",
+            left: "8%",
+            animation: "cueBlink 4s infinite",
+            display: "block",
+          }}
+        />
+      </span>
+    </span>
+  );
 }
 
 export function ImpactPage() {
   const assistantId = useActiveAssistantId();
-  const { data, isLoading } = useQuery({
+  const navigate = useNavigate();
+  const { data } = useQuery({
     ...homeImpactGetOptions({
       path: { assistant_id: assistantId ?? "" },
       query: { rangeDays: 7 },
@@ -44,103 +119,458 @@ export function ImpactPage() {
   const hoursSaved = data?.hoursSaved ?? 0;
   const taskCount = data?.taskCount ?? 0;
   const byCategory = data?.byCategory ?? [];
+  const byDay = data?.byDay ?? [0, 0, 0, 0, 0, 0, 0];
   const recent = data?.recent ?? [];
-  const maxHours = Math.max(0.1, ...byCategory.map((c) => c.hours));
-  const empty = !isLoading && taskCount === 0;
+  const maxCat = Math.max(0.1, ...byCategory.map((c) => c.hours));
+  const maxDay = Math.max(0.1, ...byDay);
+  const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
+  const todayIdx = (new Date().getDay() + 6) % 7;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
-      {/* Ink hero */}
-      <header className="flex flex-col gap-3 rounded-2xl bg-[var(--surface-ink)] p-7 text-white">
-        <span className="font-mono text-xs uppercase tracking-wide text-white/55">
-          Your week with Cue
-        </span>
-        {empty ? (
-          <>
-            <h1 className="text-3xl font-semibold leading-tight">
-              No time saved yet this week
-            </h1>
-            <p className="max-w-md text-base leading-relaxed text-white/70">
-              As Cue drafts replies, triages your inbox, and handles tasks on
-              your behalf, the hours it gives back show up here.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="text-3xl font-semibold leading-tight">
-              This week, Cue gave you back{" "}
-              <span className="text-[var(--accent-cue-weak)]">
-                {hoursSaved} {hoursSaved === 1 ? "hour" : "hours"}
-              </span>
-            </h1>
-            <p className="max-w-md text-base leading-relaxed text-white/70">
-              Across <span className="text-white">{taskCount}</span>{" "}
-              {taskCount === 1 ? "task" : "tasks"} handled on your behalf
-              {hoursSaved >= 8 ? " — more than a full workday returned to you." : "."}
-            </p>
-          </>
-        )}
-      </header>
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        background: C.bg,
+        color: C.ink,
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
+      <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+        {/* HERO */}
+        <div
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            background: C.ink,
+            color: "#fff",
+            padding: "34px 36px 30px",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(520px 280px at 86% 30%,rgba(61,110,232,.28),transparent 70%)",
+            }}
+          />
+          <div
+            style={{
+              position: "relative",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 24,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                <Aperture />
+                <span
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 11,
+                    color: "#7FA0F0",
+                    letterSpacing: ".06em",
+                  }}
+                >
+                  YOUR WEEK WITH CUE
+                </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: serif,
+                  fontSize: 34,
+                  letterSpacing: "-.4px",
+                  marginTop: 16,
+                  lineHeight: 1.12,
+                }}
+              >
+                This week, Cue gave you back
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 12,
+                  marginTop: 4,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 72,
+                    fontWeight: 600,
+                    letterSpacing: "-3px",
+                    lineHeight: 1,
+                  }}
+                >
+                  {hoursSaved}
+                </span>
+                <span
+                  style={{
+                    fontFamily: serif,
+                    fontSize: 34,
+                    fontStyle: "italic",
+                    color: "#9DB4E6",
+                  }}
+                >
+                  {hoursSaved === 1 ? "hour" : "hours"}
+                </span>
+              </div>
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "#AEB7C7",
+                  marginTop: 8,
+                  maxWidth: 420,
+                }}
+              >
+                Across{" "}
+                <b style={{ color: "#fff" }}>
+                  {taskCount} {taskCount === 1 ? "task" : "tasks"}
+                </b>{" "}
+                handled on your behalf
+                {hoursSaved >= 8
+                  ? " — more than a full workday returned to you."
+                  : "."}
+              </p>
+            </div>
 
-      {!empty && (
-        <>
-          {/* Where the time went */}
-          {byCategory.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <TrendingUp className="size-3.5" /> Where the time went
-              </h2>
-              <div className="flex flex-col gap-2.5">
-                {byCategory.map((c) => (
-                  <div key={c.category} className="flex items-center gap-3">
-                    <span className="w-36 shrink-0 truncate text-sm text-foreground">
-                      {CATEGORY_LABEL[c.category] ?? c.category}
-                    </span>
-                    <span className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span
-                        className="absolute inset-y-0 left-0 rounded-full bg-sky-500"
-                        style={{
-                          width: `${Math.max(4, (c.hours / maxHours) * 100)}%`,
-                        }}
-                      />
-                    </span>
-                    <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
-                      {c.hours} hrs
+            {/* sparkline */}
+            <div
+              style={{
+                flexShrink: 0,
+                width: 230,
+                background: "rgba(255,255,255,.05)",
+                border: "1px solid rgba(255,255,255,.1)",
+                borderRadius: 14,
+                padding: 16,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: mono,
+                  fontSize: 10,
+                  color: "#7FA0F0",
+                  letterSpacing: ".08em",
+                  marginBottom: 12,
+                }}
+              >
+                HOURS SAVED / DAY
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 7,
+                  height: 80,
+                }}
+              >
+                {byDay.map((h, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "100%",
+                        height: `${Math.max(4, (h / maxDay) * 100)}%`,
+                        background:
+                          i === todayIdx ? C.blue : "rgba(61,110,232,.4)",
+                        borderRadius: "4px 4px 0 0",
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: mono,
+                        fontSize: 8.5,
+                        color: "#7E8BA3",
+                      }}
+                    >
+                      {dayLabels[i]}
                     </span>
                   </div>
                 ))}
               </div>
-            </section>
-          )}
+            </div>
+          </div>
+        </div>
 
-          {/* A few things Cue handled */}
-          {recent.length > 0 && (
-            <section className="flex flex-col gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                A few things Cue handled
-              </h2>
-              <div className="flex flex-col gap-2">
-                {recent.map((r, i) => {
-                  const Icon = categoryIcon(r.category);
+        <div
+          style={{
+            padding: "26px 36px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 26,
+          }}
+        >
+          {/* where the time went */}
+          {byCategory.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontFamily: mono,
+                  fontSize: 10.5,
+                  letterSpacing: ".1em",
+                  textTransform: "uppercase",
+                  color: C.t3,
+                  marginBottom: 14,
+                }}
+              >
+                Where the time went
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                {byCategory.map((c) => {
+                  const meta = CATEGORY[c.category] ?? {
+                    label: c.category,
+                    color: C.t3,
+                  };
                   return (
                     <div
-                      key={i}
-                      className="flex items-center gap-3 rounded-xl border border-border bg-background p-3.5"
+                      key={c.category}
+                      style={{ display: "flex", alignItems: "center", gap: 14 }}
                     >
-                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <Icon className="size-4" />
+                      <span
+                        style={{
+                          width: 150,
+                          fontSize: 13.5,
+                          fontWeight: 500,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 9,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 3,
+                            background: meta.color,
+                          }}
+                        />
+                        {meta.label}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                        {r.detail}
+                      <span
+                        style={{
+                          flex: 1,
+                          height: 10,
+                          borderRadius: 5,
+                          background: C.sunken,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "block",
+                            width: `${Math.max(3, (c.hours / maxCat) * 100)}%`,
+                            height: "100%",
+                            background: meta.color,
+                            borderRadius: 5,
+                          }}
+                        />
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: mono,
+                          fontSize: 12,
+                          color: C.t2,
+                          width: 54,
+                          textAlign: "right",
+                        }}
+                      >
+                        {c.hours} hrs
                       </span>
                     </div>
                   );
                 })}
               </div>
-            </section>
+            </div>
           )}
-        </>
-      )}
+
+          {/* highlights + stats */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.4fr 1fr",
+              gap: 18,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontFamily: mono,
+                  fontSize: 10.5,
+                  letterSpacing: ".1em",
+                  textTransform: "uppercase",
+                  color: C.t3,
+                  marginBottom: 14,
+                }}
+              >
+                A few things Cue handled
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {recent.length > 0 ? (
+                  recent.slice(0, 4).map((r, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 13,
+                        border: `1px solid ${C.line}`,
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 9,
+                          background: C.blueW,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        ✉
+                      </span>
+                      <div style={{ fontSize: 13.5, fontWeight: 500, minWidth: 0 }}>
+                        {r.detail}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ fontSize: 13, color: C.t2 }}>
+                    Nothing yet this week — as Cue handles things, they show up
+                    here.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div
+                style={{
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 13,
+                  padding: 15,
+                  background: "linear-gradient(180deg,#FAFBFF,#fff)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 30,
+                    fontWeight: 600,
+                    letterSpacing: "-1px",
+                    color: C.blueS,
+                  }}
+                >
+                  {taskCount}
+                </div>
+                <div style={{ fontSize: 12.5, color: C.t2, marginTop: 2 }}>
+                  tasks handled on your behalf
+                </div>
+              </div>
+              <div
+                style={{
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 13,
+                  padding: 15,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 30,
+                    fontWeight: 600,
+                    letterSpacing: "-1px",
+                    color: C.green,
+                  }}
+                >
+                  {hoursSaved}
+                </div>
+                <div style={{ fontSize: 12.5, color: C.t2, marginTop: 2 }}>
+                  hours saved this week
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* value CTA */}
+          <div
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              background: C.ink,
+              borderRadius: 16,
+              padding: "20px 24px",
+              display: "flex",
+              alignItems: "center",
+              gap: 20,
+              flexWrap: "wrap",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(320px 140px at 88% 50%,rgba(127,119,221,.26),transparent 70%)",
+              }}
+            />
+            <div style={{ position: "relative", flex: 1, minWidth: 240 }}>
+              <div
+                style={{
+                  fontFamily: serif,
+                  fontSize: 23,
+                  color: "#fff",
+                  letterSpacing: "-.2px",
+                  lineHeight: 1.2,
+                }}
+              >
+                Want next week to be even lighter?
+              </div>
+              <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
+                Connect more of your tools and Cue can handle more on your behalf.
+              </div>
+            </div>
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                gap: 8,
+                flexShrink: 0,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => navigate(routes.connectors)}
+                style={{
+                  fontSize: 12.5,
+                  background: C.blue,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 9,
+                  padding: "10px 17px",
+                  cursor: "pointer",
+                }}
+              >
+                Connect more
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

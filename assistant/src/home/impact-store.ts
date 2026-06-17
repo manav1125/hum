@@ -58,6 +58,8 @@ export interface ImpactSummary {
   hoursSaved: number;
   taskCount: number;
   byCategory: ImpactCategoryRollup[];
+  /** Hours saved per weekday, Monday(0)..Sunday(6) — drives the hero sparkline. */
+  byDay: number[];
   recent: Array<{ detail: string; category: ImpactCategory; at: string }>;
 }
 
@@ -121,6 +123,8 @@ export function aggregateEvents(
   });
 
   const totals = new Map<ImpactCategory, { count: number; minutes: number }>();
+  // Minutes per weekday, Monday(0)..Sunday(6).
+  const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
   let totalMinutes = 0;
   for (const e of events) {
     const slot = totals.get(e.category) ?? { count: 0, minutes: 0 };
@@ -128,7 +132,14 @@ export function aggregateEvents(
     slot.minutes += e.minutesSaved;
     totals.set(e.category, slot);
     totalMinutes += e.minutesSaved;
+    const d = new Date(e.at);
+    if (!Number.isNaN(d.getTime())) {
+      // JS getDay: Sun=0..Sat=6 → remap to Mon=0..Sun=6.
+      const idx = (d.getDay() + 6) % 7;
+      dayMinutes[idx] += e.minutesSaved;
+    }
   }
+  const byDay = dayMinutes.map((m) => Math.round((m / 60) * 10) / 10);
 
   const byCategory: ImpactCategoryRollup[] = [...totals.entries()]
     .map(([category, v]) => ({
@@ -149,6 +160,7 @@ export function aggregateEvents(
     hoursSaved: Math.round((totalMinutes / 60) * 10) / 10,
     taskCount: events.length,
     byCategory,
+    byDay,
     recent,
   };
 }

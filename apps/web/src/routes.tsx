@@ -292,6 +292,12 @@ export const routeTree = [
                   lazy: { Component: () => import("@/home-elevated-route").then((m) => m.HomeElevatedRoute) },
                 },
                 {
+                  // Full-bleed Core surface (reached from Home's recap), not an
+                  // "About Assistant" tab.
+                  path: "impact",
+                  lazy: { Component: () => import("@/domains/intelligence/impact-page").then((m) => m.ImpactPage) },
+                },
+                {
                   lazy: { Component: () => import("@/domains/intelligence/intelligence-layout").then((m) => m.IntelligenceLayout) },
                   children: [
                     { path: "identity", lazy: { Component: () => import("@/identity-page-route").then((m) => m.IdentityPageRoute) } },
@@ -299,7 +305,6 @@ export const routeTree = [
                     { path: "connectors", lazy: { Component: () => import("@/domains/intelligence/connectors-page").then((m) => m.ConnectorsPage) } },
                     { path: "channels", lazy: { Component: () => import("@/domains/intelligence/channels-page").then((m) => m.ChannelsPage) } },
                     { path: "agents", lazy: { Component: () => import("@/domains/intelligence/agents-page").then((m) => m.AgentsPage) } },
-                    { path: "impact", lazy: { Component: () => import("@/domains/intelligence/impact-page").then((m) => m.ImpactPage) } },
                     { path: "plugins", lazy: { Component: () => import("@/domains/intelligence/plugins-page").then((m) => m.PluginsPage) } },
                     { path: "plugins/:name", lazy: { Component: () => import("@/domains/intelligence/plugin-detail-page").then((m) => m.PluginDetailPage) } },
                     { path: "skills", lazy: { Component: () => import("@/domains/intelligence/skills-page").then((m) => m.SkillsPage) } },
