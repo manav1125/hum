@@ -625,28 +625,141 @@ function GoalRunner() {
   );
 }
 
+/** The escalating modes (surfaces/CueLive.dc.html). Companion is the shipped
+ *  mode today; Scoped watch / Always-on are the roadmap, shown for the model.
+ *  Take control maps to the "act for me" toggle in LiveControls below. */
+const CUE_MODES: ReadonlyArray<{
+  name: string;
+  desc: string;
+  meta: string;
+  active?: boolean;
+  accent?: boolean;
+}> = [
+  {
+    name: "Companion",
+    desc: "Follows your cursor, passive until summoned.",
+    meta: "AX only · most private",
+    active: true,
+  },
+  {
+    name: "Scoped watch",
+    desc: "Point Cue at one window. Captures from just that.",
+    meta: "bounded capture",
+  },
+  {
+    name: "Always-on",
+    desc: "Whole screen, continuous. Opt-in, visible light + one-tap pause.",
+    meta: "AX + vision on change",
+  },
+  {
+    name: "Take control",
+    desc: "State a goal, Cue drives. Guided → autonomous, you approve.",
+    meta: "checkpointed",
+    accent: true,
+  },
+];
+
+const MONO = "'DM Mono', ui-monospace, monospace";
+
+function ModeCards() {
+  return (
+    <div className="flex flex-col gap-3">
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 11,
+          letterSpacing: ".1em",
+          textTransform: "uppercase",
+          color: "var(--content-tertiary, #8D99A5)",
+        }}
+      >
+        Mode · escalating power + trust
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {CUE_MODES.map((m) => (
+          <div
+            key={m.name}
+            style={{
+              border: m.active
+                ? "2px solid #3D6EE8"
+                : m.accent
+                  ? "1px solid #D9D6F2"
+                  : "1px solid var(--border-base, #E5E9F0)",
+              borderRadius: 13,
+              padding: 14,
+              background: m.active ? "#FAFBFF" : m.accent ? "#FBFAFF" : undefined,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div
+                className="text-sm font-medium"
+                style={{ color: m.accent ? "#534AB7" : "var(--content-default)" }}
+              >
+                {m.name}
+              </div>
+              {m.active && (
+                <span
+                  style={{
+                    fontFamily: MONO,
+                    fontSize: 9.5,
+                    background: "#DBE4FB",
+                    color: "#2B53C4",
+                    padding: "2px 7px",
+                    borderRadius: 5,
+                  }}
+                >
+                  ACTIVE
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-xs" style={{ color: "var(--content-secondary, #5A6672)" }}>
+              {m.desc}{" "}
+              <span style={{ fontFamily: MONO, fontSize: 10, color: "#8D99A5" }}>
+                {m.meta}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CueLivePage() {
   const available = isCueLiveAvailable();
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
-      {/* Hero */}
-      <header className="flex flex-col gap-3">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-500">
-          <Sparkles className="size-3.5" />
-          Cue Live
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-7 px-6 py-8">
+      {/* Header */}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Cue Live</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            The presence that lives on your screen — guides you, or takes the
+            wheel.
+          </p>
+        </div>
+        <span
+          className="inline-flex shrink-0 items-center gap-2 rounded-full"
+          style={{
+            background: "rgba(61,110,232,.1)",
+            border: "1px solid rgba(61,110,232,.4)",
+            color: "#2B53C4",
+            padding: "6px 12px",
+            fontFamily: MONO,
+            fontSize: 11,
+          }}
+        >
+          <Sparkles className="size-3" />
+          companion
         </span>
-        <h1 className="text-2xl font-semibold text-foreground">
-          An AI teacher that lives next to your cursor
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground">
-          Hold ⌃⌥ and ask out loud — Cue looks at your screen, answers in your
-          ear, and flies the cursor to whatever it's talking about. A guide that
-          points, not a take-over.
-        </p>
       </header>
 
-      {/* Live controls (desktop) or notice */}
+      {/* Escalating modes (the design's signature model) */}
+      {available && <ModeCards />}
+
+      {/* Live controls (desktop) or notice — the real enable / take-control /
+          summon / accessibility wiring, unchanged. */}
       {available ? <LiveControls /> : <UnavailableNotice />}
 
       {/* Typed-goal test box (no mic needed) */}
