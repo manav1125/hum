@@ -96,6 +96,7 @@ export const routes = {
   connectors: r("/assistant/connectors"),
   channels: r("/assistant/channels"),
   agents: r("/assistant/agents"),
+  impact: r("/assistant/impact"),
   plugins: r("/assistant/plugins"),
   plugin: (name: string) => dyn(r("/assistant/plugins"), name),
   skills: r("/assistant/skills"),

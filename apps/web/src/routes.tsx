@@ -297,6 +297,7 @@ export const routeTree = [
                     { path: "connectors", lazy: { Component: () => import("@/domains/intelligence/connectors-page").then((m) => m.ConnectorsPage) } },
                     { path: "channels", lazy: { Component: () => import("@/domains/intelligence/channels-page").then((m) => m.ChannelsPage) } },
                     { path: "agents", lazy: { Component: () => import("@/domains/intelligence/agents-page").then((m) => m.AgentsPage) } },
+                    { path: "impact", lazy: { Component: () => import("@/domains/intelligence/impact-page").then((m) => m.ImpactPage) } },
                     { path: "plugins", lazy: { Component: () => import("@/domains/intelligence/plugins-page").then((m) => m.PluginsPage) } },
                     { path: "plugins/:name", lazy: { Component: () => import("@/domains/intelligence/plugin-detail-page").then((m) => m.PluginDetailPage) } },
                     { path: "skills", lazy: { Component: () => import("@/domains/intelligence/skills-page").then((m) => m.SkillsPage) } },

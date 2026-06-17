@@ -10682,6 +10682,109 @@ paths:
                 required:
                   - backend
                 additionalProperties: false
+  /v1/cuelive/act:
+    post:
+      operationId: cuelive_act_post
+      summary: Decide the next UI action to accomplish the user's goal
+      description:
+        "Full-auto take-control step: given a screenshot + goal, return the single next mouse/keyboard action (or
+        done). Returns done when no model is configured."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  say:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  done:
+                    type: boolean
+                  action:
+                    anyOf:
+                      - type: object
+                        properties:
+                          type:
+                            type: string
+                            enum:
+                              - click
+                              - doubleclick
+                              - type
+                              - key
+                              - scroll
+                              - move
+                              - none
+                          x:
+                            anyOf:
+                              - type: number
+                              - type: "null"
+                          y:
+                            anyOf:
+                              - type: number
+                              - type: "null"
+                          text:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          key:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          dx:
+                            anyOf:
+                              - type: number
+                              - type: "null"
+                          dy:
+                            anyOf:
+                              - type: number
+                              - type: "null"
+                        required:
+                          - type
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - say
+                  - done
+                  - action
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                goal:
+                  type: string
+                  description: What the user asked Cue to accomplish
+                imageBase64:
+                  type: string
+                  description: Current screenshot, base64 (no data URI)
+                mediaType:
+                  default: image/png
+                  type: string
+                imageWidth:
+                  type: number
+                imageHeight:
+                  type: number
+                step:
+                  type: number
+                  description: 1-based step number in this run
+                history:
+                  description: Short log of actions already taken this run
+                  type: string
+              required:
+                - goal
+                - imageBase64
+                - imageWidth
+                - imageHeight
+                - step
+              additionalProperties: false
   /v1/cuelive/guidance:
     post:
       operationId: cuelive_guidance_post
@@ -10717,6 +10820,9 @@ paths:
                 role:
                   type: string
                   description: Accessibility role of the element under the cursor
+                roleDescription:
+                  description: Human-readable role description (e.g. 'text field')
+                  type: string
                 label:
                   description: The element's accessible label
                   type: string
@@ -10726,8 +10832,82 @@ paths:
                 appName:
                   description: Frontmost application name
                   type: string
+                actions:
+                  description: AX actions the element supports, e.g. AXPress, AXConfirm
+                  type: array
+                  items:
+                    type: string
               required:
                 - role
+              additionalProperties: false
+  /v1/cuelive/look:
+    post:
+      operationId: cuelive_look_post
+      summary: Answer a spoken question about the user's screen and point at it
+      description:
+        Send a screenshot + the user's transcribed question to the configured model. Returns a short spoken answer
+        plus on-screen points (in screenshot-pixel coordinates) to fly the cursor to. Returns empty when no model is
+        configured.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        x:
+                          type: number
+                        y:
+                          type: number
+                        label:
+                          type: string
+                      required:
+                        - x
+                        - y
+                        - label
+                      additionalProperties: false
+                required:
+                  - answer
+                  - points
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+                  description: The user's spoken (transcribed) question about their screen
+                imageBase64:
+                  type: string
+                  description: Screenshot, base64-encoded (no data URI)
+                mediaType:
+                  default: image/png
+                  description: MIME type of the screenshot
+                  type: string
+                imageWidth:
+                  type: number
+                  description: Pixel width of the screenshot (POINT coords are in this space)
+                imageHeight:
+                  type: number
+                  description: Pixel height of the screenshot
+              required:
+                - question
+                - imageBase64
+                - imageWidth
+                - imageHeight
               additionalProperties: false
   /v1/debug:
     get:
@@ -12158,7 +12338,7 @@ paths:
     post:
       operationId: email_register_post
       summary: Register an email address
-      description: Register a new email address on the Vellum platform for the current assistant.
+      description: Register a new email address on the Cue platform for the current assistant.
       tags:
         - email
       responses:
@@ -12198,7 +12378,7 @@ paths:
     post:
       operationId: email_send_post
       summary: Send an email
-      description: Send an email from the assistant's registered email address via the Vellum runtime proxy.
+      description: Send an email from the assistant's registered email address via the Cue runtime proxy.
       tags:
         - email
       responses:
@@ -13504,6 +13684,136 @@ paths:
           schema:
             type: integer
           description: "Cursor for older runs: pass the previous page's `nextCursor` to return runs strictly older than it."
+  /v1/home/action-board/build:
+    post:
+      operationId: home_actionboard_build_post
+      summary: Build the daily action board
+      description:
+        Gather connected data (Gmail unread + today's Calendar), synthesize prioritized action items, and write
+        them to the Home feed. Idempotent per day. Returns counts of items written and data scanned.
+      tags:
+        - home
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  written:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  skipped:
+                    type: string
+                  emailsScanned:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  eventsScanned:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                required:
+                  - written
+                  - emailsScanned
+                  - eventsScanned
+                additionalProperties: false
+  /v1/home/draft-replies:
+    post:
+      operationId: home_draftreplies_post
+      summary: Auto-draft replies for all action-board emails
+      description:
+        Compose reply drafts (saved to Drafts, never sent) for every email card on today's action board. Explicit,
+        user-invoked, capped at 10. Returns per-message results.
+      tags:
+        - home
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drafted:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  failed:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        messageId:
+                          type: string
+                        ok:
+                          type: boolean
+                        draftId:
+                          type: string
+                        subject:
+                          type: string
+                        error:
+                          type: string
+                      required:
+                        - messageId
+                        - ok
+                      additionalProperties: false
+                required:
+                  - drafted
+                  - failed
+                  - results
+                additionalProperties: false
+  /v1/home/draft-reply:
+    post:
+      operationId: home_draftreply_post
+      summary: Auto-draft a reply to an email
+      description:
+        Compose a reply to the given Gmail message in the user's voice and save it to Drafts (threaded, never
+        sent). Returns the draft id.
+      tags:
+        - home
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  draftId:
+                    type: string
+                  threadId:
+                    type: string
+                  to:
+                    type: string
+                  subject:
+                    type: string
+                  error:
+                    type: string
+                required:
+                  - ok
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                messageId:
+                  type: string
+                  minLength: 1
+              required:
+                - messageId
+              additionalProperties: false
   /v1/home/feed:
     get:
       operationId: home_feed_get
@@ -14039,6 +14349,83 @@ paths:
                   minimum: 0
                   maximum: 9007199254740991
               additionalProperties: false
+  /v1/home/impact:
+    get:
+      operationId: home_impact_get
+      summary: Get the weekly impact recap
+      description:
+        Aggregate recorded impact events (drafts, triage, …) over the last rangeDays (default 7) into hours-saved,
+        task count, by-category breakdown, and a recent-activity list for the Impact / Home surfaces.
+      tags:
+        - home
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rangeDays:
+                    type: integer
+                    exclusiveMinimum: 0
+                    maximum: 9007199254740991
+                  hoursSaved:
+                    type: number
+                    minimum: 0
+                  taskCount:
+                    type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+                  byCategory:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        category:
+                          type: string
+                        count:
+                          type: integer
+                          minimum: 0
+                          maximum: 9007199254740991
+                        hours:
+                          type: number
+                          minimum: 0
+                      required:
+                        - category
+                        - count
+                        - hours
+                      additionalProperties: false
+                  recent:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        detail:
+                          type: string
+                        category:
+                          type: string
+                        at:
+                          type: string
+                      required:
+                        - detail
+                        - category
+                        - at
+                      additionalProperties: false
+                required:
+                  - rangeDays
+                  - hoursSaved
+                  - taskCount
+                  - byCategory
+                  - recent
+                additionalProperties: false
+      parameters:
+        - name: rangeDays
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Window in days (1–365, default 7).
   /v1/home/state:
     get:
       operationId: home_state_get
@@ -21058,7 +21445,7 @@ paths:
   /v1/platform/connect:
     post:
       operationId: platform_connect_post
-      summary: Connect to the Vellum Platform
+      summary: Connect to the Cue Platform
       description: Checks existing credentials and emits the show_platform_login signal for connected clients to show a login UI.
       tags:
         - platform
@@ -21080,7 +21467,7 @@ paths:
   /v1/platform/disconnect:
     post:
       operationId: platform_disconnect_post
-      summary: Disconnect from the Vellum Platform
+      summary: Disconnect from the Cue Platform
       description: Deletes stored platform credentials and emits platform_disconnected signal to connected clients.
       tags:
         - platform
