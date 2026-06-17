@@ -1,307 +1,480 @@
-import {
-  Bell,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Hash,
-  Mail,
-  MessageCircle,
-  MessagesSquare,
-  Phone,
-  Send,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
-import { useState } from "react";
-
 /**
- * Channels — reach Cue from anywhere and let Cue reach you.
+ * Channels — faithful translation of `surfaces/Channels.dc.html`.
  *
- * Presentational surface for binding external messaging channels (Telegram,
- * Slack, WhatsApp, Email, SMS) used both for inbound chat and for outbound
- * notifications (e.g. the daily action board's morning push). The daemon-side
- * adapters and channel-verification routes already exist; this page is the
- * front-end that will be wired to them. State here is local so the connect /
- * verify flow is demonstrable end-to-end in the UI.
+ * "One you, every channel": an ink hero with the live constellation (Cue at
+ * the centre, channels orbiting), Active channel cards, and a Connect-more
+ * grid. Presentational for now — the channel-verification + messaging adapters
+ * exist on the daemon and will be wired in; this is the design surface.
  */
 
-type ChannelState = "disconnected" | "verifying" | "connected";
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  blueS: "#2B53C4",
+  blueW: "#DBE4FB",
+  line: "#E5E9F0",
+  line2: "#D7DDE7",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+  green: "#277E41",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
 
-interface ChannelDef {
-  readonly id: string;
-  readonly name: string;
-  readonly blurb: string;
-  readonly icon: LucideIcon;
-  /** Inbound = you can chat with Cue here; Outbound = Cue can notify you here. */
-  readonly inbound: boolean;
-  readonly outbound: boolean;
-  /** Short, channel-specific setup steps shown when expanded. */
-  readonly steps: readonly string[];
-  /** Label for the credential the user pastes (null = OAuth, no paste field). */
-  readonly credentialLabel: string | null;
-  readonly credentialHint?: string;
-}
+const KEYFRAMES = `
+@keyframes cueDash{to{stroke-dashoffset:-14}}
+@keyframes cuePulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.45);opacity:0}}
+@media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
+`;
 
-const CHANNELS: readonly ChannelDef[] = [
-  {
-    id: "telegram",
-    name: "Telegram",
-    blurb: "Chat with Cue and get pushes in a private Telegram thread.",
-    icon: Send,
-    inbound: true,
-    outbound: true,
-    credentialLabel: "Bot token",
-    credentialHint: "Create a bot with @BotFather and paste its token.",
-    steps: [
-      "Message @BotFather on Telegram and create a new bot.",
-      "Paste the bot token below and start verification.",
-      "Send the verification code to your bot to confirm it's you.",
-    ],
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    blurb: "DM Cue in Slack and route notifications to your DMs.",
-    icon: Hash,
-    inbound: true,
-    outbound: true,
-    credentialLabel: null,
-    steps: [
-      "Authorize the Cue Slack app for your workspace.",
-      "Pick the DM channel Cue should use.",
-      "Confirm the guardian identity to finish binding.",
-    ],
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp",
-    blurb: "Send and receive messages through the WhatsApp Cloud API.",
-    icon: MessageCircle,
-    inbound: true,
-    outbound: true,
-    credentialLabel: "Access token",
-    credentialHint: "From your Meta WhatsApp Cloud API app.",
-    steps: [
-      "Create a Meta WhatsApp Cloud API app and phone number.",
-      "Paste the phone number ID and access token below.",
-      "Point the inbound webhook at this device to receive messages.",
-    ],
-  },
-  {
-    id: "email",
-    name: "Email",
-    blurb: "Give Cue an inbound address and a provider to send from.",
-    icon: Mail,
-    inbound: true,
-    outbound: true,
-    credentialLabel: "Provider API key",
-    credentialHint: "Mailgun or Resend API key for outbound mail.",
-    steps: [
-      "Choose an email provider (Mailgun or Resend).",
-      "Paste the provider API key and sending domain.",
-      "Add the inbound webhook in your provider to route replies to Cue.",
-    ],
-  },
-  {
-    id: "sms",
-    name: "SMS / Voice",
-    blurb: "Text or call Cue through a Twilio number.",
-    icon: Phone,
-    inbound: true,
-    outbound: true,
-    credentialLabel: "Twilio auth token",
-    credentialHint: "Account SID + auth token from the Twilio console.",
-    steps: [
-      "Buy or connect a Twilio phone number.",
-      "Paste your Account SID and auth token below.",
-      "Set the messaging webhook to this device.",
-    ],
-  },
+const NODES = [
+  { x: 210, y: 44, bg: "#fff", fg: "#1A2230", icon: "🎙", o: 0.7, dash: 1 },
+  { x: 318, y: 78, bg: "#fff", fg: "#1A2230", icon: "✉", o: 0.5, dash: 1.3 },
+  { x: 338, y: 160, bg: "#4A154B", fg: "#fff", icon: "#", o: 0.5, dash: 1.1 },
+  { x: 300, y: 200, bg: "#E7F3FB", fg: "#229ED9", icon: "✈", o: 0.4, dash: 1.4 },
+  { x: 96, y: 86, bg: "#EAF0FE", fg: "#3D6EE8", icon: "☎", o: 0.5, dash: 1.2 },
+  { x: 110, y: 176, bg: "#5865F2", fg: "#fff", icon: "◍", o: 0.4, dash: 1.5 },
 ];
 
-function Badge({
-  tone,
-  children,
-}: {
-  tone: "on" | "off" | "pending";
-  children: React.ReactNode;
-}) {
-  const cls =
-    tone === "on"
-      ? "bg-emerald-500/10 text-emerald-500"
-      : tone === "pending"
-        ? "bg-amber-500/10 text-amber-500"
-        : "bg-muted text-muted-foreground";
+function Stat({ n, label }: { n: string; label: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 22, fontWeight: 600, color: "#fff" }}>{n}</div>
+      <div style={{ fontFamily: mono, fontSize: 10.5, color: "#7E8BA3" }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function LiveDot({ pulse }: { pulse?: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}
+      className="cue-anim"
+      style={{
+        position: "relative",
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: C.green,
+        display: "inline-block",
+      }}
     >
-      {children}
+      {pulse && (
+        <span
+          style={{
+            position: "absolute",
+            inset: -3,
+            borderRadius: "50%",
+            border: "1.5px solid rgba(39,126,65,.5)",
+            animation: "cuePulse 2s ease-out infinite",
+          }}
+        />
+      )}
     </span>
   );
 }
 
-function CapabilityTag({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+function ActiveCard({
+  icon,
+  iconBg,
+  iconFg,
+  title,
+  sub,
+  full,
+  verified,
+}: {
+  icon: string;
+  iconBg: string;
+  iconFg: string;
+  title: string;
+  sub: string;
+  full?: boolean;
+  verified?: boolean;
+}) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-      <Icon className="size-3" />
-      {label}
-    </span>
-  );
-}
-
-function ChannelCard({ def }: { def: ChannelDef }) {
-  const [state, setState] = useState<ChannelState>("disconnected");
-  const [expanded, setExpanded] = useState(false);
-  const [credential, setCredential] = useState("");
-  const Icon = def.icon;
-
-  const startVerify = () => {
-    setState("verifying");
-    // Presentational: simulate the verification handshake completing.
-    window.setTimeout(() => setState("connected"), 1400);
-  };
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-border bg-background">
-      <div className="flex items-center justify-between gap-3 p-4">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
-        >
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Icon className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold text-foreground">
-                {def.name}
-              </span>
-              {state === "connected" && (
-                <Badge tone="on">
-                  <Check className="size-3" /> Connected
-                </Badge>
-              )}
-              {state === "verifying" && <Badge tone="pending">Verifying…</Badge>}
-            </div>
-            <div className="truncate text-xs text-muted-foreground">
-              {def.blurb}
-            </div>
-          </div>
-          {expanded ? (
-            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-          )}
-        </button>
-        {state === "connected" ? (
-          <button
-            type="button"
-            onClick={() => setState("disconnected")}
-            className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Disconnect
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            className="shrink-0 rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-600"
-          >
-            Set up
-          </button>
-        )}
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        padding: 16,
+        background: full ? "#fff" : "linear-gradient(180deg,#FAFBFF,#fff)",
+        gridColumn: full ? "span 2" : undefined,
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+      }}
+    >
+      <span
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 12,
+          background: iconBg,
+          color: iconFg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 19,
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14.5, fontWeight: 600 }}>{title}</div>
+        <div style={{ fontSize: 12, color: C.t2 }}>{sub}</div>
       </div>
-
-      {expanded && (
-        <div className="flex flex-col gap-3 border-t border-border bg-muted/20 p-4">
-          <div className="flex flex-wrap gap-1.5">
-            {def.inbound && <CapabilityTag icon={MessagesSquare} label="Chat with Cue" />}
-            {def.outbound && <CapabilityTag icon={Bell} label="Receive notifications" />}
-          </div>
-
-          <ol className="flex flex-col gap-1.5">
-            {def.steps.map((step, i) => (
-              <li key={i} className="flex gap-2 text-sm text-muted-foreground">
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-foreground">
-                  {i + 1}
-                </span>
-                <span className="leading-5">{step}</span>
-              </li>
-            ))}
-          </ol>
-
-          {def.credentialLabel && (
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-foreground">
-                {def.credentialLabel}
-              </span>
-              <input
-                type="password"
-                value={credential}
-                onChange={(e) => setCredential(e.target.value)}
-                placeholder={`Paste your ${def.credentialLabel.toLowerCase()}`}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-sky-500"
-              />
-              {def.credentialHint && (
-                <span className="text-xs text-muted-foreground">
-                  {def.credentialHint}
-                </span>
-              )}
-            </label>
-          )}
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={state === "verifying" || state === "connected"}
-              onClick={startVerify}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-600 disabled:opacity-50"
-            >
-              <ShieldCheck className="size-4" />
-              {def.credentialLabel ? "Save & verify" : "Authorize"}
-            </button>
-            {state === "connected" && (
-              <span className="text-xs text-emerald-500">
-                This channel is active.
-              </span>
-            )}
-          </div>
-        </div>
+      {verified ? (
+        <>
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 10,
+              background: C.blueW,
+              color: C.blueS,
+              padding: "4px 10px",
+              borderRadius: 7,
+            }}
+          >
+            VERIFIED ID
+          </span>
+          <span
+            style={{
+              width: 42,
+              height: 24,
+              borderRadius: 999,
+              background: C.blue,
+              position: "relative",
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: "#fff",
+                top: 2,
+                right: 2,
+              }}
+            />
+          </span>
+        </>
+      ) : (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontFamily: mono,
+            fontSize: 10,
+            color: C.green,
+          }}
+        >
+          <LiveDot pulse />
+          LIVE
+        </span>
       )}
     </div>
   );
 }
 
+function ConnectCard({
+  icon,
+  iconBg,
+  iconFg,
+  title,
+  sub,
+}: {
+  icon: string;
+  iconBg: string;
+  iconFg: string;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        padding: 16,
+        textAlign: "center",
+      }}
+    >
+      <span
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 13,
+          background: iconBg,
+          color: iconFg,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 21,
+          marginBottom: 11,
+        }}
+      >
+        {icon}
+      </span>
+      <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
+      <div style={{ fontSize: 11.5, color: C.t2, margin: "3px 0 11px" }}>
+        {sub}
+      </div>
+      <button
+        type="button"
+        style={{
+          fontSize: 12.5,
+          border: `1px solid ${C.line2}`,
+          background: "#fff",
+          borderRadius: 9,
+          padding: "7px 18px",
+          cursor: "pointer",
+          color: C.t1,
+        }}
+      >
+        Enable
+      </button>
+    </div>
+  );
+}
+
+const label = {
+  fontFamily: mono,
+  fontSize: 10.5,
+  letterSpacing: ".1em",
+  textTransform: "uppercase" as const,
+  color: C.t3,
+  margin: "24px 0 12px",
+};
+
 export function ChannelsPage() {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
-      <header className="flex flex-col gap-2">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-500">
-          <MessagesSquare className="size-3.5" />
-          Channels
-        </span>
-        <h1 className="text-2xl font-semibold text-foreground">
-          Reach Cue anywhere
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground">
-          Connect a messaging channel so you can chat with Cue outside the app —
-          and so Cue can reach you with notifications like your morning action
-          board. Each channel is verified to you and private.
-        </p>
-      </header>
+    <div style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
 
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
-        Setup here is a preview of the flow — channel binding will activate once
-        connected to the backend. The delivery adapters and verification already
-        exist on the daemon.
+      {/* IMMERSIVE HERO */}
+      <div
+        style={{
+          position: "relative",
+          background: C.ink,
+          borderRadius: 18,
+          overflow: "hidden",
+          display: "grid",
+          gridTemplateColumns: "1fr 420px",
+          alignItems: "center",
+          minHeight: 240,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(420px 240px at 82% 50%,rgba(61,110,232,.22),transparent 70%)",
+          }}
+        />
+        <div style={{ padding: "34px 36px", position: "relative" }}>
+          <div
+            style={{
+              fontFamily: mono,
+              fontSize: 11,
+              letterSpacing: ".14em",
+              textTransform: "uppercase",
+              color: "#7FA0F0",
+            }}
+          >
+            Channels · live
+          </div>
+          <div
+            style={{
+              fontSize: 32,
+              fontWeight: 600,
+              letterSpacing: "-1px",
+              color: "#fff",
+              marginTop: 10,
+              lineHeight: 1.06,
+            }}
+          >
+            One you,
+            <br />
+            every channel.
+          </div>
+          <p
+            style={{
+              fontSize: 14.5,
+              color: "#AEB7C7",
+              marginTop: 12,
+              maxWidth: 380,
+            }}
+          >
+            Connect a channel, verify once, and Cue recognizes you wherever you
+            reach it — voice, email, chat, or a phone call. One memory behind
+            them all.
+          </p>
+          <div style={{ display: "flex", gap: 18, marginTop: 18 }}>
+            <Stat n="3" label="active" />
+            <div style={{ width: 1, background: "rgba(255,255,255,.12)" }} />
+            <Stat n="1" label="verified id" />
+            <div style={{ width: 1, background: "rgba(255,255,255,.12)" }} />
+            <Stat n="3" label="available" />
+          </div>
+        </div>
+
+        {/* constellation */}
+        <div className="cue-anim" style={{ position: "relative", height: 240 }}>
+          <svg
+            width="420"
+            height="240"
+            viewBox="0 0 420 240"
+            style={{ position: "absolute", inset: 0 }}
+          >
+            {NODES.map((n, i) => (
+              <line
+                key={i}
+                x1="210"
+                y1="120"
+                x2={n.x}
+                y2={n.y}
+                stroke={C.blue}
+                strokeWidth="1.5"
+                strokeDasharray="3 4"
+                opacity={n.o}
+                style={{ animation: `cueDash ${n.dash}s linear infinite` }}
+              />
+            ))}
+          </svg>
+          <div
+            style={{
+              position: "absolute",
+              left: 210,
+              top: 120,
+              transform: "translate(-50%,-50%)",
+              width: 62,
+              height: 62,
+              borderRadius: 17,
+              background: "#0F1620",
+              border: "1px solid rgba(255,255,255,.12)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 2,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: 17,
+                border: "2px solid rgba(61,110,232,.6)",
+                animation: "cuePulse 2.4s ease-out infinite",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 34,
+                fontWeight: 600,
+                color: "#EEF2F7",
+                position: "relative",
+                lineHeight: 1,
+              }}
+            >
+              C
+              <span
+                style={{
+                  position: "absolute",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: C.blue,
+                  right: 9,
+                  bottom: 12,
+                }}
+              />
+            </span>
+          </div>
+          {NODES.map((n, i) => (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: n.x,
+                top: n.y,
+                transform: "translate(-50%,-50%)",
+                width: 37,
+                height: 37,
+                borderRadius: 11,
+                background: n.bg,
+                color: n.fg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 16,
+                boxShadow: "0 6px 14px -6px rgba(0,0,0,.5)",
+              }}
+            >
+              {n.icon}
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        {CHANNELS.map((c) => (
-          <ChannelCard key={c.id} def={c} />
-        ))}
+      {/* ACTIVE */}
+      <div style={label}>Active</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <ActiveCard
+          icon="🎙"
+          iconBg={C.ink}
+          iconFg="#fff"
+          title="Voice"
+          sub="Hold-to-talk & hands-free, on device"
+        />
+        <ActiveCard
+          icon="✉"
+          iconBg="#FDECEA"
+          iconFg="#1A2230"
+          title="Email"
+          sub="Triage, draft, and send on your behalf"
+        />
+        <ActiveCard
+          icon="#"
+          iconBg="#4A154B"
+          iconFg="#fff"
+          title="Slack"
+          sub="DMs and mentions — verified as you across the workspace"
+          full
+          verified
+        />
+      </div>
+
+      {/* CONNECT MORE */}
+      <div style={label}>Connect more</div>
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}
+      >
+        <ConnectCard
+          icon="✈"
+          iconBg="#E7F3FB"
+          iconFg="#229ED9"
+          title="Telegram"
+          sub="Message from your phone"
+        />
+        <ConnectCard
+          icon="☎"
+          iconBg="#EAF0FE"
+          iconFg="#3D6EE8"
+          title="Phone calling"
+          sub="Place & take calls via Twilio"
+        />
+        <ConnectCard
+          icon="◍"
+          iconBg="#5865F2"
+          iconFg="#fff"
+          title="Discord"
+          sub="Servers & direct messages"
+        />
       </div>
     </div>
   );
