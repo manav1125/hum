@@ -94,6 +94,7 @@ yarn-error.log*
 # env files
 .env*
 !.env.example
+!deploy/.env.cue.example
 
 # vercel
 .vercel

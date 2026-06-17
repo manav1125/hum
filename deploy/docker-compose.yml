@@ -1,0 +1,120 @@
+# Cue — local-parity Docker Compose (single-tenant).
+#
+# Mirrors the Render Blueprint (deploy/render.yaml) so the exact same image
+# topology and env wiring can be brought up locally before deploying. Four
+# containers on a private network; only the gateway is meant to face the
+# outside world.
+#
+#   gateway   :7830  public ingress (webhooks, OAuth callbacks, client API)
+#   assistant :3001  the brain (memory, runtime, tools) — private
+#   ces       :8090  Credential Execution Service — private, hard-isolated
+#   qdrant    :6333  vector store for the 8-type memory — private
+#
+# egress-proxy is NOT a separate container: it ships as a package consumed
+# in-process by CES (see credential-executor/Dockerfile). Don't add it here.
+#
+# Secrets: copy deploy/.env.cue.example -> deploy/.env.cue and fill it in.
+# NEVER commit deploy/.env.cue. On Render these become an Environment Group.
+#
+#   docker compose --env-file deploy/.env.cue -f deploy/docker-compose.yml up --build
+#
+# NOTE (sandboxing): the assistant uses bubblewrap / apt-chroot for sandboxed
+# skill + bash execution. That needs user-namespaces the host may not grant
+# under Compose/Render; the daemon boots in degraded mode if so (sandboxed
+# execution unavailable, everything else works). Validate at deploy time.
+
+name: cue
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  cue:
+    driver: bridge
+
+volumes:
+  workspace: # assistant: SQLite + 8-type memory + workspace files
+  ces-security: # CES: keys.enc, store.key — the security volume (CES only)
+  ces-data: # CES: private data
+  gateway-security: # gateway: JWT / principal key material
+  qdrant: # qdrant: vector storage
+
+services:
+  qdrant:
+    <<: *restart
+    image: qdrant/qdrant:v1.12.4
+    networks: [cue]
+    volumes:
+      - qdrant:/qdrant/storage
+    # private — not published to the host in production parity
+
+  ces:
+    <<: *restart
+    build:
+      context: ..
+      dockerfile: credential-executor/Dockerfile
+    networks: [cue]
+    environment:
+      CES_MODE: managed
+      CES_HEALTH_PORT: "8090"
+      CES_SERVICE_TOKEN: ${CES_SERVICE_TOKEN:?set in .env.cue}
+      CES_PRIVATE_DATA_DIR: /ces-data
+      PROXY_ALLOWED_HOSTS: ${PROXY_ALLOWED_HOSTS:-*}
+    volumes:
+      - ces-security:/ces-security # MUST be mounted by CES only
+      - ces-data:/ces-data
+    # private — no other service mounts ces-security
+
+  assistant:
+    <<: *restart
+    build:
+      context: ..
+      dockerfile: assistant/Dockerfile
+    networks: [cue]
+    depends_on: [ces, qdrant]
+    environment:
+      IS_CONTAINERIZED: "true"
+      VELLUM_ENVIRONMENT: ${VELLUM_ENVIRONMENT:-production}
+      RUNTIME_HTTP_HOST: 0.0.0.0
+      RUNTIME_HTTP_PORT: "3001"
+      VELLUM_WORKSPACE_DIR: /workspace
+      # vector store (external service, not the in-container sidecar)
+      QDRANT_URL: http://qdrant:6333
+      # credential execution service
+      CES_CREDENTIAL_URL: http://ces:8090
+      CES_SERVICE_TOKEN: ${CES_SERVICE_TOKEN:?set in .env.cue}
+      # gateway link (assistant -> gateway internal callbacks)
+      GATEWAY_INTERNAL_URL: http://gateway:7830
+      # auth shared with the gateway proxy
+      ASSISTANT_API_KEY: ${ASSISTANT_API_KEY:?set in .env.cue}
+      RUNTIME_PROXY_REQUIRE_AUTH: "true"
+      # the brain runs on Fable 5 (per CUE-INFRA-SPEC); embeddings are local
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set in .env.cue}
+      CUE_BRAIN_MODEL: ${CUE_BRAIN_MODEL:-claude-fable-5}
+    volumes:
+      - workspace:/workspace
+
+  gateway:
+    <<: *restart
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    networks: [cue]
+    depends_on: [assistant]
+    ports:
+      - "7830:7830" # the ONLY published port
+    environment:
+      GATEWAY_PORT: "7830"
+      GATEWAY_SECURITY_DIR: /gateway-security
+      GATEWAY_JWT: ${GATEWAY_JWT:?set in .env.cue}
+      # upstream assistant runtime
+      ASSISTANT_HOST: assistant
+      RUNTIME_HTTP_PORT: "3001"
+      ASSISTANT_API_KEY: ${ASSISTANT_API_KEY:?set in .env.cue}
+      DEFAULT_ASSISTANT_ID: ${DEFAULT_ASSISTANT_ID:-cue-local}
+      VELLUM_ASSISTANT_NAME: ${VELLUM_ASSISTANT_NAME:-Cue}
+      # inbound channel secrets (optional for first boot)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+    volumes:
+      - gateway-security:/gateway-security

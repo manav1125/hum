@@ -1,0 +1,149 @@
+# Cue — Render Blueprint (single-tenant). Mirrors deploy/docker-compose.yml.
+#
+# Topology: only `cue-gateway` is public (web service); `cue-assistant`,
+# `cue-ces`, and `cue-qdrant` are private services reachable from each other
+# by service name over Render's private network. CES keeps its security
+# volume hard-isolated — no other service mounts it.
+#
+# Secrets: inter-service tokens are auto-generated + shared via the
+# `cue-shared-tokens` group (generateValue). Provider/channel secrets live in
+# `cue-secrets` as sync:false — set their values in the Render dashboard, do
+# NOT put them here. (Per the security model, I scaffold placeholders; you
+# enter the real values yourself.)
+#
+# Render constraints baked in: one persistent disk per service; pinned to a
+# single instance (correct for single-tenant). Pick ONE region for all
+# services so the private network + name DNS works.
+#
+# Caveat: the assistant's sandboxed skill/bash execution uses bubblewrap,
+# which needs user-namespaces Render's container platform may not grant — the
+# daemon boots in degraded mode (sandboxing off) if so. Validate post-deploy.
+
+envVarGroups:
+  - name: cue-shared-tokens
+    envVars:
+      # Generated once by Render, shared across every service that references
+      # this group — this is how gateway↔assistant↔CES authenticate.
+      - key: CES_SERVICE_TOKEN
+        generateValue: true
+      - key: ASSISTANT_API_KEY
+        generateValue: true
+      - key: GATEWAY_JWT
+        generateValue: true
+
+  - name: cue-secrets
+    envVars:
+      # The brain runs on Claude Fable 5 (per CUE-INFRA-SPEC). Set in dashboard.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Optional inbound channels — leave blank until you wire them.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      # Outbound allowlist for CES secure commands.
+      - key: PROXY_ALLOWED_HOSTS
+        value: "*"
+
+services:
+  # ── vector store (private) ─────────────────────────────────────────────
+  - type: pserv
+    name: cue-qdrant
+    runtime: image
+    image:
+      url: docker.io/qdrant/qdrant:v1.12.4
+    region: oregon
+    plan: starter
+    disk:
+      name: qdrant
+      mountPath: /qdrant/storage
+      sizeGB: 10
+
+  # ── credential execution service (private, hard-isolated) ──────────────
+  - type: pserv
+    name: cue-ces
+    runtime: docker
+    dockerfilePath: ./credential-executor/Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: standard
+    disk:
+      # The security volume. CES is the ONLY service that mounts it.
+      name: ces-security
+      mountPath: /ces-security
+      sizeGB: 5
+    envVars:
+      - fromGroup: cue-shared-tokens
+      - fromGroup: cue-secrets
+      - key: CES_MODE
+        value: managed
+      - key: CES_HEALTH_PORT
+        value: "8090"
+      # One-disk-per-service: keep CES data on the same persistent disk.
+      - key: CES_PRIVATE_DATA_DIR
+        value: /ces-security/data
+
+  # ── assistant: the brain (private) ─────────────────────────────────────
+  - type: pserv
+    name: cue-assistant
+    runtime: docker
+    dockerfilePath: ./assistant/Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: pro # memory + runtime + tools; size up as needed
+    disk:
+      name: workspace # SQLite + 8-type memory + workspace files
+      mountPath: /workspace
+      sizeGB: 20
+    envVars:
+      - fromGroup: cue-shared-tokens
+      - fromGroup: cue-secrets
+      - key: IS_CONTAINERIZED
+        value: "true"
+      - key: VELLUM_ENVIRONMENT
+        value: production
+      - key: RUNTIME_HTTP_HOST
+        value: 0.0.0.0
+      - key: RUNTIME_HTTP_PORT
+        value: "3001"
+      - key: VELLUM_WORKSPACE_DIR
+        value: /workspace
+      - key: QDRANT_URL
+        value: http://cue-qdrant:6333
+      - key: CES_CREDENTIAL_URL
+        value: http://cue-ces:8090
+      - key: GATEWAY_INTERNAL_URL
+        value: http://cue-gateway:7830
+      - key: RUNTIME_PROXY_REQUIRE_AUTH
+        value: "true"
+      - key: CUE_BRAIN_MODEL
+        value: claude-fable-5
+
+  # ── gateway: the ONLY public ingress ───────────────────────────────────
+  - type: web
+    name: cue-gateway
+    runtime: docker
+    dockerfilePath: ./gateway/Dockerfile
+    dockerContext: .
+    region: oregon
+    plan: standard
+    healthCheckPath: /healthz
+    disk:
+      name: gateway-security # JWT / principal key material
+      mountPath: /gateway-security
+      sizeGB: 1
+    envVars:
+      - fromGroup: cue-shared-tokens
+      - fromGroup: cue-secrets
+      - key: GATEWAY_PORT
+        value: "7830"
+      - key: GATEWAY_SECURITY_DIR
+        value: /gateway-security
+      - key: ASSISTANT_HOST
+        value: cue-assistant
+      - key: RUNTIME_HTTP_PORT
+        value: "3001"
+      - key: DEFAULT_ASSISTANT_ID
+        value: cue-local
+      - key: VELLUM_ASSISTANT_NAME
+        value: Cue
