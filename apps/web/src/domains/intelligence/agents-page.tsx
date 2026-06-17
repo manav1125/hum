@@ -1,277 +1,389 @@
-import {
-  Bot,
-  Check,
-  Copy,
-  Link2,
-  Network,
-  Plus,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
-import { useState } from "react";
-
 /**
- * Agent Network (A2A) — let Cue collaborate with other agents.
+ * Agents — faithful translation of `surfaces/Agents.dc.html`.
  *
- * Presentational surface for the agent-to-agent protocol: enable the A2A
- * endpoint, view your agent card, and pair with other agents via invite
- * tokens. The A2A protocol, agent-card endpoint, task store, and invite
- * create/redeem routes already exist on the daemon; this page is the
- * front-end that will be wired to them. State is local so the enable + pair
- * flow is demonstrable in the UI.
+ * "Let Cue work with other agents": an ink hero with the agent-network
+ * constellation, the Enable-A2A card, the paired-agents grid (scoped/trusted),
+ * and the create-invite card. Presentational — the A2A protocol, agent card,
+ * and invite routes exist on the daemon and will be wired in.
  */
 
-interface ConnectedAgent {
-  readonly id: string;
-  readonly name: string;
-  readonly endpoint: string;
-}
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  blueS: "#2B53C4",
+  blueW: "#DBE4FB",
+  violet: "#7F77DD",
+  violetS: "#534AB7",
+  violetW: "#EEEDFB",
+  line: "#E5E9F0",
+  line2: "#D7DDE7",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+  green: "#277E41",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
 
-function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
+const KEYFRAMES = `
+@keyframes cueDash{to{stroke-dashoffset:-14}}
+@keyframes cuePulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.45);opacity:0}}
+@media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
+`;
+
+const LINES = [
+  { x: 230, y: 52, stroke: C.blue, o: 0.7, dash: 1.1 },
+  { x: 356, y: 96, stroke: C.violet, o: 0.6, dash: 1.3 },
+  { x: 372, y: 196, stroke: C.t3, o: 0.35, dash: 0 },
+  { x: 118, y: 92, stroke: C.violet, o: 0.5, dash: 1.5 },
+  { x: 104, y: 206, stroke: C.t3, o: 0.3, dash: 0 },
+];
+
+function AgentNode({
+  x,
+  y,
+  initials,
+  label,
+  bg,
+  fg,
+  dashed,
+}: {
+  x: number;
+  y: number;
+  initials: string;
+  label: string;
+  bg: string;
+  fg: string;
+  dashed?: boolean;
+}) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-        on ? "bg-sky-500" : "bg-muted-foreground/30"
-      }`}
-      aria-pressed={on}
+    <div
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        transform: "translate(-50%,-50%)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 5,
+      }}
     >
       <span
-        className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${
-          on ? "translate-x-[22px]" : "translate-x-0.5"
-        }`}
-      />
-    </button>
+        style={{
+          width: dashed ? 36 : 40,
+          height: dashed ? 36 : 40,
+          borderRadius: 12,
+          background: bg,
+          color: fg,
+          border: dashed ? "1.5px dashed rgba(255,255,255,.3)" : undefined,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: initials.length > 1 ? 13 : 15,
+          fontWeight: initials.length > 1 ? 600 : 400,
+        }}
+      >
+        {initials}
+      </span>
+      <span style={{ fontFamily: mono, fontSize: 8.5, color: dashed ? "#6B788C" : "#9DB4E6" }}>
+        {label}
+      </span>
+    </div>
   );
 }
 
-function Field({
-  label,
-  value,
-  copyable,
+function PairedCard({
+  initials,
+  bg,
+  fg,
+  name,
+  paired,
+  scope,
+  scopeColor,
+  scopeBg,
+  detail,
 }: {
-  label: string;
-  value: string;
-  copyable?: boolean;
+  initials: string;
+  bg: string;
+  fg: string;
+  name: string;
+  paired: string;
+  scope: string;
+  scopeColor: string;
+  scopeBg: string;
+  detail: string;
 }) {
-  const [copied, setCopied] = useState(false);
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-lg border border-border bg-muted/40 px-3 py-2 font-mono text-xs text-foreground">
-          {value}
-        </code>
-        {copyable && (
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard?.writeText(value);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            {copied ? "Copied" : "Copy"}
-          </button>
-        )}
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 11,
+            background: bg,
+            color: fg,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: initials.length > 1 ? 13 : 16,
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
+        >
+          {initials}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
+          <div style={{ fontSize: 11.5, color: C.t2 }}>{paired}</div>
+        </div>
+        <span
+          style={{
+            fontFamily: mono,
+            fontSize: 10,
+            background: scopeBg,
+            color: scopeColor,
+            padding: "3px 8px",
+            borderRadius: 6,
+          }}
+        >
+          {scope}
+        </span>
       </div>
+      <div style={{ fontSize: 12, color: C.t2, marginTop: 10 }}>{detail}</div>
     </div>
   );
 }
 
 export function AgentsPage() {
-  const [enabled, setEnabled] = useState(false);
-  const [invite, setInvite] = useState<string | null>(null);
-  const [redeemToken, setRedeemToken] = useState("");
-  const [agents, setAgents] = useState<ConnectedAgent[]>([]);
-
-  const createInvite = () => {
-    // Presentational placeholder token; the daemon's invite route mints real ones.
-    setInvite("cue-a2a-invite-XXXX-XXXX-XXXX (preview)");
-  };
-
-  const redeem = () => {
-    if (!redeemToken.trim()) return;
-    setAgents((prev) => [
-      ...prev,
-      {
-        id: `agent-${prev.length + 1}`,
-        name: "Paired agent",
-        endpoint: "https://…/a2a/message:send",
-      },
-    ]);
-    setRedeemToken("");
-  };
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
-      <header className="flex flex-col gap-2">
-        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-500">
-          <Network className="size-3.5" />
-          Agent Network
-        </span>
-        <h1 className="text-2xl font-semibold text-foreground">
-          Let Cue work with other agents
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground">
-          Cue speaks the open agent-to-agent (A2A) protocol. Turn it on to let
-          other people's agents send tasks to yours — and pair with agents you
-          trust using one-time invites.
-        </p>
-      </header>
+    <div style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
 
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
-        This is a preview of the pairing flow — the A2A protocol, agent card,
-        and invite routes already exist on the daemon and will be wired up next.
+      {/* HERO with network */}
+      <div
+        style={{
+          position: "relative",
+          background: C.ink,
+          borderRadius: 18,
+          overflow: "hidden",
+          display: "grid",
+          gridTemplateColumns: "1fr 460px",
+          alignItems: "center",
+          minHeight: 280,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(440px 280px at 80% 50%,rgba(127,119,221,.22),transparent 70%)",
+          }}
+        />
+        <div style={{ padding: "34px 36px", position: "relative" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              background: "rgba(61,110,232,.18)",
+              color: "#9DB4E6",
+              borderRadius: 999,
+              padding: "5px 12px",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            ⧉ Agent Network
+          </span>
+          <div
+            style={{
+              fontSize: 32,
+              fontWeight: 600,
+              letterSpacing: "-1px",
+              color: "#fff",
+              marginTop: 14,
+              lineHeight: 1.08,
+            }}
+          >
+            Let Cue work
+            <br />
+            with other agents.
+          </div>
+          <p style={{ fontSize: 14.5, color: "#AEB7C7", marginTop: 12, maxWidth: 400 }}>
+            Cue speaks the open agent-to-agent (A2A) protocol. Let trusted agents
+            send tasks to yours — and pair with them using scoped, one-time
+            invites.
+          </p>
+        </div>
+        <div className="cue-anim" style={{ position: "relative", height: 280 }}>
+          <svg
+            width="460"
+            height="280"
+            viewBox="0 0 460 280"
+            style={{ position: "absolute", inset: 0 }}
+          >
+            {LINES.map((l, i) => (
+              <line
+                key={i}
+                x1="230"
+                y1="140"
+                x2={l.x}
+                y2={l.y}
+                stroke={l.stroke}
+                strokeWidth="1.5"
+                strokeDasharray="3 4"
+                opacity={l.o}
+                style={l.dash ? { animation: `cueDash ${l.dash}s linear infinite` } : undefined}
+              />
+            ))}
+          </svg>
+          <div
+            style={{
+              position: "absolute",
+              left: 230,
+              top: 140,
+              transform: "translate(-50%,-50%)",
+              width: 64,
+              height: 64,
+              borderRadius: 18,
+              background: "#0F1620",
+              border: "1px solid rgba(255,255,255,.12)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 2,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: 18,
+                border: "2px solid rgba(61,110,232,.6)",
+                animation: "cuePulse 2.4s ease-out infinite",
+              }}
+            />
+            <span style={{ fontSize: 36, fontWeight: 600, color: "#EEF2F7", position: "relative", lineHeight: 1 }}>
+              C
+              <span
+                style={{
+                  position: "absolute",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: C.blue,
+                  right: 9,
+                  bottom: 13,
+                }}
+              />
+            </span>
+          </div>
+          <AgentNode x={230} y={52} initials="DR" label="Dana" bg={C.blueW} fg={C.blueS} />
+          <AgentNode x={356} y={96} initials="◆" label="Vendor" bg={C.violetW} fg={C.violetS} />
+          <AgentNode x={118} y={92} initials="SC" label="Sam" bg={C.violetW} fg={C.violetS} />
+          <AgentNode x={372} y={196} initials="?" label="pending" bg="rgba(255,255,255,.06)" fg="#7E8BA3" dashed />
+          <AgentNode x={104} y={206} initials="?" label="unknown" bg="rgba(255,255,255,.06)" fg="#7E8BA3" dashed />
+        </div>
       </div>
 
-      {/* Enable */}
-      <section className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background p-4">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Sparkles className="size-4" />
-          </span>
-          <div>
-            <div className="text-sm font-semibold text-foreground">
-              Enable A2A endpoint
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Exposes your agent at <code className="font-mono">/a2a/message:send</code>{" "}
-              so paired agents can reach it.
-            </div>
+      {/* Enable A2A */}
+      <div
+        style={{
+          border: `1.5px solid ${C.ink}`,
+          borderRadius: 14,
+          padding: "18px 20px",
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          marginTop: 18,
+        }}
+      >
+        <span style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: C.violet, flexShrink: 0 }}>
+          ✦
+        </span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Enable A2A endpoint</div>
+          <div style={{ fontSize: 13, color: C.t2, marginTop: 2 }}>
+            Exposes your agent at{" "}
+            <span style={{ fontFamily: mono, fontSize: 12, background: "#F4F6F9", padding: "1px 6px", borderRadius: 5 }}>
+              /a2a/message:send
+            </span>{" "}
+            so paired agents can reach it.
           </div>
         </div>
-        <Toggle on={enabled} onClick={() => setEnabled((v) => !v)} />
-      </section>
+        <span style={{ width: 46, height: 26, borderRadius: 999, background: C.blue, position: "relative", flexShrink: 0 }}>
+          <span style={{ position: "absolute", width: 22, height: 22, borderRadius: "50%", background: "#fff", top: 2, right: 2, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
+        </span>
+      </div>
 
-      {enabled && (
-        <>
-          {/* Your agent card */}
-          <section className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
-            <div className="flex items-center gap-2">
-              <Bot className="size-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold text-foreground">
-                Your agent card
-              </h2>
-            </div>
-            <Field label="Agent name" value="Cue (personal assistant)" />
-            <Field
-              label="Inbound endpoint"
-              value="https://your-device/a2a/message:send"
-              copyable
-            />
-            <div className="flex flex-wrap gap-1.5">
-              {["General conversation", "Push notifications"].map((cap) => (
-                <span
-                  key={cap}
-                  className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
-                >
-                  <Check className="size-3" /> {cap}
-                </span>
-              ))}
-            </div>
-          </section>
+      {/* Paired agents */}
+      <div
+        style={{
+          fontFamily: mono,
+          fontSize: 10.5,
+          letterSpacing: ".1em",
+          textTransform: "uppercase",
+          color: C.t3,
+          margin: "26px 0 12px",
+        }}
+      >
+        Paired agents · 2
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <PairedCard
+          initials="DR"
+          bg={C.blueW}
+          fg={C.blueS}
+          name="Dana's assistant"
+          paired="paired Jun 12"
+          scope="SCOPED"
+          scopeColor={C.blueS}
+          scopeBg={C.blueW}
+          detail="Can discuss the Acme renewal only · 4 messages exchanged"
+        />
+        <PairedCard
+          initials="◆"
+          bg={C.violetW}
+          fg={C.violetS}
+          name="Vendor booking agent"
+          paired="paired Jun 9"
+          scope="TRUSTED"
+          scopeColor={C.green}
+          scopeBg="#E2F0E7"
+          detail="Can place reservations on your behalf · always asks first"
+        />
+      </div>
 
-          {/* Pair */}
-          <section className="grid gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
-              <div className="flex items-center gap-2">
-                <Plus className="size-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold text-foreground">
-                  Invite an agent
-                </h2>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Create a one-time token and share it with the agent you want to
-                pair with.
-              </p>
-              {invite ? (
-                <Field label="Invite token" value={invite} copyable />
-              ) : (
-                <button
-                  type="button"
-                  onClick={createInvite}
-                  className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-sky-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-600"
-                >
-                  <Link2 className="size-4" /> Create invite
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="size-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold text-foreground">
-                  Redeem an invite
-                </h2>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Paste a token you received to pair with another agent.
-              </p>
-              <input
-                value={redeemToken}
-                onChange={(e) => setRedeemToken(e.target.value)}
-                placeholder="Paste invite token"
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-sky-500"
-              />
-              <button
-                type="button"
-                onClick={redeem}
-                className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/50"
-              >
-                Pair agent
-              </button>
-            </div>
-          </section>
-
-          {/* Connected agents */}
-          <section className="flex flex-col gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Connected agents
-            </h2>
-            {agents.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground">
-                No agents paired yet. Create or redeem an invite to connect one.
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {agents.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-4"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <Bot className="size-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold text-foreground">
-                          {a.name}
-                        </div>
-                        <div className="truncate font-mono text-xs text-muted-foreground">
-                          {a.endpoint}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAgents((prev) => prev.filter((x) => x.id !== a.id))
-                      }
-                      className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
+      {/* Create invite */}
+      <div
+        style={{
+          border: `1px dashed ${C.line2}`,
+          borderRadius: 14,
+          padding: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          marginTop: 12,
+        }}
+      >
+        <span style={{ width: 40, height: 40, borderRadius: 11, background: "#F4F6F9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: C.t2, flexShrink: 0 }}>
+          +
+        </span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Create a one-time invite</div>
+          <div style={{ fontSize: 12, color: C.t2 }}>
+            Generate a scoped pairing link for an agent you trust
+          </div>
+        </div>
+        <button
+          type="button"
+          style={{ fontSize: 12.5, background: C.blue, color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px", cursor: "pointer" }}
+        >
+          New invite
+        </button>
+      </div>
     </div>
   );
 }
