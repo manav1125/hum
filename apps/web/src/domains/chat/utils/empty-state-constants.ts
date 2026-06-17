@@ -6,7 +6,7 @@
  * scaffolding — wired up by later PRs.
  */
 
-export const DEFAULT_EMPTY_STATE_GREETING = "I'm here whenever you need me.";
+export const DEFAULT_EMPTY_STATE_GREETING = "What can I take off your plate?";
 
 export const EMPTY_STATE_PLACEHOLDERS: readonly string[] = [
   "What would help right now?",

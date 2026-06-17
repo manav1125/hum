@@ -159,9 +159,11 @@ function ContactRow({
   onClick,
   trailingIcon,
 }: ContactRowProps) {
+  // Display-only relabel: the native channel's protocol id is "vellum", but the
+  // product is Cue. Map the user-facing label without touching the underlying id.
   const channelLabel =
     channelTypes && channelTypes.length > 0
-      ? channelTypes.join(" | ")
+      ? channelTypes.map((t) => (t === "vellum" ? "Cue" : t)).join(" | ")
       : undefined;
 
   const trailingActionIcon =
