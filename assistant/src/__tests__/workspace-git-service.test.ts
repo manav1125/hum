@@ -84,7 +84,7 @@ describe("WorkspaceGitService", () => {
         encoding: "utf-8",
       }).trim();
 
-      expect(userName).toBe("Vellum Assistant");
+      expect(userName).toBe("Cue");
       expect(userEmail).toBe("assistant@vellum.ai");
     });
 
@@ -761,7 +761,7 @@ describe("WorkspaceGitService", () => {
         encoding: "utf-8",
       }).trim();
 
-      expect(userName).toBe("Vellum Assistant");
+      expect(userName).toBe("Cue");
       expect(userEmail).toBe("assistant@vellum.ai");
     });
 
@@ -798,7 +798,7 @@ describe("WorkspaceGitService", () => {
     test("existing repo with correct config is idempotent", async () => {
       // Set up a repo that already has everything configured correctly
       execFileSync("git", ["init", "-b", "main"], { cwd: testDir });
-      execFileSync("git", ["config", "user.name", "Vellum Assistant"], {
+      execFileSync("git", ["config", "user.name", "Cue"], {
         cwd: testDir,
       });
       execFileSync("git", ["config", "user.email", "assistant@vellum.ai"], {
@@ -828,7 +828,7 @@ describe("WorkspaceGitService", () => {
         cwd: testDir,
         encoding: "utf-8",
       }).trim();
-      expect(userName).toBe("Vellum Assistant");
+      expect(userName).toBe("Cue");
 
       const branch = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
         cwd: testDir,

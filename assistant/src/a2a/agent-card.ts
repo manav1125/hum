@@ -51,7 +51,7 @@ export function buildAgentCard(params: BuildAgentCardParams): AgentCard {
 
 export function getAgentCard(): AgentCard {
   const config = getConfig();
-  const assistantName = getAssistantName() ?? "Vellum Assistant";
+  const assistantName = getAssistantName() ?? "Cue";
   const baseUrl = getPublicBaseUrl(config);
 
   return buildAgentCard({ assistantName, baseUrl });

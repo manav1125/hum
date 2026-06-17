@@ -1,7 +1,7 @@
 /**
  * Route handlers for domain registration and status.
  *
- * Delegates to the Vellum platform API for register/status and persists
+ * Delegates to the Cue platform API for register/status and persists
  * the subdomain to local config so getAssistantDomain() can use it.
  */
 

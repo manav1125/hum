@@ -31,7 +31,7 @@ export const KEY_IOS_APP_ASSISTANT_TURNS_SEEN =
 
 export const IOS_APP_BANNER_MIN_TURNS = 5;
 
-/** App Store listing for Vellum Assistant (id6759934423). */
+/** App Store listing for Cue (id6759934423). */
 export const IOS_APP_STORE_URL =
   "https://apps.apple.com/us/app/vellum-assistant/id6759934423";
 

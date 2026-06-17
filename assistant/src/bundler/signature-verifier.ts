@@ -178,7 +178,7 @@ export async function verifyBundleSignature(
     }
   }
 
-  // For MVP, we don't have Vellum account lookup, so best we can do is 'signed'
+  // For MVP, we don't have Cue account lookup, so best we can do is 'signed'
   return {
     trustTier: "signed",
     signerKeyId: keyId,

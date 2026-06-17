@@ -437,7 +437,7 @@ async function listSkillsWithCatalog(): Promise<SlimSkillResponse[]> {
     return installed;
   }
 
-  // All entries from the Vellum platform API are first-party.
+  // All entries from the Cue platform API are first-party.
   // Create SlimSkillResponses for catalog skills not already installed.
   const available: SlimSkillResponse[] = catalogSkills
     .filter((cs) => !installedIds.has(cs.id))

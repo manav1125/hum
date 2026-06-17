@@ -1,7 +1,7 @@
 ---
 name: messaging
 description: Read, search, send, and manage messages across Gmail, Outlook, Telegram, and other platforms
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "\U0001F4AC"
   vellum:

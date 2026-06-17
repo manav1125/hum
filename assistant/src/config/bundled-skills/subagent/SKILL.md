@@ -1,7 +1,7 @@
 ---
 name: subagent
 description: Spawn and manage autonomous background agents for parallel work
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🤖"
   vellum:
@@ -33,13 +33,13 @@ Each subagent is spawned with a role that determines its tool access. Choose the
 
 `recall` is local information search across memory, the personal knowledge base, past conversations, and workspace files. Use it when a subagent needs prior context that is not already in the prompt.
 
-| Role | Tools | When to use |
-|---|---|---|
-| `general` | Full tool access | Task genuinely needs unrestricted capabilities (rare -- prefer a specialized role) |
-| `researcher` | `web_search`, `web_fetch`, `file_read`, `file_list`, `recall`, `notify_parent` | Information gathering, web research, codebase exploration, reading documentation |
-| `coder` | `bash`, `file_read`, `file_write`, `file_edit`, `web_search`, `recall`, `notify_parent` | Code changes, file editing, running commands, build/test tasks |
-| `planner` | `file_read`, `file_list`, `web_search`, `web_fetch`, `recall`, `notify_parent` | Analysis, planning, synthesizing information, reviewing approaches |
-| `investigator` | `bash`, `file_read`, `file_list`, `web_search`, `web_fetch`, `recall`, `notify_parent` | Root-cause analysis: debugging, log forensics, tracing behavior across many files. Shell access is for read-only investigation (grep/find/reading logs); returns a compact root-cause report |
+| Role           | Tools                                                                                   | When to use                                                                                                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `general`      | Full tool access                                                                        | Task genuinely needs unrestricted capabilities (rare -- prefer a specialized role)                                                                                                           |
+| `researcher`   | `web_search`, `web_fetch`, `file_read`, `file_list`, `recall`, `notify_parent`          | Information gathering, web research, codebase exploration, reading documentation                                                                                                             |
+| `coder`        | `bash`, `file_read`, `file_write`, `file_edit`, `web_search`, `recall`, `notify_parent` | Code changes, file editing, running commands, build/test tasks                                                                                                                               |
+| `planner`      | `file_read`, `file_list`, `web_search`, `web_fetch`, `recall`, `notify_parent`          | Analysis, planning, synthesizing information, reviewing approaches                                                                                                                           |
+| `investigator` | `bash`, `file_read`, `file_list`, `web_search`, `web_fetch`, `recall`, `notify_parent`  | Root-cause analysis: debugging, log forensics, tracing behavior across many files. Shell access is for read-only investigation (grep/find/reading logs); returns a compact root-cause report |
 
 All specialized roles (`researcher`, `coder`, `planner`) include `notify_parent` for mid-run communication with the parent.
 
@@ -79,13 +79,13 @@ Forks are sub-agents that inherit the parent's full context -- messages, system 
 
 **When to fork vs regular sub-agent:**
 
-| Task | Mode |
-|---|---|
-| Single tool call (one search, one file read) | Direct -- don't spawn at all |
-| Multi-page web research needing conversation context | Fork |
-| Exploratory file search informed by prior discussion | Fork |
-| Comparing multiple sources against what was discussed | Parallel forks |
-| Self-contained task with a clear objective | Regular sub-agent |
+| Task                                                  | Mode                         |
+| ----------------------------------------------------- | ---------------------------- |
+| Single tool call (one search, one file read)          | Direct -- don't spawn at all |
+| Multi-page web research needing conversation context  | Fork                         |
+| Exploratory file search informed by prior discussion  | Fork                         |
+| Comparing multiple sources against what was discussed | Parallel forks               |
+| Self-contained task with a clear objective            | Regular sub-agent            |
 
 Rule of thumb: "Does this task need to know what we've been talking about?" If yes, fork. If the objective is fully self-describing, use a regular sub-agent with a scoped role.
 

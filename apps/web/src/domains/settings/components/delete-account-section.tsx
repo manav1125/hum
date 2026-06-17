@@ -17,7 +17,7 @@ import { Notice } from "@vellumai/design-library/components/notice";
 import { toast } from "@vellumai/design-library/components/toast";
 
 export function DeleteAccountSection() {
-  // platformHostedOnly: deleting a Vellum platform account from a UI that
+  // platformHostedOnly: deleting a Cue platform account from a UI that
   // is actively connected to a self-hosted assistant is confusing /
   // disruptive — the user can switch to a platform-hosted assistant to
   // access this action. The standard gate would still expose it.

@@ -422,7 +422,7 @@ async function checkManagedProvider(
         provider: providerRow.provider,
         accountInfo: allConnections[0]?.account_label ?? null,
         status: "missing_token",
-        details: `No active managed connection for ${providerRow.provider}. Reconnect on the Vellum platform.`,
+        details: `No active managed connection for ${providerRow.provider}. Reconnect on the Cue platform.`,
         missingScopes: [],
         canAutoRecover: false,
       });
@@ -519,7 +519,7 @@ async function checkManagedProvider(
           results.push({
             ...base,
             status: "ping_failed",
-            details: `${providerRow.provider} managed liveness check returned ${pingResp.status} from the upstream provider. The Vellum platform may not have refreshed the token before forwarding; will retry next cycle.`,
+            details: `${providerRow.provider} managed liveness check returned ${pingResp.status} from the upstream provider. The Cue platform may not have refreshed the token before forwarding; will retry next cycle.`,
             canAutoRecover: false,
           });
         } else {
@@ -546,7 +546,7 @@ async function checkManagedProvider(
           results.push({
             ...base,
             status: "revoked",
-            details: `${providerRow.provider} managed connection cannot be refreshed by the Vellum platform. Reconnect on the Vellum platform.`,
+            details: `${providerRow.provider} managed connection cannot be refreshed by the Cue platform. Reconnect on the Cue platform.`,
             canAutoRecover: false,
           });
         } else {

@@ -97,7 +97,7 @@ const MODE_TRADEOFFS: Record<StatusCheckMode, string[]> = {
     "More secure than relying on Chrome's native remote debugging functionality.",
   ],
   [BROWSER_STATUS_MODE.CDP_INSPECT]: [
-    "This is the second-best approach for all things browser-use, after the native Vellum Assistant Chrome Extension.",
+    "This is the second-best approach for all things browser-use, after the native Cue Chrome Extension.",
     "It requires Chrome version 146 or greater",
     "It requires toggling on remote debugging in Chrome Settings",
     "It's prone to phishing attacks from other local processes that may try to do their own remote debugging.",
@@ -194,7 +194,7 @@ export function parseBrowserMode(
 const REMEDIATION_HINTS: Record<string, string[]> = {
   // Extension backend
   "extension:transport_error": [
-    "Ensure the Vellum browser extension is installed and enabled, or that the macOS desktop client is running for host browser proxy mode.",
+    "Ensure the Cue browser extension is installed and enabled, or that the macOS desktop client is running for host browser proxy mode.",
     "For extension mode: check that the extension WebSocket connection is active (extension popup → status).",
     "For macOS host browser proxy: verify the desktop client is running and has an active SSE connection to the assistant.",
     "Try reconnecting the extension or restarting the desktop client.",
@@ -233,11 +233,11 @@ const REMEDIATION_HINTS: Record<string, string[]> = {
     "Ensure Chrome on the user's machine is on version 146 or higher (chrome://settings/help).",
     'Ensure "Allow remote debugging for this browser instance" is toggled on at chrome://inspect/#remote-debugging.',
     "Verify the desktop client is running and has an active SSE connection to the assistant.",
-    "Installing the Vellum Chrome extension is the preferred path and avoids the debug-port requirement.",
+    "Installing the Cue Chrome extension is the preferred path and avoids the debug-port requirement.",
   ],
   "host-bridge:transport_error": [
     "The desktop client could not reach Chrome's remote-debugging endpoint on the user's machine.",
-    "Ensure Chrome is running with remote debugging enabled, or install the Vellum Chrome extension (preferred).",
+    "Ensure Chrome is running with remote debugging enabled, or install the Cue Chrome extension (preferred).",
     "Verify the desktop client is running and connected.",
   ],
   // Local/Playwright backend
@@ -669,11 +669,10 @@ export async function executeBrowserNavigate(
   const newTab = input.new_tab === true;
   if (newTab && cdp.kind === "extension") {
     try {
-      const result = await cdp.send<{ tabId?: number | string; clientId?: string }>(
-        "Vellum.createTab",
-        {},
-        context.signal,
-      );
+      const result = await cdp.send<{
+        tabId?: number | string;
+        clientId?: string;
+      }>("Vellum.createTab", {}, context.signal);
       const tabId =
         typeof result?.tabId === "number"
           ? String(result.tabId)
@@ -720,8 +719,7 @@ export async function executeBrowserNavigate(
       // We're early-returning before the main try/finally block below,
       // so we must dispose the cdp client manually to avoid leaking it.
       clearPinnedTab(context.conversationId);
-      const message =
-        err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       log.warn(
         { conversationId: context.conversationId, err },
         "Vellum.createTab failed; aborting --new-tab navigate",
@@ -2246,7 +2244,7 @@ function modeTradeoffs(mode: StatusCheckMode): string[] {
 
 function extensionSetupActions(): string[] {
   return [
-    "Install the Vellum Assistant Chrome extension from the Chrome Web Store: https://chromewebstore.google.com/detail/vellum-assistant-browser/hphbdmpffeigpcdjkckleobjmhhokpne",
+    "Install the Cue Chrome extension from the Chrome Web Store: https://chromewebstore.google.com/detail/vellum-assistant-browser/hphbdmpffeigpcdjkckleobjmhhokpne",
     "Open the extension and pair with your assistant.",
   ];
 }

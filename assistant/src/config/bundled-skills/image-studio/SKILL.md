@@ -1,7 +1,7 @@
 ---
 name: image-studio
 description: Create images from a text description, or edit photos and graphics the user provides (remove backgrounds or watermarks, retouch, restyle, in-paint). Can produce multiple variants when the user wants options to choose from.
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🎨"
   vellum:
@@ -37,13 +37,27 @@ Pass a concrete model ID only if the user names one explicitly. If the tool reje
 Generate (no model parameter, default is correct):
 
 ```json
-{ "tool": "media_generate_image", "input": { "prompt": "A sunset over the ocean, golden hour, soft haze, 35mm photo style", "variants": 2 } }
+{
+  "tool": "media_generate_image",
+  "input": {
+    "prompt": "A sunset over the ocean, golden hour, soft haze, 35mm photo style",
+    "variants": 2
+  }
+}
 ```
 
 Edit:
 
 ```json
-{ "tool": "media_generate_image", "input": { "prompt": "Remove the watermark text from the background. Keep the subject, framing, lighting, and colors exactly identical. Change nothing else.", "mode": "edit", "source_paths": ["conversations/<conv-id>/attachments/photo.jpeg"], "model": "openai" } }
+{
+  "tool": "media_generate_image",
+  "input": {
+    "prompt": "Remove the watermark text from the background. Keep the subject, framing, lighting, and colors exactly identical. Change nothing else.",
+    "mode": "edit",
+    "source_paths": ["conversations/<conv-id>/attachments/photo.jpeg"],
+    "model": "openai"
+  }
+}
 ```
 
 `source_paths` is a flat array of file path strings. Do NOT pass objects:

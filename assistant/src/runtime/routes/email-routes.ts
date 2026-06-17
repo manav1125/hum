@@ -1,7 +1,7 @@
 /**
  * Route handlers for the email management API.
  *
- * Delegates to the Vellum platform API for register/unregister/send/list/status/download.
+ * Delegates to the Cue platform API for register/unregister/send/list/status/download.
  * All handlers require a valid platform client (UnauthorizedError if not).
  */
 

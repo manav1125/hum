@@ -45,7 +45,7 @@ export const PlatformConfigSchema = z
         "platform.baseUrl must be an absolute URL starting with http:// or https://",
       )
       .default("")
-      .describe("Base URL of the Vellum platform API"),
+      .describe("Base URL of the Cue platform API"),
     subdomain: z
       .string({ error: "platform.subdomain must be a string" })
       .default("")
@@ -53,7 +53,7 @@ export const PlatformConfigSchema = z
         "Registered subdomain on vellum.me (e.g. 'apollobot' → apollobot.vellum.me). Set automatically by 'assistant domain register'.",
       ),
   })
-  .describe("Vellum platform connection settings");
+  .describe("Cue platform connection settings");
 
 export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 

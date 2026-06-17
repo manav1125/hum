@@ -1,7 +1,7 @@
 ---
 name: phone-calls
 description: "Make outgoing phone calls, receive incoming calls, and pull up past call transcripts"
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "📞"
   vellum:
@@ -78,7 +78,6 @@ assistant channel-verification-sessions status --channel phone --json
 After they are verified, ask them what they think of your voice and offer to let them change it. Load up the `elevenlabs-voice` skill and follow the instructions there to see what voices are available and how to update your configured voice. Say something like:
 
 > Great, you're verified! What did you think of my voice? We can update it if you'd like.
-
 
 # Making Outbound Calls
 

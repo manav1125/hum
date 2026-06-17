@@ -1,7 +1,7 @@
 ---
 name: contacts
 description: Manage contacts, communication channels, access control, and invite links
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "👥"
   vellum:
@@ -131,7 +131,6 @@ assistant contacts channels update-status <channel_id> --status blocked --reason
 ```
 
 Replace `<channel_id>` with the channel's `id` from the contact's `channels` array (visible in `assistant contacts list --json` output).
-
 
 ## Invite Links
 

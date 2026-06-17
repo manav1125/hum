@@ -485,7 +485,7 @@ export async function readCatalogSkillFileContent(
 // ─── Catalog-to-slim conversion ──────────────────────────────────────────────
 
 /**
- * Map a `CatalogSkill` (from the Vellum platform API) to a `SlimSkillResponse`
+ * Map a `CatalogSkill` (from the Cue platform API) to a `SlimSkillResponse`
  * shaped for the "available catalog skill" case. Shared between
  * `listSkillsWithCatalog` (merging catalog entries into the installed list),
  * `getSkillFiles` (catalog fallback for preview listings), and the

@@ -68,7 +68,7 @@ export async function resolveOAuthConnection(
           : "missing assistant ID";
         throw new Error(
           `Platform-managed connection for "${provider}" cannot be created: ${detail}. ` +
-            `Log in to the Vellum platform or switch to using your own OAuth app.`,
+            `Log in to the Cue platform or switch to using your own OAuth app.`,
         );
       }
 

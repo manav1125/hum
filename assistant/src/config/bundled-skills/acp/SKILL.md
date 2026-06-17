@@ -1,7 +1,7 @@
 ---
 name: acp
 description: Spawn external coding agents via the Agent Client Protocol (ACP)
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🔗"
   vellum:
@@ -85,19 +85,20 @@ The alternative is browser OAuth: run `gemini` once interactively and complete t
 Do NOT put API keys (or any secret) in the workspace config file - secrets never belong in the workspace directory. Use the credential store instead.
 
 A workspace `acp.agents.gemini` override is only for non-secret customization (custom binary path, extra args, non-secret env vars). It must spell out the full `command` and `args` - see "Critical: correct agent command" below for the replace-not-merge rule:
-  ```json
-  {
-    "acp": {
-      "agents": {
-        "gemini": {
-          "command": "gemini",
-          "args": ["--acp"],
-          "env": { "NO_COLOR": "1" }
-        }
+
+```json
+{
+  "acp": {
+    "agents": {
+      "gemini": {
+        "command": "gemini",
+        "args": ["--acp"],
+        "env": { "NO_COLOR": "1" }
       }
     }
   }
-  ```
+}
+```
 
 ## Critical: correct agent command
 

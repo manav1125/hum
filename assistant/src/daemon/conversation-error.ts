@@ -345,7 +345,7 @@ function classifyCore(
         return {
           code: "MANAGED_USAGE_LIMIT",
           userMessage:
-            "Vellum managed inference is rate limited. This is a Vellum-side usage limit, not an AI provider outage.",
+            "Cue managed inference is rate limited. This is a Cue-side usage limit, not an AI provider outage.",
           retryable: true,
           errorCategory: "managed_usage_limit",
         };
@@ -636,7 +636,7 @@ function classifyByMessage(
         return {
           code: "MANAGED_USAGE_LIMIT",
           userMessage:
-            "Vellum managed inference is rate limited. This is a Vellum-side usage limit, not an AI provider outage.",
+            "Cue managed inference is rate limited. This is a Cue-side usage limit, not an AI provider outage.",
           retryable: true,
           errorCategory: "managed_usage_limit",
         };

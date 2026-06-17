@@ -1,7 +1,7 @@
 ---
 name: sequences
 description: Create and manage automated email drip sequences
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "📧"
   vellum:

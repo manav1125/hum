@@ -106,7 +106,7 @@ async function createProviderConnection(
  * Apply the API key collected during onboarding to the freshly hatched local
  * assistant: store the secret (when a key was entered) and create the provider
  * connection so the daemon can use it. Consumes the pending key; no-op when
- * nothing was collected (e.g. Vellum Cloud, which skips the API-key step).
+ * nothing was collected (e.g. Cue Cloud, which skips the API-key step).
  */
 export async function applyPendingProviderKey(
   assistantId: string,

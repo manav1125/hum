@@ -15,7 +15,7 @@ import { writeOutput } from "../../output.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Verify that the user has connected to the Vellum platform (has stored
+ * Verify that the user has connected to the Cue platform (has stored
  * credentials). Unlike `requirePlatformClient`, this does NOT require a
  * platform assistant ID — it only checks that credentials exist.
  *

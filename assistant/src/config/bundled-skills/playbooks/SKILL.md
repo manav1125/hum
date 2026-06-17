@@ -1,7 +1,7 @@
 ---
 name: playbooks
 description: Trigger-action automation rules for handling incoming messages
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "📖"
   vellum:
@@ -15,9 +15,9 @@ Playbooks are trigger-action automation rules that tell the assistant how to han
 
 Each playbook has:
 
-- **Trigger**: Pattern or description that activates the rule (e.g. "meeting request", "from:ceo@*")
+- **Trigger**: Pattern or description that activates the rule (e.g. "meeting request", "from:ceo@\*")
 - **Action**: What to do when triggered (natural language description)
-- **Channel**: Which channel the rule applies to ("*" = all channels, or specific like "email", "slack")
+- **Channel**: Which channel the rule applies to ("\*" = all channels, or specific like "email", "slack")
 - **Category**: Free-form grouping label (e.g. "scheduling", "triage")
 - **Autonomy level**: How much autonomy the assistant has
   - `auto` -- execute immediately without asking

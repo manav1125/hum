@@ -1,7 +1,7 @@
 /**
  * Backwards-compat gate: feature-flag query freshness.
  *
- * Vellum Assistant 0.8.5 introduced `sync_changed` broadcasts for the
+ * Cue 0.8.5 introduced `sync_changed` broadcasts for the
  * two feature-flag tags (PR #31921 / #31932). Web subscribers use
  * those pushes + `sse.opened` reconnect invalidation to keep the flag
  * query caches fresh, so the previous 5s interval poll is redundant.

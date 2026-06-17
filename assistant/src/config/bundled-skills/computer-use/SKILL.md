@@ -1,7 +1,7 @@
 ---
 name: computer-use
 description: Control the macOS desktop
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🖥️"
   vellum:
@@ -15,7 +15,7 @@ metadata:
       - "Task can be done via a more specific skill (gmail, calendar, contacts, terminal-sessions) or a CLI / API call"
 ---
 
-This skill provides the computer_use_* action tools for controlling
+This skill provides the computer*use*\* action tools for controlling
 the macOS desktop. CU tools run through the main agent loop via HostCuProxy.
 
 The skill is internally preactivated for conversations with a connected desktop client.

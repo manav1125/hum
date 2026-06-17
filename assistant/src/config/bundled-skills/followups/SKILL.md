@@ -1,7 +1,7 @@
 ---
 name: followups
 description: Track sent messages awaiting responses across communication channels
-compatibility: "Designed for Vellum personal assistants"
+compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "📨"
   vellum:
@@ -27,6 +27,7 @@ When `expected_response_hours` is set, the follow-up automatically becomes overd
 ## Resolution
 
 Follow-ups can be resolved in two ways:
+
 1. **By ID** -- resolve a specific follow-up directly
 2. **By conversation** -- provide channel + conversation_id to auto-resolve all matching pending follow-ups (useful when a response arrives on a conversation)
 
