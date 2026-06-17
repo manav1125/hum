@@ -18,6 +18,9 @@ ENV PATH="/root/.bun/bin:${PATH}"
 
 # Copy shared packages needed by assistant's repo-local dependencies
 COPY packages/ces-client ./packages/ces-client
+# assistant-client is a gateway dependency — needed for the combined Cue app
+# image (daemon + gateway co-located). Harmless for the standalone daemon.
+COPY packages/assistant-client ./packages/assistant-client
 COPY packages/service-contracts ./packages/service-contracts
 COPY packages/credential-storage ./packages/credential-storage
 COPY packages/egress-proxy ./packages/egress-proxy
@@ -63,6 +66,18 @@ COPY assistant ./assistant
 # register proxy tools/routes without importing the skill in-process.
 RUN bun run /app/skills/meet-join/scripts/emit-manifest.ts \
       --output /app/skills/meet-join/manifest.json
+
+# ── Gateway, co-located in the combined Cue app image ───────────────────────
+# The gateway reaches the daemon over the Unix socket in the shared workspace,
+# so on a single-service host (Render) it must live in the same image. The
+# default assistant CMD below is unchanged (standalone daemon); the combined
+# start command is supplied by the deploy (render.yaml dockerCommand ->
+# docker-cue-app-entrypoint.sh). Shared packages it needs (assistant-client,
+# ces-client, gateway-client, ipc-server-utils, service-contracts, slack-text,
+# twilio-client) are already present under /app/packages.
+COPY gateway/package.json gateway/bun.lock ./gateway/
+RUN cd /app/gateway && bun install --frozen-lockfile --production
+COPY gateway ./gateway
 
 # Final stage
 FROM debian:trixie-slim@sha256:4ffb3a1511099754cddc70eb1b12e50ffdb67619aa0ab6c13fcd800a78ef7c7a AS runner
@@ -246,6 +261,7 @@ COPY packages/block-volume-bootstrap/scripts/*.sh /usr/local/bin/
 
 RUN chmod +x \
     /app/assistant/docker-entrypoint.sh \
+    /app/assistant/docker-cue-app-entrypoint.sh \
     /app/assistant/docker-init-apt-root.sh \
     /app/assistant/docker-kata-apt-env.sh \
     /app/assistant/docker-kata-runtime-family.sh \

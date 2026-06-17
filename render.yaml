@@ -1,9 +1,10 @@
 # Cue — Render Blueprint (single-tenant). Mirrors deploy/docker-compose.yml.
 #
-# Topology: only `cue-gateway` is public (web service); `cue-assistant`,
-# `cue-ces`, and `cue-qdrant` are private services reachable from each other
-# by service name over Render's private network. CES keeps its security
-# volume hard-isolated — no other service mounts it.
+# Topology: `cue-app` (daemon + gateway co-located in one container) is the only
+# public web service; `cue-ces` and `cue-qdrant` are private services reachable
+# by service name over Render's private network. The gateway↔daemon link is a
+# Unix socket in the shared /workspace, which is why they share a container.
+# CES keeps its security volume hard-isolated — no other service mounts it.
 #
 # Secrets: inter-service tokens are auto-generated + shared via the
 # `cue-shared-tokens` group (generateValue). Provider/channel secrets live in
@@ -83,16 +84,23 @@ services:
       - key: CES_PRIVATE_DATA_DIR
         value: /ces-security/data
 
-  # ── assistant: the brain (private) ─────────────────────────────────────
-  - type: pserv
-    name: cue-assistant
+  # ── cue-app: daemon + gateway, co-located (the ONLY public ingress) ─────
+  # The gateway reaches the daemon over the Unix socket in the shared
+  # /workspace, so they MUST run in one container (Render can't share a socket
+  # across services). The combined start command runs both (see
+  # assistant/docker-cue-app-entrypoint.sh). Public traffic hits the gateway on
+  # Render's $PORT (10000); the daemon binds 127.0.0.1:3001 in-container only.
+  - type: web
+    name: cue-app
     runtime: docker
     dockerfilePath: ./assistant/Dockerfile
     dockerContext: .
+    dockerCommand: /app/assistant/docker-cue-app-entrypoint.sh
     region: singapore
-    plan: standard # memory + runtime + tools; size up as needed
+    plan: standard # daemon + gateway + tools; size up as needed
+    healthCheckPath: /healthz
     disk:
-      name: workspace # SQLite + 8-type memory + workspace files
+      name: workspace # SQLite + 8-type memory + workspace files + gateway keys
       mountPath: /workspace
       sizeGB: 10
     envVars:
@@ -102,48 +110,32 @@ services:
         value: "true"
       - key: VELLUM_ENVIRONMENT
         value: production
-      - key: RUNTIME_HTTP_HOST
-        value: 0.0.0.0
-      - key: RUNTIME_HTTP_PORT
-        value: "3001"
       - key: VELLUM_WORKSPACE_DIR
         value: /workspace
-      - key: QDRANT_URL
-        value: http://cue-qdrant:6333
-      - key: CES_CREDENTIAL_URL
-        value: http://cue-ces:8090
-      - key: GATEWAY_INTERNAL_URL
-        value: http://cue-gateway:7830
-      - key: RUNTIME_PROXY_REQUIRE_AUTH
-        value: "true"
-      - key: CUE_BRAIN_MODEL
-        value: claude-fable-5
-
-  # ── gateway: the ONLY public ingress ───────────────────────────────────
-  - type: web
-    name: cue-gateway
-    runtime: docker
-    dockerfilePath: ./gateway/Dockerfile
-    dockerContext: .
-    region: singapore
-    plan: starter
-    healthCheckPath: /healthz
-    disk:
-      name: gateway-security # JWT / principal key material
-      mountPath: /gateway-security
-      sizeGB: 1
-    envVars:
-      - fromGroup: cue-shared-tokens
-      - fromGroup: cue-secrets
-      - key: GATEWAY_PORT
-        value: "7830"
-      - key: GATEWAY_SECURITY_DIR
-        value: /gateway-security
-      - key: ASSISTANT_HOST
-        value: cue-assistant
+      # daemon HTTP — in-container only (gateway reaches it via socket + this)
+      - key: RUNTIME_HTTP_HOST
+        value: 127.0.0.1
       - key: RUNTIME_HTTP_PORT
         value: "3001"
+      - key: RUNTIME_PROXY_REQUIRE_AUTH
+        value: "true"
+      # gateway — public on Render's $PORT
+      - key: GATEWAY_PORT
+        value: "10000"
+      - key: GATEWAY_INTERNAL_URL
+        value: http://127.0.0.1:10000
+      - key: GATEWAY_SECURITY_DIR
+        value: /workspace/gateway-security
+      - key: ASSISTANT_HOST
+        value: 127.0.0.1
       - key: DEFAULT_ASSISTANT_ID
         value: cue-local
       - key: VELLUM_ASSISTANT_NAME
         value: Cue
+      # external services (HTTP)
+      - key: QDRANT_URL
+        value: http://cue-qdrant:6333
+      - key: CES_CREDENTIAL_URL
+        value: http://cue-ces:8090
+      - key: CUE_BRAIN_MODEL
+        value: claude-fable-5
