@@ -20,6 +20,12 @@ interface ImportMetaEnv {
   readonly VITE_APP_VERSION?: string;
   /** When set, the app runs in platform (cloud-hosted) mode. Unset = local mode. */
   readonly VITE_PLATFORM_MODE?: string;
+  /**
+   * Build-time backend (gateway) base URL for a hosted/static deploy, e.g.
+   * `https://cue-gateway-xxxx.onrender.com`. Falls back to same-origin when
+   * unset. See `getPlatformRuntimeUrl` in `lib/local-mode.ts`.
+   */
+  readonly VITE_PLATFORM_URL?: string;
   /** When truthy ("1", "true", "yes"), disables platform connectivity in local mode. */
   readonly VITE_VELLUM_DISABLE_PLATFORM?: string;
   /**

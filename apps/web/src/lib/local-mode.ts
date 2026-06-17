@@ -64,7 +64,15 @@ export function getPlatformRuntimeUrl(): string {
       __VELLUM_CONFIG__?: { platformUrl?: string };
     }
   ).__VELLUM_CONFIG__;
-  return injected?.platformUrl || window.location.origin;
+  // Resolution order: a runtime-injected config wins (lets one build serve many
+  // hosts); then a build-time VITE_PLATFORM_URL (for a static deploy pinned to a
+  // specific gateway); then same-origin (the gateway-serves-the-SPA case, where
+  // window.location.origin IS the gateway).
+  return (
+    injected?.platformUrl ||
+    import.meta.env.VITE_PLATFORM_URL ||
+    window.location.origin
+  );
 }
 
 // Advance the in-memory cache and mirror the lockfile to persisted storage in
