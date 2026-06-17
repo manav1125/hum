@@ -287,7 +287,9 @@ export const routeTree = [
               children: [
                 {
                   path: "home",
-                  lazy: { Component: () => import("@/home-page-route").then((m) => m.HomePageRoute) },
+                  // Elevated, design-matched Home. Revert to the classic Home by
+                  // swapping this back to `@/home-page-route` -> HomePageRoute.
+                  lazy: { Component: () => import("@/home-elevated-route").then((m) => m.HomeElevatedRoute) },
                 },
                 {
                   lazy: { Component: () => import("@/domains/intelligence/intelligence-layout").then((m) => m.IntelligenceLayout) },
