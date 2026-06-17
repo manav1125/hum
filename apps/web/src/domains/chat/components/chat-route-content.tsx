@@ -23,6 +23,7 @@ import { useEscapeCancel } from "@/domains/chat/hooks/use-escape-cancel";
 import { useChatUIState } from "@/domains/chat/hooks/use-chat-ui-state";
 import { useTranscriptData } from "@/domains/chat/hooks/use-transcript-data";
 import { useChatEmptyState } from "@/domains/chat/hooks/use-chat-empty-state";
+import { ChatLauncher } from "@/domains/chat/components/chat-launcher";
 import { useComposerSubmit } from "@/domains/chat/hooks/use-composer-submit";
 import { DiskPressureBannerSlot } from "@/domains/chat/components/disk-pressure-banner-slot";
 import { useRuleEditorBridge } from "@/domains/chat/hooks/use-rule-editor-bridge";
@@ -847,7 +848,16 @@ export function ChatMainPanel({
         bannerSlot={isSidePanel ? undefined : mainBannerSlot}
         queuedDrawerSlot={isSidePanel ? undefined : mainQueuedDrawerSlot}
         readonlyBannerSlot={slackReadonlyBannerSlot}
-        startersSlot={startersSlot}
+        startersSlot={
+          isEmptyConversation && assistantId ? (
+            <>
+              <ChatLauncher assistantId={assistantId} onSeed={setInput} />
+              {startersSlot}
+            </>
+          ) : (
+            startersSlot
+          )
+        }
       />
       <MicPermissionPrimer
         open={showPrimer}
