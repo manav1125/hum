@@ -49,13 +49,11 @@ function ContactMergeDialogInner({
   const filteredCandidates = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return candidates;
-    return candidates.filter((c) =>
-      c.displayName.toLowerCase().includes(q),
-    );
+    return candidates.filter((c) => c.displayName.toLowerCase().includes(q));
   }, [candidates, search]);
 
   const donor = donorId
-    ? candidates.find((c) => c.id === donorId) ?? null
+    ? (candidates.find((c) => c.id === donorId) ?? null)
     : null;
 
   const survivorLabel = formatSurvivorName(survivor);
@@ -187,8 +185,12 @@ function CandidateList({
 function CandidateRow({
   contact,
   onPick,
-}: { contact: ContactPayload; onPick: () => void }) {
-  const channelLabel = mergeDialogChannelTypeLabels(contact).join(" | ") || undefined;
+}: {
+  contact: ContactPayload;
+  onPick: () => void;
+}) {
+  const channelLabel =
+    mergeDialogChannelTypeLabels(contact).join(" | ") || undefined;
   return (
     <PanelItem asChild label="">
       <button
@@ -216,7 +218,10 @@ function CandidateRow({
 function MergeSummary({
   survivor,
   donor,
-}: { survivor: ContactPayload; donor: ContactPayload }) {
+}: {
+  survivor: ContactPayload;
+  donor: ContactPayload;
+}) {
   const survivorLabel = formatSurvivorName(survivor);
   const { moved, duplicates } = classifyMergedChannels(survivor, donor);
 
@@ -279,6 +284,8 @@ const CHANNEL_TYPE_LABEL: Record<string, string> = {
   phone: "Phone",
   email: "Email",
   whatsapp: "WhatsApp",
+  // Display-only: the native channel's protocol id is "vellum"; show "Cue".
+  vellum: "Cue",
 };
 
 function describeChannel(type: string): string {

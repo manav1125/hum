@@ -1,12 +1,12 @@
 import {
-    Bot,
-    CheckCircle,
-    Hash,
-    HelpCircle,
-    Mail,
-    MessageSquare,
-    Phone,
-    Send,
+  Bot,
+  CheckCircle,
+  Hash,
+  HelpCircle,
+  Mail,
+  MessageSquare,
+  Phone,
+  Send,
 } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useState } from "react";
@@ -15,8 +15,8 @@ import { Button } from "@vellumai/design-library/components/button";
 import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
 
 import type {
-    ChannelInfo,
-    ContactChannelPayload,
+  ChannelInfo,
+  ContactChannelPayload,
 } from "@/domains/contacts/types";
 
 const KNOWN_CHANNEL_IDS: ReadonlySet<string> = new Set<ChannelInfo["id"]>([
@@ -32,6 +32,14 @@ const KNOWN_CHANNEL_IDS: ReadonlySet<string> = new Set<ChannelInfo["id"]>([
 
 function isKnownChannelId(value: string): value is ChannelInfo["id"] {
   return KNOWN_CHANNEL_IDS.has(value);
+}
+
+/**
+ * Display-only relabel: the native channel's protocol id is "vellum", but the
+ * product is Cue. Map the user-facing label without touching the underlying id.
+ */
+function displayChannelLabel(info: ChannelInfo): string {
+  return info.id === "vellum" ? "Cue" : info.label;
 }
 
 /** Discriminated union describing what action/badge to render for a channel row. */
@@ -229,8 +237,8 @@ export function ContactChannelsSection({
       {verifyPending && (
         <ConfirmDialog
           open={true}
-          title={`Verify ${verifyPending.label}`}
-          message={`This will mark your ${verifyPending.label} channel as verified. Your assistant will recognize you when you reach out from it.`}
+          title={`Verify ${displayChannelLabel(verifyPending)}`}
+          message={`This will mark your ${displayChannelLabel(verifyPending)} channel as verified. Your assistant will recognize you when you reach out from it.`}
           confirmLabel="Verify"
           onConfirm={handleVerifyConfirm}
           onCancel={() => setVerifyPending(null)}
@@ -240,7 +248,7 @@ export function ContactChannelsSection({
       {revokePending && (
         <ConfirmDialog
           open={true}
-          title={`Revoke ${revokePending.channel.label}`}
+          title={`Revoke ${displayChannelLabel(revokePending.channel)}`}
           message="This will disconnect the verified channel. The contact will need to re-verify to use this channel again."
           confirmLabel="Revoke"
           destructive
@@ -290,7 +298,7 @@ function ChannelRow({
         className="text-body-medium-default"
         style={{ color: "var(--content-default)" }}
       >
-        {info.label}
+        {displayChannelLabel(info)}
       </span>
       {existing?.address ? (
         <span
@@ -335,11 +343,7 @@ function ChannelRow({
           </Button>
         ) : actionState.kind === "setup" ? (
           info.id === "a2a" ? null : (
-            <Button
-              variant="outlined"
-              onClick={onSetup}
-              disabled={!onSetup}
-            >
+            <Button variant="outlined" onClick={onSetup} disabled={!onSetup}>
               {setupLabel}
             </Button>
           )
