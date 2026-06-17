@@ -31,6 +31,12 @@ envVarGroups:
         generateValue: true
       - key: GATEWAY_JWT
         generateValue: true
+      # Self-hosted auth bootstrap: lets POST /v1/guardian/init (with the
+      # matching x-bootstrap-secret header) mint a long-lived actor JWT for
+      # remote clients — the bridge that replaces the Vellum Platform's token
+      # brokering. Render-generated; reveal it in the dashboard to mint.
+      - key: GUARDIAN_BOOTSTRAP_SECRET
+        generateValue: true
 
   - name: cue-secrets
     envVars:
