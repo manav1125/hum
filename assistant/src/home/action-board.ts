@@ -29,6 +29,7 @@ import type { ToolDefinition } from "../providers/types.js";
 import { getLogger } from "../util/logger.js";
 import type { FeedAction, FeedItem, FeedItemUrgency } from "./feed-types.js";
 import { appendFeedItem, readHomeFeed } from "./feed-writer.js";
+import { recordImpact, TIME_SAVED_MINUTES } from "./impact-store.js";
 
 const log = getLogger("action-board");
 
@@ -392,6 +393,9 @@ export async function buildDailyActionBoard(opts?: {
    *  items. Used by the morning tick; left off for lazy/manual builds so we
    *  don't ping the user every time they open Home. */
   notify?: boolean;
+  /** When true, record a once-daily email-triage impact event. Set only by the
+   *  once-per-day guarded path so manual rebuilds don't inflate hours-saved. */
+  recordTriageImpact?: boolean;
 }): Promise<ActionBoardResult> {
   const now = opts?.now ?? new Date();
   const signal = opts?.signal;
@@ -423,6 +427,15 @@ export async function buildDailyActionBoard(opts?: {
     events = await fetchTodaysEvents(conn, now, signal);
   } catch (err) {
     log.warn({ err: String(err) }, "Action board: calendar fetch failed");
+  }
+
+  if (opts?.recordTriageImpact && emails.length > 0) {
+    recordImpact({
+      type: "emails_triaged",
+      category: "email",
+      minutesSaved: emails.length * TIME_SAVED_MINUTES.emailTriaged,
+      detail: `Triaged ${emails.length} unread email${emails.length === 1 ? "" : "s"}`,
+    });
   }
 
   const synth = await synthesize(emails, events, now, signal);
@@ -605,7 +618,11 @@ export async function maybeBuildActionBoardForToday(opts?: {
 
   attemptInFlight = true;
   try {
-    const result = await buildDailyActionBoard({ now, notify: opts?.notify });
+    const result = await buildDailyActionBoard({
+      now,
+      notify: opts?.notify,
+      recordTriageImpact: true,
+    });
     // Only latch the guard on a real build. Skips (not connected, synthesis
     // failed) leave it unset so a later trigger retries.
     if (result.written > 0 && !result.skipped) {

@@ -22,6 +22,7 @@ import {
   userMessage,
 } from "../providers/provider-send-message.js";
 import { getLogger } from "../util/logger.js";
+import { recordImpact, TIME_SAVED_MINUTES } from "./impact-store.js";
 
 const log = getLogger("auto-draft");
 
@@ -286,6 +287,12 @@ export async function draftReplyForMessage(
     { draftId: draft.id, messageId, to },
     "Auto-draft reply created in Gmail Drafts",
   );
+  recordImpact({
+    type: "email_drafted",
+    category: "email",
+    minutesSaved: TIME_SAVED_MINUTES.emailDrafted,
+    detail: `Drafted a reply${subject ? ` — ${subject}` : ""}`,
+  });
   return {
     ok: true,
     draftId: draft.id,

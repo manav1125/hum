@@ -33,6 +33,7 @@ import { draftReplyForMessage } from "../../home/auto-draft.js";
 import { patchFeedItemStatus, readHomeFeed } from "../../home/feed-writer.js";
 import { revalidateHomeContentInBackground } from "../../home/home-content-refresh.js";
 import { getPersonalizedGreeting } from "../../home/home-greeting.js";
+import { getImpactSummary } from "../../home/impact-store.js";
 import { getSuggestedPrompts } from "../../home/suggested-prompts.js";
 import {
   addMessage,
@@ -440,6 +441,40 @@ export async function handleDraftRepliesForBoard(): Promise<
   return { drafted, failed: results.length - drafted, results };
 }
 
+const impactResponseSchema = z.object({
+  rangeDays: z.number().int().positive(),
+  hoursSaved: z.number().nonnegative(),
+  taskCount: z.number().int().nonnegative(),
+  byCategory: z.array(
+    z.object({
+      category: z.string(),
+      count: z.number().int().nonnegative(),
+      hours: z.number().nonnegative(),
+    }),
+  ),
+  recent: z.array(
+    z.object({
+      detail: z.string(),
+      category: z.string(),
+      at: z.string(),
+    }),
+  ),
+});
+
+export function handleGetImpact({
+  queryParams = {},
+}: RouteHandlerArgs): Record<string, unknown> {
+  const raw = queryParams.rangeDays;
+  let rangeDays = 7;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isInteger(parsed) && parsed > 0 && parsed <= 365) {
+      rangeDays = parsed;
+    }
+  }
+  return getImpactSummary(rangeDays) as unknown as Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
@@ -535,6 +570,29 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["home"],
     requestBody: draftReplyRequestSchema,
     responseBody: draftReplyResponseSchema,
+  },
+  {
+    operationId: "get_impact",
+    endpoint: "home/impact",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleGetImpact,
+    summary: "Get the weekly impact recap",
+    description:
+      "Aggregate recorded impact events (drafts, triage, …) over the last rangeDays (default 7) into hours-saved, task count, by-category breakdown, and a recent-activity list for the Impact / Home surfaces.",
+    tags: ["home"],
+    queryParams: [
+      {
+        name: "rangeDays",
+        type: "integer",
+        required: false,
+        description: "Window in days (1–365, default 7).",
+      },
+    ],
+    responseBody: impactResponseSchema,
   },
   {
     operationId: "draft_replies_for_board",
