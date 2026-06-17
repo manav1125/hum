@@ -33,16 +33,34 @@ export function MemoriesPage() {
   const { data, isLoading, isError } = useMemoryItemsQuery(assistantId);
 
   const [filter, setFilter] = useState<KindFilter>("all");
+  const [query, setQuery] = useState("");
 
   const items = useMemo<MemoryItem[]>(() => data?.items ?? [], [data?.items]);
 
-  const filteredItems = useMemo(
-    () =>
-      filter === "all"
-        ? items
-        : items.filter((item) => item.kind === filter),
-    [items, filter],
-  );
+  // Per-type counts + average confidence, computed from the real items — the
+  // design's header stats and per-chip counts (surfaces/Memory.dc.html).
+  const countByKind = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const it of items) m[it.kind] = (m[it.kind] ?? 0) + 1;
+    return m;
+  }, [items]);
+  const avgConfidence = useMemo(() => {
+    const confs = items
+      .map((i) => i.confidence)
+      .filter((c): c is number => typeof c === "number");
+    if (confs.length === 0) return null;
+    return Math.round((confs.reduce((a, b) => a + b, 0) / confs.length) * 100) / 100;
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((item) => {
+      if (filter !== "all" && item.kind !== filter) return false;
+      if (q && !`${item.statement} ${item.subject}`.toLowerCase().includes(q))
+        return false;
+      return true;
+    });
+  }, [items, filter, query]);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
@@ -51,15 +69,31 @@ export function MemoriesPage() {
           variant="title-small"
           className="text-[var(--content-default)]"
         >
-          Memory
+          {items.length > 0
+            ? `Cue remembers ${items.length.toLocaleString()} things about how you work.`
+            : "Memory"}
         </Typography>
         <Typography
           variant="body-medium-lighter"
           className="mt-1 text-[var(--content-tertiary)]"
         >
-          What your assistant remembers, tagged by the kind of memory it is.
+          Across 8 memory types · every one traceable to its source · you can
+          edit or forget anything.
+          {avgConfidence !== null && (
+            <span className="ml-2 font-[var(--font-mono)] text-[var(--content-tertiary)]">
+              {avgConfidence.toFixed(2)} avg conf
+            </span>
+          )}
         </Typography>
       </header>
+
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={`Search ${items.length || ""} memories…`.replace("  ", " ")}
+        className="shrink-0 rounded-lg border border-[var(--border-base)] bg-[var(--surface-sunken)] px-3 py-2 text-sm text-[var(--content-default)] outline-none placeholder:text-[var(--content-tertiary)] focus:border-[var(--accent-cue)]"
+      />
 
       <div
         className="flex shrink-0 flex-wrap items-center gap-2"
@@ -71,7 +105,7 @@ export function MemoriesPage() {
           selected={filter === "all"}
           onClick={() => setFilter("all")}
         >
-          All
+          All · {items.length}
         </Chip>
         {MEMORY_TYPES.map((kind) => (
           <Chip
@@ -81,6 +115,7 @@ export function MemoriesPage() {
             onClick={() => setFilter(kind)}
           >
             {KIND_LABELS[kind]}
+            {countByKind[kind] ? ` ${countByKind[kind]}` : ""}
           </Chip>
         ))}
       </div>
