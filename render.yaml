@@ -52,12 +52,12 @@ services:
     runtime: image
     image:
       url: docker.io/qdrant/qdrant:v1.12.4
-    region: oregon
+    region: singapore
     plan: starter
     disk:
       name: qdrant
       mountPath: /qdrant/storage
-      sizeGB: 10
+      sizeGB: 5
 
   # ── credential execution service (private, hard-isolated) ──────────────
   - type: pserv
@@ -65,8 +65,8 @@ services:
     runtime: docker
     dockerfilePath: ./credential-executor/Dockerfile
     dockerContext: .
-    region: oregon
-    plan: standard
+    region: singapore
+    plan: starter
     disk:
       # The security volume. CES is the ONLY service that mounts it.
       name: ces-security
@@ -89,12 +89,12 @@ services:
     runtime: docker
     dockerfilePath: ./assistant/Dockerfile
     dockerContext: .
-    region: oregon
-    plan: pro # memory + runtime + tools; size up as needed
+    region: singapore
+    plan: standard # memory + runtime + tools; size up as needed
     disk:
       name: workspace # SQLite + 8-type memory + workspace files
       mountPath: /workspace
-      sizeGB: 20
+      sizeGB: 10
     envVars:
       - fromGroup: cue-shared-tokens
       - fromGroup: cue-secrets
@@ -125,8 +125,8 @@ services:
     runtime: docker
     dockerfilePath: ./gateway/Dockerfile
     dockerContext: .
-    region: oregon
-    plan: standard
+    region: singapore
+    plan: starter
     healthCheckPath: /healthz
     disk:
       name: gateway-security # JWT / principal key material
