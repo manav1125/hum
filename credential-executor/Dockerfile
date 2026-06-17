@@ -66,11 +66,15 @@ RUN chmod +x \
     /usr/local/bin/vellum-block-volume-mount.sh \
     /usr/local/bin/vellum-block-volume-resize.sh
 
-USER ces
+# Start as root so the entrypoint can chown the Render-mounted disk (Render
+# mounts persistent disks root-owned), then drop to the non-root `ces` user via
+# setpriv (util-linux, installed above) before exec'ing the service. Without
+# this the non-root user can't write keys.enc/store.key to /ces-security and the
+# process crash-loops on boot (never binding its port).
 
 EXPOSE 8090
 
 ENV CES_MODE=managed
 ENV CES_HEALTH_PORT=8090
 
-CMD ["bun", "run", "src/managed-main.ts"]
+CMD ["sh", "-c", "mkdir -p /ces-security/data && chown -R ces:ces /ces-security /ces-data && exec setpriv --reuid=ces --regid=ces --init-groups bun run src/managed-main.ts"]
