@@ -1,29 +1,122 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Check, Mail, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { requestComposerFocus } from "@/domains/chat/composer-focus";
 import { createDraftConversationId } from "@/domains/chat/utils/conversation-selection";
+import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
+import { selectNextMove, selectNoticed } from "@/domains/home/utils";
 import { homeImpactGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useViewerStore } from "@/stores/viewer-store";
-import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
-import { selectNextMove, selectNoticed } from "@/domains/home/utils";
 import { routes } from "@/utils/routes";
 import type { FeedItem } from "@vellumai/assistant-api";
 
 /**
- * Home — the elevated, design-matched surface.
+ * Home — faithful translation of `surfaces/Home.dc.html`.
  *
- * The editorial "one move right now" lead, a drafted-for-you next-move card,
- * open commitments, and a "while you slept" recap that links to Impact. Wired
- * to the same proven data hooks as the classic Home (feed query + selectors)
- * plus the impact summary. Built to match `surfaces/Home.dc.html`.
- *
- * Mounted at the Home route; the previous Home lives on in `home-page.tsx` /
- * `home-page-route.tsx` as a one-line fallback if needed.
+ * The app already supplies the dark sidebar, so this renders the design's MAIN
+ * column + DAY RAIL on the cool canvas: an aperture-avatar lead with the
+ * editorial "one move" line, an ink "drafted for you" next-move card, a queue
+ * of things that also need you (urgency-coloured rails), a "while you slept"
+ * recap strip linking to Impact, and a right rail with the day timeline + open
+ * commitments. Wired to the real home-feed + impact data; degrades gracefully
+ * when the board is light.
  */
+
+// Exact design tokens (mirrors the inline palette in Home.dc.html).
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  blueS: "#2B53C4",
+  blue9: "#9DB4E6",
+  bg: "#F4F6F9",
+  sunken: "#EEF1F6",
+  line: "#E5E9F0",
+  line2: "#D7DDE7",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+  green: "#277E41",
+  amber: "#C98A1B",
+  danger: "#DA491A",
+  white: "#FFFFFF",
+} as const;
+
+const mono = "'DM Mono', ui-monospace, monospace";
+const serif = "'Instrument Serif', Georgia, serif";
+
+const KEYFRAMES = `
+@keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+@keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+@keyframes cuePing{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+@media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
+`;
+
+function ApertureAvatar() {
+  return (
+    <span
+      className="cue-anim"
+      style={{
+        position: "relative",
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        background: C.ink,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: 10,
+          border: "1.5px solid rgba(61,110,232,.5)",
+          animation: "cuePing 2.8s ease-out infinite",
+        }}
+      />
+      <span
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: "50%",
+          boxShadow: "0 0 0 4px #EEF2F7 inset",
+          WebkitMask:
+            "radial-gradient(circle,transparent 56%,#000 57%)",
+          mask: "radial-gradient(circle,transparent 56%,#000 57%)",
+          transform: "rotate(40deg)",
+          animation: "cueLook 6s ease-in-out infinite",
+          position: "relative",
+          display: "block",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            borderRadius: "50%",
+            background: C.blue,
+            width: "26%",
+            height: "26%",
+            top: "8%",
+            left: "8%",
+            animation: "cueBlink 4s infinite",
+            display: "block",
+          }}
+        />
+      </span>
+    </span>
+  );
+}
+
+function urgencyColor(item: FeedItem): string {
+  if (item.urgency === "critical" || item.urgency === "high") return C.danger;
+  if (item.urgency === "medium") return C.amber;
+  return C.line2;
+}
+
 export function HomeElevatedRoute() {
   const navigate = useNavigate();
   const assistantId = useActiveAssistantId();
@@ -37,12 +130,27 @@ export function HomeElevatedRoute() {
   });
 
   const items = feedQuery.data?.items ?? [];
-  // Only the proactive action-board cards drive the "one move" + commitments.
   const boardItems = items.filter((i) => i.id.startsWith("action-board:"));
   const nextMove = selectNextMove(boardItems);
-  const commitments = selectNoticed(boardItems, nextMove?.id ?? undefined, 4);
-  const greeting = feedQuery.data?.contextBanner?.greeting ?? "Welcome back";
-  const handledOvernight = impactQuery.data?.taskCount ?? 0;
+  const commitments = selectNoticed(boardItems, nextMove?.id ?? undefined, 3);
+  // Clean time-based greeting matching the design template ("Good morning. …"),
+  // rather than the daemon's verbose personalized line which doesn't compose
+  // with the "your one move" sentence.
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const handled = impactQuery.data?.taskCount ?? 0;
+  const hoursSaved = impactQuery.data?.hoursSaved ?? 0;
+  const recent = impactQuery.data?.recent ?? [];
+
+  const now = new Date();
+  const day = now
+    .toLocaleDateString(undefined, { weekday: "long" })
+    .toUpperCase();
+  const time = now.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
   const seedChat = (prompt: string) => {
     useViewerStore.getState().setMainView("chat");
@@ -51,170 +159,411 @@ export function HomeElevatedRoute() {
     navigate(`${routes.conversation(id)}?prompt=${encodeURIComponent(prompt)}`);
     requestComposerFocus();
   };
-
-  const primaryAction = (item: FeedItem): { label: string; prompt: string } | null => {
-    const a = item.actions?.[0];
-    return a ? { label: a.label, prompt: a.prompt } : null;
-  };
-
-  const isEmail = (item: FeedItem) => item.category === "email";
+  const action = (item: FeedItem) => item.actions?.[0] ?? null;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-[760px] flex-col gap-7 px-8 py-10">
-        {/* meta line */}
-        <div className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-          {greeting}
-          {handledOvernight > 0 && (
-            <>
-              {" · "}
-              <span className="text-foreground">
-                {handledOvernight} handled
-              </span>{" "}
-              this week
-            </>
-          )}
-        </div>
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        background: C.bg,
+        color: C.t1,
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        display: "grid",
+        gridTemplateColumns: "minmax(0,1fr) 300px",
+        overflow: "hidden",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
 
-        {/* editorial one-move hero */}
-        <h1
-          className="text-3xl leading-tight text-foreground"
-          style={{ fontFamily: '"Instrument Serif", Georgia, serif' }}
-        >
-          {nextMove ? (
-            <>
-              Your one move right now is{" "}
-              <span className="text-sky-600">{nextMove.title}</span>.
-            </>
-          ) : (
-            <>You&apos;re all caught up. Nothing needs you right now.</>
-          )}
-        </h1>
-
-        {/* next-move card */}
-        {nextMove && (
-          <section className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-            <div className="flex flex-col gap-3 p-5">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 font-mono text-[11px] font-semibold uppercase tracking-wide text-sky-600">
-                  {isEmail(nextMove) ? (
-                    <>
-                      <Mail className="size-3" /> Drafted for you
-                    </>
-                  ) : (
-                    <>Next move</>
-                  )}
-                </span>
-                {nextMove.urgency && (
-                  <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
-                    {nextMove.urgency}
-                  </span>
-                )}
-              </div>
-              <div>
-                <div className="text-lg font-semibold text-foreground">
-                  {nextMove.title}
-                </div>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                  {nextMove.summary}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {primaryAction(nextMove) && (
-                  <button
-                    type="button"
-                    onClick={() => seedChat(primaryAction(nextMove)!.prompt)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-600"
-                  >
-                    {primaryAction(nextMove)!.label}
-                    <ArrowRight className="size-4" />
-                  </button>
-                )}
-                {nextMove.conversationId && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate(routes.conversation(nextMove.conversationId!))
-                    }
-                    className="rounded-lg border border-border px-3.5 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Open
-                  </button>
-                )}
-              </div>
+      {/* MAIN COLUMN */}
+      <div style={{ overflowY: "auto" }}>
+        <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 8px" }}>
+          {/* LEAD */}
+          <div style={{ padding: "26px 20px 22px", borderBottom: `1px solid ${C.line}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <ApertureAvatar />
+              <span
+                style={{
+                  fontFamily: mono,
+                  fontSize: 11,
+                  color: C.t3,
+                  letterSpacing: ".04em",
+                }}
+              >
+                {day} · {time} · {handled} HANDLED THIS WEEK
+              </span>
             </div>
-          </section>
-        )}
+            <div
+              style={{
+                fontFamily: serif,
+                fontSize: 30,
+                letterSpacing: "-.3px",
+                lineHeight: 1.16,
+                marginTop: 13,
+                maxWidth: 580,
+              }}
+            >
+              {nextMove ? (
+                <>
+                  {greeting}. Your one move right now is the{" "}
+                  <span style={{ fontStyle: "italic", color: C.blueS }}>
+                    {nextMove.title}.
+                  </span>
+                </>
+              ) : (
+                <>{greeting}. You&apos;re all caught up — nothing needs you right now.</>
+              )}
+            </div>
 
-        {/* open commitments */}
-        {commitments.length > 0 && (
-          <section className="flex flex-col gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Open commitments
-            </h2>
-            <div className="flex flex-col gap-2">
-              {commitments.map((item) => {
-                const action = primaryAction(item);
-                return (
+            {/* INK DRAFTED CARD */}
+            {nextMove && (
+              <div
+                style={{
+                  background: C.ink,
+                  color: C.white,
+                  borderRadius: 14,
+                  padding: "16px 18px",
+                  marginTop: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  boxShadow: "0 18px 36px -22px rgba(26,34,48,.6)",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 10,
+                      color: C.blue9,
+                      letterSpacing: ".04em",
+                    }}
+                  >
+                    {nextMove.category === "email"
+                      ? "DRAFTED FOR YOU"
+                      : (nextMove.urgency ?? "next move").toUpperCase()}
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
+                    {nextMove.title}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: C.blue9, marginTop: 3 }}>
+                    {nextMove.summary}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
+                  {action(nextMove) && (
+                    <button
+                      type="button"
+                      onClick={() => seedChat(action(nextMove)!.prompt)}
+                      style={{
+                        fontSize: 12.5,
+                        background: C.blue,
+                        color: C.white,
+                        border: "none",
+                        borderRadius: 9,
+                        padding: "9px 16px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {action(nextMove)!.label}
+                    </button>
+                  )}
+                  {nextMove.conversationId && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigate(routes.conversation(nextMove.conversationId!))
+                      }
+                      style={{
+                        fontSize: 12.5,
+                        background: "rgba(255,255,255,.1)",
+                        color: C.white,
+                        border: "none",
+                        borderRadius: 9,
+                        padding: "9px 14px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Open
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* QUEUE */}
+          {commitments.length > 0 && (
+            <>
+              <div style={{ padding: "18px 20px 8px" }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontFamily: mono,
+                    letterSpacing: ".1em",
+                    textTransform: "uppercase",
+                    color: C.t3,
+                  }}
+                >
+                  Also needs you · {commitments.length}
+                </div>
+              </div>
+              <div style={{ padding: "0 20px 8px", display: "flex", flexDirection: "column" }}>
+                {commitments.map((item, i) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-4"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 13,
+                      padding: "13px 0",
+                      borderBottom:
+                        i < commitments.length - 1 ? `1px solid ${C.line}` : "none",
+                    }}
                   >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-foreground">
+                    <span
+                      style={{
+                        width: 3,
+                        height: 34,
+                        borderRadius: 3,
+                        background: urgencyColor(item),
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>
                         {item.title}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: C.t2,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {item.summary}
                       </div>
                     </div>
-                    {action && (
+                    {action(item) && (
                       <button
                         type="button"
-                        onClick={() => seedChat(action.prompt)}
-                        className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/50"
+                        onClick={() => seedChat(action(item)!.prompt)}
+                        style={{
+                          fontSize: 12,
+                          border: `1px solid ${C.line2}`,
+                          background: C.white,
+                          borderRadius: 8,
+                          padding: "7px 13px",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          color: C.t1,
+                        }}
                       >
-                        {action.label}
+                        {action(item)!.label}
                       </button>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* while you slept — recap -> Impact */}
-        <button
-          type="button"
-          onClick={() => navigate(routes.impact)}
-          className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--surface-ink)] p-5 text-left text-white transition-opacity hover:opacity-95"
-        >
-          <div className="flex items-center gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/10">
-              <Sparkles className="size-4" />
-            </span>
-            <div>
-              <div className="text-sm font-semibold">While you slept</div>
-              <div className="text-xs text-white/70">
-                {handledOvernight > 0
-                  ? `Cue handled ${handledOvernight} ${handledOvernight === 1 ? "task" : "tasks"} for you this week`
-                  : "Your weekly recap of everything Cue handled"}
+                ))}
               </div>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-white/80">
-            Full recap <ArrowRight className="size-4" />
-          </span>
-        </button>
+            </>
+          )}
 
-        {boardItems.length === 0 && !feedQuery.isLoading && (
-          <div className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-            <Check className="size-4 text-emerald-500" /> Nothing on the board
-            yet today — Cue builds it each morning from your inbox and calendar.
+          {/* RECAP STRIP */}
+          <button
+            type="button"
+            onClick={() => navigate(routes.impact)}
+            style={{
+              margin: "6px 20px 24px",
+              width: "calc(100% - 40px)",
+              background: C.sunken,
+              border: "none",
+              borderRadius: 13,
+              padding: "13px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              flexWrap: "wrap",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                color: C.t3,
+                letterSpacing: ".1em",
+                whiteSpace: "nowrap",
+              }}
+            >
+              WHILE YOU SLEPT
+            </span>
+            <span style={{ fontSize: 13, color: C.t2, whiteSpace: "nowrap" }}>
+              {handled > 0
+                ? `${handled} ${handled === 1 ? "task" : "tasks"} handled for you`
+                : "Cue is watching your inbox & calendar"}
+            </span>
+            <span
+              style={{
+                marginLeft: "auto",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {hoursSaved > 0 && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#E9F5EE",
+                    border: "1px solid #BFE3CD",
+                    borderRadius: 8,
+                    padding: "5px 11px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: C.green,
+                      letterSpacing: "-.3px",
+                    }}
+                  >
+                    ≈{hoursSaved} hrs
+                  </span>
+                  <span style={{ fontSize: 12, color: "#3E7A55" }}>
+                    saved this week
+                  </span>
+                </span>
+              )}
+              <span style={{ fontSize: 12, color: C.blueS, fontWeight: 500 }}>
+                Full recap ›
+              </span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* DAY RAIL */}
+      <aside
+        style={{
+          background: C.bg,
+          borderLeft: `1px solid ${C.line}`,
+          padding: "20px 18px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 0,
+          overflowY: "auto",
+        }}
+      >
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 10,
+            letterSpacing: ".1em",
+            textTransform: "uppercase",
+            color: C.t3,
+            marginBottom: 16,
+          }}
+        >
+          Recently · by Cue
+        </div>
+        {recent.length > 0 ? (
+          <div style={{ position: "relative", paddingLeft: 18, flex: 1 }}>
+            <span
+              style={{
+                position: "absolute",
+                left: 4,
+                top: 4,
+                bottom: 10,
+                width: 2,
+                background: C.line,
+              }}
+            />
+            {recent.slice(0, 6).map((r, i) => (
+              <div key={i} style={{ position: "relative", marginBottom: 16 }}>
+                <span
+                  style={{
+                    position: "absolute",
+                    left: -18,
+                    top: 3,
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    background: C.green,
+                    boxShadow: `0 0 0 3px ${C.bg}`,
+                  }}
+                />
+                <div style={{ fontSize: 12.5, fontWeight: 500 }}>{r.detail}</div>
+                <div style={{ fontSize: 11, color: C.t2 }}>by Cue</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: C.t2, flex: 1 }}>
+            As Cue handles things on your behalf, they show up here.
           </div>
         )}
-      </div>
+
+        {commitments.length > 0 && (
+          <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14, marginTop: 8 }}>
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                letterSpacing: ".1em",
+                textTransform: "uppercase",
+                color: C.t3,
+                marginBottom: 10,
+              }}
+            >
+              Open commitments
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {commitments.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    background: C.white,
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 11,
+                    padding: "10px 12px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {item.title}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: C.t2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {item.summary}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }
