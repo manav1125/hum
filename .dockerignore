@@ -27,6 +27,9 @@
 !skills/meet-join/shared/**
 !skills/meet-join/scripts/
 !skills/meet-join/scripts/**
+# Pre-built web SPA served by the gateway under /assistant/* (WEB_DIST_DIR).
+!deploy/
+!deploy/**
 
 # Exclude local dependencies and build outputs from included directories.
 assistant/node_modules/
@@ -43,6 +46,8 @@ credential-executor/.env.*
 gateway/node_modules/
 gateway/.env
 gateway/.env.*
+deploy/.env
+deploy/.env.*
 packages/*/node_modules/
 packages/*/.env
 packages/*/.env.*
