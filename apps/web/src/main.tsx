@@ -12,6 +12,7 @@ import { AppProviders } from "@/components/providers";
 import { WindowDragRegion } from "@/components/window-drag-region";
 import { isChunkLoadError } from "@/lib/chunk-errors";
 import { isLocalMode, loadLockfile } from "@/lib/local-mode";
+import { bootstrapCueSelfHost } from "@/lib/self-hosted/cue-self-host";
 import { initSentry } from "@/lib/sentry/sentry-init";
 import { setupAuthListeners, useAuthStore } from "@/stores/auth-store";
 import { setupOrganizationStore } from "@/stores/organization-store";
@@ -24,6 +25,11 @@ import { initSafeAreaBridge } from "@/runtime/native-safe-area";
 import { initInputModality } from "@vellumai/design-library";
 
 async function boot() {
+  // Seed a self-hosted gateway token from `?cueToken=` (if present) before the
+  // auth/lifecycle layer reads it, so the hosted SPA boots into a `self`
+  // session against its same-origin gateway. No-op outside self-host mode.
+  bootstrapCueSelfHost();
+
   initInputModality();
   await initSafeAreaBridge();
   initSentry();
@@ -54,7 +60,9 @@ async function boot() {
             Sentry.captureException(error, {
               tags: {
                 context: "RouterProvider",
-                boundary: isChunkLoadError(error) ? "lazy-route" : "route-render",
+                boundary: isChunkLoadError(error)
+                  ? "lazy-route"
+                  : "route-render",
               },
             });
           }}

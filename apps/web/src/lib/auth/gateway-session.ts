@@ -1,7 +1,5 @@
-import {
-  isLocalMode,
-  getLocalGatewayUrl,
-} from "@/lib/local-mode";
+import { isLocalMode, getLocalGatewayUrl } from "@/lib/local-mode";
+import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import type { LockfileAssistant } from "@/runtime/local-mode-host";
 
 /**
@@ -52,7 +50,12 @@ let cachedExpiresAt: number = 0;
 let cachedTokenSource: string | null = null;
 
 export function isGatewayAuthEnabled(): boolean {
-  return isLocalMode() && getLocalGatewayUrl() != null;
+  // Local desktop path: a resolved local assistant with a gateway proxy URL.
+  // Self-host path: the SPA is served same-origin from a self-hosted gateway
+  // and carries a seeded actor token (see cue-self-host.ts) — there is no
+  // local assistant, and `applyGatewayAuthShortCircuit` falls back to
+  // `window.location.origin` + assistant `self`, which is exactly right.
+  return isLocalMode() && (getLocalGatewayUrl() != null || isSelfHostMode());
 }
 
 export function isGatewayAuthMode(): boolean {
@@ -89,7 +92,10 @@ export function getGatewayToken(): string | null {
   return null;
 }
 
-async function acquireGatewayToken(tokenUrl?: string, guardianToken?: string): Promise<string> {
+async function acquireGatewayToken(
+  tokenUrl?: string,
+  guardianToken?: string,
+): Promise<string> {
   const url = tokenUrl ?? "/auth/token";
   const headers: Record<string, string> = {};
   if (guardianToken) {
@@ -119,7 +125,10 @@ async function acquireGatewayToken(tokenUrl?: string, guardianToken?: string): P
   return token;
 }
 
-export async function ensureGatewayToken(tokenUrl?: string, guardianToken?: string): Promise<string> {
+export async function ensureGatewayToken(
+  tokenUrl?: string,
+  guardianToken?: string,
+): Promise<string> {
   const source = tokenUrl ?? "/auth/token";
   const storedSource =
     cachedTokenSource ??
