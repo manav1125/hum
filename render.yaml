@@ -34,9 +34,12 @@ envVarGroups:
       # Self-hosted auth bootstrap: lets POST /v1/guardian/init (with the
       # matching x-bootstrap-secret header) mint a long-lived actor JWT for
       # remote clients — the bridge that replaces the Vellum Platform's token
-      # brokering. Render-generated; reveal it in the dashboard to mint.
+      # brokering. TEMPORARY known value (one-time-use; consumed on first mint).
+      # ROTATE/REMOVE after Phase A: regenerate via the dashboard or delete this
+      # key once the actor token is minted. Do not keep a known bootstrap secret
+      # in git long-term.
       - key: GUARDIAN_BOOTSTRAP_SECRET
-        generateValue: true
+        value: CuePhaseA-7K2pQ9mZ
 
   - name: cue-secrets
     envVars:
