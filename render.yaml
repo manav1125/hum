@@ -46,6 +46,14 @@ envVarGroups:
       # The brain runs on Claude Fable 5 (per CUE-INFRA-SPEC). Set in dashboard.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Shared JWT signing key for the co-located gateway + daemon. WITHOUT a
+      # shared key each generates its own disk key, so the gateway's exchange
+      # token fails the daemon's verify (invalid_signature) on every /v1/* call.
+      # MUST be exactly 64 hex chars (32 bytes): `openssl rand -hex 32`. Never
+      # in git — set the value in the Render dashboard. (Render generateValue is
+      # NOT hex, so it can't be used here.)
+      - key: ACTOR_TOKEN_SIGNING_KEY
+        sync: false
       # Optional inbound channels — leave blank until you wire them.
       - key: TELEGRAM_BOT_TOKEN
         sync: false
