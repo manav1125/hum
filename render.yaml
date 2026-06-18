@@ -115,6 +115,9 @@ services:
         value: production
       - key: VELLUM_WORKSPACE_DIR
         value: /workspace
+      # The gateway serves the built web SPA from here under /assistant/*.
+      - key: WEB_DIST_DIR
+        value: /app/web-dist
       # daemon HTTP — in-container only (gateway reaches it via socket + this)
       - key: RUNTIME_HTTP_HOST
         value: 127.0.0.1

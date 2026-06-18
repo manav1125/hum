@@ -1622,6 +1622,36 @@ async function main() {
     },
   });
 
+  /**
+   * Serve the self-hosted web client (SPA) under `/assistant/*` from
+   * `WEB_DIST_DIR`. Only active when that env is set (the self-host cue-app
+   * image bakes the build in); a no-op otherwise, so platform/k8s deploys are
+   * unaffected. Real asset paths (with an extension) map to files; everything
+   * else falls back to `index.html` for client-side routing. API routes
+   * (`/v1/*`, `/auth/*`) never start with `/assistant/`, so they're untouched.
+   */
+  async function serveSpaAsset(
+    pathname: string,
+  ): Promise<Response | undefined> {
+    const dir = process.env.WEB_DIST_DIR;
+    if (!dir) return undefined;
+    const rel = pathname.slice("/assistant/".length);
+    if (rel.includes("..")) return new Response("Bad request", { status: 400 });
+    const hasExt = /\.[a-zA-Z0-9]+$/.test(rel);
+    if (rel && hasExt) {
+      const file = Bun.file(`${dir}/${rel}`);
+      if (await file.exists()) return new Response(file);
+      return new Response("Not found", { status: 404 });
+    }
+    const index = Bun.file(`${dir}/index.html`);
+    if (await index.exists()) {
+      return new Response(index, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    return undefined;
+  }
+
   /** Core request routing — extracted so `fetch` can stamp headers on every response. */
   async function routeRequest(
     req: Request,
@@ -1683,6 +1713,24 @@ async function main() {
 
     if (url.pathname === "/schema") {
       return Response.json(buildSchema());
+    }
+
+    // ── Self-hosted web client (SPA, served same-origin) ──
+    // Active only on the self-host image (WEB_DIST_DIR set). API routes are
+    // unaffected (they live under /v1, /auth). Root redirects into the app.
+    if (req.method === "GET" && url.pathname.startsWith("/assistant/")) {
+      const spa = await serveSpaAsset(url.pathname);
+      if (spa) return spa;
+    }
+    if (
+      req.method === "GET" &&
+      url.pathname === "/" &&
+      process.env.WEB_DIST_DIR
+    ) {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "/assistant/" },
+      });
     }
 
     if (url.pathname === "/readyz") {

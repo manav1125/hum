@@ -257,6 +257,12 @@ ENV IS_CONTAINERIZED=true
 # and the generated meet-join manifest from the builder stage.
 COPY --from=builder /app /app
 
+# Self-hosted web client: the pre-built SPA the gateway serves under
+# /assistant/* (via WEB_DIST_DIR). Committed under deploy/web-dist so there's no
+# in-image web build; rebuilt + recommitted on web changes. Harmless on deploys
+# that don't set WEB_DIST_DIR.
+COPY deploy/web-dist /app/web-dist
+
 COPY packages/block-volume-bootstrap/scripts/*.sh /usr/local/bin/
 
 RUN chmod +x \
