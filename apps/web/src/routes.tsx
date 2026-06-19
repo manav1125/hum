@@ -297,6 +297,23 @@ export const routeTree = [
                   path: "impact",
                   lazy: { Component: () => import("@/domains/intelligence/impact-page").then((m) => m.ImpactPage) },
                 },
+                // v0.3 flagship surfaces (design-matched; live-data wiring is Phase 3).
+                {
+                  path: "next-moves",
+                  lazy: { Component: () => import("@/domains/next-moves/next-moves-page").then((m) => m.NextMovesPage) },
+                },
+                {
+                  path: "meeting",
+                  lazy: { Component: () => import("@/domains/meeting/meeting-capture-page").then((m) => m.MeetingCapturePage) },
+                },
+                {
+                  path: "trust",
+                  lazy: { Component: () => import("@/domains/trust/trust-console-page").then((m) => m.TrustConsolePage) },
+                },
+                {
+                  path: "people",
+                  lazy: { Component: () => import("@/domains/people/people-page").then((m) => m.PeoplePage) },
+                },
                 {
                   lazy: { Component: () => import("@/domains/intelligence/intelligence-layout").then((m) => m.IntelligenceLayout) },
                   children: [

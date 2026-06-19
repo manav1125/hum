@@ -6,6 +6,7 @@ import { useAppTheme } from "@/hooks/use-app-theme";
 import { useEventBusInit } from "@/hooks/use-event-bus-init";
 import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { CueMobileTabBar } from "@/components/cue-mobile-tab-bar";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import { useAssistantLifecycle } from "@/assistant/use-lifecycle";
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
@@ -267,6 +268,11 @@ export function RootLayout() {
       <div className="flex min-w-0 flex-col overflow-hidden w-full" style={{ flex: "1 1 0%", minHeight: 0 }}>
         <Outlet />
       </div>
+
+      {/* Mobile primary nav: collapses the desktop three-column layout to a
+          bottom tab bar (Today / Memory / Voice / Tasks). Desktop uses the
+          sidebar rail instead. */}
+      {isMobile && <CueMobileTabBar assistantId={assistantId} />}
 
       {/* Portal target for mobile overlays that use `position: fixed`. */}
       <div id="viewport-overlays" />

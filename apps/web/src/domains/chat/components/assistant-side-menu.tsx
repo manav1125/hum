@@ -3,13 +3,18 @@ import {
     Clock,
     Hash,
     LayoutGrid,
+    ListChecks,
+    Mic,
     Pin,
     Rocket,
     Search,
+    ShieldCheck,
     SquarePen,
+    Users,
     X,
 } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router";
 
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 
@@ -159,6 +164,18 @@ export function AssistantSideMenu({
   onShareFeedback,
   onInspect,
 }: AssistantSideMenuProps) {
+  // Direct navigation for the v0.3 flagship surfaces (next-moves / meeting /
+  // people / trust) — these are reachable by route + the mobile tab bar; the
+  // sidebar adds desktop discoverability without threading new callbacks.
+  const navigate = useNavigate();
+  const location = useLocation();
+  const cueNav = useCallback(
+    (to: string) => {
+      navigate(to);
+      onClose?.();
+    },
+    [navigate, onClose],
+  );
   const sidebar = useSidebarState({
     assistantId,
     conversations,
@@ -461,6 +478,34 @@ export function AssistantSideMenu({
             onSelect={onOpenLibrary ? () => { onOpenLibrary(); onClose?.(); } : undefined}
           />
         ) : null}
+        <SideMenu.Item
+          icon={ListChecks}
+          label="Next moves"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/next-moves")}
+          onSelect={() => cueNav("/assistant/next-moves")}
+        />
+        <SideMenu.Item
+          icon={Mic}
+          label="Meeting"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/meeting")}
+          onSelect={() => cueNav("/assistant/meeting")}
+        />
+        <SideMenu.Item
+          icon={Users}
+          label="People"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/people")}
+          onSelect={() => cueNav("/assistant/people")}
+        />
+        <SideMenu.Item
+          icon={ShieldCheck}
+          label="Trust"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/trust")}
+          onSelect={() => cueNav("/assistant/trust")}
+        />
         {pinnedApps.map((app) => (
           <SideMenu.Item
             key={app.appId}
