@@ -34,6 +34,20 @@ while [ ! -S "$SOCK" ]; do
 done
 echo "[cue-app] assistant socket ready; starting gateway" >&2
 
+# Seed the provider API key from the env into the daemon's secure store. A
+# self-hosted BYO inference connection (e.g. anthropic-personal) resolves an
+# EXPLICIT credential (credential/anthropic/api_key) which the bare
+# ANTHROPIC_API_KEY env var does not populate — so without this step the daemon
+# reports "No API key configured for anthropic" even though the env var is set.
+# `keys set` writes via the daemon IPC socket (now ready). Idempotent: it
+# silently overwrites. The key value never leaves the container — it goes
+# straight from the env into the local encrypted store.
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "[cue-app] seeding anthropic key from env into secure store" >&2
+  ( cd /app/assistant && exec bun run src/index.ts keys set anthropic "$ANTHROPIC_API_KEY" ) \
+    || echo "[cue-app] WARN: failed to seed anthropic key (chat may need a key set in Settings)" >&2
+fi
+
 # Gateway in the foreground = the public service. On container stop it receives
 # SIGTERM and shuts down cleanly; the daemon is torn down with the container
 # (its SQLite WAL replays on next boot).
