@@ -272,7 +272,7 @@ export function RootLayout() {
       {/* Mobile primary nav: collapses the desktop three-column layout to a
           bottom tab bar (Today / Memory / Voice / Tasks). Desktop uses the
           sidebar rail instead. */}
-      {isMobile && <CueMobileTabBar assistantId={assistantId} />}
+      {isMobile && <CueMobileTabBar />}
 
       {/* Portal target for mobile overlays that use `position: fixed`. */}
       <div id="viewport-overlays" />

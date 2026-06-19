@@ -315,6 +315,10 @@ export const routeTree = [
                   lazy: { Component: () => import("@/domains/people/people-page").then((m) => m.PeoplePage) },
                 },
                 {
+                  path: "voice",
+                  lazy: { Component: () => import("@/domains/chat/voice/voice-mode-page").then((m) => m.VoiceModePage) },
+                },
+                {
                   lazy: { Component: () => import("@/domains/intelligence/intelligence-layout").then((m) => m.IntelligenceLayout) },
                   children: [
                     { path: "identity", lazy: { Component: () => import("@/identity-page-route").then((m) => m.IdentityPageRoute) } },

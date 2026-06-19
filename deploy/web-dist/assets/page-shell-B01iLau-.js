@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-CVSDxk6A.js";import{t}from"./cn-DjuhCP4d.js";import"./src-mpGo7MzR.js";var n=e();function r({children:e,className:r}){return(0,n.jsx)(`div`,{className:t(`flex min-h-0 flex-1 flex-col rounded-lg border border-[var(--border-base)] bg-[var(--surface-overlay)] px-6 py-5`,r),children:e})}export{r as t};

@@ -2,21 +2,14 @@
  * Cue mobile tab bar (design v0.2 / DESIGN-SPEC §4).
  *
  * On mobile the three-column desktop layout collapses, so primary navigation
- * moves to a persistent bottom tab bar: Today / Memory / Voice / Tasks, with a
- * mic affordance for Voice (full-duplex live voice via {@link useLiveVoice}).
- * Rendered only at the mobile breakpoint, as a flex-shrink-0 footer inside the
- * root layout (so it sits above the safe-area inset the shell already pads).
+ * moves to a persistent bottom tab bar: Today / Memory / Voice / Tasks. Voice
+ * routes to the full-bleed Voice mode screen (which owns the live-voice
+ * session). Rendered only at the mobile breakpoint, as a flex-shrink-0 footer
+ * inside the root layout (so it sits above the safe-area inset the shell pads).
  */
 
-import { Home, ListChecks, Mic, Sparkles, StopCircle } from "lucide-react";
+import { Home, ListChecks, Mic, Sparkles } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
-
-import { useLiveVoice } from "@/domains/chat/voice/live-voice/use-live-voice";
-
-interface CueMobileTabBarProps {
-  /** Active assistant — needed to open a live-voice session from the mic tab. */
-  assistantId: string | null;
-}
 
 interface NavTab {
   key: string;
@@ -47,25 +40,11 @@ const NAV_TABS: NavTab[] = [
   },
 ];
 
-export function CueMobileTabBar({ assistantId }: CueMobileTabBarProps) {
+export function CueMobileTabBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { state, start, stop } = useLiveVoice();
 
-  const voiceActive =
-    state !== "idle" && state !== "failed" && state !== "connecting";
-  const voiceConnecting = state === "connecting";
-
-  function handleVoice() {
-    if (voiceConnecting) return;
-    if (voiceActive) {
-      void stop();
-    } else if (assistantId) {
-      void start(assistantId, undefined);
-    }
-  }
-
-  // Insert the Voice mic between Memory and Tasks (center-ish, like the mock).
+  // Voice (the mic) sits center, between Memory and Tasks (like the mock).
   const tabs = [NAV_TABS[0], NAV_TABS[1]];
   const tail = [NAV_TABS[2]];
 
@@ -103,16 +82,9 @@ export function CueMobileTabBar({ assistantId }: CueMobileTabBarProps) {
 
       <TabButton
         label="Voice"
-        active={voiceActive}
-        busy={voiceConnecting}
-        onClick={handleVoice}
-        icon={
-          voiceActive ? (
-            <StopCircle size={22} strokeWidth={2} />
-          ) : (
-            <Mic size={22} strokeWidth={2} />
-          )
-        }
+        active={pathname.endsWith("/voice")}
+        onClick={() => navigate("/assistant/voice")}
+        icon={<Mic size={22} strokeWidth={2} />}
         emphasized
       />
 
