@@ -11,8 +11,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { channelsReadinessGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 const CHANNEL_LABELS: Record<string, string> = {
   email: "Email",
@@ -46,14 +46,21 @@ function dotColor(s: Snapshot): string {
 }
 
 export function CueChannelPresence() {
-  const assistantId = useActiveAssistantId();
+  // This renders in the sidebar, which mounts OUTSIDE <ActiveAssistantGate>, so
+  // we must read the raw store (null until resolved) rather than
+  // useActiveAssistantId() (which throws outside the gate).
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const query = useQuery({
-    ...channelsReadinessGetOptions({ path: { assistant_id: assistantId } }),
+    ...channelsReadinessGetOptions({
+      path: { assistant_id: assistantId ?? "" },
+    }),
+    enabled: assistantId != null,
     select: (data) => data.snapshots ?? [],
     // Presence is ambient; refresh on a relaxed cadence.
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
+  if (assistantId == null) return null;
 
   const snapshots = (query.data ?? []) as Snapshot[];
   // Only surface channels that are actually configured (have a setupStatus or
