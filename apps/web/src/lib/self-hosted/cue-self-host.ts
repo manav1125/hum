@@ -31,6 +31,86 @@ export function isSelfHostMode(): boolean {
   }
 }
 
+/**
+ * True when this build is the Cue self-host SPA (served same-origin from a
+ * self-hosted gateway). Set at build time via `VITE_CUE_SELF_HOST=1` in the
+ * deploy build command. Distinguishes the self-host deploy from the Vellum
+ * Platform build (platform auth) and the Electron build (local lockfile), so
+ * only this deploy shows the paste-token Connect screen on a fresh browser.
+ */
+export function isCueSelfHostDeploy(): boolean {
+  try {
+    const env = import.meta.env as Record<string, string | undefined>;
+    if (env.VITE_CUE_SELF_HOST === "1") return true;
+    // Test/escape hatch: `?cueConnect=1` forces the Connect screen on any build
+    // (e.g. a local dev server) without weakening anything — it only renders a
+    // token-entry form, it does not grant access.
+    return new URLSearchParams(window.location.search).has("cueConnect");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether to render the Cue Connect screen instead of booting the router: a
+ * self-host deploy that has no seeded token yet (fresh browser). Once a token
+ * is seeded (`isSelfHostMode()` true) the normal authenticated boot runs.
+ */
+export function shouldShowCueConnect(): boolean {
+  return isCueSelfHostDeploy() && !isSelfHostMode();
+}
+
+/**
+ * Seed the gateway-session token store from a user-supplied value and flip the
+ * self-host flag. Accepts either a raw actor JWT, or a full connect string/URL
+ * containing `cueToken=<jwt>` (and optionally `cueExp=<ms>`) — so a user can
+ * paste either the token or the whole link they were handed. Returns true on
+ * success, false if no usable token could be parsed.
+ */
+export function seedCueToken(input: string): boolean {
+  const raw = input.trim();
+  if (!raw) return false;
+
+  let token = raw;
+  let expMs = 0;
+
+  // If they pasted a URL or a `cueToken=...` query fragment, extract from it.
+  if (raw.includes("cueToken=") || raw.includes("?") || raw.includes("://")) {
+    try {
+      const qs = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : raw;
+      const params = new URLSearchParams(qs);
+      const fromUrl = params.get("cueToken");
+      if (fromUrl) {
+        token = fromUrl;
+        const e = Number(params.get("cueExp"));
+        if (Number.isFinite(e) && e > 0) expMs = e;
+      }
+    } catch {
+      // fall through and treat the whole string as the token
+    }
+  }
+
+  // A bare JWT has three dot-separated segments. Reject obvious non-tokens so a
+  // mistyped paste surfaces an error instead of seeding garbage.
+  if (token.split(".").length !== 3) return false;
+
+  writeSelfHostToken(token, expMs > 0 ? expMs : Date.now() + DEFAULT_TTL_MS);
+  return true;
+}
+
+/** Persist a token + expiry into the gateway-session store and set the flag. */
+function writeSelfHostToken(token: string, expMs: number): void {
+  const expSec = Math.floor(expMs / 1000);
+  try {
+    localStorage.setItem(LS_TOKEN_KEY, token);
+    localStorage.setItem(LS_EXPIRES_KEY, String(expSec));
+    localStorage.setItem(LS_TOKEN_SOURCE_KEY, window.location.origin);
+    localStorage.setItem(LS_SELF_HOST_FLAG, "1");
+  } catch {
+    // localStorage unavailable — nothing more we can do
+  }
+}
+
 /** Clear self-host mode + the seeded token (e.g. on an explicit disconnect). */
 export function clearSelfHostMode(): void {
   try {
@@ -66,17 +146,8 @@ export function bootstrapCueSelfHost(): void {
     Number.isFinite(expMsRaw) && expMsRaw > 0
       ? expMsRaw
       : Date.now() + DEFAULT_TTL_MS;
-  const expSec = Math.floor(expMs / 1000);
 
-  try {
-    localStorage.setItem(LS_TOKEN_KEY, token);
-    localStorage.setItem(LS_EXPIRES_KEY, String(expSec));
-    localStorage.setItem(LS_TOKEN_SOURCE_KEY, window.location.origin);
-    localStorage.setItem(LS_SELF_HOST_FLAG, "1");
-  } catch {
-    // localStorage unavailable — nothing more we can do
-    return;
-  }
+  writeSelfHostToken(token, expMs);
 
   // Strip the credential params from the URL without a reload.
   params.delete("cueToken");

@@ -12,7 +12,11 @@ import { AppProviders } from "@/components/providers";
 import { WindowDragRegion } from "@/components/window-drag-region";
 import { isChunkLoadError } from "@/lib/chunk-errors";
 import { isLocalMode, loadLockfile } from "@/lib/local-mode";
-import { bootstrapCueSelfHost } from "@/lib/self-hosted/cue-self-host";
+import { CueConnectScreen } from "@/lib/self-hosted/cue-connect-screen";
+import {
+  bootstrapCueSelfHost,
+  shouldShowCueConnect,
+} from "@/lib/self-hosted/cue-self-host";
 import { initSentry } from "@/lib/sentry/sentry-init";
 import { setupAuthListeners, useAuthStore } from "@/stores/auth-store";
 import { setupOrganizationStore } from "@/stores/organization-store";
@@ -34,6 +38,26 @@ async function boot() {
   await initSafeAreaBridge();
   initSentry();
 
+  const rootEl = document.getElementById("root");
+  if (!rootEl) throw new Error("Root element #root not found");
+
+  // Self-host deploy, fresh browser, no seeded token: render the Cue Connect
+  // screen instead of booting the router (which would otherwise fall into the
+  // Vellum-Platform login / local-vs-cloud onboarding that doesn't apply to a
+  // single-tenant self-host). Once a token is pasted + seeded, the screen
+  // reloads into the normal authenticated boot below.
+  if (shouldShowCueConnect()) {
+    createRoot(rootEl).render(
+      <StrictMode>
+        <AppProviders>
+          <WindowDragRegion />
+          <CueConnectScreen />
+        </AppProviders>
+      </StrictMode>,
+    );
+    return;
+  }
+
   setupOrganizationStore();
   if (isLocalMode()) {
     await loadLockfile();
@@ -42,9 +66,6 @@ async function boot() {
     useAuthStore.getState().initSession();
   }
   setupAuthListeners();
-
-  const rootEl = document.getElementById("root");
-  if (!rootEl) throw new Error("Root element #root not found");
 
   createRoot(rootEl).render(
     <StrictMode>
