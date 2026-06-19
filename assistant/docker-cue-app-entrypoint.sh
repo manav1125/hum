@@ -43,9 +43,24 @@ echo "[cue-app] assistant socket ready; starting gateway" >&2
 # silently overwrites. The key value never leaves the container — it goes
 # straight from the env into the local encrypted store.
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "[cue-app] seeding anthropic key from env into secure store" >&2
-  ( cd /app/assistant && exec bun run src/index.ts keys set anthropic "$ANTHROPIC_API_KEY" ) \
-    || echo "[cue-app] WARN: failed to seed anthropic key (chat may need a key set in Settings)" >&2
+  # Run in the background with retries: the socket FILE exists once the daemon
+  # binds, but its IPC server only starts accepting a few seconds later (the
+  # gateway hits the same race and retries). Backgrounding keeps the gateway —
+  # and Render's /healthz check — from waiting on the daemon's IPC readiness.
+  # The store write itself works (encrypted file store: store.key + keys.enc),
+  # so once a connect succeeds the key persists and every later chat resolves it.
+  (
+    j=0
+    while [ "$j" -lt 30 ]; do
+      if ( cd /app/assistant && bun run src/index.ts keys set anthropic "$ANTHROPIC_API_KEY" ) >/dev/null 2>&1; then
+        echo "[cue-app] anthropic key seeded from env into secure store" >&2
+        exit 0
+      fi
+      j=$((j + 1))
+      sleep 3
+    done
+    echo "[cue-app] WARN: could not seed anthropic key after retries (set it in Settings → API Keys)" >&2
+  ) &
 fi
 
 # Gateway in the foreground = the public service. On container stop it receives
