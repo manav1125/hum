@@ -1,15 +1,22 @@
 import { useMemo, useState } from "react";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
+
 import {
   ApertureAvatar,
+  Button,
   Card,
   Chip,
   MEMORY_TYPES,
   Typography,
   type MemoryType,
 } from "@vellumai/design-library";
+import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { memoryitemsByIdDelete } from "@/generated/daemon/sdk.gen";
+import { memoryitemsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 
 import { useMemoryItemsQuery } from "./memories/hooks/use-memory-items-query";
 import { MemoryRow } from "./memories/memory-row";
@@ -28,12 +35,48 @@ const KIND_LABELS: Record<MemoryType, string> = {
   shared: "Shared",
 };
 
+/**
+ * The Memory surface. Lists the assistant's real memories (via
+ * `memoryitemsGet`), filterable by kind and searchable by text.
+ *
+ * Interactive: every row is forgettable — a trash affordance opens a
+ * confirmation, then deletes the memory (`memoryitemsByIdDelete`) and
+ * invalidates the list so it refetches. The empty state drives the user back
+ * into conversation, since memories form from chatting with the assistant.
+ *
+ * Routed under `<ActiveAssistantGate>`, so `useActiveAssistantId()` is safe.
+ */
 export function MemoriesPage() {
   const assistantId = useActiveAssistantId();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { data, isLoading, isError } = useMemoryItemsQuery(assistantId);
 
   const [filter, setFilter] = useState<KindFilter>("all");
   const [query, setQuery] = useState("");
+  // The memory pending confirmation in the "Forget" dialog, if any.
+  const [pendingForget, setPendingForget] = useState<MemoryItem | null>(null);
+
+  const forgetMutation = useMutation({
+    mutationFn: async (item: MemoryItem) => {
+      if (!assistantId) throw new Error("No active assistant");
+      const { error } = await memoryitemsByIdDelete({
+        path: { assistant_id: assistantId, id: item.id },
+        throwOnError: false,
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      setPendingForget(null);
+      if (assistantId) {
+        await queryClient.invalidateQueries({
+          queryKey: memoryitemsGetQueryKey({
+            path: { assistant_id: assistantId },
+          }),
+        });
+      }
+    },
+  });
 
   const items = useMemo<MemoryItem[]>(() => data?.items ?? [], [data?.items]);
 
@@ -126,17 +169,47 @@ export function MemoriesPage() {
         ) : isError ? (
           <ErrorState />
         ) : filteredItems.length === 0 ? (
-          <EmptyState filtered={filter !== "all"} />
+          <EmptyState
+            filtered={filter !== "all"}
+            onStartConversation={() => void navigate("/assistant/")}
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {filteredItems.map((item) => (
               <li key={item.id}>
-                <MemoryRow item={item} />
+                <MemoryRow
+                  item={item}
+                  onForget={setPendingForget}
+                  isForgetting={
+                    forgetMutation.isPending &&
+                    forgetMutation.variables?.id === item.id
+                  }
+                />
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingForget !== null}
+        title="Forget this memory?"
+        message={
+          pendingForget
+            ? `Cue will permanently forget “${pendingForget.statement}”. This can’t be undone.`
+            : ""
+        }
+        confirmLabel={forgetMutation.isPending ? "Forgetting…" : "Forget"}
+        cancelLabel="Keep"
+        destructive
+        isPending={forgetMutation.isPending}
+        onConfirm={() => {
+          if (pendingForget) forgetMutation.mutate(pendingForget);
+        }}
+        onCancel={() => {
+          if (!forgetMutation.isPending) setPendingForget(null);
+        }}
+      />
     </div>
   );
 }
@@ -176,7 +249,13 @@ function ErrorState() {
   );
 }
 
-function EmptyState({ filtered }: { filtered: boolean }) {
+function EmptyState({
+  filtered,
+  onStartConversation,
+}: {
+  filtered: boolean;
+  onStartConversation: () => void;
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <ApertureAvatar state="idle" size={56} className="mb-4" />
@@ -194,6 +273,11 @@ function EmptyState({ filtered }: { filtered: boolean }) {
           ? "Try a different kind, or clear the filter to see everything."
           : "As you chat, your assistant will start remembering what matters — it'll show up here."}
       </p>
+      {!filtered ? (
+        <Button className="mt-5" onClick={onStartConversation}>
+          Start a conversation
+        </Button>
+      ) : null}
     </div>
   );
 }
