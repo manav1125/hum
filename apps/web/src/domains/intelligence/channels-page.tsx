@@ -1,11 +1,32 @@
 /**
- * Channels — faithful translation of `surfaces/Channels.dc.html`.
+ * Channels — "One you, every channel" (design surface from
+ * `surfaces/Channels.dc.html`), now wired to live daemon data.
  *
- * "One you, every channel": an ink hero with the live constellation (Cue at
- * the centre, channels orbiting), Active channel cards, and a Connect-more
- * grid. Presentational for now — the channel-verification + messaging adapters
- * exist on the daemon and will be wired in; this is the design surface.
+ * Data:
+ *  - `channelsAvailableGet` → the channel catalog (label / subtitle / emoji icon
+ *    per channel).
+ *  - `channelsReadinessGet` → per-channel readiness snapshots; a channel is
+ *    rendered as Active/LIVE when its snapshot `ready === true`, otherwise it
+ *    falls into the "Connect more" grid.
+ * The two are merged by channel id. Hero stats ("N active · M available") and
+ * the verified-id count are computed from this data — nothing hardcoded.
+ *
+ * Actions: every control routes to the working channel-setup UI under
+ * `/assistant/contacts` (Set up / Manage) — this page does not reimplement
+ * verification or contact wiring. v0.2 ink-hero styling is preserved.
  */
+
+import { Loader2 } from "lucide-react";
+import { useMemo } from "react";
+import { useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+
+import {
+  channelsAvailableGetOptions,
+  channelsReadinessGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { routes } from "@/utils/routes";
 
 const C = {
   ink: "#1A2230",
@@ -27,14 +48,69 @@ const KEYFRAMES = `
 @media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
 `;
 
-const NODES = [
-  { x: 210, y: 44, bg: "#fff", fg: "#1A2230", icon: "🎙", o: 0.7, dash: 1 },
-  { x: 318, y: 78, bg: "#fff", fg: "#1A2230", icon: "✉", o: 0.5, dash: 1.3 },
-  { x: 338, y: 160, bg: "#4A154B", fg: "#fff", icon: "#", o: 0.5, dash: 1.1 },
-  { x: 300, y: 200, bg: "#E7F3FB", fg: "#229ED9", icon: "✈", o: 0.4, dash: 1.4 },
-  { x: 96, y: 86, bg: "#EAF0FE", fg: "#3D6EE8", icon: "☎", o: 0.5, dash: 1.2 },
-  { x: 110, y: 176, bg: "#5865F2", fg: "#fff", icon: "◍", o: 0.4, dash: 1.5 },
+/** Channel id union from the daemon catalog. */
+type ChannelId =
+  | "telegram"
+  | "phone"
+  | "vellum"
+  | "whatsapp"
+  | "slack"
+  | "email"
+  | "platform"
+  | "a2a";
+
+/** One entry from `channelsAvailableGet` → `channels`. */
+interface AvailableChannel {
+  id: ChannelId;
+  label: string;
+  subtitle: string;
+  icon: string;
+  supportsVerification: boolean;
+}
+
+/** One entry from `channelsReadinessGet` → `snapshots`. */
+interface ReadinessSnapshot {
+  channel: string;
+  ready: boolean;
+  setupStatus?: string | null;
+  stale?: boolean;
+  channelHandle?: string | null;
+}
+
+/** A catalog channel merged with its readiness snapshot (if any). */
+interface MergedChannel extends AvailableChannel {
+  ready: boolean;
+  verified: boolean;
+  channelHandle: string | null;
+}
+
+/** Per-channel icon chrome (background/foreground) keyed by channel id. */
+const ICON_STYLE: Record<ChannelId, { bg: string; fg: string }> = {
+  phone: { bg: "#EAF0FE", fg: "#3D6EE8" },
+  email: { bg: "#FDECEA", fg: "#1A2230" },
+  slack: { bg: "#4A154B", fg: "#fff" },
+  telegram: { bg: "#E7F3FB", fg: "#229ED9" },
+  whatsapp: { bg: "#E7F8EE", fg: "#25D366" },
+  vellum: { bg: "#1A2230", fg: "#fff" },
+  platform: { bg: "#EEF1F6", fg: "#1A2230" },
+  a2a: { bg: "#EEF1F6", fg: "#5A6672" },
+};
+
+function iconStyle(id: ChannelId): { bg: string; fg: string } {
+  return ICON_STYLE[id] ?? { bg: "#EEF1F6", fg: "#5A6672" };
+}
+
+// Constellation node positions (visual only — mapped onto active channels).
+const NODE_POS = [
+  { x: 210, y: 44 },
+  { x: 318, y: 78 },
+  { x: 338, y: 160 },
+  { x: 300, y: 200 },
+  { x: 96, y: 86 },
+  { x: 110, y: 176 },
 ];
+const NODE_DASH = [1, 1.3, 1.1, 1.4, 1.2, 1.5];
+const NODE_OPACITY = [0.7, 0.5, 0.5, 0.4, 0.5, 0.4];
 
 function Stat({ n, label }: { n: string; label: string }) {
   return (
@@ -83,6 +159,7 @@ function ActiveCard({
   sub,
   full,
   verified,
+  onManage,
 }: {
   icon: string;
   iconBg: string;
@@ -91,6 +168,7 @@ function ActiveCard({
   sub: string;
   full?: boolean;
   verified?: boolean;
+  onManage: () => void;
 }) {
   return (
     <div
@@ -125,58 +203,49 @@ function ActiveCard({
         <div style={{ fontSize: 14.5, fontWeight: 600 }}>{title}</div>
         <div style={{ fontSize: 12, color: C.t2 }}>{sub}</div>
       </div>
-      {verified ? (
-        <>
-          <span
-            style={{
-              fontFamily: mono,
-              fontSize: 10,
-              background: C.blueW,
-              color: C.blueS,
-              padding: "4px 10px",
-              borderRadius: 7,
-            }}
-          >
-            VERIFIED ID
-          </span>
-          <span
-            style={{
-              width: 42,
-              height: 24,
-              borderRadius: 999,
-              background: C.blue,
-              position: "relative",
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                position: "absolute",
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                background: "#fff",
-                top: 2,
-                right: 2,
-              }}
-            />
-          </span>
-        </>
-      ) : (
+      {verified && (
         <span
           style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
             fontFamily: mono,
             fontSize: 10,
-            color: C.green,
+            background: C.blueW,
+            color: C.blueS,
+            padding: "4px 10px",
+            borderRadius: 7,
           }}
         >
-          <LiveDot pulse />
-          LIVE
+          VERIFIED ID
         </span>
       )}
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontFamily: mono,
+          fontSize: 10,
+          color: C.green,
+        }}
+      >
+        <LiveDot pulse />
+        LIVE
+      </span>
+      <button
+        type="button"
+        onClick={onManage}
+        style={{
+          fontSize: 12,
+          border: `1px solid ${C.line2}`,
+          background: "#fff",
+          borderRadius: 8,
+          padding: "6px 14px",
+          cursor: "pointer",
+          color: C.t1,
+          flexShrink: 0,
+        }}
+      >
+        Manage
+      </button>
     </div>
   );
 }
@@ -187,12 +256,14 @@ function ConnectCard({
   iconFg,
   title,
   sub,
+  onSetup,
 }: {
   icon: string;
   iconBg: string;
   iconFg: string;
   title: string;
   sub: string;
+  onSetup: () => void;
 }) {
   return (
     <div
@@ -225,6 +296,7 @@ function ConnectCard({
       </div>
       <button
         type="button"
+        onClick={onSetup}
         style={{
           fontSize: 12.5,
           border: `1px solid ${C.line2}`,
@@ -235,13 +307,13 @@ function ConnectCard({
           color: C.t1,
         }}
       >
-        Enable
+        Set up
       </button>
     </div>
   );
 }
 
-const label = {
+const labelStyle = {
   fontFamily: mono,
   fontSize: 10.5,
   letterSpacing: ".1em",
@@ -251,8 +323,77 @@ const label = {
 };
 
 export function ChannelsPage() {
+  const assistantId = useActiveAssistantId();
+  const navigate = useNavigate();
+  const goToContacts = () => void navigate(routes.contacts.root);
+
+  const availableQuery = useQuery({
+    ...channelsAvailableGetOptions({ path: { assistant_id: assistantId } }),
+    select: (data) => data.channels as AvailableChannel[],
+  });
+  const readinessQuery = useQuery({
+    ...channelsReadinessGetOptions({ path: { assistant_id: assistantId } }),
+    select: (data) => data.snapshots as ReadinessSnapshot[],
+  });
+
+  const merged = useMemo<MergedChannel[]>(() => {
+    const available = availableQuery.data ?? [];
+    const snapshots = readinessQuery.data ?? [];
+    const byChannel = new Map<string, ReadinessSnapshot>();
+    for (const snap of snapshots) byChannel.set(snap.channel, snap);
+
+    return available.map((channel) => {
+      const snap = byChannel.get(channel.id);
+      const ready = snap?.ready === true;
+      return {
+        ...channel,
+        ready,
+        verified: ready && channel.supportsVerification,
+        channelHandle: snap?.channelHandle ?? null,
+      };
+    });
+  }, [availableQuery.data, readinessQuery.data]);
+
+  const active = useMemo(() => merged.filter((c) => c.ready), [merged]);
+  const connectMore = useMemo(() => merged.filter((c) => !c.ready), [merged]);
+  const verifiedCount = useMemo(
+    () => active.filter((c) => c.verified).length,
+    [active],
+  );
+
+  const isLoading = availableQuery.isLoading || readinessQuery.isLoading;
+  const isEmpty = !isLoading && merged.length === 0;
+
+  if (isLoading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+          minHeight: 320,
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+          color: C.t2,
+        }}
+      >
+        <Loader2 size={22} color={C.blue} className="cue-spin" />
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              "@keyframes cueSpin{to{transform:rotate(360deg)}}.cue-spin{animation:cueSpin 1s linear infinite}",
+          }}
+        />
+        <div style={{ fontSize: 13.5 }}>Loading channels…</div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    <div
+      style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif" }}
+    >
       <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
 
       {/* IMMERSIVE HERO */}
@@ -315,15 +456,15 @@ export function ChannelsPage() {
             them all.
           </p>
           <div style={{ display: "flex", gap: 18, marginTop: 18 }}>
-            <Stat n="3" label="active" />
+            <Stat n={String(active.length)} label="active" />
             <div style={{ width: 1, background: "rgba(255,255,255,.12)" }} />
-            <Stat n="1" label="verified id" />
+            <Stat n={String(verifiedCount)} label="verified id" />
             <div style={{ width: 1, background: "rgba(255,255,255,.12)" }} />
-            <Stat n="3" label="available" />
+            <Stat n={String(connectMore.length)} label="available" />
           </div>
         </div>
 
-        {/* constellation */}
+        {/* constellation — nodes mapped onto active channels */}
         <div className="cue-anim" style={{ position: "relative", height: 240 }}>
           <svg
             width="420"
@@ -331,20 +472,23 @@ export function ChannelsPage() {
             viewBox="0 0 420 240"
             style={{ position: "absolute", inset: 0 }}
           >
-            {NODES.map((n, i) => (
-              <line
-                key={i}
-                x1="210"
-                y1="120"
-                x2={n.x}
-                y2={n.y}
-                stroke={C.blue}
-                strokeWidth="1.5"
-                strokeDasharray="3 4"
-                opacity={n.o}
-                style={{ animation: `cueDash ${n.dash}s linear infinite` }}
-              />
-            ))}
+            {active.slice(0, NODE_POS.length).map((c, i) => {
+              const pos = NODE_POS[i]!;
+              return (
+                <line
+                  key={c.id}
+                  x1="210"
+                  y1="120"
+                  x2={pos.x}
+                  y2={pos.y}
+                  stroke={C.blue}
+                  strokeWidth="1.5"
+                  strokeDasharray="3 4"
+                  opacity={NODE_OPACITY[i]}
+                  style={{ animation: `cueDash ${NODE_DASH[i]}s linear infinite` }}
+                />
+              );
+            })}
           </svg>
           <div
             style={{
@@ -395,87 +539,145 @@ export function ChannelsPage() {
               />
             </span>
           </div>
-          {NODES.map((n, i) => (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                left: n.x,
-                top: n.y,
-                transform: "translate(-50%,-50%)",
-                width: 37,
-                height: 37,
-                borderRadius: 11,
-                background: n.bg,
-                color: n.fg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 16,
-                boxShadow: "0 6px 14px -6px rgba(0,0,0,.5)",
-              }}
-            >
-              {n.icon}
-            </div>
-          ))}
+          {active.slice(0, NODE_POS.length).map((c, i) => {
+            const pos = NODE_POS[i]!;
+            const style = iconStyle(c.id);
+            return (
+              <div
+                key={c.id}
+                title={c.label}
+                style={{
+                  position: "absolute",
+                  left: pos.x,
+                  top: pos.y,
+                  transform: "translate(-50%,-50%)",
+                  width: 37,
+                  height: 37,
+                  borderRadius: 11,
+                  background: style.bg,
+                  color: style.fg,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
+                  boxShadow: "0 6px 14px -6px rgba(0,0,0,.5)",
+                }}
+              >
+                {c.icon}
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* ACTIVE */}
-      <div style={label}>Active</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <ActiveCard
-          icon="🎙"
-          iconBg={C.ink}
-          iconFg="#fff"
-          title="Voice"
-          sub="Hold-to-talk & hands-free, on device"
-        />
-        <ActiveCard
-          icon="✉"
-          iconBg="#FDECEA"
-          iconFg="#1A2230"
-          title="Email"
-          sub="Triage, draft, and send on your behalf"
-        />
-        <ActiveCard
-          icon="#"
-          iconBg="#4A154B"
-          iconFg="#fff"
-          title="Slack"
-          sub="DMs and mentions — verified as you across the workspace"
-          full
-          verified
-        />
-      </div>
+      {isEmpty ? (
+        /* EMPTY STATE */
+        <div
+          style={{
+            border: `1px solid ${C.line}`,
+            borderRadius: 14,
+            padding: "40px 24px",
+            textAlign: "center",
+            marginTop: 24,
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.t1 }}>
+            No channels yet
+          </div>
+          <div
+            style={{
+              fontSize: 13,
+              color: C.t2,
+              margin: "6px auto 16px",
+              maxWidth: 360,
+            }}
+          >
+            Connect your first channel so Cue can recognize you wherever you
+            reach it.
+          </div>
+          <button
+            type="button"
+            onClick={goToContacts}
+            style={{
+              fontSize: 13,
+              border: "none",
+              background: C.blue,
+              color: "#fff",
+              borderRadius: 9,
+              padding: "9px 20px",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Connect a channel
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* ACTIVE */}
+          {active.length > 0 && (
+            <>
+              <div style={labelStyle}>Active</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                }}
+              >
+                {active.map((c, i) => {
+                  const style = iconStyle(c.id);
+                  // Last card spans full width when the count is odd, matching
+                  // the v0.2 layout.
+                  const full = active.length % 2 === 1 && i === active.length - 1;
+                  return (
+                    <ActiveCard
+                      key={c.id}
+                      icon={c.icon}
+                      iconBg={style.bg}
+                      iconFg={style.fg}
+                      title={c.label}
+                      sub={c.channelHandle ?? c.subtitle}
+                      full={full}
+                      verified={c.verified}
+                      onManage={goToContacts}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
 
-      {/* CONNECT MORE */}
-      <div style={label}>Connect more</div>
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}
-      >
-        <ConnectCard
-          icon="✈"
-          iconBg="#E7F3FB"
-          iconFg="#229ED9"
-          title="Telegram"
-          sub="Message from your phone"
-        />
-        <ConnectCard
-          icon="☎"
-          iconBg="#EAF0FE"
-          iconFg="#3D6EE8"
-          title="Phone calling"
-          sub="Place & take calls via Twilio"
-        />
-        <ConnectCard
-          icon="◍"
-          iconBg="#5865F2"
-          iconFg="#fff"
-          title="Discord"
-          sub="Servers & direct messages"
-        />
-      </div>
+          {/* CONNECT MORE */}
+          {connectMore.length > 0 && (
+            <>
+              <div style={labelStyle}>Connect more</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 12,
+                }}
+              >
+                {connectMore.map((c) => {
+                  const style = iconStyle(c.id);
+                  return (
+                    <ConnectCard
+                      key={c.id}
+                      icon={c.icon}
+                      iconBg={style.bg}
+                      iconFg={style.fg}
+                      title={c.label}
+                      sub={c.subtitle}
+                      onSetup={goToContacts}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -1,11 +1,34 @@
 /**
- * Agents — faithful translation of `surfaces/Agents.dc.html`.
+ * Agents — faithful translation of `surfaces/Agents.dc.html`, now wired to the
+ * daemon.
  *
  * "Let Cue work with other agents": an ink hero with the agent-network
- * constellation, the Enable-A2A card, the paired-agents grid (scoped/trusted),
- * and the create-invite card. Presentational — the A2A protocol, agent card,
- * and invite routes exist on the daemon and will be wired in.
+ * constellation, the Enable-A2A card, the paired-agents grid, and the
+ * create-invite card. Live data comes from the A2A config endpoint
+ * (`integrationsA2aConfigGet` — drives the real on/off toggle + paired count)
+ * and the outstanding-invites endpoint (`contactsInvitesGet`). Toggling the
+ * endpoint calls `integrationsA2aConfigPost`/`integrationsA2aConfigDelete` and
+ * refetches the config. The "create invite" / empty-state CTAs route to
+ * `/assistant/contacts`, where the working A2A invite flow lives — this page
+ * does not reimplement the invite dialog.
  */
+
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
+import { useNavigate } from "react-router";
+
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import {
+  integrationsA2aConfigDelete,
+  integrationsA2aConfigPost,
+} from "@/generated/daemon/sdk.gen";
+import {
+  contactsGetOptions,
+  contactsInvitesGetOptions,
+  integrationsA2aConfigGetOptions,
+  integrationsA2aConfigGetQueryKey,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 
 const C = {
   ink: "#1A2230",
@@ -27,6 +50,7 @@ const mono = "'DM Mono', ui-monospace, monospace";
 const KEYFRAMES = `
 @keyframes cueDash{to{stroke-dashoffset:-14}}
 @keyframes cuePulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.45);opacity:0}}
+@keyframes cueSpin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
 `;
 
@@ -36,17 +60,14 @@ const LINES = [
   { x: 372, y: 196, stroke: C.t3, o: 0.35, dash: 0 },
   { x: 118, y: 92, stroke: C.violet, o: 0.5, dash: 1.5 },
   { x: 104, y: 206, stroke: C.t3, o: 0.3, dash: 0 },
-];
+] as const;
 
-function AgentNode({
-  x,
-  y,
-  initials,
-  label,
-  bg,
-  fg,
-  dashed,
-}: {
+/**
+ * A pairing/invite the hero constellation can render around the central Cue
+ * node. Derived from real paired contacts + outstanding invites; falls back to
+ * dashed "pending" placeholders so the artwork never collapses.
+ */
+type ConstellationNode = {
   x: number;
   y: number;
   initials: string;
@@ -54,7 +75,17 @@ function AgentNode({
   bg: string;
   fg: string;
   dashed?: boolean;
-}) {
+};
+
+const NODE_SLOTS: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 230, y: 52 },
+  { x: 356, y: 96 },
+  { x: 118, y: 92 },
+  { x: 372, y: 196 },
+  { x: 104, y: 206 },
+];
+
+function AgentNode({ x, y, initials, label, bg, fg, dashed }: ConstellationNode) {
   return (
     <div
       style={{
@@ -155,9 +186,188 @@ function PairedCard({
   );
 }
 
-export function AgentsPage() {
+// --- Real-data shaping -----------------------------------------------------
+
+type ContactChannel = {
+  type: string;
+  status: string;
+};
+type Contact = {
+  id: string;
+  displayName: string;
+  lastInteraction?: number | null;
+  interactionCount: number;
+  channels: ReadonlyArray<ContactChannel>;
+};
+
+/** A paired agent = a contact that owns at least one A2A channel. */
+type PairedAgent = {
+  id: string;
+  name: string;
+  active: boolean;
+  interactionCount: number;
+};
+
+function initialsFor(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "◆";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+}
+
+function isContact(value: unknown): value is Contact {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
   return (
-    <div style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    typeof v.id === "string" &&
+    typeof v.displayName === "string" &&
+    Array.isArray(v.channels)
+  );
+}
+
+/**
+ * The invites endpoint types its rows as `unknown`, so narrow defensively and
+ * read only the fields we render. Whatever string-ish label/status the daemon
+ * provides, we surface it honestly.
+ */
+type Invite = {
+  id: string;
+  label: string;
+  status: string;
+};
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function toInvite(value: unknown, index: number): Invite | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const id =
+    asString(v.id) ?? asString(v.inviteId) ?? asString(v.token) ?? `invite-${index}`;
+  const label =
+    asString(v.label) ??
+    asString(v.displayName) ??
+    asString(v.name) ??
+    asString(v.contactName) ??
+    asString(v.sourceChannel) ??
+    "One-time invite";
+  const status = asString(v.status) ?? "pending";
+  return { id, label, status };
+}
+
+export function AgentsPage() {
+  const assistantId = useActiveAssistantId();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const configQuery = useQuery(
+    integrationsA2aConfigGetOptions({ path: { assistant_id: assistantId } }),
+  );
+  const invitesQuery = useQuery(
+    contactsInvitesGetOptions({ path: { assistant_id: assistantId } }),
+  );
+  const contactsQuery = useQuery(
+    contactsGetOptions({ path: { assistant_id: assistantId } }),
+  );
+
+  const enabled = configQuery.data?.enabled ?? false;
+  const activeConnections = configQuery.data?.activeConnections ?? 0;
+
+  const configToggle = useMutation({
+    mutationFn: async (nextEnabled: boolean) => {
+      if (nextEnabled) {
+        await integrationsA2aConfigPost({
+          path: { assistant_id: assistantId },
+          throwOnError: true,
+        });
+      } else {
+        await integrationsA2aConfigDelete({
+          path: { assistant_id: assistantId },
+          throwOnError: true,
+        });
+      }
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: integrationsA2aConfigGetQueryKey({
+          path: { assistant_id: assistantId },
+        }),
+      }),
+  });
+
+  const pairedAgents = useMemo<PairedAgent[]>(() => {
+    const contacts = contactsQuery.data?.contacts ?? [];
+    return contacts.filter(isContact).flatMap((contact) => {
+      const a2aChannels = contact.channels.filter((ch) => ch.type === "a2a");
+      if (a2aChannels.length === 0) return [];
+      return [
+        {
+          id: contact.id,
+          name: contact.displayName,
+          active: a2aChannels.some((ch) => ch.status === "active"),
+          interactionCount: contact.interactionCount,
+        },
+      ];
+    });
+  }, [contactsQuery.data]);
+
+  const invites = useMemo<Invite[]>(() => {
+    const rows = invitesQuery.data?.invites ?? [];
+    return rows
+      .map((row, i) => toInvite(row, i))
+      .filter((inv): inv is Invite => inv !== null);
+  }, [invitesQuery.data]);
+
+  const goToContacts = () => navigate("/assistant/contacts");
+
+  // Build the hero constellation from real pairings + invites, padding with
+  // dashed "pending" placeholders so the artwork stays balanced.
+  const constellationNodes = useMemo<ConstellationNode[]>(() => {
+    const nodes: ConstellationNode[] = [];
+    for (const agent of pairedAgents) {
+      if (nodes.length >= NODE_SLOTS.length) break;
+      const slot = NODE_SLOTS[nodes.length]!;
+      nodes.push({
+        ...slot,
+        initials: initialsFor(agent.name),
+        label: agent.name.split(/\s+/)[0] ?? "agent",
+        bg: C.blueW,
+        fg: C.blueS,
+      });
+    }
+    for (const invite of invites) {
+      if (nodes.length >= NODE_SLOTS.length) break;
+      const slot = NODE_SLOTS[nodes.length]!;
+      nodes.push({
+        ...slot,
+        initials: "?",
+        label: "pending",
+        bg: "rgba(255,255,255,.06)",
+        fg: "#7E8BA3",
+        dashed: true,
+      });
+    }
+    while (nodes.length < NODE_SLOTS.length) {
+      const slot = NODE_SLOTS[nodes.length]!;
+      nodes.push({
+        ...slot,
+        initials: "?",
+        label: "unknown",
+        bg: "rgba(255,255,255,.06)",
+        fg: "#7E8BA3",
+        dashed: true,
+      });
+    }
+    return nodes;
+  }, [pairedAgents, invites]);
+
+  const isLoading =
+    configQuery.isLoading || invitesQuery.isLoading || contactsQuery.isLoading;
+  const hasPairings = pairedAgents.length > 0 || invites.length > 0;
+
+  return (
+    <div style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif", color: C.t1 }}>
       <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
 
       {/* HERO with network */}
@@ -280,11 +490,9 @@ export function AgentsPage() {
               />
             </span>
           </div>
-          <AgentNode x={230} y={52} initials="DR" label="Dana" bg={C.blueW} fg={C.blueS} />
-          <AgentNode x={356} y={96} initials="◆" label="Vendor" bg={C.violetW} fg={C.violetS} />
-          <AgentNode x={118} y={92} initials="SC" label="Sam" bg={C.violetW} fg={C.violetS} />
-          <AgentNode x={372} y={196} initials="?" label="pending" bg="rgba(255,255,255,.06)" fg="#7E8BA3" dashed />
-          <AgentNode x={104} y={206} initials="?" label="unknown" bg="rgba(255,255,255,.06)" fg="#7E8BA3" dashed />
+          {constellationNodes.map((node) => (
+            <AgentNode key={`${node.x}-${node.y}`} {...node} />
+          ))}
         </div>
       </div>
 
@@ -311,11 +519,51 @@ export function AgentsPage() {
               /a2a/message:send
             </span>{" "}
             so paired agents can reach it.
+            {enabled ? (
+              <>
+                {" · "}
+                <span style={{ color: C.green, fontWeight: 600 }}>
+                  {activeConnections} paired
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
-        <span style={{ width: 46, height: 26, borderRadius: 999, background: C.blue, position: "relative", flexShrink: 0 }}>
-          <span style={{ position: "absolute", width: 22, height: 22, borderRadius: "50%", background: "#fff", top: 2, right: 2, boxShadow: "0 1px 3px rgba(0,0,0,.2)" }} />
-        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Enable A2A endpoint"
+          disabled={configQuery.isLoading || configToggle.isPending}
+          onClick={() => configToggle.mutate(!enabled)}
+          style={{
+            width: 46,
+            height: 26,
+            borderRadius: 999,
+            background: enabled ? C.blue : C.line2,
+            border: "none",
+            padding: 0,
+            position: "relative",
+            flexShrink: 0,
+            cursor: configQuery.isLoading || configToggle.isPending ? "default" : "pointer",
+            opacity: configQuery.isLoading || configToggle.isPending ? 0.6 : 1,
+            transition: "background .15s ease",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              width: 22,
+              height: 22,
+              borderRadius: "50%",
+              background: "#fff",
+              top: 2,
+              left: enabled ? 22 : 2,
+              boxShadow: "0 1px 3px rgba(0,0,0,.2)",
+              transition: "left .15s ease",
+            }}
+          />
+        </button>
       </div>
 
       {/* Paired agents */}
@@ -329,32 +577,146 @@ export function AgentsPage() {
           margin: "26px 0 12px",
         }}
       >
-        Paired agents · 2
+        Paired agents · {pairedAgents.length}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <PairedCard
-          initials="DR"
-          bg={C.blueW}
-          fg={C.blueS}
-          name="Dana's assistant"
-          paired="paired Jun 12"
-          scope="SCOPED"
-          scopeColor={C.blueS}
-          scopeBg={C.blueW}
-          detail="Can discuss the Acme renewal only · 4 messages exchanged"
-        />
-        <PairedCard
-          initials="◆"
-          bg={C.violetW}
-          fg={C.violetS}
-          name="Vendor booking agent"
-          paired="paired Jun 9"
-          scope="TRUSTED"
-          scopeColor={C.green}
-          scopeBg="#E2F0E7"
-          detail="Can place reservations on your behalf · always asks first"
-        />
-      </div>
+
+      {isLoading ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            padding: "40px 0",
+            color: C.t3,
+            fontSize: 13,
+          }}
+        >
+          <Loader2 size={18} style={{ animation: "cueSpin .9s linear infinite" }} />
+          Loading agent network…
+        </div>
+      ) : hasPairings ? (
+        <>
+          {pairedAgents.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {pairedAgents.map((agent) => (
+                <PairedCard
+                  key={agent.id}
+                  initials={initialsFor(agent.name)}
+                  bg={C.blueW}
+                  fg={C.blueS}
+                  name={agent.name}
+                  paired={
+                    agent.interactionCount > 0
+                      ? `${agent.interactionCount} message${agent.interactionCount === 1 ? "" : "s"} exchanged`
+                      : "no messages yet"
+                  }
+                  scope={agent.active ? "ACTIVE" : "PAUSED"}
+                  scopeColor={agent.active ? C.green : C.t2}
+                  scopeBg={agent.active ? "#E2F0E7" : C.line}
+                  detail="Paired over the agent-to-agent protocol"
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {invites.length > 0 ? (
+            <>
+              <div
+                style={{
+                  fontFamily: mono,
+                  fontSize: 10.5,
+                  letterSpacing: ".1em",
+                  textTransform: "uppercase",
+                  color: C.t3,
+                  margin: "22px 0 12px",
+                }}
+              >
+                Pending invites · {invites.length}
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {invites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    style={{
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 9,
+                        background: C.violetW,
+                        color: C.violetS,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 15,
+                        flexShrink: 0,
+                      }}
+                    >
+                      ⧉
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{invite.label}</div>
+                      <div style={{ fontSize: 11.5, color: C.t2 }}>Outstanding invite</div>
+                    </div>
+                    <span
+                      style={{
+                        fontFamily: mono,
+                        fontSize: 10,
+                        background: C.violetW,
+                        color: C.violetS,
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {invite.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <div
+          style={{
+            border: `1px solid ${C.line}`,
+            borderRadius: 14,
+            padding: "28px 20px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600 }}>No paired agents yet</div>
+          <div style={{ fontSize: 12.5, color: C.t2, marginTop: 4, maxWidth: 340, marginInline: "auto" }}>
+            Send a scoped, one-time invite to pair Cue with an agent you trust.
+          </div>
+          <button
+            type="button"
+            onClick={goToContacts}
+            style={{
+              marginTop: 14,
+              fontSize: 12.5,
+              background: C.blue,
+              color: "#fff",
+              border: "none",
+              borderRadius: 9,
+              padding: "9px 16px",
+              cursor: "pointer",
+            }}
+          >
+            Send an invite
+          </button>
+        </div>
+      )}
 
       {/* Create invite */}
       <div
@@ -379,6 +741,7 @@ export function AgentsPage() {
         </div>
         <button
           type="button"
+          onClick={goToContacts}
           style={{ fontSize: 12.5, background: C.blue, color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px", cursor: "pointer" }}
         >
           New invite
