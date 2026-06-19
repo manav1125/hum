@@ -141,7 +141,5 @@ services:
       # external services (HTTP)
       - key: QDRANT_URL
         value: http://cue-qdrant:6333
-      - key: CES_CREDENTIAL_URL
-        value: http://cue-ces:8090
       - key: CUE_BRAIN_MODEL
         value: claude-fable-5
