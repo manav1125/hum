@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Loader2, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 
 import type { ConnectorStatus, ConnectorTool } from "@vellumai/ipc-contract";
 
@@ -243,6 +244,7 @@ function ConnectorRow({
 }
 
 export function ConnectorsPage() {
+  const navigate = useNavigate();
   const [available, setAvailable] = useState<boolean | null>(null);
   const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
   const [busySlug, setBusySlug] = useState<string | null>(null);
@@ -374,6 +376,8 @@ export function ConnectorsPage() {
       <div style={sectionLabel}>MCP servers · model context protocol</div>
       <button
         type="button"
+        onClick={() => navigate("/assistant/")}
+        title="Ask Cue in chat to add an MCP server"
         style={{
           width: "100%",
           border: `1px dashed ${C.line2}`,

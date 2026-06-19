@@ -39,6 +39,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { getLocalBool, setLocalBool } from "@/utils/local-settings";
 import { Button, Card, ConfirmDialog } from "@vellumai/design-library";
+import { useNavigate } from "react-router";
 
 interface SkillsTabProps {
   assistantId: string;
@@ -379,6 +380,7 @@ function EmptyState({
   filter: SkillFilter;
   category: string | null;
 }) {
+  const navigate = useNavigate();
   const { title, subtitle, Icon } = getEmptyStateCopy(filter, category);
   return (
     <Card.Root>
@@ -400,6 +402,14 @@ function EmptyState({
         >
           {subtitle}
         </p>
+        <Button
+          variant="primary"
+          size="regular"
+          className="mt-4"
+          onClick={() => navigate("/assistant/")}
+        >
+          Describe a skill in chat
+        </Button>
       </Card.Body>
     </Card.Root>
   );
