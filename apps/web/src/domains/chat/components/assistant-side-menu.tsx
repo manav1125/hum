@@ -22,6 +22,7 @@ import { useLocation, useNavigate } from "react-router";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 
 import { CollapsibleNavSection } from "@/components/collapsible-nav-section";
+import { CueChannelPresence } from "@/components/cue-channel-presence";
 import { CollapsedGroupIcon, getGroupIndicatorState } from "@/domains/chat/components/collapsed-group-icon";
 import {
     ConversationActionsMenu,
@@ -530,6 +531,8 @@ export function AssistantSideMenu({
           active={location.pathname.endsWith("/trust")}
           onSelect={() => cueNav("/assistant/trust")}
         />
+        {/* Channel presence — live readiness dots (one memory across channels). */}
+        <CueChannelPresence />
         {pinnedApps.map((app) => (
           <SideMenu.Item
             key={app.appId}

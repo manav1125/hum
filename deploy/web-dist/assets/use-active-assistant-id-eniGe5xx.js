@@ -1,1 +1,0 @@
-import{n as e}from"./resolved-assistants-store-BsFOtMaM.js";function t(){let t=e.use.activeAssistantId();if(!t)throw Error(`useActiveAssistantId() called outside ActiveAssistantGate — either mount the route under <ActiveAssistantGate> or read the raw store via useResolvedAssistantsStore.use.activeAssistantId().`);return t}export{t};
