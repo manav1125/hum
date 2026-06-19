@@ -1,1 +1,0 @@
-import{n as e,t}from"./create-selectors-CDULelrw.js";import{t as n}from"./impersonate-version-flag-_N7rtwW7.js";var r=t(e(e=>({name:null,version:null,setIdentity:(t,r)=>{e({name:t,version:n()??r})},clearIdentity:()=>e({name:null,version:null})})));export{r as t};
