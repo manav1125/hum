@@ -10,17 +10,29 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // and bounces non-prod shells off their own host.
 const env = process.env.VELLUM_ENVIRONMENT ?? "dev";
 
+// Cue self-host target: the mobile shell loads the SPA from the user's own
+// Cue deployment. Defaults to the pilot Render URL but is overridable at sync
+// time via CUE_SERVER_URL once a custom domain is set:
+//   CUE_SERVER_URL=https://cue.example.com/assistant VELLUM_ENVIRONMENT=cue bunx cap sync
+const CUE_SELF_HOST_URL =
+  process.env.CUE_SERVER_URL ?? "https://cue-app-3yne.onrender.com/assistant";
+
 const SERVER_URL =
-  env === "production"
-    ? "https://www.vellum.ai/assistant"
-    : env === "staging"
-      ? "https://staging-assistant.vellum.ai/assistant"
-      : "https://dev-assistant.vellum.ai/assistant";
+  env === "cue"
+    ? CUE_SELF_HOST_URL
+    : env === "production"
+      ? "https://www.vellum.ai/assistant"
+      : env === "staging"
+        ? "https://staging-assistant.vellum.ai/assistant"
+        : "https://dev-assistant.vellum.ai/assistant";
 
 const SCHEME_NAMES: Record<string, string> = {
   production: "App",
   staging: "App Staging",
   dev: "App Dev",
+  // Cue self-host reuses the distribution ("App") scheme; the user re-signs
+  // with their own bundle id + provisioning when shipping their Cue build.
+  cue: "App",
 };
 
 const config: CapacitorConfig = {
@@ -30,7 +42,7 @@ const config: CapacitorConfig = {
   // built, signed, and shipped. This value only exists to satisfy Capacitor
   // CLI validation during `cap add` / `cap sync`.
   appId: "ai.vocify.vellumassistantios",
-  appName: "Vellum",
+  appName: "Cue",
   webDir: "capacitor-shell",
   server: {
     url: SERVER_URL,
@@ -58,6 +70,13 @@ const config: CapacitorConfig = {
     // `env(safe-area-inset-*)`, which is what PRs #4821 and #4832 assume.
     contentInset: "never",
     scheme: SCHEME_NAMES[env] ?? "App",
+  },
+  android: {
+    // Native Android project lives as a peer to `apps/web/` at `apps/android/`,
+    // mirroring the iOS layout. Loads the same SPA (server.url) in a native
+    // WebView shell. Build with the Android SDK + a signing keystore:
+    //   VELLUM_ENVIRONMENT=cue bunx cap sync android && (cd ../android && ./gradlew assembleRelease)
+    path: "../android",
   },
 };
 
