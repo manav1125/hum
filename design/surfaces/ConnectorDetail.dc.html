@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{margin:0;-webkit-font-smoothing:antialiased}</style>
+</helmet>
+<div style="--ink:#1A2230;--blue:#3D6EE8;--blue-s:#2B53C4;--blue-w:#DBE4FB;--violet:#7F77DD;--violet-s:#534AB7;--bg:#F4F6F9;--sunken:#EEF1F6;--line:#E5E9F0;--line2:#D7DDE7;--t1:#1A2230;--t2:#5A6672;--t3:#8D99A5;--green:#277E41;--amber:#C98A1B;--danger:#DA491A;font-family:'DM Sans',system-ui,sans-serif;background:#F4F6F9;color:#1A2230;min-height:100vh;padding:32px;display:flex;flex-direction:column;align-items:center;gap:18px;line-height:1.5">
+
+  <div style="width:100%;max-width:1320px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+    <a href="Connectors.dc.html" style="font-family:'DM Mono',monospace;font-size:12px;color:#5A6672;text-decoration:none;display:inline-flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:7px 14px">← Connectors</a>
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.06em;color:#8D99A5">/assistant/connectors/gmail · per-tool permissions</div>
+    <div style="display:flex;gap:4px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:4px">
+      <span onClick="{{ showPerms }}" style="{{ tabPerms }}">Permissions</span>
+      <span onClick="{{ showIssue }}" style="{{ tabIssue }}">Connection issue</span>
+    </div>
+  </div>
+
+  <div style="width:100%;max-width:1320px;background:#FFFFFF;border:1px solid #D7DDE7;border-radius:14px;overflow:hidden;box-shadow:0 30px 70px -38px rgba(26,34,48,.4)">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;background:#F7F8FB;border-bottom:1px solid #E5E9F0"><span style="width:12px;height:12px;border-radius:50%;background:#ED6A5E"></span><span style="width:12px;height:12px;border-radius:50%;background:#F4BF50"></span><span style="width:12px;height:12px;border-radius:50%;background:#61C554"></span><span style="margin-left:12px;font-size:12.5px;color:#8D99A5;font-family:'DM Mono',monospace">Cue · Connectors</span></div>
+
+    <div style="display:grid;grid-template-columns:220px 280px 1fr;min-height:720px">
+      <!-- sidebar -->
+      <aside style="background:var(--ink);color:#fff;padding:18px 13px;display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:10px;padding:4px 8px 16px"><span style="width:30px;height:30px;border-radius:9px;background:#1A2230;border:1.5px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;position:relative"><span style="font-size:18px;font-weight:600">C</span><span style="position:absolute;width:6px;height:6px;border-radius:50%;background:var(--blue);right:7px;bottom:9px"></span></span><b style="font-size:21px;font-weight:500;letter-spacing:-1px">cue<span style="color:var(--blue)">.</span></b></div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">◉</span> Home</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">▮</span> Chat</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;background:rgba(255,255,255,.09)"><span style="width:16px;text-align:center;color:var(--blue)">✦</span> Intelligence</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">▤</span> Library</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">☷</span> Contacts</div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 8px 2px;border-top:1px solid rgba(255,255,255,.08);font-size:12.5px;color:#C4CCDA"><span style="width:28px;height:28px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500">M</span> Manav · guardian</div>
+      </aside>
+
+      <!-- connector list -->
+      <div style="border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:16px 16px 10px;display:flex;align-items:center;justify-content:space-between"><span style="font-size:16px;font-weight:600">Connectors</span><span style="color:var(--t3);font-size:14px">🔍 +</span></div>
+        <div style="padding:0 10px;overflow:auto;display:flex;flex-direction:column;gap:2px">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding:10px 8px 6px">Connected · 3</div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px;background:var(--sunken)"><span style="width:30px;height:30px;border-radius:8px;background:#fff;border:1px solid #EDEFF3;display:flex;align-items:center;justify-content:center;font-size:15px">📧</span><div style="flex:1"><div style="font-size:13.5px;font-weight:600">Gmail</div><div style="font-size:11px;color:var(--t2)">3 read · 9 write</div></div><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px"><span style="width:30px;height:30px;border-radius:8px;background:#4A154B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px">#</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">Slack</div><div style="font-size:11px;color:var(--t2)">2 read · 3 write</div></div><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px"><span style="width:30px;height:30px;border-radius:8px;background:#EAF0FE;color:#3D6EE8;display:flex;align-items:center;justify-content:center;font-size:14px">◳</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">Google Calendar</div><div style="font-size:11px;color:var(--t2)">2 read · 4 write</div></div><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span></div>
+          <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);padding:14px 8px 6px">Needs attention</div>
+          <div onClick="{{ showIssue }}" style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px;cursor:pointer"><span style="width:30px;height:30px;border-radius:8px;background:#fff;border:1px solid #EDEFF3;display:flex;align-items:center;justify-content:center;font-size:14px">#</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">Slack · workspace 2</div><div style="font-size:11px;color:var(--amber)">expired</div></div><span style="color:var(--amber);font-size:13px">⚠</span></div>
+        </div>
+      </div>
+
+      <!-- detail -->
+      <div style="display:flex;flex-direction:column;overflow:hidden">
+        <!-- PERMISSIONS -->
+        <sc-if value="{{ isPerms }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:24px 28px;overflow:auto">
+          <div style="display:flex;align-items:center;gap:13px">
+            <span style="width:40px;height:40px;border-radius:11px;background:#fff;border:1px solid #EDEFF3;display:flex;align-items:center;justify-content:center;font-size:20px">📧</span>
+            <div style="flex:1"><div style="font-size:19px;font-weight:600;letter-spacing:-.3px">Gmail</div><div style="font-size:12px;color:var(--t2)">Connected as manav@brinc.io</div></div>
+            <span style="font-size:12.5px;border:1px solid var(--line2);border-radius:9px;padding:8px 15px">Disconnect</span>
+          </div>
+          <p style="font-size:14px;color:var(--t2);line-height:1.65;margin-top:16px;max-width:680px">Connect Gmail so Cue can find important threads, read whole conversations for context, and draft replies on your behalf — perfect for catching up on what you missed and prepping before meetings.</p>
+
+          <div style="margin-top:22px"><div style="font-size:15px;font-weight:600">Tool permissions</div><div style="font-size:12.5px;color:var(--t2);margin-top:2px">Choose when Cue is allowed to use each tool. <b style="color:var(--t1)">Stop always wins.</b></div></div>
+
+          <!-- read-only group -->
+          <div style="margin-top:18px;border:1px solid var(--line);border-radius:13px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#FBFBFD;border-bottom:1px solid var(--line)"><div style="font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:9px">Read-only tools <span style="font-family:'DM Mono',monospace;font-size:10px;background:var(--sunken);color:var(--t2);padding:1px 7px;border-radius:5px">3</span></div><span style="display:inline-flex;align-items:center;gap:7px;font-size:12px;background:#E9F5EE;color:var(--green);border:1px solid #BFE3CD;border-radius:8px;padding:5px 11px"><span style="width:7px;height:7px;border-radius:50%;background:var(--green)"></span>Always allow ▾</span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #F0F2F6"><span style="flex:1;font-size:13px;color:var(--t1)">Retrieves a specific email thread</span><span style="display:inline-flex;align-items:center;gap:5px;background:#E9F5EE;border:1px solid #BFE3CD;border-radius:8px;padding:3px"><span style="width:24px;height:24px;border-radius:6px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">✓</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9BB7A6">✋</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9BB7A6">⊘</span></span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #F0F2F6"><span style="flex:1;font-size:13px;color:var(--t1)">Lists user labels</span><span style="display:inline-flex;align-items:center;gap:5px;background:#E9F5EE;border:1px solid #BFE3CD;border-radius:8px;padding:3px"><span style="width:24px;height:24px;border-radius:6px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">✓</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9BB7A6">✋</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9BB7A6">⊘</span></span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px"><span style="flex:1;font-size:13px;color:var(--t1)">Searches threads in your inbox</span><span style="display:inline-flex;align-items:center;gap:5px;background:#E9F5EE;border:1px solid #BFE3CD;border-radius:8px;padding:3px"><span style="width:24px;height:24px;border-radius:6px;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">✓</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9BB7A6">✋</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9BB7A6">⊘</span></span></div>
+          </div>
+
+          <!-- write group -->
+          <div style="margin-top:14px;border:1px solid var(--line);border-radius:13px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#FBFBFD;border-bottom:1px solid var(--line)"><div style="font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:9px">Write / delete tools <span style="font-family:'DM Mono',monospace;font-size:10px;background:var(--sunken);color:var(--t2);padding:1px 7px;border-radius:5px">9</span></div><span style="display:inline-flex;align-items:center;gap:7px;font-size:12px;background:#FBF0DA;color:var(--amber);border:1px solid #ECD9A6;border-radius:8px;padding:5px 11px">✋ Needs approval ▾</span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #F0F2F6"><span style="flex:1;font-size:13px;color:var(--t1)">Creates a new draft email</span><span style="display:inline-flex;align-items:center;gap:5px;background:#FBF0DA;border:1px solid #ECD9A6;border-radius:8px;padding:3px"><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#C2A862">✓</span><span style="width:24px;height:24px;border-radius:6px;background:var(--amber);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">✋</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#C2A862">⊘</span></span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #F0F2F6"><span style="flex:1;font-size:13px;color:var(--t1)">Sends an email <span style="font-family:'DM Mono',monospace;font-size:10px;background:#FCEBEB;color:var(--danger);padding:1px 6px;border-radius:5px">high impact</span></span><span style="display:inline-flex;align-items:center;gap:5px;background:#FBF0DA;border:1px solid #ECD9A6;border-radius:8px;padding:3px"><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#C2A862">✓</span><span style="width:24px;height:24px;border-radius:6px;background:var(--amber);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">✋</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#C2A862">⊘</span></span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #F0F2F6"><span style="flex:1;font-size:13px;color:var(--t1)">Adds labels to a message</span><span style="display:inline-flex;align-items:center;gap:5px;background:#FBF0DA;border:1px solid #ECD9A6;border-radius:8px;padding:3px"><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#C2A862">✓</span><span style="width:24px;height:24px;border-radius:6px;background:var(--amber);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">✋</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#C2A862">⊘</span></span></div>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 16px"><span style="flex:1;font-size:13px;color:var(--t1)">Deletes a label <span style="font-family:'DM Mono',monospace;font-size:10px;background:#FCEBEB;color:var(--danger);padding:1px 6px;border-radius:5px">high impact</span></span><span style="display:inline-flex;align-items:center;gap:5px;background:#FCEBEB;border:1px solid #F0B9AC;border-radius:8px;padding:3px"><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#CDA096">✓</span><span style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#CDA096">✋</span><span style="width:24px;height:24px;border-radius:6px;background:var(--danger);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px">⊘</span></span></div>
+          </div>
+          <div style="margin-top:14px;font-family:'DM Mono',monospace;font-size:11px;color:var(--t3)">✓ allow · ✋ ask each time · ⊘ never — Cue defaults write/delete to "ask," and high-impact tools to "never" until you choose.</div>
+        </div>
+        </sc-if>
+
+        <!-- CONNECTION ISSUE -->
+        <sc-if value="{{ isIssue }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:16px;padding:40px">
+          <span style="width:64px;height:64px;border-radius:16px;background:#4A154B;color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px">#</span>
+          <div style="display:flex;align-items:center;gap:9px;font-size:18px;font-weight:600;color:var(--amber)"><span style="font-size:18px">⚠</span> Connection issue</div>
+          <p style="font-size:14px;color:var(--t2);max-width:360px">Cue's connection to <b style="color:var(--t1)">Slack · workspace 2</b> has expired. Your data is safe and nothing was lost — reconnect to re-authenticate.</p>
+          <div style="display:flex;gap:8px"><span style="font-size:13px;background:var(--ink);color:#fff;border-radius:9px;padding:10px 20px">Reconnect</span><span style="font-size:13px;border:1px solid var(--line2);border-radius:9px;padding:10px 16px">Remove</span></div>
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;color:var(--t3);margin-top:4px">last synced 2 days ago · 09:12</div>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1384,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  state = { view: 'perms' };
+  tab(name){const a=this.state.view===name;return{cursor:'pointer',userSelect:'none',fontSize:'12px',fontFamily:"'DM Mono',monospace",borderRadius:'999px',padding:'6px 13px',color:a?'#fff':'#5A6672',background:a?'#1A2230':'transparent'};}
+  renderVals(){const v=this.state.view;const s=(x)=>()=>this.setState({view:x});return{isPerms:v==='perms',isIssue:v==='issue',showPerms:s('perms'),showIssue:s('issue'),tabPerms:this.tab('perms'),tabIssue:this.tab('issue')};}
+}
+</script>
+</body>
+</html>

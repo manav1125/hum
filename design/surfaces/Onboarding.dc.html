@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{margin:0;-webkit-font-smoothing:antialiased}
+@keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+@keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+@keyframes cuePing{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+@keyframes cueHatch{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}</style>
+</helmet>
+<div style="font-family:'DM Sans',system-ui,sans-serif;background:#F4F6F9;color:#1A2230;min-height:100vh;padding:32px;line-height:1.5">
+  <div style="max-width:1500px;margin:0 auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px">
+      <a href="../Cue Design Book.dc.html" style="font-family:'DM Mono',monospace;font-size:12px;color:#5A6672;text-decoration:none;display:inline-flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:7px 14px">← Design book</a>
+      <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.06em;color:#8D99A5">/assistant/onboarding · funnel · 440×630</div>
+      <div style="width:96px"></div>
+    </div>
+
+    <div style="display:flex;gap:28px;flex-wrap:wrap">
+
+      <!-- WELCOME -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:#8D99A5;margin-bottom:9px">welcome</div>
+        <div style="width:340px;height:630px;background:#1A2230;border-radius:30px;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:40px;text-align:center;color:#fff">
+          <span style="position:relative;width:110px;height:110px;border-radius:26%;background:#0F1620;display:flex;align-items:center;justify-content:center"><span style="position:absolute;inset:0;border-radius:26%;border:2px solid rgba(61,110,232,.55);animation:cuePing 2.6s ease-out infinite"></span><span style="width:64px;height:64px;border-radius:50%;box-shadow:0 0 0 6px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 6s ease-in-out infinite;position:relative;display:block"><span style="position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;animation:cueBlink 4s infinite;display:block"></span></span></span>
+          <div style="font-size:28px;font-weight:500;letter-spacing:-.8px">Meet Cue</div>
+          <p style="font-size:14px;color:#AEB7C7;max-width:240px;margin:0">An assistant that learns how you work and never drops a thing. Let's hatch yours.</p>
+          <div style="margin-top:8px;background:#3D6EE8;color:#fff;border-radius:11px;padding:13px 30px;font-size:14px;font-weight:500">Begin</div>
+        </div>
+      </div>
+
+      <!-- HATCHING (animation state) -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:#534AB7;margin-bottom:9px">hatching · animation state</div>
+        <div style="width:340px;height:630px;background:#1A2230;border-radius:30px;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;padding:40px;text-align:center;color:#fff">
+          <span style="position:relative;width:130px;height:130px;border-radius:26%;background:#0F1620;display:flex;align-items:center;justify-content:center;animation:cueHatch 2.4s ease-in-out infinite">
+            <span style="position:absolute;inset:0;border-radius:26%;border:2px solid rgba(61,110,232,.55);animation:cuePing 2.2s ease-out infinite"></span>
+            <span style="position:absolute;inset:0;border-radius:26%;border:2px solid rgba(127,119,221,.4);animation:cuePing 2.2s ease-out .7s infinite"></span>
+            <span style="width:76px;height:76px;border-radius:50%;box-shadow:0 0 0 7px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 4s ease-in-out infinite;position:relative;display:block"><span style="position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;animation:cueBlink 3s infinite;display:block"></span></span>
+          </span>
+          <div style="font-size:22px;font-weight:500;letter-spacing:-.5px">Hatching your Cue…</div>
+          <div style="display:flex;flex-direction:column;gap:9px;width:100%">
+            <div style="background:rgba(255,255,255,.06);border-radius:11px;padding:11px 14px;text-align:left;font-size:13px;display:flex;align-items:center;gap:9px"><span style="color:#3D6EE8">✓</span> Learned your tone — concise, direct</div>
+            <div style="background:rgba(255,255,255,.06);border-radius:11px;padding:11px 14px;text-align:left;font-size:13px;display:flex;align-items:center;gap:9px"><span style="color:#3D6EE8">✓</span> Mapped your working hours</div>
+            <div style="background:rgba(255,255,255,.06);border-radius:11px;padding:11px 14px;text-align:left;font-size:13px;display:flex;align-items:center;gap:9px;color:#9DB4E6"><span style="width:13px;height:13px;border:2px solid #3D6EE8;border-top-color:transparent;border-radius:50%;display:inline-block"></span> Building memory scaffold…</div>
+          </div>
+          <div style="display:flex;gap:7px"><span style="width:8px;height:8px;border-radius:50%;background:#3D6EE8"></span><span style="width:8px;height:8px;border-radius:50%;background:#3D6EE8"></span><span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.25)"></span></div>
+        </div>
+      </div>
+
+      <!-- PRIVACY / HOSTING -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:#8D99A5;margin-bottom:9px">privacy & hosting</div>
+        <div style="width:340px;height:630px;background:#fff;border:1px solid #E5E9F0;border-radius:30px;overflow:hidden;display:flex;flex-direction:column;padding:34px 28px">
+          <div style="font-family:'DM Mono',monospace;font-size:11px;color:#8D99A5">Step 4 of 5</div>
+          <div style="font-size:24px;font-weight:500;letter-spacing:-.6px;margin-top:6px">Where it runs</div>
+          <div style="display:flex;flex-direction:column;gap:11px;margin-top:22px">
+            <div style="border:2px solid #3D6EE8;border-radius:14px;padding:15px;background:#FAFBFF"><div style="font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:space-between">Self-host · your cloud <span style="font-family:'DM Mono',monospace;font-size:10px;background:#DBE4FB;color:#2B53C4;padding:2px 7px;border-radius:5px">chosen</span></div><div style="font-size:12.5px;color:#5A6672;margin-top:4px">Your data, your infrastructure, your keys.</div></div>
+            <div style="border:1px solid #E5E9F0;border-radius:14px;padding:15px"><div style="font-size:14px;font-weight:500">Managed</div><div style="font-size:12.5px;color:#5A6672;margin-top:4px">We run it for you.</div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #E5E9F0;border-left:3px solid #7F77DD;border-radius:0 12px 12px 0;padding:12px 14px;font-size:12.5px;color:#5A6672;margin-top:18px">You are the guardian. Trusted contacts and always-on capture stay off until you turn them on.</div>
+          <div style="margin-top:auto;background:#3D6EE8;color:#fff;border-radius:12px;padding:14px;text-align:center;font-size:14px;font-weight:500">Hatch Cue</div>
+        </div>
+      </div>
+
+      <!-- ACTIVE -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:11px;color:#8D99A5;margin-bottom:9px">active · ready</div>
+        <div style="width:340px;height:630px;background:#fff;border:1px solid #E5E9F0;border-radius:30px;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:44px 28px;text-align:center">
+          <span style="position:relative;width:96px;height:96px;border-radius:26%;background:#1A2230;display:flex;align-items:center;justify-content:center"><span style="width:56px;height:56px;border-radius:50%;box-shadow:0 0 0 6px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 6s ease-in-out infinite;position:relative;display:block"><span style="position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;animation:cueBlink 4s infinite;display:block"></span></span></span>
+          <div style="font-size:24px;font-weight:500;letter-spacing:-.6px;margin-top:22px">Cue is awake</div>
+          <p style="font-size:13.5px;color:#5A6672;margin-top:8px">Here's what I already know about how you work:</p>
+          <div style="display:flex;flex-direction:column;gap:9px;width:100%;margin-top:18px">
+            <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 14px;text-align:left"><div style="font-size:13px;font-weight:500">Concise & direct</div><div style="font-size:12px;color:#5A6672">learned from your replies</div></div>
+            <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 14px;text-align:left"><div style="font-size:13px;font-weight:500">Weekdays · 8:00–19:00</div><div style="font-size:12px;color:#5A6672">your working hours</div></div>
+            <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 14px;text-align:left"><div style="font-size:13px;font-weight:500">Acme · hiring · Q3 plan</div><div style="font-size:12px;color:#5A6672">what matters now</div></div>
+          </div>
+          <div style="margin-top:auto;background:#1A2230;color:#fff;border-radius:12px;padding:14px;width:100%;text-align:center;font-size:14px;font-weight:500">Start with Cue</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1500,&quot;height&quot;:760}}"></script>
+</body>
+</html>
