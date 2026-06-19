@@ -51,13 +51,28 @@ export function isCueSelfHostDeploy(): boolean {
   }
 }
 
+/** True when a gateway token is stored (regardless of the self-host flag). */
+function hasStoredGatewayToken(): boolean {
+  try {
+    return !!localStorage.getItem(LS_TOKEN_KEY);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Whether to render the Cue Connect screen instead of booting the router: a
- * self-host deploy that has no seeded token yet (fresh browser). Once a token
- * is seeded (`isSelfHostMode()` true) the normal authenticated boot runs.
+ * self-host deploy with no stored gateway token.
+ *
+ * Gated on TOKEN PRESENCE, not the `cue:selfHost` flag. The auth layer clears
+ * the token on a 401 (`clearGatewayToken`) but leaves the flag set, so a device
+ * whose token expired or was revoked must still be able to re-connect — gating
+ * on the flag would strand it on the old onboarding screen. A `?cueToken=` seed
+ * runs in `bootstrapCueSelfHost()` before this check, so that path still boots
+ * straight through to the authenticated session.
  */
 export function shouldShowCueConnect(): boolean {
-  return isCueSelfHostDeploy() && !isSelfHostMode();
+  return isCueSelfHostDeploy() && !hasStoredGatewayToken();
 }
 
 /**
