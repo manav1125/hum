@@ -1,4 +1,31 @@
-/** Next moves — the unified queue (design v0.3 §02). Faithful design surface; live aggregation of email/chat/tasks/approvals/calls is the Phase-3 wiring. */
+/**
+ * Next moves — the unified queue (design v0.3 §02).
+ *
+ * Wired to the real home feed (`useHomeFeedQuery`): the daemon's proactivity
+ * loop already aggregates email / chat / tasks / followups / approvals into one
+ * ranked `FeedItem[]`, which is exactly this surface. Renders the live feed in
+ * the v0.3 row design (urgency bar · category icon · title/summary · action
+ * chip); feed actions and status changes go through the same mutations Home
+ * uses. Calm working-surface styling per the design system.
+ */
+
+import {
+  Calendar,
+  CircleDot,
+  Loader2,
+  Mail,
+  Settings2,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
+import { useMemo, type ReactNode } from "react";
+import { useNavigate } from "react-router";
+
+import type { FeedItem, FeedItemCategory } from "@vellumai/assistant-api";
+
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
+import { sortFeedItems } from "@/domains/home/utils";
 
 const C = {
   ink: "#1A2230",
@@ -7,7 +34,6 @@ const C = {
   blueW: "#DBE4FB",
   violet: "#7F77DD",
   violetS: "#534AB7",
-  bg: "#F4F6F9",
   surface: "#FFFFFF",
   sunken: "#EEF1F6",
   line: "#E5E9F0",
@@ -21,213 +47,77 @@ const C = {
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
-type Urgency = "hi" | "md" | "lo";
-
-const urgencyColor: Record<Urgency, string> = {
-  hi: C.danger,
-  md: C.amber,
-  lo: C.line2,
-};
-
-interface QueueRow {
-  urgency: Urgency;
-  glyph: string;
-  tileBg: string;
-  title: string;
-  /** Optional inline source tag rendered after the title (e.g. "from meeting"). */
-  srcTag?: string;
-  subtitle: string;
-  /** Trailing action. "done" renders a muted mono tag instead of a chip. */
-  action: { kind: "primary" | "default" | "done"; label: string };
-}
-
-const ROWS: QueueRow[] = [
-  {
-    urgency: "hi",
-    glyph: "✉",
-    tileBg: C.blueW,
-    title: "Reply to Dana — renewal blocker",
-    subtitle: "She's waiting since Tue · Cue drafted a reply",
-    action: { kind: "primary", label: "Review draft" },
-  },
-  {
-    urgency: "hi",
-    glyph: "☎",
-    tileBg: "#FDE7E2",
-    title: "Approve · Cue will call Bottega to book",
-    subtitle: "Thu 7pm, 4 people · uses saved card",
-    action: { kind: "primary", label: "Approve" },
-  },
-  {
-    urgency: "md",
-    glyph: "✦",
-    tileBg: "#EEEDFB",
-    title: "Share Q3 forecast",
-    srcTag: "from meeting",
-    subtitle: "Came up twice with Acme · owner: you",
-    action: { kind: "default", label: "Do it" },
-  },
-  {
-    urgency: "md",
-    glyph: "⧖",
-    tileBg: "#FCF3DD",
-    title: 'You promised Sam the deck "by Friday"',
-    subtitle: "Captured from Slack · it's Friday",
-    action: { kind: "default", label: "Send deck" },
-  },
-  {
-    urgency: "lo",
-    glyph: "✓",
-    tileBg: "#E2F0E7",
-    title: "Standup notes filed · 3 follow-ups created",
-    subtitle: "Cue handled it · 8:00am",
-    action: { kind: "done", label: "done" },
-  },
-];
-
-function HeaderChip({ label, filled }: { label: string; filled?: boolean }) {
-  return (
-    <span
-      style={{
-        fontSize: 12,
-        border: `1px solid ${filled ? C.ink : C.line2}`,
-        background: filled ? C.ink : C.surface,
-        color: filled ? "#fff" : C.t1,
-        borderRadius: 8,
-        padding: "5px 10px",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-function ActionChip({ action }: { action: QueueRow["action"] }) {
-  if (action.kind === "done") {
-    return (
-      <span style={{ fontFamily: mono, fontSize: 11.5, color: C.t3 }}>{action.label}</span>
-    );
+/** Category → icon glyph + tile background (mirrors the v0.3 row icons). */
+function categoryVisual(category: FeedItemCategory | undefined): {
+  icon: ReactNode;
+  bg: string;
+} {
+  switch (category) {
+    case "email":
+      return { icon: <Mail size={15} color={C.blueS} />, bg: C.blueW };
+    case "scheduling":
+      return { icon: <Calendar size={15} color="#8C7225" />, bg: "#FCF3DD" };
+    case "security":
+      return { icon: <ShieldAlert size={15} color={C.danger} />, bg: "#FDE7E2" };
+    case "background":
+      return { icon: <Sparkles size={15} color={C.violetS} />, bg: "#EEEDFB" };
+    case "system":
+      return { icon: <Settings2 size={15} color={C.t2} />, bg: C.sunken };
+    default:
+      return { icon: <CircleDot size={15} color={C.t2} />, bg: C.sunken };
   }
-  const primary = action.kind === "primary";
-  return (
-    <button
-      type="button"
-      style={{
-        fontSize: 12.5,
-        fontWeight: 500,
-        border: `1px solid ${primary ? C.blue : C.line2}`,
-        background: primary ? C.blue : C.surface,
-        color: primary ? "#fff" : C.t1,
-        borderRadius: 9,
-        padding: "7px 14px",
-        cursor: "pointer",
-        whiteSpace: "nowrap",
-        flexShrink: 0,
-      }}
-    >
-      {action.label}
-    </button>
-  );
 }
 
-function QueueRowItem({ row }: { row: QueueRow }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 13,
-        padding: "13px 16px",
-        borderBottom: `1px solid ${C.line}`,
-      }}
-    >
-      <span
-        style={{
-          alignSelf: "stretch",
-          width: 3,
-          borderRadius: 3,
-          background: urgencyColor[row.urgency],
-          flexShrink: 0,
-        }}
-      />
-      <span
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 8,
-          background: row.tileBg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 15,
-          flexShrink: 0,
-        }}
-      >
-        {row.glyph}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 13.5,
-            fontWeight: 500,
-            color: C.t1,
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            flexWrap: "wrap",
-          }}
-        >
-          {row.title}
-          {row.srcTag ? (
-            <span
-              style={{
-                fontFamily: mono,
-                fontSize: 10.5,
-                padding: "1px 6px",
-                borderRadius: 5,
-                background: "#EEEDFB",
-                color: C.violetS,
-              }}
-            >
-              {row.srcTag}
-            </span>
-          ) : null}
-        </div>
-        <div style={{ fontSize: 12, color: C.t2, marginTop: 2 }}>{row.subtitle}</div>
-      </div>
-      <ActionChip action={row.action} />
-    </div>
-  );
+/** Urgency → the 3px left bar color. */
+function urgencyColor(item: FeedItem): string {
+  if (item.urgency === "critical" || item.urgency === "high") return C.danger;
+  if (item.urgency === "medium") return C.amber;
+  return C.line2;
 }
 
 export function NextMovesPage() {
+  const assistantId = useActiveAssistantId();
+  const navigate = useNavigate();
+  const feed = useHomeFeedQuery(assistantId);
+
+  const items = useMemo(() => {
+    const all = feed.data?.items ?? [];
+    return sortFeedItems(all.filter((i) => i.status !== "dismissed"));
+  }, [feed.data?.items]);
+
+  const needsYou = items.filter((i) => i.status === "new").length;
+  const waiting = items.filter((i) => i.status === "seen").length;
+  const done = items.filter((i) => i.status === "acted_on").length;
+
+  function handlePrimary(item: FeedItem) {
+    const action = item.actions?.[0];
+    if (action) {
+      feed.triggerAction.mutate({ itemId: item.id, actionId: action.id });
+      return;
+    }
+    if (item.conversationId) {
+      navigate(`/assistant/conversations/${item.conversationId}`);
+      return;
+    }
+    feed.updateStatus.mutate({ itemId: item.id, status: "acted_on" });
+  }
+
   return (
-    <div
-      style={{
-        fontFamily: "'DM Sans', system-ui, sans-serif",
-        color: C.t1,
-        height: "100%",
-        overflowY: "auto",
-      }}
-    >
+    <div style={{ height: "100%", overflowY: "auto" }}>
       <div style={{ maxWidth: 860, margin: "0 auto", padding: 24 }}>
-        {/* eyebrow */}
         <div
           style={{
             fontFamily: mono,
             fontSize: 11.5,
-            letterSpacing: ".14em",
+            letterSpacing: "0.14em",
             textTransform: "uppercase",
             color: C.blueS,
+            marginBottom: 10,
           }}
         >
           Next moves
         </div>
 
-        {/* header row */}
         <div
           style={{
             display: "flex",
@@ -235,38 +125,64 @@ export function NextMovesPage() {
             justifyContent: "space-between",
             gap: 12,
             flexWrap: "wrap",
-            marginTop: 8,
+            marginBottom: 16,
           }}
         >
-          <div style={{ fontSize: 16, fontWeight: 500 }}>
-            12 things · Cue ranked them for you
+          <div style={{ fontSize: 18, fontWeight: 500, color: C.t1 }}>
+            {items.length > 0
+              ? `${items.length} ${items.length === 1 ? "thing" : "things"} · Cue ranked them for you`
+              : "Next moves"}
           </div>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <HeaderChip label="Needs you · 4" filled />
-            <HeaderChip label="Waiting · 5" />
-            <HeaderChip label="Scheduled · 3" />
-          </div>
+          {items.length > 0 ? (
+            <div style={{ display: "flex", gap: 7 }}>
+              <CountChip label="Needs you" n={needsYou} ink />
+              {waiting > 0 ? <CountChip label="Waiting" n={waiting} /> : null}
+              {done > 0 ? <CountChip label="Done" n={done} /> : null}
+            </div>
+          ) : null}
         </div>
 
-        {/* queue list */}
+        {feed.isLoading ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "24px 0",
+              fontSize: 13,
+              color: C.t2,
+            }}
+          >
+            <Loader2 className="size-4 animate-spin" /> Gathering your next moves…
+          </div>
+        ) : items.length === 0 ? (
+          <EmptyState error={feed.isError} />
+        ) : (
+          <div
+            style={{
+              border: `1px solid ${C.line}`,
+              borderRadius: 14,
+              overflow: "hidden",
+              background: C.surface,
+            }}
+          >
+            {items.map((item, idx) => (
+              <MoveRow
+                key={item.id}
+                item={item}
+                last={idx === items.length - 1}
+                onPrimary={() => handlePrimary(item)}
+                pending={
+                  feed.triggerAction.isPending || feed.updateStatus.isPending
+                }
+              />
+            ))}
+          </div>
+        )}
+
         <div
           style={{
-            marginTop: 16,
-            border: `1px solid ${C.line}`,
-            borderRadius: 14,
             background: C.surface,
-            overflow: "hidden",
-          }}
-        >
-          {ROWS.map((row, i) => (
-            <QueueRowItem key={i} row={row} />
-          ))}
-        </div>
-
-        {/* left-accent note */}
-        <div
-          style={{
-            background: "#fff",
             border: `1px solid ${C.line}`,
             borderLeft: `3px solid ${C.violet}`,
             borderRadius: "0 12px 12px 0",
@@ -276,10 +192,168 @@ export function NextMovesPage() {
             marginTop: 16,
           }}
         >
-          Why it&apos;s world-class: every other app makes you check 5 inboxes. Cue reads them all
-          and gives you one ranked list of what actually needs you — the literal product promise,
-          &ldquo;never miss your next move.&rdquo;
+          Every other app makes you check five inboxes. Cue reads them all and
+          gives you one ranked list of what actually needs you — the product
+          promise, “never miss your next move.”
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CountChip({
+  label,
+  n,
+  ink = false,
+}: {
+  label: string;
+  n: number;
+  ink?: boolean;
+}) {
+  return (
+    <span
+      style={{
+        fontSize: 12,
+        border: `1px solid ${ink ? C.ink : C.line2}`,
+        background: ink ? C.ink : C.surface,
+        color: ink ? "#fff" : C.t2,
+        borderRadius: 8,
+        padding: "5px 10px",
+        display: "inline-flex",
+        gap: 6,
+        alignItems: "center",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label} · {n}
+    </span>
+  );
+}
+
+function MoveRow({
+  item,
+  last,
+  onPrimary,
+  pending,
+}: {
+  item: FeedItem;
+  last: boolean;
+  onPrimary: () => void;
+  pending: boolean;
+}) {
+  const vis = categoryVisual(item.category);
+  const title = item.title ?? item.summary;
+  const sub = item.title ? item.summary : undefined;
+  const actionLabel = item.actions?.[0]?.label ?? "Open";
+  const primary = item.urgency === "high" || item.urgency === "critical";
+  const isDone = item.status === "acted_on";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+        padding: "13px 16px",
+        borderBottom: last ? "none" : `1px solid ${C.line}`,
+      }}
+    >
+      <span
+        style={{
+          width: 3,
+          alignSelf: "stretch",
+          borderRadius: 3,
+          background: urgencyColor(item),
+          flexShrink: 0,
+        }}
+      />
+      <span
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: vis.bg,
+          flexShrink: 0,
+        }}
+      >
+        {vis.icon}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 500,
+            color: C.t1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {title}
+        </div>
+        {sub ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: C.t2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {sub}
+          </div>
+        ) : null}
+      </div>
+      {isDone ? (
+        <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>done</span>
+      ) : (
+        <button
+          type="button"
+          onClick={onPrimary}
+          disabled={pending}
+          style={{
+            fontSize: 12,
+            fontWeight: 500,
+            border: `1px solid ${primary ? C.blue : C.line2}`,
+            background: primary ? C.blue : C.surface,
+            color: primary ? "#fff" : C.t1,
+            borderRadius: 8,
+            padding: "5px 10px",
+            cursor: pending ? "default" : "pointer",
+            opacity: pending ? 0.6 : 1,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ error }: { error: boolean }) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        background: C.surface,
+        padding: "40px 24px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: 15, fontWeight: 500, color: C.t1 }}>
+        {error ? "Couldn’t load your next moves" : "You’re all caught up"}
+      </div>
+      <div style={{ fontSize: 13, color: C.t2, marginTop: 6 }}>
+        {error
+          ? "Cue couldn’t reach the feed just now — try again in a moment."
+          : "Cue ranks email, messages, tasks, approvals and calls here as they need you."}
       </div>
     </div>
   );
