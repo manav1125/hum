@@ -82,8 +82,11 @@ export function PeoplePage() {
   });
 
   const contacts = useMemo(() => {
-    // Relationship memory is about people, not the assistant's own identity.
-    const list = (contactsQuery.data ?? []).filter((c) => c.role !== "assistant");
+    // Relationship memory is about other people — exclude the assistant's own
+    // identity and the guardian (you).
+    const list = (contactsQuery.data ?? []).filter(
+      (c) => c.role !== "assistant" && c.role !== "guardian",
+    );
     // Most-recently/most-active first.
     return [...list].sort(
       (a, b) =>

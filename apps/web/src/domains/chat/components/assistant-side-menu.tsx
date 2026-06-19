@@ -2,13 +2,16 @@ import {
     Brain,
     Clock,
     Hash,
+    Home,
     LayoutGrid,
     ListChecks,
     Mic,
     Pin,
+    Plug,
     Rocket,
     Search,
     ShieldCheck,
+    Sparkles,
     SquarePen,
     Users,
     X,
@@ -479,11 +482,32 @@ export function AssistantSideMenu({
           />
         ) : null}
         <SideMenu.Item
+          icon={Home}
+          label="Today"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/home")}
+          onSelect={() => cueNav("/assistant/home")}
+        />
+        <SideMenu.Item
+          icon={Sparkles}
+          label="Memory"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/memory")}
+          onSelect={() => cueNav("/assistant/memory")}
+        />
+        <SideMenu.Item
           icon={ListChecks}
           label="Next moves"
           showCollapsedTooltip
           active={location.pathname.endsWith("/next-moves")}
           onSelect={() => cueNav("/assistant/next-moves")}
+        />
+        <SideMenu.Item
+          icon={Plug}
+          label="Connections"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/connectors")}
+          onSelect={() => cueNav("/assistant/connectors")}
         />
         <SideMenu.Item
           icon={Mic}
