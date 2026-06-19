@@ -39,6 +39,13 @@ body {
   100% { width: 0%; margin-left: 100%; }
 }
 
+/* Memory surface (surfaces/Memory.dc.html) loading shimmer — the skeleton
+   cards slide a light gradient across themselves while real memories load. */
+@keyframes cueShimmer {
+  0% { background-position: -340px 0; }
+  100% { background-position: 340px 0; }
+}
+
 @keyframes fadeInUp {
   0% { transform: translateY(16px); opacity: 0; }
   /* End at `none` (not translateY(0)) so the filled-forwards transform does

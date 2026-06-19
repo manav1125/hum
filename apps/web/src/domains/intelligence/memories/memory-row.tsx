@@ -1,98 +1,301 @@
-import { Trash2 } from "lucide-react";
-
-import { SourceTag, type MemoryType } from "@vellumai/design-library";
-
-import { formatRelativeDate } from "@/utils/format-date";
+import type { MemoryType } from "@vellumai/design-library";
 
 import { sourceTypeLabel, type MemoryItem } from "./types";
 
+/**
+ * Per-memory-type color tokens, taken verbatim from surfaces/Memory.dc.html.
+ * `dot` is the chip/card dot, `text` the (sometimes darkened) DM Mono label
+ * color, and `wash` the soft background used by the "N sources" chip.
+ */
+export const TYPE_COLORS: Record<
+  MemoryType,
+  { dot: string; text: string; wash: string }
+> = {
+  semantic: { dot: "#3D6EE8", text: "#2B53C4", wash: "#DBE4FB" },
+  prospective: { dot: "#7F77DD", text: "#534AB7", wash: "#EEEDFB" },
+  procedural: { dot: "#0E8C8C", text: "#0E8C8C", wash: "#E0F0EF" },
+  episodic: { dot: "#C98A1B", text: "#9A6A14", wash: "#FBF0DA" },
+  emotional: { dot: "#E24B4A", text: "#E24B4A", wash: "#FBE3E3" },
+  behavioral: { dot: "#5A57C4", text: "#5A57C4", wash: "#E7E7F7" },
+  narrative: { dot: "#B5683A", text: "#B5683A", wash: "#F3E4DB" },
+  shared: { dot: "#B0479B", text: "#B0479B", wash: "#F5E2F0" },
+};
+
+const KIND_LABELS: Record<MemoryType, string> = {
+  semantic: "Semantic",
+  prospective: "Prospective",
+  procedural: "Procedural",
+  episodic: "Episodic",
+  emotional: "Emotional",
+  behavioral: "Behavioral",
+  narrative: "Narrative",
+  shared: "Shared",
+};
+
+const MONO = "'DM Mono', monospace";
+
+export function kindColors(kind: string): {
+  dot: string;
+  text: string;
+  wash: string;
+} {
+  return TYPE_COLORS[kind as MemoryType] ?? TYPE_COLORS.semantic;
+}
+
+export function kindLabel(kind: string): string {
+  return KIND_LABELS[kind as MemoryType] ?? kind;
+}
+
+function confLabel(confidence?: number | null): string | null {
+  return typeof confidence === "number" ? confidence.toFixed(2) : null;
+}
+
 interface MemoryRowProps {
   item: MemoryItem;
-  /**
-   * Forget (delete) this memory. Invoked when the user clicks the row's
-   * trash affordance — the page owns confirmation + the delete mutation.
-   */
+  /** True when this card is the one driving the provenance rail. */
+  selected: boolean;
+  /** Select this memory (drives the right rail). */
+  onSelect: (item: MemoryItem) => void;
+  /** Open the inline editor for this memory. */
+  onEdit: (item: MemoryItem) => void;
+  /** Forget (delete) this memory — opens the confirm dialog upstream. */
   onForget: (item: MemoryItem) => void;
-  /** True while this row's delete request is in flight; disables the button. */
-  isForgetting?: boolean;
+  /** True while editing this row inline. */
+  editing: boolean;
+  /** Current draft text while editing. */
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  /** True while this row's save/delete request is in flight. */
+  isSaving: boolean;
 }
 
 /**
- * One memory item: the `statement` as the primary text, `subject` as a
- * secondary line, a `SourceTag` colored by the memory `kind`, and the
- * relative time the memory was last seen. Confidence / importance are shown
- * subtly when present.
- *
- * Rows are forgettable: a `Trash2` affordance is revealed on hover/focus and
- * calls `onForget(item)`, fulfilling the header's "forget anything" promise.
- *
- * Colors come exclusively from tokens / `SourceTag` — no hard-coded hex.
+ * A single memory card — a faithful translation of the "Ready"-state cards in
+ * surfaces/Memory.dc.html. Top row: colored dot + DM Mono type label + right
+ * "conf {confidence}". Statement at 14px/500. Bottom row: provenance chips
+ * (a type-washed "{reinforcementCount} sources" chip + a sunken source-type
+ * chip) and right-aligned Edit / Forget actions. The selected card takes the
+ * #3D6EE8 border + #FAFBFF fill that drives the provenance rail.
  */
-export function MemoryRow({ item, onForget, isForgetting = false }: MemoryRowProps) {
-  const lastSeen = Number.isFinite(item.lastSeenAt)
-    ? formatRelativeDate(new Date(item.lastSeenAt).toISOString())
-    : "—";
-
+export function MemoryRow({
+  item,
+  selected,
+  onSelect,
+  onEdit,
+  onForget,
+  editing,
+  draft,
+  onDraftChange,
+  onSaveEdit,
+  onCancelEdit,
+  isSaving,
+}: MemoryRowProps) {
+  const c = kindColors(item.kind);
+  const conf = confLabel(item.confidence);
   const source = sourceTypeLabel(item.sourceType);
-  const confidencePct =
-    typeof item.confidence === "number"
-      ? Math.round(item.confidence * 100)
-      : null;
+  const reinforcement = item.reinforcementCount ?? 0;
 
   return (
     <div
-      className="group flex flex-col gap-1.5 rounded-lg px-4 py-3"
-      style={{ backgroundColor: "var(--surface-lift)" }}
+      onClick={() => onSelect(item)}
+      style={{
+        border: `1px solid ${selected ? "#3D6EE8" : "#E5E9F0"}`,
+        borderRadius: 13,
+        padding: "13px 15px",
+        background: selected ? "#FAFBFF" : "#FFFFFF",
+        cursor: "pointer",
+      }}
     >
-      <div className="flex items-start justify-between gap-3">
-        <p
-          className="min-w-0 flex-1 text-body-medium-default"
-          style={{ color: "var(--content-default)" }}
-        >
-          {item.statement}
-        </p>
-        <div className="flex shrink-0 items-center gap-2">
-          <SourceTag memoryType={item.kind as MemoryType} />
-          <button
-            type="button"
-            onClick={() => onForget(item)}
-            disabled={isForgetting}
-            aria-label={`Forget memory: ${item.statement}`}
-            title="Forget this memory"
-            className="rounded-md p-1 text-[var(--content-tertiary)] opacity-0 outline-none transition-opacity hover:bg-[var(--surface-sunken)] hover:text-[var(--content-default)] focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Trash2 size={15} className={isForgetting ? "animate-pulse" : undefined} />
-          </button>
-        </div>
-      </div>
-
-      {item.subject ? (
-        <p
-          className="text-body-small-default"
-          style={{ color: "var(--content-secondary)" }}
-        >
-          {item.subject}
-        </p>
-      ) : null}
-
+      {/* Top row: dot + TYPE + confidence */}
       <div
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 text-label-medium-default"
-        style={{ color: "var(--content-tertiary)" }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 5,
+        }}
       >
-        <span>{lastSeen}</span>
-        {source ? (
-          <>
-            <span aria-hidden>·</span>
-            <span>{source}</span>
-          </>
-        ) : null}
-        {confidencePct !== null ? (
-          <>
-            <span aria-hidden>·</span>
-            <span>{confidencePct}% confidence</span>
-          </>
+        <span
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: 3,
+            background: c.dot,
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: 10,
+            letterSpacing: ".06em",
+            color: c.text,
+            textTransform: "uppercase",
+          }}
+        >
+          {kindLabel(item.kind)}
+        </span>
+        {conf !== null ? (
+          <span
+            style={{
+              marginLeft: "auto",
+              fontFamily: MONO,
+              fontSize: 10,
+              color: "#8D99A5",
+            }}
+          >
+            conf {conf}
+          </span>
         ) : null}
       </div>
+
+      {/* Statement (or inline editor) */}
+      {editing ? (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ display: "flex", flexDirection: "column", gap: 8 }}
+        >
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSaveEdit();
+              if (e.key === "Escape") onCancelEdit();
+            }}
+            disabled={isSaving}
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "#1A2230",
+              border: "1px solid #3D6EE8",
+              borderRadius: 8,
+              padding: "7px 10px",
+              outline: "none",
+              fontFamily: "'DM Sans', system-ui, sans-serif",
+            }}
+          />
+          <div style={{ display: "flex", gap: 7 }}>
+            <button
+              type="button"
+              onClick={onSaveEdit}
+              disabled={isSaving || draft.trim().length === 0}
+              style={{
+                fontSize: 11.5,
+                background: "#1A2230",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "6px 12px",
+                cursor: "pointer",
+                opacity: isSaving || draft.trim().length === 0 ? 0.5 : 1,
+              }}
+            >
+              {isSaving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              disabled={isSaving}
+              style={{
+                fontSize: 11.5,
+                background: "transparent",
+                color: "#5A6672",
+                border: "1px solid #D7DDE7",
+                borderRadius: 8,
+                padding: "6px 12px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 14, fontWeight: 500, color: "#1A2230" }}>
+          {item.statement}
+        </div>
+      )}
+
+      {/* Bottom row: provenance chips + actions */}
+      {!editing ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            marginTop: 9,
+            flexWrap: "wrap",
+          }}
+        >
+          {reinforcement > 0 ? (
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                padding: "1px 6px",
+                borderRadius: 5,
+                background: c.wash,
+                color: c.text,
+              }}
+            >
+              {reinforcement} sources
+            </span>
+          ) : null}
+          {source ? (
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                padding: "1px 6px",
+                borderRadius: 5,
+                background: "#EEF1F6",
+                color: "#5A6672",
+              }}
+            >
+              {source}
+            </span>
+          ) : null}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(item);
+              }}
+              style={{
+                fontSize: 11.5,
+                color: "#5A6672",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onForget(item);
+              }}
+              style={{
+                fontSize: 11.5,
+                color: "#DA491A",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              Forget
+            </button>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
