@@ -11,9 +11,13 @@
 import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { contactsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  contactsGetOptions,
+  trustrulesGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 
 const C = {
   ink: "#1A2230",
@@ -29,8 +33,35 @@ const C = {
   t2: "#5A6672",
   t3: "#8D99A5",
   green: "#277E41",
+  danger: "#DA491A",
+  amber: "#C98A1B",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
+
+// One entry of the daemon's default-deny permission policy (trustrulesGet).
+type TrustRule = {
+  id: string;
+  tool: string;
+  pattern: string;
+  risk: "low" | "medium" | "high";
+  description: string;
+  origin: "default" | "user_defined";
+  userModified: boolean;
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Riskiest first, so the most consequential capabilities are most visible.
+const RISK_ORDER: ReadonlyArray<TrustRule["risk"]> = ["high", "medium", "low"];
+const RISK_META: Record<
+  TrustRule["risk"],
+  { label: string; dot: string }
+> = {
+  high: { label: "High risk", dot: C.danger },
+  medium: { label: "Medium risk", dot: C.amber },
+  low: { label: "Low risk", dot: C.green },
+};
 
 // Capture consent prefs — real, persisted, but not yet enforced by a capture
 // backend (Phase 3). Kept here so the user's choices stick.
@@ -58,9 +89,17 @@ function writePref(key: string, value: boolean): void {
 
 export function TrustConsolePage() {
   const assistantId = useActiveAssistantId();
+  const navigate = useNavigate();
   const contactsQuery = useQuery({
     ...contactsGetOptions({ path: { assistant_id: assistantId } }),
     select: (data) => data.contacts,
+  });
+
+  // The real default-deny permission policy: what tools Cue may use, on what
+  // patterns, by risk. Read-only here — the contract exposes get + suggest only.
+  const rulesQuery = useQuery({
+    ...trustrulesGetOptions({ path: { assistant_id: assistantId } }),
+    select: (data) => data.rules.filter((rule) => !rule.deleted),
   });
 
   const { guardians, trusted } = useMemo(() => {
@@ -99,6 +138,15 @@ export function TrustConsolePage() {
           Trust &amp; consent console
         </div>
 
+        <div style={{ marginBottom: 18 }}>
+          <PermissionRulesPanel
+            loading={rulesQuery.isLoading}
+            error={rulesQuery.isError}
+            rules={rulesQuery.data ?? []}
+            onSuggest={() => navigate("/assistant/")}
+          />
+        </div>
+
         <div
           style={{
             display: "grid",
@@ -114,6 +162,200 @@ export function TrustConsolePage() {
             trusted={trusted.map((c) => c.displayName)}
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PermissionRulesPanel({
+  loading,
+  error,
+  rules,
+  onSuggest,
+}: {
+  loading: boolean;
+  error: boolean;
+  rules: TrustRule[];
+  onSuggest: () => void;
+}) {
+  const { total, custom, byRisk } = useMemo(() => {
+    const groups: Record<TrustRule["risk"], TrustRule[]> = {
+      high: [],
+      medium: [],
+      low: [],
+    };
+    let customCount = 0;
+    for (const rule of rules) {
+      groups[rule.risk].push(rule);
+      if (rule.origin === "user_defined") customCount += 1;
+    }
+    return { total: rules.length, custom: customCount, byRisk: groups };
+  }, [rules]);
+
+  const suggestButton = (
+    <button
+      type="button"
+      onClick={onSuggest}
+      style={{
+        fontFamily: mono,
+        fontSize: 11,
+        letterSpacing: "0.02em",
+        color: C.blueS,
+        background: C.blueW,
+        border: "none",
+        borderRadius: 6,
+        padding: "4px 10px",
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      Ask Cue to propose a rule
+    </button>
+  );
+
+  return (
+    <Panel
+      title="What Cue may do · permission rules"
+      action={total > 0 && !loading && !error ? suggestButton : undefined}
+    >
+      {loading ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            color: C.t2,
+          }}
+        >
+          <Loader2 className="size-4 animate-spin" /> Loading permission rules…
+        </div>
+      ) : error ? (
+        <div
+          style={{
+            background: "#fff",
+            border: `1px solid ${C.line}`,
+            borderLeft: `3px solid ${C.danger}`,
+            borderRadius: "0 12px 12px 0",
+            padding: "11px 14px",
+            fontSize: 13,
+            color: C.t2,
+          }}
+        >
+          Couldn&rsquo;t load the permission policy. Cue stays default-deny until
+          this resolves.
+        </div>
+      ) : total === 0 ? (
+        <div style={{ fontSize: 13, color: C.t2 }}>
+          No permission rules yet — Cue is fully locked down until you grant
+          access.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12.5, color: C.t2, marginTop: -2 }}>
+            <span style={{ color: C.t1, fontWeight: 500 }}>{total}</span>{" "}
+            {total === 1 ? "rule governs" : "rules govern"} what Cue can do ·
+            default-deny
+            {custom > 0 ? (
+              <>
+                {" · "}
+                {custom} custom, {total - custom} default
+              </>
+            ) : (
+              <> · all defaults</>
+            )}
+          </div>
+
+          {RISK_ORDER.map((risk) => {
+            const group = byRisk[risk];
+            if (group.length === 0) return null;
+            const meta = RISK_META[risk];
+            return (
+              <div key={risk} style={{ display: "grid", gap: 7 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    marginTop: 2,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: meta.dot,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: C.t2,
+                    }}
+                  >
+                    {meta.label}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: C.t3 }}>
+                    {group.length}
+                  </span>
+                </div>
+                {group.map((rule) => (
+                  <RuleRow key={rule.id} rule={rule} />
+                ))}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </Panel>
+  );
+}
+
+function RuleRow({ rule }: { rule: TrustRule }) {
+  const custom = rule.origin === "user_defined";
+  return (
+    <div
+      style={{
+        background: C.surface,
+        border: `1px solid ${C.line}`,
+        borderRadius: 12,
+        padding: "11px 13px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontFamily: mono, fontSize: 12.5, color: C.t1 }}>
+          {rule.tool}
+        </span>
+        <span style={{ fontFamily: mono, fontSize: 12, color: C.t3 }}>
+          {rule.pattern}
+        </span>
+        <span
+          style={{
+            fontFamily: mono,
+            fontSize: 10,
+            padding: "1px 6px",
+            borderRadius: 5,
+            background: custom ? C.blueW : C.sunken,
+            color: custom ? C.blueS : C.t3,
+          }}
+        >
+          {custom ? "custom" : "default"}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: C.t2, marginTop: 3 }}>
+        {rule.description}
       </div>
     </div>
   );
@@ -258,7 +500,15 @@ function AuditPanel({
   );
 }
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
+function Panel({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -271,7 +521,19 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
         gap: 12,
       }}
     >
-      <div style={{ fontSize: 13.5, fontWeight: 500, color: C.t1 }}>{title}</div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div style={{ fontSize: 13.5, fontWeight: 500, color: C.t1 }}>
+          {title}
+        </div>
+        {action}
+      </div>
       {children}
     </div>
   );
