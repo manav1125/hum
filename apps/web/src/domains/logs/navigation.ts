@@ -17,12 +17,12 @@ export interface LogsSidebarItem {
 
 export const LOGS_SIDEBAR: LogsSidebarItem[] = [
   { id: "usage", label: "Usage", href: routes.logs.usage, icon: BarChart3 },
-  { id: "logs", label: "Logs", href: routes.logs.trace, icon: ScrollText },
-  { id: "emails", label: "Emails", href: routes.logs.emails, icon: Mail },
+  { id: "logs", label: "Trace", href: routes.logs.trace, icon: ScrollText },
   {
     id: "system-events",
-    label: "System Events",
+    label: "System events",
     href: routes.logs.systemEvents,
     icon: MonitorCog,
   },
+  { id: "emails", label: "Email logs", href: routes.logs.emails, icon: Mail },
 ];

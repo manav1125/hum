@@ -41,7 +41,8 @@ export function WelcomeScreen() {
             className="mt-3 text-body-medium-lighter text-[var(--content-tertiary)]"
             style={{ animation: "fadeInUp 0.5s ease-out 0.3s both" }}
           >
-            Your own personal intelligence is just a step away.
+            An assistant that learns how you work and never drops a thing.
+            Let&apos;s hatch yours.
           </p>
 
           {error && (
