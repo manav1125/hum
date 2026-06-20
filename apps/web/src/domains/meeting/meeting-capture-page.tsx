@@ -1,21 +1,26 @@
 import { ApertureAvatar } from "@vellumai/design-library/components/aperture-avatar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { messagesPost, sttTranscribePost } from "@/generated/daemon/sdk.gen";
+import { meetingsRecapPost, sttTranscribePost } from "@/generated/daemon/sdk.gen";
+import type { MeetingsRecapPostResponses } from "@/generated/daemon/types.gen";
+
+/** The structured recap returned by POST /v1/meetings/recap. */
+type RecapJson = MeetingsRecapPostResponses[200];
 
 /**
  * Meeting capture → recap (design v0.3 §01).
  *
- * Phase A (this file): the left "live capture" column is now FUNCTIONAL —
- * it records the room with MediaRecorder, transcribes the audio through the
- * daemon STT endpoint, and hands the transcript off to a recap conversation
- * (record → STT → recap conversation in memory). The visual language is the
- * original v0.3 surface (inline styles, the local `C` palette, ApertureAvatar,
- * blinking-dot pill, equalizer). Live streaming transcription and on-device
- * tone/action-item extraction are later phases; the right column stays an
- * illustration of the recap output format.
+ * Phase A (this file): the left "live capture" column records the room with
+ * MediaRecorder and transcribes the audio through the daemon STT endpoint;
+ * the transcript is then sent to POST /v1/meetings/recap, which produces a
+ * structured recap and writes the action items/decisions/people into the
+ * 8-type memory tagged by a new meeting conversation. The right column renders
+ * that REAL recap (replacing the former static illustration) and links to the
+ * meeting conversation. The visual language is the original v0.3 surface
+ * (inline styles, the local `C` palette, ApertureAvatar, blinking-dot pill,
+ * equalizer). Live streaming transcription is a later phase.
  */
 
 const C = {
@@ -250,9 +255,8 @@ function pillButton(primary: boolean): React.CSSProperties {
   };
 }
 
-function LiveCapture() {
+function LiveCapture({ onRecap }: { onRecap: (recap: RecapJson) => void }) {
   const assistantId = useActiveAssistantId();
-  const navigate = useNavigate();
 
   const [supported] = useState<boolean>(() => recordingSupported());
   const [status, setStatus] = useState<CaptureStatus>("idle");
@@ -390,27 +394,30 @@ function LiveCapture() {
     if (!transcript) return;
     setStatus("creating-recap");
     setError(null);
-    const prompt =
-      "Here is a meeting transcript. Write a recap: a 2–3 sentence summary, action items (with owner), and key decisions. Save the action items and decisions to memory.\n\nTranscript:\n" +
-      transcript;
     try {
-      const result = await messagesPost({
+      const result = await meetingsRecapPost({
         path: { assistant_id: assistantId },
-        body: { content: prompt, sourceChannel: "vellum", interface: "vellum" },
+        body: { transcript },
         throwOnError: false,
       });
-      const conversationId = result.data?.conversationId;
-      if (!conversationId) {
+      const recap = result.data;
+      if (!recap) {
         setStatus("transcribed");
-        setError("Couldn't start the recap — please try again.");
+        // 503 from the daemon means no model is configured / spend-capped.
+        setError(
+          result.response?.status === 503
+            ? "No language model is set up for recaps yet — choose one in Settings → Models & Services, then try again."
+            : "Couldn't generate the recap — please try again.",
+        );
         return;
       }
-      navigate(`/assistant/conversations/${conversationId}`);
+      onRecap(recap);
+      setStatus("transcribed");
     } catch {
       setStatus("transcribed");
-      setError("Couldn't start the recap — please try again.");
+      setError("Couldn't generate the recap — please try again.");
     }
-  }, [assistantId, transcript, navigate]);
+  }, [assistantId, transcript, onRecap]);
 
   const handleReset = useCallback(() => {
     setStatus("idle");
@@ -538,7 +545,43 @@ function LiveCapture() {
   );
 }
 
-function Recap() {
+/** Right column before any recap exists — describes what will appear here. */
+function RecapPlaceholder() {
+  return (
+    <div
+      style={{
+        background: C.surface,
+        border: `1px dashed ${C.line2}`,
+        borderRadius: 14,
+        padding: 18,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        minHeight: 360,
+        textAlign: "center",
+      }}
+    >
+      <ApertureAvatar size={40} />
+      <div style={{ fontWeight: 500, fontSize: 15 }}>Your recap appears here</div>
+      <div style={{ fontSize: 12.5, color: C.t2, lineHeight: 1.5, maxWidth: 280 }}>
+        Record the room, then choose <b>Create recap</b>. Cue writes a summary, action items,
+        decisions, and people &amp; tone — and saves them into the 8-type memory tagged to this
+        meeting.
+      </div>
+    </div>
+  );
+}
+
+/** The data-driven recap card, rendered from a real RecapJson. */
+function Recap({ recap }: { recap: RecapJson }) {
+  const peopleCount = recap.people.length;
+  const subtitleParts = [
+    peopleCount > 0 ? `${peopleCount} ${peopleCount === 1 ? "person" : "people"}` : null,
+    recap.tone ? `tone: ${recap.tone}` : null,
+  ].filter(Boolean);
+
   return (
     <div
       style={{
@@ -551,29 +594,23 @@ function Recap() {
         gap: 12,
       }}
     >
-      {/* illustration caption */}
-      <div style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
-        Example recap — yours appears in a conversation after you stop.
-      </div>
-
       {/* header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <ApertureAvatar size={28} />
         <div>
-          <div style={{ fontWeight: 500 }}>Acme quarterly sync — recap</div>
-          <div style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
-            26 min · 4 people · 09:00–09:26
-          </div>
+          <div style={{ fontWeight: 500 }}>Meeting recap</div>
+          {subtitleParts.length > 0 ? (
+            <div style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
+              {subtitleParts.join(" · ")}
+            </div>
+          ) : null}
         </div>
       </div>
 
       {/* summary */}
       <div style={card}>
         <div style={cardTitle}>Summary</div>
-        <div style={cardBody}>
-          Renewal on track for Q3. Pricing stays. Dana wants the forecast before legal review. Warm
-          tone; one open risk on timeline.
-        </div>
+        <div style={cardBody}>{recap.summary || "No summary was produced."}</div>
       </div>
 
       {/* two-up */}
@@ -591,34 +628,84 @@ function Recap() {
                 color: C.blueS,
               }}
             >
-              3
+              {recap.actionItems.length}
             </span>
           </div>
           <div style={{ ...cardBody, marginTop: 6 }}>
-            ☐ Share Q3 forecast — <b>you</b>
-            <br />☐ Intro Dana ↔ Legal — <b>you</b>
-            <br />☑ Send pricing one-pager — done
+            {recap.actionItems.length === 0 ? (
+              <span style={{ color: C.t3 }}>None captured.</span>
+            ) : (
+              recap.actionItems.map((item, i) => (
+                <div key={i}>
+                  {item.done ? "☑" : "☐"} {item.text}
+                  {item.owner ? (
+                    <>
+                      {" — "}
+                      <b>{item.owner}</b>
+                    </>
+                  ) : null}
+                </div>
+              ))
+            )}
           </div>
         </div>
         <div style={card}>
           <div style={cardTitle}>People &amp; tone</div>
           <div style={{ ...cardBody, marginTop: 6 }}>
-            Dana — decision-maker, positive
-            <br />
-            Sam — needs the deck
-            <br />
-            Risk flagged on timeline
+            {peopleCount === 0 ? (
+              <span style={{ color: C.t3 }}>No people identified.</span>
+            ) : (
+              recap.people.map((p, i) => (
+                <div key={i}>
+                  {p.name} — {p.tone}
+                  {p.note ? `, ${p.note}` : ""}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      {/* chips */}
+      {/* decisions */}
+      {recap.decisions.length > 0 ? (
+        <div style={card}>
+          <div style={cardTitle}>
+            Decisions{" "}
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                padding: "1px 6px",
+                borderRadius: 5,
+                background: C.blueW,
+                color: C.blueS,
+              }}
+            >
+              {recap.decisions.length}
+            </span>
+          </div>
+          <div style={{ ...cardBody, marginTop: 6 }}>
+            {recap.decisions.map((d, i) => (
+              <div key={i}>• {d}</div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {/* link to the meeting conversation */}
       <div style={{ display: "flex", gap: 8 }}>
-        <span style={{ ...chipBase, background: C.blue, borderColor: C.blue, color: "#fff" }}>
-          Send follow-up draft
-        </span>
-        <span style={chipBase}>Add to tasks</span>
-        <span style={chipBase}>Save to memory</span>
+        <Link
+          to={`/assistant/conversations/${recap.conversationId}`}
+          style={{
+            ...chipBase,
+            background: C.blue,
+            borderColor: C.blue,
+            color: "#fff",
+            textDecoration: "none",
+          }}
+        >
+          Open meeting conversation
+        </Link>
       </div>
 
       {/* note */}
@@ -633,14 +720,16 @@ function Recap() {
           color: C.t2,
         }}
       >
-        All of this writes into the 8-type memory with source = this meeting, so it surfaces before
-        your next Acme touchpoint.
+        These items were written into the 8-type memory with source = this meeting, so they surface
+        before your next related touchpoint.
       </div>
     </div>
   );
 }
 
 export function MeetingCapturePage() {
+  const [recap, setRecap] = useState<RecapJson | null>(null);
+
   return (
     <div
       style={{
@@ -678,11 +767,9 @@ export function MeetingCapturePage() {
       {/* two-part responsive layout */}
       <div className="mc-grid">
         <div>
-          <LiveCapture />
+          <LiveCapture onRecap={setRecap} />
         </div>
-        <div>
-          <Recap />
-        </div>
+        <div>{recap ? <Recap recap={recap} /> : <RecapPlaceholder />}</div>
       </div>
 
       <style>{`

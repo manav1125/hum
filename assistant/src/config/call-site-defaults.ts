@@ -49,6 +49,13 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
 
   filingAgent: { profile: "cost-optimized" },
   memoryExtraction: { profile: "cost-optimized" },
+  // Structured recap of a meeting transcript via a forced tool call — match
+  // the proven cost-optimized forced-tool path that memoryExtraction uses.
+  meetingRecap: {
+    profile: "cost-optimized",
+    thinking: { enabled: false },
+    disableCache: true,
+  },
   memoryRetrieval: { profile: "cost-optimized" },
   memoryRetrospective: { profile: "cost-optimized" },
   memoryV2Migration: { profile: "cost-optimized" },

@@ -90,6 +90,13 @@ const CATALOG_RECORD: CatalogRecord = {
     description: "Extracts memorable facts from conversation turns.",
     domain: "memory",
   },
+  meetingRecap: {
+    id: "meetingRecap",
+    displayName: "Meeting Recap",
+    description:
+      "Produces a structured recap (summary, action items, decisions, people) from a meeting transcript.",
+    domain: "memory",
+  },
   memoryConsolidation: {
     id: "memoryConsolidation",
     displayName: "Memory Consolidation",

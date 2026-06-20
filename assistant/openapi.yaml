@@ -17579,6 +17579,95 @@ paths:
                   description: Upper bound epoch ms
                   type: number
               additionalProperties: false
+  /v1/meetings/recap:
+    post:
+      operationId: meetings_recap_post
+      summary: Generate a meeting recap
+      description:
+        Turn a meeting transcript into a structured recap (summary, action items, decisions, people and tone) and
+        write the results into memory, tagged by a new meeting conversation.
+      tags:
+        - meetings
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: string
+                  actionItems:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        text:
+                          type: string
+                        owner:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        done:
+                          type: boolean
+                      required:
+                        - text
+                        - owner
+                        - done
+                      additionalProperties: false
+                  decisions:
+                    type: array
+                    items:
+                      type: string
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        tone:
+                          type: string
+                        note:
+                          type: string
+                      required:
+                        - name
+                        - tone
+                      additionalProperties: false
+                  tone:
+                    type: string
+                  conversationId:
+                    type: string
+                  memoryNodeIds:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - summary
+                  - actionItems
+                  - decisions
+                  - people
+                  - tone
+                  - conversationId
+                  - memoryNodeIds
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                transcript:
+                  type: string
+                  description: The full meeting transcript to summarize.
+                title:
+                  description: Optional title for the meeting conversation.
+                  type: string
+              required:
+                - transcript
+              additionalProperties: false
   /v1/memory-items:
     get:
       operationId: memoryitems_get
