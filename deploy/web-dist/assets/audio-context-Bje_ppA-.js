@@ -1,1 +1,0 @@
-var e=`/assistant/assets/pcm-downsample-worklet-CwNZrVLe.js`;function t(){if(!(typeof window>`u`))return window.AudioContext??window.webkitAudioContext}function n(e){let n=t();if(!n)throw Error(`Web Audio API is not available in this environment`);return new n(e)}export{t as n,e as r,n as t};

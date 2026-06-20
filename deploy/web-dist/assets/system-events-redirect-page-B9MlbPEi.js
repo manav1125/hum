@@ -1,0 +1,1 @@
+import{o as e}from"./chunk-jRWAZmH_.js";import{t}from"./react-DJZBPgpf.js";import{d as n}from"./chunk-5KNZJZUH-DdS6bb-3.js";import{i as r}from"./routes-BMHD3yHt.js";var i=e(t(),1);function a(){let e=n();return(0,i.useEffect)(()=>{e(r.logs.systemEvents,{replace:!0})},[e]),null}export{a as SystemEventsRedirectPage};
