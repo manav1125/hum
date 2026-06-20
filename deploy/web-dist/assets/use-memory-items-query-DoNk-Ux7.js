@@ -1,1 +1,0 @@
-import{t as e}from"./useQuery-B45lW1Kk.js";import{F as t}from"./react-query.gen-DEgMZt46.js";function n(n){return e({...t({path:{assistant_id:n??``}}),select:e=>{let t=e.items??[],n={};for(let e of t)n[e.kind]=(n[e.kind]??0)+1;return{items:t,total:e.total,kindCounts:n}},enabled:!!n,staleTime:3e4})}export{n as t};
