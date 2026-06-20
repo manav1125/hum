@@ -26,13 +26,13 @@
  * once, not on every call.
  */
 
-import {
-  getBudgetConfig,
-  type BudgetConfig,
-} from "./budget-config-reader.js";
 import { getTotalUsageCostInWindow } from "../memory/llm-usage-store.js";
 import { emitNotificationSignal } from "../notifications/emit-signal.js";
 import { getLogger } from "../util/logger.js";
+import {
+  type BudgetConfig,
+  getBudgetConfig,
+} from "./budget-config-reader.js";
 import type {
   Message,
   Provider,

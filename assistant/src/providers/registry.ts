@@ -5,6 +5,7 @@ import { type LLMConfig } from "../config/schemas/llm.js";
 import { getProviderKeyAsync } from "../security/secure-keys.js";
 import { ProviderNotConfiguredError } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
+import { BudgetCapProvider } from "./budget-cap.js";
 import {
   buildProviderAdapter,
   createAdapterFromConnection,
@@ -20,7 +21,6 @@ import {
   buildManagedBaseUrl,
   resolveManagedProxyContext,
 } from "./platform-proxy/context.js";
-import { BudgetCapProvider } from "./budget-cap.js";
 import { RetryProvider } from "./retry.js";
 import type { Provider } from "./types.js";
 import { UsageTrackingProvider } from "./usage-tracking.js";

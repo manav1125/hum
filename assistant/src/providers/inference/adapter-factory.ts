@@ -19,6 +19,7 @@
  */
 
 import { AnthropicProvider } from "../anthropic/client.js";
+import { BudgetCapProvider } from "../budget-cap.js";
 import { FireworksProvider } from "../fireworks/client.js";
 import { GeminiProvider } from "../gemini/client.js";
 import { MinimaxProvider } from "../minimax/client.js";
@@ -26,7 +27,6 @@ import { PROVIDER_CATALOG } from "../model-catalog.js";
 import { OllamaProvider } from "../ollama/client.js";
 import { OpenAIChatCompletionsProvider } from "../openai/chat-completions-provider.js";
 import { OpenAIResponsesProvider } from "../openai/responses-provider.js";
-import { BudgetCapProvider } from "../budget-cap.js";
 import { OpenRouterProvider } from "../openrouter/client.js";
 import { RetryProvider } from "../retry.js";
 import type { Provider } from "../types.js";
