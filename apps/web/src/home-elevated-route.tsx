@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -18,41 +18,46 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { requestComposerFocus } from "@/domains/chat/composer-focus";
 import { createDraftConversationId } from "@/domains/chat/utils/conversation-selection";
 import { useDashboardQuery } from "@/domains/dashboard/use-dashboard-query";
-import { useDashboardTemplates } from "@/domains/dashboard/use-dashboard-templates";
-import type { DashboardTemplate, WidgetSpec } from "@/domains/dashboard/templates";
-import { AssistantStateWidget } from "@/domains/dashboard/widgets/assistant-state-widget";
-import { ConnectorQueryWidget } from "@/domains/dashboard/widgets/connector-query-widget";
-import { ImpactStatsWidget } from "@/domains/dashboard/widgets/impact-stats-widget";
-import { RecentMemoryWidget } from "@/domains/dashboard/widgets/recent-memory-widget";
-import { SchedulesWidget } from "@/domains/dashboard/widgets/schedules-widget";
-import { WorkItemsWidget } from "@/domains/dashboard/widgets/work-items-widget";
 import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
-import { selectNextMove, selectNoticed } from "@/domains/home/utils";
-import { homeImpactGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
+import { selectNextMove } from "@/domains/home/utils";
+import {
+  homeImpactGetOptions,
+  schedulesGetOptions,
+  usageTotalsGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import { routes } from "@/utils/routes";
 import type { FeedItem } from "@vellumai/assistant-api";
 
 /**
- * Home — faithful translation of `surfaces/Home.dc.html`.
+ * Home — the flagship command center.
  *
- * The app already supplies the dark sidebar, so this renders the design's MAIN
- * column + DAY RAIL on the cool canvas: an aperture-avatar lead with the
- * editorial "one move" line, an ink "drafted for you" next-move card, a queue
- * of things that also need you (urgency-coloured rails), a "while you slept"
- * recap strip linking to Impact, and a right rail with the day timeline + open
- * commitments. Wired to the real home-feed + impact data; degrades gracefully
- * when the board is light.
+ * A three-zone editorial layout on the calm light canvas (the app supplies the
+ * dark sidebar): a CENTER column that opens with the living "moment" — aperture
+ * avatar, a mono eyebrow, and a serif greeting that names the user's single
+ * most important move — then an ink "drafted for you" hero card, a single-line
+ * "Ask Cue" bar, a scannable "Also needs you" queue with Needs-you / Waiting /
+ * Done status tabs, and a "while you slept" recap strip; and a RIGHT RAIL
+ * ("Your Day") with a vertical timeline of upcoming schedules + recently-handled
+ * work, plus open commitments.
+ *
+ * Every zone is wired to real data — the home feed, impact, schedules, and usage
+ * totals — and both states are first-class: the FULL board (items present) and
+ * the calm "all caught up" empty state. No metrics are fabricated; zones that
+ * have no real data degrade to honest empty copy.
  */
 
-// Exact design tokens (mirrors the inline palette in Home.dc.html).
+// Exact design tokens (mirrors the inline palette in the approved mock).
 const C = {
   ink: "#1A2230",
   blue: "#3D6EE8",
   blueS: "#2B53C4",
   blue9: "#9DB4E6",
+  violet: "#7F77DD",
   bg: "#F4F6F9",
+  surface: "#FFFFFF",
   sunken: "#EEF1F6",
   line: "#E5E9F0",
   line2: "#D7DDE7",
@@ -75,14 +80,15 @@ const KEYFRAMES = `
 @media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
 `;
 
-function ApertureAvatar() {
+function ApertureAvatar({ size = 34 }: { size?: number }) {
+  const ring = Math.round(size * 0.59);
   return (
     <span
       className="cue-anim"
       style={{
         position: "relative",
-        width: 34,
-        height: 34,
+        width: size,
+        height: size,
         borderRadius: 10,
         background: C.ink,
         display: "flex",
@@ -102,12 +108,11 @@ function ApertureAvatar() {
       />
       <span
         style={{
-          width: 20,
-          height: 20,
+          width: ring,
+          height: ring,
           borderRadius: "50%",
           boxShadow: "0 0 0 4px #EEF2F7 inset",
-          WebkitMask:
-            "radial-gradient(circle,transparent 56%,#000 57%)",
+          WebkitMask: "radial-gradient(circle,transparent 56%,#000 57%)",
           mask: "radial-gradient(circle,transparent 56%,#000 57%)",
           transform: "rotate(40deg)",
           animation: "cueLook 6s ease-in-out infinite",
@@ -139,33 +144,58 @@ function urgencyColor(item: FeedItem): string {
   return C.line2;
 }
 
-// Per-category glyph + wash for the "Also needs you" queue chips, mirroring the
-// 34px icon tiles in Home.dc.html. The wash tints (danger/violet/amber/blue) are
-// the design's exact chip backgrounds; the strong colour drives the glyph.
+// Per-category glyph + wash for the queue's 34px icon tiles. The wash tints are
+// the mock's exact chip backgrounds; the strong colour drives the glyph.
 const QUEUE_CHIP_STYLE: Record<
   string,
-  { icon: LucideIcon; wash: string; ink: string }
+  { icon: LucideIcon; wash: string; ink: string; provenance: string }
 > = {
-  email: { icon: Mail, wash: "#FDE7E2", ink: C.danger },
-  scheduling: { icon: CalendarClock, wash: "#FBF0DA", ink: C.amber },
-  security: { icon: ShieldCheck, wash: "#EEEDFB", ink: C.blueS },
-  background: { icon: Sparkles, wash: "#EEEDFB", ink: "#534AB7" },
-  system: { icon: Bell, wash: C.sunken, ink: C.t2 },
+  email: { icon: Mail, wash: "#FDE7E2", ink: C.danger, provenance: "Email" },
+  scheduling: {
+    icon: CalendarClock,
+    wash: "#FBF0DA",
+    ink: C.amber,
+    provenance: "Calendar",
+  },
+  security: {
+    icon: ShieldCheck,
+    wash: "#EEEDFB",
+    ink: C.blueS,
+    provenance: "Security",
+  },
+  background: {
+    icon: Sparkles,
+    wash: "#EEEDFB",
+    ink: "#534AB7",
+    provenance: "Background",
+  },
+  system: { icon: Bell, wash: C.sunken, ink: C.t2, provenance: "System" },
 };
 
 function queueChipStyle(item: FeedItem) {
   return QUEUE_CHIP_STYLE[item.category ?? "system"] ?? QUEUE_CHIP_STYLE.system;
 }
 
+type QueueTab = "new" | "seen" | "acted_on";
+const QUEUE_TABS: { id: QueueTab; label: string }[] = [
+  { id: "new", label: "Needs you" },
+  { id: "seen", label: "Waiting" },
+  { id: "acted_on", label: "Done" },
+];
+
+function formatScheduleTime(epochMs: number): string {
+  return new Date(epochMs).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function HomeElevatedRoute() {
   const navigate = useNavigate();
   const assistantId = useActiveAssistantId();
   const feedQuery = useHomeFeedQuery(assistantId);
-  // The dashboard, folded into Home: a mode switcher (Personal / Company /
-  // Finances / Founder) drives a tidy row of glanceable widgets below the
-  // editorial feed. Home's own "Also needs you" queue IS the next-moves feed,
-  // so we never render the next-moves widget here — that would double it.
-  const { templates, activeId, active, setActiveId } = useDashboardTemplates();
+  const stateQuery = useHomeStateQuery(assistantId);
+
   const impactQuery = useQuery({
     ...homeImpactGetOptions({
       path: { assistant_id: assistantId ?? "" },
@@ -174,35 +204,83 @@ export function HomeElevatedRoute() {
     enabled: !!assistantId,
   });
 
+  // Month-to-date spend for the stat strip — honest usage cost, not fabricated.
+  const monthStart = useMemo(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  }, []);
+  const usageQuery = useQuery({
+    ...usageTotalsGetOptions({
+      path: { assistant_id: assistantId ?? "" },
+      query: { from: monthStart, to: Date.now() },
+    }),
+    enabled: !!assistantId,
+  });
+
+  const schedulesQuery = useQuery({
+    ...schedulesGetOptions({ path: { assistant_id: assistantId ?? "" } }),
+    enabled: !!assistantId,
+  });
+
   const items = feedQuery.data?.items ?? [];
   const boardItems = items.filter((i) => i.id.startsWith("action-board:"));
   const nextMove = selectNextMove(boardItems);
-  const commitments = selectNoticed(boardItems, nextMove?.id ?? undefined, 3);
-  // Clean time-based greeting matching the design template ("Good morning. …"),
-  // rather than the daemon's verbose personalized line which doesn't compose
-  // with the "your one move" sentence.
+
+  // The queue is the full board minus the hero move, kept at real status so the
+  // Needs-you / Waiting / Done tabs filter honestly.
+  const queueItems = useMemo(
+    () =>
+      boardItems
+        .filter((i) => i.id !== nextMove?.id && i.status !== "dismissed")
+        .sort((a, b) => b.priority - a.priority),
+    [boardItems, nextMove?.id],
+  );
+  const [queueTab, setQueueTab] = useState<QueueTab>("new");
+  const tabbed = queueItems.filter((i) => i.status === queueTab);
+  const tabCount = (t: QueueTab) =>
+    queueItems.filter((i) => i.status === t).length;
+
+  // Open commitments for the rail: the live (not-yet-done) board items.
+  const openCommitments = queueItems
+    .filter((i) => i.status !== "acted_on")
+    .slice(0, 3);
+
+  const userName = stateQuery.data?.userName?.trim();
   const hour = new Date().getHours();
-  const greeting =
+  const greetingWord =
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = userName ? `${greetingWord}, ${userName}` : greetingWord;
+
   const handled = impactQuery.data?.taskCount ?? 0;
   const hoursSaved = impactQuery.data?.hoursSaved ?? 0;
   const recent = impactQuery.data?.recent ?? [];
+  const spend = usageQuery.data?.totalEstimatedCostUsd ?? 0;
 
-  // Mark presented items "seen" once (mirrors home-page.tsx's handleSelectItem,
-  // which flips "new" → "seen"). On Home the lead + queue rows are effectively
-  // "viewed" when surfaced, so a "new" item shown here is seen. The ref guards
-  // against re-firing the mutation across re-renders/refetches.
+  // Upcoming schedules for the day rail — real, enabled, future-dated runs.
+  const upcoming = useMemo(() => {
+    const list = schedulesQuery.data?.schedules ?? [];
+    const now = Date.now();
+    return list
+      .filter((s) => s.enabled && s.nextRunAt > now)
+      .sort((a, b) => a.nextRunAt - b.nextRunAt)
+      .slice(0, 5);
+  }, [schedulesQuery.data?.schedules]);
+  const scheduledCount = upcoming.length;
+
+  // Mark only the featured hero move "seen" once surfaced (mirrors home-page's
+  // new→seen flip). The queue keeps real status so its tabs stay honest.
   const seenItemIds = useRef<Set<string>>(new Set());
   const updateStatusMutate = feedQuery.updateStatus.mutate;
   useEffect(() => {
-    const presented = [nextMove, ...commitments];
-    for (const item of presented) {
-      if (item && item.status === "new" && !seenItemIds.current.has(item.id)) {
-        seenItemIds.current.add(item.id);
-        updateStatusMutate({ itemId: item.id, status: "seen" });
-      }
+    if (
+      nextMove &&
+      nextMove.status === "new" &&
+      !seenItemIds.current.has(nextMove.id)
+    ) {
+      seenItemIds.current.add(nextMove.id);
+      updateStatusMutate({ itemId: nextMove.id, status: "seen" });
     }
-  }, [nextMove, commitments, updateStatusMutate]);
+  }, [nextMove, updateStatusMutate]);
 
   const now = new Date();
   const day = now
@@ -223,10 +301,9 @@ export function HomeElevatedRoute() {
   const action = (item: FeedItem) => item.actions?.[0] ?? null;
 
   // Invoke a feed item's primary action for real. When the action carries an
-  // `id`, fire the daemon action endpoint (homeFeedByIdActionsByActionIdPost via
-  // the hook's triggerAction); the hook optimistically marks the item acted_on
-  // and refetches. Fall back to seeding chat only when an action has a prompt
-  // but no actionId (defensive — the wire contract always supplies an id).
+  // `id`, fire the daemon action endpoint via the hook's triggerAction (which
+  // optimistically marks the item acted_on and refetches). Fall back to seeding
+  // chat only when an action has a prompt but no id (defensive).
   const runAction = (item: FeedItem) => {
     const a = action(item);
     if (!a) return;
@@ -237,8 +314,6 @@ export function HomeElevatedRoute() {
     }
   };
 
-  // Drop an item from the queue. Mirrors home-page.tsx's dismiss: the hook's
-  // updateStatus optimistically removes it and the refetch settles the board.
   const dismissItem = (item: FeedItem) => {
     feedQuery.updateStatus.mutate({ itemId: item.id, status: "dismissed" });
   };
@@ -252,19 +327,28 @@ export function HomeElevatedRoute() {
         color: C.t1,
         fontFamily: "'DM Sans', system-ui, sans-serif",
         display: "grid",
-        gridTemplateColumns: "minmax(0,1fr) 300px",
+        gridTemplateColumns: "minmax(0,1fr) 308px",
         overflow: "hidden",
       }}
+      className="cue-home"
     >
-      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
+      <style
+        dangerouslySetInnerHTML={{
+          __html:
+            KEYFRAMES +
+            `@media (max-width: 880px){.cue-home{grid-template-columns:1fr !important;}.cue-home>aside{border-left:none !important;border-top:1px solid ${C.line} !important;}}`,
+        }}
+      />
 
-      {/* MAIN COLUMN */}
+      {/* CENTER COLUMN */}
       <div style={{ overflowY: "auto" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 8px" }}>
-          {/* LEAD */}
-          <div style={{ padding: "26px 20px 22px", borderBottom: `1px solid ${C.line}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <ApertureAvatar />
+          {/* THE MOMENT */}
+          <div
+            style={{ padding: "30px 20px 22px", borderBottom: `1px solid ${C.line}` }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <ApertureAvatar size={38} />
               <span
                 style={{
                   fontFamily: mono,
@@ -273,14 +357,9 @@ export function HomeElevatedRoute() {
                   letterSpacing: ".04em",
                 }}
               >
-                {day} · {time} · {handled} HANDLED THIS WEEK
+                {day} · {time}
+                {handled > 0 ? ` · ${handled} HANDLED THIS WEEK` : ""}
               </span>
-              {/*
-                Meeting entry point. Meeting was demoted from the nav rail per
-                the clean-rail design; this surfaces it as an in-context action
-                (record → transcribe → recap) on Home. Route /assistant/meeting
-                stays live.
-              */}
               <button
                 type="button"
                 onClick={() => navigate(routes.meeting)}
@@ -292,60 +371,58 @@ export function HomeElevatedRoute() {
                   background: C.white,
                   border: `1px solid ${C.line2}`,
                   borderRadius: 9,
-                  padding: "6px 12px",
+                  padding: "7px 13px",
                   fontSize: 12,
                   fontWeight: 500,
                   color: C.t1,
                   cursor: "pointer",
+                  boxShadow: "0 1px 2px rgba(26,34,48,.04)",
                 }}
               >
                 <Mic width={14} height={14} color={C.blueS} />
                 Take into a meeting
               </button>
             </div>
+
             <div
               style={{
                 fontFamily: serif,
-                fontSize: 30,
+                fontSize: 31,
                 letterSpacing: "-.3px",
-                lineHeight: 1.16,
-                marginTop: 13,
-                maxWidth: 580,
+                lineHeight: 1.14,
+                marginTop: 16,
+                maxWidth: 600,
+                color: C.ink,
               }}
             >
               {nextMove ? (
                 <>
-                  {greeting}. Your one move right now is the{" "}
+                  {greeting}. Your one move right now is{" "}
                   <span style={{ fontStyle: "italic", color: C.blueS }}>
-                    {nextMove.title}.
+                    {nextMove.title ?? nextMove.summary}.
                   </span>
                 </>
               ) : (
-                <>{greeting}. You&apos;re all caught up — nothing needs you right now.</>
+                <>
+                  {greeting}. You&apos;re all caught up — nothing needs you right
+                  now.
+                </>
               )}
             </div>
 
-            {/* ASK CUE ANYTHING — the command-center query bar (folded in from
-                the dashboard). Sits under the greeting, framed by the active
-                mode's queryContext so e.g. Finances reasons about money. */}
-            <HomeQueryBar
-              assistantId={assistantId}
-              queryContext={active.queryContext}
-            />
-
-            {/* INK DRAFTED CARD */}
+            {/* THE ONE MOVE — ink hero card, only when a top move exists. */}
             {nextMove && (
               <div
                 style={{
                   background: C.ink,
                   color: C.white,
                   borderRadius: 14,
-                  padding: "16px 18px",
-                  marginTop: 16,
+                  padding: "17px 19px",
+                  marginTop: 18,
                   display: "flex",
                   alignItems: "center",
                   gap: 16,
-                  boxShadow: "0 18px 36px -22px rgba(26,34,48,.6)",
+                  boxShadow: "0 20px 38px -22px rgba(26,34,48,.62)",
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -354,21 +431,39 @@ export function HomeElevatedRoute() {
                       fontFamily: mono,
                       fontSize: 10,
                       color: C.blue9,
-                      letterSpacing: ".04em",
+                      letterSpacing: ".06em",
                     }}
                   >
                     {nextMove.category === "email"
                       ? "DRAFTED FOR YOU"
-                      : (nextMove.urgency ?? "next move").toUpperCase()}
+                      : `${(nextMove.urgency ?? "next move").toUpperCase()} · DRAFTED FOR YOU`}
                   </div>
-                  <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
-                    {nextMove.title}
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 500,
+                      marginTop: 5,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {nextMove.title ?? nextMove.summary}
                   </div>
-                  <div style={{ fontSize: 12.5, color: C.blue9, marginTop: 3 }}>
-                    {nextMove.summary}
-                  </div>
+                  {nextMove.title && (
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        color: C.blue9,
+                        marginTop: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {nextMove.summary}
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   {action(nextMove) && (
                     <button
                       type="button"
@@ -376,14 +471,16 @@ export function HomeElevatedRoute() {
                       disabled={feedQuery.triggerAction.isPending}
                       style={{
                         fontSize: 12.5,
+                        fontWeight: 500,
                         background: C.blue,
                         color: C.white,
                         border: "none",
                         borderRadius: 9,
-                        padding: "9px 16px",
+                        padding: "10px 17px",
                         cursor: feedQuery.triggerAction.isPending
                           ? "default"
                           : "pointer",
+                        opacity: feedQuery.triggerAction.isPending ? 0.7 : 1,
                       }}
                     >
                       {action(nextMove)!.label}
@@ -401,7 +498,7 @@ export function HomeElevatedRoute() {
                         color: C.white,
                         border: "none",
                         borderRadius: 9,
-                        padding: "9px 14px",
+                        padding: "10px 15px",
                         cursor: "pointer",
                       }}
                     >
@@ -411,36 +508,107 @@ export function HomeElevatedRoute() {
                 </div>
               </div>
             )}
+
+            {/* ASK CUE — the elegant single-line command bar. */}
+            <HomeQueryBar assistantId={assistantId} />
+
+            {/* STAT STRIP — the dashboard's value folded in as one tasteful row
+                of mono chips that link to detail. Real impact / usage / schedule
+                data; chips with no data are omitted. */}
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {hoursSaved > 0 && (
+                <StatChip
+                  label={`≈${hoursSaved} hrs saved`}
+                  onClick={() => navigate(routes.impact)}
+                  accent={C.green}
+                />
+              )}
+              {spend > 0 && (
+                <StatChip
+                  label={`$${spend.toFixed(2)} spent this month`}
+                  onClick={() => navigate(routes.settings.budget)}
+                />
+              )}
+              {scheduledCount > 0 && (
+                <StatChip
+                  label={`${scheduledCount} scheduled`}
+                  onClick={() => navigate(routes.settings.schedules)}
+                />
+              )}
+            </div>
           </div>
 
-          {/* QUEUE */}
-          {commitments.length > 0 && (
+          {/* ALSO NEEDS YOU — queue with status tabs. */}
+          {queueItems.length > 0 && (
             <>
               <div
                 style={{
-                  padding: "18px 20px 8px",
+                  padding: "20px 20px 10px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 12,
+                  flexWrap: "wrap",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontFamily: mono,
-                    letterSpacing: ".1em",
-                    textTransform: "uppercase",
-                    color: C.t3,
-                  }}
-                >
-                  Also needs you · {commitments.length}
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontFamily: mono,
+                      letterSpacing: ".1em",
+                      textTransform: "uppercase",
+                      color: C.t3,
+                    }}
+                  >
+                    Also needs you · {queueItems.length}
+                  </div>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      background: C.sunken,
+                      borderRadius: 9,
+                      padding: 3,
+                      gap: 2,
+                    }}
+                  >
+                    {QUEUE_TABS.map((t) => {
+                      const isActive = t.id === queueTab;
+                      const n = tabCount(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setQueueTab(t.id)}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 500,
+                            border: "none",
+                            background: isActive ? C.white : "transparent",
+                            color: isActive ? C.t1 : C.t2,
+                            borderRadius: 7,
+                            padding: "5px 11px",
+                            cursor: "pointer",
+                            boxShadow: isActive
+                              ? "0 1px 2px rgba(26,34,48,.08)"
+                              : "none",
+                          }}
+                        >
+                          {t.label}
+                          {n > 0 ? ` ${n}` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                {/*
-                  Next moves was demoted from the nav rail — the full unified
-                  queue lives at /assistant/next-moves and is reachable from
-                  here, where its items already surface as Home's feed.
-                */}
                 <button
                   type="button"
                   onClick={() => navigate(routes.nextMoves)}
@@ -457,32 +625,54 @@ export function HomeElevatedRoute() {
                   See all moves ›
                 </button>
               </div>
-              <div style={{ padding: "0 20px 8px", display: "flex", flexDirection: "column" }}>
-                {commitments.map((item, i) => (
+
+              <div
+                style={{
+                  padding: "0 20px 8px",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {tabbed.length === 0 ? (
                   <div
-                    key={item.id}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 13,
-                      padding: "13px 0",
-                      borderBottom:
-                        i < commitments.length - 1 ? `1px solid ${C.line}` : "none",
+                      fontSize: 13,
+                      color: C.t3,
+                      padding: "16px 0 4px",
                     }}
                   >
-                    <span
-                      style={{
-                        width: 3,
-                        height: 34,
-                        borderRadius: 3,
-                        background: urgencyColor(item),
-                        flexShrink: 0,
-                      }}
-                    />
-                    {(() => {
-                      const chip = queueChipStyle(item);
-                      const ChipIcon = chip.icon;
-                      return (
+                    Nothing here.
+                  </div>
+                ) : (
+                  tabbed.map((item, i) => {
+                    const chip = queueChipStyle(item);
+                    const ChipIcon = chip.icon;
+                    const a = action(item);
+                    const isDone = item.status === "acted_on";
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 13,
+                          padding: "14px 0",
+                          borderBottom:
+                            i < tabbed.length - 1
+                              ? `1px solid ${C.line}`
+                              : "none",
+                          opacity: isDone ? 0.62 : 1,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 3,
+                            height: 36,
+                            borderRadius: 3,
+                            background: urgencyColor(item),
+                            flexShrink: 0,
+                          }}
+                        />
                         <span
                           aria-hidden="true"
                           style={{
@@ -498,120 +688,130 @@ export function HomeElevatedRoute() {
                         >
                           <ChipIcon width={16} height={16} color={chip.ink} />
                         </span>
-                      );
-                    })()}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                        {item.title}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: 13.5,
+                              fontWeight: 500,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <span
+                              style={{
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {item.title ?? item.summary}
+                            </span>
+                            <span
+                              style={{
+                                fontFamily: mono,
+                                fontSize: 9.5,
+                                letterSpacing: ".04em",
+                                textTransform: "uppercase",
+                                color: chip.ink,
+                                background: chip.wash,
+                                borderRadius: 5,
+                                padding: "2px 6px",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {chip.provenance}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: C.t2,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              marginTop: 2,
+                            }}
+                          >
+                            {item.title ? item.summary : ""}
+                          </div>
+                        </div>
+                        {a && !isDone && (
+                          <button
+                            type="button"
+                            onClick={() => runAction(item)}
+                            disabled={feedQuery.triggerAction.isPending}
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 500,
+                              border: `1px solid ${C.line2}`,
+                              background: C.white,
+                              borderRadius: 8,
+                              padding: "8px 14px",
+                              cursor: feedQuery.triggerAction.isPending
+                                ? "default"
+                                : "pointer",
+                              flexShrink: 0,
+                              color: C.t1,
+                            }}
+                          >
+                            {a.label}
+                          </button>
+                        )}
+                        {isDone ? (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontFamily: mono,
+                              color: C.green,
+                              flexShrink: 0,
+                            }}
+                          >
+                            Done
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => dismissItem(item)}
+                            aria-label={`Dismiss ${item.title ?? item.summary}`}
+                            title="Dismiss"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: 26,
+                              height: 26,
+                              border: "none",
+                              background: "transparent",
+                              borderRadius: 7,
+                              padding: 0,
+                              cursor: "pointer",
+                              color: C.t3,
+                              flexShrink: 0,
+                            }}
+                          >
+                            <X width={14} height={14} />
+                          </button>
+                        )}
                       </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: C.t2,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {item.summary}
-                      </div>
-                    </div>
-                    {action(item) && (
-                      <button
-                        type="button"
-                        onClick={() => runAction(item)}
-                        disabled={feedQuery.triggerAction.isPending}
-                        style={{
-                          fontSize: 12,
-                          border: `1px solid ${C.line2}`,
-                          background: C.white,
-                          borderRadius: 8,
-                          padding: "7px 13px",
-                          cursor: feedQuery.triggerAction.isPending
-                            ? "default"
-                            : "pointer",
-                          flexShrink: 0,
-                          color: C.t1,
-                        }}
-                      >
-                        {action(item)!.label}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => dismissItem(item)}
-                      aria-label={`Dismiss ${item.title ?? item.summary}`}
-                      title="Dismiss"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 26,
-                        height: 26,
-                        border: "none",
-                        background: "transparent",
-                        borderRadius: 7,
-                        padding: 0,
-                        cursor: "pointer",
-                        color: C.t3,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <X width={14} height={14} />
-                    </button>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </>
           )}
 
-          {/* TEMPLATE WIDGETS — the dashboard's glanceable cards, folded into
-              Home. A mode switcher swaps the widget set; the next-moves widget
-              is intentionally dropped (Home's queue above already IS that feed)
-              and the query bar lives at the top, so this is a tidy grid of the
-              remaining glanceable cards. */}
-          <div style={{ padding: "4px 20px 6px" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginBottom: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontFamily: mono,
-                  letterSpacing: ".1em",
-                  textTransform: "uppercase",
-                  color: C.t3,
-                }}
-              >
-                At a glance · {active.name}
-              </div>
-              <ModeSwitcher
-                templates={templates}
-                activeId={activeId}
-                onSelect={setActiveId}
-              />
-            </div>
-            <HomeWidgetGrid template={active} assistantId={assistantId} />
-          </div>
-
-          {/* RECAP STRIP */}
+          {/* WHILE YOU SLEPT — recap strip → Impact. */}
           <button
             type="button"
             onClick={() => navigate(routes.impact)}
             style={{
-              margin: "6px 20px 24px",
+              margin: "16px 20px 26px",
               width: "calc(100% - 40px)",
               background: C.sunken,
               border: "none",
               borderRadius: 13,
-              padding: "13px 16px",
+              padding: "14px 16px",
               display: "flex",
               alignItems: "center",
               gap: 14,
@@ -633,7 +833,7 @@ export function HomeElevatedRoute() {
             </span>
             <span style={{ fontSize: 13, color: C.t2, whiteSpace: "nowrap" }}>
               {handled > 0
-                ? `${handled} ${handled === 1 ? "task" : "tasks"} handled for you`
+                ? `${handled} ${handled === 1 ? "task" : "tasks"} handled for you this week`
                 : "Cue is watching your inbox & calendar"}
             </span>
             <span
@@ -680,12 +880,12 @@ export function HomeElevatedRoute() {
         </div>
       </div>
 
-      {/* DAY RAIL */}
+      {/* YOUR DAY — right rail. */}
       <aside
         style={{
           background: C.bg,
           borderLeft: `1px solid ${C.line}`,
-          padding: "20px 18px",
+          padding: "22px 18px",
           display: "flex",
           flexDirection: "column",
           gap: 0,
@@ -694,18 +894,52 @@ export function HomeElevatedRoute() {
       >
         <div
           style={{
-            fontFamily: mono,
-            fontSize: 10,
-            letterSpacing: ".1em",
-            textTransform: "uppercase",
-            color: C.t3,
-            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 18,
           }}
         >
-          Recently · by Cue
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 10,
+              letterSpacing: ".1em",
+              textTransform: "uppercase",
+              color: C.t3,
+            }}
+          >
+            Your Day
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => navigate(routes.meeting)}
+              aria-label="Record"
+              title="Record a meeting"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 24,
+                height: 24,
+                border: "none",
+                background: "transparent",
+                borderRadius: 6,
+                padding: 0,
+                cursor: "pointer",
+                color: C.blueS,
+              }}
+            >
+              <Mic width={14} height={14} />
+            </button>
+            <Sparkles width={13} height={13} color={C.violet} />
+          </div>
         </div>
-        {recent.length > 0 ? (
-          <div style={{ position: "relative", paddingLeft: 18, flex: 1 }}>
+
+        {/* TIMELINE — upcoming schedules (real) + recently-handled work. */}
+        {upcoming.length > 0 || recent.length > 0 ? (
+          <div style={{ position: "relative", paddingLeft: 18 }}>
             <span
               style={{
                 position: "absolute",
@@ -716,8 +950,76 @@ export function HomeElevatedRoute() {
                 background: C.line,
               }}
             />
-            {recent.slice(0, 6).map((r, i) => (
-              <div key={i} style={{ position: "relative", marginBottom: 16 }}>
+            {upcoming.map((s, idx) => {
+              const isNow = idx === 0;
+              return (
+                <div key={s.id} style={{ position: "relative", marginBottom: 18 }}>
+                  <span
+                    style={{
+                      position: "absolute",
+                      left: -18,
+                      top: 3,
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: isNow ? C.blue : C.white,
+                      border: `2px solid ${isNow ? C.blue : C.line2}`,
+                      boxShadow: `0 0 0 3px ${C.bg}`,
+                    }}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      fontFamily: mono,
+                      fontSize: 10,
+                      color: C.t3,
+                    }}
+                  >
+                    {formatScheduleTime(s.nextRunAt)}
+                    {isNow && (
+                      <span
+                        style={{
+                          fontFamily: mono,
+                          fontSize: 9,
+                          fontWeight: 600,
+                          letterSpacing: ".08em",
+                          color: C.blue,
+                          background: "#E6EDFC",
+                          borderRadius: 5,
+                          padding: "1px 5px",
+                        }}
+                      >
+                        NEXT
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      marginTop: 2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {s.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.t2 }}>
+                    {s.mode === "execute" || s.mode === "script"
+                      ? "Cue will run this"
+                      : "Cue will notify you"}
+                  </div>
+                </div>
+              );
+            })}
+            {recent.slice(0, 5).map((r, i) => (
+              <div
+                key={`recent-${i}`}
+                style={{ position: "relative", marginBottom: 16 }}
+              >
                 <span
                   style={{
                     position: "absolute",
@@ -736,13 +1038,21 @@ export function HomeElevatedRoute() {
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: C.t2, flex: 1 }}>
-            As Cue handles things on your behalf, they show up here.
+          <div style={{ fontSize: 12.5, color: C.t2 }}>
+            Your day is clear. As Cue schedules work and handles things on your
+            behalf, they show up here.
           </div>
         )}
 
-        {commitments.length > 0 && (
-          <div style={{ borderTop: `1px solid ${C.line}`, paddingTop: 14, marginTop: 8 }}>
+        {/* OPEN COMMITMENTS */}
+        {openCommitments.length > 0 && (
+          <div
+            style={{
+              borderTop: `1px solid ${C.line}`,
+              paddingTop: 16,
+              marginTop: 8,
+            }}
+          >
             <div
               style={{
                 fontFamily: mono,
@@ -756,7 +1066,7 @@ export function HomeElevatedRoute() {
               Open commitments
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {commitments.map((item) => (
+              {openCommitments.map((item) => (
                 <div
                   key={item.id}
                   style={{
@@ -775,7 +1085,7 @@ export function HomeElevatedRoute() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {item.title}
+                    {item.title ?? item.summary}
                   </div>
                   <div
                     style={{
@@ -786,7 +1096,7 @@ export function HomeElevatedRoute() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {item.summary}
+                    {item.title ? item.summary : queueChipStyle(item).provenance}
                   </div>
                 </div>
               ))}
@@ -798,33 +1108,74 @@ export function HomeElevatedRoute() {
   );
 }
 
-/**
- * "Ask Cue anything" — the command-center query bar, folded onto Home from the
- * dashboard. Reuses `useDashboardQuery` (postChatMessage → fresh conversation),
- * styled to Home's serif/mono inline-hex palette rather than the dashboard card
- * chrome so it reads as one coherent surface.
- */
-function HomeQueryBar({
-  assistantId,
-  queryContext,
+/** A slim mono stat chip linking to a detail surface. */
+function StatChip({
+  label,
+  onClick,
+  accent,
 }: {
-  assistantId: string;
-  queryContext?: string;
+  label: string;
+  onClick: () => void;
+  accent?: string;
 }) {
-  const { value, setValue, submitting, error, submit } = useDashboardQuery(
-    assistantId,
-    queryContext,
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontFamily: mono,
+        fontSize: 11.5,
+        color: accent ?? C.t2,
+        background: C.white,
+        border: `1px solid ${C.line}`,
+        borderRadius: 8,
+        padding: "6px 11px",
+        cursor: "pointer",
+        letterSpacing: ".01em",
+      }}
+    >
+      {label}
+      <ArrowRight size={12} color={C.t3} />
+    </button>
   );
+}
+
+/**
+ * "Ask Cue anything" — the command-center query bar. Reuses `useDashboardQuery`
+ * (postChatMessage → fresh conversation), styled to Home's inline-hex palette
+ * so it reads as one coherent surface.
+ */
+function HomeQueryBar({ assistantId }: { assistantId: string }) {
+  const { value, setValue, submitting, error, submit } =
+    useDashboardQuery(assistantId);
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: 18 }}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
-        style={{ display: "flex", gap: 10, alignItems: "center" }}
+        style={{
+          display: "flex",
+          gap: 0,
+          alignItems: "center",
+          background: C.white,
+          border: `1px solid ${C.line2}`,
+          borderRadius: 12,
+          padding: "4px 4px 4px 14px",
+          boxShadow: "0 1px 2px rgba(26,34,48,.04)",
+        }}
       >
+        <Sparkles
+          width={15}
+          height={15}
+          color={C.violet}
+          style={{ flexShrink: 0 }}
+        />
         <input
           type="text"
           value={value}
@@ -833,13 +1184,13 @@ function HomeQueryBar({
           style={{
             flex: 1,
             fontSize: 14,
-            border: `1px solid ${C.line2}`,
-            borderRadius: 12,
-            padding: "12px 15px",
+            border: "none",
+            padding: "9px 12px",
             outline: "none",
             color: C.t1,
-            background: C.white,
+            background: "transparent",
             minWidth: 0,
+            fontFamily: "inherit",
           }}
         />
         <button
@@ -848,142 +1199,32 @@ function HomeQueryBar({
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: 7,
-            fontSize: 14,
+            gap: 6,
+            fontSize: 13.5,
             fontWeight: 500,
-            border: `1px solid ${C.blue}`,
+            border: "none",
             background: C.blue,
             color: C.white,
-            borderRadius: 12,
-            padding: "12px 17px",
+            borderRadius: 9,
+            padding: "9px 15px",
             cursor:
               submitting || value.trim().length === 0 ? "default" : "pointer",
-            opacity: submitting || value.trim().length === 0 ? 0.6 : 1,
+            opacity: submitting || value.trim().length === 0 ? 0.55 : 1,
             whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           {submitting ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
-            <ArrowRight size={16} />
+            <ArrowRight size={15} />
           )}
           Ask Cue
         </button>
       </form>
       {error ? (
-        <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>
-          {error}
-        </div>
+        <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</div>
       ) : null}
     </div>
   );
-}
-
-/** Mode switcher (Personal / Company / Finances / Founder) — reuses the
- *  dashboard templates; swaps the glanceable widget set below the feed. */
-function ModeSwitcher({
-  templates,
-  activeId,
-  onSelect,
-}: {
-  templates: DashboardTemplate[];
-  activeId: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-      {templates.map((t) => {
-        const isActive = t.id === activeId;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onSelect(t.id)}
-            style={{
-              fontSize: 12.5,
-              fontWeight: 500,
-              border: `1px solid ${isActive ? C.ink : C.line2}`,
-              background: isActive ? C.ink : C.white,
-              color: isActive ? C.white : C.t1,
-              borderRadius: 999,
-              padding: "5px 13px",
-              cursor: "pointer",
-            }}
-          >
-            {t.name}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/**
- * The glanceable widget grid for the active mode. Reuses the dashboard's widget
- * components verbatim. Two widget ids are skipped here so Home stays one
- * coherent surface, not two feeds:
- *   • `next-moves` — Home's "Also needs you" queue already IS this feed.
- *   • `query-bar`  — the ask-Cue bar lives at the top, under the greeting.
- */
-function HomeWidgetGrid({
-  template,
-  assistantId,
-}: {
-  template: DashboardTemplate;
-  assistantId: string;
-}) {
-  const widgets = template.widgets.filter(
-    (w) => w.id !== "next-moves" && w.id !== "query-bar",
-  );
-
-  if (widgets.length === 0) return null;
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-        gap: 14,
-        alignItems: "start",
-      }}
-    >
-      {widgets.map((spec, idx) => (
-        <HomeWidget
-          key={`${spec.id}-${idx}`}
-          spec={spec}
-          assistantId={assistantId}
-        />
-      ))}
-    </div>
-  );
-}
-
-function HomeWidget({
-  spec,
-  assistantId,
-}: {
-  spec: WidgetSpec;
-  assistantId: string;
-}) {
-  switch (spec.id) {
-    case "recent-memory":
-      return <RecentMemoryWidget assistantId={assistantId} />;
-    case "impact-stats":
-      return <ImpactStatsWidget assistantId={assistantId} />;
-    case "schedules":
-      return <SchedulesWidget assistantId={assistantId} />;
-    case "work-items":
-      return <WorkItemsWidget assistantId={assistantId} />;
-    case "assistant-state":
-      return <AssistantStateWidget assistantId={assistantId} />;
-    case "connector-query":
-      // A connector-query spec without a preset is a template authoring bug;
-      // skip rather than render a broken card.
-      return spec.preset ? (
-        <ConnectorQueryWidget assistantId={assistantId} preset={spec.preset} />
-      ) : null;
-    default:
-      // next-moves / query-bar are filtered out before reaching here.
-      return null;
-  }
 }
