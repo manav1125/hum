@@ -13687,10 +13687,12 @@ paths:
   /v1/home/action-board/build:
     post:
       operationId: home_actionboard_build_post
-      summary: Build the daily action board
+      summary: Build the daily action board (all streams)
       description:
-        Gather connected data (Gmail unread + today's Calendar), synthesize prioritized action items, and write
-        them to the Home feed. Idempotent per day. Returns counts of items written and data scanned.
+        "Gather connected data across ALL streams (Gmail unread + today's Calendar + connected messaging channels:
+        Slack/Telegram/WhatsApp), synthesize one cross-stream prioritized action list, and write the cards to the Home
+        feed. Idempotent per day. Returns counts of items written and data scanned. Path kept stable for existing
+        callers."
       tags:
         - home
       responses:
@@ -13908,6 +13910,11 @@ paths:
                             - scheduling
                             - background
                             - email
+                            - slack
+                            - telegram
+                            - whatsapp
+                            - chat
+                            - task
                             - system
                         noteworthy:
                           type: boolean
@@ -14073,6 +14080,11 @@ paths:
                       - scheduling
                       - background
                       - email
+                      - slack
+                      - telegram
+                      - whatsapp
+                      - chat
+                      - task
                       - system
                   noteworthy:
                     type: boolean
@@ -14253,6 +14265,11 @@ paths:
                             - scheduling
                             - background
                             - email
+                            - slack
+                            - telegram
+                            - whatsapp
+                            - chat
+                            - task
                             - system
                         noteworthy:
                           type: boolean
@@ -14333,6 +14350,11 @@ paths:
                       - scheduling
                       - background
                       - email
+                      - slack
+                      - telegram
+                      - whatsapp
+                      - chat
+                      - task
                       - system
                 conversationId:
                   type: string

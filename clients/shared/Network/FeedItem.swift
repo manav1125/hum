@@ -58,6 +58,11 @@ public enum FeedItemCategory: String, Codable, Sendable, Hashable, CaseIterable 
     case scheduling
     case background
     case email
+    case slack
+    case telegram
+    case whatsapp
+    case chat
+    case task
     case system
 }
 

@@ -9,13 +9,14 @@
  * localStorage — see `use-dashboard-templates.ts`).
  */
 
-/** A `FeedItemCategory` subset used to slice the next-moves widget. */
-export type FeedCategory =
-  | "security"
-  | "scheduling"
-  | "background"
-  | "email"
-  | "system";
+import type { FeedItemCategory } from "@vellumai/assistant-api";
+
+/**
+ * Categories used to slice the next-moves widget. Aliased to the canonical
+ * `FeedItemCategory` so new channel categories (slack/telegram/whatsapp/chat/
+ * task) flow through automatically without drifting from the wire contract.
+ */
+export type FeedCategory = FeedItemCategory;
 
 /** A preset "ask Cue to fetch this from your connected apps" intent. */
 export interface ConnectorPreset {

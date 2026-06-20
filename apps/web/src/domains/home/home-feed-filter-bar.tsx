@@ -1,4 +1,15 @@
-import { Bell, Clock, List, Mail, Settings, ShieldCheck } from "lucide-react";
+import {
+  Bell,
+  Clock,
+  List,
+  ListTodo,
+  Mail,
+  MessageCircle,
+  MessageSquare,
+  Send,
+  Settings,
+  ShieldCheck,
+} from "lucide-react";
 import { type ComponentType, type SVGProps } from "react";
 
 import type { FeedItemCategory } from "@vellumai/assistant-api";
@@ -33,6 +44,31 @@ export const CATEGORY_STYLES: Record<FeedItemCategory, CategoryStyle> = {
     strong: "var(--system-info-strong)",
     weak: "var(--system-info-weak)",
   },
+  slack: {
+    icon: MessageSquare,
+    strong: "var(--feed-thread-strong)",
+    weak: "var(--feed-thread-weak)",
+  },
+  telegram: {
+    icon: Send,
+    strong: "var(--feed-thread-strong)",
+    weak: "var(--feed-thread-weak)",
+  },
+  whatsapp: {
+    icon: MessageCircle,
+    strong: "var(--feed-thread-strong)",
+    weak: "var(--feed-thread-weak)",
+  },
+  chat: {
+    icon: MessageCircle,
+    strong: "var(--feed-thread-strong)",
+    weak: "var(--feed-thread-weak)",
+  },
+  task: {
+    icon: ListTodo,
+    strong: "var(--system-info-strong)",
+    weak: "var(--system-info-weak)",
+  },
   system: {
     icon: Bell,
     strong: "var(--feed-digest-strong)",
@@ -44,6 +80,11 @@ export const CATEGORY_ORDER: FeedItemCategory[] = [
   "security",
   "email",
   "scheduling",
+  "slack",
+  "telegram",
+  "whatsapp",
+  "chat",
+  "task",
   "background",
   "system",
 ];

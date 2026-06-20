@@ -4,9 +4,13 @@ import {
   ArrowRight,
   Bell,
   CalendarClock,
+  ListTodo,
   Loader2,
   Mail,
+  MessageCircle,
+  MessageSquare,
   Mic,
+  Send,
   ShieldCheck,
   Sparkles,
   X,
@@ -169,6 +173,36 @@ const QUEUE_CHIP_STYLE: Record<
     ink: "#534AB7",
     provenance: "Background",
   },
+  slack: {
+    icon: MessageSquare,
+    wash: "#EAF2EC",
+    ink: C.green,
+    provenance: "Slack",
+  },
+  telegram: {
+    icon: Send,
+    wash: "#E5EEFB",
+    ink: C.blueS,
+    provenance: "Telegram",
+  },
+  whatsapp: {
+    icon: MessageCircle,
+    wash: "#EAF2EC",
+    ink: C.green,
+    provenance: "WhatsApp",
+  },
+  chat: {
+    icon: MessageCircle,
+    wash: "#E5EEFB",
+    ink: C.blueS,
+    provenance: "Message",
+  },
+  task: {
+    icon: ListTodo,
+    wash: "#EEEDFB",
+    ink: "#534AB7",
+    provenance: "Task",
+  },
   system: { icon: Bell, wash: C.sunken, ink: C.t2, provenance: "System" },
 };
 
@@ -223,7 +257,13 @@ export function HomeElevatedRoute() {
   });
 
   const items = feedQuery.data?.items ?? [];
-  const boardItems = items.filter((i) => i.id.startsWith("action-board:"));
+  // The "Also needs you" queue is multi-stream: action-board cards (email +
+  // calendar), work-item cards (the agent's queued work, incl. Slack items),
+  // and channel-triage cards all belong here. We exclude only the synthetic
+  // daily summary header (`action-board:<date>:summary`) — it's a banner, not
+  // an actionable card. Everything else flows through the same one-click
+  // framework with channel-aware category icons + provenance chips.
+  const boardItems = items.filter((i) => !i.id.endsWith(":summary"));
   const nextMove = selectNextMove(boardItems);
 
   // The queue is the full board minus the hero move, kept at real status so the

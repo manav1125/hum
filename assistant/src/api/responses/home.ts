@@ -49,12 +49,26 @@ export const FeedItemUrgencySchema = z.enum([
 ]);
 export type FeedItemUrgency = z.infer<typeof FeedItemUrgencySchema>;
 
-/** Broad category for grouping and filtering feed items. */
+/**
+ * Broad category for grouping and filtering feed items.
+ *
+ * `email` and `scheduling` cover the original Gmail/Calendar action board.
+ * `slack`, `telegram`, `whatsapp`, and `chat` tag cross-stream triage cards
+ * by their source messaging channel so the Home queue can render a
+ * channel-accurate icon + provenance chip. `task` tags work-queue items
+ * surfaced on Home. A structurally compatible Swift mirror lives at
+ * `clients/shared/Network/FeedItem.swift` — keep it in sync.
+ */
 export const FeedItemCategorySchema = z.enum([
   "security",
   "scheduling",
   "background",
   "email",
+  "slack",
+  "telegram",
+  "whatsapp",
+  "chat",
+  "task",
   "system",
 ]);
 export type FeedItemCategory = z.infer<typeof FeedItemCategorySchema>;

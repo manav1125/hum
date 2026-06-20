@@ -36,6 +36,15 @@ import { getPersonalizedGreeting } from "../../home/home-greeting.js";
 import { getImpactSummary } from "../../home/impact-store.js";
 import { getSuggestedPrompts } from "../../home/suggested-prompts.js";
 import {
+  mergeWorkItemsIntoFeed,
+  workItemToFeedItem,
+  WORK_ITEM_FEED_PREFIX,
+} from "../../home/work-item-feed.js";
+import {
+  getWorkItem,
+  listWorkItems,
+} from "../../work-items/work-item-store.js";
+import {
   addMessage,
   createConversation,
 } from "../../memory/conversation-crud.js";
@@ -63,7 +72,20 @@ const listHomeFeedRequestSchema = z.object({
   after: z.string().optional(),
   urgencies: z.array(z.enum(["low", "medium", "high", "critical"])).optional(),
   categories: z
-    .array(z.enum(["security", "scheduling", "background", "email", "system"]))
+    .array(
+      z.enum([
+        "security",
+        "scheduling",
+        "background",
+        "email",
+        "slack",
+        "telegram",
+        "whatsapp",
+        "chat",
+        "task",
+        "system",
+      ]),
+    )
     .optional(),
   conversationId: z.string().optional(),
   fromAssistant: z.boolean().optional(),
@@ -107,6 +129,25 @@ export function formatRelativeTime(seconds: number): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+/**
+ * Resolve a feed item by id, looking first at the on-disk feed and falling
+ * back to a synthesized work-item card. Work-item cards are computed in the
+ * GET handler (not persisted), so `POST /actions/:actionId` must reconstruct
+ * the same card to find its action — otherwise a one-click on a work-item
+ * card would 404.
+ */
+function resolveFeedItemById(itemId: string): FeedItem | undefined {
+  const onDisk = readHomeFeed().items.find((i) => i.id === itemId);
+  if (onDisk) return onDisk;
+
+  if (itemId.startsWith(WORK_ITEM_FEED_PREFIX)) {
+    const workItemId = itemId.slice(WORK_ITEM_FEED_PREFIX.length);
+    const wi = getWorkItem(workItemId);
+    if (wi) return workItemToFeedItem(wi, new Date());
+  }
+  return undefined;
+}
+
 function timeAwayBucket(seconds: number): string {
   if (seconds < 1800) return "<1800";
   if (seconds < 14400) return "1800-14400";
@@ -134,14 +175,32 @@ export async function handleGetHomeFeed({
   }
   const timeAwaySeconds = parsed;
 
+  const now = new Date();
+
   const feed = readHomeFeed();
   // v2 schema dropped per-item `minTimeAway` gating; surface every item
   // and let the client decide what to render based on its own
   // session state. `timeAwaySeconds` survives only to feed the
   // context-banner relative-time label.
-  const filtered = feed.items;
-
-  const now = new Date();
+  //
+  // Union the on-disk feed (action-board + triage cards) with queued
+  // work-items mapped to FeedItems, so agent-created work-queue items
+  // (the 7 Slack items, etc.) finally surface on Home. Deterministic —
+  // no model involved — and deduped against the on-disk feed so an item
+  // isn't double-listed. A read here is acceptable: this GET handler
+  // stays read-only (the DB read is a pure query, the file read already
+  // happens above).
+  let filtered: FeedItem[];
+  try {
+    const queued = listWorkItems({ status: "queued" });
+    filtered = mergeWorkItemsIntoFeed(feed.items, queued, now);
+  } catch (err) {
+    log.warn(
+      { err: String(err) },
+      "Failed to union work-items into home feed; serving feed-file items only",
+    );
+    filtered = feed.items;
+  }
 
   // Stale-while-revalidate: serve whatever is cached right now and kick
   // off a bounded background regeneration of any stale LLM content. The
@@ -195,6 +254,16 @@ export async function handlePatchFeedItem({
   const currentFeed = readHomeFeed();
   const existing = currentFeed.items.find((i) => i.id === itemId);
   if (!existing) {
+    // Work-item cards are synthesized in the GET handler, not persisted to
+    // the feed file. A status flip on one (e.g. mark "seen") is a UI-only
+    // concern — the item's real lifecycle lives in the work-item store — so
+    // echo the synthesized card with the requested status instead of 404/500.
+    if (itemId.startsWith(WORK_ITEM_FEED_PREFIX)) {
+      const card = resolveFeedItemById(itemId);
+      if (card) {
+        return { ...card, status } as unknown as Record<string, unknown>;
+      }
+    }
     throw new NotFoundError(`Feed item not found: ${itemId}`);
   }
 
@@ -307,8 +376,7 @@ export async function handlePostFeedAction({
   const itemId = pathParams.id;
   const actionId = pathParams.actionId;
 
-  const feed = readHomeFeed();
-  const item: FeedItem | undefined = feed.items.find((i) => i.id === itemId);
+  const item: FeedItem | undefined = resolveFeedItemById(itemId);
   if (!item) {
     throw new NotFoundError(`Feed item not found: ${itemId}`);
   }
@@ -550,9 +618,9 @@ export const ROUTES: RouteDefinition[] = [
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     handler: handleBuildActionBoard,
-    summary: "Build the daily action board",
+    summary: "Build the daily action board (all streams)",
     description:
-      "Gather connected data (Gmail unread + today's Calendar), synthesize prioritized action items, and write them to the Home feed. Idempotent per day. Returns counts of items written and data scanned.",
+      "Gather connected data across ALL streams (Gmail unread + today's Calendar + connected messaging channels: Slack/Telegram/WhatsApp), synthesize one cross-stream prioritized action list, and write the cards to the Home feed. Idempotent per day. Returns counts of items written and data scanned. Path kept stable for existing callers.",
     tags: ["home"],
     responseBody: actionBoardResponseSchema,
   },
