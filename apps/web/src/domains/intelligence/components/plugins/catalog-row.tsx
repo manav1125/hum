@@ -1,61 +1,79 @@
-import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 
 import type { PluginsSearchGetResponse } from "@/generated/daemon/types.gen";
 import { routes } from "@/utils/routes";
-import { Card } from "@vellumai/design-library";
 
 interface CatalogRowProps {
   match: PluginsSearchGetResponse["matches"][number];
 }
 
 /**
- * Row for a single catalog entry. Links to the plugin's detail page,
- * where the README, tracked metadata, and an Install action live. The
- * hover affordance (surface tint + chevron) signals the row is
- * navigable.
+ * Card for a single catalog entry — design-matched to surfaces/Plugins.dc.html
+ * (icon tile + name + an Install chip + description, in a 2-up grid). The whole
+ * card links to the plugin's detail page, where the README, tracked metadata,
+ * and the real Install action live.
  */
 export function CatalogRow({ match }: CatalogRowProps) {
   return (
-    <Card.Root asChild>
-      <Link
-        to={routes.plugin(match.name)}
-        className="group flex cursor-pointer items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-      >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center text-2xl">
+    <Link
+      to={routes.plugin(match.name)}
+      className="group block cursor-pointer rounded-[13px] p-[15px] text-left transition-colors hover:bg-[var(--surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      style={{
+        border: "1px solid #E5E9F0",
+        background: "#fff",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: "#1A2230",
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className="flex shrink-0 items-center justify-center"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            background: "#EEF1F6",
+            fontSize: 17,
+          }}
+        >
           📦
-        </div>
+        </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span
-              className="truncate text-body-medium-default"
-              style={{ color: "var(--content-default)" }}
-            >
-              {match.name}
-            </span>
+          <div
+            className="truncate"
+            style={{ fontSize: 14, fontWeight: 500, color: "#1A2230" }}
+          >
+            {match.name}
           </div>
-          {match.description && (
-            <p
-              className="mt-1 truncate text-body-small-default"
-              style={{ color: "var(--content-secondary)" }}
-            >
-              {match.description}
-            </p>
-          )}
-          <p
-            className="mt-1 truncate text-body-small-default"
-            style={{ color: "var(--content-tertiary)" }}
+          <div
+            className="truncate"
+            style={{ fontSize: 12, color: "#8D99A5" }}
             title={match.path}
           >
             {match.path}
-          </p>
+          </div>
         </div>
-        <ChevronRight
-          className="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-          style={{ color: "var(--content-tertiary)" }}
-          aria-hidden
-        />
-      </Link>
-    </Card.Root>
+        <span
+          className="shrink-0"
+          style={{
+            fontSize: 12,
+            border: "1px solid #D7DDE7",
+            borderRadius: 8,
+            padding: "5px 11px",
+            color: "#1A2230",
+          }}
+        >
+          Install
+        </span>
+      </div>
+      {match.description ? (
+        <p
+          className="mt-[10px] line-clamp-2"
+          style={{ fontSize: 12.5, color: "#5A6672" }}
+        >
+          {match.description}
+        </p>
+      ) : null}
+    </Link>
   );
 }

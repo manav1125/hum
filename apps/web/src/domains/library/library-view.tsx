@@ -25,7 +25,19 @@ import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
 import type { AppSummary } from "@/types/app-types";
 import { clearAppHtmlCache, getCachedAppHtml } from "@/utils/app-html-cache";
 import { importBundle } from "@/utils/import-bundle";
-import { Button, Input, toast } from "@vellumai/design-library";
+import { ApertureAvatar, Input, toast } from "@vellumai/design-library";
+
+// Editorial tokens (design/HANDOFF.md) — Library mirrors the inline-hex
+// convention of the other v0.3 catalog surfaces (Connectors, Impact).
+const SERIF = "'Instrument Serif', Georgia, serif";
+const MONO = "'DM Mono', ui-monospace, monospace";
+const sectionLabel = {
+  fontFamily: MONO,
+  fontSize: 11,
+  letterSpacing: ".1em",
+  textTransform: "uppercase" as const,
+  color: "#8D99A5",
+};
 
 export interface LibraryViewProps {
   assistantId: string;
@@ -180,37 +192,64 @@ export function LibraryView({
 
   // --- Render: main library grid ---
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
-        {title ? (
-          <h1 className="text-title-large text-[var(--content-default)]">
-            {title}
-          </h1>
-        ) : (
-          <span />
-        )}
-        <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".vellum"
-            className="hidden"
-            onChange={handleImportBundle}
-          />
-          <Button
-            variant="outlined"
-            size="regular"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isImporting}
+    <div
+      className="flex h-full flex-col overflow-hidden"
+      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+    >
+      {/* Editorial hero — "Everything you and Cue have made together." */}
+      <div className="mb-5 flex shrink-0 items-center gap-4">
+        <ApertureAvatar state="listening" size={42} className="rounded-[12px]" />
+        <div className="flex-1 min-w-0">
+          <div
+            style={{
+              fontFamily: SERIF,
+              fontSize: 26,
+              letterSpacing: "-.2px",
+              lineHeight: 1.18,
+            }}
           >
-            {isImporting ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            ) : (
-              <Upload size={14} />
-            )}
-            <span className="ml-1.5">Import</span>
-          </Button>
+            Everything you and Cue have{" "}
+            <span style={{ fontStyle: "italic", color: "#2B53C4" }}>
+              made together.
+            </span>
+          </div>
+          <div style={{ fontSize: 12.5, color: "#5A6672", marginTop: 3 }}>
+            Decks, docs, sites, and artifacts — pick up where you left off, or
+            import your own.
+          </div>
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".vellum"
+          className="hidden"
+          onChange={handleImportBundle}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isImporting}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13.5,
+            background: "#1A2230",
+            color: "#fff",
+            border: "none",
+            borderRadius: 10,
+            padding: "10px 18px",
+            cursor: isImporting ? "default" : "pointer",
+            flexShrink: 0,
+          }}
+        >
+          {isImporting ? (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+          ) : (
+            <Upload size={14} />
+          )}
+          Import
+        </button>
       </div>
 
       <div className="mb-6 shrink-0">
@@ -256,7 +295,7 @@ export function LibraryView({
             />
             {filteredDocuments.length > 0 ? (
               <section>
-                <h2 className="mb-4 text-body-small-emphasised text-[color:var(--content-secondary)]">
+                <h2 className="mb-4" style={sectionLabel}>
                   Documents
                 </h2>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">

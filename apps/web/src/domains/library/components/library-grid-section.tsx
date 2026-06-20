@@ -35,7 +35,16 @@ export function LibraryGridSection({
 
   return (
     <section>
-      <h2 className="mb-4 text-body-small-emphasised text-[color:var(--content-secondary)]">
+      <h2
+        className="mb-4"
+        style={{
+          fontFamily: "'DM Mono', ui-monospace, monospace",
+          fontSize: 11,
+          letterSpacing: ".1em",
+          textTransform: "uppercase",
+          color: "#8D99A5",
+        }}
+      >
         {title}
       </h2>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">

@@ -6,7 +6,7 @@ import { Input } from "@vellumai/design-library/components/input";
 
 import { DetailCard } from "@/components/detail-card";
 import { ContactChannelsSection } from "@/domains/contacts/components/contact-channels-section";
-import { ContactTypeBadge } from "@/domains/contacts/components/contact-type-badge";
+import { ContactDossierHeader } from "@/domains/contacts/components/contact-dossier-header";
 import type { ChannelInfo, ContactPayload } from "@/domains/contacts/types";
 
 interface ContactDetailViewProps {
@@ -62,7 +62,6 @@ function ContactDetailViewInner({
     contact.interactionCount === 0;
 
   const headerName = trimmedName || contact.displayName;
-  const interactionLabel = `${contact.interactionCount} interaction${contact.interactionCount === 1 ? "" : "s"}`;
 
   const requestDelete = () => {
     if (isEmptyDraft) {
@@ -74,12 +73,13 @@ function ContactDetailViewInner({
 
   return (
     <div className="flex flex-col gap-6">
-      <DetailCard
-        title={headerName}
-        accessory={<ContactTypeBadge role={contact.role} contactType={contact.contactType} />}
-        compactAccessory
-        subtitle={interactionLabel}
-      >
+      <ContactDossierHeader
+        contact={contact}
+        displayName={headerName}
+        subtitle={trimmedNotes || contact.notes || undefined}
+      />
+
+      <DetailCard title="Details">
         <div className="flex flex-col gap-4">
           <Input
             label="Name"
@@ -93,11 +93,11 @@ function ContactDetailViewInner({
           />
 
           <Input
-            label="Notes"
+            label="How you know them"
             type="text"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional notes about the human which AI will take into account"
+            placeholder="Context Cue should keep in mind — how you met, how they prefer to work"
             disabled={savePending || deletePending}
             fullWidth
           />

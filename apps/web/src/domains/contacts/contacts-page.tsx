@@ -559,11 +559,25 @@ export function ContactsPage({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden sm:flex-row sm:gap-6">
-      <div className="flex items-center sm:hidden">
-        <MobileSidebarTrigger onClick={() => setDrawerOpen(true)} />
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden"
+      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+    >
+      <div className="flex shrink-0 items-center gap-3">
+        <div className="flex items-center sm:hidden">
+          <MobileSidebarTrigger onClick={() => setDrawerOpen(true)} />
+        </div>
+        <div>
+          <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>
+            Contacts
+          </h1>
+          <p style={{ fontSize: 13.5, color: "#5A6672", marginTop: 3 }}>
+            People Cue knows — context, commitments, and how to reach them.
+          </p>
+        </div>
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden sm:flex-row sm:gap-6">
       <MobileSidebarDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -680,15 +694,19 @@ export function ContactsPage({
         assistantId={assistantId}
         onClose={handleInviteClose}
       />
+      </div>
     </div>
   );
 }
 
 function ContactsEmptyState() {
   return (
-    <div className="flex h-full items-center justify-center py-16">
-      <p className="text-body-medium-lighter" style={{ color: "var(--content-tertiary)" }}>
-        Select a contact
+    <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
+      <p style={{ fontSize: 15, fontWeight: 600, color: "#1A2230" }}>
+        Pick someone to see their dossier
+      </p>
+      <p style={{ fontSize: 13, color: "#8D99A5", maxWidth: 300 }}>
+        Cue keeps context, commitments, and how to reach each person you select.
       </p>
     </div>
   );

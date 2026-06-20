@@ -1,11 +1,9 @@
-import { ChevronRight } from "lucide-react";
 import { Link } from "react-router";
 
 import { UpdateAvailableBadge } from "@/domains/intelligence/components/plugins/update-available-badge";
 import { usePluginDrift } from "@/domains/intelligence/use-plugin-drift";
 import type { PluginsGetResponse } from "@/generated/daemon/types.gen";
 import { routes } from "@/utils/routes";
-import { Card } from "@vellumai/design-library";
 
 interface PluginRowProps {
   plugin: PluginsGetResponse["plugins"][number];
@@ -13,71 +11,77 @@ interface PluginRowProps {
 }
 
 /**
- * Row for a single installed plugin. Links to the plugin's detail page,
- * where the README, tracked metadata, and Upgrade / Remove actions live.
- * The hover affordance (surface tint + chevron) signals the row is
- * navigable; an "Update available" pill appears when the installed copy
- * is behind the marketplace pin. The drift query is shared (by key) with
- * the detail page, so opening a flagged plugin doesn't re-inspect it.
+ * Card for a single installed plugin — design-matched to surfaces/Plugins.dc.html
+ * (icon tile + name + version chip + description, in a 2-up grid). The whole
+ * card links to the plugin's detail page, where the README, tracked metadata,
+ * and Upgrade / Remove actions live. An "Update available" pill appears when
+ * the installed copy is behind the marketplace pin. The drift query is shared
+ * (by key) with the detail page, so opening a flagged plugin doesn't re-inspect.
  */
 export function PluginRow({ plugin, assistantId }: PluginRowProps) {
   const driftQuery = usePluginDrift({ assistantId, name: plugin.name });
   const updateAvailable = driftQuery.data?.status === "update-available";
 
   return (
-    <Card.Root asChild>
-      <Link
-        to={routes.plugin(plugin.name)}
-        className="group flex cursor-pointer items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-[var(--surface-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-      >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center text-2xl">
+    <Link
+      to={routes.plugin(plugin.name)}
+      className="group block cursor-pointer rounded-[13px] p-[15px] text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      style={{
+        border: "1px solid #E5E9F0",
+        background: "#fff",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: "#1A2230",
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className="flex shrink-0 items-center justify-center"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            background: "#EEEDFB",
+            fontSize: 17,
+          }}
+        >
           🧩
-        </div>
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className="truncate text-body-medium-default"
-              style={{ color: "var(--content-default)" }}
+              className="truncate"
+              style={{ fontSize: 14, fontWeight: 500, color: "#1A2230" }}
             >
               {plugin.name}
             </span>
             {plugin.version ? (
-              <span
-                className="shrink-0 text-body-small-default"
-                style={{ color: "var(--content-tertiary)" }}
-              >
+              <span style={{ fontSize: 12, color: "#5A6672", flexShrink: 0 }}>
                 v{plugin.version}
               </span>
             ) : null}
             {updateAvailable ? <UpdateAvailableBadge /> : null}
           </div>
-          <p
-            className="mt-1 truncate text-body-medium-lighter"
-            style={{ color: "var(--content-secondary)" }}
-          >
-            {plugin.description ?? "No description provided."}
-          </p>
-          {plugin.issues && plugin.issues.length > 0 ? (
-            <p
-              className="mt-1 truncate text-body-small-default"
-              style={{
-                color: "var(--content-warning, var(--content-tertiary))",
-              }}
-              title={plugin.issues.join("; ")}
-            >
-              {plugin.issues[0]}
-              {plugin.issues.length > 1
-                ? ` (+${plugin.issues.length - 1} more)`
-                : ""}
-            </p>
-          ) : null}
+          <div style={{ fontSize: 12, color: "#5A6672" }}>installed</div>
         </div>
-        <ChevronRight
-          className="h-5 w-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-          style={{ color: "var(--content-tertiary)" }}
-          aria-hidden
-        />
-      </Link>
-    </Card.Root>
+      </div>
+      <p
+        className="mt-[10px] line-clamp-2"
+        style={{ fontSize: 12.5, color: "#5A6672" }}
+      >
+        {plugin.description ?? "No description provided."}
+      </p>
+      {plugin.issues && plugin.issues.length > 0 ? (
+        <p
+          className="mt-1 truncate"
+          style={{ fontSize: 11.5, color: "#C98A1B" }}
+          title={plugin.issues.join("; ")}
+        >
+          {plugin.issues[0]}
+          {plugin.issues.length > 1
+            ? ` (+${plugin.issues.length - 1} more)`
+            : ""}
+        </p>
+      ) : null}
+    </Link>
   );
 }

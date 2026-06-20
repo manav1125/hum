@@ -34,10 +34,11 @@ export function LibraryEmptyState({
         <LayoutGrid size={32} className="text-[var(--content-tertiary)]" />
       </div>
       <h2 className="text-title-medium text-[var(--content-default)]">
-        Your library is empty
+        Nothing here yet
       </h2>
       <p className="max-w-md text-center text-body-medium-lighter text-[color:var(--content-tertiary)]">
-        Ask your assistant to build something, or import a shared app
+        Decks, docs, sites, and artifacts you make with Cue land here. Ask Cue
+        to build something, or import your own.
       </p>
       <div className="flex flex-col items-center gap-3">
         {onNewConversation ? (

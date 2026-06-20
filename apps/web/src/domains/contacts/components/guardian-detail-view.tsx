@@ -5,7 +5,7 @@ import { Input } from "@vellumai/design-library/components/input";
 
 import { DetailCard } from "@/components/detail-card";
 import { ContactChannelsSection } from "@/domains/contacts/components/contact-channels-section";
-import { ContactTypeBadge } from "@/domains/contacts/components/contact-type-badge";
+import { ContactDossierHeader } from "@/domains/contacts/components/contact-dossier-header";
 import { ShareConnectionLinkButton } from "@/domains/contacts/components/share-connection-link-button";
 import type { ChannelInfo, ContactPayload } from "@/domains/contacts/types";
 
@@ -56,19 +56,19 @@ function GuardianDetailViewInner({
     trimmedNotes !== (contact.notes ?? "").trim();
   const canSave = dirty && !savePending;
 
-  const interactionLabel = `${contact.interactionCount} interaction${contact.interactionCount === 1 ? "" : "s"}`;
   const headerName = principalId
     ? "You"
     : `${contact.displayName} (You)`;
 
   return (
     <div className="flex flex-col gap-6">
-      <DetailCard
-        title={headerName}
-        accessory={<ContactTypeBadge role="guardian" />}
-        compactAccessory
-        subtitle={interactionLabel}
-      >
+      <ContactDossierHeader
+        contact={contact}
+        displayName={headerName}
+        subtitle={trimmedNotes || contact.notes || "Your guardian profile"}
+      />
+
+      <DetailCard title="Details">
         <div className="flex flex-col gap-4">
           <Input
             label="Name"

@@ -125,13 +125,28 @@ export function PluginsTab({ assistantId }: PluginsTabProps) {
     !isLoadingInstalled && !pluginsQuery.isError && visibleInstalled.length === 0;
   const showCatalogEmpty = !isLoadingCatalog && catalogMatches.length === 0;
 
+  // Total available-to-install count drives the search placeholder copy,
+  // mirroring the mock's "Search N plugins…".
+  const catalogTotal = catalogQuery.data?.matches.length ?? 0;
+
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
-      <FilterBar
-        search={searchValue}
-        onSearchChange={setSearchValue}
-        isSearching={isSearching}
-      />
+    <div
+      className="flex h-full min-h-0 flex-1 flex-col gap-4"
+      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+    >
+      <div className="flex shrink-0 items-center gap-3">
+        <h2 style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-.4px" }}>
+          Plugins
+        </h2>
+        <div className="ml-auto min-w-0 flex-1 sm:max-w-[280px]">
+          <FilterBar
+            search={searchValue}
+            onSearchChange={setSearchValue}
+            isSearching={isSearching}
+            catalogTotal={catalogTotal}
+          />
+        </div>
+      </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
         <SectionHeader title="Installed" />
@@ -142,13 +157,15 @@ export function PluginsTab({ assistantId }: PluginsTabProps) {
         ) : showInstalledEmpty ? (
           <InstalledEmptyState hasQuery={Boolean(query)} />
         ) : (
-          <ul className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {visibleInstalled.map((plugin) => (
-              <li key={plugin.id}>
-                <PluginRow plugin={plugin} assistantId={assistantId} />
-              </li>
+              <PluginRow
+                key={plugin.id}
+                plugin={plugin}
+                assistantId={assistantId}
+              />
             ))}
-          </ul>
+          </div>
         )}
 
         <div className="mt-6" />
@@ -160,13 +177,11 @@ export function PluginsTab({ assistantId }: PluginsTabProps) {
         ) : showCatalogEmpty ? (
           <CatalogEmptyState hasQuery={Boolean(query)} />
         ) : (
-          <ul className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {catalogMatches.map((match) => (
-              <li key={match.path}>
-                <CatalogRow match={match} />
-              </li>
+              <CatalogRow key={match.path} match={match} />
             ))}
-          </ul>
+          </div>
         )}
       </div>
     </div>
@@ -185,39 +200,53 @@ interface FilterBarProps {
   search: string;
   onSearchChange: Dispatch<SetStateAction<string>>;
   isSearching: boolean;
+  catalogTotal: number;
 }
 
-function FilterBar({ search, onSearchChange, isSearching }: FilterBarProps) {
+function FilterBar({
+  search,
+  onSearchChange,
+  isSearching,
+  catalogTotal,
+}: FilterBarProps) {
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     onSearchChange(e.target.value);
   };
 
+  // Mirror the mock's "Search N plugins…", but only when we actually know
+  // the catalog size — never invent a count.
+  const placeholder =
+    catalogTotal > 0 ? `Search ${catalogTotal} plugins…` : "Search plugins";
+
   return (
-    <div className="flex items-center gap-3">
-      <Input
-        type="search"
-        value={search}
-        onChange={handleChange}
-        placeholder="Search Plugins"
-        aria-label="Search Plugins"
-        leftIcon={<Search className="h-4 w-4" aria-hidden />}
-        rightIcon={
-          isSearching ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : undefined
-        }
-        fullWidth
-        wrapperClassName="flex-1"
-      />
-    </div>
+    <Input
+      type="search"
+      value={search}
+      onChange={handleChange}
+      placeholder={placeholder}
+      aria-label="Search plugins"
+      leftIcon={<Search className="h-4 w-4" aria-hidden />}
+      rightIcon={
+        isSearching ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+        ) : undefined
+      }
+      fullWidth
+    />
   );
 }
 
 function SectionHeader({ title }: { title: string }) {
   return (
     <h3
-      className="mb-2 text-body-small-default uppercase tracking-wide"
-      style={{ color: "var(--content-tertiary)" }}
+      className="mb-[11px]"
+      style={{
+        fontFamily: "'DM Mono', ui-monospace, monospace",
+        fontSize: 11,
+        letterSpacing: ".1em",
+        textTransform: "uppercase",
+        color: "#8D99A5",
+      }}
     >
       {title}
     </h3>
