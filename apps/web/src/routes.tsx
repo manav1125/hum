@@ -309,6 +309,12 @@ export const routeTree = [
                   lazy: { Component: () => import("@/domains/dashboard/dashboard-page").then((m) => m.DashboardPage) },
                 },
                 {
+                  // Activity — the background-work command center: every task
+                  // Cue runs, with its trigger provenance + steer controls.
+                  path: "activity",
+                  lazy: { Component: () => import("@/domains/activity/activity-page").then((m) => m.ActivityPage) },
+                },
+                {
                   path: "meeting",
                   lazy: { Component: () => import("@/domains/meeting/meeting-capture-page").then((m) => m.MeetingCapturePage) },
                 },

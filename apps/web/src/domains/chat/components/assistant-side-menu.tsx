@@ -1,4 +1,5 @@
 import {
+    Activity,
     Clock,
     Hash,
     Home,
@@ -489,6 +490,13 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/home")}
           onSelect={() => cueNav("/assistant/home")}
+        />
+        <SideMenu.Item
+          icon={Activity}
+          label="Activity"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/activity")}
+          onSelect={() => cueNav("/assistant/activity")}
         />
         <SideMenu.Item
           icon={LayoutDashboard}
