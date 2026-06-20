@@ -13,6 +13,13 @@ import { Button } from "@vellumai/design-library/components/button";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Toggle } from "@vellumai/design-library/components/toggle";
 
+import { captureError } from "@/lib/sentry/capture-error";
+import {
+  settingsClientPut,
+  settingsVoicePut,
+} from "@/generated/daemon/sdk.gen";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
+
 import { DetailCard } from "@/components/detail-card";
 import {
   getLocalSetting,
@@ -221,6 +228,9 @@ function MicrophoneCard() {
 }
 
 function PushToTalkCard() {
+  // Settings routes are NOT mounted under `<ActiveAssistantGate>`, so read the
+  // raw store (nullable) rather than `useActiveAssistantId()`, which throws.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const fnPushToTalkConfigurable = canConfigureFnPushToTalk();
   const [activator, setActivator] = useState<PTTActivator>(() => {
     const raw = getLocalSetting(LS_PTT_ACTIVATION_KEY, "");
@@ -243,12 +253,30 @@ function PushToTalkCard() {
   const pttEnabled = activator.kind !== "off";
   const showFocusedTabNote = pttEnabled && !fnPushToTalkConfigurable;
 
-  const selectActivator = useCallback((next: PTTActivator) => {
-    setActivator(next);
-    setLocalSetting(LS_PTT_ACTIVATION_KEY, serializeActivator(next));
-    setIsRecording(false);
-    setPendingModifiers([]);
-  }, []);
+  const selectActivator = useCallback(
+    (next: PTTActivator) => {
+      const serialized = serializeActivator(next);
+      setActivator(next);
+      // localStorage stays the instant-UI cache the renderer reads on mount.
+      setLocalSetting(LS_PTT_ACTIVATION_KEY, serialized);
+      setIsRecording(false);
+      setPendingModifiers([]);
+      // Also persist to the daemon (`PUT /settings/voice` takes the same
+      // serialized activation key) so the choice survives a cache clear and
+      // is visible to other clients. Best-effort: the cache already reflects
+      // the change, so a failed sync only loses cross-client persistence.
+      if (assistantId) {
+        void settingsVoicePut({
+          path: { assistant_id: assistantId },
+          body: { activationKey: serialized },
+          throwOnError: true,
+        }).catch((error) => {
+          captureError(error, { context: "settings-ptt-activation-key" });
+        });
+      }
+    },
+    [assistantId],
+  );
 
   const beginRecording = useCallback(() => {
     setIsRecording(true);
@@ -489,6 +517,9 @@ function ActivationKeyOption({
 }
 
 function ConversationTimeoutCard() {
+  // Settings routes are NOT mounted under `<ActiveAssistantGate>`, so read the
+  // raw store (nullable) rather than `useActiveAssistantId()`, which throws.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const [timeout, setTimeoutValue] = useState<ConversationTimeoutValue>(() => {
     const raw = getLocalSetting(
       LS_CONVERSATION_TIMEOUT,
@@ -498,10 +529,26 @@ function ConversationTimeoutCard() {
     return match?.value ?? DEFAULT_CONVERSATION_TIMEOUT;
   });
 
-  const handleChange = useCallback((next: ConversationTimeoutValue) => {
-    setTimeoutValue(next);
-    setLocalSetting(LS_CONVERSATION_TIMEOUT, next);
-  }, []);
+  const handleChange = useCallback(
+    (next: ConversationTimeoutValue) => {
+      setTimeoutValue(next);
+      // localStorage stays the instant-UI cache the renderer reads on mount.
+      setLocalSetting(LS_CONVERSATION_TIMEOUT, next);
+      // `PUT /settings/voice` only carries the PTT activation key, so the
+      // timeout goes through the generic client key/value store instead.
+      // Best-effort: the cache already reflects the change.
+      if (assistantId) {
+        void settingsClientPut({
+          path: { assistant_id: assistantId },
+          body: { key: LS_CONVERSATION_TIMEOUT, value: next },
+          throwOnError: true,
+        }).catch((error) => {
+          captureError(error, { context: "settings-conversation-timeout" });
+        });
+      }
+    },
+    [assistantId],
+  );
 
   return (
     <DetailCard

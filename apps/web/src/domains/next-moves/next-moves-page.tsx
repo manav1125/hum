@@ -21,7 +21,11 @@ import {
 import { useMemo, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 
-import type { FeedItem, FeedItemCategory } from "@vellumai/assistant-api";
+import type {
+  FeedAction,
+  FeedItem,
+  FeedItemCategory,
+} from "@vellumai/assistant-api";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
@@ -89,17 +93,22 @@ export function NextMovesPage() {
   const waiting = items.filter((i) => i.status === "seen").length;
   const done = items.filter((i) => i.status === "acted_on").length;
 
-  function handlePrimary(item: FeedItem) {
-    const action = item.actions?.[0];
-    if (action) {
-      feed.triggerAction.mutate({ itemId: item.id, actionId: action.id });
-      return;
-    }
+  function handleAction(item: FeedItem, action: FeedAction) {
+    feed.triggerAction.mutate({ itemId: item.id, actionId: action.id });
+  }
+
+  function handleOpen(item: FeedItem) {
     if (item.conversationId) {
       navigate(`/assistant/conversations/${item.conversationId}`);
-      return;
     }
-    feed.updateStatus.mutate({ itemId: item.id, status: "acted_on" });
+  }
+
+  function handleDismiss(item: FeedItem) {
+    feed.updateStatus.mutate({ itemId: item.id, status: "dismissed" });
+  }
+
+  function handleSnooze(item: FeedItem) {
+    feed.updateStatus.mutate({ itemId: item.id, status: "seen" });
   }
 
   return (
@@ -171,7 +180,10 @@ export function NextMovesPage() {
                 key={item.id}
                 item={item}
                 last={idx === items.length - 1}
-                onPrimary={() => handlePrimary(item)}
+                onAction={(action) => handleAction(item, action)}
+                onOpen={() => handleOpen(item)}
+                onDismiss={() => handleDismiss(item)}
+                onSnooze={() => handleSnooze(item)}
                 pending={
                   feed.triggerAction.isPending || feed.updateStatus.isPending
                 }
@@ -233,20 +245,29 @@ function CountChip({
 function MoveRow({
   item,
   last,
-  onPrimary,
+  onAction,
+  onOpen,
+  onDismiss,
+  onSnooze,
   pending,
 }: {
   item: FeedItem;
   last: boolean;
-  onPrimary: () => void;
+  onAction: (action: FeedAction) => void;
+  onOpen: () => void;
+  onDismiss: () => void;
+  onSnooze: () => void;
   pending: boolean;
 }) {
   const vis = categoryVisual(item.category);
   const title = item.title ?? item.summary;
   const sub = item.title ? item.summary : undefined;
-  const actionLabel = item.actions?.[0]?.label ?? "Open";
-  const primary = item.urgency === "high" || item.urgency === "critical";
+  const actions = item.actions ?? [];
+  const emphasize = item.urgency === "high" || item.urgency === "critical";
   const isDone = item.status === "acted_on";
+  // Only offer "Open" when there is a real conversation to navigate to —
+  // otherwise it would be a no-op chip.
+  const canOpen = Boolean(item.conversationId);
 
   return (
     <div
@@ -311,28 +332,88 @@ function MoveRow({
       {isDone ? (
         <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>done</span>
       ) : (
-        <button
-          type="button"
-          onClick={onPrimary}
-          disabled={pending}
+        <div
           style={{
-            fontSize: 12,
-            fontWeight: 500,
-            border: `1px solid ${primary ? C.blue : C.line2}`,
-            background: primary ? C.blue : C.surface,
-            color: primary ? "#fff" : C.t1,
-            borderRadius: 8,
-            padding: "5px 10px",
-            cursor: pending ? "default" : "pointer",
-            opacity: pending ? 0.6 : 1,
-            whiteSpace: "nowrap",
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
             flexShrink: 0,
           }}
         >
-          {actionLabel}
-        </button>
+          {/* One runnable button per action — first emphasized, rest secondary. */}
+          {actions.map((action, i) => (
+            <RowButton
+              key={action.id}
+              label={action.label}
+              variant={i === 0 && emphasize ? "primary" : "secondary"}
+              disabled={pending}
+              onClick={() => onAction(action)}
+            />
+          ))}
+          {canOpen ? (
+            <RowButton
+              label="Open"
+              variant={actions.length === 0 && emphasize ? "primary" : "secondary"}
+              disabled={pending}
+              onClick={onOpen}
+            />
+          ) : null}
+          <RowButton
+            label="Snooze"
+            variant="ghost"
+            disabled={pending}
+            onClick={onSnooze}
+          />
+          <RowButton
+            label="Dismiss"
+            variant="ghost"
+            disabled={pending}
+            onClick={onDismiss}
+          />
+        </div>
       )}
     </div>
+  );
+}
+
+/** Row action chip — primary (emphasized), secondary, or ghost (dismiss/snooze). */
+function RowButton({
+  label,
+  variant,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  variant: "primary" | "secondary" | "ghost";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const style =
+    variant === "primary"
+      ? { border: `1px solid ${C.blue}`, background: C.blue, color: "#fff" }
+      : variant === "secondary"
+        ? { border: `1px solid ${C.line2}`, background: C.surface, color: C.t1 }
+        : { border: "1px solid transparent", background: "transparent", color: C.t2 };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        fontSize: 12,
+        fontWeight: 500,
+        borderRadius: 8,
+        padding: "5px 10px",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+        ...style,
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

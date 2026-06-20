@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
@@ -6,6 +7,7 @@ import {
   Mic,
   ShieldCheck,
   Sparkles,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -170,6 +172,22 @@ export function HomeElevatedRoute() {
   const hoursSaved = impactQuery.data?.hoursSaved ?? 0;
   const recent = impactQuery.data?.recent ?? [];
 
+  // Mark presented items "seen" once (mirrors home-page.tsx's handleSelectItem,
+  // which flips "new" → "seen"). On Home the lead + queue rows are effectively
+  // "viewed" when surfaced, so a "new" item shown here is seen. The ref guards
+  // against re-firing the mutation across re-renders/refetches.
+  const seenItemIds = useRef<Set<string>>(new Set());
+  const updateStatusMutate = feedQuery.updateStatus.mutate;
+  useEffect(() => {
+    const presented = [nextMove, ...commitments];
+    for (const item of presented) {
+      if (item && item.status === "new" && !seenItemIds.current.has(item.id)) {
+        seenItemIds.current.add(item.id);
+        updateStatusMutate({ itemId: item.id, status: "seen" });
+      }
+    }
+  }, [nextMove, commitments, updateStatusMutate]);
+
   const now = new Date();
   const day = now
     .toLocaleDateString(undefined, { weekday: "long" })
@@ -187,6 +205,27 @@ export function HomeElevatedRoute() {
     requestComposerFocus();
   };
   const action = (item: FeedItem) => item.actions?.[0] ?? null;
+
+  // Invoke a feed item's primary action for real. When the action carries an
+  // `id`, fire the daemon action endpoint (homeFeedByIdActionsByActionIdPost via
+  // the hook's triggerAction); the hook optimistically marks the item acted_on
+  // and refetches. Fall back to seeding chat only when an action has a prompt
+  // but no actionId (defensive — the wire contract always supplies an id).
+  const runAction = (item: FeedItem) => {
+    const a = action(item);
+    if (!a) return;
+    if (a.id) {
+      feedQuery.triggerAction.mutate({ itemId: item.id, actionId: a.id });
+    } else {
+      seedChat(a.prompt);
+    }
+  };
+
+  // Drop an item from the queue. Mirrors home-page.tsx's dismiss: the hook's
+  // updateStatus optimistically removes it and the refetch settles the board.
+  const dismissItem = (item: FeedItem) => {
+    feedQuery.updateStatus.mutate({ itemId: item.id, status: "dismissed" });
+  };
 
   return (
     <div
@@ -309,7 +348,8 @@ export function HomeElevatedRoute() {
                   {action(nextMove) && (
                     <button
                       type="button"
-                      onClick={() => seedChat(action(nextMove)!.prompt)}
+                      onClick={() => runAction(nextMove)}
+                      disabled={feedQuery.triggerAction.isPending}
                       style={{
                         fontSize: 12.5,
                         background: C.blue,
@@ -317,7 +357,9 @@ export function HomeElevatedRoute() {
                         border: "none",
                         borderRadius: 9,
                         padding: "9px 16px",
-                        cursor: "pointer",
+                        cursor: feedQuery.triggerAction.isPending
+                          ? "default"
+                          : "pointer",
                       }}
                     >
                       {action(nextMove)!.label}
@@ -453,14 +495,17 @@ export function HomeElevatedRoute() {
                     {action(item) && (
                       <button
                         type="button"
-                        onClick={() => seedChat(action(item)!.prompt)}
+                        onClick={() => runAction(item)}
+                        disabled={feedQuery.triggerAction.isPending}
                         style={{
                           fontSize: 12,
                           border: `1px solid ${C.line2}`,
                           background: C.white,
                           borderRadius: 8,
                           padding: "7px 13px",
-                          cursor: "pointer",
+                          cursor: feedQuery.triggerAction.isPending
+                            ? "default"
+                            : "pointer",
                           flexShrink: 0,
                           color: C.t1,
                         }}
@@ -468,6 +513,28 @@ export function HomeElevatedRoute() {
                         {action(item)!.label}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => dismissItem(item)}
+                      aria-label={`Dismiss ${item.title ?? item.summary}`}
+                      title="Dismiss"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 26,
+                        height: 26,
+                        border: "none",
+                        background: "transparent",
+                        borderRadius: 7,
+                        padding: 0,
+                        cursor: "pointer",
+                        color: C.t3,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <X width={14} height={14} />
+                    </button>
                   </div>
                 ))}
               </div>

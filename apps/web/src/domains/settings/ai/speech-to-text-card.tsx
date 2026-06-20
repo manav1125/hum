@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { useQuery } from "@tanstack/react-query";
 import { TriangleAlert } from "lucide-react";
 
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { sttProvidersGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import { useIsOrgReady } from "@/hooks/use-is-org-ready";
 import { isNativeDictationSupported } from "@/runtime/native-dictation-partials";
 import { getLocalSetting, setLocalSetting } from "@/utils/local-settings";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
@@ -18,17 +22,60 @@ import {
     LS_STT_PROVIDER,
     MACOS_NATIVE_STT_PROVIDER_ID,
     STT_PROVIDERS,
+    type STTProvider,
 } from "@/domains/settings/ai/ai-types";
 
 export function SpeechToTextCard() {
-  // Capability is fixed for the renderer's lifetime, so compute the offered
-  // list once: the native provider only exists inside the macOS Electron
-  // shell, where the helper's SFSpeechRecognizer bridge is wired.
-  const [providers] = useState(() =>
-    STT_PROVIDERS.filter(
-      (p) => !p.requiresNativeDictation || isNativeDictationSupported(),
-    ),
-  );
+  const assistantId = useActiveAssistantId();
+  const isOrgReady = useIsOrgReady();
+
+  // Capability is fixed for the renderer's lifetime: the native provider only
+  // exists inside the macOS Electron shell, where the helper's
+  // SFSpeechRecognizer bridge is wired.
+  const [nativeSupported] = useState(() => isNativeDictationSupported());
+
+  // The daemon owns the canonical STT provider list (the sibling TTS card
+  // already fetches its catalog this way). Fetch it live, then merge each
+  // entry onto the local catalog so the card keeps the richer per-provider
+  // copy the daemon response doesn't carry — `apiKeyPlaceholder`, the
+  // structured `credentialsGuide`, and `setupWarning`.
+  const { data: catalogData } = useQuery({
+    ...sttProvidersGetOptions({ path: { assistant_id: assistantId } }),
+    enabled: isOrgReady,
+    staleTime: Infinity,
+  });
+
+  const providers = useMemo<readonly STTProvider[]>(() => {
+    const local = STT_PROVIDERS.filter(
+      (p) => !p.requiresNativeDictation || nativeSupported,
+    );
+    const remote = catalogData?.providers;
+    if (!remote || remote.length === 0) return local;
+
+    const localById = new Map(local.map((p) => [p.id, p]));
+    const merged: STTProvider[] = remote.map((r) => {
+      const localEntry = localById.get(r.id);
+      return {
+        id: r.id,
+        displayName: r.displayName,
+        subtitle: r.subtitle ?? localEntry?.subtitle ?? "",
+        requiresNativeDictation: localEntry?.requiresNativeDictation,
+        setupWarning: localEntry?.setupWarning,
+        apiKeyPlaceholder: localEntry?.apiKeyPlaceholder,
+        credentialsGuide: localEntry?.credentialsGuide,
+      };
+    });
+
+    // The native provider is on-device (not a daemon provider), so it never
+    // appears in the daemon response — append it from the local catalog when
+    // this build can reach the recognizer.
+    const remoteIds = new Set(merged.map((p) => p.id));
+    for (const p of local) {
+      if (!remoteIds.has(p.id)) merged.push(p);
+    }
+    return merged;
+  }, [catalogData, nativeSupported]);
+
   const defaultProviderId = providers[0]?.id ?? "deepgram";
   const [draftProvider, setDraftProvider] = useState<string>(() => {
     const stored = getLocalSetting(LS_STT_PROVIDER, defaultProviderId);
@@ -48,7 +95,8 @@ export function SpeechToTextCard() {
   // ONLY the capability-dependent native id is corrected — legacy aliases
   // like "whisper" must survive untouched for normalizeSttProviderId() /
   // migrateLegacyLocalSttSettings() in stt-api.ts to map at transcribe
-  // time. Both deps are set-once, so this runs only on mount.
+  // time. Re-runs when the daemon catalog arrives (`providers` widens), but
+  // the native id is never in that catalog, so the correction is idempotent.
   useEffect(() => {
     const stored = getLocalSetting(LS_STT_PROVIDER, defaultProviderId);
     if (

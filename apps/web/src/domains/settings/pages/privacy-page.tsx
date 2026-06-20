@@ -1,5 +1,9 @@
 import { useState } from "react";
 
+import { settingsClientPut } from "@/generated/daemon/sdk.gen";
+import { captureError } from "@/lib/sentry/capture-error";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
+
 import { DetailCard } from "@/components/detail-card";
 import { SystemPermissionsCard } from "@/components/system-permissions-card";
 import { AccessConsentSetting } from "@/domains/settings/components/access-consent-setting";
@@ -28,6 +32,9 @@ const RETENTION_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const DEFAULT_RETENTION_ID = "thirtyDays";
+
+// Generic client key/value store key the retention choice persists under.
+const LLM_LOG_RETENTION_KEY = "llmLogRetention";
 
 function SettingRow({
   label,
@@ -66,6 +73,9 @@ export function PrivacyPage() {
   // `AccessConsentSetting` exactly.
   const platformGate = usePlatformGate({ platformHostedOnly: true });
   const hasPlatformSession = useHasPlatformSession();
+  // Settings routes are NOT mounted under `<ActiveAssistantGate>`, so read the
+  // raw store (nullable) rather than `useActiveAssistantId()`, which throws.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const [shareAnalytics, setShareAnalytics] = useState(
     () => getDeviceBool("shareAnalytics", true),
   );
@@ -90,7 +100,20 @@ export function PrivacyPage() {
 
   const handleRetentionChange = (value: string) => {
     setRetentionId(value);
-    setDeviceSetting("llmLogRetention", value);
+    // Device setting stays the instant-UI cache the renderer reads on mount.
+    setDeviceSetting(LLM_LOG_RETENTION_KEY, value);
+    // Also persist to the daemon via the generic client key/value store so the
+    // choice survives a cache clear and is visible to other clients.
+    // Best-effort: the cache already reflects the change.
+    if (assistantId) {
+      void settingsClientPut({
+        path: { assistant_id: assistantId },
+        body: { key: LLM_LOG_RETENTION_KEY, value },
+        throwOnError: true,
+      }).catch((error) => {
+        captureError(error, { context: "settings-llm-log-retention" });
+      });
+    }
   };
 
   return (
