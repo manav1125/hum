@@ -137,10 +137,12 @@ async function handlePostFeedAction(
   _req: Request,
   itemId: string,
   actionId: string,
+  body?: Record<string, unknown>,
 ) {
   try {
     const result = await _handlePostFeedAction({
       pathParams: { id: itemId, actionId },
+      ...(body ? { body } : {}),
     });
     return fakeResponse(result);
   } catch (err) {
@@ -520,6 +522,7 @@ describe("handlePostFeedAction", () => {
       }),
       "item-1",
       "reply",
+      { mode: "thread" },
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { conversationId: string };
@@ -584,6 +587,7 @@ describe("handlePostFeedAction", () => {
       }),
       "item-3",
       "reply",
+      { mode: "thread" },
     );
     expect(res.status).toBe(500);
   });
