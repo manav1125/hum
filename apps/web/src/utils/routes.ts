@@ -95,6 +95,7 @@ export const routes = {
   // design) but still routable + linked from their new homes: Next moves from
   // Home's feed, Meeting from Home's record action, People + Trust from Contacts.
   nextMoves: r("/assistant/next-moves"),
+  dashboard: r("/assistant/dashboard"),
   meeting: r("/assistant/meeting"),
   trust: r("/assistant/trust"),
   people: r("/assistant/people"),

@@ -2,6 +2,7 @@ import {
     Clock,
     Hash,
     Home,
+    LayoutDashboard,
     LayoutGrid,
     Pin,
     Rocket,
@@ -488,6 +489,13 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/home")}
           onSelect={() => cueNav("/assistant/home")}
+        />
+        <SideMenu.Item
+          icon={LayoutDashboard}
+          label="Dashboard"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/dashboard")}
+          onSelect={() => cueNav("/assistant/dashboard")}
         />
         <SideMenu.Item
           icon={Sparkles}

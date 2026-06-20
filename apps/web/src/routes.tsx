@@ -303,6 +303,12 @@ export const routeTree = [
                   lazy: { Component: () => import("@/domains/next-moves/next-moves-page").then((m) => m.NextMovesPage) },
                 },
                 {
+                  // Template-library dashboard — a personal command center with
+                  // real-data widgets + an "ask Cue anything" query bar.
+                  path: "dashboard",
+                  lazy: { Component: () => import("@/domains/dashboard/dashboard-page").then((m) => m.DashboardPage) },
+                },
+                {
                   path: "meeting",
                   lazy: { Component: () => import("@/domains/meeting/meeting-capture-page").then((m) => m.MeetingCapturePage) },
                 },
