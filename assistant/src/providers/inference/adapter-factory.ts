@@ -26,6 +26,7 @@ import { PROVIDER_CATALOG } from "../model-catalog.js";
 import { OllamaProvider } from "../ollama/client.js";
 import { OpenAIChatCompletionsProvider } from "../openai/chat-completions-provider.js";
 import { OpenAIResponsesProvider } from "../openai/responses-provider.js";
+import { BudgetCapProvider } from "../budget-cap.js";
 import { OpenRouterProvider } from "../openrouter/client.js";
 import { RetryProvider } from "../retry.js";
 import type { Provider } from "../types.js";
@@ -208,9 +209,13 @@ export function createAdapterFromConnection(
   // would leak internal Vellum metadata, so gate on the auth type:
   // `platform` is the only auth that flows through our proxy.
   const isManagedProxy = connection.auth.type === "platform";
-  return new UsageTrackingProvider(
-    new RetryProvider(adapter, {
-      forwardUsageAttributionHeaders: isManagedProxy,
-    }),
+  // BudgetCapProvider sits OUTSIDE usage tracking so a budget-blocked call
+  // throws before any spend is recorded.
+  return new BudgetCapProvider(
+    new UsageTrackingProvider(
+      new RetryProvider(adapter, {
+        forwardUsageAttributionHeaders: isManagedProxy,
+      }),
+    ),
   );
 }

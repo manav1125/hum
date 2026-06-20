@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { getGatewayDb } from "../db/connection.js";
 import { resolveAutonomyPolicies } from "../http/routes/autonomy-policies.js";
+import { resolveBudgetConfig } from "../http/routes/budget.js";
 import {
   autoApproveThresholds,
   conversationThresholdOverrides,
@@ -101,6 +102,15 @@ export const thresholdRoutes: IpcRoute[] = [
     method: "get_autonomy_policies",
     handler: () => {
       return { policies: resolveAutonomyPolicies() };
+    },
+  },
+  {
+    // Returns the budget config singleton with DEFAULTS already baked in
+    // (caps null = off, killSwitch false, alertThresholdPct 80). The daemon's
+    // budget-cap provider relies on this shape being complete.
+    method: "get_budget_config",
+    handler: () => {
+      return resolveBudgetConfig();
     },
   },
 ];

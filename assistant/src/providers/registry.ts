@@ -20,6 +20,7 @@ import {
   buildManagedBaseUrl,
   resolveManagedProxyContext,
 } from "./platform-proxy/context.js";
+import { BudgetCapProvider } from "./budget-cap.js";
 import { RetryProvider } from "./retry.js";
 import type { Provider } from "./types.js";
 import { UsageTrackingProvider } from "./usage-tracking.js";
@@ -41,7 +42,12 @@ function getConnectionProviderCacheKey(
 }
 
 function registerProvider(name: string, provider: Provider): void {
-  providers.set(name, new UsageTrackingProvider(provider));
+  // BudgetCapProvider sits OUTSIDE usage tracking so a budget-blocked call
+  // throws before any spend is recorded.
+  providers.set(
+    name,
+    new BudgetCapProvider(new UsageTrackingProvider(provider)),
+  );
 }
 
 export function getProvider(name: string): Provider {

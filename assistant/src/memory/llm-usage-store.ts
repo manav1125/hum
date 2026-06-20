@@ -479,6 +479,29 @@ export function getUsageCostForConversationWindow({
 }
 
 /**
+ * Sum `estimated_cost_usd` over an arbitrary [from, to) epoch-ms window across
+ * ALL conversations/actors. Used by the budget-cap provider to evaluate the
+ * current day and month spend windows before each LLM call.
+ *
+ * Half-open interval: `created_at >= from AND created_at < to`. Callers compute
+ * the boundaries (local midnight, first-of-month) so the window matches the
+ * user's wall clock rather than UTC.
+ */
+export function getTotalUsageCostInWindow(from: number, to: number): number {
+  const rows = rawAll<{ total_cost: number | null }>(
+    /*sql*/ `
+    SELECT COALESCE(SUM(estimated_cost_usd), 0) AS total_cost
+    FROM llm_usage_events
+    WHERE created_at >= ?1
+      AND created_at < ?2
+    `,
+    from,
+    to,
+  );
+  return rows[0]?.total_cost ?? 0;
+}
+
+/**
  * Return aggregate totals for all usage events within the given time range.
  */
 export function getUsageTotals(

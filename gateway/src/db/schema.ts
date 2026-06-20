@@ -10,6 +10,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -231,6 +232,30 @@ export const autonomyCategoryPolicies = sqliteTable(
       .default(sql`(datetime('now'))`),
   },
 );
+
+// ---------------------------------------------------------------------------
+// Budget config (cost guardrails — gateway-owned singleton)
+// ---------------------------------------------------------------------------
+//
+// Single-row table (id = 1) holding the user's spend caps + kill switch.
+// Defaults are intentionally OFF: caps null (no enforcement), killSwitch 0,
+// alert threshold 80%. The daemon's budget-cap provider reads this over IPC
+// and only BLOCKS calls when a cap is positively set and reached, or when the
+// kill switch is on. The gateway owns this table; the daemon never writes it.
+
+export const budgetConfig = sqliteTable("budget_config", {
+  id: integer("id").primaryKey().default(1),
+  // Null = no cap (off). When set, a positive USD amount.
+  dailyCapUsd: real("daily_cap_usd"),
+  monthlyCapUsd: real("monthly_cap_usd"),
+  // 0 = off, 1 = on. When on, the daemon blocks every LLM call.
+  killSwitch: integer("kill_switch").notNull().default(0),
+  // Percent (1–100) of a cap at which to emit a one-time alert notification.
+  alertThresholdPct: integer("alert_threshold_pct").notNull().default(80),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
 
 // ---------------------------------------------------------------------------
 // Actor tokens (auth — gateway-owned)
