@@ -45,6 +45,27 @@ export function resolveUsageRangeWindow(
   };
 }
 
+/**
+ * Stable upper bound for usage/spend range queries.
+ *
+ * A raw `Date.now()` / `new Date().getTime()` used as the `to` bound of a React
+ * Query key is recomputed on EVERY render, so the key changes every render and
+ * React Query refetches in a tight loop. When that query polls a daemon
+ * endpoint (e.g. `usage/totals`), the loop exhausts the per-client rate-limit
+ * budget and every OTHER request starts returning 429 — breaking conversation
+ * history, Activity sections, and action buttons app-wide.
+ *
+ * Rounding the upper bound up to the next whole hour keeps the key stable
+ * across renders (and across the query's refetch interval) while still covering
+ * "now". Spend figures are date-to-date approximations, so hour-granularity on
+ * the end bound is immaterial.
+ */
+export function usageRangeNow(): number {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  return d.getTime() + 60 * 60 * 1000;
+}
+
 export function resolveLastTimezoneCalendarDays(
   days: number,
   tz: string,

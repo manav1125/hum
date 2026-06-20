@@ -16,7 +16,7 @@ import {
   listWatchers,
   updateWatcher,
 } from "../../watcher/watcher-store.js";
-import { LOCAL_PRINCIPALS } from "../auth/route-policy.js";
+import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { BadRequestError, NotFoundError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -195,7 +195,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     handler: handleWatcherCreate,
     summary: "Create a watcher",
@@ -210,7 +210,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.read"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     handler: handleWatcherList,
     summary: "List watchers",
@@ -226,7 +226,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     handler: handleWatcherUpdate,
     summary: "Update a watcher",
@@ -241,7 +241,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     handler: handleWatcherDelete,
     summary: "Delete a watcher",
@@ -256,7 +256,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.read"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     handler: handleWatcherDigest,
     summary: "Get watcher event digest",

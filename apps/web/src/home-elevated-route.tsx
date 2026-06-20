@@ -35,6 +35,7 @@ import {
 import { useConversationStore } from "@/stores/conversation-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import { routes } from "@/utils/routes";
+import { usageRangeNow } from "@/utils/usage-window";
 import type { FeedItem } from "@vellumai/assistant-api";
 
 /**
@@ -414,7 +415,7 @@ export function HomeElevatedRoute() {
   const usageQuery = useQuery({
     ...usageTotalsGetOptions({
       path: { assistant_id: assistantId ?? "" },
-      query: { from: monthStart, to: Date.now() },
+      query: { from: monthStart, to: usageRangeNow() },
     }),
     enabled: !!assistantId,
   });

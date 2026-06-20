@@ -34,6 +34,7 @@ import {
 import { watchersListPost } from "@/generated/daemon/sdk.gen";
 import { getBudgetConfig } from "@/lib/budget-api";
 import { routes } from "@/utils/routes";
+import { usageRangeNow } from "@/utils/usage-window";
 
 import { NeedsYouSection } from "./sections/needs-you-section";
 import { QueuedSection } from "./sections/queued-section";
@@ -109,7 +110,9 @@ function useSummary(assistantId: string) {
 function monthWindow(): { from: number; to: number } {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  return { from: start.getTime(), to: now.getTime() };
+  // `to` must be stable across renders or the query key churns and refetches in
+  // a loop (exhausting the rate limit). See usageRangeNow().
+  return { from: start.getTime(), to: usageRangeNow() };
 }
 
 function useSpendMeter(assistantId: string) {

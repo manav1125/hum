@@ -32,6 +32,7 @@ import {
 } from "@/lib/budget-api";
 import { captureError } from "@/lib/sentry/capture-error";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
+import { usageRangeNow } from "@/utils/usage-window";
 
 // ---------------------------------------------------------------------------
 // Time windows
@@ -49,14 +50,16 @@ function todayWindow(): { from: number; to: number } {
     0,
     0,
   );
-  return { from: start.getTime(), to: now.getTime() };
+  // `to` must be stable across renders or the query key churns. See usageRangeNow().
+  return { from: start.getTime(), to: usageRangeNow() };
 }
 
 /** [start, now] epoch-ms for the current calendar month. */
 function monthWindow(): { from: number; to: number } {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  return { from: start.getTime(), to: now.getTime() };
+  // `to` must be stable across renders or the query key churns. See usageRangeNow().
+  return { from: start.getTime(), to: usageRangeNow() };
 }
 
 function formatUsd(value: number): string {

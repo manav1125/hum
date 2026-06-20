@@ -34,8 +34,13 @@ export function RunningSection({ assistantId }: { assistantId: string }) {
   const queryClient = useQueryClient();
   const running = useWorkItems(assistantId, "running");
 
+  // NOTE: subagents/reconcile is a PER-CONVERSATION endpoint (requires
+  // parentConversationId) — there is no global "list running subagents" call,
+  // so this query 400s. Disabled to keep the section healthy; running work
+  // (including background Home actions) already surfaces via work-items below.
   const subagents = useQuery({
     ...subagentsReconcileGetOptions({ path: { assistant_id: assistantId } }),
+    enabled: false,
     refetchInterval: 20_000,
     staleTime: 15_000,
   });
@@ -90,8 +95,8 @@ export function RunningSection({ assistantId }: { assistantId: string }) {
     })
     .map(([id, v]) => ({ id, status: str((v as { status?: unknown }).status) ?? "running" }));
 
-  const isLoading = running.isLoading || subagents.isLoading;
-  const isError = running.isError || subagents.isError;
+  const isLoading = running.isLoading;
+  const isError = running.isError;
   const rowCount = running.items.length + runningSubagents.length;
   const empty = !isLoading && !isError && rowCount === 0;
   const mutating = cancel.isPending || abort.isPending;
