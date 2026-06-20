@@ -341,6 +341,14 @@ export class MacHelperClient {
       const line = chunk.toString("utf8").trim();
       if (line) this.logger.warn(`[${this.name}] ${line}`);
     });
+    // The helper's stdin can break (EPIPE) when the helper dies or during an
+    // ungraceful shutdown. An unhandled "error" event on the stream would
+    // otherwise crash the entire Electron main process (the writeFrame in
+    // shutdown() emits it asynchronously, past its try/catch). Swallow it —
+    // the supervisor owns process recovery.
+    child.stdin.on("error", (err: Error) => {
+      this.logger.warn(`[${this.name}] stdin error: ${err.message}`);
+    });
   }
 
   private handleStdout(chunk: Buffer): void {
@@ -424,6 +432,12 @@ export class MacHelperClient {
     const line = JSON.stringify(frame);
     if (line.includes("\n") || line.includes("\r")) {
       throw new Error(`${this.name} frame contained raw newline`);
+    }
+    // Don't write to a closed/broken helper pipe — it would throw or emit an
+    // EPIPE (now handled by the stdin "error" listener, but skip it cleanly).
+    if (child.stdin.destroyed || child.stdin.writableEnded) {
+      callback?.(new Error(`${this.name} stdin is not writable`));
+      return;
     }
     child.stdin.write(`${line}\n`, callback);
   }
