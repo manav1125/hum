@@ -244,15 +244,15 @@ export function ChatLayout() {
   const isContactsActive = location.pathname === routes.people;
 
   // The Intelligence rail item is the hub: active for every Intelligence
-  // sub-route — Identity, Connectors, Channels, Connections (= /contacts, the
-  // channel/agent setup), Agents, Cue Live, Skills, Memory, Workspace, Plugins.
+  // sub-route — Identity, Tools & Apps (= /connectors), Channels & Agents
+  // (= /channels), Connections (= /contacts, the channel/agent setup), Cue
+  // Live, Skills, Memory, Workspace, Plugins.
   const isIntelligenceActive =
     location.pathname === routes.identity ||
     location.pathname === routes.connectors ||
     location.pathname.startsWith(`${routes.connectors}/`) ||
     location.pathname === routes.channels ||
     location.pathname.startsWith(routes.contacts.root) ||
-    location.pathname === routes.agents ||
     location.pathname === routes.cueLive ||
     location.pathname === routes.skills ||
     location.pathname === routes.memory ||

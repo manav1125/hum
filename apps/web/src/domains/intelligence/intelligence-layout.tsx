@@ -17,13 +17,19 @@ interface IntelligenceTab {
 
 const BASE_INTELLIGENCE_TABS: readonly IntelligenceTab[] = [
   { label: "Identity", to: routes.identity },
-  { label: "Connectors", to: routes.connectors },
-  { label: "Channels", to: routes.channels },
-  // "Connections" = the channel/agent setup surface (Slack/Telegram/phone/email
-  // tokens + A2A invites). Lives under Intelligence; the primary-rail "Contacts"
-  // item points at the relationship dossier (/assistant/people) instead.
+  // "Tools & Apps" = the MCP/SaaS connector catalog (route stays `/connectors`).
+  // Renamed from "Connectors" so it no longer collides with the people/
+  // reachability surfaces below.
+  { label: "Tools & Apps", to: routes.connectors },
+  // "Channels & Agents" = the merged reach overview (channel status) + A2A
+  // agent pairing. The actual per-channel setup + invite flow lives in the
+  // Connections workbench, which this surface deep-links into.
+  { label: "Channels & Agents", to: routes.channels },
+  // "Connections" = the channel/agent setup workbench (Slack/Telegram/phone/
+  // email tokens + A2A invites). Lives under Intelligence; reached primarily
+  // via "Channels & Agents". The primary-rail "Contacts" item points at the
+  // relationship dossier (/assistant/people) instead.
   { label: "Connections", to: routes.contacts.root },
-  { label: "Agents", to: routes.agents },
   { label: "Cue Live", to: routes.cueLive },
   { label: "Skills", to: routes.skills },
   { label: "Memory", to: routes.memory },
