@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { classifyAutonomy, type AutonomyClass } from "./autonomy-class.js";
+import { type AutonomyClass,classifyAutonomy } from "./autonomy-class.js";
 
 describe("classifyAutonomy — core tools", () => {
   test("read/list/glob/grep/web_search/web_fetch → research", () => {
