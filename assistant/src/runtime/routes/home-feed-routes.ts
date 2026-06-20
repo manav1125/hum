@@ -30,6 +30,11 @@ import {
 } from "../../api/responses/home.js";
 import { buildDailyActionBoard } from "../../home/action-board.js";
 import { draftReplyForMessage } from "../../home/auto-draft.js";
+import {
+  classifyFeedActionMode,
+  type FeedActionMode,
+  resolveDefaultMode,
+} from "../../home/feed-action-mode.js";
 import { patchFeedItemStatus, readHomeFeed } from "../../home/feed-writer.js";
 import { revalidateHomeContentInBackground } from "../../home/home-content-refresh.js";
 import { getPersonalizedGreeting } from "../../home/home-greeting.js";
@@ -44,11 +49,18 @@ import {
   addMessage,
   createConversation,
 } from "../../memory/conversation-crud.js";
+import { emitNotificationSignal } from "../../notifications/emit-signal.js";
+import { getAutonomyPolicy } from "../../permissions/autonomy-policy-reader.js";
+import { createTask } from "../../tasks/task-store.js";
 import { getLogger } from "../../util/logger.js";
+import { runBackgroundJob } from "../background-job-runner.js";
 import {
+  createWorkItem,
   getWorkItem,
   listWorkItems,
+  updateWorkItem,
 } from "../../work-items/work-item-store.js";
+import { broadcastWorkItemStatus } from "../../work-items/work-item-runner.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
@@ -370,8 +382,71 @@ export function handleListHomeFeed({
   };
 }
 
+/** How long a background home-action agent run may take before timing out. */
+const HOME_ACTION_TIMEOUT_MS = 180_000;
+
+const feedActionRequestSchema = z.object({
+  // "smart" (default) routes off the autonomy policy; the others force a mode.
+  mode: z.enum(["smart", "background", "thread"]).optional(),
+});
+
+/** Best-effort channel/source tag for a feed item, for work-item provenance. */
+function feedItemSource(item: FeedItem): {
+  sourceType?: string;
+  sourceId?: string;
+} {
+  const md = (item.metadata ?? undefined) as
+    | { sourceType?: unknown; sourceId?: unknown }
+    | undefined;
+  const sourceType =
+    typeof md?.sourceType === "string"
+      ? md.sourceType
+      : typeof item.category === "string"
+        ? item.category
+        : undefined;
+  const sourceId =
+    typeof md?.sourceId === "string" ? md.sourceId : item.id;
+  return {
+    ...(sourceType ? { sourceType } : {}),
+    ...(sourceId ? { sourceId } : {}),
+  };
+}
+
+/**
+ * Create the parent task + the work-item row for a dispatched feed action.
+ * The `work_items.taskId` foreign key requires a real `tasks` row, so we mint
+ * a lightweight one per dispatch (the action prompt is its template).
+ */
+function createFeedActionWorkItem(item: FeedItem, action: { label: string; prompt: string }) {
+  // Prefer the item's own title ("Reply on WordPress guidance…") over the
+  // action label ("Run it"/"Draft reply"), which is too generic for the
+  // Activity row + the result card.
+  const title = item.title?.trim() || action.label;
+  const task = createTask({ title, template: action.prompt });
+  return createWorkItem({
+    taskId: task.id,
+    title,
+    notes: action.prompt,
+    ...feedItemSource(item),
+  });
+}
+
+/**
+ * Trigger a Home feed action. Three execution modes:
+ *
+ *   - "thread"     — seed a foreground conversation the user drives (the
+ *                    original behavior).
+ *   - "background" — dispatch an autonomous agent run; show it live in
+ *                    Activity → Running, then post a "Done" card back to Home.
+ *   - "needs_you"  — queue it but do NOT run; it waits for explicit approval.
+ *
+ * The default ("smart") picks the mode from the action's category + the
+ * user's autonomy policy: research/draft → background, send/money/delete →
+ * needs_you (never silently fires), a "never" policy → manual thread.
+ */
 export async function handlePostFeedAction({
   pathParams = {},
+  body,
 }: RouteHandlerArgs): Promise<Record<string, unknown>> {
   const itemId = pathParams.id;
   const actionId = pathParams.actionId;
@@ -386,24 +461,107 @@ export async function handlePostFeedAction({
     throw new NotFoundError(`Action not found on item ${itemId}: ${actionId}`);
   }
 
-  try {
-    const conversation = createConversation({
-      title: action.label,
-      source: "home-feed",
-    });
-    await addMessage(
-      conversation.id,
-      "user",
-      JSON.stringify([{ type: "text", text: action.prompt }]),
-    );
-    return { conversationId: conversation.id };
-  } catch (err) {
-    log.warn(
-      { err, itemId, actionId },
-      "Failed to create conversation from feed action",
-    );
-    throw new InternalError("Failed to create conversation for feed action");
+  const parsed = feedActionRequestSchema.safeParse(body ?? {});
+  const requestedMode = parsed.success ? parsed.data.mode : undefined;
+
+  // Resolve the effective execution mode.
+  let mode: FeedActionMode;
+  if (requestedMode === "background") {
+    mode = "background";
+  } else if (requestedMode === "thread") {
+    mode = "thread";
+  } else {
+    // "smart" (or unspecified): route off the autonomy policy.
+    const policy = await getAutonomyPolicy();
+    mode = resolveDefaultMode(classifyFeedActionMode(action), policy);
   }
+
+  // ── Thread: seed a foreground conversation the user drives. ──────────
+  if (mode === "thread") {
+    try {
+      const conversation = createConversation({
+        title: action.label,
+        source: "home-feed",
+      });
+      await addMessage(
+        conversation.id,
+        "user",
+        JSON.stringify([{ type: "text", text: action.prompt }]),
+      );
+      return { mode: "thread", conversationId: conversation.id };
+    } catch (err) {
+      log.warn(
+        { err, itemId, actionId },
+        "Failed to create conversation from feed action",
+      );
+      throw new InternalError("Failed to create conversation for feed action");
+    }
+  }
+
+  // ── Needs you: queue it, but never auto-run. ────────────────────────
+  if (mode === "needs_you") {
+    const wi = createFeedActionWorkItem(item, action);
+    log.info({ itemId, actionId, workItemId: wi.id }, "Feed action queued (needs approval)");
+    return { mode: "needs_you", workItemId: wi.id };
+  }
+
+  // ── Background: dispatch an autonomous run, surface it in Activity. ──
+  const wi = createFeedActionWorkItem(item, action);
+  updateWorkItem(wi.id, { status: "running" });
+  broadcastWorkItemStatus(wi.id);
+
+  // Fire-and-forget — return immediately; the run reports back via the
+  // work-item status broadcast + a Home result card.
+  void runBackgroundJob({
+    jobName: `home-action:${item.id}`,
+    source: "home-feed-action",
+    prompt: action.prompt,
+    systemHint: action.label,
+    trustContext: { sourceChannel: "vellum", trustClass: "guardian" },
+    callSite: "homeAction",
+    timeoutMs: HOME_ACTION_TIMEOUT_MS,
+    origin: "task",
+    conversationType: "background",
+  })
+    .then(async (result) => {
+      updateWorkItem(wi.id, {
+        status: result.ok ? "done" : "failed",
+        lastRunConversationId: result.conversationId || null,
+        lastRunStatus: result.ok ? "ok" : "failed",
+      });
+      broadcastWorkItemStatus(wi.id);
+
+      if (result.ok) {
+        // Post a "Done" card back to Home. runBackgroundJob already emits an
+        // activity.failed card on failure, so we only emit on success.
+        await emitNotificationSignal({
+          sourceEventName: "activity.complete",
+          sourceChannel: "assistant_tool",
+          sourceContextId: `home-action:${item.id}`,
+          attentionHints: {
+            requiresAction: false,
+            urgency: "low",
+            isAsyncBackground: true,
+            visibleInSourceNow: false,
+          },
+          contextPayload: {
+            title: `Done — ${action.label}`,
+            summary: `Cue finished "${action.label}" in the background. Open it to review.`,
+          },
+          dedupeKey: `home-action:${item.id}`,
+        });
+        // Retire the original card so it doesn't linger next to the result.
+        patchFeedItemStatus(item.id, "acted_on");
+      }
+    })
+    .catch((err) => {
+      log.warn({ err, itemId, workItemId: wi.id }, "Home action background run failed to dispatch");
+      updateWorkItem(wi.id, { status: "failed", lastRunStatus: "failed" });
+      broadcastWorkItemStatus(wi.id);
+    });
+
+  log.info({ itemId, actionId, workItemId: wi.id }, "Feed action dispatched to background");
+  return { mode: "background", workItemId: wi.id };
 }
 
 const actionBoardResponseSchema = z.object({

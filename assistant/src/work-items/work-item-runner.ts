@@ -26,7 +26,7 @@ const log = getLogger("work-item-runner");
 
 // ── Public API ───────────────────────────────────────────────────────
 
-function broadcastWorkItemStatus(id: string): void {
+export function broadcastWorkItemStatus(id: string): void {
   const item = getWorkItem(id);
   if (item) {
     broadcastMessage({
