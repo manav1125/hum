@@ -84,6 +84,18 @@ export const FeedActionSchema = z.object({
   id: z.string(),
   label: z.string(),
   prompt: z.string(),
+  /**
+   * Server-computed smart-default execution mode for this action (from the
+   * action's category + the user's autonomy policy). The client renders the
+   * split-button primary action around this. Absent on older payloads.
+   */
+  defaultMode: z.enum(["background", "thread", "needs_you"]).optional(),
+  /**
+   * Whether running this action in the background is safe by default
+   * (research/draft). False for consequential actions (send/money/delete) so
+   * the UI can warn before the user forces a background run.
+   */
+  allowBackground: z.boolean().optional(),
 });
 export type FeedAction = z.infer<typeof FeedActionSchema>;
 

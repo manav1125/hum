@@ -13874,6 +13874,14 @@ paths:
                                 type: string
                               prompt:
                                 type: string
+                              defaultMode:
+                                type: string
+                                enum:
+                                  - background
+                                  - thread
+                                  - needs_you
+                              allowBackground:
+                                type: boolean
                             required:
                               - id
                               - label
@@ -14044,6 +14052,14 @@ paths:
                           type: string
                         prompt:
                           type: string
+                        defaultMode:
+                          type: string
+                          enum:
+                            - background
+                            - thread
+                            - needs_you
+                        allowBackground:
+                          type: boolean
                       required:
                         - id
                         - label
@@ -14138,8 +14154,10 @@ paths:
       operationId: home_feed_by_id_actions_by_actionId_post
       summary: Trigger home feed action
       description:
-        Create a new conversation pre-seeded with the action's prompt as the first user message. Returns the new
-        `conversationId`.
+        "Execute a feed action. `mode` selects how it runs: 'smart' (default) routes off the action's category +
+        the autonomy policy; 'background' dispatches an autonomous run (shown in Activity, result card posted to Home);
+        'thread' seeds a foreground conversation. Returns the resolved mode plus a `conversationId` (thread) or
+        `workItemId` (background/needs_you)."
       tags:
         - home
       responses:
@@ -14150,15 +14168,23 @@ paths:
               schema:
                 type: object
                 properties:
+                  mode:
+                    type: string
+                    enum:
+                      - thread
+                      - background
+                      - needs_you
                   conversationId:
                     type: string
+                  workItemId:
+                    type: string
                 required:
-                  - conversationId
+                  - mode
                 additionalProperties: false
         "404":
           description: Feed item or action not found
         "500":
-          description: Failed to create conversation
+          description: Failed to dispatch feed action
       parameters:
         - name: id
           in: path
@@ -14170,6 +14196,20 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode:
+                  type: string
+                  enum:
+                    - smart
+                    - background
+                    - thread
+              additionalProperties: false
   /v1/home/feed/query:
     post:
       operationId: home_feed_query_post
@@ -14229,6 +14269,14 @@ paths:
                                 type: string
                               prompt:
                                 type: string
+                              defaultMode:
+                                type: string
+                                enum:
+                                  - background
+                                  - thread
+                                  - needs_you
+                              allowBackground:
+                                type: boolean
                             required:
                               - id
                               - label

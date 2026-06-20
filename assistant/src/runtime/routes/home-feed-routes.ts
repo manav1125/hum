@@ -31,6 +31,7 @@ import {
 import { buildDailyActionBoard } from "../../home/action-board.js";
 import { draftReplyForMessage } from "../../home/auto-draft.js";
 import {
+  allowsBackground,
   classifyFeedActionMode,
   type FeedActionMode,
   resolveDefaultMode,
@@ -172,6 +173,31 @@ function timeAwayBucket(seconds: number): string {
 // Handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * Annotate each feed item's actions with their smart-default execution mode +
+ * background eligibility, so the client can render the action split-button
+ * without re-deriving the autonomy policy. Pure given a resolved policy.
+ */
+function annotateFeedActionModes(
+  items: FeedItem[],
+  policy: Awaited<ReturnType<typeof getAutonomyPolicy>>,
+): FeedItem[] {
+  return items.map((item) => {
+    if (!item.actions || item.actions.length === 0) return item;
+    return {
+      ...item,
+      actions: item.actions.map((a) => {
+        const cls = classifyFeedActionMode(a);
+        return {
+          ...a,
+          defaultMode: resolveDefaultMode(cls, policy),
+          allowBackground: allowsBackground(cls),
+        };
+      }),
+    };
+  });
+}
+
 export async function handleGetHomeFeed({
   queryParams = {},
 }: RouteHandlerArgs): Promise<Record<string, unknown>> {
@@ -244,7 +270,7 @@ export async function handleGetHomeFeed({
   );
 
   return {
-    items: filtered,
+    items: annotateFeedActionModes(filtered, await getAutonomyPolicy()),
     updatedAt: feed.updatedAt,
     contextBanner,
     suggestedPrompts,
@@ -847,14 +873,17 @@ export const ROUTES: RouteDefinition[] = [
     handler: handlePostFeedAction,
     summary: "Trigger home feed action",
     description:
-      "Create a new conversation pre-seeded with the action's prompt as the first user message. Returns the new `conversationId`.",
+      "Execute a feed action. `mode` selects how it runs: 'smart' (default) routes off the action's category + the autonomy policy; 'background' dispatches an autonomous run (shown in Activity, result card posted to Home); 'thread' seeds a foreground conversation. Returns the resolved mode plus a `conversationId` (thread) or `workItemId` (background/needs_you).",
     tags: ["home"],
+    requestBody: feedActionRequestSchema,
     responseBody: z.object({
-      conversationId: z.string(),
+      mode: z.enum(["thread", "background", "needs_you"]),
+      conversationId: z.string().optional(),
+      workItemId: z.string().optional(),
     }),
     additionalResponses: {
       "404": { description: "Feed item or action not found" },
-      "500": { description: "Failed to create conversation" },
+      "500": { description: "Failed to dispatch feed action" },
     },
   },
 ];

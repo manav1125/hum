@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Bell,
   CalendarClock,
+  ChevronDown,
   ListTodo,
   Loader2,
   Mail,
@@ -16,6 +17,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { toast } from "@vellumai/design-library/components/toast";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
@@ -224,6 +226,172 @@ function formatScheduleTime(epochMs: number): string {
   });
 }
 
+type FeedActionShape = {
+  label: string;
+  defaultMode?: "background" | "thread" | "needs_you";
+  allowBackground?: boolean;
+};
+
+type RunMode = "smart" | "background" | "thread";
+
+/**
+ * Split-button for a feed item's primary action. The wide segment runs the
+ * smart default (server routes off the autonomy policy); the caret opens an
+ * override menu ("Run in background" / "Open as chat"). The `title` tooltip
+ * + a subtle caption surface what the smart default will do.
+ */
+function ActionSplitButton({
+  action,
+  pending,
+  variant,
+  onRun,
+}: {
+  action: FeedActionShape;
+  pending: boolean;
+  variant: "primary" | "subtle";
+  onRun: (mode?: RunMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const isPrimary = variant === "primary";
+  const hint =
+    action.defaultMode === "background"
+      ? "Runs in the background"
+      : action.defaultMode === "needs_you"
+        ? "Asks before doing anything"
+        : "Opens a conversation";
+
+  const seg: React.CSSProperties = {
+    fontSize: isPrimary ? 12.5 : 12,
+    fontWeight: 500,
+    background: isPrimary ? C.blue : C.white,
+    color: isPrimary ? C.white : C.t1,
+    border: isPrimary ? "none" : `1px solid ${C.line2}`,
+    cursor: pending ? "default" : "pointer",
+    opacity: pending ? 0.7 : 1,
+  };
+  const divider = isPrimary
+    ? "1px solid rgba(255,255,255,0.28)"
+    : `1px solid ${C.line2}`;
+
+  return (
+    <div
+      ref={ref}
+      style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}
+    >
+      <button
+        type="button"
+        onClick={() => onRun("smart")}
+        disabled={pending}
+        title={hint}
+        style={{
+          ...seg,
+          padding: isPrimary ? "10px 15px" : "8px 12px",
+          borderRadius: isPrimary ? "9px 0 0 9px" : "8px 0 0 8px",
+          borderRight: "none",
+        }}
+      >
+        {action.label}
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={pending}
+        aria-label="More run options"
+        style={{
+          ...seg,
+          padding: isPrimary ? "10px 7px" : "8px 6px",
+          borderRadius: isPrimary ? "0 9px 9px 0" : "0 8px 8px 0",
+          borderLeft: divider,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 5px)",
+            right: 0,
+            zIndex: 40,
+            background: C.white,
+            border: `1px solid ${C.line2}`,
+            borderRadius: 10,
+            boxShadow: "0 10px 28px rgba(20,30,50,0.16)",
+            overflow: "hidden",
+            minWidth: 184,
+          }}
+        >
+          <SplitMenuItem
+            label="Run in background"
+            sub={
+              action.allowBackground === false
+                ? "Consequential — Cue will ask first"
+                : "Cue does it, posts the result"
+            }
+            onClick={() => {
+              setOpen(false);
+              onRun("background");
+            }}
+          />
+          <SplitMenuItem
+            label="Open as chat"
+            sub="Work on it together"
+            onClick={() => {
+              setOpen(false);
+              onRun("thread");
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SplitMenuItem({
+  label,
+  sub,
+  onClick,
+}: {
+  label: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        background: "transparent",
+        border: "none",
+        borderBottom: `1px solid ${C.bg}`,
+        padding: "9px 13px",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
+      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+    >
+      <div style={{ fontSize: 12.5, fontWeight: 500, color: C.t1 }}>{label}</div>
+      <div style={{ fontSize: 11, color: C.t3, marginTop: 1 }}>{sub}</div>
+    </button>
+  );
+}
+
 export function HomeElevatedRoute() {
   const navigate = useNavigate();
   const assistantId = useActiveAssistantId();
@@ -340,15 +508,38 @@ export function HomeElevatedRoute() {
   };
   const action = (item: FeedItem) => item.actions?.[0] ?? null;
 
-  // Invoke a feed item's primary action for real. When the action carries an
-  // `id`, fire the daemon action endpoint via the hook's triggerAction (which
-  // optimistically marks the item acted_on and refetches). Fall back to seeding
-  // chat only when an action has a prompt but no id (defensive).
-  const runAction = (item: FeedItem) => {
+  // Invoke a feed item's primary action. `mode` selects how it runs:
+  // undefined/"smart" lets the daemon route off the autonomy policy; the
+  // split-button caret passes "background" or "thread" explicitly. On the
+  // response we navigate (thread) or confirm (background/needs_you). Fall back
+  // to seeding chat only when an action has a prompt but no id (defensive).
+  const runAction = (
+    item: FeedItem,
+    mode?: "smart" | "background" | "thread",
+  ) => {
     const a = action(item);
     if (!a) return;
     if (a.id) {
-      feedQuery.triggerAction.mutate({ itemId: item.id, actionId: a.id });
+      feedQuery.triggerAction.mutate(
+        { itemId: item.id, actionId: a.id, mode },
+        {
+          onSuccess: (data) => {
+            const resolved = (data as { mode?: string; conversationId?: string })
+              ?.mode;
+            const conversationId = (data as { conversationId?: string })
+              ?.conversationId;
+            if (resolved === "thread" && conversationId) {
+              navigate(routes.conversation(conversationId));
+            } else if (resolved === "background") {
+              toast.success("Running in the background — track it in Activity.");
+            } else if (resolved === "needs_you") {
+              toast.success(
+                "Queued — it'll wait for your approval in Activity.",
+              );
+            }
+          },
+        },
+      );
     } else {
       seedChat(a.prompt);
     }
@@ -505,26 +696,12 @@ export function HomeElevatedRoute() {
                 </div>
                 <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   {action(nextMove) && (
-                    <button
-                      type="button"
-                      onClick={() => runAction(nextMove)}
-                      disabled={feedQuery.triggerAction.isPending}
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 500,
-                        background: C.blue,
-                        color: C.white,
-                        border: "none",
-                        borderRadius: 9,
-                        padding: "10px 17px",
-                        cursor: feedQuery.triggerAction.isPending
-                          ? "default"
-                          : "pointer",
-                        opacity: feedQuery.triggerAction.isPending ? 0.7 : 1,
-                      }}
-                    >
-                      {action(nextMove)!.label}
-                    </button>
+                    <ActionSplitButton
+                      action={action(nextMove)!}
+                      variant="primary"
+                      pending={feedQuery.triggerAction.isPending}
+                      onRun={(mode) => runAction(nextMove, mode)}
+                    />
                   )}
                   {nextMove.conversationId && (
                     <button
@@ -777,26 +954,12 @@ export function HomeElevatedRoute() {
                           </div>
                         </div>
                         {a && !isDone && (
-                          <button
-                            type="button"
-                            onClick={() => runAction(item)}
-                            disabled={feedQuery.triggerAction.isPending}
-                            style={{
-                              fontSize: 12,
-                              fontWeight: 500,
-                              border: `1px solid ${C.line2}`,
-                              background: C.white,
-                              borderRadius: 8,
-                              padding: "8px 14px",
-                              cursor: feedQuery.triggerAction.isPending
-                                ? "default"
-                                : "pointer",
-                              flexShrink: 0,
-                              color: C.t1,
-                            }}
-                          >
-                            {a.label}
-                          </button>
+                          <ActionSplitButton
+                            action={a}
+                            variant="subtle"
+                            pending={feedQuery.triggerAction.isPending}
+                            onRun={(mode) => runAction(item, mode)}
+                          />
                         )}
                         {isDone ? (
                           <span

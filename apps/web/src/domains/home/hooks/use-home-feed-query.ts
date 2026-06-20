@@ -124,9 +124,12 @@ export function useHomeFeedQuery(assistantId: string | null) {
     mutationFn: async ({
       itemId,
       actionId,
+      mode,
     }: {
       itemId: string;
       actionId: string;
+      /** How to execute. Omit/"smart" = route off the autonomy policy. */
+      mode?: "smart" | "background" | "thread";
     }) => {
       const { data } = await homeFeedByIdActionsByActionIdPost({
         path: {
@@ -134,37 +137,16 @@ export function useHomeFeedQuery(assistantId: string | null) {
           id: itemId,
           actionId,
         },
+        body: mode ? { mode } : {},
         throwOnError: true,
       });
       return data;
     },
 
-    onMutate: async ({ itemId }) => {
-      await queryClient.cancelQueries({ queryKey: feedQueryKey });
-
-      const previous = queryClient.getQueryData<HomeFeedGetResponse>(feedQueryKey);
-
-      homeFeedGetSetQueryData(queryClient, feedOpts, (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          items: old.items.map((item) =>
-            item.id === itemId
-              ? { ...item, status: "acted_on" as const }
-              : item,
-          ),
-        };
-      });
-
-      return { previous };
-    },
-
-    onError: (_err, _vars, context) => {
-      if (context?.previous) {
-        homeFeedGetSetQueryData(queryClient, feedOpts, context.previous);
-      }
-    },
-
+    // No optimistic status flip: the resolved mode isn't known until the
+    // response (background/needs_you keep the item around; only thread/
+    // completed retire it). The server retires the card on a completed
+    // background run; we just refetch on settle.
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: feedQueryKey });
     },
