@@ -10,7 +10,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
@@ -18,6 +18,13 @@ import {
   contactsGetOptions,
   trustrulesGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  getAutonomyPolicies,
+  setAutonomyPolicies,
+  type AutonomyCategory,
+  type AutonomyMode,
+  type AutonomyPolicies,
+} from "@/lib/autonomy-policies-api";
 
 const C = {
   ink: "#1A2230",
@@ -139,6 +146,10 @@ export function TrustConsolePage() {
         </div>
 
         <div style={{ marginBottom: 18 }}>
+          <AutonomyPolicyPanel assistantId={assistantId} />
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
           <PermissionRulesPanel
             loading={rulesQuery.isLoading}
             error={rulesQuery.isError}
@@ -162,6 +173,250 @@ export function TrustConsolePage() {
             trusted={trusted.map((c) => c.displayName)}
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Autonomy policy matrix ─────────────────────────────────────────────────
+// The heart of "trust": the user sets autonomy per ACTION CATEGORY. Research
+// and drafting can auto-run; sending, money, and deletes ask by default. This
+// is enforced in the daemon's permission gate — "ask" holds even at Full
+// access, and "never" denies outright.
+
+const AUTONOMY_ROWS: ReadonlyArray<{
+  category: AutonomyCategory;
+  label: string;
+  sub: string;
+  accent: string;
+}> = [
+  {
+    category: "research",
+    label: "Research / Read",
+    sub: "Search, read, fetch, look things up",
+    accent: C.green,
+  },
+  {
+    category: "draft",
+    label: "Drafting",
+    sub: "Write files, compose drafts, edits",
+    accent: C.green,
+  },
+  {
+    category: "send",
+    label: "Messages / Send",
+    sub: "Send email, post, message, (un)subscribe",
+    accent: C.amber,
+  },
+  {
+    category: "money",
+    label: "Money / Payments",
+    sub: "Charge, transfer, order, refund, checkout",
+    accent: C.danger,
+  },
+  {
+    category: "delete",
+    label: "Deletes",
+    sub: "Delete, remove, archive, destructive shell",
+    accent: C.danger,
+  },
+  {
+    category: "other",
+    label: "Other",
+    sub: "Everything else — asks by default",
+    accent: C.t3,
+  },
+];
+
+const AUTONOMY_MODE_OPTIONS: ReadonlyArray<{
+  mode: AutonomyMode;
+  label: string;
+}> = [
+  { mode: "auto", label: "Auto-run" },
+  { mode: "ask", label: "Ask" },
+  { mode: "never", label: "Never" },
+];
+
+function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ["autonomyPolicies", assistantId] as const;
+
+  const query = useQuery({
+    queryKey,
+    queryFn: () => getAutonomyPolicies(assistantId),
+    staleTime: 30_000,
+  });
+
+  const mutation = useMutation({
+    mutationFn: (next: Partial<AutonomyPolicies>) =>
+      setAutonomyPolicies(assistantId, next),
+    // Optimistic: reflect the click immediately, roll back on error.
+    onMutate: async (next) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<AutonomyPolicies>(queryKey);
+      if (previous) {
+        queryClient.setQueryData<AutonomyPolicies>(queryKey, {
+          ...previous,
+          ...next,
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _next, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
+  const setMode = useCallback(
+    (category: AutonomyCategory, mode: AutonomyMode) => {
+      mutation.mutate({ [category]: mode });
+    },
+    [mutation],
+  );
+
+  const policies = query.data;
+
+  return (
+    <Panel title="What runs on its own · autonomy by action type">
+      {query.isLoading ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            color: C.t2,
+          }}
+        >
+          <Loader2 className="size-4 animate-spin" /> Loading autonomy policy…
+        </div>
+      ) : query.isError || !policies ? (
+        <div
+          style={{
+            background: "#fff",
+            border: `1px solid ${C.line}`,
+            borderLeft: `3px solid ${C.danger}`,
+            borderRadius: "0 12px 12px 0",
+            padding: "11px 14px",
+            fontSize: 13,
+            color: C.t2,
+          }}
+        >
+          Couldn&rsquo;t load your autonomy policy. Until it loads, Cue applies
+          its safe defaults — research and drafting auto-run; messages, money,
+          and deletes always ask.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12.5, color: C.t2, marginTop: -2 }}>
+            Choose what Cue may do on its own. <b>Ask</b> always prompts you
+            first — even at Full access. <b>Never</b> blocks the category
+            outright. These never weaken Cue&rsquo;s deny rules or risk checks.
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {AUTONOMY_ROWS.map((row) => (
+              <AutonomyRow
+                key={row.category}
+                row={row}
+                mode={policies[row.category]}
+                disabled={mutation.isPending}
+                onSelect={(mode) => setMode(row.category, mode)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+function AutonomyRow({
+  row,
+  mode,
+  disabled,
+  onSelect,
+}: {
+  row: (typeof AUTONOMY_ROWS)[number];
+  mode: AutonomyMode;
+  disabled: boolean;
+  onSelect: (mode: AutonomyMode) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        background: C.surface,
+        border: `1px solid ${C.line}`,
+        borderRadius: 12,
+        padding: "11px 13px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: row.accent,
+            flexShrink: 0,
+          }}
+        />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 500, color: C.t1 }}>
+            {row.label}
+          </div>
+          <div style={{ fontSize: 12, color: C.t2 }}>{row.sub}</div>
+        </div>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label={`${row.label} autonomy`}
+        style={{
+          display: "inline-flex",
+          background: C.sunken,
+          border: `1px solid ${C.line2}`,
+          borderRadius: 8,
+          padding: 2,
+          flexShrink: 0,
+        }}
+      >
+        {AUTONOMY_MODE_OPTIONS.map((opt) => {
+          const active = opt.mode === mode;
+          return (
+            <button
+              key={opt.mode}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={disabled}
+              onClick={() => {
+                if (!active) onSelect(opt.mode);
+              }}
+              style={{
+                fontFamily: mono,
+                fontSize: 11,
+                letterSpacing: "0.02em",
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "none",
+                cursor: disabled ? "default" : "pointer",
+                background: active ? C.surface : "transparent",
+                color: active ? C.blueS : C.t2,
+                fontWeight: active ? 600 : 400,
+                boxShadow: active ? `0 1px 2px rgba(26,34,48,0.10)` : "none",
+                transition: "background 120ms, color 120ms",
+              }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

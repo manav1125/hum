@@ -9,6 +9,7 @@ import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { getGatewayDb } from "../db/connection.js";
+import { resolveAutonomyPolicies } from "../http/routes/autonomy-policies.js";
 import {
   autoApproveThresholds,
   conversationThresholdOverrides,
@@ -91,6 +92,15 @@ export const thresholdRoutes: IpcRoute[] = [
         conversationId: parsed.conversationId,
         threshold: parsed.threshold,
       };
+    },
+  },
+  {
+    // Returns the full per-category autonomy policy map with SAFE DEFAULTS
+    // already baked in (research/draft → auto, send/money/delete/other → ask).
+    // The daemon reader relies on this map being complete.
+    method: "get_autonomy_policies",
+    handler: () => {
+      return { policies: resolveAutonomyPolicies() };
     },
   },
 ];

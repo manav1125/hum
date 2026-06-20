@@ -28,6 +28,8 @@ import {
   type ApprovalContext,
   DefaultApprovalPolicy,
 } from "./approval-policy.js";
+import { classifyAutonomy } from "./autonomy-class.js";
+import { getAutonomyPolicy } from "./autonomy-policy-reader.js";
 import {
   getAutoApproveThreshold,
   refreshAutoApproveThreshold,
@@ -538,10 +540,18 @@ export async function check(
 
   // Build approval context from local variables
   const tool = getTool(toolName);
-  const threshold = await getAutoApproveThreshold(
-    policyContext?.conversationId,
-    policyContext?.executionContext,
-  );
+  // Fetch the auto-approve threshold and the per-category autonomy policy in
+  // parallel — both are gateway IPC reads with independent fail-closed
+  // fallbacks.
+  const [threshold, autonomyPolicy] = await Promise.all([
+    getAutoApproveThreshold(
+      policyContext?.conversationId,
+      policyContext?.executionContext,
+    ),
+    getAutonomyPolicy(),
+  ]);
+  const autonomyClass = classifyAutonomy(toolName, input);
+  const autonomyMode = autonomyPolicy[autonomyClass];
   const approvalContext: ApprovalContext = {
     riskLevel: risk,
     toolName,
@@ -555,6 +565,8 @@ export async function check(
     hasManifestOverride: !!manifestOverride,
     autoApproveUpTo: threshold,
     hasSandboxAutoApprove,
+    autonomyClass,
+    autonomyMode,
   };
 
   // Delegate the allow/prompt/deny decision to the approval policy

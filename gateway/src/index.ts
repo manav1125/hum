@@ -83,6 +83,10 @@ import {
   createConversationThresholdPutHandler,
   createConversationThresholdDeleteHandler,
 } from "./http/routes/auto-approve-thresholds.js";
+import {
+  createAutonomyPoliciesGetHandler,
+  createAutonomyPoliciesPutHandler,
+} from "./http/routes/autonomy-policies.js";
 import { createChannelVerificationSessionProxyHandler } from "./http/routes/channel-verification-session-proxy.js";
 import { createTelegramControlPlaneProxyHandler } from "./http/routes/telegram-control-plane-proxy.js";
 import { createTwilioControlPlaneProxyHandler } from "./http/routes/twilio-control-plane-proxy.js";
@@ -512,6 +516,8 @@ async function main() {
     createConversationThresholdPutHandler();
   const handleConversationThresholdDelete =
     createConversationThresholdDeleteHandler();
+  const handleAutonomyPoliciesGet = createAutonomyPoliciesGetHandler();
+  const handleAutonomyPoliciesPut = createAutonomyPoliciesPutHandler();
   const handleTrustRulesList = createTrustRulesListHandler();
   const handleTrustRulesCreate = createTrustRulesCreateHandler();
   const handleTrustRulesUpdate = createTrustRulesUpdateHandler();
@@ -1346,6 +1352,36 @@ async function main() {
       auth: "edge-scoped",
       scope: "settings.write",
       handler: (req) => handleGlobalThresholdPut(req),
+    },
+
+    // ── Per-category autonomy policies (scope-protected) ──
+    {
+      path: "/v1/permissions/autonomy-policies",
+      method: "GET",
+      auth: "edge-scoped",
+      scope: "approval.read",
+      handler: (req) => handleAutonomyPoliciesGet(req),
+    },
+    {
+      path: /^\/v1\/assistants\/([^/]+)\/permissions\/autonomy-policies\/?$/,
+      method: "GET",
+      auth: "edge-scoped",
+      scope: "approval.read",
+      handler: (req) => handleAutonomyPoliciesGet(req),
+    },
+    {
+      path: "/v1/permissions/autonomy-policies",
+      method: "PUT",
+      auth: "edge-scoped",
+      scope: "approval.write",
+      handler: (req) => handleAutonomyPoliciesPut(req),
+    },
+    {
+      path: /^\/v1\/assistants\/([^/]+)\/permissions\/autonomy-policies\/?$/,
+      method: "PUT",
+      auth: "edge-scoped",
+      scope: "approval.write",
+      handler: (req) => handleAutonomyPoliciesPut(req),
     },
 
     // ── Per-conversation threshold overrides (scope-protected) ──

@@ -209,6 +209,30 @@ export const conversationThresholdOverrides = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
+// Per-category autonomy policies
+// ---------------------------------------------------------------------------
+//
+// The user opts each action *category* (research / draft / send / money /
+// delete / other) into one of three autonomy modes:
+//   - "auto":  run without asking (subject to deny rules + risk logic)
+//   - "ask":   always prompt, even at a relaxed auto-approve threshold
+//   - "never": always deny
+// Missing rows fall back to safe defaults (research/draft → auto, everything
+// else → ask) — see autonomy-policies route + the daemon-side reader. The
+// gateway owns this table; the daemon reads it over IPC.
+
+export const autonomyCategoryPolicies = sqliteTable(
+  "autonomy_category_policies",
+  {
+    category: text("category").primaryKey(),
+    mode: text("mode").notNull(),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(datetime('now'))`),
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Actor tokens (auth — gateway-owned)
 // ---------------------------------------------------------------------------
 

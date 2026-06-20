@@ -982,4 +982,92 @@ describe("autoApproveUpTo threshold", () => {
       expect(result.reason).toContain("within auto-approve threshold");
     });
   });
+
+  describe("per-category autonomy mode", () => {
+    test("'ask' forces prompt even with a high autoApproveUpTo (Full access)", () => {
+      const result = evaluate({
+        riskLevel: RiskLevel.Low,
+        toolName: "mcp__slack__send_message",
+        autonomyClass: "send",
+        autonomyMode: "ask",
+        // A maximally-relaxed threshold would normally auto-allow Low risk.
+        autoApproveUpTo: "high",
+      });
+      expect(result.decision).toBe("prompt");
+      expect(result.reason).toBe("category requires approval");
+    });
+
+    test("'ask' beats even an allow rule (ask still prompts)", () => {
+      const result = evaluate({
+        riskLevel: RiskLevel.Low,
+        toolName: "mcp__slack__send_message",
+        autonomyClass: "send",
+        autonomyMode: "ask",
+        autoApproveUpTo: "high",
+        matchedRule: makeRule({ decision: "allow" }),
+      });
+      expect(result.decision).toBe("prompt");
+      expect(result.reason).toBe("category requires approval");
+    });
+
+    test("'never' denies", () => {
+      const result = evaluate({
+        riskLevel: RiskLevel.Low,
+        toolName: "mcp__stripe__create_charge",
+        autonomyClass: "money",
+        autonomyMode: "never",
+        autoApproveUpTo: "high",
+      });
+      expect(result.decision).toBe("deny");
+      expect(result.reason).toBe("category set to never");
+    });
+
+    test("a deny rule still wins over an 'auto'/'ask' category", () => {
+      // Deny rules are evaluated first — autonomy gating is additive and must
+      // never weaken a deny rule.
+      const result = evaluate({
+        riskLevel: RiskLevel.Low,
+        toolName: "bash",
+        autonomyClass: "research",
+        autonomyMode: "auto",
+        matchedRule: makeRule({ decision: "deny", pattern: "rm -rf" }),
+      });
+      expect(result.decision).toBe("deny");
+      expect(result.reason).toContain("deny rule");
+    });
+
+    test("'auto' preserves existing risk-based behavior (allow within threshold)", () => {
+      const result = evaluate({
+        riskLevel: RiskLevel.Low,
+        toolName: "read",
+        autonomyClass: "research",
+        autonomyMode: "auto",
+        autoApproveUpTo: "low",
+      });
+      expect(result.decision).toBe("allow");
+      expect(result.reason).toContain("within auto-approve threshold");
+    });
+
+    test("'auto' still prompts when risk exceeds threshold", () => {
+      const result = evaluate({
+        riskLevel: RiskLevel.High,
+        toolName: "some_tool",
+        autonomyClass: "other",
+        autonomyMode: "auto",
+        autoApproveUpTo: "low",
+      });
+      expect(result.decision).toBe("prompt");
+      expect(result.reason).toContain("above auto-approve threshold");
+    });
+
+    test("undefined autonomyMode preserves pre-existing behavior", () => {
+      const result = evaluate({
+        riskLevel: RiskLevel.Low,
+        toolName: "read",
+        autoApproveUpTo: "low",
+        // autonomyMode not set — no category gating
+      });
+      expect(result.decision).toBe("allow");
+    });
+  });
 });

@@ -86,6 +86,22 @@ mock.module("./gateway-threshold-reader.js", () => ({
   _clearGlobalCacheForTesting: () => {},
 }));
 
+// Mock the per-category autonomy reader. Default to all-"auto" so these tests
+// exercise the existing risk/threshold logic in isolation (autonomyMode="auto"
+// falls through to risk-based evaluation). The dedicated autonomy gating tests
+// live in approval-policy.test.ts.
+mock.module("./autonomy-policy-reader.js", () => ({
+  getAutonomyPolicy: async () => ({
+    research: "auto",
+    draft: "auto",
+    send: "auto",
+    money: "auto",
+    delete: "auto",
+    other: "auto",
+  }),
+  _clearAutonomyPolicyCacheForTesting: () => {},
+}));
+
 // Mock trust-store — no rules by default.
 mock.module("./trust-store.js", () => ({
   findHighestPriorityRule: () => null,

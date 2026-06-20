@@ -1,4 +1,5 @@
 import type { OwnerKind } from "../tools/types.js";
+import type { AutonomyClass } from "./autonomy-class.js";
 import type { TrustRule } from "./types.js";
 import { RiskLevel } from "./types.js";
 
@@ -35,6 +36,22 @@ export interface ApprovalContext {
    * - "high": auto-approve everything unconditionally
    */
   autoApproveUpTo?: "none" | "low" | "medium" | "high";
+  /**
+   * Per-task-type autonomy category this tool invocation falls into
+   * (research / draft / send / money / delete / other). Informational —
+   * `autonomyMode` is the field the policy acts on.
+   */
+  autonomyClass?: AutonomyClass;
+  /**
+   * The user's configured autonomy mode for this invocation's category.
+   * - "never": deny unconditionally (high priority, after deny rules)
+   * - "ask":   prompt unconditionally — holds even at a relaxed threshold /
+   *            Full access
+   * - "auto":  fall through to the existing risk-based logic (still honors
+   *            deny rules and risk)
+   * `undefined` preserves the pre-existing behavior (no category gating).
+   */
+  autonomyMode?: "auto" | "ask" | "never";
 }
 
 // ── Ordinal maps for threshold comparison ─────────────────────────────────────
@@ -118,6 +135,33 @@ export class DefaultApprovalPolicy implements ApprovalPolicy {
         decision: "deny",
         reason: `Blocked by deny rule: ${matchedRule.pattern}`,
         matchedRule,
+      };
+    }
+
+    // ── 1b. Per-category autonomy mode (high priority) ─────────────────
+    // The user's per-task-type autonomy setting is evaluated immediately
+    // after deny rules and BEFORE any threshold/override logic. This is
+    // additive and can only make the decision stricter:
+    //   - "never": deny — the user has forbidden this category outright.
+    //   - "ask":   prompt UNCONDITIONALLY. This must hold even when the
+    //              auto-approve threshold would otherwise allow the risk
+    //              (e.g. Full access) — "ask" is the user explicitly opting
+    //              this category out of auto-run, so it defeats a relaxed
+    //              threshold. We do NOT consult autoApproveUpTo here.
+    //   - "auto":  fall through to the existing risk-based logic below; auto
+    //              still respects deny rules and risk-based prompting.
+    //   - undefined: no category gating — preserve pre-existing behavior.
+    const { autonomyMode } = context;
+    if (autonomyMode === "never") {
+      return {
+        decision: "deny",
+        reason: "category set to never",
+      };
+    }
+    if (autonomyMode === "ask") {
+      return {
+        decision: "prompt",
+        reason: "category requires approval",
       };
     }
 
