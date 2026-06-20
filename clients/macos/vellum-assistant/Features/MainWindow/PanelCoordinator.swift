@@ -958,6 +958,8 @@ private func iconForFeedItem(_ item: FeedItem) -> VIcon {
     case .scheduling:  return .clock
     case .background:  return .settings
     case .system:      return .bell
+    case .slack, .telegram, .whatsapp, .chat: return .messageSquare
+    case .task:        return .listChecks
     case nil:          return .bell
     }
 }
@@ -971,6 +973,8 @@ private func iconForegroundForFeedItem(_ item: FeedItem) -> Color {
     case .scheduling:  return VColor.feedThreadStrong
     case .background:  return VColor.systemInfoStrong
     case .system:      return VColor.feedDigestStrong
+    case .slack, .telegram, .whatsapp, .chat: return VColor.feedThreadStrong
+    case .task:        return VColor.feedDigestStrong
     case nil:          return VColor.feedDigestStrong
     }
 }
@@ -984,6 +988,8 @@ private func iconBackgroundForFeedItem(_ item: FeedItem) -> Color {
     case .scheduling:  return VColor.feedThreadWeak
     case .background:  return VColor.systemInfoWeak
     case .system:      return VColor.feedDigestWeak
+    case .slack, .telegram, .whatsapp, .chat: return VColor.feedThreadWeak
+    case .task:        return VColor.feedDigestWeak
     case nil:          return VColor.feedDigestWeak
     }
 }

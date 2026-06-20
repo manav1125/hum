@@ -11,15 +11,15 @@
 
 import { describe, expect, it } from "bun:test";
 
-import {
-  channelToCategory,
-  fetchChannelConversations,
-} from "./action-board.js";
 import type { MessagingProvider } from "../messaging/provider.js";
 import type {
   Conversation,
   Message,
 } from "../messaging/provider-types.js";
+import {
+  channelToCategory,
+  fetchChannelConversations,
+} from "./action-board.js";
 
 const NOW = new Date("2026-06-20T12:00:00Z");
 

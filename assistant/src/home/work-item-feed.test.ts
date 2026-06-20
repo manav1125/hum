@@ -7,13 +7,13 @@
 
 import { describe, expect, it } from "bun:test";
 
-import type { FeedItem } from "./feed-types.js";
 import type { WorkItem } from "../work-items/work-item-store.js";
+import type { FeedItem } from "./feed-types.js";
 import {
   mergeWorkItemsIntoFeed,
   sourceTypeToCategory,
-  workItemToFeedItem,
   WORK_ITEM_FEED_PREFIX,
+  workItemToFeedItem,
 } from "./work-item-feed.js";
 
 const NOW = new Date("2026-06-20T12:00:00Z");

@@ -17,8 +17,8 @@
  * the day's cards in place instead of duplicating them.
  */
 
-import { getConnectedProviders } from "../messaging/registry.js";
 import type { MessagingProvider } from "../messaging/provider.js";
+import { getConnectedProviders } from "../messaging/registry.js";
 import { emitNotificationSignal } from "../notifications/emit-signal.js";
 import type { OAuthConnection } from "../oauth/connection.js";
 import { resolveOAuthConnection } from "../oauth/connection-resolver.js";

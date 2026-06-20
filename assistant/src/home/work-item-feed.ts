@@ -18,8 +18,8 @@
  * synthesized triage card).
  */
 
-import type { FeedItem, FeedItemCategory, FeedItemUrgency } from "./feed-types.js";
 import type { WorkItem } from "../work-items/work-item-store.js";
+import type { FeedItem, FeedItemCategory, FeedItemUrgency } from "./feed-types.js";
 
 /** Stable id prefix for work-item-derived feed cards. */
 export const WORK_ITEM_FEED_PREFIX = "work-item:";
@@ -79,7 +79,8 @@ export function sourceTypeToCategory(
  */
 export function workItemToFeedItem(item: WorkItem, now: Date): FeedItem {
   const category = sourceTypeToCategory(item.sourceType);
-  const createdIso = new Date(item.createdAt).toISOString();
+  // Fall back to `now` when a queued item somehow lacks a creation time.
+  const createdIso = new Date(item.createdAt ?? now).toISOString();
   const summary =
     (item.notes ?? "").trim().length > 0
       ? item.notes!.trim()

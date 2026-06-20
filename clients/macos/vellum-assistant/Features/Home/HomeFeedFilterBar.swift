@@ -78,6 +78,8 @@ struct HomeFeedFilterBar: View {
         case .scheduling: return .clock
         case .background: return .settings
         case .system:     return .bell
+        case .slack, .telegram, .whatsapp, .chat: return .messageSquare
+        case .task:       return .listChecks
         }
     }
 
@@ -88,6 +90,8 @@ struct HomeFeedFilterBar: View {
         case .scheduling: return VColor.feedThreadStrong
         case .background: return VColor.systemInfoStrong
         case .system:     return VColor.feedDigestStrong
+        case .slack, .telegram, .whatsapp, .chat: return VColor.feedThreadStrong
+        case .task:       return VColor.feedDigestStrong
         }
     }
 
@@ -98,6 +102,8 @@ struct HomeFeedFilterBar: View {
         case .scheduling: return VColor.feedThreadWeak
         case .background: return VColor.systemInfoWeak
         case .system:     return VColor.feedDigestWeak
+        case .slack, .telegram, .whatsapp, .chat: return VColor.feedThreadWeak
+        case .task:       return VColor.feedDigestWeak
         }
     }
 }
