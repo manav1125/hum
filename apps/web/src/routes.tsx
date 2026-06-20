@@ -303,10 +303,11 @@ export const routeTree = [
                   lazy: { Component: () => import("@/domains/next-moves/next-moves-page").then((m) => m.NextMovesPage) },
                 },
                 {
-                  // Template-library dashboard — a personal command center with
-                  // real-data widgets + an "ask Cue anything" query bar.
+                  // The Dashboard folded into Home (the command center now
+                  // carries the query bar + template widgets). Redirect the old
+                  // route + any lingering links so they don't 404.
                   path: "dashboard",
-                  lazy: { Component: () => import("@/domains/dashboard/dashboard-page").then((m) => m.DashboardPage) },
+                  element: <Navigate to={routes.home} replace />,
                 },
                 {
                   // Activity — the background-work command center: every task

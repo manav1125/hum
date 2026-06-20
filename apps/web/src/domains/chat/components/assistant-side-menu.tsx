@@ -3,7 +3,6 @@ import {
     Clock,
     Hash,
     Home,
-    LayoutDashboard,
     LayoutGrid,
     Pin,
     Rocket,
@@ -116,12 +115,13 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  * (see design/surfaces/Memory.dc.html + CueLive.dc.html):
  *
  *   Header · primary rail
- *     • Home        → home feed (next-moves lives here as feed content)
+ *     • Home        → the command center (feed + query bar + glanceable
+ *                       template widgets; the dashboard folded in here)
+ *     • Activity    → background-work command center
  *     • Intelligence → Identity hub (holds its own tab bar: Connectors,
  *                       Channels, Agents, Cue Live, Skills, Memory, Workspace)
  *     • Library
- *     • Workspace
- *     • Contacts
+ *     • People      → relationship dossiers (/people)
  *     • channel-presence dots + pinned apps (rail affordances)
  *     • ───────────────
  *   Body · "Chat" section — the conversation-thread list
@@ -478,11 +478,13 @@ export function AssistantSideMenu({
           </div>
         ) : null}
         {/*
-          The clean rail: Home · Intelligence · Library · Contacts. "Chat" is the
-          conversation-thread list below (labeled in the body). Contacts opens the
-          relationship dossier (/people). Workspace, Connections (channel setup),
-          Memory, Connectors live as Intelligence tabs; Next moves = Home feed;
-          Meeting = a Home action; Trust = a link on Contacts. (See docblock.)
+          The clean rail: Home · Activity · Intelligence · Library · People.
+          "Chat" is the conversation-thread list below (labeled in the body).
+          People opens the relationship dossier (/people). The Dashboard folded
+          into Home (query bar + template widgets); Workspace, Connections
+          (channel setup), Memory, Connectors live as Intelligence tabs;
+          Next moves = Home feed; Meeting = a Home action; Trust = a link on
+          People. (See docblock.)
         */}
         <SideMenu.Item
           icon={Home}
@@ -497,13 +499,6 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/activity")}
           onSelect={() => cueNav("/assistant/activity")}
-        />
-        <SideMenu.Item
-          icon={LayoutDashboard}
-          label="Dashboard"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/dashboard")}
-          onSelect={() => cueNav("/assistant/dashboard")}
         />
         <SideMenu.Item
           icon={Sparkles}
@@ -523,7 +518,7 @@ export function AssistantSideMenu({
         ) : null}
         <SideMenu.Item
           icon={Users}
-          label="Contacts"
+          label="People"
           showCollapsedTooltip
           active={isContactsActive}
           onSelect={

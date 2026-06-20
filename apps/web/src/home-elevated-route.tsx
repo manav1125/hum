@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowRight,
   Bell,
   CalendarClock,
+  Loader2,
   Mail,
   Mic,
   ShieldCheck,
@@ -15,6 +17,15 @@ import { useNavigate } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { requestComposerFocus } from "@/domains/chat/composer-focus";
 import { createDraftConversationId } from "@/domains/chat/utils/conversation-selection";
+import { useDashboardQuery } from "@/domains/dashboard/use-dashboard-query";
+import { useDashboardTemplates } from "@/domains/dashboard/use-dashboard-templates";
+import type { DashboardTemplate, WidgetSpec } from "@/domains/dashboard/templates";
+import { AssistantStateWidget } from "@/domains/dashboard/widgets/assistant-state-widget";
+import { ConnectorQueryWidget } from "@/domains/dashboard/widgets/connector-query-widget";
+import { ImpactStatsWidget } from "@/domains/dashboard/widgets/impact-stats-widget";
+import { RecentMemoryWidget } from "@/domains/dashboard/widgets/recent-memory-widget";
+import { SchedulesWidget } from "@/domains/dashboard/widgets/schedules-widget";
+import { WorkItemsWidget } from "@/domains/dashboard/widgets/work-items-widget";
 import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
 import { selectNextMove, selectNoticed } from "@/domains/home/utils";
 import { homeImpactGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -150,6 +161,11 @@ export function HomeElevatedRoute() {
   const navigate = useNavigate();
   const assistantId = useActiveAssistantId();
   const feedQuery = useHomeFeedQuery(assistantId);
+  // The dashboard, folded into Home: a mode switcher (Personal / Company /
+  // Finances / Founder) drives a tidy row of glanceable widgets below the
+  // editorial feed. Home's own "Also needs you" queue IS the next-moves feed,
+  // so we never render the next-moves widget here — that would double it.
+  const { templates, activeId, active, setActiveId } = useDashboardTemplates();
   const impactQuery = useQuery({
     ...homeImpactGetOptions({
       path: { assistant_id: assistantId ?? "" },
@@ -308,6 +324,14 @@ export function HomeElevatedRoute() {
                 <>{greeting}. You&apos;re all caught up — nothing needs you right now.</>
               )}
             </div>
+
+            {/* ASK CUE ANYTHING — the command-center query bar (folded in from
+                the dashboard). Sits under the greeting, framed by the active
+                mode's queryContext so e.g. Finances reasons about money. */}
+            <HomeQueryBar
+              assistantId={assistantId}
+              queryContext={active.queryContext}
+            />
 
             {/* INK DRAFTED CARD */}
             {nextMove && (
@@ -541,6 +565,42 @@ export function HomeElevatedRoute() {
             </>
           )}
 
+          {/* TEMPLATE WIDGETS — the dashboard's glanceable cards, folded into
+              Home. A mode switcher swaps the widget set; the next-moves widget
+              is intentionally dropped (Home's queue above already IS that feed)
+              and the query bar lives at the top, so this is a tidy grid of the
+              remaining glanceable cards. */}
+          <div style={{ padding: "4px 20px 6px" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontFamily: mono,
+                  letterSpacing: ".1em",
+                  textTransform: "uppercase",
+                  color: C.t3,
+                }}
+              >
+                At a glance · {active.name}
+              </div>
+              <ModeSwitcher
+                templates={templates}
+                activeId={activeId}
+                onSelect={setActiveId}
+              />
+            </div>
+            <HomeWidgetGrid template={active} assistantId={assistantId} />
+          </div>
+
           {/* RECAP STRIP */}
           <button
             type="button"
@@ -736,4 +796,194 @@ export function HomeElevatedRoute() {
       </aside>
     </div>
   );
+}
+
+/**
+ * "Ask Cue anything" — the command-center query bar, folded onto Home from the
+ * dashboard. Reuses `useDashboardQuery` (postChatMessage → fresh conversation),
+ * styled to Home's serif/mono inline-hex palette rather than the dashboard card
+ * chrome so it reads as one coherent surface.
+ */
+function HomeQueryBar({
+  assistantId,
+  queryContext,
+}: {
+  assistantId: string;
+  queryContext?: string;
+}) {
+  const { value, setValue, submitting, error, submit } = useDashboardQuery(
+    assistantId,
+    queryContext,
+  );
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+        style={{ display: "flex", gap: 10, alignItems: "center" }}
+      >
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Ask Cue anything — it’ll open a conversation with the answer…"
+          style={{
+            flex: 1,
+            fontSize: 14,
+            border: `1px solid ${C.line2}`,
+            borderRadius: 12,
+            padding: "12px 15px",
+            outline: "none",
+            color: C.t1,
+            background: C.white,
+            minWidth: 0,
+          }}
+        />
+        <button
+          type="submit"
+          disabled={submitting || value.trim().length === 0}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            fontSize: 14,
+            fontWeight: 500,
+            border: `1px solid ${C.blue}`,
+            background: C.blue,
+            color: C.white,
+            borderRadius: 12,
+            padding: "12px 17px",
+            cursor:
+              submitting || value.trim().length === 0 ? "default" : "pointer",
+            opacity: submitting || value.trim().length === 0 ? 0.6 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {submitting ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <ArrowRight size={16} />
+          )}
+          Ask Cue
+        </button>
+      </form>
+      {error ? (
+        <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Mode switcher (Personal / Company / Finances / Founder) — reuses the
+ *  dashboard templates; swaps the glanceable widget set below the feed. */
+function ModeSwitcher({
+  templates,
+  activeId,
+  onSelect,
+}: {
+  templates: DashboardTemplate[];
+  activeId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {templates.map((t) => {
+        const isActive = t.id === activeId;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onSelect(t.id)}
+            style={{
+              fontSize: 12.5,
+              fontWeight: 500,
+              border: `1px solid ${isActive ? C.ink : C.line2}`,
+              background: isActive ? C.ink : C.white,
+              color: isActive ? C.white : C.t1,
+              borderRadius: 999,
+              padding: "5px 13px",
+              cursor: "pointer",
+            }}
+          >
+            {t.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The glanceable widget grid for the active mode. Reuses the dashboard's widget
+ * components verbatim. Two widget ids are skipped here so Home stays one
+ * coherent surface, not two feeds:
+ *   • `next-moves` — Home's "Also needs you" queue already IS this feed.
+ *   • `query-bar`  — the ask-Cue bar lives at the top, under the greeting.
+ */
+function HomeWidgetGrid({
+  template,
+  assistantId,
+}: {
+  template: DashboardTemplate;
+  assistantId: string;
+}) {
+  const widgets = template.widgets.filter(
+    (w) => w.id !== "next-moves" && w.id !== "query-bar",
+  );
+
+  if (widgets.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+        gap: 14,
+        alignItems: "start",
+      }}
+    >
+      {widgets.map((spec, idx) => (
+        <HomeWidget
+          key={`${spec.id}-${idx}`}
+          spec={spec}
+          assistantId={assistantId}
+        />
+      ))}
+    </div>
+  );
+}
+
+function HomeWidget({
+  spec,
+  assistantId,
+}: {
+  spec: WidgetSpec;
+  assistantId: string;
+}) {
+  switch (spec.id) {
+    case "recent-memory":
+      return <RecentMemoryWidget assistantId={assistantId} />;
+    case "impact-stats":
+      return <ImpactStatsWidget assistantId={assistantId} />;
+    case "schedules":
+      return <SchedulesWidget assistantId={assistantId} />;
+    case "work-items":
+      return <WorkItemsWidget assistantId={assistantId} />;
+    case "assistant-state":
+      return <AssistantStateWidget assistantId={assistantId} />;
+    case "connector-query":
+      // A connector-query spec without a preset is a template authoring bug;
+      // skip rather than render a broken card.
+      return spec.preset ? (
+        <ConnectorQueryWidget assistantId={assistantId} preset={spec.preset} />
+      ) : null;
+    default:
+      // next-moves / query-bar are filtered out before reaching here.
+      return null;
+  }
 }
