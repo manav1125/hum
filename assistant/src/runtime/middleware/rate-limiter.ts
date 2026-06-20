@@ -8,7 +8,14 @@ import { isLoopbackAddress, isPrivateAddress } from "./auth.js";
 
 const log = getLogger("rate-limiter");
 
-const DEFAULT_MAX_REQUESTS = 300;
+// A rich multi-surface SPA legitimately bursts well past a few req/sec: Home,
+// Activity (7 polling sections), the dashboard, and rapid navigation each
+// refire a fan-out of GETs, and multiple windows/clients behind one gateway
+// share a forwarded client IP (so their budgets combine). 300/min (5/sec)
+// throttled real usage into intermittent "couldn't load" 429s. Raise the
+// authenticated budget generously — abuse surface is still bounded by auth +
+// the much lower unauthenticated IP limit below.
+const DEFAULT_MAX_REQUESTS = 2_000;
 const DEFAULT_WINDOW_MS = 60_000; // 60 seconds
 const MAX_TRACKED_TOKENS = 10_000;
 
@@ -18,7 +25,7 @@ const MAX_TRACKED_TOKENS = 10_000;
 // instead (see extractClientIp). Local clients legitimately burst far
 // beyond the remote budget: a cold sidebar load at thousands of
 // conversations pages through hundreds of GETs in a few seconds.
-const LOOPBACK_MAX_REQUESTS = 1200;
+const LOOPBACK_MAX_REQUESTS = 5_000;
 
 // Lower limit for unauthenticated (IP-based) requests to reduce abuse surface.
 const DEFAULT_IP_MAX_REQUESTS = 20;
