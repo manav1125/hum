@@ -50,7 +50,7 @@
  * push-to-talk and moves to `transcribing` (mic stays open).
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   LiveVoiceChannelClient,
@@ -102,10 +102,19 @@ export interface UseLiveVoiceResult {
   inputAmplitude: number;
   /** Failure message when `state === "failed"`, else `null`. */
   error: string | null;
+  /** Whether the mic is currently muted (audio tracks disabled). */
+  muted: boolean;
   /** Start a session for `assistantId`, optionally attaching a conversation. */
   start: (assistantId: string, conversationId?: string) => Promise<void>;
   /** End the session and release the mic, socket, and audio context. */
   stop: () => Promise<void>;
+  /**
+   * Mute/unmute the live mic. Toggles `enabled` on the active capture's audio
+   * tracks: the session, socket, and capture graph stay up, but no real audio
+   * is forwarded to the server while muted. The preference is retained across
+   * `start()` so a session begins muted if the user muted before starting.
+   */
+  setMuted: (muted: boolean) => void;
 }
 
 /** Injectable factories so tests can supply mock primitives. */
@@ -174,6 +183,12 @@ export function useLiveVoice(
 
   const sessionRef = useRef<SessionContext | null>(null);
 
+  // Mute is UI-reactive state; a mirror ref lets async glue (startCapture) read
+  // the latest value without re-subscribing. The mic preference persists across
+  // sessions, so it is not reset on stop()/teardown.
+  const [muted, setMutedState] = useState(false);
+  const mutedRef = useRef(muted);
+
   // Keep the factories in a ref so start()/stop() stay stable across renders
   // even if callers pass inline option objects. The ref is updated in an effect
   // (not during render) to satisfy the react-compiler "no refs during render"
@@ -182,6 +197,21 @@ export function useLiveVoice(
   useEffect(() => {
     optionsRef.current = options;
   });
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+
+  /**
+   * Mute/unmute the live mic. Applies immediately to the active capture (if any)
+   * and stores the preference for the next `startCapture` so a session that
+   * starts while muted comes up muted.
+   */
+  const setMuted = useCallback((next: boolean) => {
+    setMutedState(next);
+    mutedRef.current = next;
+    sessionRef.current?.capture.setMuted(next);
+  }, []);
 
   /**
    * Tear down the active session's primitives, clear the ref, and reset the
@@ -272,7 +302,7 @@ export function useLiveVoice(
       session.unsubscribes.push(
         client.on("ready", () => {
           if (!live()) return;
-          void startCapture(session, teardown);
+          void startCapture(session, teardown, mutedRef.current);
         }),
         client.on("sttPartial", (frame) => {
           if (!live()) return;
@@ -362,8 +392,10 @@ export function useLiveVoice(
     assistantTranscript,
     inputAmplitude,
     error,
+    muted,
     start,
     stop,
+    setMuted,
   };
 }
 
@@ -375,6 +407,7 @@ export function useLiveVoice(
 async function startCapture(
   session: SessionContext,
   teardown: () => void,
+  muted: boolean,
 ): Promise<void> {
   const generation = session.generation;
   const result = await session.capture.start();
@@ -389,6 +422,8 @@ async function startCapture(
   }
   session.captureRunning = true;
   session.forwardingAudio = true;
+  // Honor a mute set before the session opened (the mic comes up muted).
+  if (muted) session.capture.setMuted(true);
   const s = useLiveVoiceStore.getState();
   if (s.state === "connecting") s.setState("listening");
 }

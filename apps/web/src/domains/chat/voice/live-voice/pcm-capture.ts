@@ -193,6 +193,20 @@ export class LiveVoiceAudioCapture {
     }
   }
 
+  /**
+   * Mute or unmute the live mic by toggling `enabled` on the stream's audio
+   * tracks. A disabled track keeps the capture graph and `getUserMedia` session
+   * alive (no permission re-prompt, no device churn) but feeds silence into the
+   * worklet, so no real audio is streamed to the server while muted. No-op if
+   * the mic is not currently open.
+   */
+  setMuted(muted: boolean): void {
+    if (!this.stream) return;
+    for (const track of this.stream.getAudioTracks()) {
+      track.enabled = !muted;
+    }
+  }
+
   /** Releases the mic and audio graph. The instance can be `start()`ed again. */
   async stop(): Promise<void> {
     // Cancel any in-flight start() so a getUserMedia/addModule that resolves
