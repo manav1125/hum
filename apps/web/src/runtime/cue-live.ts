@@ -1,4 +1,5 @@
 import type {
+  CueLiveGoal,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -63,6 +64,34 @@ function voiceKeysSupported(): boolean {
     isCueLiveAvailable() &&
     typeof window.vellum?.cueLive?.voiceKeysStatus === "function"
   );
+}
+
+/** Whether the saved auto-run goals IPC is present (newer preloads only). */
+export function isCueLiveGoalsSupported(): boolean {
+  return (
+    isCueLiveAvailable() &&
+    typeof window.vellum?.cueLive?.listGoals === "function"
+  );
+}
+
+/** List the persisted auto-run goals, or `[]` when off-desktop/unsupported. */
+export async function listCueLiveGoals(): Promise<CueLiveGoal[]> {
+  if (!isCueLiveGoalsSupported()) return [];
+  return window.vellum!.cueLive!.listGoals!();
+}
+
+/** Upsert a goal (id absent → create); returns the refreshed list. */
+export async function saveCueLiveGoal(
+  goal: Omit<CueLiveGoal, "id"> & { id?: string },
+): Promise<CueLiveGoal[]> {
+  if (!isCueLiveGoalsSupported()) return [];
+  return window.vellum!.cueLive!.saveGoal!(goal);
+}
+
+/** Remove a goal by id; returns the refreshed list. */
+export async function deleteCueLiveGoal(id: string): Promise<CueLiveGoal[]> {
+  if (!isCueLiveGoalsSupported()) return [];
+  return window.vellum!.cueLive!.deleteGoal!(id);
 }
 
 /** Which voice keys are configured (never the secret values themselves). */

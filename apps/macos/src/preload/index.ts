@@ -8,6 +8,7 @@ import type {
   ConnectivityState,
   ConnectorStatus,
   ConnectorTool,
+  CueLiveGoal,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -41,6 +42,7 @@ export type {
   ConnectivityState,
   ConnectorStatus,
   ConnectorTool,
+  CueLiveGoal,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -210,6 +212,20 @@ const bridge: VellumBridge = {
         field,
         value,
       ) as Promise<CueLiveVoiceKeysStatus>,
+    listGoals: (): Promise<CueLiveGoal[]> =>
+      ipcRenderer.invoke("vellum:cueLive:listGoals") as Promise<CueLiveGoal[]>,
+    saveGoal: (
+      goal: Omit<CueLiveGoal, "id"> & { id?: string },
+    ): Promise<CueLiveGoal[]> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:saveGoal",
+        goal,
+      ) as Promise<CueLiveGoal[]>,
+    deleteGoal: (id: string): Promise<CueLiveGoal[]> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:deleteGoal",
+        id,
+      ) as Promise<CueLiveGoal[]>,
   },
   featureFlags: {
     set: (flags: Record<string, boolean>): void => {

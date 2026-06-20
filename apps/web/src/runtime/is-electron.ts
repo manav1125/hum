@@ -23,6 +23,7 @@ import type {
   ConnectivityState,
   ConnectorStatus,
   ConnectorTool,
+  CueLiveGoal,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -146,6 +147,11 @@ declare global {
           field: CueLiveVoiceKeyField,
           value: string | null,
         ): Promise<CueLiveVoiceKeysStatus>;
+        listGoals?(): Promise<CueLiveGoal[]>;
+        saveGoal?(
+          goal: Omit<CueLiveGoal, "id"> & { id?: string },
+        ): Promise<CueLiveGoal[]>;
+        deleteGoal?(id: string): Promise<CueLiveGoal[]>;
       };
       featureFlags?: {
         set(flags: Record<string, boolean>): void;

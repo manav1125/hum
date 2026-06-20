@@ -396,6 +396,21 @@ export type CueLiveVoiceKeyField =
   | "elevenLabs"
   | "elevenLabsVoiceId";
 
+/**
+ * A saved "auto-run goal": a named goal the user can re-run on demand via the
+ * existing typed-goal executor. Persisted in app settings (`cueLiveGoals`).
+ */
+export interface CueLiveGoal {
+  /** Stable id, assigned by main on save. */
+  id: string;
+  /** Short human label for the row (e.g. "Triage inbox"). */
+  label: string;
+  /** The goal text handed to the runGoal executor. */
+  goal: string;
+  /** Whether running it engages the act loop (full auto) vs. explain-only. */
+  takeControl: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Lockfile (bridge-facing subset of @vellumai/local-mode/contract)
 // ---------------------------------------------------------------------------

@@ -33,6 +33,17 @@ export interface AppSettings {
     elevenLabs?: string;
     elevenLabsVoiceId?: string;
   };
+  /**
+   * Saved Cue Live "auto-run goals": named goals the user can re-run on demand
+   * through the existing typed-goal executor. Each carries a stable `id`, a
+   * display `label`, the `goal` text, and whether running it takes control.
+   */
+  cueLiveGoals: Array<{
+    id: string;
+    label: string;
+    goal: string;
+    takeControl: boolean;
+  }>;
 }
 
 const schema: Schema<AppSettings> = {
@@ -71,6 +82,21 @@ const schema: Schema<AppSettings> = {
     },
     additionalProperties: false,
     default: {},
+  },
+  cueLiveGoals: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        label: { type: "string" },
+        goal: { type: "string" },
+        takeControl: { type: "boolean" },
+      },
+      required: ["id", "label", "goal", "takeControl"],
+      additionalProperties: false,
+    },
+    default: [],
   },
 };
 

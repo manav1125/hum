@@ -7,17 +7,23 @@ is the list to revisit and wire to real backends in the core-functionality phase
 
 ## Cue Live (`apps/web/src/domains/intelligence/cue-live-page.tsx`)
 Wired today: enable toggle, summon hotkey, "Allow Cue to act" (take-control), accessibility-
-trusted state, voice-key entry (AssemblyAI/ElevenLabs), goal runner.
-Display-only — need backend:
-- **Mode select** — Scoped watch / Always-on / Take control cards. Only "Companion" is the
-  shipped mode; `CueLiveStatus` has no mode-select field. Need a desktop bridge mode setter.
-- **Hotkeys** — Point at element (⌥P), Push-to-talk (hold fn), Stop everything (⌥esc) are
-  fixed display caps; only Summon's accelerator is real. Need configurable keybindings.
-- **Voice bindings** — Hands-free (VAD) + Read-selection-aloud toggles are inert. Need
-  config flags in the voice bridge.
-- **Auto-run goals** — section shows only the dashed "+ Add" affordance; no goals backend.
-- **Take-control posture** — "Pause before sending/purchases: always" + the entire
-  "How it sees" card are trust/capture posture copy (no settings store yet).
+trusted state, voice-key entry (AssemblyAI/ElevenLabs), goal runner, **Auto-run goals (DONE
+2026-06-20 — real CRUD persisted in electron-store, runs via the existing `runGoal` executor;
+no Swift needed)**.
+Remaining — need **native Swift + a packaged macOS build** to actually behave (the TS pref
+layer alone would persist-but-not-act = the "looks wired but isn't" trap; hold until the Swift
+work is done). Scoped in this session (see the Cue Live build-path investigation):
+- **Mode select** — Scoped watch / Always-on / Take control. `CueLiveStatus` has no `mode`
+  field. The capture-policy *behaviour* (scoped one-window capture; always-on continuous +
+  light) does not exist in Swift today — new native capture pipelines (CUE-LIVE-SPEC stages 2 & 5).
+- **Configurable hotkeys** — Summon is Swift-hardcoded (keyCode 49); ⌥P/⌥esc monitors don't
+  exist. Persisting a binding has no effect until Swift matches accelerators dynamically
+  (`cuelive.setHotkeys` RPC + dynamic matching in CueLive.swift).
+- **Voice bindings** — Read-selection-aloud (⌥R) needs a new Swift monitor + AX selected-text
+  read → existing `speak`. Hands-free (VAD) has **no** engine in CueVoice.swift at all (push-to-
+  talk only today) — a substantial native audio/wake-word build.
+- **Take-control posture** — "Pause before sending/purchases" + "How it sees" are posture copy
+  (no settings store yet).
 
 ## Connectors / ConnectorDetail (`connectors-page.tsx`, `connector-detail-page.tsx`)
 Wired today: connector list, connect/disconnect, per-tool **enable** toggle (real binary

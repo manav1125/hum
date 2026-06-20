@@ -20,6 +20,7 @@ import type {
   ConnectivityState,
   ConnectorStatus,
   ConnectorTool,
+  CueLiveGoal,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -108,6 +109,14 @@ export interface VellumBridge {
       field: CueLiveVoiceKeyField,
       value: string | null,
     ): Promise<CueLiveVoiceKeysStatus>;
+    /** List the persisted auto-run goals. */
+    listGoals(): Promise<CueLiveGoal[]>;
+    /** Upsert a goal (id absent → create with a fresh id); returns the list. */
+    saveGoal(
+      goal: Omit<CueLiveGoal, "id"> & { id?: string },
+    ): Promise<CueLiveGoal[]>;
+    /** Remove a goal by id; returns the updated list. */
+    deleteGoal(id: string): Promise<CueLiveGoal[]>;
   };
   featureFlags: {
     set(flags: Record<string, boolean>): void;

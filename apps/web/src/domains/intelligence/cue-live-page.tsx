@@ -3,17 +3,22 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import type {
+  CueLiveGoal,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
 } from "@vellumai/ipc-contract";
 
 import {
+  deleteCueLiveGoal,
   getCueLiveStatus,
   getVoiceKeysStatus,
   isCueLiveAvailable,
+  isCueLiveGoalsSupported,
   isRunGoalSupported,
+  listCueLiveGoals,
   runGoal,
+  saveCueLiveGoal,
   setCueLiveEnabled,
   setCueLiveTakeControl,
   setVoiceKey,
@@ -493,35 +498,292 @@ function VoiceBindingsCard({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Auto-run goals — no backend for a saved goal list, so we honour the         */
-/* honesty rule: render the section header + the dashed add affordance, which  */
-/* routes to the real typed-goal runner (VoiceSetup/GoalRunner) below.         */
+/* Auto-run goals — a persisted list of named goals, each re-runnable on demand */
+/* through the existing runGoal executor. CRUD is backed by the cueLiveGoals    */
+/* setting via the bridge; the inline form adds/edits without leaving the page. */
 /* -------------------------------------------------------------------------- */
 
-function AutoRunGoals({ onAdd }: { onAdd: () => void }) {
+function AutoRunGoals() {
+  const [goals, setGoals] = useState<CueLiveGoal[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [goalText, setGoalText] = useState("");
+  const [takeControl, setTakeControl] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isCueLiveGoalsSupported()) return;
+    let alive = true;
+    void listCueLiveGoals().then((list) => {
+      if (alive) setGoals(list);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const resetForm = () => {
+    setAdding(false);
+    setLabel("");
+    setGoalText("");
+    setTakeControl(false);
+  };
+
+  const save = async () => {
+    const trimmedLabel = label.trim();
+    const trimmedGoal = goalText.trim();
+    if (!trimmedLabel || !trimmedGoal) return;
+    setBusy(true);
+    const next = await saveCueLiveGoal({
+      label: trimmedLabel,
+      goal: trimmedGoal,
+      takeControl,
+    });
+    setGoals(next);
+    setBusy(false);
+    resetForm();
+  };
+
+  const remove = async (id: string) => {
+    const next = await deleteCueLiveGoal(id);
+    setGoals(next);
+  };
+
+  const run = async (g: CueLiveGoal) => {
+    if (!isRunGoalSupported()) return;
+    setRunningId(g.id);
+    await runGoal(g.goal, g.takeControl);
+    setRunningId(null);
+  };
+
+  // Off newer-preload desktops the goals IPC is absent; keep the section quiet
+  // rather than render dead controls.
+  if (!isCueLiveGoalsSupported()) return null;
+
   return (
     <div>
       <div style={sectionLabel}>Auto-run goals</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-        <button
-          type="button"
-          onClick={onAdd}
-          style={{
-            border: `1px dashed ${C.line2}`,
-            borderRadius: 12,
-            padding: "12px 14px",
-            fontSize: 12.5,
-            color: C.t3,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "transparent",
-            cursor: "pointer",
-            textAlign: "left",
-          }}
-        >
-          + Add an auto-run goal
-        </button>
+        {goals.map((g) => (
+          <div
+            key={g.id}
+            style={{
+              border: `1px solid ${C.line}`,
+              borderRadius: 12,
+              padding: "11px 13px",
+              background: C.surface,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: C.t1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                }}
+              >
+                {g.label}
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: 0.2,
+                    textTransform: "uppercase",
+                    color: g.takeControl ? C.violetStrong : C.t3,
+                    background: g.takeControl ? C.violetWash : C.sunken,
+                    border: `1px solid ${g.takeControl ? C.violetLine : C.line2}`,
+                    borderRadius: 999,
+                    padding: "1px 7px",
+                  }}
+                >
+                  {g.takeControl ? "Do it" : "Explain"}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: C.t2,
+                  marginTop: 3,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {g.goal}
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={runningId !== null}
+              onClick={() => void run(g)}
+              style={{
+                flexShrink: 0,
+                borderRadius: 8,
+                background: C.violetStrong,
+                color: "#fff",
+                padding: "5px 13px",
+                fontSize: 12,
+                fontWeight: 500,
+                border: "none",
+                cursor: runningId !== null ? "default" : "pointer",
+                opacity: runningId !== null ? 0.5 : 1,
+              }}
+            >
+              {runningId === g.id ? "Running…" : "Run"}
+            </button>
+            <button
+              type="button"
+              aria-label={`Remove ${g.label}`}
+              onClick={() => void remove(g.id)}
+              style={{
+                flexShrink: 0,
+                border: `1px solid ${C.line2}`,
+                borderRadius: 8,
+                background: C.surface,
+                color: C.t3,
+                padding: "5px 9px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+
+        {adding ? (
+          <div
+            style={{
+              border: `1px solid ${C.line2}`,
+              borderRadius: 12,
+              padding: 13,
+              background: C.surface,
+              display: "flex",
+              flexDirection: "column",
+              gap: 9,
+            }}
+          >
+            <input
+              value={label}
+              disabled={busy}
+              placeholder="Label (e.g. Triage inbox)"
+              onChange={(e) => setLabel(e.target.value)}
+              style={{
+                width: "100%",
+                borderRadius: 8,
+                border: `1px solid ${C.line}`,
+                background: C.sunken,
+                padding: "7px 11px",
+                fontSize: 12.5,
+                color: C.t1,
+                outline: "none",
+              }}
+            />
+            <textarea
+              value={goalText}
+              disabled={busy}
+              rows={2}
+              placeholder="Goal — e.g. Open Notes and write a grocery list"
+              onChange={(e) => setGoalText(e.target.value)}
+              style={{
+                width: "100%",
+                resize: "none",
+                borderRadius: 8,
+                border: `1px solid ${C.line}`,
+                background: C.sunken,
+                padding: "7px 11px",
+                fontSize: 12.5,
+                color: C.t1,
+                outline: "none",
+              }}
+            />
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 12,
+                color: C.t2,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={takeControl}
+                disabled={busy}
+                onChange={(e) => setTakeControl(e.target.checked)}
+              />
+              Take control (click &amp; type) when this runs
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <button
+                type="button"
+                disabled={busy || !label.trim() || !goalText.trim()}
+                onClick={() => void save()}
+                style={{
+                  borderRadius: 8,
+                  background: C.violetStrong,
+                  color: "#fff",
+                  padding: "6px 14px",
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  border: "none",
+                  cursor:
+                    busy || !label.trim() || !goalText.trim()
+                      ? "default"
+                      : "pointer",
+                  opacity:
+                    busy || !label.trim() || !goalText.trim() ? 0.5 : 1,
+                }}
+              >
+                Save goal
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={resetForm}
+                style={{
+                  borderRadius: 8,
+                  border: `1px solid ${C.line2}`,
+                  background: C.surface,
+                  padding: "6px 14px",
+                  fontSize: 12.5,
+                  color: C.t2,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            style={{
+              border: `1px dashed ${C.line2}`,
+              borderRadius: 12,
+              padding: "12px 14px",
+              fontSize: 12.5,
+              color: C.t3,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "transparent",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            + Add an auto-run goal
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1261,7 +1523,7 @@ function DesktopControlPanel() {
           />
         </div>
 
-        <AutoRunGoals onAdd={openVoiceSetup} />
+        <AutoRunGoals />
 
         {/* Real summon test — keeps the working "Try it" control. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
