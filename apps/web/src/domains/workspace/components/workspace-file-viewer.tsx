@@ -17,10 +17,13 @@ import {
     Download,
     FileIcon,
     FileText,
+    FilePlus,
     FolderOpen,
     Image as ImageIcon,
     Loader2,
     Pencil,
+    Send,
+    Sparkles,
     Video,
 } from "lucide-react";
 import {
@@ -30,6 +33,8 @@ import {
     useState,
     type ReactNode,
 } from "react";
+
+import { useNavigate } from "react-router";
 
 import { FileMarkdown, isMarkdown } from "@/components/file-markdown";
 import { isJson, prettifyJson } from "@/domains/workspace/utils/file-json";
@@ -41,9 +46,25 @@ import {
     workspaceWritePost,
 } from "@/generated/daemon/sdk.gen";
 import type { WorkspaceFileGetResponse } from "@/generated/daemon/types.gen";
+import { usePendingDeepLinkStore } from "@/stores/pending-deep-link-store";
+import { formatRelativeDate } from "@/utils/format-date";
+import { routes } from "@/utils/routes";
 import { Button } from "@vellumai/design-library/components/button";
 
 import type { WorkspaceViewMode } from "@/domains/workspace/components/workspace-browser";
+
+// Literal design tokens from surfaces/Workspace.dc.html.
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  blueWash: "#EAF0FE",
+  line: "#E5E9F0",
+  surfaceTint: "#FCFCFD",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -88,16 +109,40 @@ function FileHeaderIcon({ mimeType }: { mimeType: string }) {
   }
   return (
     <span
-      className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+      className="flex shrink-0 items-center justify-center"
       style={{
-        backgroundColor:
-          "color-mix(in oklab, var(--content-default) 10%, transparent)",
+        width: 26,
+        height: 26,
+        borderRadius: 7,
+        background: C.blueWash,
       }}
     >
-      <Icon
-        className="h-3.5 w-3.5"
-        style={{ color: "var(--content-default)" }}
-      />
+      <Icon className="h-3.5 w-3.5" style={{ color: C.blue }} />
+    </span>
+  );
+}
+
+/**
+ * The mock's "✦ edited by Cue · 4m ago" badge. We can't attribute the editor,
+ * so this shows an honest "edited · {relative time}" from the real
+ * `modifiedAt`, keeping the mock's ink pill + Sparkles glyph.
+ */
+function EditedBadge({ modifiedAt }: { modifiedAt?: string | null }) {
+  if (!modifiedAt) return null;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1.5"
+      style={{
+        fontFamily: mono,
+        fontSize: 10,
+        background: C.ink,
+        color: "#fff",
+        padding: "3px 9px",
+        borderRadius: 6,
+      }}
+    >
+      <Sparkles style={{ width: 11, height: 11 }} aria-hidden />
+      edited · {formatRelativeDate(modifiedAt)}
     </span>
   );
 }
@@ -112,10 +157,7 @@ function ViewModeToggle({
   return (
     <div
       className="inline-flex rounded-md p-0.5"
-      style={{
-        backgroundColor:
-          "color-mix(in oklab, var(--content-default) 6%, transparent)",
-      }}
+      style={{ backgroundColor: "#EEF1F6" }}
     >
       {(["preview", "source"] as const).map((mode) => {
         const active = viewMode === mode;
@@ -126,11 +168,9 @@ function ViewModeToggle({
             onClick={() => onChange(mode)}
             className="h-auto rounded border-0 px-2.5 py-1 text-body-small-default hover:bg-transparent"
             style={{
-              backgroundColor: active ? "var(--surface-lift)" : "transparent",
-              color: active
-                ? "var(--content-default)"
-                : "var(--content-tertiary)",
-              boxShadow: active ? "0 1px 2px rgba(0,0,0,0.15)" : undefined,
+              backgroundColor: active ? "#fff" : "transparent",
+              color: active ? C.t1 : C.t3,
+              boxShadow: active ? "0 1px 2px rgba(26,34,48,.12)" : undefined,
             }}
           >
             {mode === "preview" ? "Preview" : "Source"}
@@ -145,36 +185,39 @@ function FileHeader({
   name,
   mimeType,
   size,
+  modifiedAt,
   rightContent,
 }: {
   name: string;
   mimeType: string;
   size?: number;
+  modifiedAt?: string | null;
   rightContent?: ReactNode;
 }) {
   return (
     <div
-      className="flex items-center justify-between gap-3 border-b px-3 py-2.5"
-      style={{ borderColor: "var(--border-element)" }}
+      className="flex items-center gap-[11px] border-b px-[18px] py-[14px]"
+      style={{ borderColor: C.line }}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        <FileHeaderIcon mimeType={mimeType} />
+      <FileHeaderIcon mimeType={mimeType} />
+      <span
+        className="truncate"
+        style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}
+      >
+        {name}
+      </span>
+      {size != null && (
         <span
-          className="truncate text-body-medium-default"
-          style={{ color: "var(--content-default)" }}
+          className="shrink-0"
+          style={{ fontFamily: mono, fontSize: 10, color: C.t3 }}
         >
-          {name}
+          {formatFileSize(size)}
         </span>
-        {size != null && (
-          <span
-            className="shrink-0 text-body-small-default"
-            style={{ color: "var(--content-tertiary)" }}
-          >
-            {formatFileSize(size)}
-          </span>
-        )}
-      </div>
-      {rightContent}
+      )}
+      <EditedBadge modifiedAt={modifiedAt} />
+      {rightContent && (
+        <div className="ml-auto flex items-center gap-3">{rightContent}</div>
+      )}
     </div>
   );
 }
@@ -446,6 +489,61 @@ function SourcePre({
 }
 
 // ---------------------------------------------------------------------------
+// Preview actions — the mock's "Send" / "Ask Cue to revise" row
+// ---------------------------------------------------------------------------
+
+function FilePreviewActions({
+  onSend,
+  onRevise,
+}: {
+  onSend: () => void;
+  onRevise: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 border-t px-9 py-3"
+      style={{ borderColor: "#E5E9F0", background: "#FCFCFD" }}
+    >
+      <button
+        type="button"
+        onClick={onSend}
+        className="inline-flex items-center gap-2"
+        style={{
+          fontSize: 12.5,
+          fontWeight: 500,
+          background: "#3D6EE8",
+          color: "#fff",
+          border: "none",
+          borderRadius: 8,
+          padding: "8px 16px",
+          cursor: "pointer",
+        }}
+      >
+        <Send style={{ width: 13, height: 13 }} aria-hidden />
+        Send
+      </button>
+      <button
+        type="button"
+        onClick={onRevise}
+        className="inline-flex items-center gap-2"
+        style={{
+          fontSize: 12.5,
+          color: "#1A2230",
+          background: "#fff",
+          border: "1px solid #D7DDE7",
+          borderRadius: 8,
+          padding: "8px 14px",
+          cursor: "pointer",
+        }}
+      >
+        <Sparkles style={{ width: 13, height: 13 }} aria-hidden />
+        Ask Cue to revise
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -458,6 +556,8 @@ export function WorkspaceFileViewer({
   onBrowse,
   pathRename,
   pathDelete,
+  hasFiles,
+  onCreateFile,
 }: {
   assistantId: string;
   selectedPath: string | null;
@@ -469,7 +569,15 @@ export function WorkspaceFileViewer({
   pathRename?: { from: string; to: string } | null;
   /** Last successful workspace delete, so drafts for the path are discarded. */
   pathDelete?: { path: string } | null;
+  /**
+   * Whether the workspace has any entries. `undefined` while stats load;
+   * `false` drives the calm on-brand empty state with a real create CTA.
+   */
+  hasFiles?: boolean;
+  /** Opens the tree's real "New File" flow from the empty state. */
+  onCreateFile?: () => void;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     ...workspaceFileRetrieveOptions({
@@ -566,17 +674,93 @@ export function WorkspaceFileViewer({
     }
   }, [selectedPath, isDirty, saveMutation, editableContent]);
 
+  // Seed the chat composer with a real prompt and open a new conversation —
+  // backs the mock's "Send" / "Ask Cue to revise" actions with the live chat
+  // surface instead of a no-op. Parks the prompt in the shared pending-deep-
+  // link store (the cross-domain narrow waist) and navigates to chat, where
+  // `useDeepLinkConsumer` applies it to the composer on mount.
+  const seedChat = useCallback(
+    (prompt: string) => {
+      usePendingDeepLinkStore.getState().setPendingComposerMessage(prompt);
+      void navigate(routes.assistant);
+    },
+    [navigate],
+  );
+
   // --- Empty / loading / error states ---
 
   if (!selectedPath) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p
-          className="text-body-medium-lighter"
-          style={{ color: "var(--content-tertiary)" }}
+    // Empty workspace — calm on-brand state with a real "New file" CTA.
+    if (hasFiles === false) {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center px-8 text-center"
+          style={{ background: C.surfaceTint }}
         >
-          Select a file to view
-        </p>
+          <span
+            className="flex items-center justify-center"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: C.blueWash,
+            }}
+          >
+            <FilePlus style={{ width: 20, height: 20, color: C.blue }} aria-hidden />
+          </span>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 600,
+              letterSpacing: "-.3px",
+              color: C.t1,
+              marginTop: 16,
+            }}
+          >
+            Nothing here yet
+          </div>
+          <p
+            style={{
+              fontSize: 13.5,
+              lineHeight: 1.6,
+              color: C.t2,
+              marginTop: 6,
+              maxWidth: 320,
+            }}
+          >
+            This is Cue&apos;s sandboxed workspace — the files it reads and
+            writes for you. Create the first one to get started.
+          </p>
+          {onCreateFile && (
+            <button
+              type="button"
+              onClick={onCreateFile}
+              className="inline-flex items-center gap-2"
+              style={{
+                marginTop: 18,
+                fontSize: 12.5,
+                fontWeight: 500,
+                background: C.blue,
+                color: "#fff",
+                border: "none",
+                borderRadius: 9,
+                padding: "9px 16px",
+                cursor: "pointer",
+              }}
+            >
+              <FilePlus style={{ width: 14, height: 14 }} aria-hidden />
+              New file
+            </button>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div
+        className="flex h-full flex-col items-center justify-center gap-3"
+        style={{ background: C.surfaceTint }}
+      >
+        <p style={{ fontSize: 13.5, color: C.t3 }}>Select a file to view</p>
         {onBrowse && (
           <Button
             type="button"
@@ -593,24 +777,22 @@ export function WorkspaceFileViewer({
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2
-          className="h-6 w-6 animate-spin"
-          style={{ color: "var(--content-tertiary)" }}
-        />
+      <div
+        className="flex h-full items-center justify-center"
+        style={{ background: C.surfaceTint }}
+      >
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: C.t3 }} />
       </div>
     );
   }
 
   if (!data) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p
-          className="text-body-medium-lighter"
-          style={{ color: "var(--content-tertiary)" }}
-        >
-          File not found
-        </p>
+      <div
+        className="flex h-full items-center justify-center"
+        style={{ background: C.surfaceTint }}
+      >
+        <p style={{ fontSize: 13.5, color: C.t3 }}>File not found</p>
       </div>
     );
   }
@@ -640,11 +822,13 @@ export function WorkspaceFileViewer({
   // Markdown: Preview/Source toggle
   if (markdown && data.content != null) {
     const sourceContent = isEditing ? editableContent : data.content;
+    const showActions = !isEditing && viewMode === "preview";
     return (
       <div className="flex h-full flex-col">
         <FileHeader
           name={name}
           mimeType={mimeType}
+          modifiedAt={data.modifiedAt}
           rightContent={
             <ViewModeToggle
               viewMode={viewMode}
@@ -655,7 +839,10 @@ export function WorkspaceFileViewer({
             />
           }
         />
-        <div className="relative flex-1 overflow-hidden">
+        <div
+          className="relative flex-1 overflow-hidden"
+          style={{ background: C.surfaceTint }}
+        >
           <ContentActionBar
             content={sourceContent}
             fileName={name}
@@ -668,10 +855,12 @@ export function WorkspaceFileViewer({
           />
           {viewMode === "preview" ? (
             <div
-              className="h-full overflow-auto px-6 py-4"
-              style={{ color: "var(--content-default)" }}
+              className="h-full overflow-auto"
+              style={{ color: C.t1, padding: "30px 36px" }}
             >
-              <FileMarkdown content={sourceContent} />
+              <div style={{ maxWidth: 620 }}>
+                <FileMarkdown content={sourceContent} />
+              </div>
             </div>
           ) : isEditing ? (
             <FileTextarea
@@ -689,6 +878,20 @@ export function WorkspaceFileViewer({
             />
           )}
         </div>
+        {showActions && (
+          <FilePreviewActions
+            onSend={() =>
+              seedChat(
+                `Here's my workspace file \`${selectedPath}\`. Please send it / act on it:\n\n${sourceContent}`,
+              )
+            }
+            onRevise={() =>
+              seedChat(
+                `Please revise my workspace file \`${selectedPath}\`:\n\n${sourceContent}`,
+              )
+            }
+          />
+        )}
         {editFooter}
       </div>
     );
@@ -703,6 +906,7 @@ export function WorkspaceFileViewer({
         <FileHeader
           name={name}
           mimeType={mimeType}
+          modifiedAt={data.modifiedAt}
           rightContent={
             <ViewModeToggle
               viewMode={viewMode}
@@ -713,7 +917,10 @@ export function WorkspaceFileViewer({
             />
           }
         />
-        <div className="relative flex-1 overflow-hidden">
+        <div
+          className="relative flex-1 overflow-hidden"
+          style={{ background: C.surfaceTint }}
+        >
           <ContentActionBar
             content={viewMode === "preview" ? previewContent : sourceContent}
             downloadContent={sourceContent}
@@ -743,6 +950,20 @@ export function WorkspaceFileViewer({
             />
           )}
         </div>
+        {!isEditing && (
+          <FilePreviewActions
+            onSend={() =>
+              seedChat(
+                `Here's my workspace file \`${selectedPath}\`. Please send it / act on it:\n\n${sourceContent}`,
+              )
+            }
+            onRevise={() =>
+              seedChat(
+                `Please revise my workspace file \`${selectedPath}\`:\n\n${sourceContent}`,
+              )
+            }
+          />
+        )}
         {editFooter}
       </div>
     );
@@ -750,12 +971,21 @@ export function WorkspaceFileViewer({
 
   // Plain text — source only, consistent header
   if (isText) {
+    const textContent = data.content ?? "";
     return (
       <div className="flex h-full flex-col">
-        <FileHeader name={name} mimeType={mimeType} size={data.size} />
-        <div className="relative flex-1 overflow-hidden">
+        <FileHeader
+          name={name}
+          mimeType={mimeType}
+          size={data.size}
+          modifiedAt={data.modifiedAt}
+        />
+        <div
+          className="relative flex-1 overflow-hidden"
+          style={{ background: C.surfaceTint }}
+        >
           <ContentActionBar
-            content={isEditing ? editableContent : (data.content ?? "")}
+            content={isEditing ? editableContent : textContent}
             fileName={name}
             mimeType={mimeType}
             showEdit={!readOnly}
@@ -774,12 +1004,26 @@ export function WorkspaceFileViewer({
             />
           ) : (
             <SourcePre
-              content={data.content ?? ""}
+              content={textContent}
               readOnly={readOnly}
               onStartEdit={() => setEditingPath(selectedPath)}
             />
           )}
         </div>
+        {!isEditing && (
+          <FilePreviewActions
+            onSend={() =>
+              seedChat(
+                `Here's my workspace file \`${selectedPath}\`. Please send it / act on it:\n\n${textContent}`,
+              )
+            }
+            onRevise={() =>
+              seedChat(
+                `Please revise my workspace file \`${selectedPath}\`:\n\n${textContent}`,
+              )
+            }
+          />
+        )}
         {editFooter}
       </div>
     );
@@ -789,8 +1033,16 @@ export function WorkspaceFileViewer({
   if (mimeType.startsWith("image/") || mimeType.startsWith("video/")) {
     return (
       <div className="flex h-full flex-col">
-        <FileHeader name={name} mimeType={mimeType} size={data.size} />
-        <div className="flex-1 overflow-auto">
+        <FileHeader
+          name={name}
+          mimeType={mimeType}
+          size={data.size}
+          modifiedAt={data.modifiedAt}
+        />
+        <div
+          className="flex-1 overflow-auto"
+          style={{ background: C.surfaceTint }}
+        >
           <BinaryContentViewer
             assistantId={assistantId}
             path={selectedPath}
@@ -805,49 +1057,33 @@ export function WorkspaceFileViewer({
   // Binary fallback — metadata card
   return (
     <div className="flex h-full flex-col">
-      <FileHeader name={name} mimeType={mimeType} size={data.size} />
-      <div className="flex flex-1 items-center justify-center p-8">
+      <FileHeader
+        name={name}
+        mimeType={mimeType}
+        size={data.size}
+        modifiedAt={data.modifiedAt}
+      />
+      <div
+        className="flex flex-1 items-center justify-center p-8"
+        style={{ background: C.surfaceTint }}
+      >
         <div
           className="w-full max-w-sm rounded-lg border p-6 text-center"
-          style={{
-            borderColor: "var(--border-base)",
-            backgroundColor: "var(--surface-lift)",
-          }}
+          style={{ borderColor: C.line, backgroundColor: "#fff" }}
         >
-          <FileIcon
-            className="mx-auto h-10 w-10"
-            style={{ color: "var(--content-tertiary)" }}
-          />
-          <p
-            className="mt-3 text-body-medium-default"
-            style={{ color: "var(--content-default)" }}
-          >
+          <FileIcon className="mx-auto h-10 w-10" style={{ color: C.t3 }} />
+          <p className="mt-3" style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>
             {name}
           </p>
           <div className="mt-2 space-y-1">
-            <p
-              className="text-body-small-default"
-              style={{
-                color: "var(--content-secondary, var(--content-tertiary))",
-              }}
-            >
+            <p style={{ fontFamily: mono, fontSize: 11, color: C.t2 }}>
               {mimeType}
             </p>
-            <p
-              className="text-body-small-default"
-              style={{
-                color: "var(--content-secondary, var(--content-tertiary))",
-              }}
-            >
+            <p style={{ fontFamily: mono, fontSize: 11, color: C.t2 }}>
               {formatFileSize(data.size, "Unknown size")}
             </p>
             {data.modifiedAt && (
-              <p
-                className="text-body-small-default"
-                style={{
-                  color: "var(--content-secondary, var(--content-tertiary))",
-                }}
-              >
+              <p style={{ fontFamily: mono, fontSize: 11, color: C.t2 }}>
                 Modified: {new Date(data.modifiedAt).toLocaleString()}
               </p>
             )}

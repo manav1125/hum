@@ -151,6 +151,44 @@ function LiveDot({ pulse }: { pulse?: boolean }) {
   );
 }
 
+/**
+ * Manage toggle — the blue pill switch the mock shows on the verified
+ * full-width card. It reads "on" (the channel is live) and clicking it routes
+ * to the working channel-setup UI, preserving the real Manage action.
+ */
+function ManageToggle({ onManage }: { onManage: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onManage}
+      aria-label="Manage channel"
+      style={{
+        width: 42,
+        height: 24,
+        borderRadius: 999,
+        background: C.blue,
+        position: "relative",
+        flexShrink: 0,
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          width: 20,
+          height: 20,
+          borderRadius: "50%",
+          background: "#fff",
+          top: 2,
+          right: 2,
+        }}
+      />
+    </button>
+  );
+}
+
 function ActiveCard({
   icon,
   iconBg,
@@ -159,6 +197,7 @@ function ActiveCard({
   sub,
   full,
   verified,
+  pulse,
   onManage,
 }: {
   icon: string;
@@ -168,21 +207,11 @@ function ActiveCard({
   sub: string;
   full?: boolean;
   verified?: boolean;
+  pulse?: boolean;
   onManage: () => void;
 }) {
-  return (
-    <div
-      style={{
-        border: `1px solid ${C.line}`,
-        borderRadius: 14,
-        padding: 16,
-        background: full ? "#fff" : "linear-gradient(180deg,#FAFBFF,#fff)",
-        gridColumn: full ? "span 2" : undefined,
-        display: "flex",
-        alignItems: "center",
-        gap: 13,
-      }}
-    >
+  const inner = (
+    <>
       <span
         style={{
           width: 44,
@@ -193,7 +222,7 @@ function ActiveCard({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 19,
+          fontSize: full ? 18 : 19,
           flexShrink: 0,
         }}
       >
@@ -203,49 +232,71 @@ function ActiveCard({
         <div style={{ fontSize: 14.5, fontWeight: 600 }}>{title}</div>
         <div style={{ fontSize: 12, color: C.t2 }}>{sub}</div>
       </div>
-      {verified && (
+      {full ? (
+        <>
+          {verified && (
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                background: C.blueW,
+                color: C.blueS,
+                padding: "4px 10px",
+                borderRadius: 7,
+              }}
+            >
+              VERIFIED ID
+            </span>
+          )}
+          <ManageToggle onManage={onManage} />
+        </>
+      ) : (
         <span
           style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
             fontFamily: mono,
             fontSize: 10,
-            background: C.blueW,
-            color: C.blueS,
-            padding: "4px 10px",
-            borderRadius: 7,
+            color: C.green,
           }}
         >
-          VERIFIED ID
+          <LiveDot pulse={pulse} />
+          LIVE
         </span>
       )}
-      <span
+    </>
+  );
+
+  // Full-width card: flex at the root (matches mock). Half-width cards wrap
+  // their content in an inner flex row over the gradient surface.
+  if (full) {
+    return (
+      <div
         style={{
-          display: "inline-flex",
+          border: `1px solid ${C.line}`,
+          borderRadius: 14,
+          padding: 16,
+          gridColumn: "span 2",
+          display: "flex",
           alignItems: "center",
-          gap: 6,
-          fontFamily: mono,
-          fontSize: 10,
-          color: C.green,
+          gap: 14,
         }}
       >
-        <LiveDot pulse />
-        LIVE
-      </span>
-      <button
-        type="button"
-        onClick={onManage}
-        style={{
-          fontSize: 12,
-          border: `1px solid ${C.line2}`,
-          background: "#fff",
-          borderRadius: 8,
-          padding: "6px 14px",
-          cursor: "pointer",
-          color: C.t1,
-          flexShrink: 0,
-        }}
-      >
-        Manage
-      </button>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        padding: 16,
+        background: "linear-gradient(180deg,#FAFBFF,#fff)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 13 }}>{inner}</div>
     </div>
   );
 }
@@ -298,6 +349,7 @@ function ConnectCard({
         type="button"
         onClick={onSetup}
         style={{
+          display: "inline-block",
           fontSize: 12.5,
           border: `1px solid ${C.line2}`,
           background: "#fff",
@@ -307,7 +359,7 @@ function ConnectCard({
           color: C.t1,
         }}
       >
-        Set up
+        Enable
       </button>
     </div>
   );
@@ -640,6 +692,7 @@ export function ChannelsPage() {
                       sub={c.channelHandle ?? c.subtitle}
                       full={full}
                       verified={c.verified}
+                      pulse={i === 0}
                       onManage={goToContacts}
                     />
                   );

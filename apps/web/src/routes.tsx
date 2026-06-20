@@ -324,6 +324,7 @@ export const routeTree = [
                     { path: "identity", lazy: { Component: () => import("@/identity-page-route").then((m) => m.IdentityPageRoute) } },
                     { path: "cue-live", lazy: { Component: () => import("@/domains/intelligence/cue-live-page").then((m) => m.CueLivePage) } },
                     { path: "connectors", lazy: { Component: () => import("@/domains/intelligence/connectors-page").then((m) => m.ConnectorsPage) } },
+                    { path: "connectors/:slug", lazy: { Component: () => import("@/domains/intelligence/connector-detail-page").then((m) => m.ConnectorDetailPage) } },
                     { path: "channels", lazy: { Component: () => import("@/domains/intelligence/channels-page").then((m) => m.ChannelsPage) } },
                     { path: "agents", lazy: { Component: () => import("@/domains/intelligence/agents-page").then((m) => m.AgentsPage) } },
                     { path: "plugins", lazy: { Component: () => import("@/domains/intelligence/plugins-page").then((m) => m.PluginsPage) } },

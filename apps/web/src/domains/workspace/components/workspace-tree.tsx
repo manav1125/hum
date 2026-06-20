@@ -35,6 +35,7 @@ import {
 import {
     type FormEvent,
     useCallback,
+    useEffect,
     useMemo,
     useRef,
     useState,
@@ -65,6 +66,17 @@ import { Modal } from "@vellumai/design-library/components/modal";
 import { PanelItem } from "@vellumai/design-library/components/panel-item";
 
 export type { WorkspaceSortMode };
+
+// Literal design tokens from surfaces/Workspace.dc.html — this surface is
+// hex-matched like connectors-page / memories-page rather than themed.
+const C = {
+  selected: "#EAEEF5",
+  hover: "#F4F6F9",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -146,7 +158,7 @@ function FileIconForEntry({ entry }: { entry: WorkspaceTreeEntry }) {
     return (
       <Folder
         className="h-4 w-4 shrink-0"
-        style={{ color: "var(--content-tertiary)" }}
+        style={{ color: C.t3 }}
       />
     );
   }
@@ -154,7 +166,7 @@ function FileIconForEntry({ entry }: { entry: WorkspaceTreeEntry }) {
     return (
       <ImageIcon
         className="h-4 w-4 shrink-0"
-        style={{ color: "var(--content-tertiary)" }}
+        style={{ color: C.t3 }}
       />
     );
   }
@@ -162,15 +174,12 @@ function FileIconForEntry({ entry }: { entry: WorkspaceTreeEntry }) {
     return (
       <Video
         className="h-4 w-4 shrink-0"
-        style={{ color: "var(--content-tertiary)" }}
+        style={{ color: C.t3 }}
       />
     );
   }
   return (
-    <FileText
-      className="h-4 w-4 shrink-0"
-      style={{ color: "var(--content-tertiary)" }}
-    />
+    <FileText className="h-4 w-4 shrink-0" style={{ color: C.t3 }} />
   );
 }
 
@@ -256,32 +265,30 @@ function TreeNode({
   const row = (
     <button
       onClick={handleClick}
-      className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-body-medium-lighter transition-colors hover:bg-[var(--surface-hover)]"
+      className="group flex w-full items-center gap-1.5 py-[5px] text-left"
       style={{
-        paddingLeft: `${depth * 14 + 8}px`,
+        paddingLeft: `${depth * 18 + 8}px`,
         paddingRight: "8px",
-        color: isSelected
-          ? "var(--content-default)"
-          : isHidden
-            ? "var(--content-tertiary)"
-            : "var(--content-default)",
-        backgroundColor: isSelected
-          ? "color-mix(in oklab, var(--primary-base) 12%, transparent)"
-          : undefined,
+        fontSize: 13,
+        borderRadius: 8,
+        fontWeight: isSelected ? 500 : 400,
+        color: isSelected ? C.t1 : isDirectory ? C.t1 : C.t2,
+        backgroundColor: isSelected ? C.selected : "transparent",
         opacity: isHidden && !isSelected ? 0.7 : 1,
+        transition: "background .12s",
+      }}
+      onMouseEnter={(e) => {
+        if (!isSelected) e.currentTarget.style.backgroundColor = C.hover;
+      }}
+      onMouseLeave={(e) => {
+        if (!isSelected) e.currentTarget.style.backgroundColor = "transparent";
       }}
     >
       {isDirectory ? (
         effectivelyExpanded ? (
-          <ChevronDown
-            className="h-3 w-3 shrink-0"
-            style={{ color: "var(--content-tertiary)" }}
-          />
+          <ChevronDown className="h-3 w-3 shrink-0" style={{ color: C.t3 }} />
         ) : (
-          <ChevronRight
-            className="h-3 w-3 shrink-0"
-            style={{ color: "var(--content-tertiary)" }}
-          />
+          <ChevronRight className="h-3 w-3 shrink-0" style={{ color: C.t3 }} />
         )
       ) : (
         <span className="h-3 w-3 shrink-0" />
@@ -290,8 +297,8 @@ function TreeNode({
       <span className="min-w-0 flex-1 truncate">{entryName}</span>
       {entry.size != null && (
         <span
-          className="shrink-0 text-label-medium-default tabular-nums"
-          style={{ color: "var(--content-tertiary)" }}
+          className="shrink-0 tabular-nums"
+          style={{ fontFamily: mono, fontSize: 10, color: C.t3 }}
         >
           {formatFileSize(entry.size)}
         </span>
@@ -504,6 +511,7 @@ export function WorkspaceTree({
   onChangeSortMode,
   onPathDeleted,
   onPathRenamed,
+  createFileSignal,
 }: {
   assistantId: string;
   expandedPaths: Set<string>;
@@ -517,6 +525,12 @@ export function WorkspaceTree({
   onChangeSortMode: (next: WorkspaceSortMode) => void;
   onPathDeleted: (path: string) => void;
   onPathRenamed: (oldPath: string, newPath: string) => void;
+  /**
+   * Monotonically increasing counter. Each increment opens the root-level
+   * "New File" dialog — lets sibling surfaces (e.g. the viewer's empty state)
+   * trigger the real create flow without re-implementing it.
+   */
+  createFileSignal?: number;
 }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -646,6 +660,16 @@ export function WorkspaceTree({
     [],
   );
 
+  // Open the root "New File" dialog whenever a sibling surface bumps the
+  // signal (the first render at 0 is ignored so we don't auto-open on mount).
+  const lastCreateSignal = useRef(createFileSignal ?? 0);
+  useEffect(() => {
+    if (createFileSignal == null) return;
+    if (createFileSignal === lastCreateSignal.current) return;
+    lastCreateSignal.current = createFileSignal;
+    handleRequestCreate({ kind: "file", parentPath: "" });
+  }, [createFileSignal, handleRequestCreate]);
+
   const handleRequestRename = useCallback((target: EntryTarget) => {
     setDialogError(null);
     setDialog({ type: "rename", path: target.path, name: target.name });
@@ -685,13 +709,9 @@ export function WorkspaceTree({
   return (
     <>
       <div
-        className="flex items-center justify-between border-b px-3 py-2.5"
-        style={{ borderColor: "var(--border-element)" }}
+        className="flex items-center justify-between px-[14px] pb-[11px] pt-[14px]"
       >
-        <span
-          className="text-body-medium-default"
-          style={{ color: "var(--content-secondary)" }}
-        >
+        <span style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>
           Files
         </span>
         <div className="flex items-center gap-0.5">
@@ -744,7 +764,7 @@ export function WorkspaceTree({
         </div>
       </div>
 
-      <div className="px-3 py-2">
+      <div className="px-[14px] pb-[10px]">
         <div className="relative">
           <Input
             type="text"
@@ -771,20 +791,20 @@ export function WorkspaceTree({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-[10px] pb-2">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div
               className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-              style={{ color: "var(--content-tertiary)" }}
+              style={{ color: C.t3 }}
             />
           </div>
         ) : !rootEntries.length ? (
           <p
-            className="px-3 py-4 text-center text-body-medium-lighter"
-            style={{ color: "var(--content-tertiary)" }}
+            className="px-3 py-4 text-center"
+            style={{ fontSize: 13, color: C.t3 }}
           >
-            No files found
+            {search ? "No files match your search." : "No files yet."}
           </p>
         ) : (
           rootEntries.map((entry) => (

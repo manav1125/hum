@@ -5,10 +5,12 @@
  * "Let Cue work with other agents": an ink hero with the agent-network
  * constellation, the Enable-A2A card, the paired-agents grid, and the
  * create-invite card. Live data comes from the A2A config endpoint
- * (`integrationsA2aConfigGet` — drives the real on/off toggle + paired count)
- * and the outstanding-invites endpoint (`contactsInvitesGet`). Toggling the
- * endpoint calls `integrationsA2aConfigPost`/`integrationsA2aConfigDelete` and
- * refetches the config. The "create invite" / empty-state CTAs route to
+ * (`integrationsA2aConfigGet` — drives the real on/off toggle), the contacts
+ * endpoint (A2A channels → the paired-agent cards + "Paired agents · N"), and
+ * the outstanding-invites endpoint (`contactsInvitesGet` → the dashed "pending"
+ * nodes in the hero constellation). Toggling the endpoint calls
+ * `integrationsA2aConfigPost`/`integrationsA2aConfigDelete` and refetches the
+ * config. The "create invite" / empty-state CTAs route to
  * `/assistant/contacts`, where the working A2A invite flow lives — this page
  * does not reimplement the invite dialog.
  */
@@ -19,6 +21,7 @@ import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { formatFriendlyDate } from "@/utils/format-date";
 import {
   integrationsA2aConfigDelete,
   integrationsA2aConfigPost,
@@ -123,27 +126,17 @@ function AgentNode({ x, y, initials, label, bg, fg, dashed }: ConstellationNode)
   );
 }
 
-function PairedCard({
-  initials,
-  bg,
-  fg,
-  name,
-  paired,
-  scope,
-  scopeColor,
-  scopeBg,
-  detail,
-}: {
-  initials: string;
-  bg: string;
-  fg: string;
-  name: string;
-  paired: string;
-  scope: string;
-  scopeColor: string;
-  scopeBg: string;
-  detail: string;
-}) {
+function PairedCard({ agent }: { agent: PairedAgent }) {
+  const badge = agent.active
+    ? { label: "TRUSTED", bg: "#E2F0E7", color: C.green }
+    : { label: "SCOPED", bg: C.blueW, color: C.blueS };
+  const tone = agent.tone === "violet"
+    ? { bg: C.violetW, fg: C.violetS }
+    : { bg: C.blueW, fg: C.blueS };
+  const messages =
+    agent.interactionCount > 0
+      ? `${agent.interactionCount} message${agent.interactionCount === 1 ? "" : "s"} exchanged`
+      : "no messages yet";
   return (
     <div style={{ border: `1px solid ${C.line}`, borderRadius: 14, padding: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -152,36 +145,38 @@ function PairedCard({
             width: 40,
             height: 40,
             borderRadius: 11,
-            background: bg,
-            color: fg,
+            background: tone.bg,
+            color: tone.fg,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: initials.length > 1 ? 13 : 16,
+            fontSize: agent.initials.length > 1 ? 13 : 16,
             fontWeight: 600,
             flexShrink: 0,
           }}
         >
-          {initials}
+          {agent.initials}
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
-          <div style={{ fontSize: 11.5, color: C.t2 }}>{paired}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{agent.name}</div>
+          <div style={{ fontSize: 11.5, color: C.t2 }}>{agent.pairedLabel}</div>
         </div>
         <span
           style={{
             fontFamily: mono,
             fontSize: 10,
-            background: scopeBg,
-            color: scopeColor,
+            background: badge.bg,
+            color: badge.color,
             padding: "3px 8px",
             borderRadius: 6,
           }}
         >
-          {scope}
+          {badge.label}
         </span>
       </div>
-      <div style={{ fontSize: 12, color: C.t2, marginTop: 10 }}>{detail}</div>
+      <div style={{ fontSize: 12, color: C.t2, marginTop: 10 }}>
+        Paired over the agent-to-agent protocol · {messages}
+      </div>
     </div>
   );
 }
@@ -191,6 +186,8 @@ function PairedCard({
 type ContactChannel = {
   type: string;
   status: string;
+  verifiedAt?: number | null;
+  lastSeenAt?: number | null;
 };
 type Contact = {
   id: string;
@@ -200,12 +197,20 @@ type Contact = {
   channels: ReadonlyArray<ContactChannel>;
 };
 
-/** A paired agent = a contact that owns at least one A2A channel. */
+/**
+ * A paired agent = a contact that owns at least one A2A channel. Shaped to the
+ * mock's card: an initials avatar (alternating blue/violet tone), the name, a
+ * "paired <date>" subtitle from the channel's verification time, a trust badge
+ * derived from channel status, and an exchanged-message count.
+ */
 type PairedAgent = {
   id: string;
   name: string;
+  initials: string;
   active: boolean;
   interactionCount: number;
+  pairedLabel: string;
+  tone: "blue" | "violet";
 };
 
 function initialsFor(name: string): string {
@@ -272,7 +277,6 @@ export function AgentsPage() {
   );
 
   const enabled = configQuery.data?.enabled ?? false;
-  const activeConnections = configQuery.data?.activeConnections ?? 0;
 
   const configToggle = useMutation({
     mutationFn: async (nextEnabled: boolean) => {
@@ -298,18 +302,34 @@ export function AgentsPage() {
 
   const pairedAgents = useMemo<PairedAgent[]>(() => {
     const contacts = contactsQuery.data?.contacts ?? [];
-    return contacts.filter(isContact).flatMap((contact) => {
-      const a2aChannels = contact.channels.filter((ch) => ch.type === "a2a");
-      if (a2aChannels.length === 0) return [];
-      return [
-        {
-          id: contact.id,
-          name: contact.displayName,
-          active: a2aChannels.some((ch) => ch.status === "active"),
-          interactionCount: contact.interactionCount,
-        },
-      ];
-    });
+    return contacts
+      .filter(isContact)
+      .flatMap((contact) => {
+        const a2aChannels = contact.channels.filter((ch) => ch.type === "a2a");
+        if (a2aChannels.length === 0) return [];
+        const pairedAt = a2aChannels
+          .map((ch) => ch.verifiedAt ?? ch.lastSeenAt ?? null)
+          .filter((t): t is number => typeof t === "number")
+          .sort((a, b) => a - b)[0];
+        return [
+          {
+            id: contact.id,
+            name: contact.displayName,
+            initials: initialsFor(contact.displayName),
+            active: a2aChannels.some((ch) => ch.status === "active"),
+            interactionCount: contact.interactionCount,
+            pairedLabel:
+              typeof pairedAt === "number"
+                ? `paired ${formatFriendlyDate(new Date(pairedAt))}`
+                : "paired recently",
+          },
+        ];
+      })
+      // Alternate the avatar tone (blue / violet) per card, as the mock does.
+      .map((agent, i): PairedAgent => ({
+        ...agent,
+        tone: i % 2 === 0 ? "blue" : "violet",
+      }));
   }, [contactsQuery.data]);
 
   const invites = useMemo<Invite[]>(() => {
@@ -336,7 +356,7 @@ export function AgentsPage() {
         fg: C.blueS,
       });
     }
-    for (const invite of invites) {
+    for (let i = 0; i < invites.length; i += 1) {
       if (nodes.length >= NODE_SLOTS.length) break;
       const slot = NODE_SLOTS[nodes.length]!;
       nodes.push({
@@ -364,7 +384,6 @@ export function AgentsPage() {
 
   const isLoading =
     configQuery.isLoading || invitesQuery.isLoading || contactsQuery.isLoading;
-  const hasPairings = pairedAgents.length > 0 || invites.length > 0;
 
   return (
     <div style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif", color: C.t1 }}>
@@ -519,14 +538,6 @@ export function AgentsPage() {
               /a2a/message:send
             </span>{" "}
             so paired agents can reach it.
-            {enabled ? (
-              <>
-                {" · "}
-                <span style={{ color: C.green, fontWeight: 600 }}>
-                  {activeConnections} paired
-                </span>
-              </>
-            ) : null}
           </div>
         </div>
         <button
@@ -595,97 +606,12 @@ export function AgentsPage() {
           <Loader2 size={18} style={{ animation: "cueSpin .9s linear infinite" }} />
           Loading agent network…
         </div>
-      ) : hasPairings ? (
-        <>
-          {pairedAgents.length > 0 ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {pairedAgents.map((agent) => (
-                <PairedCard
-                  key={agent.id}
-                  initials={initialsFor(agent.name)}
-                  bg={C.blueW}
-                  fg={C.blueS}
-                  name={agent.name}
-                  paired={
-                    agent.interactionCount > 0
-                      ? `${agent.interactionCount} message${agent.interactionCount === 1 ? "" : "s"} exchanged`
-                      : "no messages yet"
-                  }
-                  scope={agent.active ? "ACTIVE" : "PAUSED"}
-                  scopeColor={agent.active ? C.green : C.t2}
-                  scopeBg={agent.active ? "#E2F0E7" : C.line}
-                  detail="Paired over the agent-to-agent protocol"
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {invites.length > 0 ? (
-            <>
-              <div
-                style={{
-                  fontFamily: mono,
-                  fontSize: 10.5,
-                  letterSpacing: ".1em",
-                  textTransform: "uppercase",
-                  color: C.t3,
-                  margin: "22px 0 12px",
-                }}
-              >
-                Pending invites · {invites.length}
-              </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                {invites.map((invite) => (
-                  <div
-                    key={invite.id}
-                    style={{
-                      border: `1px solid ${C.line}`,
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 9,
-                        background: C.violetW,
-                        color: C.violetS,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 15,
-                        flexShrink: 0,
-                      }}
-                    >
-                      ⧉
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{invite.label}</div>
-                      <div style={{ fontSize: 11.5, color: C.t2 }}>Outstanding invite</div>
-                    </div>
-                    <span
-                      style={{
-                        fontFamily: mono,
-                        fontSize: 10,
-                        background: C.violetW,
-                        color: C.violetS,
-                        padding: "3px 8px",
-                        borderRadius: 6,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {invite.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : null}
-        </>
+      ) : pairedAgents.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {pairedAgents.map((agent) => (
+            <PairedCard key={agent.id} agent={agent} />
+          ))}
+        </div>
       ) : (
         <div
           style={{

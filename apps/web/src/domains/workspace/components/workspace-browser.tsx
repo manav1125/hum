@@ -1,9 +1,20 @@
 /**
- * Top-level workspace browser layout. Renders a file tree sidebar (hidden on
- * mobile behind a drawer) and a file viewer pane side-by-side.
+ * Top-level workspace browser — a faithful translation of
+ * surfaces/Workspace.dc.html. Renders three stat cards (files · size ·
+ * last edit) above a two-column grid: a file tree sidebar (hidden on mobile
+ * behind a drawer) and a rich file preview pane.
+ *
+ * Every visible value maps to real assistant-workspace data:
+ * - stat cards: counts / total size / newest `modifiedAt` from the root tree
+ *   listing (computed with `includeDirSizes` so folder bytes are real);
+ * - tree: the live `workspace/tree` listing with real create / rename / delete;
+ * - preview: the selected file's real content, with Send / Ask Cue to revise
+ *   wired to a prefilled chat composer.
  */
 
-import { useCallback, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { FileText, Layers } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useSearchParams } from "react-router";
 
@@ -16,8 +27,229 @@ import {
   WorkspaceTree,
   type WorkspaceSortMode,
 } from "@/domains/workspace/components/workspace-tree";
+import { formatFileSize } from "@/domains/workspace/utils/format-file-size";
+import { workspaceTreeGet } from "@/generated/daemon/sdk.gen";
+import type { WorkspaceTreeGetResponse } from "@/generated/daemon/types.gen";
+import { formatRelativeDate } from "@/utils/format-date";
 
 export type WorkspaceViewMode = "preview" | "source";
+
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  violet: "#534AB7",
+  line: "#E5E9F0",
+  t1: "#1A2230",
+  t3: "#8D99A5",
+  blueWash: "#EAF0FE",
+  violetWash: "#EEEDFB",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
+
+// ---------------------------------------------------------------------------
+// Stat cards
+// ---------------------------------------------------------------------------
+
+interface WorkspaceStats {
+  files: number;
+  folders: number;
+  totalSize: number | null;
+  lastEdit: string | null;
+}
+
+function useWorkspaceStats(assistantId: string): WorkspaceStats | undefined {
+  // A small dedicated root listing for the stat cards. `includeDirSizes` makes
+  // each folder's `size` the real recursive byte total, so "sandboxed" size is
+  // honest. Cached under its own key and shared across mounts of this page.
+  const { data } = useQuery({
+    queryFn: async (): Promise<WorkspaceTreeGetResponse> => {
+      const { data: res, error } = await workspaceTreeGet({
+        path: { assistant_id: assistantId },
+        query: { includeDirSizes: "true" },
+      });
+      if (error) throw error;
+      if (!res) throw new Error("Failed to load workspace tree");
+      return res;
+    },
+    queryKey: [
+      "assistantsWorkspaceTreeRetrieve",
+      {
+        path: { assistant_id: assistantId },
+        query: { includeDirSizes: true },
+      },
+    ],
+  });
+
+  return useMemo(() => {
+    if (!data) return undefined;
+    const entries = data.entries ?? [];
+    let files = 0;
+    let folders = 0;
+    let totalSize = 0;
+    let hasSize = false;
+    let lastEdit: number | null = null;
+    for (const entry of entries) {
+      if (entry.type === "directory") folders += 1;
+      else files += 1;
+      if (typeof entry.size === "number") {
+        totalSize += entry.size;
+        hasSize = true;
+      }
+      const ts = entry.modifiedAt ? Date.parse(entry.modifiedAt) : NaN;
+      if (Number.isFinite(ts) && (lastEdit === null || ts > lastEdit)) {
+        lastEdit = ts;
+      }
+    }
+    return {
+      files,
+      folders,
+      totalSize: hasSize ? totalSize : null,
+      lastEdit: lastEdit === null ? null : new Date(lastEdit).toISOString(),
+    };
+  }, [data]);
+}
+
+function StatCard({
+  icon,
+  iconBg,
+  iconColor,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
+  value: string;
+  label: string;
+}) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        border: `1px solid ${C.line}`,
+        borderRadius: 13,
+        padding: "13px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        background: "#fff",
+      }}
+    >
+      <span
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 9,
+          background: iconBg,
+          color: iconColor,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 600,
+            letterSpacing: "-.4px",
+            color: C.t1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {value}
+        </div>
+        <div style={{ fontFamily: mono, fontSize: 10, color: C.t3 }}>
+          {label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCards({ stats }: { stats: WorkspaceStats | undefined }) {
+  const hasFolders = stats != null && stats.folders > 0;
+  const filesLabel = hasFolders
+    ? `${stats.files} files · ${stats.folders} folders`
+    : "files";
+  const filesValue = !stats
+    ? "—"
+    : hasFolders
+      ? String(stats.files + stats.folders)
+      : String(stats.files);
+
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
+      <StatCard
+        icon={<Layers className="h-4 w-4" aria-hidden />}
+        iconBg={C.blueWash}
+        iconColor={C.blue}
+        value={filesValue}
+        label={filesLabel}
+      />
+      <StatCard
+        icon={<FileText className="h-4 w-4" aria-hidden />}
+        iconBg={C.violetWash}
+        iconColor={C.violet}
+        value={
+          stats && stats.totalSize != null
+            ? formatFileSize(stats.totalSize)
+            : "—"
+        }
+        label="sandboxed"
+      />
+      <StatCard
+        icon={<CueMark />}
+        iconBg={C.ink}
+        iconColor="#fff"
+        value={stats && stats.lastEdit ? formatRelativeDate(stats.lastEdit) : "—"}
+        label="last edit"
+      />
+    </div>
+  );
+}
+
+/** The Cue `C` monogram with its blue pupil dot, per the mock's third card. */
+function CueMark() {
+  return (
+    <span
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "100%",
+        height: "100%",
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#fff",
+      }}
+    >
+      C
+      <span
+        style={{
+          position: "absolute",
+          width: 4,
+          height: 4,
+          borderRadius: "50%",
+          background: C.blue,
+          right: 8,
+          bottom: 9,
+        }}
+      />
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Browser
+// ---------------------------------------------------------------------------
 
 export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
@@ -28,6 +260,17 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
     searchParams.get("sort") === "size" ? "size" : "name",
   );
   const [viewMode, setViewMode] = useState<WorkspaceViewMode>("preview");
+
+  const stats = useWorkspaceStats(assistantId);
+
+  // Bumped by the viewer's empty-state CTA to open the tree's real "New File"
+  // dialog (the tree owns the create flow, so we trigger it via a signal).
+  const [createFileSignal, setCreateFileSignal] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const handleCreateFile = useCallback(() => {
+    setDrawerOpen(true);
+    setCreateFileSignal((n) => n + 1);
+  }, []);
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPaths((prev) => {
@@ -49,8 +292,6 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
       return next;
     });
   }, []);
-
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const handleSelectPath = useCallback((path: string) => {
     setSelectedPath(path);
@@ -108,11 +349,15 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
     onChangeSortMode: setSortMode,
     onPathDeleted: handlePathDeleted,
     onPathRenamed: handlePathRenamed,
+    createFileSignal,
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex items-center sm:hidden">
+    <div
+      className="flex h-full min-h-0 flex-col"
+      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: C.t1 }}
+    >
+      <div className="mb-3 flex items-center sm:hidden">
         <MobileSidebarTrigger onClick={() => setDrawerOpen(true)} />
       </div>
 
@@ -124,21 +369,25 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
         <WorkspaceTree {...treeProps} />
       </MobileSidebarDrawer>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 sm:grid-cols-[320px_1fr]">
+      <StatCards stats={stats} />
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-[18px] sm:grid-cols-[300px_1fr]">
         <div
-          className="hidden min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border sm:flex"
+          className="hidden min-h-0 min-w-0 flex-col overflow-hidden sm:flex"
           style={{
-            backgroundColor: "var(--surface-overlay)",
-            borderColor: "var(--border-base)",
+            background: "#fff",
+            border: `1px solid ${C.line}`,
+            borderRadius: 14,
           }}
         >
           <WorkspaceTree {...treeProps} />
         </div>
         <div
-          className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden"
           style={{
-            backgroundColor: "var(--surface-overlay)",
-            borderColor: "var(--border-base)",
+            background: "#fff",
+            border: `1px solid ${C.line}`,
+            borderRadius: 14,
           }}
         >
           <WorkspaceFileViewer
@@ -150,6 +399,8 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
             onBrowse={() => setDrawerOpen(true)}
             pathRename={lastRename}
             pathDelete={lastDelete}
+            hasFiles={stats == null ? undefined : stats.files + stats.folders > 0}
+            onCreateFile={handleCreateFile}
           />
         </div>
       </div>
