@@ -328,6 +328,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Composes a reply draft to an email in the user's voice, saved to drafts for review before sending.",
     domain: "agentLoop",
   },
+  homeAction: {
+    id: "homeAction",
+    displayName: "Home Action (background)",
+    description:
+      "Runs a Home action item as its own background agent turn when it's dispatched to run in the background.",
+    domain: "agentLoop",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage

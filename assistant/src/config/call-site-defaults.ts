@@ -151,4 +151,10 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
     maxTokens: 1024,
     disableCache: true,
   },
+  // A Home action item dispatched to run in the background as its own agent
+  // turn (research/draft work). It's a full agentic loop, so use the balanced
+  // profile — capable enough to use tools and complete the task.
+  homeAction: {
+    profile: "balanced",
+  },
 };
