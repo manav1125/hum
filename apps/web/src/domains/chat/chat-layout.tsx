@@ -225,12 +225,8 @@ export function ChatLayout() {
     navigate(routes.identity);
   }, [navigate]);
 
-  const handleOpenWorkspace = useCallback(() => {
-    navigate(routes.workspace);
-  }, [navigate]);
-
   const handleOpenContacts = useCallback(() => {
-    navigate(routes.contacts.root);
+    navigate(routes.people);
   }, [navigate]);
 
   const handleGoBack = useCallback(() => {
@@ -243,29 +239,26 @@ export function ChatLayout() {
 
   const isHomeActive = location.pathname === routes.home;
 
-  // Workspace and Contacts each own a dedicated rail item, so they light up
-  // their own button — not the Intelligence hub (avoids double-lighting even
-  // though both also appear as Intelligence tabs).
-  const isWorkspaceActive = location.pathname === routes.workspace;
-  const isContactsActive = location.pathname.startsWith(routes.contacts.root);
+  // The rail "Contacts" item opens the relationship-memory dossier (/people) —
+  // where Cue learns about + enriches the people you know.
+  const isContactsActive = location.pathname === routes.people;
 
   // The Intelligence rail item is the hub: active for every Intelligence
-  // sub-route (Identity, Connectors, Channels, Agents, Cue Live, Skills,
-  // Memory, Plugins) — but NOT Workspace/Contacts, which have their own rail
-  // items above.
+  // sub-route — Identity, Connectors, Channels, Connections (= /contacts, the
+  // channel/agent setup), Agents, Cue Live, Skills, Memory, Workspace, Plugins.
   const isIntelligenceActive =
-    !isWorkspaceActive &&
-    !isContactsActive &&
-    (location.pathname === routes.identity ||
-      location.pathname === routes.connectors ||
-      location.pathname.startsWith(`${routes.connectors}/`) ||
-      location.pathname === routes.channels ||
-      location.pathname === routes.agents ||
-      location.pathname === routes.cueLive ||
-      location.pathname === routes.skills ||
-      location.pathname === routes.memory ||
-      location.pathname === routes.plugins ||
-      location.pathname.startsWith(`${routes.plugins}/`));
+    location.pathname === routes.identity ||
+    location.pathname === routes.connectors ||
+    location.pathname.startsWith(`${routes.connectors}/`) ||
+    location.pathname === routes.channels ||
+    location.pathname.startsWith(routes.contacts.root) ||
+    location.pathname === routes.agents ||
+    location.pathname === routes.cueLive ||
+    location.pathname === routes.skills ||
+    location.pathname === routes.memory ||
+    location.pathname === routes.workspace ||
+    location.pathname === routes.plugins ||
+    location.pathname.startsWith(`${routes.plugins}/`);
 
   // --- Sidebar collapsed / drawer state ---
   const [collapsed, setCollapsed] = useState<boolean>(readPersistedCollapsed);
@@ -587,8 +580,6 @@ export function ChatLayout() {
       onOpenIntelligence={handleOpenIdentity}
       isLibraryActive={isLibraryActive}
       onOpenLibrary={handleOpenLibrary}
-      isWorkspaceActive={isWorkspaceActive}
-      onOpenWorkspace={handleOpenWorkspace}
       isContactsActive={isContactsActive}
       onOpenContacts={handleOpenContacts}
       activeAppId={activeAppId ?? undefined}

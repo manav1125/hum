@@ -18,6 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import type { ContactPayload } from "@/domains/contacts/types";
@@ -104,25 +105,56 @@ export function PeoplePage() {
       <div style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
         <div
           style={{
-            fontFamily: mono,
-            fontSize: 11.5,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: C.blueS,
-            marginBottom: 10,
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
           }}
         >
-          People
-        </div>
-        <div
-          style={{
-            fontSize: 18,
-            fontWeight: 500,
-            color: C.t1,
-            marginBottom: 16,
-          }}
-        >
-          Relationship memory
+          <div>
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 11.5,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: C.blueS,
+                marginBottom: 10,
+              }}
+            >
+              Contacts
+            </div>
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 500,
+                color: C.t1,
+                marginBottom: 16,
+              }}
+            >
+              The people Cue knows — relationship memory
+            </div>
+          </div>
+          <Link
+            to="/assistant/trust"
+            title="Trust & consent — who can reach Cue, and what it may do"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#FFFFFF",
+              border: "1px solid #D7DDE7",
+              borderRadius: 9,
+              padding: "7px 13px",
+              fontSize: 12.5,
+              fontWeight: 500,
+              color: C.t1,
+              textDecoration: "none",
+              flexShrink: 0,
+            }}
+          >
+            Trust
+          </Link>
         </div>
 
         {contactsQuery.isLoading ? (

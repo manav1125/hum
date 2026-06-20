@@ -19,14 +19,15 @@ const BASE_INTELLIGENCE_TABS: readonly IntelligenceTab[] = [
   { label: "Identity", to: routes.identity },
   { label: "Connectors", to: routes.connectors },
   { label: "Channels", to: routes.channels },
+  // "Connections" = the channel/agent setup surface (Slack/Telegram/phone/email
+  // tokens + A2A invites). Lives under Intelligence; the primary-rail "Contacts"
+  // item points at the relationship dossier (/assistant/people) instead.
+  { label: "Connections", to: routes.contacts.root },
   { label: "Agents", to: routes.agents },
   { label: "Cue Live", to: routes.cueLive },
   { label: "Skills", to: routes.skills },
   { label: "Memory", to: routes.memory },
   { label: "Workspace", to: routes.workspace },
-  // Contacts lives in the primary rail only (per the design's clean rail), not
-  // as an Intelligence tab — though /assistant/contacts still renders under
-  // this layout so the page keeps its chrome.
 ];
 
 const PLUGINS_TAB: IntelligenceTab = {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 import { toast } from "@vellumai/design-library/components/toast";
 
@@ -120,7 +120,6 @@ export function ContactsPage({
   assistantId,
   onStartSetupConversation,
 }: ContactsPageProps) {
-  const navigate = useNavigate();
   const a2aChannel = useAssistantFeatureFlagStore.use.a2aChannel();
   const setFlag = useAssistantFeatureFlagStore.use.setFlag();
   const identityName = useAssistantIdentityStore.use.name();
@@ -629,57 +628,12 @@ export function ContactsPage({
         </div>
         <div>
           <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>
-            Contacts
+            Connections
           </h1>
           <p style={{ fontSize: 13.5, color: "#5A6672", marginTop: 3 }}>
-            People Cue knows — context, commitments, and how to reach them.
+            Connect Cue to Slack, Telegram, phone, email, and other agents — set
+            up a channel once and Cue is reachable there.
           </p>
-        </div>
-        {/*
-          People + Trust were demoted off the primary nav rail (per the clean-rail
-          design). People (dossiers) stays a SEPARATE surface from Contacts — both
-          reachable here. Trust (the guardrail console) lands here too. Routes
-          /assistant/people and /assistant/trust stay live.
-        */}
-        <div className="ml-auto hidden items-center gap-2 sm:flex">
-          <button
-            type="button"
-            onClick={() => navigate(routes.people)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#FFFFFF",
-              border: "1px solid #D7DDE7",
-              borderRadius: 9,
-              padding: "7px 13px",
-              fontSize: 12.5,
-              fontWeight: 500,
-              color: "#1A2230",
-              cursor: "pointer",
-            }}
-          >
-            People · dossiers
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate(routes.trust)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#FFFFFF",
-              border: "1px solid #D7DDE7",
-              borderRadius: 9,
-              padding: "7px 13px",
-              fontSize: 12.5,
-              fontWeight: 500,
-              color: "#1A2230",
-              cursor: "pointer",
-            }}
-          >
-            Trust
-          </button>
         </div>
       </div>
 
@@ -687,7 +641,7 @@ export function ContactsPage({
       <MobileSidebarDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title="Contacts"
+        title="Connections"
       >
         <ContactsList {...contactsListProps} onSelect={handleSelect} />
       </MobileSidebarDrawer>

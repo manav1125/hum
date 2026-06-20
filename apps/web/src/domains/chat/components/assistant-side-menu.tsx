@@ -9,7 +9,6 @@ import {
     Sparkles,
     SquarePen,
     Users,
-    Workflow,
     X,
 } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
@@ -58,8 +57,6 @@ export interface AssistantSideMenuProps extends UseSidebarStateParams {
   onOpenIntelligence?: () => void;
   isLibraryActive?: boolean;
   onOpenLibrary?: () => void;
-  isWorkspaceActive?: boolean;
-  onOpenWorkspace?: () => void;
   isContactsActive?: boolean;
   onOpenContacts?: () => void;
   onOpenApp?: (appId: string) => void;
@@ -153,8 +150,6 @@ export function AssistantSideMenu({
   onOpenIntelligence,
   isLibraryActive = false,
   onOpenLibrary,
-  isWorkspaceActive = false,
-  onOpenWorkspace,
   isContactsActive = false,
   onOpenContacts,
   onOpenApp,
@@ -481,10 +476,11 @@ export function AssistantSideMenu({
           </div>
         ) : null}
         {/*
-          The design's clean rail: Home · Intelligence · Library · Workspace ·
-          Contacts. "Chat" is the conversation-thread list below (labeled in the
-          body). Memory / Next moves / Connections / Meeting / People / Trust
-          are demoted off the rail but stay reachable (see component docblock).
+          The clean rail: Home · Intelligence · Library · Contacts. "Chat" is the
+          conversation-thread list below (labeled in the body). Contacts opens the
+          relationship dossier (/people). Workspace, Connections (channel setup),
+          Memory, Connectors live as Intelligence tabs; Next moves = Home feed;
+          Meeting = a Home action; Trust = a link on Contacts. (See docblock.)
         */}
         <SideMenu.Item
           icon={Home}
@@ -510,17 +506,6 @@ export function AssistantSideMenu({
           />
         ) : null}
         <SideMenu.Item
-          icon={Workflow}
-          label="Workspace"
-          showCollapsedTooltip
-          active={isWorkspaceActive}
-          onSelect={
-            onOpenWorkspace
-              ? () => { onOpenWorkspace(); onClose?.(); }
-              : () => cueNav("/assistant/workspace")
-          }
-        />
-        <SideMenu.Item
           icon={Users}
           label="Contacts"
           showCollapsedTooltip
@@ -528,7 +513,7 @@ export function AssistantSideMenu({
           onSelect={
             onOpenContacts
               ? () => { onOpenContacts(); onClose?.(); }
-              : () => cueNav("/assistant/contacts")
+              : () => cueNav("/assistant/people")
           }
         />
         {/* Channel presence — live readiness dots (one memory across channels). */}

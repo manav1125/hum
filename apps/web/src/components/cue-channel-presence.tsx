@@ -10,6 +10,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 
 import { channelsReadinessGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
@@ -50,6 +51,7 @@ export function CueChannelPresence() {
   // we must read the raw store (null until resolved) rather than
   // useActiveAssistantId() (which throws outside the gate).
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const navigate = useNavigate();
   const query = useQuery({
     ...channelsReadinessGetOptions({
       path: { assistant_id: assistantId ?? "" },
@@ -87,12 +89,18 @@ export function CueChannelPresence() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {configured.map((s) => (
-          <div
+          <button
             key={s.channel}
+            type="button"
+            onClick={() =>
+              navigate(
+                `/assistant/contacts?channel=${encodeURIComponent(s.channel)}`,
+              )
+            }
             title={
               s.ready
-                ? `${labelFor(s.channel)} · ready`
-                : `${labelFor(s.channel)} · ${s.setupStatus ?? "not ready"}`
+                ? `${labelFor(s.channel)} · ready · manage`
+                : `${labelFor(s.channel)} · ${s.setupStatus ?? "not ready"} · set up`
             }
             style={{
               display: "flex",
@@ -101,6 +109,12 @@ export function CueChannelPresence() {
               padding: "4px 4px",
               fontSize: 13,
               color: "var(--content-default)",
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              textAlign: "left",
             }}
           >
             <span
@@ -119,7 +133,7 @@ export function CueChannelPresence() {
             <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {labelFor(s.channel)}
             </span>
-          </div>
+          </button>
         ))}
       </div>
     </div>
