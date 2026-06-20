@@ -138,6 +138,7 @@ export const routes = {
     voice: r("/assistant/settings/voice"),
     devices: r("/assistant/settings/devices"),
     privacy: r("/assistant/settings/privacy"),
+    budget: r("/assistant/settings/budget"),
     archive: r("/assistant/settings/archive"),
     billing: r("/assistant/settings/billing"),
     community: r("/assistant/settings/community"),

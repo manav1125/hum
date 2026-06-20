@@ -21,15 +21,19 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 
 import {
   pendinginteractionsGetOptions,
   schedulesGetOptions,
+  usageTotalsGetOptions,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { watchersListPost } from "@/generated/daemon/sdk.gen";
+import { getBudgetConfig } from "@/lib/budget-api";
+import { routes } from "@/utils/routes";
 
 import { NeedsYouSection } from "./sections/needs-you-section";
 import { QueuedSection } from "./sections/queued-section";
@@ -101,6 +105,110 @@ function useSummary(assistantId: string) {
   };
 }
 
+/** Current calendar-month window [start, now] in epoch ms. */
+function monthWindow(): { from: number; to: number } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  return { from: start.getTime(), to: now.getTime() };
+}
+
+function useSpendMeter(assistantId: string) {
+  const month = monthWindow();
+  const usage = useQuery({
+    ...usageTotalsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { from: month.from, to: month.to },
+    }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  // The gateway budget route only exists after a redeploy; a failed fetch just
+  // means "no cap to show" — the spend figure is independent of it.
+  const config = useQuery({
+    queryKey: ["budget", "config", assistantId],
+    queryFn: () => getBudgetConfig(assistantId),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  return {
+    monthUsd: usage.data?.totalEstimatedCostUsd ?? 0,
+    cap: config.data?.monthlyCapUsd ?? null,
+    alertPct: config.data?.alertThresholdPct ?? 80,
+    loading: usage.isLoading,
+  };
+}
+
+function SpendMeter({ assistantId }: { assistantId: string }) {
+  const { monthUsd, cap, alertPct, loading } = useSpendMeter(assistantId);
+
+  const usd = (v: number) => `$${v.toFixed(2)}`;
+  const ratio = cap != null && cap > 0 ? monthUsd / cap : 0;
+  const pct = Math.min(100, Math.max(0, ratio * 100));
+  const over = ratio >= 1;
+  const warn = ratio >= alertPct / 100;
+  const barColor = over ? C.danger : warn ? C.amber : C.blue;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        marginTop: 14,
+        fontFamily: mono,
+        fontSize: 12.5,
+        color: C.t2,
+      }}
+    >
+      <span style={{ whiteSpace: "nowrap" }}>
+        {loading ? (
+          "Adding up this month…"
+        ) : (
+          <>
+            This month: <span style={{ color: C.ink }}>{usd(monthUsd)}</span>
+            {cap != null && <span style={{ color: C.t3 }}> / {usd(cap)} cap</span>}
+          </>
+        )}
+      </span>
+      {cap != null && (
+        <span
+          style={{
+            position: "relative",
+            flex: "0 1 160px",
+            height: 4,
+            borderRadius: 999,
+            background: C.sunken,
+            overflow: "hidden",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: `${pct}%`,
+              borderRadius: 999,
+              background: barColor,
+              transition: "width 200ms",
+            }}
+          />
+        </span>
+      )}
+      <Link
+        to={routes.settings.budget}
+        style={{
+          marginLeft: "auto",
+          color: C.blueS,
+          textDecoration: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Budget →
+      </Link>
+    </div>
+  );
+}
+
 export function ActivityPage() {
   const assistantId = useActiveAssistantId();
   const summary = useSummary(assistantId);
@@ -149,6 +257,8 @@ export function ActivityPage() {
         >
           {summary.loading ? "Counting what’s in motion…" : parts.join("  ·  ")}
         </div>
+
+        <SpendMeter assistantId={assistantId} />
 
         <div
           style={{
