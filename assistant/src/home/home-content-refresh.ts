@@ -25,6 +25,17 @@ const log = getLogger("home-content-refresh");
 
 let inFlight: Promise<void> | null = null;
 
+// In-memory safety net, independent of the DB-backed per-cache TTLs. The
+// greeting/prompt caches persist their "generated at" timestamp in
+// `memory_checkpoints`; if that write ever fails (e.g. SQLite "database is
+// locked" under contention), the TTL check always reads "stale" and EVERY
+// home-feed fetch would trigger a fresh LLM generation — turning a few
+// regenerations a day into hundreds. This floor caps regeneration frequency
+// process-wide regardless of cache health, so a broken cache degrades to
+// "regenerates at most every 30 min" instead of "regenerates on every poll".
+const REVALIDATE_COOLDOWN_MS = 30 * 60_000;
+let lastRevalidateStartedAt = 0;
+
 async function revalidateAll(): Promise<void> {
   const [greetingRefreshed, promptsRefreshed] = await Promise.all([
     refreshPersonalizedGreeting(),
@@ -63,6 +74,12 @@ export function revalidateHomeContentInBackground(): void {
   if (inFlight) {
     return;
   }
+  // Cooldown floor: skip if a revalidation started within the window. Guards
+  // against a failed persistent cache regenerating on every feed fetch.
+  if (Date.now() - lastRevalidateStartedAt < REVALIDATE_COOLDOWN_MS) {
+    return;
+  }
+  lastRevalidateStartedAt = Date.now();
   inFlight = revalidateAll()
     .catch((err) => {
       log.warn({ err }, "Home content revalidation failed");
