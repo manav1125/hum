@@ -1,4 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  Bell,
+  CalendarClock,
+  Mail,
+  ShieldCheck,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
@@ -115,6 +123,24 @@ function urgencyColor(item: FeedItem): string {
   if (item.urgency === "critical" || item.urgency === "high") return C.danger;
   if (item.urgency === "medium") return C.amber;
   return C.line2;
+}
+
+// Per-category glyph + wash for the "Also needs you" queue chips, mirroring the
+// 34px icon tiles in Home.dc.html. The wash tints (danger/violet/amber/blue) are
+// the design's exact chip backgrounds; the strong colour drives the glyph.
+const QUEUE_CHIP_STYLE: Record<
+  string,
+  { icon: LucideIcon; wash: string; ink: string }
+> = {
+  email: { icon: Mail, wash: "#FDE7E2", ink: C.danger },
+  scheduling: { icon: CalendarClock, wash: "#FBF0DA", ink: C.amber },
+  security: { icon: ShieldCheck, wash: "#EEEDFB", ink: C.blueS },
+  background: { icon: Sparkles, wash: "#EEEDFB", ink: "#534AB7" },
+  system: { icon: Bell, wash: C.sunken, ink: C.t2 },
+};
+
+function queueChipStyle(item: FeedItem) {
+  return QUEUE_CHIP_STYLE[item.category ?? "system"] ?? QUEUE_CHIP_STYLE.system;
 }
 
 export function HomeElevatedRoute() {
@@ -331,6 +357,27 @@ export function HomeElevatedRoute() {
                         flexShrink: 0,
                       }}
                     />
+                    {(() => {
+                      const chip = queueChipStyle(item);
+                      const ChipIcon = chip.icon;
+                      return (
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 9,
+                            background: chip.wash,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <ChipIcon width={16} height={16} color={chip.ink} />
+                        </span>
+                      );
+                    })()}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 500 }}>
                         {item.title}

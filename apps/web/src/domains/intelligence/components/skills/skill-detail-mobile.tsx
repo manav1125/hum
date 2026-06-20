@@ -23,12 +23,17 @@ import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-det
 import { Button, Card, Menu, SegmentControl } from "@vellumai/design-library";
 import { SkillFileContent } from "./skill-file-content";
 import { SkillIcon } from "./skill-icon";
-import { SkillOriginBadge } from "./skill-origin-badge";
+import { SkillOriginTag } from "./skill-origin-tag";
 
 interface SkillDetailMobileProps {
   assistantId: string;
   skill: SkillInfo;
+  /** Full visible skill list — accepted for parity with the desktop detail; the
+   * phone overlay is single-skill, so it isn't rendered here. */
+  skills?: SkillInfo[];
   onBack: () => void;
+  /** Accepted for parity with the desktop detail; unused on the phone overlay. */
+  onSelectSkill?: (id: string) => void;
   onInstall?: () => void;
   onRemove?: () => void;
   isInstalling?: boolean;
@@ -152,7 +157,7 @@ export function SkillDetailMobile({
               {skill.name}
             </h2>
           </div>
-          <SkillOriginBadge origin={skill.origin} />
+          <SkillOriginTag origin={skill.origin} />
         </div>
         <p
           className="text-body-medium-lighter"

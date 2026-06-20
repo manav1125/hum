@@ -1,295 +1,602 @@
-import { useQuery } from "@tanstack/react-query";
-import {
-    ArrowDownToLine,
-    ArrowLeft,
-    FileText,
-    Folder,
-    Loader2,
-    Trash2,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import {
-    FileMarkdown,
-    isMarkdown,
-} from "@/components/file-markdown";
+import { isMarkdown } from "@/components/file-markdown";
+import { SkillFileContent } from "@/domains/intelligence/components/skills/skill-file-content";
 import { SkillIcon } from "@/domains/intelligence/components/skills/skill-icon";
-import { SkillOriginBadge } from "@/domains/intelligence/components/skills/skill-origin-badge";
 import {
     isAvailableSkill,
     isRemovableSkill,
-    type SkillFileEntry,
     type SkillInfo,
 } from "@/domains/intelligence/skills/types";
-import {
-    skillsByIdFilesContentGetOptions,
-    skillsByIdFilesGetOptions,
-} from "@/generated/daemon/@tanstack/react-query.gen";
-import type { SkillsByIdFilesContentGetResponse } from "@/generated/daemon/types.gen";
-import { Button, Card } from "@vellumai/design-library";
+import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
+import { formatFriendlyDate } from "@/utils/format-date";
+
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  sunken: "#EEF1F6",
+  line: "#E5E9F0",
+  line2: "#D7DDE7",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+  danger: "#DA491A",
+  dangerBorder: "#F0B9AC",
+} as const;
+const MONO = "'DM Mono', ui-monospace, monospace";
 
 interface SkillDetailProps {
   assistantId: string;
   skill: SkillInfo;
+  /** Full visible skill list — drives the left rail. */
+  skills: SkillInfo[];
   onBack: () => void;
+  onSelectSkill: (id: string) => void;
   onInstall?: () => void;
   onRemove?: () => void;
   isInstalling?: boolean;
   isRemoving?: boolean;
 }
 
+const metaLabel = {
+  fontFamily: MONO,
+  fontSize: 10,
+  letterSpacing: ".08em",
+  textTransform: "uppercase" as const,
+  color: C.t3,
+};
+
+/**
+ * Skill detail — a faithful translation of surfaces/SkillDetail.dc.html onto
+ * real skill data. A `240px 1fr` split: a left rail listing the visible skills
+ * (the active one highlighted) and a detail pane with the name, an
+ * install/remove control, a metadata triplet (Added by / Last updated /
+ * Trigger), the description, a rendered SKILL.md definition card with a
+ * Preview/Code switch, and the bundle file tree. All wired to the real files
+ * API + install/remove mutations.
+ *
+ * The dark nav is layout chrome owned by IntelligenceLayout — not rebuilt here.
+ */
 export function SkillDetail({
-  assistantId,
   skill,
+  skills,
+  assistantId,
   onBack,
+  onSelectSkill,
   onInstall,
   onRemove,
   isInstalling = false,
   isRemoving = false,
 }: SkillDetailProps) {
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-
   const available = isAvailableSkill(skill);
   const removable = isRemovableSkill(skill);
 
-  const filesQuery = useQuery({
-    ...skillsByIdFilesGetOptions({
-      path: { assistant_id: assistantId, id: skill.id },
-    }),
-    select: (data) => data ?? null,
-  });
+  const {
+    fileEntries,
+    skillMd,
+    activePath,
+    activeFile,
+    setSelectedPath,
+    isFilesLoading,
+    fileContent,
+    isBinary,
+    isContentLoading,
+  } = useSkillDetailFiles(assistantId, skill.id);
 
-  const fileEntries = useMemo<SkillFileEntry[]>(
-    () => filesQuery.data?.files ?? [],
-    [filesQuery.data],
-  );
+  const [viewMode, setViewMode] = useState<"preview" | "raw">("preview");
+  useEffect(() => {
+    setViewMode("preview");
+  }, [activePath]);
 
-  const skillMd = useMemo(
-    () => fileEntries.find((f) => f.name === "SKILL.md"),
-    [fileEntries],
-  );
+  const activeIsMarkdown = activeFile
+    ? isMarkdown(activeFile.name, undefined)
+    : false;
+  const effectiveViewMode = activeIsMarkdown ? viewMode : "raw";
 
-  const activePath = selectedPath ?? skillMd?.path ?? null;
-
-  const fileContentQuery = useQuery({
-    ...skillsByIdFilesContentGetOptions({
-      path: { assistant_id: assistantId, id: skill.id },
-      query: { path: activePath ?? "" },
-    }),
-    select: (data): SkillsByIdFilesContentGetResponse | null => data ?? null,
-    enabled: Boolean(activePath),
-  });
-
-  const activeFile = fileEntries.find((f) => f.path === activePath);
+  const addedBy = originAddedBy(skill);
+  const lastUpdated = skill.publishedAt
+    ? formatFriendlyDate(new Date(skill.publishedAt))
+    : skill.version
+      ? `v${skill.version}`
+      : "—";
 
   return (
-    <div className="flex h-[calc(100vh-14rem)] flex-col">
-      <div className="mb-4 flex items-start gap-3">
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly={<ArrowLeft aria-hidden />}
-          aria-label="Back to skills"
-          onClick={onBack}
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <SkillIcon skill={skill} className="h-8 w-8 text-3xl" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <h2
-                  className="text-title-medium"
-                  style={{ color: "var(--content-default)" }}
-                >
-                  {skill.name}
-                </h2>
-                <SkillOriginBadge origin={skill.origin} />
-              </div>
-              <p
-                className="mt-0.5 line-clamp-2 text-body-medium-lighter"
-                style={{ color: "var(--content-secondary)" }}
-              >
-                {skill.description}
-              </p>
-            </div>
-          </div>
-          {available ? (
-            isInstalling ? (
-              <div className="flex h-9 items-center px-3">
-                <Loader2
-                  className="h-4 w-4 animate-spin"
-                  style={{ color: "var(--content-tertiary)" }}
-                />
-              </div>
-            ) : (
-              <Button
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "240px 1fr",
+        height: "100%",
+        minHeight: 0,
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: C.t1,
+      }}
+    >
+      {/* ── Skill list rail ──────────────────────────────────────────── */}
+      <div
+        style={{
+          borderRight: `1px solid ${C.line}`,
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            padding: "0 6px 10px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onBack}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12.5,
+              color: C.t2,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: "4px 2px",
+              fontFamily: "inherit",
+            }}
+          >
+            <span aria-hidden>←</span> Skills
+          </button>
+        </div>
+        <div
+          style={{
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            fontSize: 13.5,
+            paddingRight: 4,
+          }}
+        >
+          {skills.map((s) => {
+            const active = s.id === skill.id;
+            return (
+              <button
+                key={s.id}
                 type="button"
-                onClick={onInstall}
-                disabled={!onInstall}
-                leftIcon={<ArrowDownToLine aria-hidden />}
+                onClick={() => onSelectSkill(s.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "9px 11px",
+                  borderRadius: 9,
+                  border: "none",
+                  background: active ? C.sunken : "transparent",
+                  color: active ? C.t1 : C.t2,
+                  fontWeight: active ? 600 : 400,
+                  fontSize: 13.5,
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  width: "100%",
+                }}
               >
-                Install
-              </Button>
-            )
-          ) : (
-            <Button
-              type="button"
-              variant={removable ? "dangerOutline" : "outlined"}
-              onClick={onRemove}
-              disabled={!removable || isRemoving || !onRemove}
-              leftIcon={
-                isRemoving ? (
-                  <Loader2 className="animate-spin" aria-hidden />
-                ) : (
-                  <Trash2 aria-hidden />
-                )
-              }
-            >
-              Remove
-            </Button>
-          )}
+                <SkillIcon skill={s} className="h-[18px] w-[18px] shrink-0" />
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {s.name}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <Card.Root asChild noPadding>
-        <div
-          className="flex flex-1 flex-col overflow-hidden sm:grid"
-          style={{
-            gridTemplateColumns: "240px 1fr",
-          }}
-        >
-        <div
-          className="max-h-40 shrink-0 overflow-y-auto border-b p-2 sm:max-h-none sm:border-b-0 sm:border-r"
-          style={{ borderColor: "var(--border-base)" }}
-        >
-          {filesQuery.isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2
-                className="h-4 w-4 animate-spin"
-                style={{ color: "var(--content-tertiary)" }}
+      {/* ── Detail pane ──────────────────────────────────────────────── */}
+      <div style={{ overflowY: "auto", minHeight: 0 }}>
+        <div style={{ padding: "22px 28px" }}>
+          {/* Header row */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}
+            >
+              <SkillIcon skill={skill} className="h-7 w-7 shrink-0" />
+              <div
+                style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.3px" }}
+              >
+                {skill.name}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <StatusControl
+                available={available}
+                removable={removable}
+                isInstalling={isInstalling}
+                isRemoving={isRemoving}
+                onInstall={onInstall}
+                onRemove={onRemove}
               />
             </div>
-          ) : fileEntries.length === 0 ? (
+          </div>
+
+          {/* Metadata triplet */}
+          <div style={{ display: "flex", gap: 40, marginTop: 18, flexWrap: "wrap" }}>
+            <div>
+              <div style={metaLabel}>Added by</div>
+              <div style={{ fontSize: 13.5, marginTop: 4 }}>{addedBy}</div>
+            </div>
+            <div>
+              <div style={metaLabel}>Last updated</div>
+              <div style={{ fontSize: 13.5, marginTop: 4 }}>{lastUpdated}</div>
+            </div>
+            <div>
+              <div style={metaLabel}>Category</div>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  marginTop: 4,
+                  borderBottom: `1px dashed ${C.line2}`,
+                  display: "inline-block",
+                  textTransform: "capitalize",
+                }}
+              >
+                {skill.category || "general"}
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div style={{ marginTop: 18 }}>
+            <div style={metaLabel}>Description</div>
             <p
-              className="px-3 py-4 text-center text-body-medium-lighter"
-              style={{ color: "var(--content-tertiary)" }}
+              style={{
+                fontSize: 14,
+                color: C.t2,
+                lineHeight: 1.65,
+                marginTop: 6,
+                maxWidth: 680,
+              }}
             >
-              No files available.
+              {skill.description}
             </p>
-          ) : (
-            fileEntries.map((entry) => {
-              const isActive = activePath === entry.path;
-              const isDirectory = (entry.mimeType ?? "").endsWith("/directory");
-              return (
-                <button
-                  key={entry.path}
-                  type="button"
-                  onClick={() => setSelectedPath(entry.path)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-body-medium-lighter transition-colors hover:bg-[var(--surface-hover)]"
+          </div>
+
+          {/* Rendered definition */}
+          <div
+            style={{
+              marginTop: 18,
+              border: `1px solid ${C.line}`,
+              borderRadius: 14,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "11px 16px",
+                borderBottom: `1px solid ${C.line}`,
+                background: "#FBFBFD",
+              }}
+            >
+              <span style={{ fontFamily: MONO, fontSize: 11, color: C.t2 }}>
+                {activeFile?.name ?? skillMd?.name ?? "SKILL.md"}
+              </span>
+              <span
+                style={{
+                  display: "inline-flex",
+                  gap: 3,
+                  background: C.sunken,
+                  borderRadius: 8,
+                  padding: 3,
+                }}
+              >
+                <ViewPill
+                  active={effectiveViewMode === "preview"}
+                  disabled={!activeIsMarkdown}
+                  onClick={() => setViewMode("preview")}
+                >
+                  👁 Preview
+                </ViewPill>
+                <ViewPill
+                  active={effectiveViewMode === "raw"}
+                  onClick={() => setViewMode("raw")}
+                >
+                  &lt;/&gt; Code
+                </ViewPill>
+              </span>
+            </div>
+            <div style={{ minHeight: 200, maxHeight: 420, overflow: "hidden" }}>
+              {isFilesLoading || isContentLoading ? (
+                <div
                   style={{
-                    color: isActive
-                      ? "var(--primary-base)"
-                      : "var(--content-default)",
-                    backgroundColor: isActive
-                      ? "color-mix(in oklab, var(--primary-base) 10%, transparent)"
-                      : undefined,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: 200,
                   }}
                 >
-                  {isDirectory ? (
-                    <Folder
-                      className="h-4 w-4 shrink-0"
-                      style={{ color: "var(--system-mid-strong)" }}
-                    />
-                  ) : (
-                    <FileText
-                      className="h-4 w-4 shrink-0"
-                      style={{ color: "var(--content-secondary)" }}
-                    />
-                  )}
-                  <span className="truncate">{entry.name}</span>
-                </button>
-              );
-            })
-          )}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {fileContentQuery.isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Loader2
-                className="h-6 w-6 animate-spin"
-                style={{ color: "var(--content-tertiary)" }}
-              />
+                  <Loader2 className="size-6 animate-spin" color={C.t3} />
+                </div>
+              ) : activeFile ? (
+                <div style={{ maxHeight: 420, overflow: "auto" }}>
+                  <SkillFileContent
+                    fileName={activeFile.name}
+                    content={fileContent}
+                    isBinary={isBinary}
+                    viewMode={effectiveViewMode}
+                  />
+                </div>
+              ) : (
+                <p
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: 200,
+                    fontSize: 13,
+                    color: C.t3,
+                  }}
+                >
+                  No definition available.
+                </p>
+              )}
             </div>
-          ) : activeFile ? (
-            <FileContent
-              fileName={activeFile.name}
-              content={fileContentQuery.data?.content ?? null}
-              isBinary={Boolean(fileContentQuery.data?.isBinary)}
-            />
-          ) : (
-            <p
-              className="flex h-full items-center justify-center text-body-medium-lighter"
-              style={{ color: "var(--content-tertiary)" }}
-            >
-              Select a file to view its contents.
-            </p>
-          )}
+          </div>
+
+          {/* Bundle file tree */}
+          <div
+            style={{
+              marginTop: 14,
+              border: `1px solid ${C.line}`,
+              borderRadius: 13,
+              padding: "14px 16px",
+            }}
+          >
+            <div style={{ ...metaLabel, marginBottom: 10 }}>Bundle</div>
+            {isFilesLoading ? (
+              <div style={{ display: "flex", padding: "6px 0" }}>
+                <Loader2 className="size-4 animate-spin" color={C.t3} />
+              </div>
+            ) : fileEntries.length === 0 ? (
+              <div style={{ fontSize: 13, color: C.t3 }}>
+                No files available.
+              </div>
+            ) : (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 6 }}
+              >
+                {fileEntries.map((entry) => {
+                  const isDirectory = (entry.mimeType ?? "").endsWith(
+                    "/directory",
+                  );
+                  const isActive = entry.path === activePath;
+                  return (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      onClick={() => setSelectedPath(entry.path)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 13,
+                        border: "none",
+                        background: "transparent",
+                        color: isActive ? C.blue : isDirectory ? C.t2 : C.t1,
+                        fontWeight: isActive ? 600 : 400,
+                        fontFamily: "inherit",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        padding: 0,
+                      }}
+                    >
+                      <span aria-hidden>{isDirectory ? "📁" : "📄"}</span>
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {entry.name}
+                      </span>
+                      <span
+                        style={{
+                          marginLeft: "auto",
+                          color: C.t3,
+                          fontFamily: MONO,
+                          fontSize: 10.5,
+                        }}
+                      >
+                        {isDirectory ? "›" : formatSize(entry.size)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-        </div>
-      </Card.Root>
+      </div>
     </div>
   );
 }
 
-function FileContent({
-  fileName,
-  content,
-  isBinary,
+function ViewPill({
+  active,
+  disabled,
+  onClick,
+  children,
 }: {
-  fileName: string;
-  content: string | null;
-  isBinary: boolean;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
-  if (isBinary) {
-    return (
-      <p
-        className="flex h-full items-center justify-center text-body-medium-lighter"
-        style={{ color: "var(--content-tertiary)" }}
-      >
-        Binary file — no preview available.
-      </p>
-    );
-  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        fontSize: 11,
+        background: active ? "#fff" : "transparent",
+        color: active ? C.t1 : C.t2,
+        borderRadius: 6,
+        padding: "4px 10px",
+        border: "none",
+        boxShadow: active ? "0 1px 2px rgba(0,0,0,.06)" : undefined,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled && !active ? 0.5 : 1,
+        fontFamily: "inherit",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
-  if (content === null) {
+/**
+ * The header status affordance. For installed/removable skills this is the
+ * on-toggle + Remove pair the mock shows; for catalog skills it's an Install
+ * button; bundled (non-removable) skills show the on-toggle alone.
+ */
+function StatusControl({
+  available,
+  removable,
+  isInstalling,
+  isRemoving,
+  onInstall,
+  onRemove,
+}: {
+  available: boolean;
+  removable: boolean;
+  isInstalling: boolean;
+  isRemoving: boolean;
+  onInstall?: () => void;
+  onRemove?: () => void;
+}) {
+  if (available) {
     return (
-      <p
-        className="flex h-full items-center justify-center text-body-medium-lighter"
-        style={{ color: "var(--content-tertiary)" }}
+      <button
+        type="button"
+        onClick={onInstall}
+        disabled={!onInstall || isInstalling}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          fontSize: 12.5,
+          background: C.ink,
+          color: "#fff",
+          border: "none",
+          borderRadius: 9,
+          padding: "8px 16px",
+          cursor: isInstalling ? "default" : "pointer",
+        }}
       >
-        No preview available for {fileName}.
-      </p>
-    );
-  }
-
-  if (isMarkdown(fileName, undefined)) {
-    return (
-      <div
-        className="h-full overflow-auto px-6 py-4"
-        style={{ color: "var(--content-default)" }}
-      >
-        <FileMarkdown content={content} />
-      </div>
+        {isInstalling ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <span aria-hidden>⤓</span>
+        )}
+        Install
+      </button>
     );
   }
 
   return (
-    <pre
-      className="h-full overflow-auto p-4 font-mono text-body-small-default"
-      style={{ color: "var(--content-default)" }}
-    >
-      {content}
-    </pre>
+    <>
+      {/* "on" pill — installed skills are active */}
+      <span
+        aria-hidden
+        style={{
+          width: 40,
+          height: 23,
+          borderRadius: 999,
+          background: C.blue,
+          position: "relative",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            width: 19,
+            height: 19,
+            borderRadius: "50%",
+            background: "#fff",
+            top: 2,
+            right: 2,
+          }}
+        />
+      </span>
+      {removable && (
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={isRemoving || !onRemove}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12.5,
+            border: `1px solid ${C.dangerBorder}`,
+            background: "#fff",
+            color: C.danger,
+            borderRadius: 9,
+            padding: "7px 14px",
+            cursor: isRemoving ? "default" : "pointer",
+          }}
+        >
+          {isRemoving ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <span aria-hidden>🗑</span>
+          )}
+          Remove
+        </button>
+      )}
+    </>
   );
+}
+
+function originAddedBy(skill: SkillInfo): string {
+  switch (skill.origin) {
+    case "vellum":
+      return "Cue · bundled";
+    case "custom":
+      return "You · custom";
+    case "clawhub":
+      return skill.author ? `${skill.author} · Clawhub` : "Clawhub";
+    case "skillssh":
+      return skill.author ? `${skill.author} · skills.sh` : "skills.sh";
+    default:
+      return "Cue";
+  }
+}
+
+function formatSize(size: number | null | undefined): string {
+  if (size == null || !Number.isFinite(size)) return "";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }

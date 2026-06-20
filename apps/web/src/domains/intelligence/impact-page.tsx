@@ -31,14 +31,70 @@ const C = {
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
 
-const CATEGORY: Record<string, { label: string; color: string }> = {
-  email: { label: "Email triage", color: C.blue },
-  meetings: { label: "Meetings captured", color: C.violet },
-  scheduling: { label: "Scheduling", color: "#0E8C8C" },
-  calls: { label: "Calls & errands", color: C.amber },
-  research: { label: "Research", color: "#5A57C4" },
-  other: { label: "Other", color: C.t3 },
+type CategoryMeta = {
+  label: string;
+  color: string;
+  /** glyph + tile wash for the "things Cue handled" highlights */
+  icon: string;
+  wash: string;
 };
+
+const CATEGORY: Record<string, CategoryMeta> = {
+  email: { label: "Email triage", color: C.blue, icon: "✉", wash: C.blueW },
+  meetings: {
+    label: "Meetings captured",
+    color: C.violet,
+    icon: "✦",
+    wash: "#EEEDFB",
+  },
+  scheduling: {
+    label: "Scheduling",
+    color: "#0E8C8C",
+    icon: "◷",
+    wash: "#D8F0F0",
+  },
+  calls: { label: "Calls & errands", color: C.amber, icon: "☎", wash: "#FBF0DA" },
+  research: { label: "Research", color: "#5A57C4", icon: "❖", wash: "#E6E5F7" },
+  other: { label: "Other", color: C.t3, icon: "•", wash: C.sunken },
+};
+
+function categoryMeta(category: string): CategoryMeta {
+  return (
+    CATEGORY[category] ?? {
+      label: category,
+      color: C.t3,
+      icon: "•",
+      wash: C.sunken,
+    }
+  );
+}
+
+const MONTHS = [
+  "JAN",
+  "FEB",
+  "MAR",
+  "APR",
+  "MAY",
+  "JUN",
+  "JUL",
+  "AUG",
+  "SEP",
+  "OCT",
+  "NOV",
+  "DEC",
+];
+
+/** "JUN 10 – 16" — the real window ending today, spanning `rangeDays`. */
+function rangeLabel(rangeDays: number): string {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(end.getDate() - Math.max(0, rangeDays - 1));
+  const sm = MONTHS[start.getMonth()];
+  const em = MONTHS[end.getMonth()];
+  return sm === em
+    ? `${sm} ${start.getDate()} – ${end.getDate()}`
+    : `${sm} ${start.getDate()} – ${em} ${end.getDate()}`;
+}
 
 const KEYFRAMES = `
 @keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
@@ -116,6 +172,7 @@ export function ImpactPage() {
     enabled: !!assistantId,
   });
 
+  const rangeDays = data?.rangeDays ?? 7;
   const hoursSaved = data?.hoursSaved ?? 0;
   const taskCount = data?.taskCount ?? 0;
   const byCategory = data?.byCategory ?? [];
@@ -125,6 +182,11 @@ export function ImpactPage() {
   const maxDay = Math.max(0.1, ...byDay);
   const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
   const todayIdx = (new Date().getDay() + 6) % 7;
+
+  // Average time returned per task — a real, derived figure for the second
+  // stat tile (the mock shows an approval %, which we have no source for).
+  const minsPerTask =
+    taskCount > 0 ? Math.round((hoursSaved * 60) / taskCount) : 0;
 
   return (
     <div
@@ -178,7 +240,7 @@ export function ImpactPage() {
                     letterSpacing: ".06em",
                   }}
                 >
-                  YOUR WEEK WITH CUE
+                  {rangeLabel(rangeDays)} · YOUR WEEK WITH CUE
                 </span>
               </div>
               <div
@@ -331,10 +393,7 @@ export function ImpactPage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
                 {byCategory.map((c) => {
-                  const meta = CATEGORY[c.category] ?? {
-                    label: c.category,
-                    color: C.t3,
-                  };
+                  const meta = categoryMeta(c.category);
                   return (
                     <div
                       key={c.category}
@@ -420,37 +479,46 @@ export function ImpactPage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {recent.length > 0 ? (
-                  recent.slice(0, 4).map((r, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 13,
-                        border: `1px solid ${C.line}`,
-                        borderRadius: 12,
-                        padding: "12px 14px",
-                      }}
-                    >
-                      <span
+                  recent.slice(0, 4).map((r, i) => {
+                    const meta = categoryMeta(r.category);
+                    return (
+                      <div
+                        key={i}
                         style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 9,
-                          background: C.blueW,
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
+                          gap: 13,
+                          border: `1px solid ${C.line}`,
+                          borderRadius: 12,
+                          padding: "12px 14px",
                         }}
                       >
-                        ✉
-                      </span>
-                      <div style={{ fontSize: 13.5, fontWeight: 500, minWidth: 0 }}>
-                        {r.detail}
+                        <span
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: 9,
+                            background: meta.wash,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {meta.icon}
+                        </span>
+                        <div
+                          style={{
+                            fontSize: 13.5,
+                            fontWeight: 500,
+                            minWidth: 0,
+                          }}
+                        >
+                          {r.detail}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div style={{ fontSize: 13, color: C.t2 }}>
                     Nothing yet this week — as Cue handles things, they show up
@@ -497,10 +565,10 @@ export function ImpactPage() {
                     color: C.green,
                   }}
                 >
-                  {hoursSaved}
+                  {minsPerTask > 0 ? `${minsPerTask}m` : "—"}
                 </div>
                 <div style={{ fontSize: 12.5, color: C.t2, marginTop: 2 }}>
-                  hours saved this week
+                  saved on average per task
                 </div>
               </div>
             </div>
@@ -541,7 +609,8 @@ export function ImpactPage() {
                 Want next week to be even lighter?
               </div>
               <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
-                Connect more of your tools and Cue can handle more on your behalf.
+                Connect more of your tools and Cue can handle more on your behalf
+                — every connection unlocks more it can take off your plate.
               </div>
             </div>
             <div
@@ -566,6 +635,21 @@ export function ImpactPage() {
                 }}
               >
                 Connect more
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(routes.connectors)}
+                style={{
+                  fontSize: 12.5,
+                  background: "rgba(255,255,255,.1)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 9,
+                  padding: "10px 15px",
+                  cursor: "pointer",
+                }}
+              >
+                See connectors
               </button>
             </div>
           </div>

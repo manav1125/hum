@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { getAssistant } from "@/assistant/api";
 import { fetchAssistantIdentity } from "@/assistant/identity";
@@ -20,7 +20,7 @@ import type { IdentityGetResponse, SkillsGetData } from "@/generated/daemon/type
 import { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
 import { captureError } from "@/lib/sentry/capture-error";
 import type { CharacterComponents, CharacterTraits } from "@/types/avatar";
-import { Button, ConfirmDialog } from "@vellumai/design-library";
+import { ConfirmDialog } from "@vellumai/design-library";
 
 export interface IdentityCardProps {
   assistantName: string;
@@ -47,127 +47,232 @@ export function IdentityCard({
 }: IdentityCardProps) {
   return (
     <div
-      className="w-full overflow-hidden rounded-xl"
       style={{
-        backgroundColor: "var(--surface-lift)",
+        width: "100%",
+        border: "1px solid #E5E9F0",
+        borderRadius: 16,
+        padding: 24,
+        display: "flex",
+        flexDirection: "column",
+        background: "#FFFFFF",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: "#1A2230",
+        lineHeight: 1.5,
       }}
     >
-      <div className="relative p-6 pb-0">
-        <div className="pr-8 text-center">
-          <h2
-            className="text-title-medium"
-            style={{ color: "var(--content-default)" }}
-          >
-            {assistantName}
-          </h2>
+      {/* Header — name + edit pencil */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 21,
+            fontWeight: 600,
+            letterSpacing: "-.4px",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {assistantName}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly={<Pencil aria-hidden />}
-          onClick={() => onOpenThread?.("I would like to change your name")}
-          disabled={!onOpenThread}
-          aria-label="Edit identity"
+        <EditPencil
+          label="Edit name"
           title="Edit Name"
-          className="absolute right-6 top-6"
-          tintColor="var(--content-tertiary)"
+          onOpenThread={onOpenThread}
+          message="I would like to change your name"
         />
       </div>
 
-      <div className="flex justify-center py-6">
-        <ChatAvatar
-          components={components}
-          traits={traits}
-          customImageUrl={customImageUrl}
-          size={200}
-          interactive
-        />
-      </div>
-
-      <div className="flex justify-center pb-6">
-        <Button
+      {/* Avatar hero */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 16,
+          marginTop: 22,
+        }}
+      >
+        <div
+          style={{
+            width: 150,
+            height: 150,
+            borderRadius: 34,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 16px 36px -16px rgba(26,34,48,.5)",
+            overflow: "hidden",
+            background: customImageUrl ? "transparent" : "#1A2230",
+          }}
+        >
+          <ChatAvatar
+            components={components}
+            traits={traits}
+            customImageUrl={customImageUrl}
+            size={150}
+            interactive
+          />
+        </div>
+        <button
           type="button"
-          variant="outlined"
-          size="regular"
           onClick={onOpenModal}
-          className="!rounded-full"
+          style={{
+            fontSize: 13.5,
+            border: "1px solid #D7DDE7",
+            borderRadius: 10,
+            padding: "9px 18px",
+            background: "#FFFFFF",
+            color: "#1A2230",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
         >
           Update Avatar
-        </Button>
+        </button>
       </div>
 
-      <div
-        className="border-t"
-        style={{ borderColor: "var(--border-base)" }}
+      {/* Role */}
+      <MetaRow
+        label="Role"
+        value={assistantRole}
+        valueColor={assistantRole === "Not set" ? "#8D99A5" : "#1A2230"}
+        marginTop={24}
+        edit={
+          <EditPencil
+            label="Edit role"
+            title="Edit Role"
+            onOpenThread={onOpenThread}
+            message="I would like to change your role description"
+          />
+        }
       />
 
-      <div
-        className="flex items-center justify-between border-b px-4 py-3"
-        style={{ borderColor: "var(--border-base)" }}
-      >
-        <div>
-          <p className="text-body-small-default" style={{ color: "var(--content-tertiary)" }}>
-            Role
-          </p>
-          <p
-            className="text-body-medium-default"
-            style={{ color: "var(--content-default)" }}
-          >
-            {assistantRole}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly={<Pencil aria-hidden />}
-          onClick={() => onOpenThread?.("I would like to change your role description")}
-          disabled={!onOpenThread}
-          aria-label="Edit role"
-          title="Edit Role"
-          tintColor="var(--content-tertiary)"
-        />
-      </div>
+      {/* Personality */}
+      <MetaRow
+        label="Personality"
+        value={assistantPersonality || "Not set"}
+        valueColor={assistantPersonality ? "#1A2230" : "#8D99A5"}
+        marginTop={18}
+        truncate
+        edit={
+          <EditPencil
+            label="Edit personality"
+            title="Edit Personality"
+            onOpenThread={onOpenThread}
+            message="I would like to change your personality"
+          />
+        }
+      />
 
-      <div
-        className="flex items-center justify-between border-b px-4 py-3"
-        style={{ borderColor: "var(--border-base)" }}
-      >
-        <div className="min-w-0 flex-1">
-          <p className="text-body-small-default" style={{ color: "var(--content-tertiary)" }}>
-            Personality
-          </p>
-          <p
-            className="truncate text-body-medium-default"
-            style={{ color: "var(--content-default)" }}
-            title={assistantPersonality || "Not set"}
-          >
-            {assistantPersonality || "Not set"}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly={<Pencil aria-hidden />}
-          onClick={() => onOpenThread?.("I would like to change your personality")}
-          disabled={!onOpenThread}
-          aria-label="Edit personality"
-          title="Edit Personality"
-          tintColor="var(--content-tertiary)"
-        />
-      </div>
-
-      <div className="px-4 py-3">
-        <p className="text-body-small-default" style={{ color: "var(--content-tertiary)" }}>
-          Hatched
-        </p>
-        <p
-          className="text-body-medium-default"
-          style={{ color: "var(--content-default)" }}
-        >
-          {hatchedDate}
-        </p>
+      {/* Hatched — pinned to the bottom of the card */}
+      <div style={{ marginTop: "auto", paddingTop: 24 }}>
+        <div style={{ fontSize: 13, color: "#5A6672" }}>Hatched</div>
+        <div style={{ fontSize: 15, marginTop: 3 }}>{hatchedDate}</div>
       </div>
     </div>
+  );
+}
+
+/** Top-bordered label/value row with an optional edit affordance (Role / Personality). */
+function MetaRow({
+  label,
+  value,
+  valueColor,
+  marginTop,
+  truncate = false,
+  edit,
+}: {
+  label: string;
+  value: string;
+  valueColor: string;
+  marginTop: number;
+  truncate?: boolean;
+  edit: ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        borderTop: "1px solid #E5E9F0",
+        marginTop,
+        paddingTop: 18,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+      }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, color: "#5A6672" }}>{label}</div>
+        <div
+          title={value}
+          style={{
+            fontSize: 15,
+            color: valueColor,
+            marginTop: 3,
+            ...(truncate
+              ? {
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }
+              : {}),
+          }}
+        >
+          {value}
+        </div>
+      </div>
+      {edit}
+    </div>
+  );
+}
+
+/**
+ * The `✎` edit affordance. There is no direct identity-edit mutation on this
+ * surface, so each pencil routes the user into chat with a pre-filled request
+ * (the real place identity changes happen). Disabled when no chat handler.
+ */
+function EditPencil({
+  label,
+  title,
+  message,
+  onOpenThread,
+}: {
+  label: string;
+  title: string;
+  message: string;
+  onOpenThread?: (message: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={title}
+      disabled={!onOpenThread}
+      onClick={() => onOpenThread?.(message)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 28,
+        height: 28,
+        flexShrink: 0,
+        border: "none",
+        background: "transparent",
+        color: "#8D99A5",
+        cursor: onOpenThread ? "pointer" : "default",
+        opacity: onOpenThread ? 1 : 0.5,
+      }}
+    >
+      <Pencil aria-hidden size={15} />
+    </button>
   );
 }
 
@@ -323,7 +428,9 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
         <SkillDetail
           assistantId={assistantId}
           skill={selectedSkill}
+          skills={installedSkills}
           onBack={() => setSelectedSkillId(null)}
+          onSelectSkill={(id) => setSelectedSkillId(id)}
           onInstall={() => handleInstall(selectedSkill)}
           onRemove={() => handleRemove(selectedSkill)}
           isInstalling={installingSkillId === (selectedSkill.slug ?? selectedSkill.id)}
@@ -340,8 +447,8 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
         <div
           className="h-6 w-6 animate-spin rounded-full border-2"
           style={{
-            borderColor: "var(--border-base)",
-            borderTopColor: "var(--content-tertiary)",
+            borderColor: "#E5E9F0",
+            borderTopColor: "#8D99A5",
           }}
         />
       </div>
@@ -362,7 +469,7 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 lg:flex-row lg:items-stretch">
       <div
-        className={`mx-auto w-full max-w-md lg:mx-0 lg:h-full lg:shrink-0 lg:overflow-y-auto ${
+        className={`mx-auto w-full max-w-md lg:mx-0 lg:h-full lg:w-[320px] lg:shrink-0 lg:overflow-y-auto ${
           constellationFullscreen ? "hidden" : "flex"
         }`}
       >

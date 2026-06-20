@@ -1,33 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-    CheckCircle,
-    CloudOff,
-    Globe,
-    LayoutGrid,
-    Loader2,
-    Package,
-    Puzzle,
-    Sparkles,
-    Terminal,
-    TriangleAlert,
-    User,
-    X,
-    Zap,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 
-import { CategorySidebar } from "@/domains/intelligence/components/skills/category-sidebar";
+import { SkillCard } from "@/domains/intelligence/components/skills/skill-card";
+import { SkillCategoryIndex } from "@/domains/intelligence/components/skills/skill-category-index";
 import { SkillDetail } from "@/domains/intelligence/components/skills/skill-detail";
 import { SkillDetailMobile } from "@/domains/intelligence/components/skills/skill-detail-mobile";
-import { FilterBar } from "@/domains/intelligence/components/skills/skill-filters";
-import { SkillRow } from "@/domains/intelligence/components/skills/skill-row";
 import { installSkill } from "@/domains/intelligence/skills/install";
 import {
+    isAvailableSkill,
     type SkillFilter,
     type SkillInfo,
 } from "@/domains/intelligence/skills/types";
 import { useSkillCategories } from "@/domains/intelligence/skills/use-skill-categories";
-import { resolveFilterParams, sortSkills } from "@/domains/intelligence/skills/utils";
+import {
+    resolveFilterParams,
+    sortSkills,
+} from "@/domains/intelligence/skills/utils";
 import {
     skillsGetOptions,
     skillsGetQueryKey,
@@ -38,8 +28,7 @@ import type { SkillsGetData } from "@/generated/daemon/types.gen";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { getLocalBool, setLocalBool } from "@/utils/local-settings";
-import { Button, Card, ConfirmDialog } from "@vellumai/design-library";
-import { useNavigate } from "react-router";
+import { ConfirmDialog } from "@vellumai/design-library";
 
 interface SkillsTabProps {
   assistantId: string;
@@ -54,18 +43,61 @@ interface SkillsTabProps {
 const SEARCH_DEBOUNCE_MS = 300;
 const TIP_STORAGE_KEY = "vellum:skills:tipDismissed";
 
+/** Inline token palette — mirrors surfaces/Skills.dc.html exactly. */
+const C = {
+  ink: "#1A2230",
+  blue: "#3D6EE8",
+  bg: "#F4F6F9",
+  sunken: "#EEF1F6",
+  line: "#E5E9F0",
+  line2: "#D7DDE7",
+  t1: "#1A2230",
+  t2: "#5A6672",
+  t3: "#8D99A5",
+  violet: "#7F77DD",
+  violetWash: "#B6AEF0",
+  danger: "#DA491A",
+} as const;
+const MONO = "'DM Mono', ui-monospace, monospace";
+const SERIF = "'Instrument Serif', Georgia, serif";
+
+/**
+ * Skills — a faithful translation of surfaces/Skills.dc.html onto real skill
+ * data. The dark editorial hero ("Cue knows N skills — and learns new ones
+ * from you"), the tip banner, a search + filter row, then a `240px 1fr` grid:
+ * the category index rail on the left and skill cards on the right. Each card
+ * carries the real skill's icon, name, origin tag, description, and a delete
+ * affordance (danger-bordered when removable).
+ *
+ * The dark nav + Intelligence tab bar are layout chrome owned by
+ * IntelligenceLayout — not rebuilt here. Routed under the active-assistant
+ * gate, so `assistantId` is always present.
+ *
+ * Real data + mutations are preserved: the skills list (with origin/kind/
+ * category filters + search), install, remove (confirm dialog), and the
+ * empty-state CTA ("Describe a skill in chat" → /assistant/).
+ */
 export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const navigate = useNavigate();
 
   const [searchValue, setSearchValue] = useState("");
-  const debouncedSearch = useDebouncedValue(searchValue.trim(), SEARCH_DEBOUNCE_MS);
-  const [filter, setFilter] = useState<SkillFilter>("all");
+  const debouncedSearch = useDebouncedValue(
+    searchValue.trim(),
+    SEARCH_DEBOUNCE_MS,
+  );
+  const [filter] = useState<SkillFilter>("all");
   const [category, setCategory] = useState<string | null>(null);
-  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(initialSkillId ?? null);
-  const [installingSkillId, setInstallingSkillId] = useState<string | null>(null);
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(
+    initialSkillId ?? null,
+  );
+  const [installingSkillId, setInstallingSkillId] = useState<string | null>(
+    null,
+  );
   const [removingSkillId, setRemovingSkillId] = useState<string | null>(null);
-  const [skillPendingRemoval, setSkillPendingRemoval] = useState<SkillInfo | null>(null);
+  const [skillPendingRemoval, setSkillPendingRemoval] =
+    useState<SkillInfo | null>(null);
   const [tipDismissed, setTipDismissed] = useState(() =>
     getLocalBool(TIP_STORAGE_KEY, false),
   );
@@ -85,7 +117,13 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
         category: category ?? undefined,
       },
     }),
-    select: (data): { skills: SkillInfo[]; categoryCounts?: Record<string, number>; totalCount?: number } => ({
+    select: (
+      data,
+    ): {
+      skills: SkillInfo[];
+      categoryCounts?: Record<string, number>;
+      totalCount?: number;
+    } => ({
       skills: data.skills,
       categoryCounts: data.categoryCounts,
       totalCount: data.totalCount,
@@ -93,6 +131,9 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
     enabled: Boolean(assistantId),
   });
 
+  // Unfiltered-by-category query: keeps the category index counts + the hero
+  // headline total stable while a category is selected (the primary query is
+  // narrowed to that category and can't supply the global counts).
   const countsQuery = useQuery({
     ...skillsGetOptions({
       path: { assistant_id: assistantId },
@@ -103,7 +144,13 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
         q: debouncedSearch || undefined,
       },
     }),
-    select: (data): { skills: SkillInfo[]; categoryCounts?: Record<string, number>; totalCount?: number } => ({
+    select: (
+      data,
+    ): {
+      skills: SkillInfo[];
+      categoryCounts?: Record<string, number>;
+      totalCount?: number;
+    } => ({
       skills: data.skills,
       categoryCounts: data.categoryCounts,
       totalCount: data.totalCount,
@@ -174,6 +221,13 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
     countsSource?.totalCount,
   );
 
+  // Active count for the hero sub-line — installed/bundled skills (anything
+  // that isn't a not-yet-installed catalog entry).
+  const activeCount = useMemo(
+    () => (countsSource?.skills ?? allSkills).filter((s) => !isAvailableSkill(s)).length,
+    [countsSource?.skills, allSkills],
+  );
+
   const displayedSkills = useMemo(() => sortSkills(allSkills), [allSkills]);
 
   const selectedSkill = useMemo(() => {
@@ -201,7 +255,9 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
     const detailProps = {
       assistantId,
       skill: selectedSkill,
+      skills: displayedSkills,
       onBack: () => setSelectedSkillId(null),
+      onSelectSkill: (id: string) => setSelectedSkillId(id),
       onInstall: () => handleInstall(selectedSkill),
       onRemove: () => handleRemove(selectedSkill),
       isInstalling:
@@ -223,60 +279,216 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
   const isSearching = skillsQuery.isFetching && Boolean(debouncedSearch);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
-      {!tipDismissed && <TipBanner onDismiss={handleDismissTip} />}
+    <div
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: C.t1,
+        padding: "0 0 24px",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        height: "100%",
+      }}
+    >
+      {/* ── Editorial hero ───────────────────────────────────────────── */}
+      <div
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          background: C.ink,
+          borderRadius: 16,
+          padding: "20px 24px",
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 22,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(340px 160px at 90% 50%,rgba(127,119,221,.26),transparent 70%)",
+          }}
+        />
+        <div style={{ position: "relative", flex: 1 }}>
+          <div
+            style={{
+              fontFamily: SERIF,
+              fontSize: 24,
+              color: "#fff",
+              letterSpacing: "-.2px",
+              lineHeight: 1.2,
+            }}
+          >
+            Cue knows{" "}
+            <span style={{ fontStyle: "italic", color: C.violetWash }}>
+              {totalCount} skill{totalCount === 1 ? "" : "s"}
+            </span>{" "}
+            — and learns new ones from you.
+          </div>
+          <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
+            {activeCount} {activeCount === 1 ? "is" : "are"} active right now.
+            Describe any task in chat and Cue will build a skill for it.
+          </div>
+        </div>
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => void navigate("/assistant/")}
+            style={{
+              fontSize: 12.5,
+              background: C.violet,
+              color: "#fff",
+              border: "none",
+              borderRadius: 9,
+              padding: "10px 17px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+            }}
+          >
+            <span aria-hidden>✦</span> Create a skill
+          </button>
+        </div>
+      </div>
 
-      <FilterBar
-        search={searchValue}
-        onSearchChange={setSearchValue}
-        filter={filter}
-        onFilterChange={setFilter}
-        isSearching={isSearching}
-        categories={categories}
-        category={category}
-        onCategoryChange={setCategory}
-        counts={counts}
-        totalCount={totalCount}
-        showCounts={!isSearching}
-      />
+      {/* ── Tip banner ───────────────────────────────────────────────── */}
+      {!tipDismissed && (
+        <div
+          style={{
+            background: C.bg,
+            borderRadius: 12,
+            padding: "13px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 11,
+            fontSize: 13.5,
+            color: C.t2,
+          }}
+        >
+          <span aria-hidden style={{ color: C.violet }}>
+            ✦
+          </span>
+          You can create a new custom skill by describing what you want in chat.
+          <button
+            type="button"
+            onClick={handleDismissTip}
+            aria-label="Dismiss tip"
+            style={{
+              marginLeft: "auto",
+              color: C.t3,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 13.5,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
-      <div className="flex min-h-0 flex-1 gap-6">
-        <aside className="hidden w-56 shrink-0 overflow-y-auto sm:block">
-          <CategorySidebar
-            selected={category}
-            onSelect={setCategory}
-            counts={counts}
-            totalCount={totalCount}
-            showCounts={!isSearching}
-            categories={categories}
+      {/* ── Search row ───────────────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <div
+          style={{
+            flex: 1,
+            border: `1px solid ${C.line2}`,
+            borderRadius: 11,
+            padding: "0 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            fontSize: 14,
+            color: C.t1,
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 13, color: C.t3 }}>
+            🔍
+          </span>
+          <input
+            type="search"
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            placeholder="Search skills"
+            aria-label="Search skills"
+            style={{
+              flex: 1,
+              border: "none",
+              outline: "none",
+              background: "transparent",
+              fontSize: 14,
+              color: C.t1,
+              padding: "11px 0",
+              fontFamily: "inherit",
+            }}
           />
-        </aside>
+          {isSearching && (
+            <Loader2 className="size-4 animate-spin" color={C.t3} />
+          )}
+        </div>
+      </div>
 
-        <div className="min-w-0 flex-1 overflow-y-auto">
+      {/* ── Category index + skill cards ─────────────────────────────── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "240px 1fr",
+          gap: 18,
+          marginTop: 16,
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        {!isMobile && (
+          <div style={{ overflowY: "auto" }}>
+            <SkillCategoryIndex
+              categories={categories}
+              selected={category}
+              onSelect={setCategory}
+              counts={counts}
+              totalCount={totalCount}
+              showCounts={!isSearching}
+            />
+          </div>
+        )}
+
+        <div style={{ minWidth: 0, overflowY: "auto", paddingRight: 4 }}>
           {skillsQuery.isLoading ? (
             <LoadingState />
           ) : skillsQuery.isError ? (
             <ErrorState />
           ) : displayedSkills.length === 0 ? (
-            <EmptyState filter={filter} category={category} />
+            <EmptyState
+              category={category}
+              onClearCategory={() => setCategory(null)}
+              onDescribe={() => void navigate("/assistant/")}
+            />
           ) : (
-            <ul className="flex flex-col gap-2">
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: 10 }}
+            >
               {displayedSkills.map((skill) => (
-                <li key={skill.id}>
-                  <SkillRow
-                    skill={skill}
-                    onSelect={() => setSelectedSkillId(skill.id)}
-                    onInstall={() => handleInstall(skill)}
-                    onRemove={() => handleRemove(skill)}
-                    isInstalling={installingSkillId === (skill.slug ?? skill.id)}
-                    isRemoving={removingSkillId === skill.id}
-                  />
-                </li>
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  onSelect={() => setSelectedSkillId(skill.id)}
+                  onInstall={() => handleInstall(skill)}
+                  onRemove={() => handleRemove(skill)}
+                  isInstalling={
+                    installingSkillId === (skill.slug ?? skill.id)
+                  }
+                  isRemoving={removingSkillId === skill.id}
+                />
               ))}
-            </ul>
+            </div>
           )}
         </div>
       </div>
+
       {removalDialog}
     </div>
   );
@@ -306,169 +518,133 @@ function useDerivedCounts(
   }, [skills, serverCounts, serverTotal]);
 }
 
-function TipBanner({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <div
-      className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-body-small-default"
-      style={{
-        backgroundColor: "var(--surface-base)",
-        color: "var(--content-secondary)",
-      }}
-    >
-      <Sparkles
-        className="h-4 w-4 shrink-0"
-        style={{ color: "var(--primary-base)" }}
-      />
-      <p className="flex-1">
-        You can create a new custom skill by describing what you want in chat.
-      </p>
-      <Button
-        type="button"
-        variant="ghost"
-        size="compact"
-        iconOnly={<X aria-hidden />}
-        onClick={onDismiss}
-        aria-label="Dismiss tip"
-        tintColor="var(--content-tertiary)"
-        expandOnMobile={false}
-      />
-    </div>
-  );
-}
-
 function LoadingState() {
   return (
-    <div className="flex items-center justify-center py-16">
-      <Loader2
-        className="h-6 w-6 animate-spin"
-        style={{ color: "var(--content-tertiary)" }}
-      />
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }} aria-hidden>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            height: 76,
+            borderRadius: 13,
+            background:
+              "linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%)",
+            backgroundSize: "340px 100%",
+            animation: "cueShimmer 1.3s linear infinite",
+          }}
+        />
+      ))}
     </div>
   );
 }
 
 function ErrorState() {
   return (
-    <Card.Root>
-      <Card.Body className="flex flex-col items-center justify-center py-16 text-center">
-        <TriangleAlert
-          className="mb-3 h-8 w-8"
-          style={{ color: "var(--system-danger)" }}
-          aria-hidden
-        />
-        <h3
-          className="text-title-small"
-          style={{ color: "var(--content-default)" }}
-        >
-          Failed to load skills
-        </h3>
-        <p
-          className="mt-1 max-w-sm text-body-medium-lighter"
-          style={{ color: "var(--content-tertiary)" }}
-        >
-          Something went wrong. Try refreshing the page.
-        </p>
-      </Card.Body>
-    </Card.Root>
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 13,
+        background: "#fff",
+        padding: "48px 24px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: 28, marginBottom: 8 }} aria-hidden>
+        ⚠
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>Failed to load skills</div>
+      <p style={{ fontSize: 13, color: C.t2, marginTop: 4 }}>
+        Something went wrong. Try refreshing the page.
+      </p>
+    </div>
   );
 }
 
 function EmptyState({
-  filter,
   category,
+  onClearCategory,
+  onDescribe,
 }: {
-  filter: SkillFilter;
   category: string | null;
+  onClearCategory: () => void;
+  onDescribe: () => void;
 }) {
-  const navigate = useNavigate();
-  const { title, subtitle, Icon } = getEmptyStateCopy(filter, category);
-  return (
-    <Card.Root>
-      <Card.Body className="flex flex-col items-center justify-center py-16 text-center">
-        <Icon
-          className="mb-3 h-8 w-8"
-          style={{ color: "var(--content-tertiary)" }}
-          aria-hidden
-        />
-        <h3
-          className="text-title-small"
-          style={{ color: "var(--content-default)" }}
-        >
-          {title}
-        </h3>
-        <p
-          className="mt-1 max-w-sm text-body-medium-lighter"
-          style={{ color: "var(--content-tertiary)" }}
-        >
-          {subtitle}
-        </p>
-        <Button
-          variant="primary"
-          size="regular"
-          className="mt-4"
-          onClick={() => navigate("/assistant/")}
-        >
-          Describe a skill in chat
-        </Button>
-      </Card.Body>
-    </Card.Root>
-  );
-}
-
-function getEmptyStateCopy(
-  filter: SkillFilter,
-  category: string | null,
-): { title: string; subtitle: string; Icon: typeof Puzzle } {
   if (category) {
-    return {
-      title: "No skills in this category",
-      subtitle: "Try selecting a different category or clearing the filter.",
-      Icon: LayoutGrid,
-    };
+    return (
+      <div
+        style={{
+          border: `1px solid ${C.line}`,
+          borderRadius: 13,
+          background: "#fff",
+          padding: "48px 24px",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 28, marginBottom: 8 }} aria-hidden>
+          ▦
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>
+          No skills in this category
+        </div>
+        <p style={{ fontSize: 13, color: C.t2, marginTop: 4 }}>
+          Try a different category or clear the filter.
+        </p>
+        <button
+          type="button"
+          onClick={onClearCategory}
+          style={{
+            marginTop: 16,
+            fontSize: 12.5,
+            background: C.ink,
+            color: "#fff",
+            border: "none",
+            borderRadius: 9,
+            padding: "9px 16px",
+            cursor: "pointer",
+          }}
+        >
+          Show all skills
+        </button>
+      </div>
+    );
   }
-  switch (filter) {
-    case "installed":
-      return {
-        title: "No Skills Installed",
-        subtitle:
-          "Ask your assistant in chat to search for and install new skills.",
-        Icon: Zap,
-      };
-    case "available":
-      return {
-        title: "No Skills Available",
-        subtitle: "All available skills have been installed.",
-        Icon: CheckCircle,
-      };
-    case "vellum":
-      return {
-        title: "No Cue Skills",
-        subtitle: "No bundled Cue skills found.",
-        Icon: Package,
-      };
-    case "clawhub":
-      return {
-        title: "No Clawhub Skills",
-        subtitle: "No Clawhub skills found. Try searching the catalog.",
-        Icon: Globe,
-      };
-    case "skillssh":
-      return {
-        title: "No skills.sh Skills",
-        subtitle: "No skills.sh skills found. Try searching the catalog.",
-        Icon: Terminal,
-      };
-    case "custom":
-      return {
-        title: "No Custom Skills",
-        subtitle: "Create a custom skill by describing what you want in chat.",
-        Icon: User,
-      };
-    default:
-      return {
-        title: "No Skills Available",
-        subtitle: "Check your connection to the Cue catalog.",
-        Icon: CloudOff,
-      };
-  }
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 13,
+        background: "#fff",
+        padding: "48px 24px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: 26, marginBottom: 10, color: C.violet }} aria-hidden>
+        ✦
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>No skills yet</div>
+      <p style={{ fontSize: 13, color: C.t2, marginTop: 4, maxWidth: 360, marginInline: "auto" }}>
+        Cue learns new skills from you — describe any task in chat and Cue will
+        build a skill for it.
+      </p>
+      <button
+        type="button"
+        onClick={onDescribe}
+        style={{
+          marginTop: 16,
+          fontSize: 12.5,
+          background: C.violet,
+          color: "#fff",
+          border: "none",
+          borderRadius: 9,
+          padding: "10px 17px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+        }}
+      >
+        <span aria-hidden>✦</span> Describe a skill in chat
+      </button>
+    </div>
+  );
 }

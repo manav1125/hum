@@ -1,9 +1,9 @@
 /**
- * Tests for `SkillRow` action controls.
+ * Tests for `SkillCard` action controls.
  *
- * The row is a `role="button"` whose primary click fires `onSelect`. The
- * trailing icon-only action button (remove for installed skills, install
- * for catalog skills) must:
+ * The card is a `role="button"` whose primary click fires `onSelect`. The
+ * trailing icon-only action button (remove for installed skills, install for
+ * catalog skills) must:
  *   - expose the correct `aria-label`
  *   - fire its own handler (`onRemove` / `onInstall`)
  *   - NOT also bubble up to `onSelect` (stopPropagation)
@@ -16,7 +16,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { cleanup, fireEvent, render } from "@testing-library/react";
 
-import { SkillRow } from "@/domains/intelligence/components/skills/skill-row.js";
+import { SkillCard } from "@/domains/intelligence/components/skills/skill-card.js";
 import type { SkillInfo } from "@/domains/intelligence/skills/types.js";
 
 afterEach(() => {
@@ -47,13 +47,13 @@ function getButton(label: string): HTMLButtonElement {
   return match;
 }
 
-describe("SkillRow", () => {
+describe("SkillCard", () => {
   test("removable skill: trash control removes without selecting", () => {
     const onSelect = mock(() => {});
     const onRemove = mock(() => {});
 
     render(
-      <SkillRow
+      <SkillCard
         skill={makeSkill({ kind: "installed" })}
         onSelect={onSelect}
         onRemove={onRemove}
@@ -72,7 +72,7 @@ describe("SkillRow", () => {
     const onInstall = mock(() => {});
 
     render(
-      <SkillRow
+      <SkillCard
         skill={makeSkill({ kind: "catalog", status: "available" })}
         onSelect={onSelect}
         onInstall={onInstall}
@@ -84,5 +84,23 @@ describe("SkillRow", () => {
 
     expect(onInstall).toHaveBeenCalledTimes(1);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  test("bundled skill: trash control is disabled and does not remove", () => {
+    const onSelect = mock(() => {});
+    const onRemove = mock(() => {});
+
+    render(
+      <SkillCard
+        skill={makeSkill({ kind: "bundled", origin: "vellum" })}
+        onSelect={onSelect}
+        onRemove={onRemove}
+      />,
+    );
+
+    const remove = getButton("Bundled skill cannot be removed");
+    fireEvent.click(remove);
+
+    expect(onRemove).not.toHaveBeenCalled();
   });
 });
