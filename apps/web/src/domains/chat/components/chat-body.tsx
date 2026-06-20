@@ -1,8 +1,9 @@
-import { type DragEventHandler, type ReactNode } from "react";
+import { type DragEventHandler, type ReactNode, useCallback, useState } from "react";
 
 import { Eye, Paperclip, Square } from "lucide-react";
 
 import { ChatComposer, type ChatComposerProps } from "@/domains/chat/components/chat-composer/chat-composer";
+import { InChatVoiceOverlay } from "@/domains/chat/components/in-chat-voice-overlay";
 import { QuestionPromptSlot } from "@/domains/chat/components/question-prompt-slot";
 import { ChatScrollArea, type ChatScrollAreaProps } from "@/domains/chat/components/chat-scroll-area";
 import { ScrollToLatestButton } from "@/domains/chat/components/scroll-to-latest-button";
@@ -184,6 +185,18 @@ export function ChatBody({
 }: ChatBodyProps) {
   const isEmptyState = scrollAreaProps.showEmptyState;
 
+  // In-chat voice mode: the composer mic opens an orb overlay covering this
+  // chat panel, bound to the active conversation. Owned here (not in the
+  // composer) so the overlay can span messages + composer via this `relative`
+  // root. The overlay self-gates on the `voice-mode` flag; the composer mic
+  // does too, so it can't be opened when the flag is off. App-editing side
+  // panels never pass `onEnterVoiceMode`, so the mic + overlay don't appear.
+  const [voiceOverlayOpen, setVoiceOverlayOpen] = useState(false);
+  const handleEnterVoiceMode = useCallback(() => setVoiceOverlayOpen(true), []);
+  const handleExitVoiceMode = useCallback(() => setVoiceOverlayOpen(false), []);
+  const supportsVoiceMode =
+    !!composerProps.onVoiceTranscript && !!composerProps.assistantId;
+
   // When the empty state is visible, center greeting + composer + starters
   // as one group. `safe center` falls back to start-alignment when the
   // content overflows the container (e.g. iOS soft keyboard open).
@@ -276,11 +289,22 @@ export function ChatBody({
               />
             )
           ) : (
-            <ChatComposer {...composerProps} />
+            <ChatComposer
+              {...composerProps}
+              onEnterVoiceMode={
+                supportsVoiceMode ? handleEnterVoiceMode : undefined
+              }
+            />
           )}
           {startersSlot}
         </div>
       </div>
+      {voiceOverlayOpen && (
+        <InChatVoiceOverlay
+          conversationId={composerProps.conversationId}
+          onExit={handleExitVoiceMode}
+        />
+      )}
       {isAttachmentDragOver && (
         <div
           aria-hidden="true"

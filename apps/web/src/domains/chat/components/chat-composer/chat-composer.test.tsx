@@ -68,6 +68,10 @@ const liveStartSpy = mock(
   async (_assistantId: string, _conversationId?: string) => {},
 );
 const liveStopSpy = mock(async () => {});
+// The composer's voice mic now *enters* in-chat voice mode (opens the orb
+// overlay owned by ChatBody) rather than starting a session inline. The handler
+// is injected by ChatBody; here we spy on it.
+const enterVoiceModeSpy = mock(() => {});
 // The composer reads session state through the store's per-field selectors
 // (`useLiveVoiceStore.use.state()` etc.), so mock the store rather than the
 // `useLiveVoice` controller. `LiveVoiceButton` is the only `useLiveVoice`
@@ -137,6 +141,7 @@ function resetLiveVoiceMocks() {
   setAudioLevelSpy.mockClear();
   liveStartSpy.mockClear();
   liveStopSpy.mockClear();
+  enterVoiceModeSpy.mockClear();
 }
 
 // Imported after the mocks so the component (and its transitive flag-store /
@@ -632,12 +637,15 @@ describe("Slash popup — SSR rendering", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Live-voice integration
+// Voice-mode entry + live-voice transcript integration
 //
-// The live-voice button is only mounted alongside the dictation button (same
-// `voiceInputRef`/`onVoiceTranscript` precondition) and self-gates on the
-// `voice-mode` flag. These tests render the *voice-enabled* variant so both
-// mic affordances are in play.
+// The composer voice mic *enters* in-chat voice mode (opens the orb overlay
+// owned by ChatBody) rather than starting a session inline; the actual session
+// (start/stop, mute, orb) lives in `VoiceModeSurface`. The mic is only mounted
+// alongside the dictation button (same `voiceInputRef`/`onVoiceTranscript`
+// precondition) AND when ChatBody supplies `onEnterVoiceMode`, and self-gates on
+// the `voice-mode` flag. The composer still *reads* live-voice store state for
+// its inline transcript strip + dictation mutual-exclusion, exercised below.
 // ---------------------------------------------------------------------------
 
 /** Render the composer with the dictation voice props supplied. */
@@ -663,13 +671,14 @@ function renderVoiceComposer(
       conversationId="conv_test"
       voiceInputRef={createRef<VoiceInputButtonHandle>()}
       onVoiceTranscript={() => {}}
+      onEnterVoiceMode={enterVoiceModeSpy}
       {...props}
     />,
   );
 }
 
-describe("ChatComposer — live-voice integration", () => {
-  test("flag OFF: no live-voice button, dictation mic stays enabled", () => {
+describe("ChatComposer — voice-mode entry + transcript", () => {
+  test("flag OFF: no voice-mode mic, dictation mic stays enabled", () => {
     // GIVEN the voice-mode flag is disabled (default)
     useTurnStore.setState(INITIAL_TURN_STATE);
     mockVoiceMode = false;
@@ -677,9 +686,8 @@ describe("ChatComposer — live-voice integration", () => {
     // WHEN the voice-enabled composer renders
     const { queryByLabelText } = renderVoiceComposer();
 
-    // THEN the live-voice control is absent and dictation is unaffected
+    // THEN the voice-mode entry mic is absent and dictation is unaffected
     expect(queryByLabelText("Start voice mode")).toBeNull();
-    expect(queryByLabelText("Stop voice mode")).toBeNull();
     const dictation = queryByLabelText(
       "Start voice input",
     ) as HTMLButtonElement | null;
@@ -687,17 +695,38 @@ describe("ChatComposer — live-voice integration", () => {
     expect(dictation?.disabled).toBe(false);
   });
 
-  test("flag ON, idle: live-voice button present, dictation still enabled", () => {
+  test("no onEnterVoiceMode handler: voice-mode mic is not rendered", () => {
+    // GIVEN the flag is on but ChatBody supplies no entry handler (e.g. the
+    // app-editing side panel, which has no voice)
+    useTurnStore.setState(INITIAL_TURN_STATE);
+    mockVoiceMode = true;
+    mockLiveVoiceState = "idle";
+
+    // WHEN the composer renders without onEnterVoiceMode
+    const { queryByLabelText } = renderVoiceComposer({
+      onEnterVoiceMode: undefined,
+    });
+
+    // THEN the voice-mode entry mic is absent
+    expect(queryByLabelText("Start voice mode")).toBeNull();
+  });
+
+  test("flag ON, idle: entry mic present and opens voice mode on click", () => {
     // GIVEN the flag is on with no active session
     useTurnStore.setState(INITIAL_TURN_STATE);
     mockVoiceMode = true;
     mockLiveVoiceState = "idle";
 
-    // WHEN the composer renders
+    // WHEN the composer renders and the user taps the mic
     const { getByLabelText, queryByLabelText } = renderVoiceComposer();
+    const mic = getByLabelText("Start voice mode") as HTMLButtonElement;
+    expect(mic).toBeTruthy();
+    fireEvent.click(mic);
 
-    // THEN both mics are available and neither is forced disabled
-    expect(getByLabelText("Start voice mode")).toBeTruthy();
+    // THEN it enters in-chat voice mode (does NOT start a session inline)...
+    expect(enterVoiceModeSpy).toHaveBeenCalledTimes(1);
+    expect(liveStartSpy).not.toHaveBeenCalled();
+    // ...and dictation remains available
     const dictation = queryByLabelText(
       "Start voice input",
     ) as HTMLButtonElement | null;
@@ -713,9 +742,10 @@ describe("ChatComposer — live-voice integration", () => {
     // WHEN the composer renders
     const { getByLabelText } = renderVoiceComposer();
 
-    // THEN the live-voice control is a stop affordance and the dictation
-    // mic is disabled so the two capture flows can't run together
-    expect(getByLabelText("Stop voice mode")).toBeTruthy();
+    // THEN the dictation mic is disabled so the two capture flows can't run
+    // together (the entry mic stays an entry affordance — start/stop lives in
+    // the overlay's VoiceModeSurface, not the composer)
+    expect(getByLabelText("Start voice mode")).toBeTruthy();
     const dictation = getByLabelText(
       "Start voice input",
     ) as HTMLButtonElement;
@@ -739,7 +769,7 @@ describe("ChatComposer — live-voice integration", () => {
     expect(surface.textContent).toContain("Let me check");
   });
 
-  test("active session stays stoppable even when the composer is busy", () => {
+  test("busy composer disables the entry mic (entry honours typingDisabled)", () => {
     // GIVEN a live session AND the composer is otherwise disabled
     useTurnStore.setState(INITIAL_TURN_STATE);
     mockVoiceMode = true;
@@ -748,11 +778,11 @@ describe("ChatComposer — live-voice integration", () => {
     // WHEN the composer renders with typingDisabled raised
     const { getByLabelText } = renderVoiceComposer({ typingDisabled: true });
 
-    // THEN the stop control is still actionable and clicking it stops
-    const stop = getByLabelText("Stop voice mode") as HTMLButtonElement;
-    expect(stop.disabled).toBe(false);
-    fireEvent.click(stop);
-    expect(liveStopSpy).toHaveBeenCalledTimes(1);
+    // THEN the entry mic is disabled (entering a new session while busy is
+    // gated; stopping an in-flight session is the overlay's job, not the
+    // composer's)
+    const mic = getByLabelText("Start voice mode") as HTMLButtonElement;
+    expect(mic.disabled).toBe(true);
   });
 
   test("flag ON but no transcript content: surface stays empty when idle", () => {

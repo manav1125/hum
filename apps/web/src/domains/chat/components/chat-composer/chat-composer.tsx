@@ -20,7 +20,7 @@ import {
 } from "@/domains/chat/components/chat-attachments/chat-attachments";
 import { type ChatAttachment, useComposerStore } from "@/domains/chat/composer-store";
 import { StreamingWaveform } from "@/domains/chat/components/chat-composer/streaming-waveform";
-import { LiveVoiceButton } from "@/domains/chat/components/live-voice-button";
+import { EnterVoiceModeButton } from "@/domains/chat/components/enter-voice-mode-button";
 import {
     VoiceInputButton,
     type VoiceInputButtonHandle,
@@ -118,6 +118,15 @@ export interface ChatComposerProps {
   conversationId?: string | null;
 
   /**
+   * Enter in-chat voice mode (opens the orb overlay on the current
+   * conversation). Wired by {@link import("@/domains/chat/components/chat-body").ChatBody},
+   * which owns the overlay's open-state. When omitted (e.g. the app-editing
+   * variant, which has no voice) the composer mic is not rendered. The mic also
+   * self-gates on the `voice-mode` assistant flag — see the button below.
+   */
+  onEnterVoiceMode?: () => void;
+
+  /**
    * Whether the currently-active inference model accepts image input.
    * When `false`, the AttachFileButton is disabled so users can't pick a
    * file that the provider would reject downstream (MiniMax, Fireworks
@@ -181,7 +190,10 @@ export function ChatComposer({
   onStopGenerating,
   canStopGenerating,
   assistantId,
-  conversationId,
+  // `conversationId` stays in the props (ChatBody reads it to bind the in-chat
+  // voice overlay to the active thread) but the composer body no longer consumes
+  // it — entering voice mode is delegated to the overlay via `onEnterVoiceMode`.
+  onEnterVoiceMode,
   thresholdPickerSlot,
   contextWindowIndicatorSlot,
   noticesAboveFormSlot,
@@ -212,28 +224,27 @@ export function ChatComposer({
     voiceInputRef !== undefined && onVoiceTranscript !== undefined;
 
   // ---- Live voice (full-duplex conversation) ----------------------------
-  // Coexists with dictation: `LiveVoiceButton` self-gates on the `voice-mode`
-  // flag, but the transcript surface and the mutual-exclusion wiring below
-  // must also no-op when the flag is off so the composer is byte-identical for
-  // users without the flag. The live-voice button only appears alongside the
-  // dictation button (same `showVoiceInput` precondition + a non-null id).
+  // The composer's `EnterVoiceModeButton` self-gates on the `voice-mode` flag
+  // and merely *enters* in-chat voice mode (it asks ChatBody to open the orb
+  // overlay, whose `VoiceModeSurface` is the single `useLiveVoice` owner). The
+  // composer itself never mounts a `useLiveVoice()` controller — it only *reads*
+  // the projected session state from the store for its inline transcript strip
+  // and the dictation mutual-exclusion below, so there is never a second
+  // controller racing teardown on the shared store. The transcript surface and
+  // the mutual-exclusion wiring must also no-op when the flag is off so the
+  // composer is byte-identical for users without the flag.
   const voiceMode = useAssistantFeatureFlagStore.use.voiceMode();
   const liveVoiceEligible = voiceMode && showVoiceInput && !!assistantId;
-  // Read session state via the store's per-field selectors rather than mounting
-  // a second `useLiveVoice()` controller. The single controller instance lives
-  // in `LiveVoiceButton` (which drives start/stop + owns the unmount-teardown
-  // effect); the composer only ever *reads* the projected state, so two
-  // controllers with competing teardown effects on the same store would be a
-  // footgun. These atomic selectors re-render only on the fields they read.
+  // Atomic per-field selectors re-render only on the fields they read.
   const liveVoiceState = useLiveVoiceStore.use.state();
   const liveVoicePartial = useLiveVoiceStore.use.partialTranscript();
   const liveVoiceFinal = useLiveVoiceStore.use.finalTranscript();
   const liveVoiceAssistant = useLiveVoiceStore.use.assistantTranscript();
   // Anything but idle/failed counts as an active session; while active the
   // dictation mic is disabled so the two capture flows never run at once.
-  // `failed` is a retryable/inactive state in `useLiveVoice`/`LiveVoiceButton`,
-  // so we must treat it as inactive — otherwise dictation stays disabled and
-  // the (empty) transcript surface stays mounted after a failed start.
+  // `failed` is a retryable/inactive state in `useLiveVoice`, so we treat it as
+  // inactive — otherwise dictation stays disabled and the (empty) transcript
+  // surface stays mounted after a failed start.
   const isLiveVoiceActive =
     liveVoiceEligible &&
     liveVoiceState !== "idle" &&
@@ -661,22 +672,16 @@ export function ChatComposer({
                         }}
                       />
                     )}
-                    {showVoiceInput && assistantId && (
-                      // Self-gates on the `voice-mode` flag (renders null when
-                      // off — no layout shift). The composer's busy/disabled
-                      // signal only gates the START path; an active session
-                      // stays stoppable even while the composer is otherwise
-                      // busy (see LiveVoiceButton).
-                      //
-                      // Mutual exclusion (reverse direction): while dictation is
-                      // active (`isVoiceActive`) we disable live voice so it
-                      // can't START a second mic/voice session alongside the
-                      // recorder. `LiveVoiceButton` only applies external
-                      // `disabled` to its START path, so an in-flight live-voice
-                      // session is never trapped by this.
-                      <LiveVoiceButton
-                        assistantId={assistantId}
-                        conversationId={conversationId ?? undefined}
+                    {showVoiceInput && assistantId && onEnterVoiceMode && (
+                      // In-chat voice entry. Self-gates on the `voice-mode` flag
+                      // (renders null when off — no layout shift). Tapping it
+                      // opens the orb overlay on the CURRENT conversation (it
+                      // does NOT start a session inline — the overlay's
+                      // `VoiceModeSurface` is the single `useLiveVoice` owner and
+                      // auto-starts there). Disabled while dictation is active
+                      // (`isVoiceActive`) so the two capture flows never overlap.
+                      <EnterVoiceModeButton
+                        onClick={onEnterVoiceMode}
                         disabled={typingDisabled || isVoiceActive}
                       />
                     )}
