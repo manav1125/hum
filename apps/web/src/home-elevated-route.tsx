@@ -3,6 +3,7 @@ import {
   Bell,
   CalendarClock,
   Mail,
+  Mic,
   ShieldCheck,
   Sparkles,
   type LucideIcon,
@@ -219,6 +220,33 @@ export function HomeElevatedRoute() {
               >
                 {day} · {time} · {handled} HANDLED THIS WEEK
               </span>
+              {/*
+                Meeting entry point. Meeting was demoted from the nav rail per
+                the clean-rail design; this surfaces it as an in-context action
+                (record → transcribe → recap) on Home. Route /assistant/meeting
+                stays live.
+              */}
+              <button
+                type="button"
+                onClick={() => navigate(routes.meeting)}
+                style={{
+                  marginLeft: "auto",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: C.white,
+                  border: `1px solid ${C.line2}`,
+                  borderRadius: 9,
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: C.t1,
+                  cursor: "pointer",
+                }}
+              >
+                <Mic width={14} height={14} color={C.blueS} />
+                Take into a meeting
+              </button>
             </div>
             <div
               style={{
@@ -322,7 +350,15 @@ export function HomeElevatedRoute() {
           {/* QUEUE */}
           {commitments.length > 0 && (
             <>
-              <div style={{ padding: "18px 20px 8px" }}>
+              <div
+                style={{
+                  padding: "18px 20px 8px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
                 <div
                   style={{
                     fontSize: 11,
@@ -334,6 +370,26 @@ export function HomeElevatedRoute() {
                 >
                   Also needs you · {commitments.length}
                 </div>
+                {/*
+                  Next moves was demoted from the nav rail — the full unified
+                  queue lives at /assistant/next-moves and is reachable from
+                  here, where its items already surface as Home's feed.
+                */}
+                <button
+                  type="button"
+                  onClick={() => navigate(routes.nextMoves)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    color: C.blueS,
+                    cursor: "pointer",
+                  }}
+                >
+                  See all moves ›
+                </button>
               </div>
               <div style={{ padding: "0 20px 8px", display: "flex", flexDirection: "column" }}>
                 {commitments.map((item, i) => (

@@ -10,9 +10,10 @@
  * the outstanding-invites endpoint (`contactsInvitesGet` → the dashed "pending"
  * nodes in the hero constellation). Toggling the endpoint calls
  * `integrationsA2aConfigPost`/`integrationsA2aConfigDelete` and refetches the
- * config. The "create invite" / empty-state CTAs route to
- * `/assistant/contacts`, where the working A2A invite flow lives — this page
- * does not reimplement the invite dialog.
+ * config. The "create invite" / empty-state CTAs deep-link to
+ * `/assistant/contacts?invite=a2a`, where the working A2A invite flow lives —
+ * the contacts surface enables A2A if needed and opens the invite dialog
+ * directly. This page does not reimplement the invite dialog.
  */
 
 import { useMemo } from "react";
@@ -339,7 +340,11 @@ export function AgentsPage() {
       .filter((inv): inv is Invite => inv !== null);
   }, [invitesQuery.data]);
 
-  const goToContacts = () => navigate("/assistant/contacts");
+  // Deep-link straight into the A2A invite flow on the contacts surface. The
+  // `invite=a2a` param tells contacts-page.tsx to enable A2A if needed and open
+  // the GenerateInviteLinkDialog, so the invite is reachable even before any
+  // agent is paired.
+  const goToInvite = () => navigate("/assistant/contacts?invite=a2a");
 
   // Build the hero constellation from real pairings + invites, padding with
   // dashed "pending" placeholders so the artwork stays balanced.
@@ -627,7 +632,7 @@ export function AgentsPage() {
           </div>
           <button
             type="button"
-            onClick={goToContacts}
+            onClick={goToInvite}
             style={{
               marginTop: 14,
               fontSize: 12.5,
@@ -667,7 +672,7 @@ export function AgentsPage() {
         </div>
         <button
           type="button"
-          onClick={goToContacts}
+          onClick={goToInvite}
           style={{ fontSize: 12.5, background: C.blue, color: "#fff", border: "none", borderRadius: 9, padding: "9px 16px", cursor: "pointer" }}
         >
           New invite

@@ -1,5 +1,5 @@
 import { CheckCircle, ChevronDown, ChevronRight, Hash, Phone, Send } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@vellumai/design-library/components/button";
 import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
@@ -22,6 +22,12 @@ interface AssistantChannelsDetailProps {
   onSaveSlackConfig?: (botToken: string, appToken: string) => Promise<void>;
   onSaveTwilioCredentials?: (accountSid: string, authToken: string) => Promise<void>;
   onGenerateInviteLink?: () => void;
+  /**
+   * Channel to scroll to and auto-expand on mount, set when the user arrives
+   * via a `?channel=` deep-link from the Channels surface. Consumed once.
+   */
+  highlightChannelKey?: ChannelKey | null;
+  onHighlightConsumed?: () => void;
 }
 
 const CHANNEL_META: Record<
@@ -58,12 +64,36 @@ export function AssistantChannelsDetail({
   onSaveSlackConfig,
   onSaveTwilioCredentials,
   onGenerateInviteLink,
+  highlightChannelKey = null,
+  onHighlightConsumed,
 }: AssistantChannelsDetailProps) {
   const displayName = assistantName.trim() || "your assistant";
   const [pendingDisconnect, setPendingDisconnect] = useState<ChannelKey | null>(null);
   const [expandedChannels, setExpandedChannels] = useState<Set<ChannelKey>>(new Set());
+  const [flashChannel, setFlashChannel] = useState<ChannelKey | null>(null);
+  const rowRefs = useRef<Partial<Record<ChannelKey, HTMLDivElement | null>>>({});
 
   const disconnectMeta = pendingDisconnect ? CHANNEL_META[pendingDisconnect] : null;
+
+  // Honor a `?channel=` deep-link: expand the requested channel's setup row,
+  // scroll it into view, and briefly highlight it. Consumed once.
+  useEffect(() => {
+    if (!highlightChannelKey) return;
+    setExpandedChannels((prev) => {
+      if (prev.has(highlightChannelKey)) return prev;
+      const next = new Set(prev);
+      next.add(highlightChannelKey);
+      return next;
+    });
+    setFlashChannel(highlightChannelKey);
+    const row = rowRefs.current[highlightChannelKey];
+    if (row) {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    onHighlightConsumed?.();
+    const timer = setTimeout(() => setFlashChannel(null), 1600);
+    return () => clearTimeout(timer);
+  }, [highlightChannelKey, onHighlightConsumed]);
 
   const toggleExpanded = (key: ChannelKey) => {
     setExpandedChannels((prev) => {
@@ -91,7 +121,18 @@ export function AssistantChannelsDetail({
       >
         <div className="flex flex-col">
           {channels.map((channel, index) => (
-            <div key={channel.key}>
+            <div
+              key={channel.key}
+              ref={(el) => {
+                rowRefs.current[channel.key] = el;
+              }}
+              className="rounded-md transition-colors"
+              style={
+                flashChannel === channel.key
+                  ? { background: "var(--surface-hover)" }
+                  : undefined
+              }
+            >
               {index > 0 ? (
                 <div
                   className="border-t"

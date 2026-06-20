@@ -11,9 +11,11 @@
  * The two are merged by channel id. Hero stats ("N active · M available") and
  * the verified-id count are computed from this data — nothing hardcoded.
  *
- * Actions: every control routes to the working channel-setup UI under
- * `/assistant/contacts` (Set up / Manage) — this page does not reimplement
- * verification or contact wiring. v0.2 ink-hero styling is preserved.
+ * Actions: every control deep-links to the working channel-setup UI under
+ * `/assistant/contacts?channel=<id>` (Set up / Manage), which pre-selects the
+ * assistant pane and scrolls to / expands that channel's setup. This page does
+ * not reimplement verification or contact wiring. v0.2 ink-hero styling is
+ * preserved.
  */
 
 import { Loader2 } from "lucide-react";
@@ -152,39 +154,31 @@ function LiveDot({ pulse }: { pulse?: boolean }) {
 }
 
 /**
- * Manage toggle — the blue pill switch the mock shows on the verified
- * full-width card. It reads "on" (the channel is live) and clicking it routes
- * to the working channel-setup UI, preserving the real Manage action.
+ * Manage action — an honest button (not a fake on/off switch). Clicking it
+ * deep-links to this channel's setup pane under `/assistant/contacts`, where the
+ * real connect/disconnect controls live. A one-click disable here would be
+ * destructive without confirmation, so we deliberately link out instead of
+ * faking a toggle.
  */
-function ManageToggle({ onManage }: { onManage: () => void }) {
+function ManageButton({ onManage }: { onManage: () => void }) {
   return (
     <button
       type="button"
       onClick={onManage}
       aria-label="Manage channel"
       style={{
-        width: 42,
-        height: 24,
-        borderRadius: 999,
-        background: C.blue,
-        position: "relative",
         flexShrink: 0,
-        border: "none",
-        padding: 0,
+        fontSize: 12.5,
+        border: `1px solid ${C.line2}`,
+        background: "#fff",
+        borderRadius: 9,
+        padding: "7px 16px",
         cursor: "pointer",
+        color: C.t1,
+        fontWeight: 600,
       }}
     >
-      <span
-        style={{
-          position: "absolute",
-          width: 20,
-          height: 20,
-          borderRadius: "50%",
-          background: "#fff",
-          top: 2,
-          right: 2,
-        }}
-      />
+      Manage
     </button>
   );
 }
@@ -248,7 +242,7 @@ function ActiveCard({
               VERIFIED ID
             </span>
           )}
-          <ManageToggle onManage={onManage} />
+          <ManageButton onManage={onManage} />
         </>
       ) : (
         <span
@@ -377,7 +371,15 @@ const labelStyle = {
 export function ChannelsPage() {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
-  const goToContacts = () => void navigate(routes.contacts.root);
+  // Deep-link to the contacts surface. With a channel id, the contacts page
+  // pre-selects the assistant pane and scrolls to / expands that channel's
+  // setup row (see contacts-page.tsx's search-param handling).
+  const goToChannelSetup = (channelId?: ChannelId) =>
+    void navigate(
+      channelId
+        ? `${routes.contacts.root}?channel=${encodeURIComponent(channelId)}`
+        : routes.contacts.root,
+    );
 
   const availableQuery = useQuery({
     ...channelsAvailableGetOptions({ path: { assistant_id: assistantId } }),
@@ -649,7 +651,7 @@ export function ChannelsPage() {
           </div>
           <button
             type="button"
-            onClick={goToContacts}
+            onClick={() => goToChannelSetup()}
             style={{
               fontSize: 13,
               border: "none",
@@ -693,7 +695,7 @@ export function ChannelsPage() {
                       full={full}
                       verified={c.verified}
                       pulse={i === 0}
-                      onManage={goToContacts}
+                      onManage={() => goToChannelSetup(c.id)}
                     />
                   );
                 })}
@@ -722,7 +724,7 @@ export function ChannelsPage() {
                       iconFg={style.fg}
                       title={c.label}
                       sub={c.subtitle}
-                      onSetup={goToContacts}
+                      onSetup={() => goToChannelSetup(c.id)}
                     />
                   );
                 })}

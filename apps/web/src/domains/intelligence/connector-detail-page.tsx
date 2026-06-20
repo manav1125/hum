@@ -76,59 +76,35 @@ function classifyTool(tool: ConnectorTool): ToolKind {
   return "write";
 }
 
-/** The three-pill permission control, styled to the mock. The "active" pill is
- *  the group's trust default; the live binary enable toggle is layered as the
- *  real per-tool control. */
-function PermPills({
-  kind,
-}: {
-  kind: ToolKind;
-}) {
-  const wrap =
+/** The derived per-tool policy, shown as a single static labeled tag (display
+ *  only). It reflects the trust-model default for the tool's kind; the live
+ *  per-tool control is the binary ENABLED/OFF toggle. Per-tool allow/ask/never
+ *  isn't a real Composio primitive yet, so this must not read as selectable. */
+function PolicyTag({ kind }: { kind: ToolKind }) {
+  const style =
     kind === "read"
-      ? { bg: "#E9F5EE", border: "#BFE3CD" }
+      ? { bg: "#E9F5EE", border: "#BFE3CD", color: C.green, glyph: "✓", label: "allow" }
       : kind === "high"
-        ? { bg: "#FCEBEB", border: "#F0B9AC" }
-        : { bg: "#FBF0DA", border: "#ECD9A6" };
-  const active = kind === "read" ? 0 : kind === "high" ? 2 : 1;
-  const activeColor =
-    kind === "read" ? C.green : kind === "high" ? C.danger : C.amber;
-  const dimColor =
-    kind === "read" ? "#9BB7A6" : kind === "high" ? "#CDA096" : "#C2A862";
-  const glyphs = ["✓", "✋", "⊘"];
+        ? { bg: "#FCEBEB", border: "#F0B9AC", color: C.danger, glyph: "⊘", label: "never" }
+        : { bg: "#FBF0DA", border: "#ECD9A6", color: C.amber, glyph: "✋", label: "ask" };
   return (
     <span
+      aria-label={`Default policy: ${style.label}`}
       style={{
         display: "inline-flex",
         alignItems: "center",
         gap: 5,
-        background: wrap.bg,
-        border: `1px solid ${wrap.border}`,
+        background: style.bg,
+        border: `1px solid ${style.border}`,
         borderRadius: 8,
-        padding: 3,
+        padding: "4px 9px",
+        fontFamily: mono,
+        fontSize: 10,
+        color: style.color,
       }}
     >
-      {glyphs.map((g, i) => {
-        const isActive = i === active;
-        return (
-          <span
-            key={g}
-            style={{
-              width: 24,
-              height: 24,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              borderRadius: isActive ? 6 : undefined,
-              background: isActive ? activeColor : undefined,
-              color: isActive ? "#fff" : dimColor,
-            }}
-          >
-            {g}
-          </span>
-        );
-      })}
+      <span aria-hidden>{style.glyph}</span>
+      {style.label}
     </span>
   );
 }
@@ -174,6 +150,9 @@ function ToolRow({
           </span>
         )}
       </span>
+      {/* Derived policy — display only, not a control. */}
+      <PolicyTag kind={kind} />
+      {/* The real live control: binary enable/disable toggle. */}
       <button
         type="button"
         disabled={pending}
@@ -183,7 +162,8 @@ function ToolRow({
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 9,
+          justifyContent: "center",
+          minWidth: 52,
           background: "transparent",
           border: "none",
           padding: 0,
@@ -203,7 +183,6 @@ function ToolRow({
             {tool.enabled ? "ENABLED" : "OFF"}
           </span>
         )}
-        <PermPills kind={kind} />
       </button>
     </div>
   );
@@ -611,8 +590,9 @@ export function ConnectorDetailPage() {
               color: C.t3,
             }}
           >
-            ✓ allow · ✋ ask each time · ⊘ never — Cue defaults write/delete to
-            &quot;ask,&quot; and high-impact tools to &quot;never&quot; until you choose.
+            ✓ allow · ✋ ask each time · ⊘ never — policy derived from tool type ·
+            per-tool allow/ask/never coming soon. The ENABLED/OFF toggle is live
+            today.
           </div>
         </>
       )}

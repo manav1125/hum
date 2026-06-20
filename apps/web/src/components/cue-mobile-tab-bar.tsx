@@ -1,15 +1,21 @@
 /**
- * Cue mobile tab bar (design v0.2 / DESIGN-SPEC §4).
+ * Cue mobile tab bar.
  *
  * On mobile the three-column desktop layout collapses, so primary navigation
- * moves to a persistent bottom tab bar: Today / Memory / Voice / Tasks. Voice
- * routes to the full-bleed Voice mode screen (which owns the live-voice
- * session). Rendered only at the mobile breakpoint, as a flex-shrink-0 footer
- * inside the root layout (so it sits above the safe-area inset the shell pads).
+ * moves to a persistent bottom tab bar reconciled to the design's clean rail:
+ * Home · Chat · Voice · Contacts. Voice (the emphasized center mic) routes to
+ * the full-bleed Voice mode screen (which owns the live-voice session); Chat
+ * starts a fresh conversation. Memory and Tasks are no longer tabs — they stay
+ * reachable in-app (Memory via Intelligence, Tasks/Next moves via Home).
+ * Rendered only at the mobile breakpoint, as a flex-shrink-0 footer inside the
+ * root layout (so it sits above the safe-area inset the shell pads).
  */
 
-import { Home, ListChecks, Mic, Sparkles } from "lucide-react";
+import { Home, Mic, MessageSquare, Users } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
+
+import { navigateToNewConversation } from "@/domains/chat/utils/conversation-navigation";
+import { routes } from "@/utils/routes";
 
 interface NavTab {
   key: string;
@@ -19,34 +25,30 @@ interface NavTab {
   match: (pathname: string) => boolean;
 }
 
-const NAV_TABS: NavTab[] = [
-  {
-    key: "today",
-    label: "Today",
-    to: "/assistant/home",
-    match: (p) => p.endsWith("/home"),
-  },
-  {
-    key: "memory",
-    label: "Memory",
-    to: "/assistant/memory",
-    match: (p) => p.endsWith("/memory"),
-  },
-  {
-    key: "tasks",
-    label: "Tasks",
-    to: "/assistant/next-moves",
-    match: (p) => p.endsWith("/next-moves"),
-  },
-];
+const HOME_TAB: NavTab = {
+  key: "home",
+  label: "Home",
+  to: routes.home,
+  match: (p) => p.endsWith("/home"),
+};
+
+const CONTACTS_TAB: NavTab = {
+  key: "contacts",
+  label: "Contacts",
+  to: routes.contacts.root,
+  match: (p) => p.startsWith(routes.contacts.root),
+};
 
 export function CueMobileTabBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  // Voice (the mic) sits center, between Memory and Tasks (like the mock).
-  const tabs = [NAV_TABS[0], NAV_TABS[1]];
-  const tail = [NAV_TABS[2]];
+  // A conversation route is "Chat" — `/assistant/conversations/:id` and the
+  // bare `/assistant` index both resolve to the chat surface.
+  const isChatActive =
+    pathname === routes.assistant ||
+    pathname === `${routes.assistant}/` ||
+    pathname.startsWith(`${routes.conversations}/`);
 
   return (
     <nav
@@ -64,39 +66,34 @@ export function CueMobileTabBar() {
         borderTop: "1px solid var(--border-element)",
       }}
     >
-      {tabs.map((tab) => (
-        <TabButton
-          key={tab.key}
-          label={tab.label}
-          active={tab.match(pathname)}
-          onClick={() => navigate(tab.to)}
-          icon={
-            tab.key === "today" ? (
-              <Home size={20} strokeWidth={2} />
-            ) : (
-              <Sparkles size={20} strokeWidth={2} />
-            )
-          }
-        />
-      ))}
+      <TabButton
+        label={HOME_TAB.label}
+        active={HOME_TAB.match(pathname)}
+        onClick={() => navigate(HOME_TAB.to)}
+        icon={<Home size={20} strokeWidth={2} />}
+      />
+
+      <TabButton
+        label="Chat"
+        active={isChatActive}
+        onClick={() => navigateToNewConversation(navigate)}
+        icon={<MessageSquare size={20} strokeWidth={2} />}
+      />
 
       <TabButton
         label="Voice"
         active={pathname.endsWith("/voice")}
-        onClick={() => navigate("/assistant/voice")}
+        onClick={() => navigate(routes.voice)}
         icon={<Mic size={22} strokeWidth={2} />}
         emphasized
       />
 
-      {tail.map((tab) => (
-        <TabButton
-          key={tab.key}
-          label={tab.label}
-          active={tab.match(pathname)}
-          onClick={() => navigate(tab.to)}
-          icon={<ListChecks size={20} strokeWidth={2} />}
-        />
-      ))}
+      <TabButton
+        label={CONTACTS_TAB.label}
+        active={CONTACTS_TAB.match(pathname)}
+        onClick={() => navigate(CONTACTS_TAB.to)}
+        icon={<Users size={20} strokeWidth={2} />}
+      />
     </nav>
   );
 }

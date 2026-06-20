@@ -81,7 +81,7 @@ describe("AssistantSideMenu · Conversations category rows", () => {
 
     const html = renderMenu({ conversations });
 
-    expect(html).toContain(">Conversations<");
+    expect(html).toContain(">Chat<");
     expect(html).toContain(">Pinned<");
     expect(html).toContain(">Pinned thread<");
     expect(html).not.toContain(">Scheduled<");
@@ -91,7 +91,7 @@ describe("AssistantSideMenu · Conversations category rows", () => {
     expect(html).not.toContain(">Slack<");
 
     expect(html.indexOf(">Pinned<")).toBeLessThan(
-      html.indexOf(">Conversations<"),
+      html.indexOf(">Chat<"),
     );
   });
 
@@ -131,7 +131,7 @@ describe("AssistantSideMenu · Conversations category rows", () => {
     expect(expandedHtml).toContain(">Pinned<");
     expect(expandedHtml).toContain(">Pinned thread<");
     expect(expandedHtml.indexOf(">Pinned<")).toBeLessThan(
-      expandedHtml.indexOf(">Conversations<"),
+      expandedHtml.indexOf(">Chat<"),
     );
   });
 
@@ -161,7 +161,7 @@ describe("AssistantSideMenu · Conversations category rows", () => {
 
     const html = renderMenu({ conversations });
 
-    expect(html).toContain(">Conversations<");
+    expect(html).toContain(">Chat<");
     expect(html).not.toContain(">2<");
     expect(html).not.toContain(">1<");
   });

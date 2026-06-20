@@ -171,6 +171,7 @@ export function ConnectorsPage() {
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
   const [tipDismissed, setTipDismissed] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -230,8 +231,12 @@ export function ConnectorsPage() {
   }
 
   const q = query.trim().toLowerCase();
+  const categories = Array.from(
+    new Set(connectors.map((c) => c.category).filter(Boolean)),
+  ).sort();
   const matches = (c: ConnectorStatus) =>
-    q === "" || c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q);
+    (category === "all" || c.category === category) &&
+    (q === "" || c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q));
 
   const connected = connectors.filter((c) => c.connected && matches(c));
   const availableConnectors = connectors.filter((c) => !c.connected && matches(c));
@@ -407,20 +412,28 @@ export function ConnectorsPage() {
             }}
           />
         </div>
-        <div
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          aria-label="Filter connectors by category"
           style={{
             border: `1px solid ${C.line2}`,
             borderRadius: 11,
             padding: "11px 16px",
             fontSize: 13.5,
             color: C.t2,
-            display: "flex",
-            alignItems: "center",
-            gap: 18,
+            background: "#fff",
+            fontFamily: "inherit",
+            cursor: "pointer",
           }}
         >
-          All <span style={{ color: C.t3 }}>▾</span>
-        </div>
+          <option value="all">All categories</option>
+          {categories.map((cat) => (
+            <option key={cat} value={cat}>
+              {CATEGORY_DESC[cat] ?? cat}
+            </option>
+          ))}
+        </select>
       </div>
 
       {note && (
@@ -502,23 +515,34 @@ export function ConnectorsPage() {
       <button
         type="button"
         onClick={() => navigate(routes.assistant)}
-        title="Ask Cue in chat to add an MCP server"
+        title="Opens chat — ask Cue to add an MCP server"
         style={{
           width: "100%",
           border: `1px dashed ${C.line2}`,
           borderRadius: 13,
-          background: "#fff",
+          background: C.bg,
           padding: 14,
           display: "flex",
           alignItems: "center",
           gap: 10,
           cursor: "pointer",
           textAlign: "left",
-          color: C.t3,
+          color: C.t2,
           fontSize: 13,
         }}
       >
-        <Plus className="size-4" color={C.t3} /> Add an MCP server
+        <span style={{ color: C.violet }}>✦</span> Ask Cue in chat to add an MCP
+        server
+        <span
+          style={{
+            marginLeft: "auto",
+            fontFamily: mono,
+            fontSize: 10,
+            color: C.t3,
+          }}
+        >
+          opens chat →
+        </span>
       </button>
     </div>
   );

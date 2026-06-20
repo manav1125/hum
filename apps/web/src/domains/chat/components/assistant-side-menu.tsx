@@ -1,19 +1,15 @@
 import {
-    Brain,
     Clock,
     Hash,
     Home,
     LayoutGrid,
-    ListChecks,
-    Mic,
     Pin,
-    Plug,
     Rocket,
     Search,
-    ShieldCheck,
     Sparkles,
     SquarePen,
     Users,
+    Workflow,
     X,
 } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
@@ -62,6 +58,10 @@ export interface AssistantSideMenuProps extends UseSidebarStateParams {
   onOpenIntelligence?: () => void;
   isLibraryActive?: boolean;
   onOpenLibrary?: () => void;
+  isWorkspaceActive?: boolean;
+  onOpenWorkspace?: () => void;
+  isContactsActive?: boolean;
+  onOpenContacts?: () => void;
   onOpenApp?: (appId: string) => void;
   activeAppId?: string;
   onStartNewConversation?: () => void;
@@ -113,25 +113,35 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
 /**
  * Assistant sidebar content.
  *
- * Structure (top → bottom):
+ * Structure (top → bottom) — the design's clean rail
+ * (see design/surfaces/Memory.dc.html + CueLive.dc.html):
  *
- *   Header
- *     • Your Assistant → Intelligence view
+ *   Header · primary rail
+ *     • Home        → home feed (next-moves lives here as feed content)
+ *     • Intelligence → Identity hub (holds its own tab bar: Connectors,
+ *                       Channels, Agents, Cue Live, Skills, Memory, Workspace)
+ *     • Library
+ *     • Workspace
+ *     • Contacts
+ *     • channel-presence dots + pinned apps (rail affordances)
  *     • ───────────────
- *   Body · Pinned section (when non-empty)
- *     • pinned thread
- *   Body · Conversations section
+ *   Body · "Chat" section — the conversation-thread list
+ *     • Pinned …       — pinned threads (when non-empty)
  *     • thread …       — recent conversations inline
- *     • …
  *     • Show more/less — page through recent conversations
  *     • Slack ▾        — collapsible category when Slack conversations exist
  *   Footer
  *     • ───────────────
  *     • caller-provided action (PreferencesMenu)
+ *
+ * Demoted from the rail but kept reachable: Memory (Intelligence tab),
+ * Next moves (Home feed + /assistant/next-moves), Connections (Intelligence ›
+ * Connectors), Meeting (Home record action + /assistant/meeting), People
+ * (Contacts › "People · dossiers" + /assistant/people), Trust (Contacts +
+ * /assistant/trust).
  */
 export function AssistantSideMenu({
   assistantId,
-  assistantName,
   collapsed,
   variant,
   width,
@@ -143,6 +153,10 @@ export function AssistantSideMenu({
   onOpenIntelligence,
   isLibraryActive = false,
   onOpenLibrary,
+  isWorkspaceActive = false,
+  onOpenWorkspace,
+  isContactsActive = false,
+  onOpenContacts,
   onOpenApp,
   activeAppId,
   onStartNewConversation,
@@ -466,9 +480,22 @@ export function AssistantSideMenu({
             <div className="flex items-center gap-2">{headerActions}</div>
           </div>
         ) : null}
+        {/*
+          The design's clean rail: Home · Intelligence · Library · Workspace ·
+          Contacts. "Chat" is the conversation-thread list below (labeled in the
+          body). Memory / Next moves / Connections / Meeting / People / Trust
+          are demoted off the rail but stay reachable (see component docblock).
+        */}
         <SideMenu.Item
-          icon={Brain}
-          label={assistantName || "Your Assistant"}
+          icon={Home}
+          label="Home"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/home")}
+          onSelect={() => cueNav("/assistant/home")}
+        />
+        <SideMenu.Item
+          icon={Sparkles}
+          label="Intelligence"
           showCollapsedTooltip
           active={isIntelligenceActive}
           onSelect={onOpenIntelligence ? () => { onOpenIntelligence(); onClose?.(); } : undefined}
@@ -483,53 +510,26 @@ export function AssistantSideMenu({
           />
         ) : null}
         <SideMenu.Item
-          icon={Home}
-          label="Today"
+          icon={Workflow}
+          label="Workspace"
           showCollapsedTooltip
-          active={location.pathname.endsWith("/home")}
-          onSelect={() => cueNav("/assistant/home")}
-        />
-        <SideMenu.Item
-          icon={Sparkles}
-          label="Memory"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/memory")}
-          onSelect={() => cueNav("/assistant/memory")}
-        />
-        <SideMenu.Item
-          icon={ListChecks}
-          label="Next moves"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/next-moves")}
-          onSelect={() => cueNav("/assistant/next-moves")}
-        />
-        <SideMenu.Item
-          icon={Plug}
-          label="Connections"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/connectors")}
-          onSelect={() => cueNav("/assistant/connectors")}
-        />
-        <SideMenu.Item
-          icon={Mic}
-          label="Meeting"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/meeting")}
-          onSelect={() => cueNav("/assistant/meeting")}
+          active={isWorkspaceActive}
+          onSelect={
+            onOpenWorkspace
+              ? () => { onOpenWorkspace(); onClose?.(); }
+              : () => cueNav("/assistant/workspace")
+          }
         />
         <SideMenu.Item
           icon={Users}
-          label="People"
+          label="Contacts"
           showCollapsedTooltip
-          active={location.pathname.endsWith("/people")}
-          onSelect={() => cueNav("/assistant/people")}
-        />
-        <SideMenu.Item
-          icon={ShieldCheck}
-          label="Trust"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/trust")}
-          onSelect={() => cueNav("/assistant/trust")}
+          active={isContactsActive}
+          onSelect={
+            onOpenContacts
+              ? () => { onOpenContacts(); onClose?.(); }
+              : () => cueNav("/assistant/contacts")
+          }
         />
         {/* Channel presence — live readiness dots (one memory across channels). */}
         <CueChannelPresence />
@@ -588,7 +588,7 @@ export function AssistantSideMenu({
             ) : null}
 
             <SideMenu.Section
-              title="Conversations"
+              title="Chat"
               className="gap-1"
               actions={variant === "overlay" ? undefined : headerActions}
             >

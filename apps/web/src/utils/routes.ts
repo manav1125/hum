@@ -91,6 +91,14 @@ export const routes = {
   },
 
   home: r("/assistant/home"),
+  // v0.3 flagship surfaces. Demoted off the primary nav rail (per the clean-rail
+  // design) but still routable + linked from their new homes: Next moves from
+  // Home's feed, Meeting from Home's record action, People + Trust from Contacts.
+  nextMoves: r("/assistant/next-moves"),
+  meeting: r("/assistant/meeting"),
+  trust: r("/assistant/trust"),
+  people: r("/assistant/people"),
+  voice: r("/assistant/voice"),
   identity: r("/assistant/identity"),
   cueLive: r("/assistant/cue-live"),
   connectors: r("/assistant/connectors"),

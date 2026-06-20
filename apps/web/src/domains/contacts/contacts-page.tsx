@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { toast } from "@vellumai/design-library/components/toast";
+
+import { routes } from "@/utils/routes";
 
 import {
     MobileSidebarDrawer,
@@ -117,7 +120,9 @@ export function ContactsPage({
   assistantId,
   onStartSetupConversation,
 }: ContactsPageProps) {
+  const navigate = useNavigate();
   const a2aChannel = useAssistantFeatureFlagStore.use.a2aChannel();
+  const setFlag = useAssistantFeatureFlagStore.use.setFlag();
   const identityName = useAssistantIdentityStore.use.name();
   const queryClient = useQueryClient();
   const [selection, setSelection] = useState<ContactSelection>({
@@ -127,6 +132,10 @@ export function ContactsPage({
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  // Channel whose setup row the assistant pane should scroll to / expand,
+  // requested via the `?channel=` deep-link from the Channels surface.
+  const [highlightChannel, setHighlightChannel] =
+    useState<AssistantChannelState["key"] | null>(null);
 
   const assistantName = identityName ?? "your assistant";
 
@@ -217,6 +226,57 @@ export function ContactsPage({
     () => deriveChannelStates(readinessData),
     [readinessData],
   );
+
+  // ---------------------------------------------------------------------------
+  // Deep-link handling (?channel=… / ?invite=a2a)
+  // ---------------------------------------------------------------------------
+  // The Channels and Agents surfaces deep-link here via query params:
+  //   ?channel=<id>  → pre-select the assistant pane + scroll/expand that
+  //                    channel's setup row.
+  //   ?invite=a2a    → enable A2A if needed, then open the invite dialog.
+  // We consume the param once on mount, act on it, then strip it so it doesn't
+  // re-fire on re-render or back-navigation.
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+
+    const channelParam = searchParams.get("channel");
+    const inviteParam = searchParams.get("invite");
+    if (!channelParam && !inviteParam) return;
+
+    deepLinkHandledRef.current = true;
+
+    if (channelParam) {
+      // The assistant pane only renders slack/telegram/phone setup rows. Other
+      // channel ids still land on the assistant pane (just without a specific
+      // highlight).
+      setSelection({ kind: "assistant" });
+      if (
+        channelParam === "slack" ||
+        channelParam === "telegram" ||
+        channelParam === "phone"
+      ) {
+        setHighlightChannel(channelParam);
+      }
+    }
+
+    if (inviteParam === "a2a") {
+      setSelection({ kind: "assistant" });
+      if (!a2aChannel) {
+        setFlag("a2aChannel", true, assistantId);
+      }
+      setInviteDialogOpen(true);
+    }
+
+    // Strip the consumed params so the deep-link doesn't re-fire.
+    const next = new URLSearchParams(searchParams);
+    next.delete("channel");
+    next.delete("invite");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, a2aChannel, setFlag, assistantId]);
 
   // ---------------------------------------------------------------------------
   // Mutations
@@ -575,6 +635,52 @@ export function ContactsPage({
             People Cue knows — context, commitments, and how to reach them.
           </p>
         </div>
+        {/*
+          People + Trust were demoted off the primary nav rail (per the clean-rail
+          design). People (dossiers) stays a SEPARATE surface from Contacts — both
+          reachable here. Trust (the guardrail console) lands here too. Routes
+          /assistant/people and /assistant/trust stay live.
+        */}
+        <div className="ml-auto hidden items-center gap-2 sm:flex">
+          <button
+            type="button"
+            onClick={() => navigate(routes.people)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#FFFFFF",
+              border: "1px solid #D7DDE7",
+              borderRadius: 9,
+              padding: "7px 13px",
+              fontSize: 12.5,
+              fontWeight: 500,
+              color: "#1A2230",
+              cursor: "pointer",
+            }}
+          >
+            People · dossiers
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(routes.trust)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#FFFFFF",
+              border: "1px solid #D7DDE7",
+              borderRadius: 9,
+              padding: "7px 13px",
+              fontSize: 12.5,
+              fontWeight: 500,
+              color: "#1A2230",
+              cursor: "pointer",
+            }}
+          >
+            Trust
+          </button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden sm:flex-row sm:gap-6">
@@ -608,6 +714,8 @@ export function ContactsPage({
             onSaveSlackConfig={handleSaveSlackConfig}
             onSaveTwilioCredentials={handleSaveTwilioCredentials}
             onGenerateInviteLink={a2aChannel ? handleOpenInviteLink : undefined}
+            highlightChannelKey={highlightChannel}
+            onHighlightConsumed={() => setHighlightChannel(null)}
           />
         ) : optimisticContact ? (
           optimisticContact.role === "guardian" ? (

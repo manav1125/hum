@@ -54,6 +54,7 @@ export function MemoriesPage() {
 
   const [filter, setFilter] = useState<KindFilter>("all");
   const [query, setQuery] = useState("");
+  const [confidentOnly, setConfidentOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -88,9 +89,14 @@ export function MemoriesPage() {
       if (filter !== "all" && item.kind !== filter) return false;
       if (q && !`${item.statement} ${item.subject}`.toLowerCase().includes(q))
         return false;
+      if (
+        confidentOnly &&
+        !(typeof item.confidence === "number" && item.confidence >= 0.6)
+      )
+        return false;
       return true;
     });
-  }, [items, filter, query]);
+  }, [items, filter, query, confidentOnly]);
 
   // Default the rail to the first visible memory; reselect when the current
   // selection scrolls out of the filtered set.
@@ -154,6 +160,7 @@ export function MemoriesPage() {
   function clearFilters() {
     setFilter("all");
     setQuery("");
+    setConfidentOnly(false);
   }
 
   const showEmpty = !isLoading && !isError && filteredItems.length === 0;
@@ -279,18 +286,28 @@ export function MemoriesPage() {
               }}
             />
           </div>
-          <span
+          <button
+            type="button"
+            onClick={() => setConfidentOnly((v) => !v)}
+            aria-pressed={confidentOnly}
+            title={
+              confidentOnly
+                ? "Showing only memories with confidence ≥ 0.6 — click to show all"
+                : "Filter to memories with confidence ≥ 0.6"
+            }
             style={{
               fontSize: 12,
-              background: "#EEF1F6",
-              color: "#5A6672",
+              background: confidentOnly ? "#1A2230" : "#EEF1F6",
+              color: confidentOnly ? "#fff" : "#5A6672",
+              border: "none",
               borderRadius: 8,
               padding: "7px 12px",
               fontFamily: MONO,
+              cursor: "pointer",
             }}
           >
             confidence ≥ 0.6
-          </span>
+          </button>
           <button
             type="button"
             onClick={() => void navigate("/assistant/")}
@@ -378,7 +395,7 @@ export function MemoriesPage() {
           {isLoading ? (
             <LoadingState />
           ) : isError ? (
-            <ErrorState onRebuild={() => void refetch()} />
+            <ErrorState onRetry={() => void refetch()} />
           ) : showEmpty ? (
             <EmptyState onClearFilters={clearFilters} />
           ) : (
@@ -739,7 +756,7 @@ function EmptyState({ onClearFilters }: { onClearFilters: () => void }) {
   );
 }
 
-function ErrorState({ onRebuild }: { onRebuild: () => void }) {
+function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{
@@ -771,16 +788,16 @@ function ErrorState({ onRebuild }: { onRebuild: () => void }) {
       </span>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13.5, fontWeight: 500, color: "#8A2E12" }}>
-          Memory index unavailable
+          Couldn&rsquo;t load your memories
         </div>
         <div style={{ fontSize: 12.5, color: "#A8492B", marginTop: 2 }}>
-          The local retrieval store didn&rsquo;t respond. Cue is running on
-          cached recall only.
+          The memory store didn&rsquo;t respond. Cue is running on cached recall
+          only — retry to load them again.
         </div>
       </div>
       <button
         type="button"
-        onClick={onRebuild}
+        onClick={onRetry}
         style={{
           fontSize: 12,
           background: "#DA491A",
@@ -791,7 +808,7 @@ function ErrorState({ onRebuild }: { onRebuild: () => void }) {
           cursor: "pointer",
         }}
       >
-        Rebuild index
+        Retry
       </button>
     </div>
   );

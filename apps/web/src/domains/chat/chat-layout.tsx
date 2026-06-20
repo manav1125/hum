@@ -225,6 +225,14 @@ export function ChatLayout() {
     navigate(routes.identity);
   }, [navigate]);
 
+  const handleOpenWorkspace = useCallback(() => {
+    navigate(routes.workspace);
+  }, [navigate]);
+
+  const handleOpenContacts = useCallback(() => {
+    navigate(routes.contacts.root);
+  }, [navigate]);
+
   const handleGoBack = useCallback(() => {
     navigate(-1);
   }, [navigate]);
@@ -234,11 +242,30 @@ export function ChatLayout() {
   }, [navigate]);
 
   const isHomeActive = location.pathname === routes.home;
-  const isIdentityActive =
-    location.pathname === routes.identity ||
-    location.pathname === routes.skills ||
-    location.pathname === routes.workspace ||
-    location.pathname.startsWith(routes.contacts.root);
+
+  // Workspace and Contacts each own a dedicated rail item, so they light up
+  // their own button — not the Intelligence hub (avoids double-lighting even
+  // though both also appear as Intelligence tabs).
+  const isWorkspaceActive = location.pathname === routes.workspace;
+  const isContactsActive = location.pathname.startsWith(routes.contacts.root);
+
+  // The Intelligence rail item is the hub: active for every Intelligence
+  // sub-route (Identity, Connectors, Channels, Agents, Cue Live, Skills,
+  // Memory, Plugins) — but NOT Workspace/Contacts, which have their own rail
+  // items above.
+  const isIntelligenceActive =
+    !isWorkspaceActive &&
+    !isContactsActive &&
+    (location.pathname === routes.identity ||
+      location.pathname === routes.connectors ||
+      location.pathname.startsWith(`${routes.connectors}/`) ||
+      location.pathname === routes.channels ||
+      location.pathname === routes.agents ||
+      location.pathname === routes.cueLive ||
+      location.pathname === routes.skills ||
+      location.pathname === routes.memory ||
+      location.pathname === routes.plugins ||
+      location.pathname.startsWith(`${routes.plugins}/`));
 
   // --- Sidebar collapsed / drawer state ---
   const [collapsed, setCollapsed] = useState<boolean>(readPersistedCollapsed);
@@ -556,10 +583,14 @@ export function ChatLayout() {
       attentionConversationIds={attentionConversationIds}
       onSelectConversation={handleSelectConversation}
       onStartNewConversation={startNewConversation}
-      isIntelligenceActive={isIdentityActive}
+      isIntelligenceActive={isIntelligenceActive}
       onOpenIntelligence={handleOpenIdentity}
       isLibraryActive={isLibraryActive}
       onOpenLibrary={handleOpenLibrary}
+      isWorkspaceActive={isWorkspaceActive}
+      onOpenWorkspace={handleOpenWorkspace}
+      isContactsActive={isContactsActive}
+      onOpenContacts={handleOpenContacts}
       activeAppId={activeAppId ?? undefined}
       onOpenApp={handleOpenAppFromSidebar}
       onPinConversation={handleTogglePinConversation}

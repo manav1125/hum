@@ -24,7 +24,9 @@ const BASE_INTELLIGENCE_TABS: readonly IntelligenceTab[] = [
   { label: "Skills", to: routes.skills },
   { label: "Memory", to: routes.memory },
   { label: "Workspace", to: routes.workspace },
-  { label: "Contacts", to: routes.contacts.root },
+  // Contacts lives in the primary rail only (per the design's clean rail), not
+  // as an Intelligence tab — though /assistant/contacts still renders under
+  // this layout so the page keeps its chrome.
 ];
 
 const PLUGINS_TAB: IntelligenceTab = {

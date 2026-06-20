@@ -83,8 +83,8 @@ export function IdentityCard({
           {assistantName}
         </div>
         <EditPencil
-          label="Edit name"
-          title="Edit Name"
+          label="Ask Cue in chat to update your name"
+          title="Ask Cue in chat to update your name"
           onOpenThread={onOpenThread}
           message="I would like to change your name"
         />
@@ -147,8 +147,8 @@ export function IdentityCard({
         marginTop={24}
         edit={
           <EditPencil
-            label="Edit role"
-            title="Edit Role"
+            label="Ask Cue in chat to update your role"
+            title="Ask Cue in chat to update your role"
             onOpenThread={onOpenThread}
             message="I would like to change your role description"
           />
@@ -164,8 +164,8 @@ export function IdentityCard({
         truncate
         edit={
           <EditPencil
-            label="Edit personality"
-            title="Edit Personality"
+            label="Ask Cue in chat to update your personality"
+            title="Ask Cue in chat to update your personality"
             onOpenThread={onOpenThread}
             message="I would like to change your personality"
           />
