@@ -2,10 +2,18 @@
 // Loaded via <script src> (not inline) so CSP script-src 'self' allows it.
 (function () {
   try {
-    var theme =
+    var stored =
       window.localStorage.getItem("device:theme") ||
-      window.localStorage.getItem("vellum_theme") ||
-      "system";
+      window.localStorage.getItem("vellum_theme");
+    // Native (Capacitor iOS/Android) ships the dark "v1" mobile design by
+    // default; an explicit stored choice still wins. window.Capacitor is
+    // injected at document start in the native shell, so it is readable here.
+    var isNative = !!(
+      window.Capacitor &&
+      window.Capacitor.isNativePlatform &&
+      window.Capacitor.isNativePlatform()
+    );
+    var theme = stored || (isNative ? "dark" : "system");
     var prefersDark =
       window.matchMedia &&
       window.matchMedia("(prefers-color-scheme: dark)").matches;
