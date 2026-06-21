@@ -1794,6 +1794,21 @@ async function main() {
       const spa = await serveSpaAsset(url.pathname);
       if (spa) return spa;
     }
+    // Bare `/assistant` (no trailing slash) → redirect to the app root. Without
+    // this it falls through to the auth gate and returns 401, which a client
+    // pointed at the no-slash URL (e.g. a Capacitor shell) renders as the raw
+    // {"error":"Unauthorized"} JSON. The SPA's asset base is `/assistant/`, so
+    // the trailing slash is required for relative assets to resolve too.
+    if (
+      req.method === "GET" &&
+      url.pathname === "/assistant" &&
+      process.env.WEB_DIST_DIR
+    ) {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "/assistant/" },
+      });
+    }
     if (
       req.method === "GET" &&
       url.pathname === "/" &&
