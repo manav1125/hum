@@ -30,7 +30,14 @@ import { ActivityRow, RowButton } from "../activity-row";
 import { C, str } from "../theme";
 import { useWorkItems } from "../use-work-items";
 
-export function RunningSection({ assistantId }: { assistantId: string }) {
+export function RunningSection({
+  assistantId,
+  focusId,
+}: {
+  assistantId: string;
+  /** Work-item id from Home's `?focus=` deep-link; highlights the matching row. */
+  focusId?: string | null;
+}) {
   const queryClient = useQueryClient();
   const running = useWorkItems(assistantId, "running");
 
@@ -126,6 +133,7 @@ export function RunningSection({ assistantId }: { assistantId: string }) {
             statusLabel="running"
             statusTone="blue"
             last={last}
+            highlight={item.id === focusId}
             actions={
               <>
                 <RowButton

@@ -10,6 +10,7 @@ import { describe, expect, it } from "bun:test";
 import type { WorkItem } from "../work-items/work-item-store.js";
 import type { FeedItem } from "./feed-types.js";
 import {
+  dedupeFeedItems,
   mergeWorkItemsIntoFeed,
   sourceTypeToCategory,
   WORK_ITEM_FEED_PREFIX,
@@ -130,5 +131,97 @@ describe("mergeWorkItemsIntoFeed", () => {
     });
     const merged = mergeWorkItemsIntoFeed([triageCard], [makeWorkItem()], NOW);
     expect(merged).toHaveLength(2);
+  });
+
+  it("collapses the same logical task enqueued under several work-item ids", () => {
+    // Three queued work-items for the SAME commitment, each with its own UUID
+    // (the agent re-enqueued it). They share a title; they're untitled-task
+    // items (no channel source), so the title-based content key collapses them.
+    const wis = ["5bd5b526", "0144e2ed", "538fffa3"].map((id) =>
+      makeWorkItem({
+        id,
+        title: "Send OTP to Aileen for Guillermo's flight",
+        sourceType: null,
+        sourceId: null,
+      }),
+    );
+    const merged = mergeWorkItemsIntoFeed([], wis, NOW);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].title).toBe("Send OTP to Aileen for Guillermo's flight");
+  });
+
+  it("drops an exact-id duplicate present on disk and still queued", () => {
+    // A work-item card already persisted on disk AND the same id still in the
+    // queued set: the unioned list must not show it twice.
+    const persisted = makeFeedItem({
+      id: `${WORK_ITEM_FEED_PREFIX}538fffa3`,
+      title: "Send OTP to Aileen for Guillermo's flight",
+    });
+    const merged = mergeWorkItemsIntoFeed(
+      [persisted],
+      [makeWorkItem({ id: "538fffa3" })],
+      NOW,
+    );
+    expect(merged.filter((i) => i.id === `${WORK_ITEM_FEED_PREFIX}538fffa3`)).toHaveLength(
+      1,
+    );
+  });
+});
+
+describe("dedupeFeedItems", () => {
+  it("removes exact-id duplicates, keeping the higher-priority instance", () => {
+    const low = makeFeedItem({ id: "x", title: "Task X", priority: 40 });
+    const high = makeFeedItem({ id: "x", title: "Task X", priority: 90 });
+    const deduped = dedupeFeedItems([low, high]);
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].priority).toBe(90);
+  });
+
+  it("collapses logical duplicates (distinct ids, same title + channel)", () => {
+    const a = makeFeedItem({
+      id: `${WORK_ITEM_FEED_PREFIX}a`,
+      title: "Send OTP to Aileen for Guillermo's flight",
+      category: "task",
+      priority: 60,
+    });
+    const b = makeFeedItem({
+      id: `${WORK_ITEM_FEED_PREFIX}b`,
+      title: "send otp to aileen for guillermo's flight", // case-insensitive
+      category: "task",
+      priority: 80,
+    });
+    const deduped = dedupeFeedItems([a, b]);
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].priority).toBe(80);
+  });
+
+  it("does NOT collapse genuinely distinct titles", () => {
+    const a = makeFeedItem({ id: "a", title: "Reply to Jane", category: "email" });
+    const b = makeFeedItem({ id: "b", title: "Prep for standup", category: "scheduling" });
+    expect(dedupeFeedItems([a, b])).toHaveLength(2);
+  });
+
+  it("does NOT collapse same title across different channels", () => {
+    const slack = makeFeedItem({
+      id: "a",
+      title: "Follow up",
+      metadata: { sourceType: "slack" },
+    });
+    const email = makeFeedItem({
+      id: "b",
+      title: "Follow up",
+      metadata: { sourceType: "gmail" },
+    });
+    expect(dedupeFeedItems([slack, email])).toHaveLength(2);
+  });
+
+  it("preserves first-occurrence order", () => {
+    const items = [
+      makeFeedItem({ id: "1", title: "First" }),
+      makeFeedItem({ id: "2", title: "Second" }),
+      makeFeedItem({ id: "1", title: "First" }),
+    ];
+    const deduped = dedupeFeedItems(items);
+    expect(deduped.map((i) => i.title)).toEqual(["First", "Second"]);
   });
 });

@@ -21,7 +21,8 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { useEffect } from "react";
+import { Link, useSearchParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 
@@ -216,6 +217,21 @@ export function ActivityPage() {
   const assistantId = useActiveAssistantId();
   const summary = useSummary(assistantId);
 
+  // Deep-link from Home's "Run it" toast: `?focus=<workItemId>` highlights the
+  // matching Running/Queued row. The param is transient — after the row applies
+  // the highlight we clear it (one-shot) so refreshes don't re-pin a stale run.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get("focus");
+  useEffect(() => {
+    if (!focusId) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    setSearchParams(next, { replace: true });
+    // We intentionally clear once on mount/focus change; the captured focusId is
+    // still threaded into the sections for this render so the highlight applies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
+
   const parts = [
     `${summary.running} running`,
     `${summary.scheduled} scheduled`,
@@ -281,8 +297,8 @@ export function ActivityPage() {
         </div>
 
         <NeedsYouSection assistantId={assistantId} />
-        <RunningSection assistantId={assistantId} />
-        <QueuedSection assistantId={assistantId} />
+        <RunningSection assistantId={assistantId} focusId={focusId} />
+        <QueuedSection assistantId={assistantId} focusId={focusId} />
         <ScheduledSection assistantId={assistantId} />
         <WatchingSection assistantId={assistantId} />
         <SequencesSection assistantId={assistantId} />

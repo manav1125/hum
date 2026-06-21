@@ -510,7 +510,15 @@ const CROSS_CLIENT_EXPOSED_CAPABILITIES = new Set<HostProxyCapability>([
   "host_browser",
 ]);
 // Tools that require a connected client but no specific host proxy capability.
-const CLIENT_CAPABILITY_TOOL_NAMES = new Set(["app_open", "ask_question"]);
+const CLIENT_CAPABILITY_TOOL_NAMES = new Set(["ask_question"]);
+// Tools that render a dynamic_page / UI surface and therefore depend on the
+// client supporting dynamic UI rather than on a desktop host proxy. `app_open`
+// is resolved entirely server-side by `surfaceProxyResolver`: it emits a
+// `ui_surface_show` (dynamic_page) event over SSE that any dynamic-UI-capable
+// client (web, macOS) renders inline. It must be gated on dynamic-UI support —
+// like UI_SURFACE_TOOL_NAMES — not on the presence of a desktop host, so it
+// stays available on self-host web/mobile where it is fully functional.
+const DYNAMIC_UI_TOOL_NAMES = new Set(["app_open"]);
 const PLATFORM_TOOL_NAMES = new Set(["request_system_permission"]);
 
 /**
@@ -585,6 +593,12 @@ export function isToolActiveForContext(
     ) {
       return !hasNoClient;
     }
+    return channelCapabilities?.supportsDynamicUi ?? !hasNoClient;
+  }
+  if (DYNAMIC_UI_TOOL_NAMES.has(name)) {
+    // `app_open` renders a dynamic_page surface server-side and streams it to
+    // the client over SSE — available wherever dynamic UI is supported (web,
+    // macOS), not only when a desktop host proxy is connected.
     return channelCapabilities?.supportsDynamicUi ?? !hasNoClient;
   }
   if (HOST_TOOL_NAMES.has(name)) {

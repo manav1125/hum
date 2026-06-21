@@ -21,7 +21,14 @@ import { ActivityRow, RowButton } from "../activity-row";
 import { C } from "../theme";
 import { useWorkItems } from "../use-work-items";
 
-export function QueuedSection({ assistantId }: { assistantId: string }) {
+export function QueuedSection({
+  assistantId,
+  focusId,
+}: {
+  assistantId: string;
+  /** Work-item id from Home's `?focus=` deep-link; highlights the matching row. */
+  focusId?: string | null;
+}) {
   const queryClient = useQueryClient();
   const pending = useWorkItems(assistantId, "pending");
 
@@ -65,6 +72,7 @@ export function QueuedSection({ assistantId }: { assistantId: string }) {
           statusLabel="queued"
           statusTone="amber"
           last={i === pending.items.length - 1}
+          highlight={item.id === focusId}
           actions={
             <>
               <RowButton

@@ -8,7 +8,7 @@
  * passed in here; this component never fabricates a trigger.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { C, mono } from "./theme";
 
@@ -128,6 +128,7 @@ export function ActivityRow({
   statusTone = "neutral",
   actions,
   last = false,
+  highlight = false,
 }: {
   dotColor?: string;
   title: string;
@@ -140,15 +141,30 @@ export function ActivityRow({
   statusTone?: PillTone;
   actions?: ReactNode;
   last?: boolean;
+  /**
+   * Deep-link focus: when this row is the target of Home's `?focus=` link, it
+   * scrolls itself into view on mount and wears a blue wash + left accent so the
+   * run the user just kicked off is unmistakable.
+   */
+  highlight?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlight) ref.current?.scrollIntoView({ block: "center" });
+  }, [highlight]);
+
   return (
     <div
+      ref={ref}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 12,
         padding: "12px 14px",
         borderBottom: last ? "none" : `1px solid ${C.line}`,
+        background: highlight ? C.blueW : undefined,
+        boxShadow: highlight ? `inset 3px 0 0 ${C.blue}` : undefined,
+        transition: "background 200ms",
       }}
     >
       {dotColor ? (

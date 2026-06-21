@@ -115,13 +115,135 @@ export function workItemToFeedItem(item: WorkItem, now: Date): FeedItem {
 }
 
 /**
- * Union the on-disk feed items with queued work-items mapped to FeedItems.
+ * Best-effort `(sourceType, sourceId)` for a feed item, normalizing the two
+ * provenance shapes the feed carries: work-item cards tag
+ * `metadata.sourceType` / `metadata.sourceId`; synthesized channel-triage
+ * cards tag `metadata.channel` / `metadata.sourceConversationId`.
+ */
+function feedItemSourceKey(item: FeedItem): string | undefined {
+  const md = item.metadata as
+    | {
+        sourceType?: unknown;
+        sourceId?: unknown;
+        channel?: unknown;
+        sourceConversationId?: unknown;
+      }
+    | undefined;
+  const srcType =
+    typeof md?.sourceType === "string"
+      ? md.sourceType
+      : typeof md?.channel === "string"
+        ? md.channel
+        : undefined;
+  const srcId =
+    typeof md?.sourceId === "string"
+      ? md.sourceId
+      : typeof md?.sourceConversationId === "string"
+        ? md.sourceConversationId
+        : undefined;
+  return srcType && srcId ? `${srcType}:${srcId}` : undefined;
+}
+
+/**
+ * Stable content key for collapsing items that describe the *same logical
+ * task* even though they carry distinct ids (e.g. the agent enqueued the same
+ * commitment several times, each minting a fresh work-item UUID). Keyed on the
+ * source channel/category plus a normalized title, so "Send OTP to Aileen…"
+ * queued five times collapses to one card, while genuinely different titles
+ * stay distinct.
+ *
+ * Returns `undefined` for items with no usable title — those fall through to
+ * id/source dedup so we never collapse unrelated untitled cards together.
+ */
+function feedItemContentKey(item: FeedItem): string | undefined {
+  const title = item.title?.trim().toLowerCase();
+  if (!title) return undefined;
+  const md = item.metadata as
+    | { sourceType?: unknown; channel?: unknown }
+    | undefined;
+  const channel =
+    typeof md?.sourceType === "string"
+      ? md.sourceType
+      : typeof md?.channel === "string"
+        ? md.channel
+        : (item.category ?? "");
+  return `${channel} ${title}`;
+}
+
+/**
+ * Pick the instance to keep when two cards collide on a dedup key: prefer the
+ * higher-priority one, breaking ties toward the newer `createdAt`.
+ */
+function preferItem(a: FeedItem, b: FeedItem): FeedItem {
+  if (a.priority !== b.priority) return a.priority >= b.priority ? a : b;
+  const aMs = Date.parse(a.createdAt);
+  const bMs = Date.parse(b.createdAt);
+  if (Number.isNaN(aMs)) return b;
+  if (Number.isNaN(bMs)) return a;
+  return aMs >= bMs ? a : b;
+}
+
+/**
+ * Collapse a feed list so no two items share an exact `id` (exact-duplicate
+ * leak) or a logical content/source key (the same underlying task surfaced as
+ * several cards). Array order is preserved at each key's *first* occurrence;
+ * the kept payload is the highest-priority / newest colliding instance. Pure —
+ * the input is not mutated.
+ */
+export function dedupeFeedItems(items: FeedItem[]): FeedItem[] {
+  // Map each dedup key → index in `out` so a later collision can replace the
+  // earlier payload in place (preserving position, swapping in the winner).
+  const slotByKey = new Map<string, number>();
+  const out: FeedItem[] = [];
+
+  for (const item of items) {
+    const keys = [`id:${item.id}`];
+    const contentKey = feedItemContentKey(item);
+    if (contentKey) keys.push(`content:${contentKey}`);
+    else {
+      // No title to key on — fall back to source so untitled cards for the
+      // same thread still collapse.
+      const sourceKey = feedItemSourceKey(item);
+      if (sourceKey) keys.push(`source:${sourceKey}`);
+    }
+
+    // First slot any of this item's keys already maps to is the collision site.
+    let slot = -1;
+    for (const k of keys) {
+      const s = slotByKey.get(k);
+      if (s !== undefined) {
+        slot = s;
+        break;
+      }
+    }
+
+    if (slot === -1) {
+      slot = out.length;
+      out.push(item);
+    } else {
+      out[slot] = preferItem(out[slot]!, item);
+    }
+    // Point every key at the surviving slot so future collisions on any of
+    // them resolve here.
+    for (const k of keys) slotByKey.set(k, slot);
+  }
+
+  return out;
+}
+
+/**
+ * Union the on-disk feed items with queued work-items mapped to FeedItems,
+ * then dedupe the combined list.
  *
  * Dedup rules (deterministic):
  *   - Skip any work-item whose `work-item:<id>` already exists in `feedItems`.
  *   - Skip any work-item whose `sourceType` + `sourceId` already matches the
  *     source of an existing feed item (so a synthesized triage card and the
  *     queued work item for the same Slack/Telegram message don't both show).
+ *   - Finally collapse the unioned list via {@link dedupeFeedItems}, which
+ *     removes exact-id duplicates (e.g. a card persisted on disk *and* still
+ *     queued) and logical duplicates (the same task enqueued several times
+ *     under different ids), keeping the highest-priority / newest instance.
  *
  * Returns a new array; inputs are not mutated. The caller is responsible for
  * any final sort (the writer/route already sorts by priority).
@@ -134,27 +256,8 @@ export function mergeWorkItemsIntoFeed(
   const existingIds = new Set(feedItems.map((i) => i.id));
   const existingSources = new Set<string>();
   for (const i of feedItems) {
-    const md = i.metadata as
-      | {
-          sourceType?: unknown;
-          sourceId?: unknown;
-          channel?: unknown;
-          sourceConversationId?: unknown;
-        }
-      | undefined;
-    const srcType =
-      typeof md?.sourceType === "string"
-        ? md.sourceType
-        : typeof md?.channel === "string"
-          ? md.channel
-          : undefined;
-    const srcId =
-      typeof md?.sourceId === "string"
-        ? md.sourceId
-        : typeof md?.sourceConversationId === "string"
-          ? md.sourceConversationId
-          : undefined;
-    if (srcType && srcId) existingSources.add(`${srcType}:${srcId}`);
+    const key = feedItemSourceKey(i);
+    if (key) existingSources.add(key);
   }
 
   const mapped: FeedItem[] = [];
@@ -167,5 +270,5 @@ export function mergeWorkItemsIntoFeed(
     mapped.push(workItemToFeedItem(wi, now));
   }
 
-  return [...feedItems, ...mapped];
+  return dedupeFeedItems([...feedItems, ...mapped]);
 }

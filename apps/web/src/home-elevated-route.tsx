@@ -261,6 +261,17 @@ function formatScheduleTime(epochMs: number): string {
   });
 }
 
+/**
+ * Activity route deep-linked to a specific run. Background/needs-you feed
+ * actions mint a `workItemId`; passing it as `?focus=` lets the Activity surface
+ * scroll to and highlight that row the moment it lands.
+ */
+function activityRouteFor(workItemId?: string): string {
+  return workItemId
+    ? `${routes.activity}?focus=${encodeURIComponent(workItemId)}`
+    : routes.activity;
+}
+
 type FeedActionShape = {
   label: string;
   defaultMode?: "background" | "thread" | "needs_you";
@@ -561,18 +572,32 @@ export function HomeElevatedRoute() {
         { itemId: item.id, actionId: a.id, mode },
         {
           onSuccess: (data) => {
-            const resolved = (data as { mode?: string; conversationId?: string })
-              ?.mode;
+            const resolved = (
+              data as {
+                mode?: string;
+                conversationId?: string;
+                workItemId?: string;
+              }
+            )?.mode;
             const conversationId = (data as { conversationId?: string })
               ?.conversationId;
+            const workItemId = (data as { workItemId?: string })?.workItemId;
             if (resolved === "thread" && conversationId) {
               navigate(routes.conversation(conversationId));
             } else if (resolved === "background") {
-              toast.success("Running in the background — track it in Activity.");
+              toast.success("Running in the background — track it in Activity.", {
+                action: {
+                  label: "View in Activity",
+                  onClick: () => navigate(activityRouteFor(workItemId)),
+                },
+              });
             } else if (resolved === "needs_you") {
-              toast.success(
-                "Queued — it'll wait for your approval in Activity.",
-              );
+              toast.success("Queued — it'll wait for your approval in Activity.", {
+                action: {
+                  label: "Review in Activity",
+                  onClick: () => navigate(activityRouteFor(workItemId)),
+                },
+              });
             }
           },
         },
@@ -1185,7 +1210,22 @@ export function HomeElevatedRoute() {
           >
             Your Day
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => navigate(routes.activity)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontSize: 12,
+                fontWeight: 500,
+                color: C.blueS,
+                cursor: "pointer",
+              }}
+            >
+              Activity ›
+            </button>
             <button
               type="button"
               onClick={() => navigate(routes.meeting)}
