@@ -1712,13 +1712,34 @@ async function main() {
     const hasExt = /\.[a-zA-Z0-9]+$/.test(rel);
     if (rel && hasExt) {
       const file = Bun.file(`${dir}/${rel}`);
-      if (await file.exists()) return new Response(file);
+      if (await file.exists()) {
+        // Vite emits hashed bundle files under assets/ — the filename changes on
+        // every content change, so they're safe to cache forever. Everything else
+        // with an extension (theme-init.js, boot-splash.js, icons, manifest) is
+        // unhashed and can change between deploys, so it must revalidate.
+        const immutable = rel.startsWith("assets/");
+        return new Response(file, {
+          headers: {
+            "cache-control": immutable
+              ? "public, max-age=31536000, immutable"
+              : "no-cache, must-revalidate",
+          },
+        });
+      }
       return new Response("Not found", { status: 404 });
     }
     const index = Bun.file(`${dir}/index.html`);
     if (await index.exists()) {
       return new Response(index, {
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          // The shell references the hashed bundle, so a stale shell pins an old
+          // app version. WKWebView heuristically caches no-header HTML and serves
+          // it across launches without revalidating — which is exactly the
+          // "still the old design after reinstall" bug. Force a revalidate (and
+          // no-store) every load so a new deploy is picked up on next launch.
+          "cache-control": "no-cache, no-store, must-revalidate",
+        },
       });
     }
     return undefined;
