@@ -19,7 +19,11 @@
  */
 
 import type { WorkItem } from "../work-items/work-item-store.js";
-import type { FeedItem, FeedItemCategory, FeedItemUrgency } from "./feed-types.js";
+import type {
+  FeedItem,
+  FeedItemCategory,
+  FeedItemUrgency,
+} from "./feed-types.js";
 
 /** Stable id prefix for work-item-derived feed cards. */
 export const WORK_ITEM_FEED_PREFIX = "work-item:";

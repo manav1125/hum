@@ -87,12 +87,12 @@ describe("workItemToFeedItem", () => {
   });
 
   it("maps priority tiers to urgency", () => {
-    expect(workItemToFeedItem(makeWorkItem({ priorityTier: 0 }), NOW).urgency).toBe(
-      "high",
-    );
-    expect(workItemToFeedItem(makeWorkItem({ priorityTier: 2 }), NOW).urgency).toBe(
-      "low",
-    );
+    expect(
+      workItemToFeedItem(makeWorkItem({ priorityTier: 0 }), NOW).urgency,
+    ).toBe("high");
+    expect(
+      workItemToFeedItem(makeWorkItem({ priorityTier: 2 }), NOW).urgency,
+    ).toBe("low");
   });
 
   it("falls back to placeholder summary when notes are empty", () => {
@@ -103,7 +103,11 @@ describe("workItemToFeedItem", () => {
 
 describe("mergeWorkItemsIntoFeed", () => {
   it("appends queued work-items as feed cards", () => {
-    const merged = mergeWorkItemsIntoFeed([makeFeedItem()], [makeWorkItem()], NOW);
+    const merged = mergeWorkItemsIntoFeed(
+      [makeFeedItem()],
+      [makeWorkItem()],
+      NOW,
+    );
     expect(merged).toHaveLength(2);
     expect(merged[1].id).toBe(`${WORK_ITEM_FEED_PREFIX}wi-1`);
   });
@@ -162,9 +166,9 @@ describe("mergeWorkItemsIntoFeed", () => {
       [makeWorkItem({ id: "538fffa3" })],
       NOW,
     );
-    expect(merged.filter((i) => i.id === `${WORK_ITEM_FEED_PREFIX}538fffa3`)).toHaveLength(
-      1,
-    );
+    expect(
+      merged.filter((i) => i.id === `${WORK_ITEM_FEED_PREFIX}538fffa3`),
+    ).toHaveLength(1);
   });
 });
 
@@ -196,8 +200,16 @@ describe("dedupeFeedItems", () => {
   });
 
   it("does NOT collapse genuinely distinct titles", () => {
-    const a = makeFeedItem({ id: "a", title: "Reply to Jane", category: "email" });
-    const b = makeFeedItem({ id: "b", title: "Prep for standup", category: "scheduling" });
+    const a = makeFeedItem({
+      id: "a",
+      title: "Reply to Jane",
+      category: "email",
+    });
+    const b = makeFeedItem({
+      id: "b",
+      title: "Prep for standup",
+      category: "scheduling",
+    });
     expect(dedupeFeedItems([a, b])).toHaveLength(2);
   });
 
