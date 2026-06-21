@@ -63,6 +63,27 @@ if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   ) &
 fi
 
+# Same pattern for OpenRouter: the canonical `openrouter` connection
+# (seedCanonicalConnections) resolves an EXPLICIT credential
+# (credential/openrouter/api_key) via `resolve-auth`, which reads the secure
+# store only — it does NOT fall back to the bare OPENROUTER_API_KEY env var. So
+# without this step the DeepSeek-via-OpenRouter managed profiles report
+# "credential not found". `keys set openrouter` writes that credential.
+if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  (
+    j=0
+    while [ "$j" -lt 30 ]; do
+      if ( cd /app/assistant && bun run src/index.ts keys set openrouter "$OPENROUTER_API_KEY" ) >/dev/null 2>&1; then
+        echo "[cue-app] openrouter key seeded from env into secure store" >&2
+        exit 0
+      fi
+      j=$((j + 1))
+      sleep 3
+    done
+    echo "[cue-app] WARN: could not seed openrouter key after retries (set it in Settings → API Keys)" >&2
+  ) &
+fi
+
 # Gateway in the foreground = the public service. On container stop it receives
 # SIGTERM and shuts down cleanly; the daemon is torn down with the container
 # (its SQLite WAL replays on next boot).

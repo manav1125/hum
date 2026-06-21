@@ -260,6 +260,20 @@ export function seedInferenceProfiles(
       template.provider,
       template.connectionName,
     ) as Record<string, unknown>;
+    // Self-host on OpenRouter: when `OPENROUTER_API_KEY` is set the platform
+    // "...-managed" proxy is unavailable, so route the managed profiles through
+    // the user's OpenRouter key (seeded into the store by the entrypoint, via
+    // the canonical `openrouter` connection) using DeepSeek models — Pro for
+    // balanced/quality, Flash for cost. Leaves the open-weight economy profile
+    // alone. Local/platform installs (no env var) are unaffected.
+    if (process.env.OPENROUTER_API_KEY && name !== "balanced-economy") {
+      next.provider = "openrouter";
+      next.provider_connection = "openrouter";
+      next.model =
+        name === "cost-optimized"
+          ? "deepseek/deepseek-v4-flash"
+          : "deepseek/deepseek-v4-pro";
+    }
     if (
       isByokMode &&
       options.isHatch &&

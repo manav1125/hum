@@ -346,6 +346,18 @@ const CANONICAL_CONNECTIONS: Array<{
     auth: { type: "platform" },
     label: "Fireworks",
   },
+  {
+    // Self-host OpenRouter (BYO key): used when the platform "...-managed"
+    // proxy is unavailable (single-tenant deploys). The key is seeded into the
+    // secure store at `credential/openrouter/api_key` by the container
+    // entrypoint from the `OPENROUTER_API_KEY` env var; `resolve-auth` reads it
+    // there. Always seeded so a profile can declare `provider_connection:
+    // "openrouter"` without a manual setup step.
+    name: "openrouter",
+    provider: "openrouter",
+    auth: { type: "api_key", credential: "credential/openrouter/api_key" },
+    label: "OpenRouter",
+  },
 ];
 
 /**
@@ -415,4 +427,3 @@ export function seedCanonicalConnections(db: DrizzleDb): void {
       .run();
   }
 }
-
