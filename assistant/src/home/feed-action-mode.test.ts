@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import type { AutonomyPolicyMap } from "../permissions/autonomy-policy-reader.js";
-import type { FeedAction } from "./feed-types.js";
 import {
   allowsBackground,
   classifyFeedActionMode,
   resolveDefaultMode,
 } from "./feed-action-mode.js";
+import type { FeedAction } from "./feed-types.js";
 
 const SAFE: AutonomyPolicyMap = {
   research: "auto",
@@ -40,9 +40,9 @@ describe("classifyFeedActionMode", () => {
   });
 
   test("send dominates over draft (draft AND send -> send)", () => {
-    expect(
-      classifyFeedActionMode(action("Draft and send the reply")),
-    ).toBe("send");
+    expect(classifyFeedActionMode(action("Draft and send the reply"))).toBe(
+      "send",
+    );
     expect(classifyFeedActionMode(action("Reply on WordPress guidance"))).toBe(
       "send",
     );

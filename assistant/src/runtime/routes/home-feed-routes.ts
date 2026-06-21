@@ -54,15 +54,15 @@ import { emitNotificationSignal } from "../../notifications/emit-signal.js";
 import { getAutonomyPolicy } from "../../permissions/autonomy-policy-reader.js";
 import { createTask } from "../../tasks/task-store.js";
 import { getLogger } from "../../util/logger.js";
-import { runBackgroundJob } from "../background-job-runner.js";
+import { broadcastWorkItemStatus } from "../../work-items/work-item-runner.js";
 import {
   createWorkItem,
   getWorkItem,
   listWorkItems,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
-import { broadcastWorkItemStatus } from "../../work-items/work-item-runner.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
+import { runBackgroundJob } from "../background-job-runner.js";
 import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -430,8 +430,7 @@ function feedItemSource(item: FeedItem): {
       : typeof item.category === "string"
         ? item.category
         : undefined;
-  const sourceId =
-    typeof md?.sourceId === "string" ? md.sourceId : item.id;
+  const sourceId = typeof md?.sourceId === "string" ? md.sourceId : item.id;
   return {
     ...(sourceType ? { sourceType } : {}),
     ...(sourceId ? { sourceId } : {}),
@@ -443,7 +442,10 @@ function feedItemSource(item: FeedItem): {
  * The `work_items.taskId` foreign key requires a real `tasks` row, so we mint
  * a lightweight one per dispatch (the action prompt is its template).
  */
-function createFeedActionWorkItem(item: FeedItem, action: { label: string; prompt: string }) {
+function createFeedActionWorkItem(
+  item: FeedItem,
+  action: { label: string; prompt: string },
+) {
   // Prefer the item's own title ("Reply on WordPress guidance…") over the
   // action label ("Run it"/"Draft reply"), which is too generic for the
   // Activity row + the result card.
@@ -527,7 +529,10 @@ export async function handlePostFeedAction({
   // ── Needs you: queue it, but never auto-run. ────────────────────────
   if (mode === "needs_you") {
     const wi = createFeedActionWorkItem(item, action);
-    log.info({ itemId, actionId, workItemId: wi.id }, "Feed action queued (needs approval)");
+    log.info(
+      { itemId, actionId, workItemId: wi.id },
+      "Feed action queued (needs approval)",
+    );
     return { mode: "needs_you", workItemId: wi.id };
   }
 
@@ -581,12 +586,18 @@ export async function handlePostFeedAction({
       }
     })
     .catch((err) => {
-      log.warn({ err, itemId, workItemId: wi.id }, "Home action background run failed to dispatch");
+      log.warn(
+        { err, itemId, workItemId: wi.id },
+        "Home action background run failed to dispatch",
+      );
       updateWorkItem(wi.id, { status: "failed", lastRunStatus: "failed" });
       broadcastWorkItemStatus(wi.id);
     });
 
-  log.info({ itemId, actionId, workItemId: wi.id }, "Feed action dispatched to background");
+  log.info(
+    { itemId, actionId, workItemId: wi.id },
+    "Feed action dispatched to background",
+  );
   return { mode: "background", workItemId: wi.id };
 }
 
