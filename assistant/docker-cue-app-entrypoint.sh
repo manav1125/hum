@@ -12,6 +12,18 @@ SOCK="${VELLUM_WORKSPACE_DIR}/assistant.sock"
 # keeps its JWT/principal key material under it too.
 mkdir -p "${VELLUM_WORKSPACE_DIR}" "${GATEWAY_SECURITY_DIR:-${VELLUM_WORKSPACE_DIR}/gateway-security}"
 
+# One-time re-pairing: /v1/guardian/init writes a `guardian-init.lock` after the
+# first bootstrap and then refuses forever ("Bootstrap already completed"). To
+# re-pair a fresh remote client (e.g. a new mobile install) set
+# CUE_RESET_GUARDIAN_LOCK=1, redeploy once to clear the lock + consumed-secret
+# file, mint a token via guardian/init, then unset the var so normal boots keep
+# the lock in place. The guardian binding itself is preserved.
+if [ "${CUE_RESET_GUARDIAN_LOCK:-}" = "1" ]; then
+  _SECDIR="${GATEWAY_SECURITY_DIR:-${VELLUM_WORKSPACE_DIR}/gateway-security}"
+  rm -f "${_SECDIR}/guardian-init.lock" "${_SECDIR}/guardian-init-consumed.json" 2>/dev/null || true
+  echo "[cue-app] guardian-init lock reset (CUE_RESET_GUARDIAN_LOCK=1) — re-pairing enabled this boot" >&2
+fi
+
 echo "[cue-app] starting daemon (workspace=${VELLUM_WORKSPACE_DIR})" >&2
 # Daemon via its normal entrypoint (kata/apt prep, workspace hooks), backgrounded.
 ( cd /app/assistant && exec /app/assistant/docker-entrypoint.sh ) &
