@@ -2,53 +2,70 @@
  * Cue mobile tab bar.
  *
  * On mobile the three-column desktop layout collapses, so primary navigation
- * moves to a persistent bottom tab bar reconciled to the design's clean rail:
- * Home · Chat · Voice · Contacts. Voice (the emphasized center mic) routes to
- * the full-bleed Voice mode screen (which owns the live-voice session); Chat
- * starts a fresh conversation. Memory and Tasks are no longer tabs — they stay
- * reachable in-app (Memory via Intelligence, Tasks/Next moves via Home).
- * Rendered only at the mobile breakpoint, as a flex-shrink-0 footer inside the
- * root layout (so it sits above the safe-area inset the shell pads).
+ * moves to a persistent bottom tab bar matching the mobile design's clean
+ * 4-item rail: Today · Tasks · Voice · You.
+ *   - Today  → the Home command center (`/home`).
+ *   - Tasks  → the Next-moves work queue (`/next-moves`).
+ *   - Voice  → the full-bleed Voice mode screen (owns the live-voice session).
+ *   - You    → identity hub (Channels / Memory / Settings), entered at Channels.
+ * Chat is no longer a tab — it is a full-screen push reached by opening a
+ * next-move card or a task. Rendered only at the mobile breakpoint, as a
+ * flex-shrink-0 footer inside the root layout (so it sits above the safe-area
+ * inset the shell pads). Active = brand accent; inactive = secondary at .5.
  */
 
-import { Home, Mic, MessageSquare, Users } from "lucide-react";
+import { Home, ListChecks, Mic, User } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
-import { navigateToNewConversation } from "@/domains/chat/utils/conversation-navigation";
 import { routes } from "@/utils/routes";
 
 interface NavTab {
   key: string;
   label: string;
   to: string;
-  /** Match the active route by pathname suffix. */
+  icon: React.ReactNode;
+  /** Match the active route by pathname. */
   match: (pathname: string) => boolean;
 }
 
-const HOME_TAB: NavTab = {
-  key: "home",
-  label: "Home",
-  to: routes.home,
-  match: (p) => p.endsWith("/home"),
-};
-
-const CONTACTS_TAB: NavTab = {
-  key: "contacts",
-  label: "Contacts",
-  to: routes.contacts.root,
-  match: (p) => p.startsWith(routes.contacts.root),
-};
+const TABS: NavTab[] = [
+  {
+    key: "today",
+    label: "Today",
+    to: routes.home,
+    icon: <Home size={20} strokeWidth={2} />,
+    match: (p) => p.endsWith("/home"),
+  },
+  {
+    key: "tasks",
+    label: "Tasks",
+    to: routes.nextMoves,
+    icon: <ListChecks size={20} strokeWidth={2} />,
+    match: (p) => p.includes("/next-moves"),
+  },
+  {
+    key: "voice",
+    label: "Voice",
+    to: routes.voice,
+    icon: <Mic size={21} strokeWidth={2} />,
+    match: (p) => p.endsWith("/voice"),
+  },
+  {
+    key: "you",
+    label: "You",
+    to: routes.channels,
+    icon: <User size={20} strokeWidth={2} />,
+    match: (p) =>
+      p.includes("/channels") ||
+      p.includes("/memory") ||
+      p.includes("/settings") ||
+      p.startsWith(routes.contacts.root),
+  },
+];
 
 export function CueMobileTabBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-
-  // A conversation route is "Chat" — `/assistant/conversations/:id` and the
-  // bare `/assistant` index both resolve to the chat surface.
-  const isChatActive =
-    pathname === routes.assistant ||
-    pathname === `${routes.assistant}/` ||
-    pathname.startsWith(`${routes.conversations}/`);
 
   return (
     <nav
@@ -66,34 +83,15 @@ export function CueMobileTabBar() {
         borderTop: "1px solid var(--border-element)",
       }}
     >
-      <TabButton
-        label={HOME_TAB.label}
-        active={HOME_TAB.match(pathname)}
-        onClick={() => navigate(HOME_TAB.to)}
-        icon={<Home size={20} strokeWidth={2} />}
-      />
-
-      <TabButton
-        label="Chat"
-        active={isChatActive}
-        onClick={() => navigateToNewConversation(navigate)}
-        icon={<MessageSquare size={20} strokeWidth={2} />}
-      />
-
-      <TabButton
-        label="Voice"
-        active={pathname.endsWith("/voice")}
-        onClick={() => navigate(routes.voice)}
-        icon={<Mic size={22} strokeWidth={2} />}
-        emphasized
-      />
-
-      <TabButton
-        label={CONTACTS_TAB.label}
-        active={CONTACTS_TAB.match(pathname)}
-        onClick={() => navigate(CONTACTS_TAB.to)}
-        icon={<Users size={20} strokeWidth={2} />}
-      />
+      {TABS.map((tab) => (
+        <TabButton
+          key={tab.key}
+          label={tab.label}
+          icon={tab.icon}
+          active={tab.match(pathname)}
+          onClick={() => navigate(tab.to)}
+        />
+      ))}
     </nav>
   );
 }
@@ -103,19 +101,14 @@ function TabButton({
   icon,
   active,
   busy = false,
-  emphasized = false,
   onClick,
 }: {
   label: string;
   icon: React.ReactNode;
   active: boolean;
   busy?: boolean;
-  emphasized?: boolean;
   onClick: () => void;
 }) {
-  const color = active
-    ? "var(--accent-cue)"
-    : "var(--content-secondary)";
   return (
     <button
       type="button"
@@ -132,30 +125,14 @@ function TabButton({
         gap: 3,
         border: "none",
         background: "transparent",
-        color,
+        color: active ? "var(--accent-cue)" : "var(--content-secondary)",
+        opacity: busy ? 0.6 : active ? 1 : 0.5,
         cursor: "pointer",
         WebkitTapHighlightColor: "transparent",
-        opacity: busy ? 0.6 : 1,
+        transition: "color .15s ease, opacity .15s ease",
       }}
     >
-      <span
-        style={
-          emphasized
-            ? {
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 38,
-                height: 38,
-                borderRadius: "26%",
-                background: active ? "var(--accent-cue)" : "var(--surface-ink)",
-                color: "var(--content-on-ink)",
-              }
-            : { display: "flex" }
-        }
-      >
-        {icon}
-      </span>
+      <span style={{ display: "flex" }}>{icon}</span>
       <span
         style={{
           fontSize: 10.5,

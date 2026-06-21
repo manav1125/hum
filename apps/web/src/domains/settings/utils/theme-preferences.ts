@@ -1,3 +1,4 @@
+import { isNativePlatform } from "@/runtime/native-auth";
 import { getDeviceSetting, setDeviceSetting } from "@/utils/device-settings";
 
 export type ThemePreference = "system" | "light" | "dark" | "velvet";
@@ -28,6 +29,12 @@ export function readStoredThemePreference(
 ): ThemePreference {
   if (typeof window === "undefined") return "system";
   const raw = getDeviceSetting("theme", "");
+  // Native (iOS/Android) ships the dark "v1" mobile design by default. Only
+  // applies when the user hasn't made an explicit choice yet — once they pick a
+  // theme it persists to `device:theme` and `raw` wins below.
+  if (!raw && isNativePlatform()) {
+    return "dark";
+  }
   return normalizeThemePreference(raw || null, options);
 }
 

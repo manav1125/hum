@@ -117,8 +117,6 @@ targetTemplates:
 targets:
   App:
     templates: [AppEnvironment]
-    sources:
-      - path: App/AppIcon.icon
     configFiles:
       Debug: App/Config/App.xcconfig
       Release: App/Config/App.xcconfig

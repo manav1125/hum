@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { meetingsRecapPost, sttTranscribePost } from "@/generated/daemon/sdk.gen";
 import type { MeetingsRecapPostResponses } from "@/generated/daemon/types.gen";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
 /** The structured recap returned by POST /v1/meetings/recap. */
 type RecapJson = MeetingsRecapPostResponses[200];
@@ -42,6 +43,30 @@ const C = {
   green: "#277E41",
   red: "#E24B4A",
 } as const;
+/**
+ * Dark mobile tokens (README-MOBILE §1). The phone shell is full-bleed dark
+ * on mobile, so the recap card and chrome read against the ink gradient rather
+ * than the light desktop page. Accents (blue/lilac) are theme-invariant.
+ */
+const D = {
+  ink: "#1A2230",
+  inkDeep: "#11161F",
+  inkBottom: "#0C1018",
+  surface: "#212B3B",
+  surface2: "#2A3547",
+  blue: "#3D6EE8",
+  blueS: "#2B53C4",
+  blueW: "rgba(61,110,232,.18)",
+  lilac: "#7F77DD",
+  t1: "#FFFFFF",
+  t2: "#8A97AC",
+  t3: "#5E6B80",
+  green: "#3FB871",
+  danger: "#E5634B",
+  line: "rgba(255,255,255,.08)",
+  line2: "rgba(255,255,255,.14)",
+} as const;
+
 const mono = "'DM Mono', ui-monospace, monospace";
 
 /* Scoped animations. Reduced-motion holds the dot solid and the bars at mid height. */
@@ -64,22 +89,6 @@ const ANIM_CSS = `
 }
 `;
 
-const card = {
-  background: C.surface,
-  border: `1px solid ${C.line}`,
-  borderRadius: 13,
-  padding: "13px 15px",
-} as const;
-const cardTitle = { fontSize: 13.5, fontWeight: 500 } as const;
-const cardBody = { fontSize: 12, color: C.t2, marginTop: 3 } as const;
-const chipBase = {
-  fontSize: 12,
-  border: `1px solid ${C.line2}`,
-  background: C.surface,
-  borderRadius: 8,
-  padding: "5px 10px",
-  color: C.t1,
-} as const;
 
 /** Format a duration in whole seconds as MM:SS. */
 function formatDuration(totalSeconds: number): string {
@@ -199,8 +208,37 @@ function CaptureFrame({
   );
 }
 
-/** The blinking-rec pill from the original design, now driven by the live timer. */
-function RecPill({ elapsed }: { elapsed: number }) {
+/**
+ * The blinking-REC pill, now driven by the live timer. On mobile it's a
+ * larger danger-tinted chip with the danger-red (`#E5634B`) dot and a DM-Mono
+ * timer, per README-MOBILE §3.6.
+ */
+function RecPill({ elapsed, mobile = false }: { elapsed: number; mobile?: boolean }) {
+  if (mobile) {
+    return (
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: mono,
+          fontSize: 12.5,
+          letterSpacing: ".08em",
+          color: "#fff",
+          background: "rgba(229,99,75,.16)",
+          border: `1px solid rgba(229,99,75,.5)`,
+          padding: "6px 12px",
+          borderRadius: 999,
+        }}
+      >
+        <span
+          className="mc-dot"
+          style={{ width: 9, height: 9, borderRadius: "50%", background: D.danger }}
+        />
+        REC {formatDuration(elapsed)}
+      </span>
+    );
+  }
   return (
     <span
       style={{
@@ -255,7 +293,112 @@ function pillButton(primary: boolean): React.CSSProperties {
   };
 }
 
-function LiveCapture({ onRecap }: { onRecap: (recap: RecapJson) => void }) {
+/**
+ * Full-width, ≥44pt touch target for the mobile bottom-third controls.
+ * `tone`: primary (blue) · neutral (glass) · danger (stop).
+ */
+function mobileButton(tone: "primary" | "neutral" | "danger"): React.CSSProperties {
+  const bg =
+    tone === "primary" ? D.blue : tone === "danger" ? "rgba(229,99,75,.16)" : "rgba(255,255,255,.06)";
+  const border =
+    tone === "primary"
+      ? `1px solid ${D.blue}`
+      : tone === "danger"
+        ? `1px solid rgba(229,99,75,.55)`
+        : `1px solid ${D.line2}`;
+  return {
+    fontFamily: "'DM Sans', system-ui, sans-serif",
+    fontSize: 15,
+    fontWeight: 600,
+    letterSpacing: ".01em",
+    border,
+    background: bg,
+    color: tone === "danger" ? "#FFD9CF" : "#fff",
+    borderRadius: 14,
+    minHeight: 52,
+    padding: "0 18px",
+    width: "100%",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  };
+}
+
+/**
+ * The mobile phone shell: a full-bleed dark ink gradient with safe-area
+ * insets. `content` fills the upper area (scrollable); `controls` is pinned to
+ * the bottom third for thumb reach (README-MOBILE §3.6 / §1).
+ */
+function MobileShell({
+  topBar,
+  content,
+  controls,
+}: {
+  topBar: React.ReactNode;
+  content: React.ReactNode;
+  controls: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        background: `linear-gradient(180deg, ${D.ink} 0%, ${D.inkDeep} 72%, ${D.inkBottom} 100%)`,
+        color: D.t1,
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+      }}
+    >
+      <style>{ANIM_CSS}</style>
+      {/* top bar — eyebrow + REC indicator, padded for the notch */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "calc(env(safe-area-inset-top, 0px) + 16px) 20px 8px",
+          flexShrink: 0,
+        }}
+      >
+        {topBar}
+      </div>
+
+      {/* scrollable capture / recap body */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          padding: "8px 20px 12px",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {content}
+      </div>
+
+      {/* bottom-third controls — pinned within thumb reach */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          padding: "14px 20px calc(env(safe-area-inset-bottom, 0px) + 18px)",
+          borderTop: `1px solid ${D.line}`,
+          background: "rgba(12,16,24,.55)",
+        }}
+      >
+        {controls}
+      </div>
+    </div>
+  );
+}
+
+function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void; mobile: boolean }) {
   const assistantId = useActiveAssistantId();
 
   const [supported] = useState<boolean>(() => recordingSupported());
@@ -426,6 +569,232 @@ function LiveCapture({ onRecap }: { onRecap: (recap: RecapJson) => void }) {
     setError(null);
   }, []);
 
+  // =====================================================================
+  // Mobile (README-MOBILE §3.6): full-bleed dark phone shell, the flow
+  // record → live transcript → recap, REC indicator up top, Stop & Save
+  // controls pinned in the bottom third for thumb reach.
+  // =====================================================================
+  if (mobile) {
+    const recording = status === "recording";
+    const transcribing = status === "transcribing";
+    const reviewing = status === "transcribed" || status === "creating-recap";
+    const creating = status === "creating-recap";
+
+    const topBar = (
+      <>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: ".12em", color: D.t2 }}>
+            CUE · MEETING
+          </span>
+        </div>
+        {recording ? <RecPill elapsed={elapsed} mobile /> : null}
+      </>
+    );
+
+    const errorNote = error ? (
+      <div
+        style={{
+          marginTop: 14,
+          fontSize: 12.5,
+          color: "#F3B8AC",
+          textAlign: "center",
+          lineHeight: 1.45,
+        }}
+      >
+        {error}
+      </div>
+    ) : null;
+
+    // ---- Unsupported ----
+    if (!supported) {
+      return (
+        <MobileShell
+          topBar={topBar}
+          content={
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                gap: 16,
+                padding: "0 8px",
+              }}
+            >
+              <ApertureAvatar size={96} />
+              <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5, maxWidth: 280 }}>
+                Recording isn&apos;t supported here. Open Meeting capture on your phone to record the
+                room.
+              </div>
+            </div>
+          }
+          controls={
+            <button type="button" disabled style={{ ...mobileButton("neutral"), opacity: 0.55, cursor: "default" }}>
+              Recording unavailable
+            </button>
+          }
+        />
+      );
+    }
+
+    // ---- Recording ----
+    if (recording) {
+      return (
+        <MobileShell
+          topBar={topBar}
+          content={
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                gap: 22,
+              }}
+            >
+              <ApertureAvatar state="listening" size={132} />
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 30 }}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <span key={i} className="mc-bar" style={{ width: 5, borderRadius: 3, background: "#fff" }} />
+                ))}
+              </div>
+              <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5 }}>
+                Listening &amp; transcribing the room…
+              </div>
+            </div>
+          }
+          controls={
+            <button type="button" onClick={handleStop} style={mobileButton("danger")}>
+              <span style={{ width: 11, height: 11, borderRadius: 3, background: D.danger }} />
+              Stop &amp; transcribe
+            </button>
+          }
+        />
+      );
+    }
+
+    // ---- Transcribing ----
+    if (transcribing) {
+      return (
+        <MobileShell
+          topBar={topBar}
+          content={
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                gap: 18,
+              }}
+            >
+              <Spinner size={34} />
+              <div style={{ fontSize: 14, color: D.t2 }}>Transcribing your capture…</div>
+            </div>
+          }
+          controls={
+            <button type="button" disabled style={{ ...mobileButton("neutral"), opacity: 0.6, cursor: "default" }}>
+              Transcribing…
+            </button>
+          }
+        />
+      );
+    }
+
+    // ---- Transcript ready → create recap ----
+    if (reviewing) {
+      return (
+        <MobileShell
+          topBar={topBar}
+          content={
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4 }}>
+              <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: ".06em", color: D.t3 }}>
+                TRANSCRIPT
+              </div>
+              <div
+                style={{
+                  background: D.surface,
+                  border: `1px solid ${D.line}`,
+                  borderLeft: `3px solid ${D.blue}`,
+                  borderRadius: 16,
+                  padding: "14px 16px",
+                  fontSize: 14,
+                  lineHeight: 1.55,
+                  color: "#E7ECF6",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {transcript}
+              </div>
+              {errorNote}
+            </div>
+          }
+          controls={
+            <>
+              <button
+                type="button"
+                onClick={handleCreateRecap}
+                disabled={creating}
+                style={{ ...mobileButton("primary"), opacity: creating ? 0.75 : 1, cursor: creating ? "default" : "pointer" }}
+              >
+                {creating ? <Spinner size={18} /> : null}
+                {creating ? "Saving recap to memory…" : "Save recap to memory"}
+              </button>
+              {!creating ? (
+                <button type="button" onClick={handleReset} style={mobileButton("neutral")}>
+                  Discard
+                </button>
+              ) : null}
+            </>
+          }
+        />
+      );
+    }
+
+    // ---- Idle ----
+    return (
+      <MobileShell
+        topBar={topBar}
+        content={
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              gap: 18,
+              padding: "0 6px",
+            }}
+          >
+            <ApertureAvatar size={132} />
+            <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-.3px", lineHeight: 1.25 }}>
+              Capture the room
+            </div>
+            <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5, maxWidth: 290 }}>
+              Cue records, transcribes live, then writes a recap — summary, action items, decisions —
+              into memory.
+            </div>
+            {errorNote}
+          </div>
+        }
+        controls={
+          <button type="button" onClick={handleStart} style={mobileButton("primary")}>
+            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#fff" }} />
+            Start recording
+          </button>
+        }
+      />
+    );
+  }
+
   // ---- Unsupported environment -------------------------------------------
   if (!supported) {
     return (
@@ -575,32 +944,84 @@ function RecapPlaceholder() {
 }
 
 /** The data-driven recap card, rendered from a real RecapJson. */
-function Recap({ recap }: { recap: RecapJson }) {
+function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }) {
   const peopleCount = recap.people.length;
   const subtitleParts = [
     peopleCount > 0 ? `${peopleCount} ${peopleCount === 1 ? "person" : "people"}` : null,
     recap.tone ? `tone: ${recap.tone}` : null,
   ].filter(Boolean);
 
+  // Theme bundle: dark surfaces/text on mobile, the original light palette on
+  // desktop. The JSX below is identical for both — only these values swap.
+  const tk = mobile
+    ? {
+        surface: D.surface,
+        line: D.line,
+        t1: D.t1,
+        t2: D.t2,
+        t3: D.t3,
+        blue: D.blue,
+        blueW: D.blueW,
+        blueS: "#9CB7FF",
+        violet: D.lilac,
+        nestBg: D.surface2,
+        nestLine: D.line,
+        noteBg: D.surface,
+        radius: mobile ? 18 : 14,
+      }
+    : {
+        surface: C.surface,
+        line: C.line,
+        t1: C.t1,
+        t2: C.t2,
+        t3: C.t3,
+        blue: C.blue,
+        blueW: C.blueW,
+        blueS: C.blueS,
+        violet: C.violet,
+        nestBg: C.surface,
+        nestLine: C.line,
+        noteBg: "#fff",
+        radius: 14,
+      };
+
+  const cardStyle: React.CSSProperties = {
+    background: tk.nestBg,
+    border: `1px solid ${tk.nestLine}`,
+    borderRadius: 13,
+    padding: "13px 15px",
+  };
+  const titleStyle: React.CSSProperties = { fontSize: 13.5, fontWeight: 500, color: tk.t1 };
+  const bodyStyle: React.CSSProperties = { fontSize: 12, color: tk.t2, marginTop: 3 };
+  const countChip: React.CSSProperties = {
+    fontFamily: mono,
+    fontSize: 10,
+    padding: "1px 6px",
+    borderRadius: 5,
+    background: tk.blueW,
+    color: tk.blueS,
+  };
+
   return (
     <div
       style={{
-        background: C.surface,
-        border: `1px solid ${C.line}`,
-        borderRadius: 14,
-        padding: 18,
+        background: tk.surface,
+        border: `1px solid ${tk.line}`,
+        borderRadius: tk.radius,
+        padding: mobile ? 16 : 18,
         display: "flex",
         flexDirection: "column",
         gap: 12,
+        color: tk.t1,
       }}
     >
       {/* header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <ApertureAvatar size={28} />
         <div>
-          <div style={{ fontWeight: 500 }}>Meeting recap</div>
+          <div style={{ fontWeight: 500, color: tk.t1 }}>Meeting recap</div>
           {subtitleParts.length > 0 ? (
-            <div style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
+            <div style={{ fontFamily: mono, fontSize: 11, color: tk.t3 }}>
               {subtitleParts.join(" · ")}
             </div>
           ) : null}
@@ -608,32 +1029,20 @@ function Recap({ recap }: { recap: RecapJson }) {
       </div>
 
       {/* summary */}
-      <div style={card}>
-        <div style={cardTitle}>Summary</div>
-        <div style={cardBody}>{recap.summary || "No summary was produced."}</div>
+      <div style={cardStyle}>
+        <div style={titleStyle}>Summary</div>
+        <div style={bodyStyle}>{recap.summary || "No summary was produced."}</div>
       </div>
 
-      {/* two-up */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div style={card}>
-          <div style={cardTitle}>
-            Action items{" "}
-            <span
-              style={{
-                fontFamily: mono,
-                fontSize: 10,
-                padding: "1px 6px",
-                borderRadius: 5,
-                background: C.blueW,
-                color: C.blueS,
-              }}
-            >
-              {recap.actionItems.length}
-            </span>
+      {/* two-up — stacks on mobile */}
+      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+        <div style={cardStyle}>
+          <div style={titleStyle}>
+            Action items <span style={countChip}>{recap.actionItems.length}</span>
           </div>
-          <div style={{ ...cardBody, marginTop: 6 }}>
+          <div style={{ ...bodyStyle, marginTop: 6 }}>
             {recap.actionItems.length === 0 ? (
-              <span style={{ color: C.t3 }}>None captured.</span>
+              <span style={{ color: tk.t3 }}>None captured.</span>
             ) : (
               recap.actionItems.map((item, i) => (
                 <div key={i}>
@@ -641,7 +1050,7 @@ function Recap({ recap }: { recap: RecapJson }) {
                   {item.owner ? (
                     <>
                       {" — "}
-                      <b>{item.owner}</b>
+                      <b style={{ color: tk.t1 }}>{item.owner}</b>
                     </>
                   ) : null}
                 </div>
@@ -649,11 +1058,11 @@ function Recap({ recap }: { recap: RecapJson }) {
             )}
           </div>
         </div>
-        <div style={card}>
-          <div style={cardTitle}>People &amp; tone</div>
-          <div style={{ ...cardBody, marginTop: 6 }}>
+        <div style={cardStyle}>
+          <div style={titleStyle}>People &amp; tone</div>
+          <div style={{ ...bodyStyle, marginTop: 6 }}>
             {peopleCount === 0 ? (
-              <span style={{ color: C.t3 }}>No people identified.</span>
+              <span style={{ color: tk.t3 }}>No people identified.</span>
             ) : (
               recap.people.map((p, i) => (
                 <div key={i}>
@@ -668,23 +1077,11 @@ function Recap({ recap }: { recap: RecapJson }) {
 
       {/* decisions */}
       {recap.decisions.length > 0 ? (
-        <div style={card}>
-          <div style={cardTitle}>
-            Decisions{" "}
-            <span
-              style={{
-                fontFamily: mono,
-                fontSize: 10,
-                padding: "1px 6px",
-                borderRadius: 5,
-                background: C.blueW,
-                color: C.blueS,
-              }}
-            >
-              {recap.decisions.length}
-            </span>
+        <div style={cardStyle}>
+          <div style={titleStyle}>
+            Decisions <span style={countChip}>{recap.decisions.length}</span>
           </div>
-          <div style={{ ...cardBody, marginTop: 6 }}>
+          <div style={{ ...bodyStyle, marginTop: 6 }}>
             {recap.decisions.map((d, i) => (
               <div key={i}>• {d}</div>
             ))}
@@ -697,11 +1094,20 @@ function Recap({ recap }: { recap: RecapJson }) {
         <Link
           to={`/assistant/conversations/${recap.conversationId}`}
           style={{
-            ...chipBase,
-            background: C.blue,
-            borderColor: C.blue,
+            fontSize: mobile ? 14 : 12,
+            fontWeight: mobile ? 600 : 400,
+            border: `1px solid ${tk.blue}`,
+            background: tk.blue,
+            borderRadius: mobile ? 14 : 8,
+            padding: mobile ? "13px 16px" : "5px 10px",
             color: "#fff",
             textDecoration: "none",
+            width: mobile ? "100%" : undefined,
+            textAlign: "center",
+            minHeight: mobile ? 48 : undefined,
+            display: mobile ? "flex" : undefined,
+            alignItems: mobile ? "center" : undefined,
+            justifyContent: mobile ? "center" : undefined,
           }}
         >
           Open meeting conversation
@@ -711,13 +1117,13 @@ function Recap({ recap }: { recap: RecapJson }) {
       {/* note */}
       <div
         style={{
-          background: "#fff",
-          border: `1px solid ${C.line}`,
-          borderLeft: `3px solid ${C.violet}`,
+          background: tk.noteBg,
+          border: `1px solid ${tk.line}`,
+          borderLeft: `3px solid ${tk.violet}`,
           borderRadius: "0 12px 12px 0",
           padding: "11px 14px",
           fontSize: 13,
-          color: C.t2,
+          color: tk.t2,
         }}
       >
         These items were written into the 8-type memory with source = this meeting, so they surface
@@ -729,7 +1135,38 @@ function Recap({ recap }: { recap: RecapJson }) {
 
 export function MeetingCapturePage() {
   const [recap, setRecap] = useState<RecapJson | null>(null);
+  const isMobile = useIsMobile();
 
+  // ---- Mobile: full-bleed dark phone surface ------------------------------
+  if (isMobile) {
+    // Before a recap exists, LiveCapture owns the whole dark shell (record →
+    // transcript → save). Once a recap lands, render it in a matching dark
+    // shell with a bottom-third "Capture another meeting" control.
+    if (!recap) {
+      return <LiveCapture onRecap={setRecap} mobile />;
+    }
+    return (
+      <MobileShell
+        topBar={
+          <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: ".12em", color: D.t2 }}>
+            CUE · RECAP
+          </span>
+        }
+        content={
+          <div style={{ paddingTop: 4 }}>
+            <Recap recap={recap} mobile />
+          </div>
+        }
+        controls={
+          <button type="button" onClick={() => setRecap(null)} style={mobileButton("neutral")}>
+            Capture another meeting
+          </button>
+        }
+      />
+    );
+  }
+
+  // ---- Desktop: the original two-column light layout ----------------------
   return (
     <div
       style={{
@@ -767,7 +1204,7 @@ export function MeetingCapturePage() {
       {/* two-part responsive layout */}
       <div className="mc-grid">
         <div>
-          <LiveCapture onRecap={setRecap} />
+          <LiveCapture onRecap={setRecap} mobile={false} />
         </div>
         <div>{recap ? <Recap recap={recap} /> : <RecapPlaceholder />}</div>
       </div>

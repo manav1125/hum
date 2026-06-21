@@ -41,6 +41,7 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useLiveVoice } from "@/domains/chat/voice/live-voice/use-live-voice";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { ttsProvidersGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+// eslint-disable-next-line local/no-cross-domain-imports -- pre-existing; settings TTS types reused by the voice surface
 import { LS_TTS_PROVIDER, TTS_PROVIDERS } from "@/domains/settings/ai/ai-types";
 import { useIsOrgReady } from "@/hooks/use-is-org-ready";
 import {
@@ -50,6 +51,35 @@ import {
 } from "@/utils/local-settings";
 
 const mono = "'DM Mono', ui-monospace, monospace";
+
+// Design tokens (dark-v1 mobile book §1). Used as inline literals so this calm,
+// full-bleed surface renders identically on the route and the in-chat overlay
+// regardless of the host theme — the Voice screen is intentionally ink-only.
+const INK_GRADIENT =
+  "radial-gradient(120% 70% at 50% 30%, #22324F 0%, #161E2C 50%, #0C1018 100%)";
+const BLUE = "#3D6EE8";
+const DANGER = "#E5634B";
+const TEXT_2 = "#8A97AC";
+const TEXT_3 = "#5E6B80";
+const LINE = "rgba(255,255,255,.08)";
+const LINE_2 = "rgba(255,255,255,.14)";
+const SURFACE = "#212B3B";
+
+const safeInset = (side: "top" | "bottom" | "left" | "right") =>
+  `var(--safe-area-inset-${side}, env(safe-area-inset-${side}, 0px))`;
+
+/**
+ * Listening pulse rings + waveform keyframes (book §5: `cueVoiceRing`, `cueBar`).
+ * Scoped to this surface and disabled under `prefers-reduced-motion`. Purely
+ * presentational — no bearing on the session lifecycle.
+ */
+const VOICE_KEYFRAMES = `
+@keyframes cueVoiceRing { 0% { transform: scale(.9); opacity: .5 } 100% { transform: scale(1.6); opacity: 0 } }
+@keyframes cueBar { 0%,100% { transform: scaleY(.28) } 50% { transform: scaleY(1) } }
+@media (prefers-reduced-motion: reduce) {
+  .cue-voice-ring, .cue-voice-bar { animation: none !important }
+}
+`;
 
 /** Map the live-voice session phase onto the orb's four visual states. */
 function orbState(state: string): VoiceOrbState {
@@ -130,6 +160,14 @@ export function VoiceModeSurface({
   const connecting = state === "connecting";
   const active =
     state !== "idle" && state !== "failed" && state !== "connecting";
+  // Presentation-only flags derived from existing state. The live-voice
+  // controller maps every mic-start failure (incl. getUserMedia
+  // `permission-denied`) onto `state === "failed"` with the generic capture
+  // error — so a failed session is rendered as the design's mic-denied state
+  // (book §3.3). No new permission API is introduced; this only reskins the
+  // existing failure signal.
+  const listening = state === "listening" || state === "transcribing";
+  const denied = state === "failed";
 
   const handleToggle = useCallback(() => {
     if (connecting) return;
@@ -203,18 +241,24 @@ export function VoiceModeSurface({
     <div
       style={{
         height: "100%",
-        background: "var(--surface-ink)",
-        color: "var(--content-on-ink)",
+        background: INK_GRADIENT,
+        color: "#FFFFFF",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 28,
-        padding: 24,
+        gap: 26,
+        paddingTop: `calc(28px + ${safeInset("top")})`,
+        paddingBottom: `calc(28px + ${safeInset("bottom")})`,
+        paddingLeft: `calc(24px + ${safeInset("left")})`,
+        paddingRight: `calc(24px + ${safeInset("right")})`,
         textAlign: "center",
         position: "relative",
+        overflow: "hidden",
       }}
     >
+      <style>{VOICE_KEYFRAMES}</style>
+
       {/* Exit affordance — only when an onExit handler is supplied (in-chat). */}
       {onExit ? (
         <button
@@ -224,20 +268,21 @@ export function VoiceModeSurface({
           title="Return to typing"
           style={{
             position: "absolute",
-            top: 16,
-            right: 16,
+            top: `calc(14px + ${safeInset("top")})`,
+            right: `calc(14px + ${safeInset("right")})`,
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
             fontFamily: mono,
             fontSize: 12,
-            color: "var(--content-on-ink-muted)",
-            background: "transparent",
-            border:
-              "1px solid color-mix(in srgb, var(--content-on-ink) 22%, transparent)",
+            color: TEXT_2,
+            background: "rgba(255,255,255,.04)",
+            border: `1px solid ${LINE_2}`,
             borderRadius: 999,
-            padding: "7px 14px",
+            padding: "8px 14px",
+            minHeight: 36,
             cursor: "pointer",
+            backdropFilter: "blur(8px)",
           }}
         >
           <Keyboard size={14} aria-hidden />
@@ -246,16 +291,45 @@ export function VoiceModeSurface({
       ) : null}
 
       {!voiceMode ? (
-        <div style={{ maxWidth: 360 }}>
-          <VoiceOrb state="idle" size={120} />
-          <div style={{ fontSize: 17, fontWeight: 500, marginTop: 24 }}>
+        <div
+          style={{
+            maxWidth: 320,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 118,
+              height: 118,
+              borderRadius: "50%",
+              background: SURFACE,
+              border: `1px solid ${LINE}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: 0.6,
+            }}
+          >
+            <VoiceOrb state="idle" size={84} />
+          </div>
+          <div
+            style={{
+              fontSize: 19,
+              fontWeight: 600,
+              letterSpacing: "-0.3px",
+              marginTop: 26,
+            }}
+          >
             Voice mode isn't enabled
           </div>
           <div
             style={{
-              fontSize: 13.5,
-              color: "var(--content-on-ink-muted)",
-              marginTop: 8,
+              fontSize: 14,
+              lineHeight: 1.5,
+              color: TEXT_2,
+              marginTop: 10,
             }}
           >
             Turn on voice mode for this assistant (Settings → Models &amp;
@@ -265,52 +339,60 @@ export function VoiceModeSurface({
         </div>
       ) : (
         <>
-          <button
-            type="button"
-            onClick={handleToggle}
-            aria-label={active ? "Stop voice mode" : "Start voice mode"}
-            disabled={connecting}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: connecting ? "default" : "pointer",
-              opacity: muted && active ? 0.55 : 1,
-              transition: "opacity 120ms ease",
-            }}
-          >
-            <VoiceOrb state={orbState(state)} size={160} />
-          </button>
-
+          {/* Status eyebrow (DM Mono) — the design's top-of-screen state line. */}
           <div
             style={{
               fontFamily: mono,
-              fontSize: 12.5,
-              letterSpacing: "0.06em",
+              fontSize: 10.5,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
               color:
                 muted && active
-                  ? "var(--content-on-ink-muted)"
-                  : state === "listening" || state === "transcribing"
-                    ? "var(--accent-cue)"
-                    : "var(--content-on-ink-muted)",
+                  ? TEXT_2
+                  : listening
+                    ? BLUE
+                    : denied
+                      ? DANGER
+                      : TEXT_2,
             }}
           >
-            {muted && active ? "muted" : stateLabel(state)}
+            {muted && active
+              ? "muted"
+              : denied
+                ? "microphone unavailable"
+                : stateLabel(state)}
           </div>
 
           {/* Live transcript: finalized (white) + in-flight (blue) + reply. */}
-          <div style={{ maxWidth: 560, minHeight: 80 }}>
+          <div
+            style={{
+              maxWidth: 560,
+              minHeight: 84,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+            }}
+          >
             {finalTranscript ? (
-              <span style={{ fontSize: 18, lineHeight: 1.5 }}>
+              <span
+                style={{
+                  fontSize: 20,
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                  letterSpacing: "-0.3px",
+                }}
+              >
                 {finalTranscript}{" "}
               </span>
             ) : null}
             {partialTranscript ? (
               <span
                 style={{
-                  fontSize: 18,
-                  lineHeight: 1.5,
-                  color: "var(--accent-cue)",
+                  fontSize: 20,
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                  letterSpacing: "-0.3px",
+                  color: BLUE,
                 }}
               >
                 {partialTranscript}
@@ -319,23 +401,26 @@ export function VoiceModeSurface({
             {!finalTranscript && !partialTranscript && !assistantTranscript ? (
               <div
                 style={{
-                  fontSize: 15,
-                  color: "var(--content-on-ink-muted)",
+                  fontSize: 17,
+                  lineHeight: 1.45,
+                  color: denied ? TEXT_3 : TEXT_2,
                 }}
               >
-                {active
-                  ? muted
-                    ? "Muted — unmute to talk."
-                    : "Listening — say something."
-                  : "Tap the orb and start talking."}
+                {denied
+                  ? "We couldn't reach your microphone."
+                  : active
+                    ? muted
+                      ? "Muted — unmute to talk."
+                      : "Listening — say something."
+                    : "Hold to talk, or tap the mic to start."}
               </div>
             ) : null}
             {assistantTranscript ? (
               <div
                 style={{
-                  fontSize: 15,
+                  fontSize: 15.5,
                   lineHeight: 1.5,
-                  color: "var(--content-on-ink-muted)",
+                  color: TEXT_2,
                   marginTop: 14,
                 }}
               >
@@ -344,11 +429,120 @@ export function VoiceModeSurface({
             ) : null}
           </div>
 
-          {error ? (
+          {/* Big central mic — aperture orb in a tappable circle. While
+              listening, two offset `cueVoiceRing` halos pulse outward. When the
+              capture failed (mic-denied), the circle greys out. */}
+          <button
+            type="button"
+            onClick={handleToggle}
+            aria-label={active ? "Stop voice mode" : "Start voice mode"}
+            disabled={connecting}
+            style={{
+              position: "relative",
+              width: 150,
+              height: 150,
+              flexShrink: 0,
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: connecting ? "default" : "pointer",
+              transition: "opacity 120ms ease",
+            }}
+          >
+            {listening && !muted ? (
+              <>
+                <span
+                  className="cue-voice-ring"
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    border: `2px solid ${BLUE}80`,
+                    animation: "cueVoiceRing 1.8s ease-out infinite",
+                  }}
+                />
+                <span
+                  className="cue-voice-ring"
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    border: `2px solid ${BLUE}80`,
+                    animation: "cueVoiceRing 1.8s ease-out .9s infinite",
+                  }}
+                />
+              </>
+            ) : null}
+            <span
+              style={{
+                width: 118,
+                height: 118,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: denied
+                  ? SURFACE
+                  : active && !muted
+                    ? BLUE
+                    : SURFACE,
+                border: denied ? `1px solid ${LINE_2}` : "none",
+                boxShadow:
+                  active && !muted && !denied
+                    ? "0 20px 50px -16px rgba(61,110,232,.7)"
+                    : "0 16px 40px -20px rgba(0,0,0,.8)",
+                opacity: denied || (muted && active) ? 0.5 : 1,
+                transition: "background 160ms ease, opacity 160ms ease",
+              }}
+            >
+              {denied ? (
+                <MicOff size={40} color={TEXT_2} aria-hidden />
+              ) : (
+                <VoiceOrb state={orbState(state)} size={88} />
+              )}
+            </span>
+          </button>
+
+          {/* Mic-denied recovery: deep-link to the OS settings (book §3.3). */}
+          {denied ? (
+            <button
+              type="button"
+              onClick={() => {
+                // Best-effort native deep-link; a no-op on web. Presentational —
+                // no permission API is invoked here.
+                try {
+                  window.location.href = "app-settings:";
+                } catch {
+                  /* ignore — unsupported host */
+                }
+              }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontFamily: mono,
+                fontSize: 12,
+                color: "#FFFFFF",
+                background: BLUE,
+                border: "none",
+                borderRadius: 999,
+                padding: "11px 20px",
+                minHeight: 44,
+                cursor: "pointer",
+              }}
+            >
+              Enable microphone in Settings
+            </button>
+          ) : error && !denied ? (
             <div
               style={{
                 fontSize: 13,
-                color: "var(--system-negative-hover, #E86B40)",
+                color: DANGER,
                 maxWidth: 420,
               }}
             >
@@ -376,16 +570,12 @@ export function VoiceModeSurface({
                   gap: 8,
                   fontFamily: mono,
                   fontSize: 12,
-                  color: muted
-                    ? "var(--content-on-ink)"
-                    : "var(--content-on-ink-muted)",
-                  background: muted
-                    ? "color-mix(in srgb, var(--content-on-ink) 14%, transparent)"
-                    : "transparent",
-                  border:
-                    "1px solid color-mix(in srgb, var(--content-on-ink) 22%, transparent)",
+                  color: muted ? "#FFFFFF" : TEXT_2,
+                  background: muted ? "rgba(255,255,255,.14)" : "transparent",
+                  border: `1px solid ${LINE_2}`,
                   borderRadius: 999,
-                  padding: "7px 16px",
+                  padding: "11px 18px",
+                  minHeight: 44,
                   cursor: "pointer",
                 }}
               >
@@ -400,26 +590,40 @@ export function VoiceModeSurface({
               <button
                 type="button"
                 onClick={() => void stop()}
+                aria-label="Stop voice mode"
                 style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
                   fontFamily: mono,
                   fontSize: 12,
-                  color: "var(--content-on-ink-muted)",
-                  background: "transparent",
-                  border:
-                    "1px solid color-mix(in srgb, var(--content-on-ink) 22%, transparent)",
+                  color: DANGER,
+                  background: `${DANGER}1A`,
+                  border: `1px solid ${DANGER}59`,
                   borderRadius: 999,
-                  padding: "7px 18px",
+                  padding: "11px 20px",
+                  minHeight: 44,
                   cursor: "pointer",
                 }}
               >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: DANGER,
+                  }}
+                />
                 Stop
               </button>
             </div>
           ) : null}
 
           {/* Voice / TTS-provider picker — only while idle, so a turn isn't
-              interrupted; persists to the shared LS_TTS_PROVIDER key. */}
-          {!active ? (
+              interrupted; persists to the shared LS_TTS_PROVIDER key. Hidden in
+              the mic-denied state so the recovery CTA stays the focus. */}
+          {!active && !denied ? (
             <div
               style={{
                 display: "flex",
@@ -433,8 +637,8 @@ export function VoiceModeSurface({
                 style={{
                   fontFamily: mono,
                   fontSize: 11,
-                  letterSpacing: "0.06em",
-                  color: "var(--content-on-ink-muted)",
+                  letterSpacing: "0.1em",
+                  color: TEXT_3,
                 }}
               >
                 VOICE
