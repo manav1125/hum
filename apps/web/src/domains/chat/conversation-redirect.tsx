@@ -6,9 +6,11 @@
 import { Navigate, useSearchParams } from "react-router";
 
 import { ChatPage } from "@/domains/chat/chat-page";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 
 export function ConversationRedirect() {
+  const isMobile = useIsMobile();
   const [searchParams] = useSearchParams();
   // Both params are checked intentionally: `conversationKey` predates the
   // `conversationId` cutover. Ancient saved/shared URLs only have `conversationKey`.
@@ -26,6 +28,11 @@ export function ConversationRedirect() {
         replace
       />
     );
+  }
+  // On mobile (the design's primary surface), the default tab is Today — land
+  // there instead of opening a fresh chat. Desktop keeps the chat-first index.
+  if (isMobile) {
+    return <Navigate to={routes.home} replace />;
   }
   return <ChatPage />;
 }

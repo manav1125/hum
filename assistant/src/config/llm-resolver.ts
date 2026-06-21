@@ -92,6 +92,17 @@ export interface ResolveCallSiteOpts {
   onMixSelected?: (info: { mixProfile: string; chosenProfile: string }) => void;
 }
 
+/**
+ * Self-host-on-OpenRouter override. When `OPENROUTER_API_KEY` is set (the
+ * single-tenant Render deploy), force every resolved call site onto
+ * DeepSeek-via-OpenRouter regardless of the workspace's active/default profile —
+ * a fresh self-host hatch points those at Anthropic (BYO key), which has no
+ * platform proxy and, here, a usage cap. The canonical `openrouter` connection
+ * is seeded at boot and the key lives in the secure store. Read once at module
+ * load so the resolver stays effectively pure per call.
+ */
+const FORCE_OPENROUTER_DEEPSEEK = !!process.env.OPENROUTER_API_KEY;
+
 export function resolveCallSiteConfig(
   callSite: LLMCallSite,
   llm: z.infer<typeof LLMSchema>,
@@ -148,6 +159,17 @@ export function resolveCallSiteConfig(
     resolved.logitBias = biasRef.preset;
   } else {
     delete (resolved as { logitBias?: unknown }).logitBias;
+  }
+  // Self-host OpenRouter override (see FORCE_OPENROUTER_DEEPSEEK): route the
+  // main chat through DeepSeek Pro and every other call site through Flash,
+  // overriding whatever provider the profile layers resolved to.
+  if (FORCE_OPENROUTER_DEEPSEEK && resolved.provider !== "openrouter") {
+    resolved.provider = "openrouter";
+    resolved.provider_connection = "openrouter";
+    resolved.model =
+      callSite === "mainAgent"
+        ? "deepseek/deepseek-v4-pro"
+        : "deepseek/deepseek-v4-flash";
   }
   return resolved;
 }

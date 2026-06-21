@@ -24,6 +24,7 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { requestComposerFocus } from "@/domains/chat/composer-focus";
 import { createDraftConversationId } from "@/domains/chat/utils/conversation-selection";
 import { useDashboardQuery } from "@/domains/dashboard/use-dashboard-query";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { selectNextMove } from "@/domains/home/utils";
@@ -79,6 +80,39 @@ const C = {
 
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
+
+// Dark mobile tokens — the design-book "Today" palette (README §1, Dark v1).
+// Mirrors the inline hexes in `Cue Mobile.dc.html` so the mobile branch reads
+// as one coherent dark surface independent of the light desktop canvas.
+const M = {
+  ink: "#1A2230",
+  inkDeep: "#11161F",
+  inkBottom: "#0C1018",
+  surface: "#212B3B",
+  surface2: "#2A3547",
+  blue: "#3D6EE8",
+  blueDeep: "#2B53C4",
+  blueEyebrow: "#86A9F2",
+  lilac: "#7F77DD",
+  lilacText: "#A59EF0",
+  t1: "#FFFFFF",
+  t2: "#8A97AC",
+  t3: "#5E6B80",
+  green: "#3FB871",
+  amber: "#E0A53B",
+  danger: "#E5634B",
+  line: "rgba(255,255,255,.08)",
+  line2: "rgba(255,255,255,.14)",
+  markChip: "#0F1620",
+} as const;
+
+const MOBILE_KEYFRAMES = `
+@keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+@keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+@keyframes cuePing{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+@keyframes cueShim{0%{background-position:-260px 0}100%{background-position:260px 0}}
+@media (prefers-reduced-motion: reduce){.cue-today-anim *{animation:none !important}}
+`;
 
 const KEYFRAMES = `
 @keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
@@ -395,6 +429,7 @@ function SplitMenuItem({
 
 export function HomeElevatedRoute() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const assistantId = useActiveAssistantId();
   const feedQuery = useHomeFeedQuery(assistantId);
   const stateQuery = useHomeStateQuery(assistantId);
@@ -468,6 +503,7 @@ export function HomeElevatedRoute() {
   // Upcoming schedules for the day rail — real, enabled, future-dated runs.
   const upcoming = useMemo(() => {
     const list = schedulesQuery.data?.schedules ?? [];
+    // eslint-disable-next-line react-hooks/purity -- Date.now() inside a memo (recomputed on schedule change), not a render-loop read
     const now = Date.now();
     return list
       .filter((s) => s.enabled && s.nextRunAt > now)
@@ -549,6 +585,40 @@ export function HomeElevatedRoute() {
   const dismissItem = (item: FeedItem) => {
     feedQuery.updateStatus.mutate({ itemId: item.id, status: "dismissed" });
   };
+
+  // MOBILE — render the clean design-book "Today" screen instead of the
+  // desktop command center. Reuses every handler/datum above (home feed,
+  // next-move selection, the split-button action-mode execution, and
+  // approve→runAction / deny→dismiss). The app shell already supplies the
+  // status bar + bottom tab bar, so this branch renders only the content
+  // column (greeting + card stack) and the pinned composer.
+  if (isMobile) {
+    // The mobile "next-move stack" is the hero move first, then the rest of
+    // the live queue (still ordered by priority) — one continuous stack of
+    // cards as the design book shows, not a separate hero + queue.
+    const moveStack = [
+      ...(nextMove ? [nextMove] : []),
+      ...queueItems.filter((i) => i.status !== "acted_on"),
+    ];
+    return (
+      <TodayMobile
+        assistantId={assistantId}
+        greeting={greeting}
+        day={day}
+        time={time}
+        userName={userName}
+        loading={feedQuery.isLoading}
+        moves={moveStack}
+        actionPending={feedQuery.triggerAction.isPending}
+        action={action}
+        onRun={runAction}
+        onApprove={(item) => runAction(item, "smart")}
+        onDeny={dismissItem}
+        onOpenConversation={(id) => navigate(routes.conversation(id))}
+        onVoice={() => navigate(routes.voice)}
+      />
+    );
+  }
 
   return (
     <div
@@ -1429,6 +1499,770 @@ function HomeQueryBar({ assistantId }: { assistantId: string }) {
       {error ? (
         <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</div>
       ) : null}
+    </div>
+  );
+}
+
+// ===========================================================================
+// MOBILE — design-book "Today" screen.
+// ===========================================================================
+
+/** True when a feed item's primary action needs explicit user approval. */
+function isApprovalItem(item: FeedItem): boolean {
+  const a = item.actions?.[0];
+  if (!a) return false;
+  return a.defaultMode === "needs_you" || a.allowBackground === false;
+}
+
+/** The mono eyebrow above a card title (e.g. `NEXT MOVE · DUE 10:30`). */
+function moveEyebrow(item: FeedItem): string {
+  if (isApprovalItem(item)) {
+    return item.actions?.[0]?.label
+      ? `APPROVAL NEEDED · ${item.actions[0].label.toUpperCase()}`
+      : "APPROVAL NEEDED";
+  }
+  if (item.expiresAt) {
+    const due = new Date(item.expiresAt);
+    if (!Number.isNaN(due.getTime())) {
+      const t = due.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return `NEXT MOVE · DUE ${t.toUpperCase()}`;
+    }
+  }
+  return "NEXT MOVE";
+}
+
+type TodayMobileProps = {
+  assistantId: string;
+  greeting: string;
+  day: string;
+  time: string;
+  userName?: string;
+  loading: boolean;
+  moves: FeedItem[];
+  actionPending: boolean;
+  action: (item: FeedItem) => FeedActionShape | null;
+  onRun: (item: FeedItem, mode?: RunMode) => void;
+  onApprove: (item: FeedItem) => void;
+  onDeny: (item: FeedItem) => void;
+  onOpenConversation: (conversationId: string) => void;
+  onVoice: () => void;
+};
+
+/**
+ * Today (mobile) — the design-book `/home` screen.
+ *
+ * A dark gradient canvas with a greeting header, a scrollable stack of
+ * next-move + approval cards, and a composer pinned at the bottom. Three
+ * first-class states: Ready (cards), Loading (shimmer skeletons), and Empty
+ * ("You're all caught up"). All execution reuses the parent's wired handlers —
+ * the split-button modes, approve→run, deny→dismiss, and open-as-chat.
+ */
+function TodayMobile({
+  assistantId,
+  greeting,
+  day,
+  time,
+  userName,
+  loading,
+  moves,
+  actionPending,
+  action,
+  onRun,
+  onApprove,
+  onDeny,
+  onOpenConversation,
+  onVoice,
+}: TodayMobileProps) {
+  const initial = (userName?.trim()?.[0] ?? "C").toUpperCase();
+  const isEmpty = !loading && moves.length === 0;
+
+  return (
+    <div
+      className="cue-today-anim"
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        background: `linear-gradient(180deg, ${M.ink} 0%, ${M.inkDeep} 78%, ${M.inkBottom} 100%)`,
+        color: M.t1,
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        overflow: "hidden",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: MOBILE_KEYFRAMES }} />
+
+      {/* HEADER — eyebrow + greeting + identity chip. */}
+      <div style={{ flexShrink: 0, padding: "12px 20px 12px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span
+              style={{
+                position: "relative",
+                width: 30,
+                height: 30,
+                borderRadius: 9,
+                background: M.markChip,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  width: 17,
+                  height: 17,
+                  borderRadius: "50%",
+                  boxShadow: "0 0 0 2.6px #EEF2F7 inset",
+                  WebkitMask:
+                    "radial-gradient(circle,transparent 56%,#000 57%)",
+                  mask: "radial-gradient(circle,transparent 56%,#000 57%)",
+                  transform: "rotate(40deg)",
+                  animation: "cueLook 6s ease-in-out infinite",
+                  position: "relative",
+                  display: "block",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    borderRadius: "50%",
+                    background: M.blue,
+                    width: "26%",
+                    height: "26%",
+                    top: "8%",
+                    left: "8%",
+                    animation: "cueBlink 4s infinite",
+                    display: "block",
+                  }}
+                />
+              </span>
+            </span>
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 9,
+                letterSpacing: ".08em",
+                color: M.t2,
+              }}
+            >
+              {day} · {time}
+            </span>
+          </div>
+          <span
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              background: M.surface,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              fontWeight: 600,
+              color: M.t1,
+              flexShrink: 0,
+            }}
+          >
+            {initial}
+          </span>
+        </div>
+        <div
+          style={{
+            fontSize: 23,
+            fontWeight: 600,
+            letterSpacing: "-.6px",
+            marginTop: 12,
+          }}
+        >
+          {greeting}
+        </div>
+      </div>
+
+      {/* SCROLL CONTENT — Ready / Loading / Empty. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          padding: "4px 20px 12px",
+        }}
+      >
+        {loading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+            {[128, 128, 110].map((h, i) => (
+              <div
+                key={i}
+                style={{
+                  height: h,
+                  borderRadius: 18,
+                  background: `linear-gradient(90deg,${M.surface} 0%,${M.surface2} 50%,${M.surface} 100%)`,
+                  backgroundSize: "260px 100%",
+                  animation: "cueShim 1.3s linear infinite",
+                }}
+              />
+            ))}
+          </div>
+        ) : isEmpty ? (
+          <TodayMobileEmpty />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+            {moves.map((item) =>
+              isApprovalItem(item) ? (
+                <ApprovalCardMobile
+                  key={item.id}
+                  item={item}
+                  pending={actionPending}
+                  onApprove={() => onApprove(item)}
+                  onDeny={() => onDeny(item)}
+                />
+              ) : (
+                <NextMoveCardMobile
+                  key={item.id}
+                  item={item}
+                  action={action(item)}
+                  pending={actionPending}
+                  onRun={(mode) => onRun(item, mode)}
+                  onOpen={
+                    item.conversationId
+                      ? () => onOpenConversation(item.conversationId!)
+                      : undefined
+                  }
+                />
+              ),
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* COMPOSER — pinned above the app's bottom tab bar. */}
+      <TodayMobileComposer assistantId={assistantId} onVoice={onVoice} />
+    </div>
+  );
+}
+
+/** A next-move card: eyebrow, title, summary, and the reused split-button. */
+function NextMoveCardMobile({
+  item,
+  action,
+  pending,
+  onRun,
+  onOpen,
+}: {
+  item: FeedItem;
+  action: FeedActionShape | null;
+  pending: boolean;
+  onRun: (mode?: RunMode) => void;
+  onOpen?: () => void;
+}) {
+  return (
+    <div
+      style={{
+        background: M.surface,
+        border: `1px solid ${M.line}`,
+        borderRadius: 18,
+        padding: "15px 16px",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: mono,
+          fontSize: 9,
+          letterSpacing: ".07em",
+          color: M.blueEyebrow,
+        }}
+      >
+        {moveEyebrow(item)}
+      </div>
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 600,
+          marginTop: 7,
+          letterSpacing: "-.2px",
+          lineHeight: 1.3,
+        }}
+      >
+        {item.title ?? item.summary}
+      </div>
+      {item.title && (
+        <div
+          style={{
+            fontSize: 12.5,
+            color: M.t2,
+            marginTop: 4,
+            lineHeight: 1.45,
+          }}
+        >
+          {item.summary}
+        </div>
+      )}
+      {(action || onOpen) && (
+        <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+          {action && (
+            <MobileSplitButton
+              action={action}
+              pending={pending}
+              onRun={onRun}
+            />
+          )}
+          {onOpen && (
+            <button
+              type="button"
+              onClick={onOpen}
+              style={{
+                background: M.surface2,
+                color: M.t1,
+                fontSize: 13,
+                fontWeight: 500,
+                padding: "11px 16px",
+                borderRadius: 11,
+                border: "none",
+                cursor: "pointer",
+                minHeight: 44,
+                flexShrink: 0,
+              }}
+            >
+              Open
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The mobile split-button — primary smart action (full-width) + caret that
+ * opens the override menu (Run in background / Open as chat). Same execution
+ * contract as the desktop `ActionSplitButton`: `onRun("smart"|"background"|"thread")`.
+ */
+function MobileSplitButton({
+  action,
+  pending,
+  onRun,
+}: {
+  action: FeedActionShape;
+  pending: boolean;
+  onRun: (mode?: RunMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "flex", flex: 1 }}>
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          borderRadius: 11,
+          overflow: "hidden",
+          boxShadow: "0 6px 16px -8px rgba(61,110,232,.8)",
+          opacity: pending ? 0.7 : 1,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => onRun("smart")}
+          disabled={pending}
+          style={{
+            flex: 1,
+            background: M.blue,
+            color: M.t1,
+            fontSize: 13,
+            fontWeight: 600,
+            textAlign: "center",
+            padding: "11px 0",
+            border: "none",
+            cursor: pending ? "default" : "pointer",
+            minHeight: 44,
+          }}
+        >
+          {action.label}
+        </button>
+        <span style={{ width: 1, background: "rgba(255,255,255,.22)" }} />
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          disabled={pending}
+          aria-label="More run options"
+          style={{
+            width: 44,
+            background: M.blue,
+            color: M.t1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "none",
+            cursor: pending ? "default" : "pointer",
+            minHeight: 44,
+          }}
+        >
+          <ChevronDown size={15} />
+        </button>
+      </div>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            zIndex: 40,
+            background: M.surface2,
+            border: `1px solid ${M.line2}`,
+            borderRadius: 12,
+            boxShadow: "0 14px 34px rgba(0,0,0,0.45)",
+            overflow: "hidden",
+          }}
+        >
+          <MobileMenuItem
+            label="Run in background"
+            sub={
+              action.allowBackground === false
+                ? "Consequential — Cue will ask first"
+                : "Cue does it, posts the result"
+            }
+            onClick={() => {
+              setOpen(false);
+              onRun("background");
+            }}
+          />
+          <MobileMenuItem
+            label="Open as chat"
+            sub="Work on it together"
+            onClick={() => {
+              setOpen(false);
+              onRun("thread");
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileMenuItem({
+  label,
+  sub,
+  onClick,
+}: {
+  label: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        background: "transparent",
+        border: "none",
+        borderBottom: `1px solid ${M.line}`,
+        padding: "11px 14px",
+        cursor: "pointer",
+        minHeight: 44,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 500, color: M.t1 }}>{label}</div>
+      <div style={{ fontSize: 11, color: M.t3, marginTop: 1 }}>{sub}</div>
+    </button>
+  );
+}
+
+/** The lilac approval card — distinct style, Approve / Deny. */
+function ApprovalCardMobile({
+  item,
+  pending,
+  onApprove,
+  onDeny,
+}: {
+  item: FeedItem;
+  pending: boolean;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  return (
+    <div
+      style={{
+        background: "rgba(127,119,221,.1)",
+        border: "1px solid rgba(127,119,221,.4)",
+        borderRadius: 18,
+        padding: "15px 16px",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: mono,
+          fontSize: 9,
+          letterSpacing: ".07em",
+          color: M.lilacText,
+        }}
+      >
+        {moveEyebrow(item)}
+      </div>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          marginTop: 7,
+          letterSpacing: "-.2px",
+          lineHeight: 1.3,
+        }}
+      >
+        {item.title ?? item.summary}
+      </div>
+      {item.title && (
+        <div style={{ fontSize: 12, color: M.t2, marginTop: 4, lineHeight: 1.45 }}>
+          {item.summary}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+        <button
+          type="button"
+          onClick={onApprove}
+          disabled={pending}
+          style={{
+            flex: 1,
+            background: M.lilac,
+            color: M.t1,
+            fontSize: 13,
+            fontWeight: 600,
+            textAlign: "center",
+            padding: "11px 0",
+            borderRadius: 11,
+            border: "none",
+            cursor: pending ? "default" : "pointer",
+            opacity: pending ? 0.7 : 1,
+            minHeight: 44,
+          }}
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={onDeny}
+          disabled={pending}
+          style={{
+            background: M.surface2,
+            color: M.t2,
+            fontSize: 13,
+            fontWeight: 500,
+            padding: "11px 16px",
+            borderRadius: 11,
+            border: "none",
+            cursor: pending ? "default" : "pointer",
+            minHeight: 44,
+            flexShrink: 0,
+          }}
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The calm empty state — aperture + "You're all caught up" + CTA. */
+function TodayMobileEmpty() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        minHeight: "100%",
+        padding: "0 20px 60px",
+        gap: 14,
+      }}
+    >
+      <span
+        style={{
+          position: "relative",
+          width: 58,
+          height: 58,
+          borderRadius: 17,
+          background: M.markChip,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 17,
+            border: "1.5px solid rgba(61,110,232,.5)",
+            animation: "cuePing 2.8s ease-out infinite",
+          }}
+        />
+        <span
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            boxShadow: "0 0 0 4.5px #EEF2F7 inset",
+            WebkitMask: "radial-gradient(circle,transparent 56%,#000 57%)",
+            mask: "radial-gradient(circle,transparent 56%,#000 57%)",
+            transform: "rotate(40deg)",
+            animation: "cueLook 6s ease-in-out infinite",
+            position: "relative",
+            display: "block",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              borderRadius: "50%",
+              background: M.blue,
+              width: "26%",
+              height: "26%",
+              top: "8%",
+              left: "8%",
+              animation: "cueBlink 4s infinite",
+              display: "block",
+            }}
+          />
+        </span>
+      </span>
+      <div style={{ fontSize: 17, fontWeight: 600 }}>You&apos;re all caught up</div>
+      <div
+        style={{
+          fontSize: 13,
+          color: M.t2,
+          lineHeight: 1.5,
+          maxWidth: 230,
+        }}
+      >
+        Nothing needs you right now. I&apos;m watching your inbox, calendar, and
+        channels.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The pinned composer. Submitting seeds a fresh conversation via the same
+ * `useDashboardQuery` path the desktop "Ask Cue" bar uses; the mic routes to
+ * the dedicated Voice screen (the design book's Voice tab owns hold-to-talk).
+ */
+function TodayMobileComposer({
+  assistantId,
+  onVoice,
+}: {
+  assistantId: string;
+  onVoice: () => void;
+}) {
+  const { value, setValue, submitting, submit } = useDashboardQuery(assistantId);
+  const canSend = value.trim().length > 0 && !submitting;
+
+  return (
+    <div style={{ flexShrink: 0, padding: "10px 16px 10px" }}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSend) void submit();
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          background: M.surface,
+          border: `1px solid ${M.line2}`,
+          borderRadius: 16,
+          padding: "9px 10px 9px 15px",
+        }}
+      >
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Message Cue…"
+          style={{
+            flex: 1,
+            fontSize: 13,
+            border: "none",
+            outline: "none",
+            background: "transparent",
+            color: M.t1,
+            minWidth: 0,
+            fontFamily: "inherit",
+          }}
+        />
+        {canSend ? (
+          <button
+            type="submit"
+            disabled={submitting}
+            aria-label="Send"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: M.blue,
+              color: M.t1,
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            {submitting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Send size={16} />
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onVoice}
+            aria-label="Voice"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: "50%",
+              background: M.blue,
+              color: M.t1,
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <Mic size={16} />
+          </button>
+        )}
+      </form>
     </div>
   );
 }
