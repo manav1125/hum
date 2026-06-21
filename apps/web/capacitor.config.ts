@@ -46,7 +46,10 @@ const config: CapacitorConfig = {
   webDir: "capacitor-shell",
   server: {
     url: SERVER_URL,
-    cleartext: false,
+    // Allow plain http only when the target itself is http (local dev server
+    // for the simulator, e.g. CUE_SERVER_URL=http://localhost:3000/assistant).
+    // Production https targets keep ATS enforced.
+    cleartext: SERVER_URL.startsWith("http://"),
   },
   ios: {
     // Native iOS project lives as a peer to `apps/web/` at `apps/ios/`,
