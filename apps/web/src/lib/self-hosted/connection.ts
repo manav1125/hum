@@ -19,7 +19,25 @@
  * Both slots are null by default — the interceptor is a no-op until the
  * lifecycle hook primes them, and every request flows to the platform
  * as before.
+ *
+ * Token freshness — gateway-auth (local / Cue self-host) mode:
+ * In gateway-auth mode the token slot is primed from a one-time snapshot
+ * of `getGatewayToken()` taken when `applyGatewayAuthShortCircuit()` runs.
+ * The gateway token is short-lived and rotates (it is re-minted by
+ * `ensureGatewayToken()` on resume / `refreshSession()` and read straight
+ * from localStorage), so a frozen snapshot goes stale the moment the token
+ * expires — every subsequent runtime-proxy request (including the
+ * long-lived events SSE) would then carry a missing or stale
+ * `Authorization` header and the gateway 401s, surfacing as an
+ * intermittent logout. To avoid that, `getSelfHostedActorToken()` reads
+ * the *live* gateway token in gateway-auth mode and only falls back to the
+ * snapshot for the platform-managed self-hosted path (where the slot holds
+ * the platform actor token, which has no live source here).
  */
+import {
+  getGatewayToken,
+  isGatewayAuthEnabled,
+} from "@/lib/auth/gateway-session";
 
 interface SelfHostedConnection {
   /**
@@ -56,5 +74,19 @@ export function getSelfHostedIngressUrl(): string | null {
 }
 
 export function getSelfHostedActorToken(): string | null {
+  // Gateway-auth mode (local / Cue self-host): the slot's token is a stale
+  // one-time snapshot; read the live, auto-refreshing gateway token so a
+  // rotated/expired token never strands runtime-proxy + SSE requests with a
+  // missing `Authorization` header (which the gateway 401s → logout). The
+  // snapshot remains the source for the platform-managed self-hosted path.
+  // `isGatewayAuthEnabled()` (not `isGatewayAuthMode()`) is the guard: the
+  // latter additionally requires a currently-valid token, which would flip
+  // to false in the exact expiry window this is meant to cover and fall back
+  // to the stale snapshot. Gating on "enabled" keeps the live token as the
+  // source across rotation; the snapshot is the fallback only before the
+  // first mint lands.
+  if (isGatewayAuthEnabled()) {
+    return getGatewayToken() ?? current.token;
+  }
   return current.token;
 }
