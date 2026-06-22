@@ -20,6 +20,7 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 
 import { subagentsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { SubagentsGetResponse } from "@/generated/daemon/types.gen";
+// eslint-disable-next-line local/no-cross-domain-imports -- rough observability surface reuses Activity's editorial theme tokens for visual consistency; lift to a shared dir when this page graduates from debug to product
 import { C, mono, serif } from "@/domains/activity/theme";
 import { routes } from "@/utils/routes";
 
