@@ -10,11 +10,28 @@ import { getLogger } from "../../util/logger.js";
 
 const log = getLogger("daemon-credential-client");
 
-const DAEMON_UNREACHABLE =
-  "Could not connect to assistant daemon. Is it running?";
-
+/**
+ * Detect IPC transport failures that mean the daemon isn't reachable, so the
+ * caller can fall back to a direct credential-store write.
+ *
+ * `cliIpcCall` surfaces connect/close failures as one of a few stable strings
+ * (see `src/ipc/cli-client.ts`). The dominant one is the connect-refused /
+ * socket-error message `"Could not connect to the assistant at <socket>..."`,
+ * which fires during the boot window when the daemon has bound the socket file
+ * but its IPC server isn't yet accepting — exactly when the Docker entrypoint
+ * seeds provider keys. We also treat the connect/first-byte timeouts and the
+ * "connection closed before response" case as unreachable: in all of these the
+ * write never reached the daemon, so a direct store write is the correct
+ * recovery rather than reporting a hard failure.
+ */
 function isDaemonUnreachable(error: string): boolean {
-  return error === DAEMON_UNREACHABLE;
+  return (
+    error.startsWith("Could not connect to the assistant at ") ||
+    error.startsWith("Connection error:") ||
+    error === "Connection closed before response" ||
+    error === "Request timed out" ||
+    error === "Stream timed out waiting for first byte"
+  );
 }
 
 // ---------------------------------------------------------------------------

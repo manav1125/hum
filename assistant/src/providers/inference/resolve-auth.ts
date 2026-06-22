@@ -13,7 +13,10 @@ import {
   buildManagedBaseUrl,
   resolveManagedProxyContext,
 } from "../../providers/platform-proxy/context.js";
-import { getSecureKeyAsync } from "../../security/secure-keys.js";
+import {
+  getProviderKeyAsync,
+  getSecureKeyAsync,
+} from "../../security/secure-keys.js";
 import { getLogger } from "../../util/logger.js";
 import type { Auth, ResolvedAuth } from "./auth.js";
 import { PROVIDERS_REQUIRING_BASE_URL_AND_MODELS } from "./connections.js";
@@ -47,7 +50,18 @@ export async function resolveAuth(
 
   switch (auth.type) {
     case "api_key": {
-      const value = await getSecureKeyAsync(auth.credential);
+      // Explicit credential lookup from the secure store. When the store has no
+      // entry, fall back to the provider's `<PROVIDER>_API_KEY` env var so
+      // env-only setups authenticate even if the credential was never seeded
+      // into the store. This matters for the single-tenant Docker/Render deploy:
+      // the canonical `openrouter`/`anthropic-personal` connections reference
+      // `credential/<provider>/api_key`, but the boot-time socket seed of that
+      // credential can fail (daemon IPC not yet accepting), leaving the store
+      // empty. The env var (`OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY`) is
+      // always present in that deploy, so this fallback keeps inference working.
+      const value =
+        (await getSecureKeyAsync(auth.credential)) ??
+        (await getProviderKeyAsync(provider));
       if (!value) {
         return {
           ok: false,

@@ -8,9 +8,19 @@ import { describe, expect, mock, test } from "bun:test";
  * for writes/deletes when the daemon is unreachable.
  */
 
+// The real connect-failure string produced by `cliIpcCall` (see
+// src/ipc/cli-client.ts) when the daemon's IPC server isn't accepting yet.
+// `isDaemonUnreachable` must recognise THIS shape — an earlier mismatch (the
+// detector compared against a string the IPC client never emits) sent the
+// unreachable path down the "hard failure" branch instead of the direct-write
+// fallback, which broke boot-time key seeding in Docker.
+const DAEMON_UNREACHABLE_ERROR =
+  "Could not connect to the assistant at /workspace/assistant.sock.\n" +
+  "Run `assistant status` to check, or `assistant gateway start` to start it.";
+
 let _ipcResponse: { ok: boolean; result?: unknown; error?: string } = {
   ok: false,
-  error: "Could not connect to assistant daemon. Is it running?",
+  error: DAEMON_UNREACHABLE_ERROR,
 };
 
 let _lastIpcCall: { method: string; params: unknown } | null = null;
@@ -41,7 +51,7 @@ describe("daemon credential client", () => {
     test("falls back to direct write when daemon is not running", async () => {
       _ipcResponse = {
         ok: false,
-        error: "Could not connect to assistant daemon. Is it running?",
+        error: DAEMON_UNREACHABLE_ERROR,
       };
 
       const result = await setSecureKeyViaDaemon(
