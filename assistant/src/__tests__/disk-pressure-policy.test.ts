@@ -157,6 +157,60 @@ describe("classifyDiskPressureTurnPolicy", () => {
       expected: { action: "block", reason: "unknown-remote" },
     },
     {
+      // Self-hosted actor whose guardian binding drifted (DB reset / workspace
+      // migration) resolves to `unknown` trust but sends from the owner's own
+      // app over vellum+web. It is the local owner, not a remote sender, so it
+      // must enter cleanup mode rather than being blocked as "unknown-remote".
+      name: "self-host actor with unknown trust on vellum/web is local owner",
+      status: status(),
+      metadata: {
+        conversationType: "standard",
+        callSite: "mainAgent",
+        isInteractive: true,
+        sourceChannel: "vellum",
+        sourceInterface: "web",
+        trustContext: {
+          sourceChannel: "vellum",
+          trustClass: "unknown",
+        },
+      },
+      expected: { action: "allow-cleanup-mode", reason: "local-owner" },
+    },
+    {
+      name: "self-host actor with unknown trust on vellum/macos is local owner",
+      status: status(),
+      metadata: {
+        conversationType: "standard",
+        callSite: "mainAgent",
+        isInteractive: true,
+        sourceChannel: "vellum",
+        sourceInterface: "macos",
+        trustContext: {
+          sourceChannel: "vellum",
+          trustClass: "unknown",
+        },
+      },
+      expected: { action: "allow-cleanup-mode", reason: "local-owner" },
+    },
+    {
+      // The unknown-trust local-owner allowance is scoped to the vellum channel.
+      // An unknown sender arriving on a remote channel/interface stays blocked.
+      name: "unknown trust on a remote interface is still blocked",
+      status: status(),
+      metadata: {
+        conversationType: "standard",
+        callSite: "mainAgent",
+        isInteractive: true,
+        sourceChannel: "telegram",
+        sourceInterface: "telegram",
+        trustContext: {
+          sourceChannel: "telegram",
+          trustClass: "unknown",
+        },
+      },
+      expected: { action: "block", reason: "unknown-remote" },
+    },
+    {
       name: "background conversation is blocked",
       status: status(),
       metadata: {

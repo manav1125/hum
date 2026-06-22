@@ -86,16 +86,31 @@ export function classifyDiskPressureTurnPolicy(
     return { action: "block", reason: "non-guardian" };
   }
 
+  // Local-owner foreground turn check runs *before* the `unknown`-trust block.
+  //
+  // A self-hosted actor sending from the owner's own app arrives on channel
+  // `vellum` over a local-owner interface (`web`/`macos`/`ios`/`cli`). Its JWT
+  // is resolved through the guardian-binding trust pipeline, which can yield
+  // `trustClass: "unknown"` when the binding has drifted (e.g. a DB reset or a
+  // workspace migration that re-minted the guardian principal id while the
+  // client still holds a valid actor JWT). That actor is the local owner, not a
+  // remote sender — remote senders only ever reach this classifier on a
+  // channel-specific interface (telegram/slack/email/phone/whatsapp), never on
+  // `vellum`+local-owner. Treating the drifted-owner turn as "unknown-remote"
+  // here silently blocks the owner's foreground agent turn under disk pressure
+  // (the turn no-ops with only a transient SSE error and persists nothing), so
+  // the local-owner channel/interface signal takes precedence over the
+  // `unknown` trust class.
+  if (isLocalOwnerForegroundTurn(metadata)) {
+    return { action: "allow-cleanup-mode", reason: "local-owner" };
+  }
+
   if (trustClass === "unknown") {
     return { action: "block", reason: "unknown-remote" };
   }
 
   if (trustClass !== undefined) {
     return { action: "block", reason: "non-guardian" };
-  }
-
-  if (isLocalOwnerTurnWithoutTrust(metadata)) {
-    return { action: "allow-cleanup-mode", reason: "local-owner" };
   }
 
   return { action: "block", reason: "unknown-remote" };
@@ -131,10 +146,22 @@ function isNonGuardianTrustClass(
   return trustClass === "non_guardian" || trustClass === "non-guardian";
 }
 
-function isLocalOwnerTurnWithoutTrust(
+/**
+ * True for the local owner's own foreground turn: channel `vellum` over a
+ * local-owner interface (`web`/`macos`/`ios`/`cli`/`vellum`).
+ *
+ * Accepts both the no-trust case (trust never resolved) and the
+ * `unknown`-trust case (guardian-binding drift on a self-hosted actor JWT —
+ * see the call site for why a `vellum`+local-owner turn that resolved to
+ * `unknown` is the owner, not a remote sender). Any other resolved trust class
+ * (`guardian`/`trusted_contact`/`non_guardian`) is handled by the earlier
+ * branches and never reaches here.
+ */
+function isLocalOwnerForegroundTurn(
   metadata: DiskPressureTurnMetadata,
 ): boolean {
-  if (metadata.trustContext != null) return false;
+  const trustClass = metadata.trustContext?.trustClass;
+  if (trustClass != null && trustClass !== "unknown") return false;
 
   const channel = metadata.sourceChannel;
   const sourceInterface = metadata.sourceInterface;

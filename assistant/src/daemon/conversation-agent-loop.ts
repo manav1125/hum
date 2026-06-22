@@ -143,6 +143,52 @@ function formatDiskPressureBlockedMessage(): string {
   return "Storage is critically low, so background processes are paused and remote messages are ignored until the guardian frees enough space. Remote senders should try again later.";
 }
 
+/**
+ * Persist a durable assistant message capturing a turn that ended without
+ * producing any assistant output.
+ *
+ * Several terminal paths in the agent loop emit only a transient SSE
+ * `error`/`conversation_error` event and then return/throw without writing an
+ * assistant row: the disk-pressure block and any exception thrown during turn
+ * setup (before the first provider call's own error row is written). When that
+ * happens the conversation persists only the user message, so on reload — or in
+ * an export — the turn looks like it silently "sat there" with no reply and no
+ * trace of why. Writing a durable assistant row makes the failure visible after
+ * reload and gives the transcript a concrete record of the cause.
+ *
+ * Best-effort: a DB hiccup here must never escalate into a turn-level throw, so
+ * all failures are swallowed with a warning. Returns the persisted row id (for
+ * `lastAssistantMessageId` repointing) or null on failure.
+ */
+async function persistTurnFailureAssistantMessage(
+  ctx: Conversation,
+  userFacingMessage: string,
+  channelMeta: Record<string, unknown>,
+): Promise<string | null> {
+  try {
+    const assistantMessage = createAssistantMessage(userFacingMessage);
+    const row = await addMessage(
+      ctx.conversationId,
+      "assistant",
+      JSON.stringify(assistantMessage.content),
+      { metadata: channelMeta },
+    );
+    ctx.messages.push(assistantMessage);
+    const conv = getConversation(ctx.conversationId);
+    if (conv) {
+      syncMessageToDisk(ctx.conversationId, row.id, conv.createdAt);
+    }
+    publishConversationMessagesChanged(ctx.conversationId);
+    return row.id;
+  } catch (err) {
+    log.warn(
+      { err, conversationId: ctx.conversationId },
+      "Failed to persist turn-failure assistant message (non-fatal)",
+    );
+    return null;
+  }
+}
+
 // ── Plugin pipeline helpers ──────────────────────────────────────────
 
 /**
@@ -525,6 +571,27 @@ export async function runAgentLoopImpl(
         retryable: true,
         errorCategory: DISK_PRESSURE_ERROR_CATEGORY,
       });
+      // Persist a durable assistant row so the blocked turn leaves a trace in
+      // history rather than silently "sitting there" after reload — the SSE
+      // events above are transient and lost once the client reconnects.
+      const blockMeta = {
+        ...provenanceFromTrustContext(ctx.trustContext),
+        userMessageChannel: capturedTurnChannelContext.userMessageChannel,
+        assistantMessageChannel:
+          capturedTurnChannelContext.assistantMessageChannel,
+        userMessageInterface: capturedTurnInterfaceContext.userMessageInterface,
+        assistantMessageInterface:
+          capturedTurnInterfaceContext.assistantMessageInterface,
+      };
+      const blockRowId = await persistTurnFailureAssistantMessage(
+        ctx,
+        message,
+        blockMeta,
+      );
+      if (blockRowId) {
+        persistedErrorAssistantMessage = true;
+        state.lastAssistantMessageId = blockRowId;
+      }
       return;
     }
 
@@ -1399,6 +1466,39 @@ export async function runAgentLoopImpl(
         errorCategory: classified.errorCategory,
       });
       onEvent(buildConversationErrorMessage(ctx.conversationId, classified));
+      // When the turn threw *before* producing any assistant output (e.g. an
+      // exception during setup/assembly, where the in-loop provider-error row
+      // never runs), the conversation would otherwise persist only the user
+      // message and look like it silently "sat there" with no reply after
+      // reload. Write a durable assistant row so the failure survives a
+      // reconnect and the transcript records it. Skip when the loop already
+      // persisted assistant content (streamed text or an in-loop error row) so
+      // we never append a duplicate trailing error bubble.
+      if (
+        !state.lastAssistantMessageId &&
+        !persistedErrorAssistantMessage &&
+        state.persistedToolUseIds.size === 0
+      ) {
+        const failureMeta = {
+          ...provenanceFromTrustContext(ctx.trustContext),
+          userMessageChannel: capturedTurnChannelContext.userMessageChannel,
+          assistantMessageChannel:
+            capturedTurnChannelContext.assistantMessageChannel,
+          userMessageInterface:
+            capturedTurnInterfaceContext.userMessageInterface,
+          assistantMessageInterface:
+            capturedTurnInterfaceContext.assistantMessageInterface,
+        };
+        const failureRowId = await persistTurnFailureAssistantMessage(
+          ctx,
+          classified.userMessage,
+          failureMeta,
+        );
+        if (failureRowId) {
+          persistedErrorAssistantMessage = true;
+          state.lastAssistantMessageId = failureRowId;
+        }
+      }
       publishLoopMessagesChanged();
     }
   } finally {
