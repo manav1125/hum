@@ -78,6 +78,8 @@ import { useRuleEditorStore } from "@/domains/chat/rule-editor-store";
 import { useOpenAppFromChat } from "@/domains/chat/hooks/use-open-app-from-chat";
 import { useVoiceInput } from "@/domains/chat/hooks/use-voice-input";
 import { useConversationListQuery } from "@/hooks/conversation-queries";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { MobileChatView } from "@/domains/chat/components/mobile-chat-view";
 import { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
 import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
@@ -158,6 +160,7 @@ export function ChatMainPanel({
 }: ChatMainPanelProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const statusBannerVisible = !location.search.includes("popout=1");
 
   // -------------------------------------------------------------------------
@@ -822,6 +825,48 @@ export function ChatMainPanel({
   const editingConversationId = useConversationStore.use.editingConversationId();
   const isSidePanel = mainView === "app-editing" && !!openedAppState && !!editingConversationId;
   const variant = isSidePanel ? "side-panel" : "main";
+
+  // MOBILE — render the design-book chat screen (dark canvas, design-book
+  // header + message bubbles + pinned keyboard-aware composer). It REUSES the
+  // live message-stream wiring (the same `chatTranscriptProps` + `transcriptRef`
+  // the desktop path uses, so streamed output / tool-step chips / subagents /
+  // surfaces / confirmations all keep working) and the same send + voice path
+  // (`submitMessage`, `input`/`setInput`, `VoiceInputButton` handlers). The
+  // desktop chat path below is left completely unchanged. App-editing side
+  // panels stay on the desktop path. Modals (send-error, rule-editor, mic
+  // primer) are rendered for both paths.
+  if (isMobile && !isSidePanel) {
+    return (
+      <>
+        <MobileChatView
+          transcriptProps={chatTranscriptProps}
+          transcriptRef={transcriptRef}
+          conversationTitle={activeConversation?.title ?? null}
+          input={input}
+          setInput={setInput}
+          onSubmit={submitMessage}
+          sendDisabled={sendDisabled}
+          typingDisabled={typingDisabled}
+          canStopGenerating={canStopGenerating}
+          onStopGenerating={handleStopGenerating}
+          voiceInputRef={voiceInputRef}
+          onVoiceTranscript={handleVoiceTranscript}
+          onVoiceInterimTranscript={setVoiceInterim}
+          onVoiceError={setVoiceError}
+          onVoiceBeforeStart={handleVoiceBeforeStart}
+          voiceInterim={voiceInterim ?? undefined}
+          assistantId={assistantId}
+        />
+        <MicPermissionPrimer
+          open={showPrimer}
+          onContinue={handlePrimerContinue}
+          onCancel={handlePrimerCancel}
+        />
+        {sendErrorModalNode}
+        {ruleEditorModalNode}
+      </>
+    );
+  }
 
   return (
     <>

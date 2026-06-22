@@ -161,6 +161,89 @@ describe("readMemoryV2StaticContent", () => {
     cleanupMemoryDir();
     expect(readMemoryV2StaticContent()).toBeNull();
   });
+
+  describe("buffer origin framing", () => {
+    const CURRENT = "conv-current";
+    const OTHER = "conv-other";
+
+    test("frames other-conversation entries under a background heading, keeps current primary", () => {
+      writeMemoryFile(
+        "buffer.md",
+        [
+          `- [Jun 22, 1:00 PM] Hong Kong cruise sails Friday <!--cid:${CURRENT}-->`,
+          `- [Jun 20, 9:00 AM] Bali trip is in July <!--cid:${OTHER}-->`,
+        ].join("\n"),
+      );
+
+      const text = readMemoryV2StaticContent({
+        currentConversationId: CURRENT,
+      })!;
+
+      expect(text).toContain("## Buffer");
+      expect(text).toContain(
+        "From your other chats (background — may not be relevant here)",
+      );
+      // Current-conversation entry is primary (above the background heading).
+      const headingIdx = text.indexOf("From your other chats");
+      expect(text.indexOf("Hong Kong cruise")).toBeLessThan(headingIdx);
+      // Other-conversation entry sits under the background heading.
+      expect(text.indexOf("Bali trip is in July")).toBeGreaterThan(headingIdx);
+      // Markers are stripped from rendered output.
+      expect(text).not.toContain("cid:");
+    });
+
+    test("keeps untagged/legacy entries primary (never hidden as background)", () => {
+      writeMemoryFile(
+        "buffer.md",
+        [
+          "- [Jun 22, 1:00 PM] Legacy untagged fact",
+          `- [Jun 20, 9:00 AM] Other chat fact <!--cid:${OTHER}-->`,
+        ].join("\n"),
+      );
+
+      const text = readMemoryV2StaticContent({
+        currentConversationId: CURRENT,
+      })!;
+
+      const headingIdx = text.indexOf("From your other chats");
+      expect(text.indexOf("Legacy untagged fact")).toBeLessThan(headingIdx);
+      expect(text.indexOf("Other chat fact")).toBeGreaterThan(headingIdx);
+    });
+
+    test("omits the background heading when no entry is from another chat", () => {
+      writeMemoryFile(
+        "buffer.md",
+        `- [Jun 22, 1:00 PM] Only this chat <!--cid:${CURRENT}-->`,
+      );
+
+      const text = readMemoryV2StaticContent({
+        currentConversationId: CURRENT,
+      })!;
+
+      expect(text).toContain("Only this chat");
+      expect(text).not.toContain("From your other chats");
+      expect(text).not.toContain("cid:");
+    });
+
+    test("renders verbatim (no partitioning) when currentConversationId is omitted", () => {
+      writeMemoryFile(
+        "buffer.md",
+        [
+          `- [Jun 22, 1:00 PM] Entry A <!--cid:${CURRENT}-->`,
+          `- [Jun 20, 9:00 AM] Entry B <!--cid:${OTHER}-->`,
+        ].join("\n"),
+      );
+
+      const text = readMemoryV2StaticContent()!;
+
+      // No partitioning without a current conversation, but markers are still
+      // stripped so the model never sees the write-time metadata.
+      expect(text).toContain("Entry A");
+      expect(text).toContain("Entry B");
+      expect(text).not.toContain("From your other chats");
+      expect(text).not.toContain("cid:");
+    });
+  });
 });
 
 describe("shouldExposePersonalMemory", () => {

@@ -33,7 +33,7 @@ export interface RememberResult {
 
 export function handleRemember(
   input: RememberInput,
-  _conversationId: string,
+  conversationId: string,
   _scopeId: string,
   config: AssistantConfig,
 ): RememberResult {
@@ -46,7 +46,10 @@ export function handleRemember(
 
   const workspaceDir = getWorkspaceDir();
   const now = new Date();
-  const entry = formatRememberEntry(input.content.trim(), now);
+  // Stamp the entry with its source conversation so the static-context
+  // injector can frame cross-conversation recall as background recall (rather
+  // than active context) when another chat later re-reads the global buffer.
+  const entry = formatRememberEntry(input.content.trim(), now, conversationId);
 
   if (config.memory.v2.enabled) {
     appendBufferAndArchive({
@@ -89,17 +92,69 @@ export function formatBufferTimestamp(now: Date): string {
 }
 
 /**
+ * Trailing HTML-comment marker that stamps a buffer entry with the
+ * conversation it originated in, e.g. `<!--cid:abc123-->`. Kept as an HTML
+ * comment so the entry stays human-readable and renders invisibly in any
+ * markdown view, while the static-context injector can split entries by
+ * origin (current chat vs. "your other chats").
+ *
+ * Backward-compatible: entries written before this change (and sweep-job
+ * entries, which span many conversations and carry no single origin) simply
+ * omit the marker. {@link parseBufferEntryOrigin} treats a missing marker as
+ * "no known origin".
+ */
+const CID_MARKER_RE = /\s*<!--\s*cid:([^\s>]+)\s*-->\s*$/;
+
+/**
  * Build a timestamped bullet entry for `buffer.md` / `archive/<date>.md`.
  *
  * Format mirrors the long-standing v1 PKB layout so v2 buffers stay
  * human-readable and downstream consumers (sweep, consolidation) can parse
  * the same shape regardless of which path produced the entry.
  *
+ * When `conversationId` is supplied, a trailing `<!--cid:...-->` marker is
+ * appended so the injector can frame entries from other conversations as
+ * background recall. Callers with no single source conversation (e.g. the
+ * cross-conversation sweep job) omit it — those entries stay untagged and
+ * parse exactly as pre-marker entries did.
+ *
  * Exported so memory v2 sweep / extractor jobs format their auto-remembered
  * entries identically to user-facing `remember()` calls.
  */
-export function formatRememberEntry(content: string, now: Date): string {
-  return `- [${formatBufferTimestamp(now)}] ${content}\n`;
+export function formatRememberEntry(
+  content: string,
+  now: Date,
+  conversationId?: string,
+): string {
+  const marker =
+    conversationId && conversationId.trim().length > 0
+      ? ` <!--cid:${conversationId.trim()}-->`
+      : "";
+  return `- [${formatBufferTimestamp(now)}] ${content}${marker}\n`;
+}
+
+/**
+ * Split a single buffer-entry line into its origin conversation id (if the
+ * line carries a `<!--cid:...-->` marker) and the line with that marker
+ * stripped for display.
+ *
+ * Backward-compatible: a line with no marker returns `{ conversationId:
+ * undefined, display: <line unchanged> }`, so old/untagged entries are
+ * treated as having no known origin.
+ *
+ * Exported for the static-context injector, which partitions the buffer into
+ * current-conversation vs. other-conversation entries.
+ */
+export function parseBufferEntryOrigin(line: string): {
+  conversationId: string | undefined;
+  display: string;
+} {
+  const match = line.match(CID_MARKER_RE);
+  if (!match) return { conversationId: undefined, display: line };
+  return {
+    conversationId: match[1],
+    display: line.replace(CID_MARKER_RE, ""),
+  };
 }
 
 /**

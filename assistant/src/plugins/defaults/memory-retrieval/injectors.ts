@@ -506,10 +506,13 @@ function readGatedNowScratchpad(trust: TrustContext): string | null {
  *
  * `excludeBuffer` is forwarded for consolidation turns, whose contract is the
  * buffer FILE itself — see {@link readMemoryV2StaticContent}.
+ *
+ * `currentConversationId` is forwarded so the buffer can frame entries from
+ * other conversations as background recall — see {@link readMemoryV2StaticContent}.
  */
 function readGatedMemoryV2Static(
   trust: TrustContext,
-  options: { excludeBuffer?: boolean } = {},
+  options: { excludeBuffer?: boolean; currentConversationId?: string } = {},
 ): string | null {
   return isPersonalMemoryAllowed(trust)
     ? readMemoryV2StaticContent(options)
@@ -756,6 +759,7 @@ const memoryV2StaticInjector: Injector = {
     // entire backlog into its context (and go stale as it edits the file).
     const content = readGatedMemoryV2Static(ctx.trust, {
       excludeBuffer: ctx.callSite === "memoryV2Consolidation",
+      currentConversationId: ctx.conversationId,
     });
     if (!content) return null;
     if (hasInjectedUserTextBlock(runMessages, MEMORY_V2_STATIC_BLOCK_MATCHERS))

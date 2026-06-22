@@ -56,7 +56,8 @@ afterAll(() => {
 
 // Imports are deferred to after the env var is set so any internal use of
 // `getWorkspaceDir()` resolves to the tmpdir.
-const { handleRemember } = await import("../tool-handlers.js");
+const { handleRemember, formatRememberEntry, parseBufferEntryOrigin } =
+  await import("../tool-handlers.js");
 const { applyNestedDefaults } = await import("../../../config/loader.js");
 
 const CONFIG = applyNestedDefaults({});
@@ -181,6 +182,30 @@ describe("handleRemember — memory.v2.enabled on", () => {
     expect(existsSync(join(tmpWorkspace, "memory", "buffer.md"))).toBe(false);
     expect(enqueueCalls).toEqual([]);
   });
+
+  test("stamps the buffer entry with its source conversation id", () => {
+    handleRemember(
+      { content: "Bali trip is in July" },
+      "conv-bali-7",
+      "default",
+      CONFIG,
+    );
+
+    const buffer = readFileSync(
+      join(tmpWorkspace, "memory", "buffer.md"),
+      "utf-8",
+    );
+    expect(buffer).toContain("Bali trip is in July");
+    // The cid marker rides at the end of the bullet line, before the newline.
+    expect(buffer).toMatch(/Bali trip is in July <!--cid:conv-bali-7-->\n/);
+
+    // And it round-trips through the origin parser.
+    const line = buffer.trim().split("\n").at(-1)!;
+    const parsed = parseBufferEntryOrigin(line);
+    expect(parsed.conversationId).toBe("conv-bali-7");
+    expect(parsed.display).toContain("Bali trip is in July");
+    expect(parsed.display).not.toContain("cid:");
+  });
 });
 
 describe("handleRemember — memory.v2.enabled off (v1 PKB path)", () => {
@@ -225,5 +250,61 @@ describe("handleRemember — memory.v2.enabled off (v1 PKB path)", () => {
     for (const call of enqueueCalls) {
       expect(call.pkbRoot).toBe(pkbDir);
     }
+  });
+});
+
+describe("formatRememberEntry — conversation-origin marker", () => {
+  const now = new Date(2026, 5, 22, 14, 30); // Jun 22, 2:30 PM
+
+  test("appends a cid marker when a conversation id is supplied", () => {
+    const entry = formatRememberEntry("Bali in July", now, "conv-bali-7");
+    expect(entry).toMatch(/^- \[.*\] Bali in July <!--cid:conv-bali-7-->\n$/);
+  });
+
+  test("omits the marker when no conversation id is supplied (sweep path)", () => {
+    const entry = formatRememberEntry("Cross-chat fact", now);
+    expect(entry).toBe(
+      `- [${formatBufferTimestampish(now)}] Cross-chat fact\n`,
+    );
+    expect(entry).not.toContain("cid:");
+  });
+
+  test("omits the marker for empty/whitespace conversation ids", () => {
+    expect(formatRememberEntry("x", now, "")).not.toContain("cid:");
+    expect(formatRememberEntry("x", now, "   ")).not.toContain("cid:");
+  });
+
+  // Local re-derivation of the timestamp shape so the assertion above does not
+  // depend on importing the (locale-formatted) helper.
+  function formatBufferTimestampish(d: Date): string {
+    const month = d.toLocaleString("en-US", { month: "short" });
+    const hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    const displayHour = hours % 12 || 12;
+    return `${month} ${d.getDate()}, ${displayHour}:${minutes} ${ampm}`;
+  }
+});
+
+describe("parseBufferEntryOrigin — backward compatibility", () => {
+  test("extracts the cid and strips the marker from a tagged line", () => {
+    const line = "- [Jun 22, 2:30 PM] Bali in July <!--cid:conv-bali-7-->";
+    const { conversationId, display } = parseBufferEntryOrigin(line);
+    expect(conversationId).toBe("conv-bali-7");
+    expect(display).toBe("- [Jun 22, 2:30 PM] Bali in July");
+  });
+
+  test("returns undefined origin for legacy untagged entries", () => {
+    const line = "- [Jun 22, 2:30 PM] An old entry with no marker";
+    const { conversationId, display } = parseBufferEntryOrigin(line);
+    expect(conversationId).toBeUndefined();
+    expect(display).toBe(line);
+  });
+
+  test("tolerates whitespace inside the marker", () => {
+    const { conversationId } = parseBufferEntryOrigin(
+      "- [x] y <!--  cid:conv-9  -->",
+    );
+    expect(conversationId).toBe("conv-9");
   });
 });
