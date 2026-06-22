@@ -8,7 +8,7 @@ const C = {
   active: "#F0F2F6",
   t1: "#1A2230",
   t2: "#5A6672",
-  t3: "#8D99A5",
+  t3: "#9AA6B2",
 } as const;
 const MONO = "'DM Mono', ui-monospace, monospace";
 

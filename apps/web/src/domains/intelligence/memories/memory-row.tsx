@@ -143,7 +143,7 @@ export function MemoryRow({
               marginLeft: "auto",
               fontFamily: MONO,
               fontSize: 10,
-              color: "#8D99A5",
+              color: "#9AA6B2",
             }}
           >
             conf {conf}

@@ -233,6 +233,70 @@ describe("runtime proxy handler", () => {
     expect(capturedSignal).toBeInstanceOf(AbortSignal);
   });
 
+  test("does not abort a long-lived streaming (SSE) response after the connection timeout elapses", async () => {
+    // Regression: a "Run it" task opens an SSE stream (GET /v1/events) and the
+    // agent's reply streams back over minutes. The proxy timeout must only
+    // cover the connection/header phase — once the upstream has produced
+    // response headers, the stream must be allowed to run past
+    // runtimeTimeoutMs without being aborted. Previously a blanket timeout on
+    // the whole request killed long turns, surfacing as a 504 and a stalled,
+    // never-completing reply on the client.
+    const TIMEOUT_MS = 40;
+
+    fetchMock = mock(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        const signal = init?.signal;
+        // Model real fetch semantics: the abort signal is wired to the
+        // response body stream. If the proxy leaves the timeout armed, the
+        // signal aborts mid-stream and the body read rejects.
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const enc = new TextEncoder();
+            // First byte arrives immediately (headers already flushed).
+            controller.enqueue(enc.encode(": heartbeat\n\n"));
+            if (signal) {
+              signal.addEventListener("abort", () => {
+                controller.error(
+                  signal.reason ?? new DOMException("aborted", "AbortError"),
+                );
+              });
+            }
+            // A later event arrives well after the connection timeout would
+            // have fired. A correct proxy has cleared the timer by now.
+            setTimeout(() => {
+              try {
+                controller.enqueue(enc.encode("data: done\n\n"));
+                controller.close();
+              } catch {
+                /* already errored */
+              }
+            }, TIMEOUT_MS * 4);
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    );
+
+    const handler = createRuntimeProxyHandler(
+      makeConfig({ runtimeTimeoutMs: TIMEOUT_MS }),
+    );
+    const req = new Request("http://localhost:7830/v1/events", {
+      headers: { "x-vellum-client-id": "c1", "x-vellum-interface-id": "web" },
+    });
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    // Fully drain the stream — this only completes if the body was never
+    // aborted by the connection-phase timeout.
+    const body = await res.text();
+    expect(body).toContain(": heartbeat");
+    expect(body).toContain("data: done");
+  });
+
   test("replaces client authorization with JWT service token when auth is not required", async () => {
     let capturedHeaders: Headers | undefined;
     fetchMock = mock(

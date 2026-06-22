@@ -245,7 +245,7 @@ function SectionHeader({ title }: { title: string }) {
         fontSize: 11,
         letterSpacing: ".1em",
         textTransform: "uppercase",
-        color: "#8D99A5",
+        color: "#9AA6B2",
       }}
     >
       {title}

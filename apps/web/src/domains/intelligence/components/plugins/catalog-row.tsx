@@ -47,7 +47,7 @@ export function CatalogRow({ match }: CatalogRowProps) {
           </div>
           <div
             className="truncate"
-            style={{ fontSize: 12, color: "#8D99A5" }}
+            style={{ fontSize: 12, color: "#9AA6B2" }}
             title={match.path}
           >
             {match.path}

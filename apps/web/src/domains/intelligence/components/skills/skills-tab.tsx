@@ -53,12 +53,11 @@ const C = {
   line2: "#D7DDE7",
   t1: "#1A2230",
   t2: "#5A6672",
-  t3: "#8D99A5",
+  t3: "#9AA6B2",
   violet: "#7F77DD",
   violetWash: "#B6AEF0",
   danger: "#DA491A",
 } as const;
-const MONO = "'DM Mono', ui-monospace, monospace";
 const SERIF = "'Instrument Serif', Georgia, serif";
 
 /**

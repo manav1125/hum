@@ -41,7 +41,7 @@ const sectionLabelStyle = {
   fontSize: 10.5,
   letterSpacing: ".1em",
   textTransform: "uppercase" as const,
-  color: "#8D99A5",
+  color: "#9AA6B2",
   margin: "8px 0 16px",
 };
 

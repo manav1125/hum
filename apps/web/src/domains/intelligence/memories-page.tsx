@@ -231,7 +231,7 @@ export function MemoriesPage() {
               >
                 +{addedThisWeek}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "#8D99A5" }}>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: "#9AA6B2" }}>
                 this week
               </div>
             </div>
@@ -241,7 +241,7 @@ export function MemoriesPage() {
               >
                 {avgConfidence !== null ? avgConfidence.toFixed(2) : "—"}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "#8D99A5" }}>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: "#9AA6B2" }}>
                 avg conf
               </div>
             </div>
@@ -494,7 +494,7 @@ function ProvenanceRail({
           fontFamily: MONO,
           letterSpacing: ".1em",
           textTransform: "uppercase",
-          color: "#8D99A5",
+          color: "#9AA6B2",
         }}
       >
         Selected · provenance
@@ -510,7 +510,7 @@ function ProvenanceRail({
             borderRadius: 13,
             padding: "20px 15px",
             fontSize: 12.5,
-            color: "#8D99A5",
+            color: "#9AA6B2",
             textAlign: "center",
           }}
         >
@@ -582,7 +582,7 @@ function RailContent({
             marginTop: 12,
             fontSize: 11,
             fontFamily: MONO,
-            color: "#8D99A5",
+            color: "#9AA6B2",
           }}
         >
           Confidence
@@ -630,7 +630,7 @@ function RailContent({
           style={{
             fontSize: 11,
             fontFamily: MONO,
-            color: "#8D99A5",
+            color: "#9AA6B2",
             marginBottom: 8,
           }}
         >

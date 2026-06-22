@@ -39,7 +39,7 @@ const C = {
   line2: "#D7DDE7",
   t1: "#1A2230",
   t2: "#5A6672",
-  t3: "#8D99A5",
+  t3: "#9AA6B2",
   green: "#277E41",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";

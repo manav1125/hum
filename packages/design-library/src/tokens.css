@@ -368,12 +368,16 @@
 
 /* ===== Dark mode — Figma node 2674:20730 ===== */
 [data-theme="dark"] {
-  /* Surface */
+  /* Surface. Readability pass: surfaces lifted off --surface-base so cards
+   * and panels read as distinct layers on the near-black background. The old
+   * overlay (#1C2024) sat at only ~1.08:1 vs base — cards were nearly
+   * invisible; overlay/lift now step up to ~1.17/1.37:1 with a perceptible
+   * overlay→lift delta for nested surfaces. Hover bumped 0.06→0.08 alpha. */
   --surface-base: #17191C;
-  --surface-overlay: #1C2024;
+  --surface-overlay: #22272C;
   --surface-active: #444D56;
-  --surface-lift: #24292E;
-  --surface-hover: rgba(233, 230, 226, 0.06);
+  --surface-lift: #2C3338;
+  --surface-hover: rgba(233, 230, 226, 0.08);
 
   /* Primary */
   --primary-base: #FDFDFC;
@@ -382,29 +386,36 @@
   --primary-disabled: #2D3339;
   --primary-second-hover: #E9E6E2;
 
-  /* Border */
-  --border-base: #24292E;
+  /* Border. Readability pass: card/section borders raised so they're
+   * actually visible against the dark surfaces (old base #24292E was
+   * 1.20:1 vs background — invisible). base/subtle now read at ~1.40/1.60:1;
+   * element (field outlines) nudged up for clearer input affordance. */
+  --border-base: #2E343A;
   --border-disabled: #1C2024;
-  --border-element: #5A6672;
-  --border-hover: #2D3339;
+  --border-element: #646F7B;
+  --border-hover: #363D44;
   --border-active: #F6F5F4;
 
-  /* Content. See light-mode block for the rationale on quiet/faint/strong. */
+  /* Content. See light-mode block for the rationale on quiet/faint/strong.
+   * Readability pass: tertiary/faint nudged up (6.07→7.11:1 on bg) so small
+   * secondary labels and eyebrows read comfortably; disabled lifted
+   * 3.00→4.36:1 so it's legible without reading as active. secondary/quiet/
+   * strong already clear AA and are left as-is to keep the dark hierarchy. */
   --content-default: #F6F5F4;
   --content-emphasised: #FDFDFC;
   --content-secondary: #A9B2BB;
-  --content-tertiary: #8D99A5;
+  --content-tertiary: #9AA6B2;
   --content-quiet: #A9B2BB;     /* = secondary in dark, lighter than tertiary in light */
   --content-strong: #E9E6E2;
-  --content-faint: #8D99A5;
-  --content-disabled: #5A6672;
+  --content-faint: #9AA6B2;
+  --content-disabled: #73808C;
   --content-inset: #17191C;
 
-  /* Surface (extras) */
-  --surface-sunken: #1C2024;
+  /* Surface (extras). Sunken stays just above base — recessed but distinct. */
+  --surface-sunken: #202327;
 
   /* Border (extras) */
-  --border-subtle: #2D3339;
+  --border-subtle: #363D44;
 
   /* System */
   --system-positive-strong: #309C50;

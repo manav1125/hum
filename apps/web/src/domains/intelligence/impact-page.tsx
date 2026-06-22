@@ -24,7 +24,7 @@ const C = {
   sunken: "#EEF1F6",
   line: "#E5E9F0",
   t2: "#5A6672",
-  t3: "#8D99A5",
+  t3: "#9AA6B2",
   green: "#277E41",
   amber: "#C98A1B",
 } as const;

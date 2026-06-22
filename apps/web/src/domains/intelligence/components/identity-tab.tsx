@@ -143,7 +143,7 @@ export function IdentityCard({
       <MetaRow
         label="Role"
         value={assistantRole}
-        valueColor={assistantRole === "Not set" ? "#8D99A5" : "#1A2230"}
+        valueColor={assistantRole === "Not set" ? "#9AA6B2" : "#1A2230"}
         marginTop={24}
         edit={
           <EditPencil
@@ -159,7 +159,7 @@ export function IdentityCard({
       <MetaRow
         label="Personality"
         value={assistantPersonality || "Not set"}
-        valueColor={assistantPersonality ? "#1A2230" : "#8D99A5"}
+        valueColor={assistantPersonality ? "#1A2230" : "#9AA6B2"}
         marginTop={18}
         truncate
         edit={
@@ -266,7 +266,7 @@ function EditPencil({
         flexShrink: 0,
         border: "none",
         background: "transparent",
-        color: "#8D99A5",
+        color: "#9AA6B2",
         cursor: onOpenThread ? "pointer" : "default",
         opacity: onOpenThread ? 1 : 0.5,
       }}
@@ -448,7 +448,7 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
           className="h-6 w-6 animate-spin rounded-full border-2"
           style={{
             borderColor: "#E5E9F0",
-            borderTopColor: "#8D99A5",
+            borderTopColor: "#9AA6B2",
           }}
         />
       </div>
