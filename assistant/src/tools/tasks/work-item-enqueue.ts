@@ -4,7 +4,7 @@ import { getLogger } from "../../util/logger.js";
 import {
   buildWorkItemMismatchError,
   createWorkItemWithPermissions,
-  findActiveWorkItemsByTitle,
+  findActiveWorkItemBySource,
   identifyEntityById,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
@@ -18,15 +18,87 @@ const PRIORITY_LABELS: Record<number, string> = {
   2: "low",
 };
 
+/**
+ * Execution channels that are NOT external messaging channels and therefore
+ * carry no meaningful channel provenance for a work item: the local desktop
+ * app ("vellum") and internal transports ("platform", "a2a"). A commitment
+ * enqueued from one of these is a genuine local task — it must stay
+ * source-less so {@link sourceTypeToCategory} renders it as "task" rather than
+ * fabricating a channel.
+ */
+const NON_CHANNEL_EXECUTION_CHANNELS: ReadonlySet<string> = new Set([
+  "vellum",
+  "platform",
+  "a2a",
+]);
+
+/**
+ * Resolve the real `(sourceType, sourceId)` provenance for a work item being
+ * enqueued from a channel commitment. Explicit `source_type` / `source_id`
+ * inputs (e.g. supplied by the action-board synth or a caller that already
+ * knows the canonical channel ids) win; otherwise we fall back to the
+ * invocation's own channel context — `executionChannel` is the channel kind
+ * (slack/telegram/whatsapp/phone/email) and the requester chat id (or the
+ * conversation id) is the stable conversation/source id.
+ *
+ * Returns `{}` for genuine local tasks (desktop / internal transports), so the
+ * generic task path is preserved and dedup keys stay channel-distinct.
+ */
+function deriveWorkItemSource(
+  input: Record<string, unknown>,
+  context: ToolContext,
+): { sourceType?: string; sourceId?: string } {
+  const explicitType =
+    typeof input.source_type === "string" && input.source_type.trim()
+      ? input.source_type.trim()
+      : undefined;
+  const explicitId =
+    typeof input.source_id === "string" && input.source_id.trim()
+      ? input.source_id.trim()
+      : undefined;
+  if (explicitType || explicitId) {
+    return {
+      ...(explicitType ? { sourceType: explicitType } : {}),
+      ...(explicitId ? { sourceId: explicitId } : {}),
+    };
+  }
+
+  const channel = context.executionChannel?.trim();
+  if (!channel || NON_CHANNEL_EXECUTION_CHANNELS.has(channel)) {
+    return {};
+  }
+
+  // The conversation/source id within that channel: prefer the external chat
+  // id (the channel-native thread id), then the Slack channel binding, then
+  // the internal conversation id as a last resort.
+  const sourceId =
+    context.requesterChatId?.trim() ||
+    context.channelPermissionChannelId?.trim() ||
+    context.conversationId?.trim() ||
+    undefined;
+
+  return {
+    sourceType: channel,
+    ...(sourceId ? { sourceId } : {}),
+  };
+}
+
 function handleDuplicate(
   title: string,
   ifExists: string,
   input: Record<string, unknown>,
+  source: { sourceType?: string; sourceId?: string },
 ): ToolExecutionResult | null {
-  const existing = findActiveWorkItemsByTitle(title);
-  if (existing.length === 0) return null;
-
-  const match = existing[0];
+  // Source-aware dedup: key on (sourceType, sourceId, title) when a channel
+  // source is known so two channel commitments only collapse when they share
+  // the same channel/conversation AND title. Falls back to title-only for
+  // source-less local tasks (handled inside findActiveWorkItemBySource).
+  const match = findActiveWorkItemBySource({
+    title,
+    sourceType: source.sourceType ?? null,
+    sourceId: source.sourceId ?? null,
+  });
+  if (!match) return null;
   log.info(
     { title, existingId: match.id, ifExists },
     "task_list_add: duplicate detected",
@@ -79,7 +151,7 @@ function handleDuplicate(
 
 export async function executeTaskListAdd(
   input: Record<string, unknown>,
-  _context: ToolContext,
+  context: ToolContext,
 ): Promise<ToolExecutionResult> {
   try {
     const taskId = input.task_id as string | undefined;
@@ -92,6 +164,11 @@ export async function executeTaskListAdd(
     const rawRequiredTools = input.required_tools as string[] | undefined;
 
     const ifExists = (input.if_exists as string) || "reuse_existing";
+
+    // Real channel provenance for this commitment (slack/telegram/…+ conv id),
+    // or `{}` for a genuine local task. Stamped onto the work item so the feed
+    // can group/dedup per channel instead of seeing a generic "task".
+    const source = deriveWorkItemSource(input, context);
 
     // Sanitize explicit required_tools if provided (including empty array)
     const hasExplicitTools = rawRequiredTools !== undefined;
@@ -111,7 +188,12 @@ export async function executeTaskListAdd(
 
       // Duplicate-prevention guard
       if (ifExists !== "create_duplicate") {
-        const duplicateResult = handleDuplicate(titleOverride, ifExists, input);
+        const duplicateResult = handleDuplicate(
+          titleOverride,
+          ifExists,
+          input,
+          source,
+        );
         if (duplicateResult) return duplicateResult;
       } else {
         log.info(
@@ -145,6 +227,7 @@ export async function executeTaskListAdd(
         priorityTier: priorityTier ?? 1,
         sortIndex,
         requiredTools: adHocRequiredTools,
+        ...source,
       });
 
       log.info(
@@ -152,6 +235,8 @@ export async function executeTaskListAdd(
           selectorType: "title",
           workItemId: workItem.id,
           title: workItem.title,
+          sourceType: source.sourceType,
+          sourceId: source.sourceId,
         },
         "ad-hoc work item created",
       );
@@ -230,7 +315,12 @@ export async function executeTaskListAdd(
 
     // Duplicate-prevention guard
     if (ifExists !== "create_duplicate") {
-      const duplicateResult = handleDuplicate(finalTitle, ifExists, input);
+      const duplicateResult = handleDuplicate(
+        finalTitle,
+        ifExists,
+        input,
+        source,
+      );
       if (duplicateResult) return duplicateResult;
     } else {
       log.info(
@@ -262,6 +352,7 @@ export async function executeTaskListAdd(
       priorityTier: priorityTier ?? 1,
       sortIndex,
       requiredTools: resolvedRequiredTools,
+      ...source,
     });
 
     log.info(
@@ -270,6 +361,8 @@ export async function executeTaskListAdd(
         taskId: resolvedTask.id,
         workItemId: workItem.id,
         title: workItem.title,
+        sourceType: source.sourceType,
+        sourceId: source.sourceId,
       },
       "work item created from task definition",
     );

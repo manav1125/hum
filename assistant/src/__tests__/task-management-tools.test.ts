@@ -1036,6 +1036,132 @@ describe("executeTaskListAdd tool", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+// Tool: executeTaskListAdd — channel-source provenance stamping
+// ═══════════════════════════════════════════════════════════════════
+
+describe("executeTaskListAdd channel-source stamping", () => {
+  beforeEach(clearTables);
+
+  /** A guardian invocation that originated from a Slack channel thread. */
+  const slackCtx: ToolContext = {
+    workingDir: "/tmp",
+    conversationId: "conv-slack",
+    trustClass: "guardian",
+    executionChannel: "slack",
+    requesterChatId: "C123-thread",
+  };
+
+  test("stamps the real channel sourceType + conversation sourceId for a channel commitment", async () => {
+    const result = await executeTaskListAdd(
+      { title: "Send OTP to Aileen" },
+      slackCtx,
+    );
+    expect(result.isError).toBe(false);
+    const items = listWorkItems();
+    expect(items).toHaveLength(1);
+    // NOT the generic "task" — the actual channel + conversation id.
+    expect(items[0].sourceType).toBe("slack");
+    expect(items[0].sourceId).toBe("C123-thread");
+  });
+
+  test("keeps genuine local (vellum) tasks source-less", async () => {
+    const localCtx: ToolContext = {
+      workingDir: "/tmp",
+      conversationId: "conv-local",
+      trustClass: "guardian",
+      executionChannel: "vellum",
+      requesterChatId: "ignored",
+    };
+    await executeTaskListAdd({ title: "Tidy my desktop" }, localCtx);
+    const items = listWorkItems();
+    expect(items).toHaveLength(1);
+    expect(items[0].sourceType).toBeNull();
+    expect(items[0].sourceId).toBeNull();
+  });
+
+  test("explicit source_type / source_id inputs override the channel context", async () => {
+    await executeTaskListAdd(
+      {
+        title: "Reply on thread",
+        source_type: "telegram",
+        source_id: "tg-chat-42",
+      },
+      slackCtx,
+    );
+    const items = listWorkItems();
+    expect(items).toHaveLength(1);
+    expect(items[0].sourceType).toBe("telegram");
+    expect(items[0].sourceId).toBe("tg-chat-42");
+  });
+
+  test("falls back to conversationId when no requester chat id is present", async () => {
+    const noChatCtx: ToolContext = {
+      workingDir: "/tmp",
+      conversationId: "conv-fallback",
+      trustClass: "guardian",
+      executionChannel: "whatsapp",
+    };
+    await executeTaskListAdd({ title: "Confirm pickup" }, noChatCtx);
+    const items = listWorkItems();
+    expect(items[0].sourceType).toBe("whatsapp");
+    expect(items[0].sourceId).toBe("conv-fallback");
+  });
+
+  test("same channel commitment dedups (richer source key collapses the duplicate)", async () => {
+    const first = await executeTaskListAdd(
+      { title: "Send OTP to Aileen" },
+      slackCtx,
+    );
+    expect(first.isError).toBe(false);
+    const second = await executeTaskListAdd(
+      { title: "Send OTP to Aileen" },
+      slackCtx,
+    );
+    expect(second.isError).toBe(false);
+    expect(second.content).toContain("already exists");
+    // Only one work item — the duplicate enqueue was suppressed.
+    expect(listWorkItems()).toHaveLength(1);
+  });
+
+  test("same title from a DIFFERENT channel/conversation stays distinct", async () => {
+    await executeTaskListAdd({ title: "Send OTP to Aileen" }, slackCtx);
+
+    const telegramCtx: ToolContext = {
+      workingDir: "/tmp",
+      conversationId: "conv-tg",
+      trustClass: "guardian",
+      executionChannel: "telegram",
+      requesterChatId: "tg-987",
+    };
+    const result = await executeTaskListAdd(
+      { title: "Send OTP to Aileen" },
+      telegramCtx,
+    );
+    expect(result.isError).toBe(false);
+    expect(result.content).toContain("Enqueued work item");
+
+    // Two distinct items: one per channel source — NOT collapsed.
+    const items = listWorkItems();
+    expect(items).toHaveLength(2);
+    const sources = items.map((i) => `${i.sourceType}:${i.sourceId}`).sort();
+    expect(sources).toEqual(["slack:C123-thread", "telegram:tg-987"]);
+  });
+
+  test("two different commitments in the SAME channel thread both persist", async () => {
+    await executeTaskListAdd({ title: "Send OTP to Aileen" }, slackCtx);
+    const second = await executeTaskListAdd(
+      { title: "Schedule the demo" },
+      slackCtx,
+    );
+    expect(second.isError).toBe(false);
+    expect(second.content).toContain("Enqueued work item");
+    // Same (sourceType, sourceId) bucket, different titles — title guard keeps
+    // them distinct.
+    expect(listWorkItems()).toHaveLength(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
 // Tool: executeTaskListUpdate (work-item-update)
 // ═══════════════════════════════════════════════════════════════════
 

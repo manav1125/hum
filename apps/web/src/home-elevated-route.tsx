@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity as ActivityIcon,
@@ -287,18 +287,40 @@ type RunMode = "smart" | "background" | "thread";
  * override menu ("Run in background" / "Open as chat"). The `title` tooltip
  * + a subtle caption surface what the smart default will do.
  */
+const RUN_MODES_HINT_KEY = "cue.firstRun.runModesHintSeen";
+
 function ActionSplitButton({
   action,
   pending,
   variant,
   onRun,
+  firstRun = false,
 }: {
   action: FeedActionShape;
   pending: boolean;
   variant: "primary" | "subtle";
   onRun: (mode?: RunMode) => void;
+  /** When true (and not seen before), show a one-time hint about run modes. */
+  firstRun?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  useEffect(() => {
+    if (!firstRun) return;
+    try {
+      if (!localStorage.getItem(RUN_MODES_HINT_KEY)) setShowHint(true);
+    } catch {
+      /* localStorage unavailable — skip the hint */
+    }
+  }, [firstRun]);
+  const dismissHint = useCallback(() => {
+    setShowHint(false);
+    try {
+      localStorage.setItem(RUN_MODES_HINT_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -338,7 +360,10 @@ function ActionSplitButton({
     >
       <button
         type="button"
-        onClick={() => onRun("smart")}
+        onClick={() => {
+          if (showHint) dismissHint();
+          onRun("smart");
+        }}
         disabled={pending}
         title={hint}
         style={{
@@ -352,7 +377,10 @@ function ActionSplitButton({
       </button>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (showHint) dismissHint();
+          setOpen((o) => !o);
+        }}
         disabled={pending}
         aria-label="More run options"
         style={{
@@ -366,6 +394,60 @@ function ActionSplitButton({
       >
         <ChevronDown size={13} />
       </button>
+      {showHint && !open && (
+        <div
+          role="status"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            right: 0,
+            zIndex: 41,
+            width: 220,
+            background: C.ink,
+            color: C.white,
+            borderRadius: 10,
+            padding: "11px 13px",
+            boxShadow: "0 10px 28px rgba(20,30,50,0.22)",
+            fontSize: 12,
+            lineHeight: 1.45,
+            textAlign: "left",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: -5,
+              right: 12,
+              width: 10,
+              height: 10,
+              background: C.ink,
+              transform: "rotate(45deg)",
+              borderRadius: 2,
+            }}
+          />
+          Cue picks the smart way to run this. Tap the arrow to run it in the
+          background or open it as a chat instead.
+          <button
+            type="button"
+            onClick={dismissHint}
+            style={{
+              display: "block",
+              marginTop: 8,
+              marginLeft: "auto",
+              fontSize: 11.5,
+              fontWeight: 500,
+              color: C.white,
+              background: "rgba(255,255,255,.16)",
+              border: "none",
+              borderRadius: 7,
+              padding: "5px 11px",
+              cursor: "pointer",
+            }}
+          >
+            Got it
+          </button>
+        </div>
+      )}
       {open && (
         <div
           style={{
@@ -799,6 +881,7 @@ export function HomeElevatedRoute() {
                       variant="primary"
                       pending={feedQuery.triggerAction.isPending}
                       onRun={(mode) => runAction(nextMove, mode)}
+                      firstRun
                     />
                   )}
                   {nextMove.conversationId && (

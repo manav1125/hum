@@ -417,21 +417,44 @@ const feedActionRequestSchema = z.object({
   mode: z.enum(["smart", "background", "thread"]).optional(),
 });
 
-/** Best-effort channel/source tag for a feed item, for work-item provenance. */
+/**
+ * Best-effort channel/source tag for a feed item, for work-item provenance.
+ *
+ * Normalizes the two provenance shapes the feed carries (matching
+ * `work-item-feed.ts#feedItemSourceKey`): action-board channel cards tag
+ * `metadata.channel` / `metadata.sourceConversationId`; work-item-derived
+ * cards tag `metadata.sourceType` / `metadata.sourceId`. Falling back to the
+ * item's `category` / `id` keeps non-channel cards (email, calendar) keyed on
+ * something stable. The resolved `(sourceType, sourceId)` is stamped onto the
+ * dispatched work item so it carries its real channel instead of a generic
+ * "task", and so the dedup guard keys channel commitments per channel/thread.
+ */
 function feedItemSource(item: FeedItem): {
   sourceType?: string;
   sourceId?: string;
 } {
   const md = (item.metadata ?? undefined) as
-    | { sourceType?: unknown; sourceId?: unknown }
+    | {
+        sourceType?: unknown;
+        sourceId?: unknown;
+        channel?: unknown;
+        sourceConversationId?: unknown;
+      }
     | undefined;
   const sourceType =
     typeof md?.sourceType === "string"
       ? md.sourceType
-      : typeof item.category === "string"
-        ? item.category
-        : undefined;
-  const sourceId = typeof md?.sourceId === "string" ? md.sourceId : item.id;
+      : typeof md?.channel === "string"
+        ? md.channel
+        : typeof item.category === "string"
+          ? item.category
+          : undefined;
+  const sourceId =
+    typeof md?.sourceId === "string"
+      ? md.sourceId
+      : typeof md?.sourceConversationId === "string"
+        ? md.sourceConversationId
+        : item.id;
   return {
     ...(sourceType ? { sourceType } : {}),
     ...(sourceId ? { sourceId } : {}),

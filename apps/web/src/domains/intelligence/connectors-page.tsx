@@ -1,4 +1,4 @@
-import { Loader2, Plus, Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -484,6 +484,59 @@ export function ConnectorsPage() {
             ))}
           </div>
         </>
+      )}
+
+      {connected.length === 0 && availableConnectors.length === 0 && (
+        <div
+          style={{
+            marginTop: 16,
+            border: `1px solid ${C.line}`,
+            borderRadius: 14,
+            background: C.sunken,
+            padding: "36px 24px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 500, color: C.t1 }}>
+            {connectors.length === 0
+              ? "Connect your first tool"
+              : "No connectors match that search"}
+          </div>
+          <div
+            style={{
+              fontSize: 13,
+              color: C.t2,
+              marginTop: 6,
+              maxWidth: 380,
+              marginInline: "auto",
+              lineHeight: 1.5,
+            }}
+          >
+            {connectors.length === 0
+              ? "Hook up Gmail, Slack, Notion and more so Cue can act for you across them."
+              : "Try a different name or category, or browse the full catalog."}
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              connectors.length === 0
+                ? navigate(routes.library.root)
+                : (setQuery(""), setCategory("all"))
+            }
+            style={{
+              marginTop: 16,
+              fontSize: 12.5,
+              background: C.blue,
+              color: "#fff",
+              border: "none",
+              borderRadius: 9,
+              padding: "9px 16px",
+              cursor: "pointer",
+            }}
+          >
+            {connectors.length === 0 ? "Browse catalog" : "Clear filters"}
+          </button>
+        </div>
       )}
 
       {/* MCP servers */}

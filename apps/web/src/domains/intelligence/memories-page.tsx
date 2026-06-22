@@ -69,12 +69,13 @@ export function MemoriesPage() {
 
   // Header stats — derived from the real items (mock: "+24 this week" / "0.81
   // avg conf").
+  // Capture "now" once at mount so the render stays pure (Date.now() is impure).
+  const [weekCutoff] = useState(() => Date.now() - WEEK_MS);
   const addedThisWeek = useMemo(() => {
-    const cutoff = Date.now() - WEEK_MS;
     return items.filter(
-      (i) => Number.isFinite(i.firstSeenAt) && i.firstSeenAt >= cutoff,
+      (i) => Number.isFinite(i.firstSeenAt) && i.firstSeenAt >= weekCutoff,
     ).length;
-  }, [items]);
+  }, [items, weekCutoff]);
   const avgConfidence = useMemo(() => {
     const confs = items
       .map((i) => i.confidence)
@@ -397,7 +398,11 @@ export function MemoriesPage() {
           ) : isError ? (
             <ErrorState onRetry={() => void refetch()} />
           ) : showEmpty ? (
-            <EmptyState onClearFilters={clearFilters} />
+            <EmptyState
+              firstRun={total === 0}
+              onClearFilters={clearFilters}
+              onTeach={() => void navigate("/assistant/")}
+            />
           ) : (
             <div
               style={{ display: "flex", flexDirection: "column", gap: 10 }}
@@ -715,7 +720,15 @@ function LoadingState() {
   );
 }
 
-function EmptyState({ onClearFilters }: { onClearFilters: () => void }) {
+function EmptyState({
+  firstRun,
+  onClearFilters,
+  onTeach,
+}: {
+  firstRun: boolean;
+  onClearFilters: () => void;
+  onTeach: () => void;
+}) {
   return (
     <div
       style={{
@@ -731,7 +744,7 @@ function EmptyState({ onClearFilters }: { onClearFilters: () => void }) {
     >
       <ApertureAvatar state="idle" size={60} />
       <div style={{ fontSize: 17, fontWeight: 500 }}>
-        No memories match this filter
+        {firstRun ? "Cue learns as you go" : "No memories match this filter"}
       </div>
       <p style={{ fontSize: 13.5, color: "#5A6672", maxWidth: 360 }}>
         Cue forms memories as you work — from chats, email, meetings, and the
@@ -739,7 +752,7 @@ function EmptyState({ onClearFilters }: { onClearFilters: () => void }) {
       </p>
       <button
         type="button"
-        onClick={onClearFilters}
+        onClick={firstRun ? onTeach : onClearFilters}
         style={{
           fontSize: 12.5,
           background: "#3D6EE8",
@@ -750,7 +763,7 @@ function EmptyState({ onClearFilters }: { onClearFilters: () => void }) {
           cursor: "pointer",
         }}
       >
-        Clear filters
+        {firstRun ? "Teach Cue something" : "Clear filters"}
       </button>
     </div>
   );
