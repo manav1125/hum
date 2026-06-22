@@ -36,6 +36,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     var hotKeyMonitor: Any?
     var lastRegisteredGlobalHotkey: String?
     var lastRegisteredQuickInputHotkey: String?
+    /// Global + local monitors for the Cue Live (⌥R) toggle hotkey.
+    var cueLiveMonitor: Any?
+    var cueLiveLocalMonitor: Any?
+    var lastRegisteredCueLiveHotkey: String?
     var globalHotkeyObserver: AnyCancellable?
     var escapeMonitor: Any?
     var hasSetupHotKey = false

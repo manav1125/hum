@@ -36,6 +36,54 @@ protocol LiveVoiceAudioPlaying: AnyObject {
 
 extension LiveVoiceAudioPlayer: LiveVoiceAudioPlaying {}
 
+/// Tunable client-side voice-activity-detection (VAD) parameters for Cue Live.
+///
+/// Cue Live uses **client-side RMS amplitude VAD** (not OpenAI Realtime
+/// `server_vad`): each captured audio chunk carries an RMS amplitude, and
+/// `LiveVoiceChannelManager` accumulates speech / silence durations against
+/// these thresholds to decide when the user's turn has ended (auto-release)
+/// and when the user is barging in over the assistant.
+///
+/// Values are read from `UserDefaults` so they can be tuned per machine /
+/// microphone without a rebuild. Each key falls back to the previously
+/// hard-coded default when unset, so behavior is unchanged out of the box.
+struct CueLiveVADConfig {
+    var bargeInAmplitudeThreshold: Float
+    var speechAmplitudeThreshold: Float
+    var silenceDurationBeforeRelease: TimeInterval
+    var minimumSpeechDurationBeforeRelease: TimeInterval
+
+    /// The shipped defaults — identical to the previous hard-coded constants.
+    static let standard = CueLiveVADConfig(
+        bargeInAmplitudeThreshold: 0.05,
+        speechAmplitudeThreshold: 0.03,
+        silenceDurationBeforeRelease: 1.0,
+        minimumSpeechDurationBeforeRelease: 0.12
+    )
+
+    /// Builds a config from `UserDefaults`, using `standard` for any unset key.
+    /// Out-of-range / non-positive values are ignored in favor of the default
+    /// so a bad write can't disable turn detection entirely.
+    static func fromDefaults(_ defaults: UserDefaults = .standard) -> CueLiveVADConfig {
+        func positiveFloat(_ key: String, _ fallback: Float) -> Float {
+            guard defaults.object(forKey: key) != nil else { return fallback }
+            let value = Float(defaults.double(forKey: key))
+            return value > 0 ? value : fallback
+        }
+        func positiveInterval(_ key: String, _ fallback: TimeInterval) -> TimeInterval {
+            guard defaults.object(forKey: key) != nil else { return fallback }
+            let value = defaults.double(forKey: key)
+            return value > 0 ? value : fallback
+        }
+        return CueLiveVADConfig(
+            bargeInAmplitudeThreshold: positiveFloat("cueLiveBargeInAmplitudeThreshold", standard.bargeInAmplitudeThreshold),
+            speechAmplitudeThreshold: positiveFloat("cueLiveSpeechAmplitudeThreshold", standard.speechAmplitudeThreshold),
+            silenceDurationBeforeRelease: positiveInterval("cueLiveSilenceDurationBeforeRelease", standard.silenceDurationBeforeRelease),
+            minimumSpeechDurationBeforeRelease: positiveInterval("cueLiveMinimumSpeechDurationBeforeRelease", standard.minimumSpeechDurationBeforeRelease)
+        )
+    }
+}
+
 @MainActor
 @Observable
 final class LiveVoiceChannelManager {
@@ -103,6 +151,25 @@ final class LiveVoiceChannelManager {
         self.speechAmplitudeThreshold = speechAmplitudeThreshold
         self.silenceDurationBeforeRelease = silenceDurationBeforeRelease
         self.minimumSpeechDurationBeforeRelease = minimumSpeechDurationBeforeRelease
+    }
+
+    /// Convenience initializer that applies a `CueLiveVADConfig` (typically read
+    /// from `UserDefaults`) to the VAD thresholds.
+    convenience init(
+        clientFactory: @escaping @MainActor () -> any LiveVoiceChannelClientProtocol = { LiveVoiceChannelClient() },
+        capture: any LiveVoiceAudioCapturing = LiveVoiceAudioCapture(),
+        playback: (any LiveVoiceAudioPlaying)? = nil,
+        vadConfig: CueLiveVADConfig
+    ) {
+        self.init(
+            clientFactory: clientFactory,
+            capture: capture,
+            playback: playback,
+            bargeInAmplitudeThreshold: vadConfig.bargeInAmplitudeThreshold,
+            speechAmplitudeThreshold: vadConfig.speechAmplitudeThreshold,
+            silenceDurationBeforeRelease: vadConfig.silenceDurationBeforeRelease,
+            minimumSpeechDurationBeforeRelease: vadConfig.minimumSpeechDurationBeforeRelease
+        )
     }
 
     func start(conversationId: String) async {

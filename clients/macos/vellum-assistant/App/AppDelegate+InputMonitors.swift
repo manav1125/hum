@@ -102,6 +102,15 @@ extension UserDefaults {
         }
         return string(forKey: "nextConversationShortcut") ?? ""
     }
+    /// Global shortcut that toggles "Cue Live" (continuous voice mode).
+    /// Defaults to ⌥R. Stored under "cueLiveShortcut" and observed for
+    /// live re-registration, mirroring the other dynamic-hotkey settings.
+    @objc dynamic var cueLiveShortcut: String {
+        if UserDefaults.standard.object(forKey: "cueLiveShortcut") == nil {
+            return "opt+r"
+        }
+        return string(forKey: "cueLiveShortcut") ?? ""
+    }
     @objc dynamic var connectedOrganizationId: String? {
         return string(forKey: "connectedOrganizationId")
     }
@@ -116,6 +125,7 @@ extension AppDelegate {
         hasSetupHotKey = true
 
         registerGlobalHotkeyMonitor()
+        registerCueLiveMonitor()
         registerQuickInputMonitor()
         registerFnVMonitor()
         registerCmdKMonitor()
@@ -132,6 +142,7 @@ extension AppDelegate {
 
         let shortcutPublishers: [AnyPublisher<Void, Never>] = [
             UserDefaults.standard.publisher(for: \.globalHotkeyShortcut).map { _ in () }.eraseToAnyPublisher(),
+            UserDefaults.standard.publisher(for: \.cueLiveShortcut).map { _ in () }.eraseToAnyPublisher(),
             UserDefaults.standard.publisher(for: \.quickInputHotkeyShortcut).map { _ in () }.eraseToAnyPublisher(),
             UserDefaults.standard.publisher(for: \.quickInputHotkeyKeyCode).map { _ in () }.eraseToAnyPublisher(),
             UserDefaults.standard.publisher(for: \.sidebarToggleShortcut).map { _ in () }.eraseToAnyPublisher(),
@@ -148,6 +159,7 @@ extension AppDelegate {
             .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 self?.registerGlobalHotkeyMonitor()
+                self?.registerCueLiveMonitor()
                 self?.registerQuickInputMonitor()
                 self?.registerSidebarToggleMonitor()
                 self?.registerNewChatMonitor()
@@ -275,6 +287,14 @@ extension AppDelegate {
         if let monitor = conversationNavLocalMonitor {
             NSEvent.removeMonitor(monitor)
             conversationNavLocalMonitor = nil
+        }
+        if let monitor = cueLiveMonitor {
+            NSEvent.removeMonitor(monitor)
+            cueLiveMonitor = nil
+        }
+        if let monitor = cueLiveLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            cueLiveLocalMonitor = nil
         }
     }
 
@@ -920,6 +940,80 @@ extension AppDelegate {
         }
 
         lastRegisteredGlobalHotkey = shortcut
+    }
+
+    /// Tears down and re-registers the global "Cue Live" hotkey (default ⌥R)
+    /// from the current `cueLiveShortcut` UserDefaults value. Skips
+    /// re-registration if the shortcut is unchanged. Like the Open-Vellum
+    /// hotkey this uses a non-consuming `NSEvent` global monitor so the
+    /// keystroke is still delivered to the frontmost app.
+    func registerCueLiveMonitor() {
+        let shortcut = UserDefaults.standard.string(forKey: "cueLiveShortcut") ?? "opt+r"
+
+        if shortcut == lastRegisteredCueLiveHotkey { return }
+
+        if let existing = cueLiveMonitor {
+            NSEvent.removeMonitor(existing)
+            cueLiveMonitor = nil
+        }
+        if let existing = cueLiveLocalMonitor {
+            NSEvent.removeMonitor(existing)
+            cueLiveLocalMonitor = nil
+        }
+
+        guard !shortcut.isEmpty else {
+            lastRegisteredCueLiveHotkey = shortcut
+            log.info("Cue Live: hotkey disabled")
+            return
+        }
+
+        let (targetModifiers, targetKey) = ShortcutHelper.parseShortcut(shortcut)
+
+        // Global monitor: fires when another app is frontmost.
+        cueLiveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let eventMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.numericPad)
+            guard eventMods == targetModifiers,
+                  event.charactersIgnoringModifiers?.lowercased() == targetKey.lowercased() else { return }
+            Task { @MainActor in
+                guard self?.isBootstrapping != true else { return }
+                self?.toggleCueLive()
+            }
+        }
+        // Local monitor: fires (and consumes) when Cue itself is frontmost, so
+        // the shortcut doesn't also type the key into the composer.
+        cueLiveLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let eventMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.numericPad)
+            guard eventMods == targetModifiers,
+                  event.charactersIgnoringModifiers?.lowercased() == targetKey.lowercased() else { return event }
+            Task { @MainActor in
+                guard self?.isBootstrapping != true else { return }
+                self?.toggleCueLive()
+            }
+            return nil
+        }
+
+        lastRegisteredCueLiveHotkey = shortcut
+        log.info("Cue Live: hotkey \(ShortcutHelper.displayString(for: shortcut)) registered")
+    }
+
+    /// Toggles Cue Live (continuous voice mode) from a global hotkey.
+    /// Brings the main window forward when starting, then forwards to the
+    /// window's `toggleCueLive()`, which mirrors the in-app voice-mode toggle
+    /// and captures the frontmost-app context at invocation time.
+    func toggleCueLive() {
+        guard let mainWindow else {
+            // No window yet (early launch) — surface the main window so the
+            // user can retry once the app is ready.
+            showMainWindow()
+            return
+        }
+        let isActive = mainWindow.voiceModeManager.state != .off
+        if !isActive {
+            // Capture context BEFORE we steal focus by raising our window.
+            mainWindow.pendingCueLiveContext = DictationContextCapture.capture()
+            showMainWindow()
+        }
+        mainWindow.toggleCueLive()
     }
 
     func setupEscapeMonitor() {

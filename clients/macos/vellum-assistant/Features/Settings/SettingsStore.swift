@@ -172,6 +172,8 @@ public final class SettingsStore: ObservableObject {
     // MARK: - Settings Values
 
     @Published var globalHotkeyShortcut: String
+    /// Global shortcut that toggles Cue Live (continuous voice mode). Default ⌥R.
+    @Published var cueLiveShortcut: String
     @Published var quickInputHotkeyShortcut: String
     @Published var quickInputHotkeyKeyCode: Int
     @Published var sidebarToggleShortcut: String
@@ -543,6 +545,11 @@ public final class SettingsStore: ObservableObject {
         } else {
             self.globalHotkeyShortcut = UserDefaults.standard.string(forKey: "globalHotkeyShortcut") ?? ""
         }
+        if UserDefaults.standard.object(forKey: "cueLiveShortcut") == nil {
+            self.cueLiveShortcut = "opt+r"
+        } else {
+            self.cueLiveShortcut = UserDefaults.standard.string(forKey: "cueLiveShortcut") ?? ""
+        }
         if UserDefaults.standard.object(forKey: "quickInputHotkeyShortcut") == nil {
             self.quickInputHotkeyShortcut = "cmd+shift+/"
         } else {
@@ -652,6 +659,11 @@ public final class SettingsStore: ObservableObject {
         $globalHotkeyShortcut
             .dropFirst()
             .sink { value in UserDefaults.standard.set(value, forKey: "globalHotkeyShortcut") }
+            .store(in: &cancellables)
+
+        $cueLiveShortcut
+            .dropFirst()
+            .sink { value in UserDefaults.standard.set(value, forKey: "cueLiveShortcut") }
             .store(in: &cancellables)
 
         $quickInputHotkeyShortcut

@@ -322,6 +322,16 @@ public final class MainWindow {
         conversationManager.activeViewModel
     }
 
+    /// Frontmost-app context captured at the moment the Cue Live hotkey (⌥R)
+    /// was pressed, before Cue stole focus. Consumed by `toggleCueLive()` and
+    /// forwarded to the voice-mode session so the assistant knows what the user
+    /// was looking at. Cleared once the session starts (or fails to start).
+    var pendingCueLiveContext: DictationContext?
+
+    /// Guards against re-entrant Cue Live activation while the active
+    /// conversation is still being prepared for voice mode.
+    private var isPreparingCueLive = false
+
     private var initialAssistantName: String?
 
     init(
@@ -337,7 +347,9 @@ public final class MainWindow {
         self.assistantFeatureFlagStore = assistantFeatureFlagStore
         self.bookmarkStore = services.bookmarkStore
         self.initialAssistantName = initialAssistantName
-        let liveVoiceChannelManager = LiveVoiceChannelManager()
+        // Cue Live VAD thresholds are tunable via UserDefaults; falls back to
+        // the shipped defaults when unset (see CueLiveVADConfig).
+        let liveVoiceChannelManager = LiveVoiceChannelManager(vadConfig: .fromDefaults())
         self.liveVoiceChannelManager = liveVoiceChannelManager
         let connectionManager = services.connectionManager
         self.voiceModeManager = VoiceModeManager(
@@ -403,6 +415,41 @@ public final class MainWindow {
                     self.hasConnectedOnce = true
                 }
             }
+        }
+    }
+
+    /// Toggles Cue Live (continuous voice mode) from the global ⌥R hotkey.
+    /// Mirrors `MainWindowView.toggleVoiceMode()` but lives on the window so it
+    /// can be driven from `AppDelegate` without going through SwiftUI. When
+    /// starting, the frontmost-app context captured at hotkey time
+    /// (`pendingCueLiveContext`) is handed to the voice-mode manager.
+    func toggleCueLive() {
+        if voiceModeManager.state != .off {
+            voiceModeManager.deactivate()
+            pendingCueLiveContext = nil
+            return
+        }
+
+        guard !isPreparingCueLive else { return }
+        isPreparingCueLive = true
+        let capturedContext = pendingCueLiveContext
+        pendingCueLiveContext = nil
+
+        Task { @MainActor in
+            defer { isPreparingCueLive = false }
+
+            guard let viewModel = await conversationManager.prepareActiveConversationForVoiceMode() else {
+                windowState.showToast(
+                    message: "Couldn't start Cue Live. Check that the assistant is connected.",
+                    style: .error
+                )
+                return
+            }
+
+            guard voiceModeManager.state == .off else { return }
+            voiceModeManager.setLiveContext(capturedContext)
+            voiceModeManager.activate(chatViewModel: viewModel, settingsStore: services.settingsStore)
+            voiceModeManager.startListening()
         }
     }
 

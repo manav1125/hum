@@ -74,6 +74,26 @@ final class VoiceModeManager {
 
     @ObservationIgnored weak var chatViewModel: ChatViewModel?
     @ObservationIgnored private weak var settingsStore: SettingsStore?
+
+    /// Frontmost-app context captured when the session was started from the
+    /// global Cue Live hotkey (⌥R). Describes what the user was looking at
+    /// before Cue took focus (app name, window title, selected text). Set via
+    /// `setLiveContext(_:)` immediately before `activate`/`startListening`, and
+    /// cleared on `deactivate`. Surfaced for downstream wiring (e.g. seeding the
+    /// voice turn with on-screen context); see `currentLiveContext`.
+    @ObservationIgnored private var liveContext: DictationContext?
+
+    /// Read-only accessor for the captured Cue Live invocation context, if any.
+    var currentLiveContext: DictationContext? { liveContext }
+
+    /// Stores the frontmost-app context for the next/active Cue Live session.
+    /// Call before `activate` so the context is available for the whole session.
+    func setLiveContext(_ context: DictationContext?) {
+        liveContext = context
+        if let context {
+            log.info("Cue Live: captured context — app=\(context.appName, privacy: .public) window=\(context.windowTitle, privacy: .public) hasSelection=\(context.selectedText?.isEmpty == false, privacy: .public)")
+        }
+    }
     @ObservationIgnored private var previousOnVoiceResponseComplete: ((String) -> Void)?
     @ObservationIgnored private var previousOnVoiceTextDelta: ((String) -> Void)?
     /// Guards against async auth callback activating after the panel is closed.
@@ -246,6 +266,7 @@ final class VoiceModeManager {
 
     func deactivate() {
         awaitingAuthorization = false
+        liveContext = nil
         guard state != .off else { return }
 
         // Cancel conversation timeout before setting state to .off

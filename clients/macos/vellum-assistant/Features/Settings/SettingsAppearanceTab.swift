@@ -14,6 +14,7 @@ struct SettingsAppearanceTab: View {
     @State private var newAllowlistDomain = ""
     @State private var isVideoDomainsExpanded: Bool = false
     @State private var isRecordingGlobalHotkey = false
+    @State private var isRecordingCueLive = false
     @State private var isRecordingQuickInputHotkey = false
     @State private var isRecordingSidebarToggle = false
     @State private var isRecordingHome = false
@@ -237,6 +238,39 @@ struct SettingsAppearanceTab: View {
                         .foregroundStyle(VColor.systemNegativeHover)
                         .padding(.bottom, VSpacing.xs)
                 }
+
+                SettingsDivider()
+
+                // Cue Live (configurable) — toggles continuous voice mode
+                HStack {
+                    Text("Cue Live")
+                        .font(VFont.bodyMediumLighter)
+                        .foregroundStyle(VColor.contentSecondary)
+                    Spacer()
+                    if isRecordingCueLive, let display = recordingDisplayString, !display.isEmpty {
+                        VShortcutTag(display)
+                    } else {
+                        VShortcutTag(ShortcutHelper.displayString(for: store.cueLiveShortcut))
+                    }
+
+                    if isRecordingCueLive {
+                        VButton(label: "Press shortcut...", style: .outlined) {
+                            stopRecording()
+                        }
+                    } else {
+                        HStack(spacing: VSpacing.sm) {
+                            VButton(label: "Change", style: .outlined) {
+                                startRecordingCueLive()
+                            }
+                            if !store.cueLiveShortcut.isEmpty {
+                                VButton(label: "Remove", style: .outlined) {
+                                    store.cueLiveShortcut = ""
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, VSpacing.md)
 
                 SettingsDivider()
 
@@ -800,6 +834,13 @@ struct SettingsAppearanceTab: View {
         isRecordingGlobalHotkey = true
     }
 
+    private func startRecordingCueLive() {
+        startRecordingShortcut { shortcut, _ in
+            store.cueLiveShortcut = shortcut
+        }
+        isRecordingCueLive = true
+    }
+
     private func startRecordingQuickInput() {
         startRecordingShortcut { shortcut, keyCode in
             store.quickInputHotkeyShortcut = shortcut
@@ -906,6 +947,7 @@ struct SettingsAppearanceTab: View {
 
     private func stopRecording() {
         isRecordingGlobalHotkey = false
+        isRecordingCueLive = false
         isRecordingQuickInputHotkey = false
         isRecordingSidebarToggle = false
         isRecordingNewChat = false
