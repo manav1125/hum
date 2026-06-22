@@ -127,6 +127,10 @@ beforeEach(() => {
   createWindowMock.mockClear();
   appState.isPackaged = false;
   delete process.env.VELLUM_DEV_URL;
+  // Pin the legacy `app://vellum.ai` renderer base for the packaged-URL
+  // assertions; the self-host cloud default would otherwise resolve the
+  // remote https base.
+  process.env.CUE_SERVER_URL = "";
 });
 
 afterEach(() => {

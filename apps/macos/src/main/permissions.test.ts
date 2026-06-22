@@ -21,6 +21,11 @@ const setPermissionRequestHandlerMock = mock(
   },
 );
 
+// These assertions pin the renderer origin to the legacy `app://vellum.ai`
+// scheme, so disable the self-host cloud default (which would otherwise make
+// `resolveAllowedOrigin()` return the Render https origin).
+process.env.CUE_SERVER_URL = "";
+
 mock.module("electron", () => ({
   app: { isPackaged: true },
   session: {

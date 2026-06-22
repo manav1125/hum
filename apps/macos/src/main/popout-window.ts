@@ -1,7 +1,7 @@
 import { BrowserWindow, app } from "electron";
 import { z } from "zod";
 
-import { RENDERER_BASE_PROD, getDevRendererBase } from "./app-config";
+import { getRendererBaseProd, getDevRendererBase } from "./app-config";
 import { handle } from "./ipc";
 import { createWindow } from "./windows";
 import { restoreBounds, track as trackWindowState } from "./window-state";
@@ -45,7 +45,7 @@ const POPOUT_MIN_HEIGHT = 400;
 const popouts = new Map<string, BrowserWindow>();
 
 const popoutUrl = (conversationId: string): string => {
-  const base = app.isPackaged ? RENDERER_BASE_PROD : getDevRendererBase();
+  const base = app.isPackaged ? getRendererBaseProd() : getDevRendererBase();
   return `${base}/conversations/${conversationId}?popout=1`;
 };
 

@@ -1,7 +1,7 @@
 import { BrowserWindow, app, screen } from "electron";
 import { z } from "zod";
 
-import { RENDERER_BASE_PROD, getDevRendererBase } from "./app-config";
+import { getRendererBaseProd, getDevRendererBase } from "./app-config";
 import { type VellumCommand } from "./commands";
 import { handle } from "./ipc";
 import { dispatchToMain, ensureVisible } from "./main-window";
@@ -30,7 +30,7 @@ const PANEL_WIDTH = 720;
 const PANEL_HEIGHT = 72;
 
 const quickInputUrl = (): string => {
-  const base = app.isPackaged ? RENDERER_BASE_PROD : getDevRendererBase();
+  const base = app.isPackaged ? getRendererBaseProd() : getDevRendererBase();
   return `${base}${QUICK_INPUT_PATH}`;
 };
 

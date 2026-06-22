@@ -14,10 +14,14 @@ mock.module("electron", () => ({
 const { isAllowedOrigin, resolveAllowedOrigin } = await import("./app-origin");
 
 const ORIGINAL_DEV_URL = process.env.VELLUM_DEV_URL;
+const ORIGINAL_CUE_SERVER_URL = process.env.CUE_SERVER_URL;
 
 beforeEach(() => {
   appState.isPackaged = false;
   delete process.env.VELLUM_DEV_URL;
+  // Default the self-host opt-out for the legacy-path assertions; the
+  // self-host suite sets its own value.
+  process.env.CUE_SERVER_URL = "";
 });
 
 afterEach(() => {
@@ -26,14 +30,37 @@ afterEach(() => {
   } else {
     process.env.VELLUM_DEV_URL = ORIGINAL_DEV_URL;
   }
+  if (ORIGINAL_CUE_SERVER_URL === undefined) {
+    delete process.env.CUE_SERVER_URL;
+  } else {
+    process.env.CUE_SERVER_URL = ORIGINAL_CUE_SERVER_URL;
+  }
 });
 
 describe("resolveAllowedOrigin", () => {
-  test("packaged builds resolve to the app://vellum.ai tuple origin", () => {
+  test("packaged builds with self-host disabled resolve to the app://vellum.ai tuple origin", () => {
     appState.isPackaged = true;
     expect(resolveAllowedOrigin()).toEqual({
       protocol: "app:",
       host: "vellum.ai",
+    });
+  });
+
+  test("packaged builds default to the self-host cloud origin when CUE_SERVER_URL is unset", () => {
+    delete process.env.CUE_SERVER_URL;
+    appState.isPackaged = true;
+    expect(resolveAllowedOrigin()).toEqual({
+      protocol: "https:",
+      host: "cue-app-3yne.onrender.com",
+    });
+  });
+
+  test("packaged builds honor an overridden CUE_SERVER_URL origin", () => {
+    process.env.CUE_SERVER_URL = "https://cue.example.com/assistant/";
+    appState.isPackaged = true;
+    expect(resolveAllowedOrigin()).toEqual({
+      protocol: "https:",
+      host: "cue.example.com",
     });
   });
 

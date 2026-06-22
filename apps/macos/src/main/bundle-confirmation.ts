@@ -1,7 +1,7 @@
 import { BrowserWindow, app } from "electron";
 import { z } from "zod";
 
-import { RENDERER_BASE_PROD, getDevRendererBase } from "./app-config";
+import { getRendererBaseProd, getDevRendererBase } from "./app-config";
 import type { BundleScanData } from "./bundle-manager";
 import { handle, on } from "./ipc";
 import { createWindow } from "./windows";
@@ -11,7 +11,7 @@ import { createWindow } from "./windows";
 const CONFIRM_PATH = "/bundle/confirm";
 
 const confirmWindowUrl = (): string => {
-  const base = app.isPackaged ? RENDERER_BASE_PROD : getDevRendererBase();
+  const base = app.isPackaged ? getRendererBaseProd() : getDevRendererBase();
   return `${base}${CONFIRM_PATH}`;
 };
 

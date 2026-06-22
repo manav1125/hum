@@ -4,7 +4,7 @@ import {
   type BrowserWindowConstructorOptions,
 } from "electron";
 
-import { RENDERER_BASE_PROD, getDevRendererBase } from "./app-config";
+import { getRendererBaseProd, getDevRendererBase } from "./app-config";
 import { createWindow } from "./windows";
 
 type AlwaysOnTopLevel = NonNullable<
@@ -44,7 +44,7 @@ const floatingWindows = new Map<string, BrowserWindow>();
 
 const floatingWindowUrl = (route: string): string => {
   const normalizedRoute = route.startsWith("/") ? route : `/${route}`;
-  const base = app.isPackaged ? RENDERER_BASE_PROD : getDevRendererBase();
+  const base = app.isPackaged ? getRendererBaseProd() : getDevRendererBase();
   return `${base}${normalizedRoute}`;
 };
 

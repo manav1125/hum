@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppVersionInfo } from "@vellumai/ipc-contract";
 
-import { RENDERER_BASE_PROD, getDevRendererBase } from "./app-config";
+import { getRendererBaseProd, getDevRendererBase } from "./app-config";
 import { handle } from "./ipc";
 import { createWindow } from "./windows";
 
@@ -68,7 +68,7 @@ export const getVersionInfo = (): AppVersionInfo => ({
 const ABOUT_PATH = "/about";
 
 const aboutWindowUrl = (): string => {
-  const base = app.isPackaged ? RENDERER_BASE_PROD : getDevRendererBase();
+  const base = app.isPackaged ? getRendererBaseProd() : getDevRendererBase();
   return `${base}${ABOUT_PATH}`;
 };
 

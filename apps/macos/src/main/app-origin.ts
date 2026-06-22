@@ -1,6 +1,11 @@
 import { app } from "electron";
 
-import { APP_HOST, APP_PROTOCOL, getDevRendererBase } from "./app-config";
+import {
+  APP_HOST,
+  APP_PROTOCOL,
+  getDevRendererBase,
+  resolveSelfHostUrl,
+} from "./app-config";
 
 /**
  * The single origin the renderer legitimately runs at, expressed as a
@@ -24,6 +29,16 @@ export interface AllowedOrigin {
  */
 export const resolveAllowedOrigin = (): AllowedOrigin => {
   if (app.isPackaged) {
+    // Self-host cloud: the renderer runs at the remote https origin, so that
+    // tuple — not `app://vellum.ai` — is what the IPC sender guard, the
+    // permissions guard, and the navigation guard must accept. Without this
+    // the in-window navigation of the remote SPA would be ejected to the
+    // system browser and every `window.vellum.*` IPC call would be rejected,
+    // breaking Cue Live / host-proxy / tray on the remote origin.
+    const selfHost = resolveSelfHostUrl();
+    if (selfHost) {
+      return { protocol: selfHost.protocol, host: selfHost.host };
+    }
     return { protocol: `${APP_PROTOCOL}:`, host: APP_HOST };
   }
   const devUrl = new URL(getDevRendererBase());

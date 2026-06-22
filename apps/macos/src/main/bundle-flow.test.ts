@@ -110,8 +110,11 @@ mock.module("./app-config", () => ({
   VELLUMAPP_PROTOCOL: "vellumapp",
   BUNDLES_DIR_NAME: "bundles",
   RENDERER_BASE_PROD: "app://vellum.ai/assistant",
+  getRendererBaseProd: () => "app://vellum.ai/assistant",
   getDevRendererBase: () => "http://localhost:5173",
   getRendererRootUrl: () => "app://vellum.ai/assistant",
+  // Legacy bundle path for these assertions: self-host disabled.
+  resolveSelfHostUrl: () => null,
 }));
 
 // resolveCliInvocation (via the real `./local-mode`) honors this override;

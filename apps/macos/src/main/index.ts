@@ -18,6 +18,7 @@ import {
   APP_PROTOCOL,
   BUNDLES_DIR_NAME,
   VELLUMAPP_PROTOCOL,
+  resolveSelfHostUrl,
 } from "./app-config";
 import { resolveAllowedOrigin } from "./app-origin";
 import { writeCliLocator } from "./cli-installer";
@@ -359,7 +360,13 @@ const forwardPlatformRequest = async (
 app
   .whenReady()
   .then(async () => {
-    if (!isDev) {
+    // Self-host cloud (the default for Cue) loads the renderer directly from
+    // the remote https origin, which serves its own `/v1`, `/_allauth`,
+    // `/accounts` and static assets — so the `app://` scheme + platform proxy
+    // is neither registered nor needed. Only register it for the legacy
+    // bundle-serving fallback (`CUE_SERVER_URL=`), where the packaged snapshot
+    // is served via `app://vellum.ai` and platform calls proxy to platformUrl.
+    if (!isDev && !resolveSelfHostUrl()) {
       registerAppProtocol();
     }
     registerVellumAppProtocol(
