@@ -21,6 +21,7 @@ let getSessionGates: Array<() => void> | null = null;
 
 let mockIsGatewayAuth = false;
 let mockIsLocalMode = false;
+const ensureGatewayTokenMock = mock(async () => "minted-token");
 let mockPlatformAssistants: unknown[] = [];
 let mockPrimeError: Error | null = null;
 const setSelectedAssistantMock = mock(async (_id: string | null) => {});
@@ -95,9 +96,22 @@ mock.module("@/runtime/session-token", () => ({
 mock.module("@/lib/auth/gateway-session", () => ({
   isGatewayAuthEnabled: () => mockIsGatewayAuth,
   isGatewayAuthMode: () => mockIsGatewayAuth,
-  ensureGatewayToken: async () => {},
+  ensureGatewayToken: ensureGatewayTokenMock,
   clearGatewayToken: () => {},
   getLocalTokenUrl: () => "http://localhost/token",
+}));
+
+// Self-host (Cue) controls. `mockIsSelfHost` flips the self-host refresh branch;
+// `mockActorTokenValid` is the durable actor token's validity; `mockRehydrate`
+// reports whether re-stamping the gateway slot succeeded.
+let mockIsSelfHost = false;
+let mockActorTokenValid = false;
+let mockRehydrateResult = false;
+const rehydrateGatewayTokenFromActorMock = mock(() => mockRehydrateResult);
+mock.module("@/lib/self-hosted/cue-self-host", () => ({
+  isSelfHostMode: () => mockIsSelfHost,
+  isStoredActorTokenValid: () => mockActorTokenValid,
+  rehydrateGatewayTokenFromActor: rehydrateGatewayTokenFromActorMock,
 }));
 
 mock.module("@/lib/local-mode", () => ({
@@ -254,6 +268,11 @@ beforeEach(() => {
   mockListAssistantsResult = [];
   listAssistantsMock.mockClear();
   syncPlatformAssistantsToLockfileMock.mockClear();
+  mockIsSelfHost = false;
+  mockActorTokenValid = false;
+  mockRehydrateResult = false;
+  ensureGatewayTokenMock.mockClear();
+  rehydrateGatewayTokenFromActorMock.mockClear();
   resetAuthStore();
 });
 
@@ -807,5 +826,49 @@ describe("offline session restore (LUM-2412)", () => {
     await useAuthStore.getState().initSession();
 
     expect(useAuthStore.getState().sessionStatus).toBe("unauthenticated");
+  });
+});
+
+describe("self-host (Cue) refreshSession — durable actor token is source of truth", () => {
+  test("re-hydrates the gateway token from the actor token instead of re-minting (survives app resume / SSE drop)", async () => {
+    mockIsGatewayAuth = true;
+    mockIsSelfHost = true;
+    mockActorTokenValid = true;
+    mockRehydrateResult = true;
+
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(true);
+
+    expect(useAuthStore.getState().sessionStatus).toBe("authenticated");
+    // Never routes through the mint (which would clear the actor token on the
+    // source-mismatch branch and re-mint against a guardian-less gateway).
+    expect(ensureGatewayTokenMock).not.toHaveBeenCalled();
+    expect(rehydrateGatewayTokenFromActorMock).toHaveBeenCalled();
+  });
+
+  test("keeps the session when the gateway slot is already populated (rehydrate no-op) but the actor token is still valid", async () => {
+    mockIsGatewayAuth = true;
+    mockIsSelfHost = true;
+    mockActorTokenValid = true;
+    // rehydrate returns false (slot already present / nothing to do); validity
+    // alone must keep the user signed in.
+    mockRehydrateResult = false;
+
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(true);
+
+    expect(useAuthStore.getState().sessionStatus).toBe("authenticated");
+    expect(ensureGatewayTokenMock).not.toHaveBeenCalled();
+  });
+
+  test("signs out only when the actor token itself is expired/invalid", async () => {
+    mockIsGatewayAuth = true;
+    mockIsSelfHost = true;
+    mockActorTokenValid = false;
+    mockRehydrateResult = false;
+    useAuthStore.setState({ sessionStatus: "authenticated", user: null });
+
+    await expect(useAuthStore.getState().refreshSession()).resolves.toBe(false);
+
+    expect(useAuthStore.getState().sessionStatus).toBe("unauthenticated");
+    expect(ensureGatewayTokenMock).not.toHaveBeenCalled();
   });
 });

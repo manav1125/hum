@@ -43,6 +43,11 @@ import {
   getLocalTokenUrl,
 } from "@/lib/auth/gateway-session";
 import {
+  isSelfHostMode,
+  isStoredActorTokenValid,
+  rehydrateGatewayTokenFromActor,
+} from "@/lib/self-hosted/cue-self-host";
+import {
   isLocalMode,
   getPlatformAssistants,
   getLocalAssistants,
@@ -436,6 +441,12 @@ const useAuthStoreBase = create<AuthStore>()((set, get) => ({
 
   initSession: async () => {
     if (isGatewayAuthEnabled()) {
+      // Self-host: re-derive the short-lived gateway-token slot from the durable
+      // actor token on every cold boot. A prior 401 may have cleared the slot
+      // (clearGatewayToken) while leaving the actor token intact — re-hydrating
+      // here keeps a reopen from stranding the user on the Connect screen for
+      // the full life of the actor token.
+      rehydrateGatewayTokenFromActor();
       try {
         await primeLocalGatewayConnection();
         set(authenticatedLocalUser());
@@ -617,6 +628,25 @@ const useAuthStoreBase = create<AuthStore>()((set, get) => ({
   },
 
   refreshSession: async () => {
+    // Self-host (Cue) gateway auth: the durable credential is the pasted
+    // ~30-day actor token, not a mintable local gateway token. There is no
+    // `/auth/token` mint to refresh from here (no local assistant → no
+    // `getLocalTokenUrl()`), so routing through `ensureGatewayToken` would hit
+    // the source-mismatch branch, CLEAR the actor token, and re-mint against a
+    // gateway that has no guardian token to honor — signing the user out on
+    // every app resume / SSE reconnect (the ~10-15min + reopen bug). Instead,
+    // re-derive the short-lived gateway-token slot from the durable actor token
+    // and only end the session when the ACTOR token itself is expired/invalid.
+    if (isSelfHostMode()) {
+      if (rehydrateGatewayTokenFromActor() || isStoredActorTokenValid()) {
+        set({ sessionStatus: "authenticated" });
+        probePlatformSessionIfReachable(set);
+        return true;
+      }
+      set(sessionEnded());
+      return false;
+    }
+
     if (isGatewayAuthMode()) {
       try {
         await ensureGatewayToken(getLocalTokenUrl());

@@ -4,6 +4,7 @@ import {
   Activity as ActivityIcon,
   ArrowRight,
   Bell,
+  Bot,
   CalendarClock,
   ChevronDown,
   ListTodo,
@@ -725,6 +726,7 @@ export function HomeElevatedRoute() {
         onOpenConversation={(id) => navigate(routes.conversation(id))}
         onVoice={() => navigate(routes.voice)}
         onActivity={() => navigate(routes.activity)}
+        onAgents={() => navigate(routes.agentsAtWork)}
       />
     );
   }
@@ -1675,6 +1677,7 @@ type TodayMobileProps = {
   onOpenConversation: (conversationId: string) => void;
   onVoice: () => void;
   onActivity: () => void;
+  onAgents: () => void;
 };
 
 /**
@@ -1702,6 +1705,7 @@ function TodayMobile({
   onOpenConversation,
   onVoice,
   onActivity,
+  onAgents,
 }: TodayMobileProps) {
   const initial = (userName?.trim()?.[0] ?? "C").toUpperCase();
   const isEmpty = !loading && moves.length === 0;
@@ -1810,6 +1814,30 @@ function TodayMobile({
               }}
             >
               <ActivityIcon size={15} strokeWidth={2} />
+            </button>
+            {/* Persistent entry to Agents at Work — the live view of
+                background agent runs. Mirrors the Activity glyph so mobile
+                users reach the page without a 5th tab. */}
+            <button
+              type="button"
+              onClick={onAgents}
+              aria-label="Agents at Work"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: "50%",
+                background: M.surface,
+                border: `1px solid ${M.line}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: M.t2,
+                cursor: "pointer",
+                flexShrink: 0,
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <Bot size={15} strokeWidth={2} />
             </button>
             <span
               style={{

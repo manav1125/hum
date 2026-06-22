@@ -11,6 +11,7 @@
 
 import {
   Activity as ActivityIcon,
+  Bot,
   Calendar,
   CircleDot,
   Loader2,
@@ -144,6 +145,7 @@ export function NextMovesPage() {
         onApprove={handleAction}
         onOpen={handleOpen}
         onActivity={() => navigate(routes.activity)}
+        onAgents={() => navigate(routes.agentsAtWork)}
       />
     );
   }
@@ -568,6 +570,7 @@ function NextMovesMobile({
   onApprove,
   onOpen,
   onActivity,
+  onAgents,
 }: {
   items: FeedItem[];
   loading: boolean;
@@ -577,6 +580,7 @@ function NextMovesMobile({
   onApprove: (item: FeedItem, action: FeedAction) => void;
   onOpen: (item: FeedItem) => void;
   onActivity: () => void;
+  onAgents: () => void;
 }) {
   // Group rows into project sections (preserving the priority sort order
   // the page already applied to `items`).
@@ -652,30 +656,61 @@ function NextMovesMobile({
               : `${workingCount} working · ${needsYouCount} needs you`}
           </div>
         </div>
-        {/* Persistent entry to the Activity command center (running / queued /
-            done background work). Keeps the 4-tab bar intact. */}
-        <button
-          type="button"
-          onClick={onActivity}
-          aria-label="Activity"
+        {/* Persistent entries to the Activity command center (running /
+            queued / done background work) and Agents at Work (live agent
+            runs). Keeps the 4-tab bar intact. */}
+        <div
           style={{
-            marginTop: 2,
-            width: 32,
-            height: 32,
-            borderRadius: "50%",
-            background: M.surface,
-            border: `1px solid ${M.line}`,
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
-            color: M.t2,
-            cursor: "pointer",
+            gap: 8,
+            marginTop: 2,
             flexShrink: 0,
-            WebkitTapHighlightColor: "transparent",
           }}
         >
-          <ActivityIcon size={16} strokeWidth={2} />
-        </button>
+          <button
+            type="button"
+            onClick={onAgents}
+            aria-label="Agents at Work"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: M.surface,
+              border: `1px solid ${M.line}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: M.t2,
+              cursor: "pointer",
+              flexShrink: 0,
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            <Bot size={16} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            onClick={onActivity}
+            aria-label="Activity"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              background: M.surface,
+              border: `1px solid ${M.line}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: M.t2,
+              cursor: "pointer",
+              flexShrink: 0,
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            <ActivityIcon size={16} strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       {/* Scrollable body */}

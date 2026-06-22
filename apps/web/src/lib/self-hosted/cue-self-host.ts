@@ -20,6 +20,16 @@ const LS_EXPIRES_KEY = "vellum:gw:expiresAt";
 const LS_TOKEN_SOURCE_KEY = "vellum:gw:tokenSource";
 const LS_SELF_HOST_FLAG = "cue:selfHost";
 
+// The durable refresh credential: the long-lived (~30d) `actor_client_v1` JWT
+// the user pasted. The gateway token store (`vellum:gw:token`) is treated as a
+// short-lived derived slot the rest of the auth layer rotates and clears (on
+// 401s, source mismatches, resume re-mints); persisting the actor token under
+// its OWN key means a cleared gateway token can always be silently re-derived
+// from it for the full life of the actor token, across app closes/reopens and
+// SSE drops — instead of stranding the user on the Connect screen. We re-hydrate
+// the gateway token slot from this on boot/resume whenever the slot is missing.
+const LS_ACTOR_TOKEN_KEY = "cue:selfHost:actorToken";
+
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — matches actor_client_v1
 
 /** True when this SPA has been put into self-hosted gateway mode. */
@@ -58,6 +68,73 @@ function hasStoredGatewayToken(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Decode a JWT's `exp` claim (seconds since epoch) to epoch-ms, or null when the
+ * token is malformed / has no numeric `exp`. Pure base64url payload decode — no
+ * signature verification (the gateway verifies; the client only needs the
+ * expiry to decide whether the durable credential is still worth trusting).
+ */
+export function decodeActorTokenExpMs(token: string | null): number | null {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(payload);
+    const claims = JSON.parse(json) as { exp?: unknown };
+    const exp = claims.exp;
+    if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
+    return exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
+/** The durable pasted actor token, if one is stored. */
+export function getStoredActorToken(): string | null {
+  try {
+    const durable = localStorage.getItem(LS_ACTOR_TOKEN_KEY);
+    if (durable) return durable;
+    // Migration for sessions seeded before the durable key existed: the pasted
+    // actor token was only written to the gateway-token slot. Backfill the
+    // durable key from it so the refresh credential survives the next gateway
+    // clear without forcing a re-paste. Only in self-host mode — the local
+    // (desktop) gateway slot holds a genuinely short-lived minted token, not a
+    // durable actor token.
+    if (isSelfHostMode()) {
+      const legacy = localStorage.getItem(LS_TOKEN_KEY);
+      if (legacy && legacy.split(".").length === 3) {
+        try {
+          localStorage.setItem(LS_ACTOR_TOKEN_KEY, legacy);
+        } catch {
+          // localStorage unavailable — fall through and return the value anyway
+        }
+        return legacy;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the stored actor token is still usable as a refresh credential: it
+ * exists and (when its `exp` is decodable) has not passed expiry. A token whose
+ * `exp` we cannot decode is treated as valid — the gateway is the real
+ * authority, and bouncing a present credential to the Connect screen on a parse
+ * quirk is worse than letting the gateway reject it. Only a decodably-expired
+ * token (or no token at all) is a hard sign-out.
+ */
+export function isStoredActorTokenValid(): boolean {
+  const token = getStoredActorToken();
+  if (!token) return false;
+  const expMs = decodeActorTokenExpMs(token);
+  if (expMs === null) return true;
+  // 60s skew margin, mirroring gateway-session's isTokenExpired.
+  return Date.now() < expMs - 60_000;
 }
 
 /**
@@ -109,14 +186,34 @@ export function seedCueToken(input: string): boolean {
   // mistyped paste surfaces an error instead of seeding garbage.
   if (token.split(".").length !== 3) return false;
 
-  writeSelfHostToken(token, expMs > 0 ? expMs : Date.now() + DEFAULT_TTL_MS);
+  writeSelfHostToken(token, expMs);
   return true;
 }
 
-/** Persist a token + expiry into the gateway-session store and set the flag. */
-function writeSelfHostToken(token: string, expMs: number): void {
+/**
+ * Persist the pasted actor token as both the durable refresh credential and the
+ * active gateway-session token, and set the self-host flag.
+ *
+ * Expiry resolution: an explicit `cueExp` (from the connect link) wins; else the
+ * token's own decoded `exp`; else the 30-day default. The actor token's real
+ * `exp` is the source of truth for sign-out decisions (see
+ * `isStoredActorTokenValid`), so deriving the stored expiry from it — rather
+ * than always stamping a fresh 30d — keeps the gateway-token slot honest about
+ * the credential's true remaining life.
+ */
+function writeSelfHostToken(token: string, explicitExpMs = 0): void {
+  const decodedExpMs = decodeActorTokenExpMs(token);
+  const expMs =
+    explicitExpMs > 0
+      ? explicitExpMs
+      : decodedExpMs !== null
+        ? decodedExpMs
+        : Date.now() + DEFAULT_TTL_MS;
   const expSec = Math.floor(expMs / 1000);
   try {
+    // Durable refresh credential — survives gateway-token clears (401s,
+    // source-mismatch re-mints) so the session can always be re-derived.
+    localStorage.setItem(LS_ACTOR_TOKEN_KEY, token);
     localStorage.setItem(LS_TOKEN_KEY, token);
     localStorage.setItem(LS_EXPIRES_KEY, String(expSec));
     localStorage.setItem(LS_TOKEN_SOURCE_KEY, window.location.origin);
@@ -126,10 +223,32 @@ function writeSelfHostToken(token: string, expMs: number): void {
   }
 }
 
+/**
+ * Re-hydrate the gateway-session token slot from the durable actor token when
+ * the slot is missing/expired but the actor token is still valid. Idempotent;
+ * returns true when a usable gateway token is in place afterwards.
+ *
+ * This is the recovery seam the auth layer calls on boot, app resume, and after
+ * a 401 cleared the gateway token: instead of signing out, re-stamp the actor
+ * token into the gateway slot so `getGatewayToken()` (and therefore the SSE /
+ * runtime-proxy `Authorization` header) keep working for the life of the actor
+ * token. A no-op outside self-host mode.
+ */
+export function rehydrateGatewayTokenFromActor(): boolean {
+  if (!isSelfHostMode()) return false;
+  if (!isStoredActorTokenValid()) return false;
+  if (hasStoredGatewayToken()) return true;
+  const token = getStoredActorToken();
+  if (!token) return false;
+  writeSelfHostToken(token);
+  return true;
+}
+
 /** Clear self-host mode + the seeded token (e.g. on an explicit disconnect). */
 export function clearSelfHostMode(): void {
   try {
     localStorage.removeItem(LS_SELF_HOST_FLAG);
+    localStorage.removeItem(LS_ACTOR_TOKEN_KEY);
     localStorage.removeItem(LS_TOKEN_KEY);
     localStorage.removeItem(LS_EXPIRES_KEY);
     localStorage.removeItem(LS_TOKEN_SOURCE_KEY);
@@ -153,16 +272,23 @@ export function bootstrapCueSelfHost(): void {
     return;
   }
   const token = params.get("cueToken");
-  if (!token) return;
+  if (!token) {
+    // No fresh `?cueToken=` to seed — but a prior 401 may have cleared the
+    // short-lived gateway-token slot while the durable actor token is still
+    // valid. Re-stamp it before the boot gate (`shouldShowCueConnect`) reads
+    // the slot, so a reopen re-enters the authenticated session instead of
+    // bouncing to the Connect screen for the life of the actor token.
+    rehydrateGatewayTokenFromActor();
+    return;
+  }
 
-  // `accessTokenExpiresAt` is epoch-ms; the token store keeps epoch-seconds.
+  // `accessTokenExpiresAt` is epoch-ms; an explicit `cueExp` wins, otherwise
+  // `writeSelfHostToken` derives the expiry from the token's own `exp` claim.
   const expMsRaw = Number(params.get("cueExp"));
-  const expMs =
-    Number.isFinite(expMsRaw) && expMsRaw > 0
-      ? expMsRaw
-      : Date.now() + DEFAULT_TTL_MS;
+  const explicitExpMs =
+    Number.isFinite(expMsRaw) && expMsRaw > 0 ? expMsRaw : 0;
 
-  writeSelfHostToken(token, expMs);
+  writeSelfHostToken(token, explicitExpMs);
 
   // Strip the credential params from the URL without a reload.
   params.delete("cueToken");

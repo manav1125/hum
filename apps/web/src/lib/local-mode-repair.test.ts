@@ -25,6 +25,13 @@ mock.module("@/lib/auth/gateway-session", () => ({
   ensureGatewayToken: async () => {},
   getGatewayToken: () => "gateway-tok",
   getLocalTokenUrl: () => "http://127.0.0.1:7830/token",
+  isGatewayAuthEnabled: () => true,
+}));
+
+mock.module("@/lib/self-hosted/cue-self-host", () => ({
+  isSelfHostMode: () => false,
+  isStoredActorTokenValid: () => false,
+  rehydrateGatewayTokenFromActor: () => false,
 }));
 
 mock.module("@/lib/self-hosted/connection", () => ({

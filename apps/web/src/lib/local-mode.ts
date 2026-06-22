@@ -11,6 +11,11 @@ import {
   isGatewayAuthEnabled,
 } from "@/lib/auth/gateway-session";
 import { setSelfHostedConnection } from "@/lib/self-hosted/connection";
+import {
+  isSelfHostMode,
+  isStoredActorTokenValid,
+  rehydrateGatewayTokenFromActor,
+} from "@/lib/self-hosted/cue-self-host";
 import { useLockfileStore } from "@/stores/lockfile-store";
 import {
   fetchGuardianTokenHost,
@@ -483,6 +488,35 @@ export function __resetRemintStateForTesting(): void {
  */
 export function remintGatewayTokenOnce(): Promise<boolean> {
   if (!isGatewayAuthEnabled()) return Promise.resolve(false);
+
+  // Self-host (Cue): there is no local `/auth/token` mint to re-prime from —
+  // the durable credential is the pasted actor token. Clearing the gateway slot
+  // and calling `primeLocalGatewayConnectionWithRepair` (a no-op without a local
+  // assistant) would strand every subsequent request with no `Authorization`
+  // header → a hard sign-out on the first transient 401. Instead, re-stamp the
+  // gateway slot from the durable actor token so the next request recovers, for
+  // the full life of the actor token. Only when the actor token is itself
+  // expired/invalid do we give up (return false → the 401 surfaces).
+  if (isSelfHostMode()) {
+    if (remintInFlight) return remintInFlight;
+    if (Date.now() - lastRemintAt < REMINT_COOLDOWN_MS) {
+      return Promise.resolve(false);
+    }
+    remintInFlight = (async () => {
+      try {
+        if (!isStoredActorTokenValid()) return false;
+        // Force a re-stamp even if the slot still holds a (rotated-signature)
+        // token: clear then re-hydrate from the durable actor token.
+        clearGatewayToken();
+        return rehydrateGatewayTokenFromActor();
+      } finally {
+        lastRemintAt = Date.now();
+        remintInFlight = null;
+      }
+    })();
+    return remintInFlight;
+  }
+
   if (remintInFlight) return remintInFlight;
   if (Date.now() - lastRemintAt < REMINT_COOLDOWN_MS) {
     return Promise.resolve(false);
