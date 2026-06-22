@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppVersionInfo } from "@vellumai/ipc-contract";
 
-import { getRendererBaseProd, getDevRendererBase } from "./app-config";
+import { RENDERER_BASE_PROD, getDevRendererBase } from "./app-config";
 import { handle } from "./ipc";
 import { createWindow } from "./windows";
 
@@ -40,8 +40,10 @@ const VELLUM_ENV: string =
     ? __VELLUM_ENVIRONMENT__
     : "production";
 
+// Mirror electron-builder's productName: `production` and the default `local`
+// build both present as plain "Cue"; only `dev` / `staging` carry an env suffix.
 const APP_NAME =
-  VELLUM_ENV === "production"
+  VELLUM_ENV === "production" || VELLUM_ENV === "local"
     ? "Cue"
     : `Cue ${VELLUM_ENV.charAt(0).toUpperCase() + VELLUM_ENV.slice(1)}`;
 
@@ -68,7 +70,7 @@ export const getVersionInfo = (): AppVersionInfo => ({
 const ABOUT_PATH = "/about";
 
 const aboutWindowUrl = (): string => {
-  const base = app.isPackaged ? getRendererBaseProd() : getDevRendererBase();
+  const base = app.isPackaged ? RENDERER_BASE_PROD : getDevRendererBase();
   return `${base}${ABOUT_PATH}`;
 };
 

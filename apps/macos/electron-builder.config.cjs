@@ -4,8 +4,13 @@ const env = process.env.VELLUM_ENVIRONMENT || "local";
 const bucketEnv = env === "production" ? "prod" : env;
 const targetArch = process.env.ELECTRON_TARGET_ARCH || "arm64";
 
+// "Cue" is the canonical product name. `production` and the default `local`
+// build (what `bun run pack` produces, and the handoff/self-host artifact)
+// both ship as plain "Cue" → `Cue.app`. Only the genuinely-separate
+// side-by-side builds (`dev`, `staging`) keep an env suffix so they can be
+// installed alongside a real "Cue" without colliding in the Dock / Finder.
 const productName =
-  env === "production"
+  env === "production" || env === "local"
     ? "Cue"
     : `Cue ${env.charAt(0).toUpperCase() + env.slice(1)}`;
 
