@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity as ActivityIcon,
   ArrowRight,
   Bell,
   CalendarClock,
@@ -641,6 +642,7 @@ export function HomeElevatedRoute() {
         onDeny={dismissItem}
         onOpenConversation={(id) => navigate(routes.conversation(id))}
         onVoice={() => navigate(routes.voice)}
+        onActivity={() => navigate(routes.activity)}
       />
     );
   }
@@ -1589,6 +1591,7 @@ type TodayMobileProps = {
   onDeny: (item: FeedItem) => void;
   onOpenConversation: (conversationId: string) => void;
   onVoice: () => void;
+  onActivity: () => void;
 };
 
 /**
@@ -1615,6 +1618,7 @@ function TodayMobile({
   onDeny,
   onOpenConversation,
   onVoice,
+  onActivity,
 }: TodayMobileProps) {
   const initial = (userName?.trim()?.[0] ?? "C").toUpperCase();
   const isEmpty = !loading && moves.length === 0;
@@ -1699,23 +1703,49 @@ function TodayMobile({
               {day} · {time}
             </span>
           </div>
-          <span
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: "50%",
-              background: M.surface,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 11,
-              fontWeight: 600,
-              color: M.t1,
-              flexShrink: 0,
-            }}
-          >
-            {initial}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Persistent entry to the Activity command center — the surface
+                where "Run in background" work lands. The 4-tab bar stays
+                untouched; this glyph is the lasting way in on mobile. */}
+            <button
+              type="button"
+              onClick={onActivity}
+              aria-label="Activity"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: "50%",
+                background: M.surface,
+                border: `1px solid ${M.line}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: M.t2,
+                cursor: "pointer",
+                flexShrink: 0,
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <ActivityIcon size={15} strokeWidth={2} />
+            </button>
+            <span
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: "50%",
+                background: M.surface,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                fontWeight: 600,
+                color: M.t1,
+                flexShrink: 0,
+              }}
+            >
+              {initial}
+            </span>
+          </div>
         </div>
         <div
           style={{

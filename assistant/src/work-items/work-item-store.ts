@@ -223,6 +223,18 @@ export function findActiveWorkItemsByTaskId(taskId: string): WorkItem[] {
   );
 }
 
+/**
+ * Statuses that count as "still in the queue" for dedup purposes — an item
+ * that is queued, running, or awaiting review is a live duplicate. Terminal
+ * states (done, failed, cancelled, archived) are not: re-enqueuing the same
+ * commitment after it finished/failed is legitimate (a retry).
+ */
+const ACTIVE_DEDUP_STATUSES: ReadonlySet<WorkItemStatus> = new Set([
+  "queued",
+  "running",
+  "awaiting_review",
+]);
+
 /** Find all active work items matching a title (case-insensitive exact match) */
 export function findActiveWorkItemsByTitle(title: string): WorkItem[] {
   const normalized = title.trim().toLowerCase();
@@ -232,6 +244,48 @@ export function findActiveWorkItemsByTitle(title: string): WorkItem[] {
       i.status !== "done" &&
       i.status !== "archived",
   );
+}
+
+/**
+ * Find an existing active (queued/running/awaiting_review) work item that
+ * represents the same commitment, so the enqueue path can skip minting a
+ * duplicate. Keyed on `(sourceType, sourceId)` when a stable source exists
+ * (the strongest signal — the same feed item / channel thread), and
+ * additionally narrowed by a normalized title so two *distinct* commitments
+ * that happen to share a source bucket (e.g. two different asks in the same
+ * Slack thread) are NOT collapsed.
+ *
+ * When no `sourceId` is available, falls back to a title-only match so the
+ * guard still suppresses obvious duplicates for source-less items.
+ *
+ * Returns the most recently-updated match, or `undefined` if none.
+ */
+export function findActiveWorkItemBySource(opts: {
+  title: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+}): WorkItem | undefined {
+  const normalizedTitle = opts.title.trim().toLowerCase();
+  const sourceType = opts.sourceType ?? null;
+  const sourceId = opts.sourceId ?? null;
+
+  const matches = listWorkItems().filter((i) => {
+    if (!ACTIVE_DEDUP_STATUSES.has(i.status)) return false;
+    if (sourceId) {
+      // Strong key: same source bucket AND same title. The title guard keeps
+      // two genuinely different commitments from one thread from collapsing.
+      return (
+        i.sourceType === sourceType &&
+        i.sourceId === sourceId &&
+        i.title.trim().toLowerCase() === normalizedTitle
+      );
+    }
+    // No source to key on — fall back to title-only dedup.
+    return i.title.trim().toLowerCase() === normalizedTitle;
+  });
+
+  // Return the most-recently-updated candidate.
+  return matches.sort((a, b) => b.updatedAt - a.updatedAt)[0];
 }
 
 /**

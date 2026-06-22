@@ -163,6 +163,7 @@ function SpendMeter({ assistantId }: { assistantId: string }) {
         fontFamily: mono,
         fontSize: 12.5,
         color: C.t2,
+        flexWrap: "wrap",
       }}
     >
       <span style={{ whiteSpace: "nowrap" }}>
@@ -240,8 +241,21 @@ export function ActivityPage() {
   ];
 
   return (
-    <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
-      <div style={{ maxWidth: 880, margin: "0 auto", padding: 24 }}>
+    <div
+      data-slot="activity-page"
+      style={{ height: "100%", overflowY: "auto", background: C.bg }}
+    >
+      {/* At mobile width the 38px editorial hero and the generous 24px gutter
+          overflow the ~390px viewport — tighten both below 640px. */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `@media (max-width:640px){[data-slot="activity-page"] [data-slot="activity-inner"]{padding:18px 16px !important;}[data-slot="activity-page"] [data-slot="activity-hero"]{font-size:28px !important;}}`,
+        }}
+      />
+      <div
+        data-slot="activity-inner"
+        style={{ maxWidth: 880, margin: "0 auto", padding: 24 }}
+      >
         {/* Editorial header */}
         <div
           style={{
@@ -256,6 +270,7 @@ export function ActivityPage() {
           Activity
         </div>
         <div
+          data-slot="activity-hero"
           style={{
             fontFamily: serif,
             fontSize: 38,

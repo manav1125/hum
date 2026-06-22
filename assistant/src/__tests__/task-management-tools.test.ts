@@ -47,6 +47,7 @@ import type { ToolContext } from "../tools/types.js";
 import {
   createWorkItem,
   deleteWorkItem,
+  findActiveWorkItemBySource,
   findActiveWorkItemsByTaskId,
   findActiveWorkItemsByTitle,
   getWorkItem,
@@ -466,6 +467,133 @@ describe("findActiveWorkItemsByTitle", () => {
     updateWorkItem(item.id, { status: "done" });
     const results = findActiveWorkItemsByTitle("Build App");
     expect(results).toHaveLength(0);
+  });
+});
+
+describe("findActiveWorkItemBySource (enqueue dedup guard)", () => {
+  beforeEach(clearTables);
+
+  test("matches an active item by (sourceType, sourceId) + title", () => {
+    const task = createTask({ title: "T", template: "t" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Send OTP to Aileen for Guillermo's flight",
+      sourceType: "task",
+      sourceId: "action-board:2026-06-22:0",
+    });
+    const found = findActiveWorkItemBySource({
+      title: "Send OTP to Aileen for Guillermo's flight",
+      sourceType: "task",
+      sourceId: "action-board:2026-06-22:0",
+    });
+    expect(found?.id).toBe(wi.id);
+  });
+
+  test("ignores terminal items so a retry can re-enqueue", () => {
+    const task = createTask({ title: "T", template: "t" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Send OTP",
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    updateWorkItem(wi.id, { status: "done" });
+    const found = findActiveWorkItemBySource({
+      title: "Send OTP",
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    expect(found).toBeUndefined();
+  });
+
+  test("counts running/awaiting_review as active duplicates", () => {
+    const task = createTask({ title: "T", template: "t" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Send OTP",
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    updateWorkItem(wi.id, { status: "running" });
+    expect(
+      findActiveWorkItemBySource({
+        title: "Send OTP",
+        sourceType: "task",
+        sourceId: "src-1",
+      })?.id,
+    ).toBe(wi.id);
+  });
+
+  test("does NOT collapse distinct commitments in the same source bucket", () => {
+    const task = createTask({ title: "T", template: "t" });
+    createWorkItem({
+      taskId: task.id,
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "thread-9",
+    });
+    // Different commitment, same Slack thread — must not match.
+    const found = findActiveWorkItemBySource({
+      title: "Forward the invoice to finance",
+      sourceType: "slack",
+      sourceId: "thread-9",
+    });
+    expect(found).toBeUndefined();
+  });
+
+  test("does NOT collapse same title across different sources", () => {
+    const task = createTask({ title: "T", template: "t" });
+    createWorkItem({
+      taskId: task.id,
+      title: "Send OTP",
+      sourceType: "slack",
+      sourceId: "thread-a",
+    });
+    const found = findActiveWorkItemBySource({
+      title: "Send OTP",
+      sourceType: "slack",
+      sourceId: "thread-b",
+    });
+    expect(found).toBeUndefined();
+  });
+
+  test("falls back to title-only dedup when no sourceId is available", () => {
+    const task = createTask({ title: "T", template: "t" });
+    const wi = createWorkItem({ taskId: task.id, title: "Ad-hoc thing" });
+    const found = findActiveWorkItemBySource({ title: "ad-hoc thing" });
+    expect(found?.id).toBe(wi.id);
+  });
+
+  test("REGRESSION: enqueuing the same commitment twice yields ONE active item", () => {
+    // Simulate the home-feed dispatch path minting work-items for the same
+    // commitment. With the guard, the second enqueue reuses the first.
+    const enqueue = (title: string, sourceType: string, sourceId: string) => {
+      const existing = findActiveWorkItemBySource({
+        title,
+        sourceType,
+        sourceId,
+      });
+      if (existing) return existing;
+      const task = createTask({ title, template: "do it" });
+      return createWorkItem({ taskId: task.id, title, sourceType, sourceId });
+    };
+
+    const title = "Send OTP to Aileen for Guillermo's flight";
+    const first = enqueue(title, "task", "action-board:2026-06-22:0");
+    const second = enqueue(title, "task", "action-board:2026-06-22:0");
+    const third = enqueue(title, "task", "action-board:2026-06-22:0");
+
+    expect(second.id).toBe(first.id);
+    expect(third.id).toBe(first.id);
+
+    const active = listWorkItems().filter(
+      (i) =>
+        i.title === title &&
+        i.status !== "done" &&
+        i.status !== "archived" &&
+        i.status !== "cancelled",
+    );
+    expect(active).toHaveLength(1);
   });
 });
 

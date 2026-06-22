@@ -10,6 +10,7 @@
  */
 
 import {
+  Activity as ActivityIcon,
   Calendar,
   CircleDot,
   Loader2,
@@ -33,6 +34,7 @@ import { useHomeFeedQuery } from "@/domains/home/hooks/use-home-feed-query";
 // eslint-disable-next-line local/no-cross-domain-imports -- pre-existing; Home feed sort reused
 import { sortFeedItems } from "@/domains/home/utils";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { routes } from "@/utils/routes";
 
 const C = {
   ink: "#1A2230",
@@ -141,6 +143,7 @@ export function NextMovesPage() {
         onComplete={handleComplete}
         onApprove={handleAction}
         onOpen={handleOpen}
+        onActivity={() => navigate(routes.activity)}
       />
     );
   }
@@ -564,6 +567,7 @@ function NextMovesMobile({
   onComplete,
   onApprove,
   onOpen,
+  onActivity,
 }: {
   items: FeedItem[];
   loading: boolean;
@@ -572,6 +576,7 @@ function NextMovesMobile({
   onComplete: (item: FeedItem) => void;
   onApprove: (item: FeedItem, action: FeedAction) => void;
   onOpen: (item: FeedItem) => void;
+  onActivity: () => void;
 }) {
   // Group rows into project sections (preserving the priority sort order
   // the page already applied to `items`).
@@ -620,22 +625,57 @@ function NextMovesMobile({
       }}
     >
       {/* Header */}
-      <div style={{ padding: "8px 20px 14px", flexShrink: 0 }}>
-        <div
+      <div
+        style={{
+          padding: "8px 20px 14px",
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 23,
+              fontWeight: 600,
+              letterSpacing: "-0.6px",
+              color: M.t1,
+            }}
+          >
+            Tasks
+          </div>
+          <div style={{ fontSize: 12.5, color: M.t2, marginTop: 2 }}>
+            {loading
+              ? "Gathering your tasks…"
+              : `${workingCount} working · ${needsYouCount} needs you`}
+          </div>
+        </div>
+        {/* Persistent entry to the Activity command center (running / queued /
+            done background work). Keeps the 4-tab bar intact. */}
+        <button
+          type="button"
+          onClick={onActivity}
+          aria-label="Activity"
           style={{
-            fontSize: 23,
-            fontWeight: 600,
-            letterSpacing: "-0.6px",
-            color: M.t1,
+            marginTop: 2,
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            background: M.surface,
+            border: `1px solid ${M.line}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: M.t2,
+            cursor: "pointer",
+            flexShrink: 0,
+            WebkitTapHighlightColor: "transparent",
           }}
         >
-          Tasks
-        </div>
-        <div style={{ fontSize: 12.5, color: M.t2, marginTop: 2 }}>
-          {loading
-            ? "Gathering your tasks…"
-            : `${workingCount} working · ${needsYouCount} needs you`}
-        </div>
+          <ActivityIcon size={16} strokeWidth={2} />
+        </button>
       </div>
 
       {/* Scrollable body */}

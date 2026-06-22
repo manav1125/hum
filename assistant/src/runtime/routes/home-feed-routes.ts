@@ -57,6 +57,7 @@ import { getLogger } from "../../util/logger.js";
 import { broadcastWorkItemStatus } from "../../work-items/work-item-runner.js";
 import {
   createWorkItem,
+  findActiveWorkItemBySource,
   getWorkItem,
   listWorkItems,
   updateWorkItem,
@@ -441,6 +442,14 @@ function feedItemSource(item: FeedItem): {
  * Create the parent task + the work-item row for a dispatched feed action.
  * The `work_items.taskId` foreign key requires a real `tasks` row, so we mint
  * a lightweight one per dispatch (the action prompt is its template).
+ *
+ * Deduplicates against the queue: if an active (queued/running/awaiting_review)
+ * work-item already exists for the same commitment — keyed on the feed item's
+ * `(sourceType, sourceId)` plus title — the existing item is returned instead
+ * of minting a second one. Without this, repeated dispatches of the same feed
+ * action (double-taps, client retries, the same commitment card re-surfacing
+ * across action-board builds) each created a distinct work-item UUID for one
+ * underlying commitment.
  */
 function createFeedActionWorkItem(
   item: FeedItem,
@@ -450,12 +459,33 @@ function createFeedActionWorkItem(
   // action label ("Run it"/"Draft reply"), which is too generic for the
   // Activity row + the result card.
   const title = item.title?.trim() || action.label;
+  const source = feedItemSource(item);
+
+  const existing = findActiveWorkItemBySource({
+    title,
+    sourceType: source.sourceType ?? null,
+    sourceId: source.sourceId ?? null,
+  });
+  if (existing) {
+    log.info(
+      {
+        workItemId: existing.id,
+        status: existing.status,
+        title,
+        sourceType: source.sourceType,
+        sourceId: source.sourceId,
+      },
+      "Feed action reused existing active work item (duplicate enqueue suppressed)",
+    );
+    return existing;
+  }
+
   const task = createTask({ title, template: action.prompt });
   return createWorkItem({
     taskId: task.id,
     title,
     notes: action.prompt,
-    ...feedItemSource(item),
+    ...source,
   });
 }
 
