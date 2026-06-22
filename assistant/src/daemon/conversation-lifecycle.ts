@@ -226,6 +226,15 @@ export function disposeConversation(ctx: DisposeContext): void {
       ctx.conversationId,
     ),
   );
+  // `abortConversation` only tears down the prompters when the conversation was
+  // mid-turn (`isProcessing()`). A disposed conversation must ALWAYS drop its
+  // pending confirmations/secrets so the client is notified (each prompter
+  // dispose resolves its pending interactions, which emits `interaction_resolved`
+  // on the hub) and no dead Allow button is left pointing at a requestId whose
+  // owning conversation no longer exists. `dispose()` is idempotent — a no-op
+  // when abortConversation already cleared the owned ids.
+  ctx.prompter.dispose();
+  ctx.secretPrompter.dispose();
   unregisterCallNotifiers(ctx.conversationId);
   unregisterConversationSender(ctx.conversationId);
   resetSkillToolProjection(ctx.skillProjectionState);

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { findConversation } from "../../daemon/conversation-registry.js";
 import { getConversationByKey } from "../../memory/conversation-key-store.js";
 import type { UserDecision } from "../../permissions/types.js";
+import { getSubagentManager } from "../../subagent/index.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import * as pendingInteractions from "../pending-interactions.js";
@@ -148,13 +149,61 @@ function handleSecret({ body }: RouteHandlerArgs) {
   return { accepted: true };
 }
 
+type PendingConfirmationEntry = {
+  requestId: string;
+  conversationId: string;
+  toolName?: string;
+  toolUseId: string;
+  input: Record<string, unknown>;
+  riskLevel: string;
+  executionTarget?: string;
+  allowlistOptions?: Array<{ label: string; pattern: string }>;
+  scopeOptions?: Array<{ label: string; scope: string }>;
+  persistentDecisionsAllowed?: boolean;
+  acpToolKind?: string;
+  acpOptions?: unknown;
+};
+
+function shapeConfirmation(
+  confirmation: ReturnType<
+    typeof pendingInteractions.getByConversation
+  >[number],
+): PendingConfirmationEntry {
+  return {
+    requestId: confirmation.requestId,
+    conversationId: confirmation.conversationId,
+    toolName: confirmation.confirmationDetails?.toolName,
+    toolUseId: confirmation.requestId,
+    input: confirmation.confirmationDetails?.input ?? {},
+    riskLevel: confirmation.confirmationDetails?.riskLevel ?? "unknown",
+    executionTarget: confirmation.confirmationDetails?.executionTarget,
+    allowlistOptions: confirmation.confirmationDetails?.allowlistOptions?.map(
+      (o) => ({ label: o.label, pattern: o.pattern }),
+    ),
+    scopeOptions: confirmation.confirmationDetails?.scopeOptions,
+    persistentDecisionsAllowed:
+      confirmation.confirmationDetails?.persistentDecisionsAllowed,
+    acpToolKind: confirmation.confirmationDetails?.acpToolKind,
+    acpOptions: confirmation.confirmationDetails?.acpOptions,
+  };
+}
+
 /**
  * GET /v1/pending-interactions?conversationKey=...&conversationId=...
  *
  * Returns pending interactions. When conversationKey or conversationId is
- * provided, returns the first pending confirmation and secret for that
- * conversation. When neither is provided, returns all pending interactions
- * across all conversations (diagnostic mode).
+ * provided, returns the live pending confirmations and the first pending
+ * secret for that conversation. When neither is provided, returns all pending
+ * interactions across all conversations (diagnostic mode).
+ *
+ * Subagent confirmations are included: a subagent raises a confirmation under
+ * its *own* conversationId but it is surfaced to the *parent's* client. The
+ * reconcile path therefore also walks the live subagents of the requested
+ * conversation so a client reconnecting to the parent re-syncs every live
+ * requestId — including those raised by concurrent sub-agents. Without this,
+ * a reconnect-spanning subagent approval maps to a requestId the client never
+ * re-learns, and the Allow button 404s on click ("No pending interaction
+ * found for this requestId").
  */
 function handleListPendingInteractions({ queryParams }: RouteHandlerArgs) {
   const conversationKey = queryParams?.conversationKey;
@@ -183,44 +232,47 @@ function handleListPendingInteractions({ queryParams }: RouteHandlerArgs) {
   }
 
   if (!resolvedConversationId) {
-    return { pendingConfirmation: null, pendingSecret: null };
+    return {
+      pendingConfirmation: null,
+      pendingSecret: null,
+      confirmations: [],
+    };
   }
 
-  const interactions = pendingInteractions.getByConversation(
+  // Walk the requested conversation plus the conversations of all its live
+  // subagents, so concurrent subagent confirmations are reconciled alongside
+  // the parent's own.
+  const scopeConversationIds = [
     resolvedConversationId,
-  );
+    ...getSubagentManager().getChildConversationIds(resolvedConversationId),
+  ];
 
-  const confirmation = interactions.find(
-    (i) => i.kind === "confirmation" || i.kind === "acp_confirmation",
-  );
-  const secret = interactions.find((i) => i.kind === "secret");
+  const confirmations: PendingConfirmationEntry[] = [];
+  let secretRequestId: string | undefined;
+  for (const scopeId of scopeConversationIds) {
+    const interactions = pendingInteractions.getByConversation(scopeId);
+    for (const interaction of interactions) {
+      if (
+        interaction.kind === "confirmation" ||
+        interaction.kind === "acp_confirmation"
+      ) {
+        confirmations.push(shapeConfirmation(interaction));
+      } else if (interaction.kind === "secret" && secretRequestId == null) {
+        // Secrets remain scoped to the directly-queried conversation only
+        // (the first match wins, matching prior behavior).
+        if (scopeId === resolvedConversationId) {
+          secretRequestId = interaction.requestId;
+        }
+      }
+    }
+  }
 
   return {
-    pendingConfirmation: confirmation
-      ? {
-          requestId: confirmation.requestId,
-          toolName: confirmation.confirmationDetails?.toolName,
-          toolUseId: confirmation.requestId,
-          input: confirmation.confirmationDetails?.input ?? {},
-          riskLevel: confirmation.confirmationDetails?.riskLevel ?? "unknown",
-          executionTarget: confirmation.confirmationDetails?.executionTarget,
-          allowlistOptions:
-            confirmation.confirmationDetails?.allowlistOptions?.map((o) => ({
-              label: o.label,
-              pattern: o.pattern,
-            })),
-          scopeOptions: confirmation.confirmationDetails?.scopeOptions,
-          persistentDecisionsAllowed:
-            confirmation.confirmationDetails?.persistentDecisionsAllowed,
-          acpToolKind: confirmation.confirmationDetails?.acpToolKind,
-          acpOptions: confirmation.confirmationDetails?.acpOptions,
-        }
-      : null,
-    pendingSecret: secret
-      ? {
-          requestId: secret.requestId,
-        }
-      : null,
+    // `pendingConfirmation` retains the legacy single-entry shape (first live
+    // confirmation) for older clients; `confirmations` carries the full set.
+    pendingConfirmation: confirmations[0] ?? null,
+    confirmations,
+    pendingSecret: secretRequestId ? { requestId: secretRequestId } : null,
   };
 }
 
@@ -310,7 +362,13 @@ export const ROUTES: RouteDefinition[] = [
       pendingConfirmation: z
         .object({})
         .passthrough()
-        .describe("Pending confirmation details or null")
+        .describe("First live pending confirmation or null (legacy shape)")
+        .optional(),
+      confirmations: z
+        .array(z.object({}).passthrough())
+        .describe(
+          "All live pending confirmations for the conversation and its live subagents",
+        )
         .optional(),
       pendingSecret: z
         .object({})

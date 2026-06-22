@@ -672,6 +672,55 @@ export class SubagentManager {
       .filter((s): s is SubagentState => s !== undefined);
   }
 
+  /**
+   * Return the conversation ids of all live (non-terminal) subagents whose
+   * parent is `parentConversationId`.
+   *
+   * Pending confirmations raised by a subagent are registered in
+   * `pendingInteractions` under the *subagent's* conversationId, but they are
+   * surfaced to the *parent's* client (wrapped in `subagent_event`). The
+   * reconcile endpoint (`GET /v1/pending-interactions?conversationId=<parent>`)
+   * uses this mapping to also surface still-live subagent confirmations so a
+   * client reconnecting to the parent conversation can re-sync requestIds that
+   * would otherwise be invisible (and whose Allow button would 404 on click).
+   *
+   * Terminal subagents are excluded: their pending interactions have already
+   * been resolved (prompter.dispose emits `interaction_resolved`), so there is
+   * nothing live to reconcile.
+   */
+  getChildConversationIds(parentConversationId: string): string[] {
+    const children = this.parentToChildren.get(parentConversationId);
+    if (!children) return [];
+    const ids: string[] = [];
+    for (const childId of children) {
+      const managed = this.subagents.get(childId);
+      if (managed && !TERMINAL_STATUSES.has(managed.state.status)) {
+        ids.push(managed.state.conversationId);
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * Read-only snapshot of every subagent currently tracked by the manager —
+   * active (non-terminal) plus recently-terminal entries still within their
+   * TTL retention window. Each entry pairs the subagent's `SubagentState` with
+   * a live `hasPendingConfirmation` flag (true when the subagent's own
+   * conversation is blocked on a user confirmation/approval). Intended for
+   * read-only observability surfaces (e.g. the "Agents at Work" view); it does
+   * not mutate confirmation or abort state.
+   */
+  listAll(): Array<{
+    state: SubagentState;
+    hasPendingConfirmation: boolean;
+  }> {
+    return [...this.subagents.values()].map((managed) => ({
+      state: managed.state,
+      hasPendingConfirmation:
+        managed.conversation?.hasAnyPendingConfirmation() ?? false,
+    }));
+  }
+
   /** Total number of active (non-terminal) subagents. */
   get activeCount(): number {
     return [...this.subagents.values()].filter(

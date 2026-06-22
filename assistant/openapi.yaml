@@ -27469,6 +27469,61 @@ paths:
               required:
                 - filePath
               additionalProperties: false
+  /v1/subagents:
+    get:
+      operationId: subagents_get
+      summary: List in-chat subagents
+      description:
+        Read-only snapshot of all in-chat subagents the daemon is tracking — active (running) plus
+        recently-terminal (completed/failed/aborted) entries still within the manager's retention window. Powers the
+        'Agents at Work' fleet view.
+      tags:
+        - subagents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subagents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - running
+                            - completed
+                            - failed
+                            - aborted
+                        parentConversationId:
+                          type: string
+                        startedAt:
+                          type: number
+                        finishedAt:
+                          type: number
+                        error:
+                          type: string
+                        hasPendingConfirmation:
+                          type: boolean
+                      required:
+                        - id
+                        - label
+                        - status
+                        - parentConversationId
+                        - startedAt
+                        - hasPendingConfirmation
+                      additionalProperties: false
+                required:
+                  - subagents
+                additionalProperties: false
   /v1/subagents/{id}:
     get:
       operationId: subagents_by_id_get

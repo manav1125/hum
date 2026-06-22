@@ -189,7 +189,69 @@ function getSubagentDetail(
 // Route definitions
 // ---------------------------------------------------------------------------
 
+/**
+ * Collapse the manager's fine-grained internal status into the coarse
+ * lifecycle the "Agents at Work" view cares about: anything not yet terminal
+ * (pending / running / awaiting_input) reads as "running".
+ */
+function toFleetStatus(
+  status: string,
+): "running" | "completed" | "failed" | "aborted" {
+  switch (status) {
+    case "completed":
+    case "failed":
+    case "aborted":
+      return status;
+    default:
+      return "running";
+  }
+}
+
+const SubagentFleetEntrySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(["running", "completed", "failed", "aborted"]),
+  parentConversationId: z.string(),
+  startedAt: z.number(),
+  finishedAt: z.number().optional(),
+  error: z.string().optional(),
+  hasPendingConfirmation: z.boolean(),
+});
+
 export const ROUTES: RouteDefinition[] = [
+  {
+    operationId: "listSubagents",
+    endpoint: "subagents",
+    method: "GET",
+    policy: {
+      requiredScopes: ["chat.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "List in-chat subagents",
+    description:
+      "Read-only snapshot of all in-chat subagents the daemon is tracking — active (running) plus recently-terminal (completed/failed/aborted) entries still within the manager's retention window. Powers the 'Agents at Work' fleet view.",
+    tags: ["subagents"],
+    responseBody: z.object({
+      subagents: z.array(SubagentFleetEntrySchema),
+    }),
+    handler: () => {
+      const manager = getSubagentManager();
+      const subagents = manager
+        .listAll()
+        .map(({ state, hasPendingConfirmation }) => ({
+          id: state.config.id,
+          label: state.config.label,
+          status: toFleetStatus(state.status),
+          parentConversationId: state.config.parentConversationId,
+          startedAt: state.startedAt ?? state.createdAt,
+          finishedAt: state.completedAt,
+          error: state.error,
+          hasPendingConfirmation,
+        }));
+      return { subagents };
+    },
+  },
+
   {
     operationId: "reconcileSubagents",
     endpoint: "subagents/reconcile",

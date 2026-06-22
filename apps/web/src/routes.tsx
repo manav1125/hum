@@ -317,6 +317,12 @@ export const routeTree = [
                   lazy: { Component: () => import("@/domains/activity/activity-page").then((m) => m.ActivityPage) },
                 },
                 {
+                  // Agents at Work — live fleet view of the in-chat sub-agents
+                  // (SubagentManager) spawned inside conversations.
+                  path: "agents",
+                  lazy: { Component: () => import("@/domains/agents-at-work/agents-at-work-page").then((m) => m.AgentsAtWorkPage) },
+                },
+                {
                   path: "meeting",
                   lazy: { Component: () => import("@/domains/meeting/meeting-capture-page").then((m) => m.MeetingCapturePage) },
                 },

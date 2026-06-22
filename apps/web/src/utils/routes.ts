@@ -97,6 +97,7 @@ export const routes = {
   nextMoves: r("/assistant/next-moves"),
   dashboard: r("/assistant/dashboard"),
   activity: r("/assistant/activity"),
+  agentsAtWork: r("/assistant/agents"),
   meeting: r("/assistant/meeting"),
   trust: r("/assistant/trust"),
   people: r("/assistant/people"),
