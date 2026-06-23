@@ -58,6 +58,7 @@ import { downLlmUsageAddRawUsage } from "./261-llm-usage-add-raw-usage.js";
 import { downMemoryV3Coactivation } from "./262-memory-v3-coactivation.js";
 import { downMemoryV3AutoEdges } from "./263-memory-v3-auto-edges.js";
 import { downScheduleDescription } from "./270-schedule-description.js";
+import { downReconcileDuplicateGuardians } from "./283-reconcile-duplicate-guardians.js";
 
 export interface MigrationRegistryEntry {
   /** The checkpoint key written to memory_checkpoints on completion. */
@@ -493,6 +494,13 @@ export const MIGRATION_REGISTRY: MigrationRegistryEntry[] = [
     description:
       "Backfill authored schedule descriptions for legacy non-defer schedules from their existing names",
     down: downScheduleDescription,
+  },
+  {
+    key: "migration_reconcile_duplicate_guardians_v1",
+    version: 58,
+    description:
+      "Collapse duplicate role='guardian' contacts (a local→cloud migration artifact) into a single canonical guardian so the owner appears once and all channel bindings (vellum + slack + …) live under one identity",
+    down: downReconcileDuplicateGuardians,
   },
 ];
 

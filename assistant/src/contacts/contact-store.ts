@@ -704,6 +704,90 @@ export function mergeContacts(
 }
 
 /**
+ * Reconcile multiple `role='guardian'` contacts into a single canonical
+ * guardian.
+ *
+ * There must only ever be ONE guardian — the human owner of the assistant.
+ * In normal operation `createGuardianBinding` (gateway) unifies every channel
+ * binding under one guardian contact by keying on the canonical (vellum)
+ * principal. But a few paths can leave behind duplicate `role='guardian'`
+ * rows for the same person:
+ *
+ *   - A local→cloud migration imports the owner's contacts, then the gateway
+ *     re-bootstraps and mints a FRESH `vellum-principal-<uuid>`. The imported
+ *     Slack/phone guardian row keeps the OLD principal, so the principal-keyed
+ *     unification in `createGuardianBinding` no longer matches it — leaving a
+ *     second guardian contact bound to Slack/phone.
+ *   - A DB reset without re-bootstrap, or any flow that created a channel
+ *     guardian before the vellum guardian existed.
+ *
+ * The duplicate is the root of the "two Manavs" the Connections UI shows
+ * (the second guardian falls into the non-guardian list) AND of the Slack
+ * inconsistency: the local owner's chat identity resolves only the
+ * vellum-bound guardian, so a Slack binding stranded on a sibling guardian is
+ * invisible to "am I connected to Slack?".
+ *
+ * Canonical selection prefers the guardian with an active `vellum` channel
+ * (that is the identity the local owner authenticates as, and the principal
+ * `resolveCanonicalPrincipal` keys on); ties break to a guardian that has a
+ * principalId, then the oldest row. Every other guardian's channels are
+ * merged into the canonical one and the donor rows are deleted, so all channel
+ * bindings (vellum + slack + telegram + …) live under a single guardian.
+ *
+ * Idempotent: a no-op when zero or one guardian exists. Returns the number of
+ * duplicate guardians that were merged away.
+ */
+export function reconcileGuardianContacts(): number {
+  const db = getDb();
+
+  const guardianRows = db
+    .select()
+    .from(contacts)
+    .where(eq(contacts.role, "guardian"))
+    .all();
+
+  if (guardianRows.length <= 1) return 0;
+
+  // Active-vellum-channel guardians are the canonical owner identity. Build
+  // the set of guardian contact ids that have an active vellum channel.
+  const vellumGuardianRows = db
+    .select({ contactId: contactChannels.contactId })
+    .from(contactChannels)
+    .where(
+      and(
+        eq(contactChannels.type, "vellum"),
+        eq(contactChannels.status, "active"),
+      ),
+    )
+    .all();
+  const vellumGuardianIds = new Set(vellumGuardianRows.map((r) => r.contactId));
+
+  // Rank: prefer a vellum-bound guardian, then a guardian with a principalId,
+  // then the oldest row, then id for determinism.
+  const ranked = [...guardianRows].sort((a, b) => {
+    const aVellum = vellumGuardianIds.has(a.id) ? 0 : 1;
+    const bVellum = vellumGuardianIds.has(b.id) ? 0 : 1;
+    if (aVellum !== bVellum) return aVellum - bVellum;
+    const aPrincipal = a.principalId ? 0 : 1;
+    const bPrincipal = b.principalId ? 0 : 1;
+    if (aPrincipal !== bPrincipal) return aPrincipal - bPrincipal;
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+
+  const canonical = ranked[0]!;
+  const donors = ranked.slice(1);
+
+  for (const donor of donors) {
+    // mergeContacts moves the donor's channels onto the canonical guardian
+    // (skipping (type,address) duplicates) and deletes the donor row.
+    mergeContacts(canonical.id, donor.id);
+  }
+
+  return donors.length;
+}
+
+/**
  * Find a contact by a specific channel address. Returns null if not found.
  */
 export function findContactByAddress(

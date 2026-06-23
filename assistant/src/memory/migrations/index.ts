@@ -275,6 +275,10 @@ export { migrateConversationsSurfacedAt } from "./280-conversations-surfaced-at.
 export { migrateMemoryRetrospectiveRememberedLog } from "./281-memory-retrospective-remembered-log.js";
 export { migrateScheduleInferenceProfile } from "./282-schedule-inference-profile.js";
 export {
+  downReconcileDuplicateGuardians,
+  migrateReconcileDuplicateGuardians,
+} from "./283-reconcile-duplicate-guardians.js";
+export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,
   type MigrationValidationResult,

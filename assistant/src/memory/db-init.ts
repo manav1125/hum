@@ -170,6 +170,7 @@ import {
   migrateOnboardingEventsPriorAssistants,
   migrateProviderConnectionBaseUrlAndModels,
   migrateProviderConnectionStatusLabel,
+  migrateReconcileDuplicateGuardians,
   migrateReminderRoutingIntent,
   migrateRemindersToSchedules,
   migrateRenameCleanedAt,
@@ -502,6 +503,7 @@ export function initializeDb(): void {
     migrateConversationsSurfacedAt,
     migrateMemoryRetrospectiveRememberedLog,
     migrateScheduleInferenceProfile,
+    migrateReconcileDuplicateGuardians,
   ];
 
   // Run each migration step, catching and logging individual failures so one

@@ -4,8 +4,6 @@ import { useSearchParams } from "react-router";
 
 import { toast } from "@vellumai/design-library/components/toast";
 
-import { routes } from "@/utils/routes";
-
 import {
     MobileSidebarDrawer,
     MobileSidebarTrigger,
@@ -191,13 +189,27 @@ export function ContactsPage({
   const availableChannels = availabilityQuery.data ?? EMPTY_CHANNELS;
 
   const contactsData = contactsQuery.data;
-  const guardian = useMemo(
-    () => contactsData?.find((c) => c.role === "guardian") ?? null,
-    [contactsData],
-  );
+  // There should only ever be one guardian (the owner). Migrated workspaces can
+  // briefly carry duplicate role='guardian' rows before the dedup migration
+  // runs; pick the canonical one (prefer the row bound to the 'vellum'/Cue
+  // channel, which is the identity the local owner authenticates as) and treat
+  // any extras as ordinary rows so they stay visible/mergeable rather than
+  // silently disappearing.
+  const guardian = useMemo(() => {
+    const guardians = contactsData?.filter((c) => c.role === "guardian") ?? [];
+    if (guardians.length === 0) return null;
+    if (guardians.length === 1) return guardians[0];
+    return (
+      guardians.find((c) =>
+        c.channels?.some(
+          (ch) => ch.type === "vellum" && ch.status === "active",
+        ),
+      ) ?? guardians[0]
+    );
+  }, [contactsData]);
   const regularContacts = useMemo(
-    () => contactsData?.filter((c) => c.role !== "guardian") ?? [],
-    [contactsData],
+    () => contactsData?.filter((c) => c.id !== guardian?.id) ?? [],
+    [contactsData, guardian],
   );
   const selectedContact = useMemo<ContactPayload | null>(() => {
     if (selection.kind !== "contact") return null;
@@ -207,10 +219,13 @@ export function ContactsPage({
 
   const mergeCandidates = useMemo<ContactPayload[]>(() => {
     if (!contactsData || !selectedContact) return [];
+    // Exclude the selected row itself and the canonical guardian (merging away
+    // the owner identity is never offered); a duplicate/extra guardian row is a
+    // valid merge target.
     return contactsData.filter(
-      (c) => c.id !== selectedContact.id && c.role !== "guardian",
+      (c) => c.id !== selectedContact.id && c.id !== guardian?.id,
     );
-  }, [contactsData, selectedContact]);
+  }, [contactsData, selectedContact, guardian]);
   const canMerge = mergeCandidates.length > 0;
 
   const guardianAutoSelectedRef = useRef(false);

@@ -60,6 +60,9 @@ mock.module("../../config/loader.js", () => ({
 
 const { buildSystemPrompt, maybeReseedBootstrap } =
   await import("../system-prompt.js");
+const { getSqlite } = await import("../../memory/db-connection.js");
+const { initializeDb } = await import("../../memory/db-init.js");
+initializeDb();
 
 describe("buildSystemPrompt — tool routing guidance", () => {
   beforeEach(() => {
@@ -169,6 +172,57 @@ describe("buildSystemPrompt — hasNoClient pin", () => {
     expect(
       buildSystemPrompt({ hasNoClient: false, personaOverride: {} }),
     ).toContain(WITH_CLIENT_MARKER);
+  });
+});
+
+describe("buildSystemPrompt — Your Channels section", () => {
+  // The 15-your-channels section reads the guardian's active contact channels
+  // from the DB so the model can authoritatively answer "are you connected to
+  // Slack?" — independent of which channel the current turn arrived on.
+  function resetContacts(): void {
+    const sqlite = getSqlite();
+    sqlite.run("DELETE FROM contact_channels");
+    sqlite.run("DELETE FROM contacts");
+  }
+
+  function seedGuardian(): void {
+    const sqlite = getSqlite();
+    const now = Date.now();
+    sqlite.run(
+      "INSERT INTO contacts (id, display_name, role, contact_type, principal_id, created_at, updated_at) VALUES ('g', 'Manav', 'guardian', 'human', 'vellum-principal-1', ?, ?)",
+      [now, now],
+    );
+  }
+
+  function seedGuardianChannel(type: string, address: string): void {
+    const sqlite = getSqlite();
+    const now = Date.now();
+    sqlite.run(
+      "INSERT INTO contact_channels (id, contact_id, type, address, is_primary, status, policy, interaction_count, verified_at, created_at, updated_at) VALUES (?, 'g', ?, ?, 0, 'active', 'allow', 0, ?, ?, ?)",
+      [`ch-${type}`, type, address, now, now, now],
+    );
+  }
+
+  beforeEach(() => {
+    mkdirSync(TEST_DIR, { recursive: true });
+    resetContacts();
+  });
+
+  test("lists the guardian's active Slack channel as connected", () => {
+    seedGuardian();
+    seedGuardianChannel("vellum", "vellum-principal-1");
+    seedGuardianChannel("slack", "u01hkm43vrb");
+
+    const result = buildSystemPrompt({});
+    expect(result).toContain("# Your Channels");
+    expect(result).toContain("Slack: connected");
+    expect(result).toContain("Cue (this app): connected");
+  });
+
+  test("omits the section entirely when no guardian channels exist", () => {
+    resetContacts();
+    const result = buildSystemPrompt({});
+    expect(result).not.toContain("# Your Channels");
   });
 });
 
