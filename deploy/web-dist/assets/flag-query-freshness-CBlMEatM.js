@@ -1,1 +1,0 @@
-import{n as e}from"./utils-DX2cjllC.js";var t=`0.8.5`,n=5e3,r=6e4;function i(){return e(t)?{staleTime:r,refetchInterval:!1}:{staleTime:n,refetchInterval:n}}export{i as t};
