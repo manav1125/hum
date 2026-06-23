@@ -582,6 +582,17 @@ export async function handlePostFeedAction({
   // ── Needs you: queue it, but never auto-run. ────────────────────────
   if (mode === "needs_you") {
     const wi = createFeedActionWorkItem(item, action);
+    // Broadcast the queued item so SSE-connected clients reflect it in
+    // Activity → Queued immediately, rather than waiting for the next poll.
+    broadcastWorkItemStatus(wi.id);
+    // Retire the originating Home card so it leaves "Needs you" on Home — the
+    // commitment has moved into the work queue (Activity → Queued). Without
+    // this the card lingers on Home even though "Run it" was clicked, so the
+    // click reads as a no-op. The queued work item carries the live state from
+    // here on. Skip for synthesized work-item cards (no on-disk row to patch).
+    if (!item.id.startsWith(WORK_ITEM_FEED_PREFIX)) {
+      void patchFeedItemStatus(item.id, "acted_on");
+    }
     log.info(
       { itemId, actionId, workItemId: wi.id },
       "Feed action queued (needs approval)",

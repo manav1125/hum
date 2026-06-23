@@ -443,8 +443,19 @@ export const ROUTES: RouteDefinition[] = [
     }),
     handler: ({ queryParams }) => {
       const status = queryParams?.status ?? undefined;
+      // The public API exposes "pending" as the queued bucket — the Activity
+      // "Queued" section filters on `?status=pending`. The store column, though,
+      // only ever holds "queued": created work items start "queued" and nothing
+      // writes "pending". Without this alias translation the query runs
+      // `WHERE status = 'pending'`, matches zero rows, and a just-enqueued
+      // "Run it" / needs_you work item silently vanishes from Activity even
+      // though the daemon is holding it. Map the alias so the surface matches.
+      const resolvedStatus: WorkItemStatus | undefined =
+        status === "pending"
+          ? "queued"
+          : (status as WorkItemStatus | undefined);
       const items = listWorkItems(
-        status ? { status: status as WorkItemStatus } : undefined,
+        resolvedStatus ? { status: resolvedStatus } : undefined,
       );
       return { items };
     },
