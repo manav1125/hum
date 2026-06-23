@@ -11,6 +11,7 @@ import {
     Sparkles,
     SquarePen,
     Users,
+    Wand2,
     X,
 } from "lucide-react";
 import { useCallback, type ReactNode } from "react";
@@ -493,6 +494,13 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/home")}
           onSelect={() => cueNav("/assistant/home")}
+        />
+        <SideMenu.Item
+          icon={Wand2}
+          label="Create"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/create")}
+          onSelect={() => cueNav("/assistant/create")}
         />
         <SideMenu.Item
           icon={Activity}

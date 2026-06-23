@@ -91,6 +91,8 @@ export const routes = {
   },
 
   home: r("/assistant/home"),
+  // "What do you want to get done?" template / asset-creation picker.
+  create: r("/assistant/create"),
   // v0.3 flagship surfaces. Demoted off the primary nav rail (per the clean-rail
   // design) but still routable + linked from their new homes: Next moves from
   // Home's feed, Meeting from Home's record action, People + Trust from Contacts.
