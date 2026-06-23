@@ -9,6 +9,8 @@ import type {
   ConnectorStatus,
   ConnectorTool,
   CueLiveGoal,
+  CueLivePermissions,
+  CueLiveSettingsPane,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -43,6 +45,8 @@ export type {
   ConnectorStatus,
   ConnectorTool,
   CueLiveGoal,
+  CueLivePermissions,
+  CueLiveSettingsPane,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -193,6 +197,17 @@ const bridge: VellumBridge = {
       ) as Promise<CueLiveStatus>,
     summon: (): Promise<void> =>
       ipcRenderer.invoke("vellum:cueLive:summon") as Promise<void>,
+    permissions: (): Promise<CueLivePermissions> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:permissions",
+      ) as Promise<CueLivePermissions>,
+    openSystemSettings: (pane: CueLiveSettingsPane): Promise<void> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:openSystemSettings",
+        pane,
+      ) as Promise<void>,
+    stop: (): Promise<void> =>
+      ipcRenderer.invoke("vellum:cueLive:stop") as Promise<void>,
     runGoal: (goal: string, takeControl: boolean): Promise<void> =>
       ipcRenderer.invoke(
         "vellum:cueLive:runGoal",

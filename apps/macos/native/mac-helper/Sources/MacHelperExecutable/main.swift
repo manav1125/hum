@@ -259,6 +259,12 @@ final class MacHelper: @unchecked Sendable {
             let object = (params as? [String: Any]) ?? [:]
             return self.ensureCueLive().summonWithGoal(params: object)
         }
+        // Non-prompting read of the Accessibility + Screen Recording grants, for
+        // the renderer's permissions onboarding banner.
+        router.register("cuelive.permissions") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.ensureCueLive().permissions()
+        }
         return router
     }()
 

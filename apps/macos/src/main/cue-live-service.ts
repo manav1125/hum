@@ -39,6 +39,7 @@ const CUE_LIVE_SET_VOICE_CONFIG = "cuelive.setVoiceConfig";
 const CUE_LIVE_SPEAK = "cuelive.speak";
 const CUE_LIVE_PERFORM_ACTION = "cuelive.performAction";
 const CUE_LIVE_ABORT = "cuelive.abort";
+const CUE_LIVE_PERMISSIONS = "cuelive.permissions";
 const CUE_LIVE_ACT_PATH = "/cuelive/act";
 
 /** `cuelive.summoned` — cursor in AX top-left coords + optional spoken question
@@ -132,6 +133,49 @@ export const CUE_LIVE_HOTKEY = "Control+Option+Space";
 
 /** Whether the helper last reported it was trusted for Accessibility. */
 export const isAccessibilityTrusted = (): boolean => lastKnownTrusted;
+
+// Last Screen-Recording grant state the helper reported (from cuelive.permissions).
+// Surfaced to the renderer so the onboarding banner can block on it too.
+let lastKnownScreenRecording = false;
+
+/** `cuelive.permissions` result — the two macOS grants Cue Live depends on. */
+const PERMISSIONS_SCHEMA = z.object({
+  accessibilityTrusted: z.boolean(),
+  screenRecordingGranted: z.boolean(),
+});
+
+export interface CueLivePermissions {
+  accessibilityTrusted: boolean;
+  screenRecordingGranted: boolean;
+}
+
+/**
+ * Read the live macOS permission grants (Accessibility + Screen Recording)
+ * from the helper, non-prompting. Updates the cached trust flags so the status
+ * surface stays consistent. Best-effort: returns the last-known state on error
+ * (or when Cue Live isn't started yet — the helper isn't reachable then).
+ */
+export const getPermissions = async (): Promise<CueLivePermissions> => {
+  const fallback: CueLivePermissions = {
+    accessibilityTrusted: lastKnownTrusted,
+    screenRecordingGranted: lastKnownScreenRecording,
+  };
+  if (!started) return fallback;
+  try {
+    const raw = await getMacHelperClient().call(CUE_LIVE_PERMISSIONS);
+    const parsed = PERMISSIONS_SCHEMA.safeParse(raw);
+    if (!parsed.success) return fallback;
+    lastKnownTrusted = parsed.data.accessibilityTrusted;
+    lastKnownScreenRecording = parsed.data.screenRecordingGranted;
+    return parsed.data;
+  } catch (err) {
+    log.warn(`[cue-live] permissions read failed: ${errMessage(err)}`);
+    return fallback;
+  }
+};
+
+/** Last Screen-Recording grant the helper reported (cached, non-prompting). */
+export const isScreenRecordingGranted = (): boolean => lastKnownScreenRecording;
 
 /** Whether Cue Live is currently running (overlay up, subscriptions live). */
 export const isStarted = (): boolean => started;
@@ -711,6 +755,25 @@ export const runTypedGoal = async (
 };
 
 /**
+ * Stop everything immediately: abort any in-progress full-auto run, supersede
+ * any pending summon, and hide the overlay card/ring. Backs the in-app "Stop"
+ * control (the same outcome as pressing Escape, reachable without focus on the
+ * overlay). Safe to call when nothing is running.
+ */
+export const stopEverything = async (): Promise<void> => {
+  abortRequested = true;
+  // Bump the generation so a slow guidance/act response can't redraw a card.
+  summonGeneration++;
+  if (!started) return;
+  clearHideTimer();
+  try {
+    await getMacHelperClient().call(CUE_LIVE_HIDE);
+  } catch (err) {
+    log.warn(`[cue-live] stopEverything hide failed: ${errMessage(err)}`);
+  }
+};
+
+/**
  * One-shot diagnostic (gated on CUE_LIVE_SELFTEST): a few seconds after start,
  * draw a fixed card to prove the overlay renders, then fire a real summon at
  * the cursor to exercise the full read → highlight → card → guidance chain.
@@ -880,4 +943,6 @@ export const __resetForTesting = (): void => {
   unsubscribeAbort = null;
   persistedEnabledGetter = () => true;
   takeControlEnabledGetter = () => true;
+  lastKnownTrusted = false;
+  lastKnownScreenRecording = false;
 };

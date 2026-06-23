@@ -362,11 +362,27 @@ export interface CueLiveStatus {
   running: boolean;
   /** Whether the helper is trusted for macOS Accessibility (hotkey armed). */
   accessibilityTrusted: boolean;
+  /** Whether the helper has macOS Screen Recording (vision capture works). */
+  screenRecordingGranted: boolean;
   /** The summon hotkey, for display (e.g. "Control+Option+Space"). */
   hotkey: string;
   /** Whether a spoken goal lets Cue Live click/type for you (full auto). */
   takeControl: boolean;
 }
+
+/**
+ * The two macOS privacy grants Cue Live depends on, read non-prompting from the
+ * helper. Drives the renderer's onboarding banner: without Accessibility the
+ * summon hotkey / AX reads / take-control input do nothing; without Screen
+ * Recording the vision capture (Look / Do it) can't see the screen.
+ */
+export interface CueLivePermissions {
+  accessibilityTrusted: boolean;
+  screenRecordingGranted: boolean;
+}
+
+/** A System Settings privacy pane Cue Live can deep-link the user to. */
+export type CueLiveSettingsPane = "accessibility" | "screenRecording";
 
 /** A third-party connector (Composio-backed) and this install's status. */
 export interface ConnectorStatus {

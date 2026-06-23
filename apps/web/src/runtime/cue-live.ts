@@ -1,5 +1,7 @@
 import type {
   CueLiveGoal,
+  CueLivePermissions,
+  CueLiveSettingsPane,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -40,6 +42,45 @@ export async function setCueLiveTakeControl(
 export async function summonCueLive(): Promise<void> {
   if (!isCueLiveAvailable()) return;
   await window.vellum!.cueLive!.summon();
+}
+
+/** Whether the permissions IPC is present (older preloads may lack it). */
+export function isCueLivePermissionsSupported(): boolean {
+  return (
+    isCueLiveAvailable() &&
+    typeof window.vellum?.cueLive?.permissions === "function"
+  );
+}
+
+/**
+ * Read the live macOS permission grants (non-prompting). Returns `null` when
+ * off-desktop or on an older preload without the IPC, so callers can fall back
+ * to the coarser `status.accessibilityTrusted` flag.
+ */
+export async function getCueLivePermissions(): Promise<CueLivePermissions | null> {
+  if (!isCueLivePermissionsSupported()) return null;
+  return window.vellum!.cueLive!.permissions!();
+}
+
+/** Deep-link the user to a System Settings privacy pane. */
+export async function openCueLiveSystemSettings(
+  pane: CueLiveSettingsPane,
+): Promise<void> {
+  if (
+    !isCueLiveAvailable() ||
+    typeof window.vellum?.cueLive?.openSystemSettings !== "function"
+  ) {
+    return;
+  }
+  await window.vellum.cueLive.openSystemSettings(pane);
+}
+
+/** Stop everything — abort any auto-run and hide the overlay (⌥ esc mirror). */
+export async function stopCueLive(): Promise<void> {
+  if (!isCueLiveAvailable() || typeof window.vellum?.cueLive?.stop !== "function") {
+    return;
+  }
+  await window.vellum.cueLive.stop();
 }
 
 /** Whether the typed-goal test box is available (newer preloads only). */

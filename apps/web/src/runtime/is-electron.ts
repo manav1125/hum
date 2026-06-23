@@ -24,6 +24,8 @@ import type {
   ConnectorStatus,
   ConnectorTool,
   CueLiveGoal,
+  CueLivePermissions,
+  CueLiveSettingsPane,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -141,6 +143,9 @@ declare global {
         setEnabled(enabled: boolean): Promise<CueLiveStatus>;
         setTakeControl?(enabled: boolean): Promise<CueLiveStatus>;
         summon(): Promise<void>;
+        permissions?(): Promise<CueLivePermissions>;
+        openSystemSettings?(pane: CueLiveSettingsPane): Promise<void>;
+        stop?(): Promise<void>;
         runGoal?(goal: string, takeControl: boolean): Promise<void>;
         voiceKeysStatus?(): Promise<CueLiveVoiceKeysStatus>;
         setVoiceKey?(

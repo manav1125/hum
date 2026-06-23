@@ -29,6 +29,9 @@ const electronMock = {
     encryptString: (s: string) => Buffer.from(s),
     decryptString: (b: Buffer) => b.toString(),
   },
+  shell: {
+    openExternal: mock(() => Promise.resolve()),
+  },
 };
 
 mock.module("electron", () => ({ ...electronMock, default: electronMock }));

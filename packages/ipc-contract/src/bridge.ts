@@ -21,6 +21,8 @@ import type {
   ConnectorStatus,
   ConnectorTool,
   CueLiveGoal,
+  CueLivePermissions,
+  CueLiveSettingsPane,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -103,6 +105,12 @@ export interface VellumBridge {
     setEnabled(enabled: boolean): Promise<CueLiveStatus>;
     setTakeControl(enabled: boolean): Promise<CueLiveStatus>;
     summon(): Promise<void>;
+    /** Non-prompting read of the macOS Accessibility + Screen Recording grants. */
+    permissions(): Promise<CueLivePermissions>;
+    /** Deep-link the user to a System Settings privacy pane. */
+    openSystemSettings(pane: CueLiveSettingsPane): Promise<void>;
+    /** Stop everything: abort any auto-run and hide the overlay (⌥ esc mirror). */
+    stop(): Promise<void>;
     runGoal(goal: string, takeControl: boolean): Promise<void>;
     voiceKeysStatus(): Promise<CueLiveVoiceKeysStatus>;
     setVoiceKey(

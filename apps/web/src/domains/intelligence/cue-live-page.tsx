@@ -1,9 +1,18 @@
-import { Check, Mic, MousePointer2, Volume2 } from "lucide-react";
+import {
+  Check,
+  Lock,
+  Mic,
+  MousePointer2,
+  ShieldAlert,
+  Volume2,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import type {
   CueLiveGoal,
+  CueLivePermissions,
+  CueLiveSettingsPane,
   CueLiveStatus,
   CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
@@ -11,17 +20,21 @@ import type {
 
 import {
   deleteCueLiveGoal,
+  getCueLivePermissions,
   getCueLiveStatus,
   getVoiceKeysStatus,
   isCueLiveAvailable,
   isCueLiveGoalsSupported,
+  isCueLivePermissionsSupported,
   isRunGoalSupported,
   listCueLiveGoals,
+  openCueLiveSystemSettings,
   runGoal,
   saveCueLiveGoal,
   setCueLiveEnabled,
   setCueLiveTakeControl,
   setVoiceKey,
+  stopCueLive,
   summonCueLive,
 } from "@/runtime/cue-live";
 
@@ -175,82 +188,96 @@ function Toggle({
   );
 }
 
-/** A non-interactive toggle rendered exactly per the mock (display-only). */
-function ToggleStatic({
-  on,
-  accent = "blue",
-}: {
-  on: boolean;
-  accent?: "blue" | "violet";
-}) {
-  const onColor = accent === "violet" ? C.violetStrong : C.blue;
-  return (
-    <span
-      aria-hidden
-      style={{
-        width: 38,
-        height: 22,
-        borderRadius: 999,
-        background: on ? onColor : C.line2,
-        position: "relative",
-        flexShrink: 0,
-        display: "inline-block",
-      }}
-    >
-      <span
-        style={{
-          position: "absolute",
-          width: 18,
-          height: 18,
-          borderRadius: "50%",
-          background: "#fff",
-          top: 2,
-          left: on ? 18 : 2,
-        }}
-      />
-    </span>
-  );
-}
+/* -------------------------------------------------------------------------- */
+/* Mode selector                                                               */
+/*                                                                             */
+/* Honesty rule: only the modes the native engine actually backs are           */
+/* selectable.                                                                  */
+/*   - Companion: the shipped passive-until-summoned mode — always available.  */
+/*   - Take control: backed by the real `setTakeControl` toggle (the act loop).*/
+/*     Selecting it flips take-control ON; it reflects the persisted state.    */
+/*   - Scoped watch / Always-on: no native implementation yet → DISABLED with  */
+/*     a "Coming soon" affordance, never selectable.                           */
+/* -------------------------------------------------------------------------- */
 
-/* -------------------------------------------------------------------------- */
-/* Mode selector — Companion is the shipped/active mode; the others are the    */
-/* escalating roadmap modes, rendered per the mock but non-interactive.        */
-/* -------------------------------------------------------------------------- */
+type CueModeId = "companion" | "takeControl" | "scoped" | "alwaysOn";
 
 interface CueMode {
+  readonly id: CueModeId;
   readonly name: string;
   readonly desc: string;
   readonly meta: string;
-  readonly active?: boolean;
+  /** Wired to a real capability (selectable). Otherwise it's "coming soon". */
+  readonly supported: boolean;
   readonly accent?: boolean;
 }
 
 const CUE_MODES: readonly CueMode[] = [
   {
+    id: "companion",
     name: "Companion",
     desc: "Follows your cursor, passive until summoned.",
     meta: "AX only · most private",
-    active: true,
+    supported: true,
   },
   {
+    id: "scoped",
     name: "Scoped watch",
     desc: "Point Cue at one window. Captures actions from just that.",
     meta: "bounded capture",
+    supported: false,
   },
   {
+    id: "alwaysOn",
     name: "Always-on",
     desc: "Whole screen, continuous. Opt-in, visible light + one-tap pause.",
     meta: "AX + vision on change",
+    supported: false,
   },
   {
+    id: "takeControl",
     name: "Take control",
     desc: "State a goal, Cue drives. Guided → autonomous, you approve.",
     meta: "checkpointed",
+    supported: true,
     accent: true,
   },
 ];
 
-function ModeCards() {
+function ComingSoonTag() {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontFamily: MONO,
+        fontSize: 9.5,
+        background: C.sunken,
+        color: C.t3,
+        padding: "2px 7px",
+        borderRadius: 5,
+      }}
+    >
+      <Lock className="size-2.5" /> SOON
+    </span>
+  );
+}
+
+/**
+ * Mode cards. Companion is active whenever Cue Live is enabled; "Take control"
+ * reflects (and toggles) the real take-control capability. The two unbuilt
+ * modes render disabled with a "Coming soon" tag — never selectable.
+ */
+function ModeCards({
+  takeControlOn,
+  busy,
+  onSelectTakeControl,
+}: {
+  takeControlOn: boolean;
+  busy: boolean;
+  onSelectTakeControl: (next: boolean) => void;
+}) {
   return (
     <div>
       <div style={sectionLabel}>Mode · escalating power + trust</div>
@@ -261,109 +288,176 @@ function ModeCards() {
           gap: 12,
         }}
       >
-        {CUE_MODES.map((m) => (
-          <div
-            key={m.name}
-            style={{
-              border: m.active
-                ? `2px solid ${C.blue}`
-                : m.accent
-                  ? `1px solid ${C.violetLine}`
-                  : `1px solid ${C.line}`,
-              borderRadius: 13,
-              padding: 14,
-              background: m.active
-                ? C.blueWashSoft
-                : m.accent
-                  ? C.violetWash
-                  : undefined,
-            }}
-          >
-            <div
+        {CUE_MODES.map((m) => {
+          // "Active" = the mode reflecting current real state. Companion is the
+          // baseline; Take control is active when the capability is on.
+          const active =
+            m.id === "companion" ? !takeControlOn : m.id === "takeControl" && takeControlOn;
+          const selectable = m.supported && !busy;
+          const onClick = () => {
+            if (m.id === "takeControl") onSelectTakeControl(true);
+            else if (m.id === "companion") onSelectTakeControl(false);
+          };
+          return (
+            <button
+              key={m.id}
+              type="button"
+              disabled={!selectable}
+              aria-pressed={active}
+              onClick={selectable ? onClick : undefined}
+              title={
+                m.supported
+                  ? undefined
+                  : "Not available yet — this mode needs a native capability that isn't built."
+              }
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
+                textAlign: "left",
+                border: active
+                  ? m.accent
+                    ? `2px solid ${C.violetStrong}`
+                    : `2px solid ${C.blue}`
+                  : m.accent
+                    ? `1px solid ${C.violetLine}`
+                    : `1px solid ${C.line}`,
+                borderRadius: 13,
+                padding: 14,
+                background: active
+                  ? m.accent
+                    ? C.violetWash
+                    : C.blueWashSoft
+                  : m.supported
+                    ? C.surface
+                    : C.sunken,
+                cursor: selectable ? "pointer" : "default",
+                opacity: m.supported ? 1 : 0.65,
               }}
             >
               <div
                 style={{
-                  fontSize: 13.5,
-                  fontWeight: 500,
-                  color: m.accent ? C.violetStrong : C.t1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                 }}
               >
-                {m.name}
-              </div>
-              {m.active && (
-                <span
+                <div
                   style={{
-                    fontFamily: MONO,
-                    fontSize: 9.5,
-                    background: C.blueWash,
-                    color: C.blueStrong,
-                    padding: "2px 7px",
-                    borderRadius: 5,
+                    fontSize: 13.5,
+                    fontWeight: 500,
+                    color: m.accent ? C.violetStrong : C.t1,
                   }}
                 >
-                  ACTIVE
+                  {m.name}
+                </div>
+                {active ? (
+                  <span
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 9.5,
+                      background: m.accent ? C.violetLine : C.blueWash,
+                      color: m.accent ? C.violetStrong : C.blueStrong,
+                      padding: "2px 7px",
+                      borderRadius: 5,
+                    }}
+                  >
+                    ACTIVE
+                  </span>
+                ) : !m.supported ? (
+                  <ComingSoonTag />
+                ) : null}
+              </div>
+              <div style={{ fontSize: 12, color: C.t2, marginTop: 4 }}>
+                {m.desc}{" "}
+                <span style={{ fontFamily: MONO, fontSize: 10, color: C.t3 }}>
+                  {m.meta}
                 </span>
-              )}
-            </div>
-            <div style={{ fontSize: 12, color: C.t2, marginTop: 4 }}>
-              {m.desc}{" "}
-              <span style={{ fontFamily: MONO, fontSize: 10, color: C.t3 }}>
-                {m.meta}
-              </span>
-            </div>
-          </div>
-        ))}
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hotkeys — Summon is the real configured accelerator; the rest are the       */
-/* mock's fixed bindings (no bridge field exposes them), shown display-only.   */
+/* Hotkeys                                                                     */
+/*                                                                             */
+/* Honesty rule: labels reflect what the helper actually binds.                */
+/*   - Summon: the real configured accelerator (⌃⌥Space), reported by status.  */
+/*   - Push-to-talk: the helper's CuePushToTalkMonitor fires on HOLD ⌃⌥ (not   */
+/*     "hold fn", which was wrong) — only active once voice keys are set.       */
+/*   - Stop everything: the helper aborts an auto-run on Esc; the row is also a */
+/*     live button (calls stopCueLive), so it works without overlay focus.     */
+/*   - Point at element (⌥P): NOT implemented in the helper → disabled "soon".  */
 /* -------------------------------------------------------------------------- */
 
 function HotkeyRow({
   label,
   cap,
   tone = "default",
+  disabled = false,
+  hint,
+  onClick,
   last = false,
 }: {
   label: string;
   cap: React.ReactNode;
   tone?: "default" | "danger";
+  disabled?: boolean;
+  hint?: string;
+  onClick?: () => void;
   last?: boolean;
 }) {
+  const interactive = Boolean(onClick) && !disabled;
+  const Tag = interactive ? "button" : "div";
   return (
-    <div
+    <Tag
+      {...(interactive
+        ? { type: "button" as const, onClick }
+        : {})}
       style={{
+        width: "100%",
+        textAlign: "left",
+        background: "transparent",
+        border: "none",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: 10,
         padding: "11px 14px",
         borderBottom: last ? "none" : `1px solid ${C.line}`,
+        cursor: interactive ? "pointer" : "default",
+        opacity: disabled ? 0.55 : 1,
       }}
     >
-      <span
-        style={{
-          fontSize: 13,
-          color: tone === "danger" ? C.danger : C.t1,
-          fontWeight: tone === "danger" ? 500 : 400,
-        }}
-      >
-        {label}
+      <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+        <span
+          style={{
+            fontSize: 13,
+            color: tone === "danger" ? C.danger : C.t1,
+            fontWeight: tone === "danger" ? 500 : 400,
+          }}
+        >
+          {label}
+        </span>
+        {hint && (
+          <span style={{ fontSize: 10.5, color: C.t3 }}>{hint}</span>
+        )}
       </span>
       {cap}
-    </div>
+    </Tag>
   );
 }
 
-function HotkeysCard({ summonHotkey }: { summonHotkey: string }) {
+function HotkeysCard({
+  summonHotkey,
+  voiceReady,
+  onStop,
+}: {
+  summonHotkey: string;
+  voiceReady: boolean;
+  onStop: () => void;
+}) {
   return (
     <div>
       <div style={sectionLabel}>Hotkeys</div>
@@ -378,15 +472,29 @@ function HotkeysCard({ summonHotkey }: { summonHotkey: string }) {
           label="Summon Cue"
           cap={<Keycap>{hotkeyGlyphs(summonHotkey)}</Keycap>}
         />
-        <HotkeyRow label="Point at element" cap={<Keycap>⌥ P</Keycap>} />
-        <HotkeyRow label="Push-to-talk" cap={<Keycap>hold fn</Keycap>} />
+        <HotkeyRow
+          label="Point at element"
+          hint="Coming soon"
+          disabled
+          cap={<Keycap>⌥ P</Keycap>}
+        />
+        <HotkeyRow
+          label="Push-to-talk"
+          hint={
+            voiceReady
+              ? "Hold to speak a goal"
+              : "Add a speech key in Voice setup to enable"
+          }
+          disabled={!voiceReady}
+          cap={<Keycap>hold ⌃ ⌥</Keycap>}
+        />
         <HotkeyRow
           label="Stop everything"
           tone="danger"
+          hint="Click to stop now, or press Esc"
           last
-          cap={
-            <Keycap tone="danger">⌥ esc</Keycap>
-          }
+          onClick={onStop}
+          cap={<Keycap tone="danger">esc</Keycap>}
         />
       </div>
     </div>
@@ -436,7 +544,7 @@ function VoiceBindingsCard({
               Wake on voice, no key
             </div>
           </div>
-          <ToggleStatic on={false} />
+          <ComingSoonTag />
         </div>
         <div
           style={{
@@ -449,9 +557,9 @@ function VoiceBindingsCard({
             <div style={{ fontSize: 13, fontWeight: 500 }}>
               Read selection aloud
             </div>
-            <div style={{ fontSize: 11.5, color: C.t2 }}>⌥ R on any text</div>
+            <div style={{ fontSize: 11.5, color: C.t2 }}>Highlight + speak</div>
           </div>
-          <ToggleStatic on />
+          <ComingSoonTag />
         </div>
         <div
           style={{
@@ -1353,6 +1461,137 @@ function GoalRunner() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Permissions onboarding — the most important "it doesn't work" unblock.      */
+/*                                                                             */
+/* Cue Live can't see or act without two macOS grants. We read them            */
+/* non-prompting from the helper and, when either is missing, show a BLOCKING  */
+/* banner with a one-click deep-link to the exact System Settings pane. The    */
+/* banner explains what each grant unlocks so the user knows why it matters.   */
+/* -------------------------------------------------------------------------- */
+
+function PermissionRow({
+  granted,
+  title,
+  detail,
+  pane,
+}: {
+  granted: boolean;
+  title: string;
+  detail: string;
+  pane: CueLiveSettingsPane;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 12,
+        padding: "10px 0",
+      }}
+    >
+      <div style={{ display: "flex", gap: 9, minWidth: 0 }}>
+        <span
+          style={{
+            marginTop: 2,
+            width: 16,
+            height: 16,
+            flexShrink: 0,
+            borderRadius: "50%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: granted ? C.green : C.danger,
+            color: "#fff",
+            fontSize: 10,
+          }}
+        >
+          {granted ? "✓" : "!"}
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
+            {title}{" "}
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                color: granted ? C.green : C.danger,
+              }}
+            >
+              {granted ? "granted" : "needed"}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: C.t2, marginTop: 2, lineHeight: 1.45 }}>
+            {detail}
+          </div>
+        </div>
+      </div>
+      {!granted && (
+        <button
+          type="button"
+          onClick={() => void openCueLiveSystemSettings(pane)}
+          style={{
+            flexShrink: 0,
+            borderRadius: 8,
+            background: C.danger,
+            color: "#fff",
+            border: "none",
+            padding: "6px 12px",
+            fontSize: 12,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          Open Settings
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PermissionsBanner({ permissions }: { permissions: CueLivePermissions }) {
+  const allGranted =
+    permissions.accessibilityTrusted && permissions.screenRecordingGranted;
+  if (allGranted) return null;
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        border: `1px solid ${C.dangerLine}`,
+        background: C.dangerWash,
+        padding: "14px 16px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <ShieldAlert className="size-5" style={{ color: C.danger }} />
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.danger }}>
+          Cue Live can't see or act yet
+        </div>
+      </div>
+      <div style={{ fontSize: 12.5, color: C.t2, marginTop: 6, lineHeight: 1.5 }}>
+        Grant the macOS permissions below to <strong>Cue</strong>, then come back
+        — this updates on its own. Until then, summon and "Do it" do nothing.
+      </div>
+      <div style={{ marginTop: 8, borderTop: `1px solid ${C.dangerLine}` }}>
+        <PermissionRow
+          granted={permissions.accessibilityTrusted}
+          title="Accessibility"
+          detail="Arms the summon hotkey, reads the element under your cursor, and lets Cue click & type for you."
+          pane="accessibility"
+        />
+        <div style={{ borderTop: `1px solid ${C.dangerLine}` }} />
+        <PermissionRow
+          granted={permissions.screenRecordingGranted}
+          title="Screen Recording"
+          detail="Lets Cue see your screen to answer questions and run goals (the vision pass behind Look / Do it)."
+          pane="screenRecording"
+        />
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Desktop control panel — the mock's center column + right rail              */
 /* -------------------------------------------------------------------------- */
 
@@ -1364,15 +1603,24 @@ function DesktopControlPanel() {
   const [busy, setBusy] = useState(false);
   const [summonNote, setSummonNote] = useState<string | null>(null);
   const [showVoiceSetup, setShowVoiceSetup] = useState(false);
+  const [permissions, setPermissions] = useState<CueLivePermissions | null>(
+    null,
+  );
 
   const refresh = useCallback(async () => {
     setStatus(await getCueLiveStatus());
+    // The dedicated permissions IPC is the source of truth (it reads both AX +
+    // Screen Recording, non-prompting). Fall back to the coarser status flag on
+    // older preloads that lack it.
+    if (isCueLivePermissionsSupported()) {
+      setPermissions(await getCueLivePermissions());
+    }
   }, []);
 
   useEffect(() => {
     void refresh();
-    // Re-poll while mounted so the Accessibility state reflects a grant the
-    // user just made in System Settings without needing a navigation.
+    // Re-poll while mounted so a grant the user just made in System Settings is
+    // reflected without needing a navigation — drives the onboarding banner.
     const id = setInterval(() => void refresh(), 3000);
     return () => clearInterval(id);
   }, [refresh]);
@@ -1405,15 +1653,30 @@ function DesktopControlPanel() {
     );
   };
 
+  const handleStop = () => {
+    setSummonNote("Stopped — Cue Live is idle.");
+    void stopCueLive();
+  };
+
   const openVoiceSetup = () => setShowVoiceSetup(true);
+
+  // Effective permissions: the dedicated IPC when present, else synthesize from
+  // the status flag (older preloads report only Accessibility; assume Screen
+  // Recording granted there so we don't show a banner we can't substantiate).
+  const effectivePermissions: CueLivePermissions = permissions ?? {
+    accessibilityTrusted: status.accessibilityTrusted,
+    screenRecordingGranted: true,
+  };
+  const voiceReady = Boolean(voiceKeys?.hasAssemblyAi);
 
   // The mock's status pill: "running · companion" when live. The shipped mode
   // is always Companion, so we surface that. We reflect the *real* run state.
   const pillRunning = status.enabled && status.running;
+  const modeWord = status.takeControl ? "take-control" : "companion";
   const pillLabel = pillRunning
-    ? "running · companion"
+    ? `running · ${modeWord}`
     : status.enabled
-      ? "idle · companion"
+      ? `idle · ${modeWord}`
       : "off";
   const pillOn = status.enabled;
 
@@ -1488,25 +1751,18 @@ function DesktopControlPanel() {
           </button>
         </div>
 
-        <ModeCards />
-
-        {/* Accessibility prompt — only when enabled but not yet trusted. */}
-        {status.enabled && !status.accessibilityTrusted && (
-          <div
-            style={{
-              borderRadius: 12,
-              padding: "11px 14px",
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: C.danger,
-              background: C.dangerWash,
-              border: `1px solid ${C.dangerLine}`,
-            }}
-          >
-            To arm the summon hotkey, enable <strong>Cue</strong> under System
-            Settings → Privacy &amp; Security → Accessibility.
-          </div>
+        {/* Blocking permissions onboarding — shown whenever a grant is missing
+            (and Cue Live is enabled). The single most important "it doesn't
+            work" unblock: deep-links to the right System Settings pane. */}
+        {status.enabled && (
+          <PermissionsBanner permissions={effectivePermissions} />
         )}
+
+        <ModeCards
+          takeControlOn={status.takeControl}
+          busy={busy}
+          onSelectTakeControl={(next) => void handleTakeControl(next)}
+        />
 
         {/* Hotkeys + Voice bindings */}
         <div
@@ -1516,7 +1772,11 @@ function DesktopControlPanel() {
             gap: 18,
           }}
         >
-          <HotkeysCard summonHotkey={status.hotkey} />
+          <HotkeysCard
+            summonHotkey={status.hotkey}
+            voiceReady={voiceReady}
+            onStop={handleStop}
+          />
           <VoiceBindingsCard
             voiceId={voiceKeys?.elevenLabsVoiceId ?? null}
             onChange={openVoiceSetup}

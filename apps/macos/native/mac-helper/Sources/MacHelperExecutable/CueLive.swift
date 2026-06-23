@@ -117,6 +117,22 @@ final class CueLiveController: @unchecked Sendable {
         return AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Report the macOS privacy permissions Cue Live depends on, WITHOUT
+    /// prompting. Both gate real behavior:
+    ///   - Accessibility (`AXIsProcessTrusted`): the global summon hotkey, the
+    ///     AX element reads, and the synthesized take-control input.
+    ///   - Screen Recording (`CGPreflightScreenCaptureAccess`): the vision
+    ///     capture that backs "Look"/"Do it".
+    /// The renderer uses this to drive a blocking onboarding banner so the user
+    /// isn't left wondering why nothing happens. Non-prompting on purpose — the
+    /// banner's buttons deep-link the user to the right Settings pane instead.
+    func permissions() -> [String: Any] {
+        return [
+            "accessibilityTrusted": AXIsProcessTrusted(),
+            "screenRecordingGranted": CGPreflightScreenCaptureAccess(),
+        ]
+    }
+
     /// Trigger a summon programmatically (same effect as the global hotkey):
     /// emits `cuelive.summoned` at the current cursor so the daemon runs the
     /// full read → highlight → card → guidance flow. Backs the tray fallback

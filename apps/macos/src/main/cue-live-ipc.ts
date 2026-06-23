@@ -1,16 +1,23 @@
 import { randomUUID } from "node:crypto";
 
-import type { CueLiveGoal } from "@vellumai/ipc-contract";
+import type {
+  CueLiveGoal,
+  CueLivePermissions,
+} from "@vellumai/ipc-contract";
+import { shell } from "electron";
 import { z } from "zod";
 
 import {
   CUE_LIVE_HOTKEY,
+  getPermissions,
   isAccessibilityTrusted,
+  isScreenRecordingGranted,
   isStarted,
   pushVoiceConfig,
   runTypedGoal,
   start as startCueLive,
   stop as stopCueLive,
+  stopEverything,
   triggerSummon,
 } from "./cue-live-service";
 import {
@@ -31,6 +38,8 @@ export interface CueLiveStatus {
   running: boolean;
   /** Whether the helper is trusted for macOS Accessibility (hotkey armed). */
   accessibilityTrusted: boolean;
+  /** Whether the helper has macOS Screen Recording (vision capture works). */
+  screenRecordingGranted: boolean;
   /** The summon hotkey, for display. */
   hotkey: string;
   /** Whether a spoken goal lets Cue Live click/type for you (full auto). */
@@ -41,6 +50,7 @@ const cueLiveStatus = (): CueLiveStatus => ({
   enabled: readSetting("cueLiveEnabled") ?? true,
   running: isStarted(),
   accessibilityTrusted: isAccessibilityTrusted(),
+  screenRecordingGranted: isScreenRecordingGranted(),
   hotkey: CUE_LIVE_HOTKEY,
   takeControl: readSetting("cueLiveTakeControl") ?? true,
 });
@@ -133,6 +143,41 @@ export const installCueLiveIpc = (): void => {
 
   handle("vellum:cueLive:summon", z.tuple([]), async (): Promise<void> => {
     await triggerSummon();
+  });
+
+  // Live, non-prompting read of the macOS grants Cue Live needs, for the
+  // renderer's blocking onboarding banner.
+  handle(
+    "vellum:cueLive:permissions",
+    z.tuple([]),
+    (): Promise<CueLivePermissions> => getPermissions(),
+  );
+
+  // Deep-link the user straight to the relevant System Settings privacy pane.
+  // Only the two panes Cue Live cares about are reachable — anything else is a
+  // no-op so the renderer can't drive arbitrary openExternal targets.
+  handle(
+    "vellum:cueLive:openSystemSettings",
+    z.tuple([z.enum(["accessibility", "screenRecording"])]),
+    async ([pane]): Promise<void> => {
+      const url =
+        pane === "accessibility"
+          ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+          : "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+      try {
+        await shell.openExternal(url);
+      } catch (err) {
+        log.warn(
+          `[cue-live] openSystemSettings(${pane}) failed: ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
+    },
+  );
+
+  // "Stop everything" (⌥ esc mirror): abort any auto-run and hide the overlay.
+  handle("vellum:cueLive:stop", z.tuple([]), async (): Promise<void> => {
+    await stopEverything();
   });
 
   // Typed-goal test box: run a goal by text (no mic/voice). takeControl=true
