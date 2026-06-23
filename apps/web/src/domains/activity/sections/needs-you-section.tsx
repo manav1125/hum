@@ -8,11 +8,18 @@
  * `conversationId` query and returns an opaque `prompts: unknown[]`), so it
  * cannot drive a global queue and is intentionally not used here.
  *
- * Steer: each interaction is approvable via `guardianactionsDecisionPost({
- * requestId, action, conversationId })` — we have all three fields typed, so the
- * Approve/Decline buttons are real, not fake. Every row also offers "Review in
- * chat" to open the originating conversation. Provenance is the interaction's
- * `kind` (+ toolName when present) read straight off the payload.
+ * Steer: each interaction is resolved through `confirmPost` → the daemon
+ * `POST /v1/confirm` endpoint, which resolves the pending interaction in the
+ * SAME in-memory `pending-interactions` store this list is built from. The
+ * row's `requestId` is the store key, so Approve→`allow` / Decline→`deny`
+ * resolve the exact confirmation the agent is blocked on — no dependency on the
+ * canonical guardian store's `guardianPrincipalId`, which can be absent for a
+ * self-host local owner and silently 404/identity_mismatch the decision.
+ * (The earlier `guardianactionsDecisionPost` wiring read this same list but
+ * wrote to the *other* store, so its buttons never resolved the interaction.)
+ * Every row also offers "Review in chat" to open the originating conversation,
+ * where the thread re-surfaces the live confirmation card via the
+ * conversation-scoped pending-interactions fetch on load.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +27,7 @@ import { ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import {
-  guardianactionsDecisionPostMutation,
+  confirmPostMutation,
   pendinginteractionsGetOptions,
   pendinginteractionsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -51,13 +58,12 @@ export function NeedsYouSection({ assistantId }: { assistantId: string }) {
     path: { assistant_id: assistantId },
   });
   const decide = useMutation({
-    ...guardianactionsDecisionPostMutation(),
+    ...confirmPostMutation(),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: key }),
   });
 
   const interactions = query.data?.interactions ?? [];
-  const empty =
-    !query.isLoading && !query.isError && interactions.length === 0;
+  const empty = !query.isLoading && !query.isError && interactions.length === 0;
 
   return (
     <ActivitySection
@@ -94,11 +100,7 @@ export function NeedsYouSection({ assistantId }: { assistantId: string }) {
                   onClick={() =>
                     decide.mutate({
                       path: { assistant_id: assistantId },
-                      body: {
-                        requestId: it.requestId,
-                        action: "approve",
-                        conversationId: it.conversationId,
-                      },
+                      body: { requestId: it.requestId, decision: "allow" },
                     })
                   }
                 />
@@ -109,21 +111,19 @@ export function NeedsYouSection({ assistantId }: { assistantId: string }) {
                   onClick={() =>
                     decide.mutate({
                       path: { assistant_id: assistantId },
-                      body: {
-                        requestId: it.requestId,
-                        action: "decline",
-                        conversationId: it.conversationId,
-                      },
+                      body: { requestId: it.requestId, decision: "deny" },
                     })
                   }
                 />
-                <RowButton
-                  label="Review in chat"
-                  variant="ghost"
-                  onClick={() =>
-                    navigate(`/assistant/conversations/${it.conversationId}`)
-                  }
-                />
+                {it.conversationId ? (
+                  <RowButton
+                    label="Review in chat"
+                    variant="ghost"
+                    onClick={() =>
+                      navigate(`/assistant/conversations/${it.conversationId}`)
+                    }
+                  />
+                ) : null}
               </>
             }
           />

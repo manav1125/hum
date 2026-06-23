@@ -77,10 +77,22 @@ async function handleGuardianActionDecision({
   // binding to avoid identity_mismatch.
   let guardianPrincipalId: string | undefined =
     headers["x-vellum-actor-principal-id"] ?? undefined;
+  const principalType = headers["x-vellum-principal-type"];
   if (
     isHttpAuthDisabled() &&
     headers["x-vellum-actor-principal-id"] === "dev-bypass"
   ) {
+    const binding = findGuardianForChannel("vellum");
+    guardianPrincipalId = binding?.contact.principalId ?? undefined;
+  }
+  // Local principal (self-host owner over the local session): the
+  // `local:<assistantId>:<conversationId>` JWT carries no actorPrincipalId, so
+  // no x-vellum-actor-principal-id header is injected and the canonical
+  // decision below would reject with identity_mismatch. By the single-guardian
+  // invariant the local owner *is* the bound guardian — resolve its principal
+  // from the vellum guardian binding so Home/Activity "Needs you"
+  // Approve/Decline actually resolves the confirmation.
+  if (!guardianPrincipalId && principalType === "local") {
     const binding = findGuardianForChannel("vellum");
     guardianPrincipalId = binding?.contact.principalId ?? undefined;
   }

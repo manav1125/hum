@@ -15,6 +15,19 @@ export function requireBoundGuardian(
   if (isHttpAuthDisabled()) {
     return null;
   }
+  // Local principal: a `local:<assistantId>:<conversationId>` JWT (self-host
+  // owner reaching the daemon over the local session / native app) is the
+  // bound guardian by the single-guardian invariant — there is exactly one
+  // guardian per assistant and the local owner *is* that guardian. The `local`
+  // sub carries no `actorPrincipalId` (subject.ts parses only the
+  // conversationId), so the principal-equality check below would otherwise
+  // 403 every local-owner approval (confirm / secret / guardian decision),
+  // surfacing to the user as an in-thread "Approve" that fails instantly.
+  // Treat it as authorized; it has already cleared JWT verification and the
+  // route's scope/principal-type policy gate.
+  if (authContext.principalType === "local") {
+    return null;
+  }
   if (!authContext.actorPrincipalId) {
     return httpError(
       "FORBIDDEN",
