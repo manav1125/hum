@@ -19,10 +19,23 @@ mock.module("../../permissions/checker.js", () => ({
   classifyRisk: async () => ({ level: "high" }),
 }));
 
+// Stub the task runner so "Run now" doesn't drive a real LLM turn. The
+// callback is never invoked, so the background run resolves with a
+// completed status and the work item transitions to awaiting_review.
+mock.module("../../tasks/task-runner.js", () => ({
+  runTask: async () => ({
+    status: "completed",
+    taskRunId: "test-run",
+    conversationId: "test-convo",
+  }),
+}));
+
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
-import { createWorkItem } from "../../work-items/work-item-store.js";
-import { ForbiddenError } from "./errors.js";
+import {
+  createWorkItem,
+  getWorkItem,
+} from "../../work-items/work-item-store.js";
 import { preflightWorkItem, ROUTES } from "./work-items-routes.js";
 
 initializeDb();
@@ -47,7 +60,12 @@ describe("empty required_tools snapshot bypass", () => {
     expect(result.permissions![0].tool).toBe("host_bash");
   });
 
-  test("rejects run when snapshot requiredTools is empty but task tools are unapproved", async () => {
+  test("run auto-approves required tools and starts the background run", async () => {
+    // Clicking "Run now" is explicit user consent: the route delegates to
+    // the canonical background runner (the same path the working CLI uses),
+    // which auto-approves the work item's required tools instead of
+    // rejecting with a 403 when nothing was pre-approved. The previous
+    // 403-on-unapproved behavior was the "Run now does nothing" bug.
     const task = createTask({
       title: "Test task for run",
       template: "Do something",
@@ -64,12 +82,31 @@ describe("empty required_tools snapshot bypass", () => {
       (r) => r.endpoint === "work-items/:id/run" && r.method === "POST",
     )!;
 
-    await expect(
+    const result = (await runRoute.handler({
+      pathParams: { id: workItem.id },
+      headers: {},
+    })) as { id: string; success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(result.id).toBe(workItem.id);
+    // The runner flips the item out of "queued" synchronously before the
+    // async run begins.
+    expect(getWorkItem(workItem.id)!.status).not.toBe("queued");
+  });
+
+  test("run rejects a non-existent work item with NotFoundError", () => {
+    const runRoute = ROUTES.find(
+      (r) => r.endpoint === "work-items/:id/run" && r.method === "POST",
+    )!;
+
+    // The handler is synchronous (it kicks off the run in the background and
+    // returns immediately), so the not-found guard throws synchronously.
+    expect(() =>
       runRoute.handler({
-        pathParams: { id: workItem.id },
+        pathParams: { id: "does-not-exist" },
         headers: {},
       }),
-    ).rejects.toBeInstanceOf(ForbiddenError);
+    ).toThrow("Work item not found");
   });
 });
 

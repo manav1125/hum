@@ -54,14 +54,14 @@ export function QueuedSection({
   return (
     <ActivitySection
       icon={ListChecks}
-      title="Queued"
+      title="Cued"
       accent={C.amber}
       count={pending.items.length}
       loading={pending.isLoading}
       loadingLabel="Loading the queue…"
       error={pending.isError}
       empty={empty}
-      emptyLabel="Nothing queued — Cue lines up background work here before it runs."
+      emptyLabel="Nothing cued — Cue lines up background work here before it runs."
     >
       {pending.items.map((item, i) => (
         <ActivityRow
@@ -69,7 +69,7 @@ export function QueuedSection({
           dotColor={C.amber}
           title={item.title}
           provenance={item.provenance}
-          statusLabel="queued"
+          statusLabel="cued"
           statusTone="amber"
           last={i === pending.items.length - 1}
           highlight={item.id === focusId}

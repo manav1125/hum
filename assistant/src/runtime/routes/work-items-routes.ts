@@ -7,14 +7,11 @@
  */
 import { z } from "zod";
 
-import type { Conversation } from "../../daemon/conversation.js";
 import { findConversation } from "../../daemon/conversation-registry.js";
-import { getOrCreateConversation } from "../../daemon/conversation-store.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
 import { getMessages } from "../../memory/conversation-crud.js";
 import { check, classifyRisk } from "../../permissions/checker.js";
 import { getSubagentManager } from "../../subagent/index.js";
-import { runTask } from "../../tasks/task-runner.js";
 import { getTask, getTaskRun } from "../../tasks/task-store.js";
 import {
   getRegisteredToolNames,
@@ -22,9 +19,9 @@ import {
   sanitizeToolList,
 } from "../../tasks/tool-sanitizer.js";
 import { createAbortReason } from "../../util/abort-reasons.js";
-import { getLogger } from "../../util/logger.js";
 import { truncate } from "../../util/truncate.js";
 import { resolveRequiredTools } from "../../work-items/resolve-required-tools.js";
+import { runWorkItemInBackground } from "../../work-items/work-item-runner.js";
 import {
   deleteWorkItem,
   getWorkItem,
@@ -35,15 +32,8 @@ import {
 import { buildAssistantEvent } from "../assistant-event.js";
 import { assistantEventHub } from "../assistant-event-hub.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
-import {
-  BadRequestError,
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-} from "./errors.js";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.js";
 import type { RouteDefinition } from "./types.js";
-
-const log = getLogger("work-items-routes");
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -685,7 +675,7 @@ export const ROUTES: RouteDefinition[] = [
     },
   },
 
-  // -- Cancel + Run (previously HTTP-only due to getOrCreateConversation dep) --
+  // -- Cancel + Run --
 
   {
     operationId: "cancelWorkItem",
@@ -754,136 +744,40 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["work-items"],
     additionalResponses: {
       "404": { description: "Work item or associated task not found" },
-      "403": { description: "Required tool permissions not approved" },
       "409": { description: "Work item is already running or not runnable" },
     },
-    handler: async ({ pathParams }) => {
-      const workItem = getWorkItem(pathParams!.id);
-      if (!workItem) {
-        throw new NotFoundError("Work item not found");
-      }
+    handler: ({ pathParams }) => {
+      // Delegate to the canonical background runner — the same path the
+      // working `assistant task queue run` CLI command uses. Clicking
+      // "Run now" is explicit user consent, so the runner auto-approves
+      // the work item's required tools and executes the task in the
+      // background, broadcasting status over SSE as it progresses.
+      //
+      // The earlier HTTP-only implementation duplicated the run logic but
+      // demanded every required tool already be pre-approved (via a
+      // separate preflight/approve round-trip), throwing a 403 otherwise.
+      // A freshly-queued item has no approved tools and its task's
+      // requiredTools default to the full registered-tool list, so that
+      // gate fired on every "Run now" click. The web mutation wires only
+      // `onSuccess`, so the 403 surfaced as nothing happening at all.
+      const id = pathParams!.id;
+      const result = runWorkItemInBackground(id);
 
-      if (workItem.status === "running") {
-        throw new ConflictError("Work item is already running");
-      }
-
-      const NON_RUNNABLE_STATUSES: readonly string[] = ["archived"];
-      if (NON_RUNNABLE_STATUSES.includes(workItem.status)) {
-        throw new ConflictError(
-          `Work item has status '${workItem.status}' and cannot be run`,
-        );
-      }
-
-      const task = getTask(workItem.taskId);
-      if (!task) {
-        throw new NotFoundError(
-          `Associated task not found: ${workItem.taskId}`,
-        );
-      }
-
-      const taskRequiredTools = task.requiredTools
-        ? sanitizeToolList(JSON.parse(task.requiredTools))
-        : getRegisteredToolNames();
-      const requiredTools = resolveRequiredTools(
-        workItem.requiredTools,
-        taskRequiredTools,
-      );
-
-      let approvedTools: string[] | undefined;
-      if (requiredTools.length > 0) {
-        approvedTools = workItem.approvedTools
-          ? JSON.parse(workItem.approvedTools)
-          : undefined;
-        const approvedSet = new Set<string>(approvedTools ?? []);
-        const missingApprovals = requiredTools.filter(
-          (t) => !approvedSet.has(t),
-        );
-        if (missingApprovals.length > 0) {
-          throw new ForbiddenError(
-            "Required tool permissions have not been approved. Run preflight first.",
-          );
+      if (!result.success) {
+        switch (result.errorCode) {
+          case "not_found":
+          case "no_task":
+            throw new NotFoundError(result.error ?? "Work item not found");
+          case "already_running":
+          case "invalid_status":
+            throw new ConflictError(result.error ?? "Work item cannot be run");
+          default:
+            throw new ConflictError(result.error ?? "Failed to run work item");
         }
       }
-
-      updateWorkItem(pathParams!.id, { status: "running" });
-      broadcastWorkItemStatus(pathParams!.id);
-      publishEvent({ type: "tasks_changed" });
-
-      let taskConversation: Conversation | null = null;
-      const workItemId = pathParams!.id;
-
-      void (async () => {
-        try {
-          const result = await runTask(
-            {
-              taskId: workItem.taskId,
-              workingDir: process.cwd(),
-              approvedTools,
-            },
-            async (conversationId, message, taskRunId) => {
-              if (!taskConversation) {
-                updateWorkItem(workItemId, {
-                  lastRunConversationId: conversationId,
-                });
-                taskConversation =
-                  await getOrCreateConversation(conversationId);
-
-                publishEvent({
-                  type: "task_run_conversation_created",
-                  conversationId,
-                  workItemId,
-                  title: workItem.title,
-                });
-                taskConversation.taskRunId = taskRunId;
-                taskConversation.headlessLock = true;
-              }
-              await taskConversation.processMessage({
-                content: message,
-                attachments: [],
-                onEvent: (event) => {
-                  publishEvent(event);
-                },
-                isInteractive: false,
-              });
-            },
-          );
-
-          if (taskConversation) {
-            (taskConversation as { headlessLock: boolean }).headlessLock =
-              false;
-          }
-
-          const current = getWorkItem(workItemId);
-          if (current?.status !== "cancelled") {
-            const finalStatus: WorkItemStatus =
-              result.status === "completed" ? "awaiting_review" : "failed";
-            updateWorkItem(workItemId, {
-              status: finalStatus,
-              lastRunId: result.taskRunId,
-              lastRunConversationId: result.conversationId,
-              lastRunStatus: result.status,
-            });
-          }
-
-          broadcastWorkItemStatus(workItemId);
-          publishEvent({ type: "tasks_changed" });
-        } catch (err) {
-          if (taskConversation) {
-            (taskConversation as { headlessLock: boolean }).headlessLock =
-              false;
-          }
-          log.error({ err, workItemId }, "work_item_run_task failed");
-          updateWorkItem(workItemId, {
-            status: "failed",
-            lastRunStatus: "failed",
-          });
-          broadcastWorkItemStatus(workItemId);
-          publishEvent({ type: "tasks_changed" });
-        }
-      })();
 
       return {
-        id: pathParams!.id,
+        id,
         success: true,
         lastRunId: "",
       };
