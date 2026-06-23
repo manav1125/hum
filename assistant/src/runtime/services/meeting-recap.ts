@@ -21,6 +21,7 @@
  */
 
 import { getConfig } from "../../config/loader.js";
+import type { ServerMessage } from "../../daemon/message-protocol.js";
 import {
   addMessage,
   createConversation,
@@ -36,7 +37,13 @@ import {
   getConfiguredProvider,
   userMessage,
 } from "../../providers/provider-send-message.js";
+import { broadcastMessage } from "../../runtime/assistant-event-hub.js";
+import { createTask } from "../../tasks/task-store.js";
 import { getLogger } from "../../util/logger.js";
+import {
+  createWorkItemWithPermissions,
+  findActiveWorkItemBySource,
+} from "../../work-items/work-item-store.js";
 
 const log = getLogger("meeting-recap-service");
 
@@ -65,7 +72,36 @@ export interface RecapJson {
   tone: string;
   conversationId: string;
   memoryNodeIds: string[];
+  /**
+   * Work items minted from this recap's open action items (executable tasks
+   * that land in Activity → Cued). Each entry maps one action item to its
+   * work item id; the UI uses the count to render "Added to your tasks".
+   * Already-existing items (idempotent re-run) are still listed with
+   * `created: false` so re-running a recap reports the same set without
+   * inflating the count of newly-minted rows.
+   */
+  workItems: RecapWorkItemRef[];
 }
+
+/** A reference to a work item created (or reused) from a recap action item. */
+export interface RecapWorkItemRef {
+  /** The work item id (row in the `work_items` table). */
+  id: string;
+  /** The action-item text that became this work item's title. */
+  title: string;
+  /** True when this run minted the row; false when an active match was reused. */
+  created: boolean;
+}
+
+/**
+ * The recap content produced by the model (or the stub), before the
+ * conversation-tagging, memory ids, and work-item bridging fields are
+ * attached. Built by {@link buildStubRecapBody} / {@link parseRecapToolInput}.
+ */
+type RecapBody = Omit<
+  RecapJson,
+  "conversationId" | "memoryNodeIds" | "workItems"
+>;
 
 export interface GenerateMeetingRecapOptions {
   /** Title for the meeting conversation. Defaults to "Meeting — recap". */
@@ -164,13 +200,17 @@ Do not invent details that are not supported by the transcript.`;
 // ---------------------------------------------------------------------------
 
 /** Build a fixed RecapJson body (no conversationId/memoryNodeIds yet). */
-function buildStubRecapBody(): Omit<RecapJson, "conversationId" | "memoryNodeIds"> {
+function buildStubRecapBody(): RecapBody {
   return {
     summary:
       "Renewal is on track for Q3 and pricing stays as-is. Dana wants the forecast before legal review, with one open risk on timeline.",
     actionItems: [
       { text: "Share the Q3 forecast with Dana", owner: "you", done: false },
-      { text: "Introduce Dana to Legal for the review", owner: "you", done: false },
+      {
+        text: "Introduce Dana to Legal for the review",
+        owner: "you",
+        done: false,
+      },
       { text: "Send the pricing one-pager", owner: "you", done: true },
     ],
     decisions: [
@@ -178,7 +218,11 @@ function buildStubRecapBody(): Omit<RecapJson, "conversationId" | "memoryNodeIds
       "Proceed to legal review once the forecast is shared.",
     ],
     people: [
-      { name: "Dana", tone: "positive", note: "decision-maker; wants the forecast first" },
+      {
+        name: "Dana",
+        tone: "positive",
+        note: "decision-maker; wants the forecast first",
+      },
       { name: "Sam", tone: "engaged", note: "needs the deck" },
     ],
     tone: "warm",
@@ -250,9 +294,7 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function parseRecapToolInput(
-  input: Record<string, unknown>,
-): Omit<RecapJson, "conversationId" | "memoryNodeIds"> {
+function parseRecapToolInput(input: Record<string, unknown>): RecapBody {
   const raw = input as RawRecapInput;
 
   const actionItems: RecapActionItem[] = Array.isArray(raw.action_items)
@@ -272,7 +314,9 @@ function parseRecapToolInput(
     : [];
 
   const decisions: string[] = Array.isArray(raw.decisions)
-    ? raw.decisions.filter((d): d is string => typeof d === "string" && d.length > 0)
+    ? raw.decisions.filter(
+        (d): d is string => typeof d === "string" && d.length > 0,
+      )
     : [];
 
   const people: RecapPerson[] = Array.isArray(raw.people)
@@ -296,6 +340,106 @@ function parseRecapToolInput(
     people,
     tone: asString(raw.tone),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Action items → executable work items
+// ---------------------------------------------------------------------------
+
+/**
+ * Source tag stamped onto every work item minted from a meeting recap. The
+ * meeting conversation id is the `sourceId`, so the dedup key is
+ * `(meeting, conversationId, title)` — re-running the recap on the same
+ * meeting reuses the existing rows instead of duplicating them, while two
+ * different meetings that happen to share an action text stay distinct.
+ */
+const MEETING_WORK_ITEM_SOURCE_TYPE = "meeting";
+
+/**
+ * Map a recap's open action items to executable work items so the user can
+ * run them from Activity → Cued (or have them auto-run per autonomy policy).
+ *
+ * Behaviour:
+ *   - Only **open** action items (`done === false`) become work items — an
+ *     action the meeting already completed is not work to do.
+ *   - **Idempotent**: keyed on `(sourceType=meeting, sourceId=conversationId,
+ *     title)` via {@link findActiveWorkItemBySource}, so re-running the recap
+ *     on the same meeting reuses the existing active rows rather than minting
+ *     duplicates. Two recap runs that produce the same action text collapse
+ *     to one work item.
+ *   - Each item gets a lightweight task template (the executor needs a
+ *     `taskId`); the action text is the template (the instruction the model
+ *     receives at run time) and the work item title.
+ *   - Priority defaults to medium (tier 1); status is `queued` (the default
+ *     from `createWorkItem`).
+ *
+ * Works for the self-host **local owner**: work-item/task creation is keyed on
+ * the conversation, not on a principal — there is no actor gate here — so a
+ * `local:` owner with `actorPrincipalId` undefined gets the same rows.
+ *
+ * Best-effort and isolated per item: a failure on one action item is logged
+ * and skipped; the others (and the recap itself) are unaffected.
+ */
+function createWorkItemsFromActionItems(
+  actionItems: RecapActionItem[],
+  conversationId: string,
+): RecapWorkItemRef[] {
+  const refs: RecapWorkItemRef[] = [];
+  const seenTitles = new Set<string>();
+
+  for (const item of actionItems) {
+    if (item.done) continue;
+    const title = item.text.trim();
+    if (!title) continue;
+
+    // Collapse intra-recap duplicates (the same action emitted twice) before
+    // touching the store.
+    const titleKey = title.toLowerCase();
+    if (seenTitles.has(titleKey)) continue;
+    seenTitles.add(titleKey);
+
+    try {
+      // Idempotency: reuse an active work item already minted for this
+      // (meeting, conversation, title) — re-running recap must not duplicate.
+      const existing = findActiveWorkItemBySource({
+        title,
+        sourceType: MEETING_WORK_ITEM_SOURCE_TYPE,
+        sourceId: conversationId,
+      });
+      if (existing) {
+        refs.push({ id: existing.id, title: existing.title, created: false });
+        continue;
+      }
+
+      // The executor runs against a task template, so mint a lightweight one.
+      const task = createTask({
+        title,
+        template: title,
+        createdFromConversationId: conversationId,
+      });
+      const workItem = createWorkItemWithPermissions({
+        taskId: task.id,
+        title,
+        notes: item.owner ? `Owner: ${item.owner}` : undefined,
+        priorityTier: 1, // medium
+        sourceType: MEETING_WORK_ITEM_SOURCE_TYPE,
+        sourceId: conversationId,
+      });
+      refs.push({ id: workItem.id, title: workItem.title, created: true });
+    } catch (err) {
+      log.warn(
+        { err, conversationId, title },
+        "Failed to create work item from recap action item (skipped)",
+      );
+    }
+  }
+
+  // If this run minted any new rows, tell Activity to refresh live.
+  if (refs.some((r) => r.created)) {
+    broadcastMessage({ type: "tasks_changed" } as ServerMessage);
+  }
+
+  return refs;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,10 +489,16 @@ export async function generateMeetingRecap(
       },
       { conversationId, source: "manual" },
     );
+    const stubBody = buildStubRecapBody();
+    const stubWorkItems = createWorkItemsFromActionItems(
+      stubBody.actionItems,
+      conversationId,
+    );
     return {
-      ...buildStubRecapBody(),
+      ...stubBody,
       conversationId,
       memoryNodeIds: result.createdNodeIds,
+      workItems: stubWorkItems,
     };
   }
 
@@ -366,7 +516,7 @@ export async function generateMeetingRecap(
     };
   }
 
-  let recapBody: Omit<RecapJson, "conversationId" | "memoryNodeIds">;
+  let recapBody: RecapBody;
   try {
     const response = await provider.sendMessage(
       [userMessage(`## Meeting Transcript\n\n${trimmed}`)],
@@ -386,7 +536,8 @@ export async function generateMeetingRecap(
         error: {
           kind: "RECAP_FAILED",
           status: 502,
-          message: "The model did not return a structured recap. Please try again.",
+          message:
+            "The model did not return a structured recap. Please try again.",
         },
       };
     }
@@ -409,9 +560,8 @@ export async function generateMeetingRecap(
   const memoryNodeIds: string[] = [];
   try {
     const config = getConfig();
-    const { runGraphExtraction } = await import(
-      "../../memory/graph/extraction.js"
-    );
+    const { runGraphExtraction } =
+      await import("../../memory/graph/extraction.js");
     await runGraphExtraction(conversationId, "default", config, {
       transcript: trimmed,
     });
@@ -422,7 +572,15 @@ export async function generateMeetingRecap(
     );
   }
 
-  // e. Return the recap. `memoryNodeIds` from the generic extraction are not
+  // e. Bridge the recap's open action items into executable work items
+  //    (Activity → Cued). Idempotent on re-run; best-effort so it never fails
+  //    the recap the user already has.
+  const workItems = createWorkItemsFromActionItems(
+    recapBody.actionItems,
+    conversationId,
+  );
+
+  // f. Return the recap. `memoryNodeIds` from the generic extraction are not
   //    surfaced individually (runGraphExtraction returns counts, not ids); the
   //    field is populated in stub mode and left empty here. Memory is still
   //    written and tagged via `sourceConversations: [conversationId]`.
@@ -430,5 +588,6 @@ export async function generateMeetingRecap(
     ...recapBody,
     conversationId,
     memoryNodeIds,
+    workItems,
   };
 }

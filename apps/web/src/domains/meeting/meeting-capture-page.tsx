@@ -6,6 +6,7 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { meetingsRecapPost, sttTranscribePost } from "@/generated/daemon/sdk.gen";
 import type { MeetingsRecapPostResponses } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { routes } from "@/utils/routes";
 
 /** The structured recap returned by POST /v1/meetings/recap. */
 type RecapJson = MeetingsRecapPostResponses[200];
@@ -1057,6 +1058,27 @@ function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }
               ))
             )}
           </div>
+          {/* Open action items became executable tasks (Activity → Cued). */}
+          {recap.workItems.length > 0 ? (
+            <Link
+              to={routes.activity}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                marginTop: 10,
+                fontFamily: mono,
+                fontSize: 11,
+                color: mobile ? "#9CB7FF" : C.green,
+                textDecoration: "none",
+              }}
+            >
+              <span aria-hidden>✓</span>
+              {recap.workItems.length === 1
+                ? "Added to your tasks — open in Activity"
+                : `${recap.workItems.length} added to your tasks — open in Activity`}
+            </Link>
+          ) : null}
         </div>
         <div style={cardStyle}>
           <div style={titleStyle}>People &amp; tone</div>

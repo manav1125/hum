@@ -17713,6 +17713,22 @@ paths:
                     type: array
                     items:
                       type: string
+                  workItems:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        created:
+                          type: boolean
+                      required:
+                        - id
+                        - title
+                        - created
+                      additionalProperties: false
                 required:
                   - summary
                   - actionItems
@@ -17721,6 +17737,7 @@ paths:
                   - tone
                   - conversationId
                   - memoryNodeIds
+                  - workItems
                 additionalProperties: false
       requestBody:
         required: true
@@ -21480,7 +21497,14 @@ paths:
                     type: object
                     properties: {}
                     additionalProperties: {}
-                    description: Pending confirmation details or null
+                    description: First live pending confirmation or null (legacy shape)
+                  confirmations:
+                    type: array
+                    items:
+                      type: object
+                      properties: {}
+                      additionalProperties: {}
+                    description: All live pending confirmations for the conversation and its live subagents
                   pendingSecret:
                     type: object
                     properties: {}

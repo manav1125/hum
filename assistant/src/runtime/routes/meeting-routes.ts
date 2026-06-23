@@ -38,6 +38,12 @@ const recapPersonSchema = z.object({
   note: z.string().optional(),
 });
 
+const recapWorkItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  created: z.boolean(),
+});
+
 const recapResponseSchema = z.object({
   summary: z.string(),
   actionItems: z.array(recapActionItemSchema),
@@ -46,6 +52,7 @@ const recapResponseSchema = z.object({
   tone: z.string(),
   conversationId: z.string(),
   memoryNodeIds: z.array(z.string()),
+  workItems: z.array(recapWorkItemSchema),
 });
 
 // ---------------------------------------------------------------------------
