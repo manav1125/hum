@@ -46,13 +46,30 @@ export function getSearchProviderEnvVar(
 }
 
 /**
- * Resolve a provider env-var name from either source — LLM catalog first,
- * then the search-provider mirror. Returns `undefined` when no provider
- * scope declares an env var for the given ID (keyless LLM providers like
- * Ollama, unknown IDs, etc.).
+ * STT-provider env var names. STT credential providers that are also LLM
+ * providers (openai, gemini, xai) resolve via the LLM catalog; only Deepgram
+ * is STT-exclusive, so it's declared here. This lets a Deepgram key supplied
+ * via DEEPGRAM_API_KEY survive restarts on deployments whose credential store
+ * is not durable across restarts.
+ */
+const STT_PROVIDER_ENV_VAR_NAMES: Record<string, string> = Object.freeze({
+  deepgram: "DEEPGRAM_API_KEY",
+});
+
+export function getSttProviderEnvVar(providerId: string): string | undefined {
+  return STT_PROVIDER_ENV_VAR_NAMES[providerId];
+}
+
+/**
+ * Resolve a provider env-var name from any source — LLM catalog first, then
+ * the search-provider mirror, then STT providers. Returns `undefined` when no
+ * provider scope declares an env var for the given ID (keyless LLM providers
+ * like Ollama, unknown IDs, etc.).
  */
 export function getAnyProviderEnvVar(providerId: string): string | undefined {
   return (
-    getLlmProviderEnvVar(providerId) ?? getSearchProviderEnvVar(providerId)
+    getLlmProviderEnvVar(providerId) ??
+    getSearchProviderEnvVar(providerId) ??
+    getSttProviderEnvVar(providerId)
   );
 }
