@@ -13,10 +13,12 @@
  *   - image-studio     → generate / edit images (also background removal, restyle)
  *   - media-processing → analyze a video, extract clips, query footage
  *   - vellum-browser-use + built-in web research → competitor scans, market briefs
+ *   - replicate        → generate images & video from any Replicate model (replicate_run)
+ *   - apify            → lead generation / web scraping via Apify actors (apify_run_actor)
  *
- * Modes with no backing skill are intentionally omitted (e.g. text-to-video
- * generation — Cue's media-processing only analyses/clips existing footage,
- * so "Video" is scoped honestly to analysis/clipping).
+ * The structured Image / Video / Leads form templates (create-form-templates.ts)
+ * route to the `replicate` and `apify` daemon skills, whose provider keys are
+ * configured at runtime — so they actually generate media / scrape leads.
  */
 
 import {
@@ -26,6 +28,7 @@ import {
   Palette,
   Presentation,
   Search,
+  Users,
   Video,
   type LucideIcon,
 } from "lucide-react";
@@ -36,7 +39,10 @@ export type CreateSkill =
   | "document-editor"
   | "image-studio"
   | "media-processing"
-  | "research";
+  | "research"
+  // Daemon skills wired to real provider keys (Replicate / Apify):
+  | "replicate" // replicate_run — any image/video generation model
+  | "apify"; // apify_run_actor — lead-gen / web-scraping actors
 
 export interface CreateTemplate {
   /** Stable id (mode-scoped). */
@@ -223,8 +229,8 @@ export const CREATE_MODES: CreateMode[] = [
     label: "Images",
     tagline: "Generate visuals from a prompt",
     icon: ImageIcon,
-    skill: "image-studio",
-    skillLabel: "Image Studio",
+    skill: "replicate",
+    skillLabel: "Replicate",
     templates: [
       {
         id: "hero-image",
@@ -290,10 +296,10 @@ export const CREATE_MODES: CreateMode[] = [
   {
     id: "video",
     label: "Video",
-    tagline: "Analyze footage & pull clips",
+    tagline: "Generate video, analyze footage & pull clips",
     icon: Video,
-    skill: "media-processing",
-    skillLabel: "Media Processing",
+    skill: "replicate",
+    skillLabel: "Replicate",
     templates: [
       {
         id: "summarize-video",
@@ -315,6 +321,37 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Pull a short segment out of a video.",
         prompt:
           "I want to extract a short clip from a longer video I'll provide. Ingest it, help me pick the segment, and produce the clipped output.",
+      },
+    ],
+  },
+  {
+    id: "leads",
+    label: "Leads",
+    tagline: "Find prospects & contacts via Apify",
+    icon: Users,
+    skill: "apify",
+    skillLabel: "Apify",
+    templates: [
+      {
+        id: "find-leads-quick",
+        title: "Find leads",
+        description: "Scrape a structured list of prospects by criteria.",
+        prompt:
+          "Use the apify_run_actor skill with an appropriate lead/contact scraping actor (an apollo- or linkedin-style scraper, e.g. apify/contact-info-scraper or a Google-search-based finder) to build a structured lead list. I'll specify the industry, role/title, location, and how many leads I want — return name, title, company, location, and contact info as a clean table.",
+      },
+      {
+        id: "scrape-site-contacts",
+        title: "Scrape site contacts",
+        description: "Pull emails, phones, and socials from URLs.",
+        prompt:
+          "Use the apify_run_actor skill with the apify/contact-info-scraper actor to extract contact details (emails, phone numbers, social profiles) from a set of website URLs I'll provide. Return the results as a structured table grouped by source URL.",
+      },
+      {
+        id: "company-list",
+        title: "Build a company list",
+        description: "Find companies matching a profile.",
+        prompt:
+          "Use the apify_run_actor skill with a suitable company/business scraping actor (e.g. a Google-search or maps-based actor) to build a list of companies matching a profile I'll describe (industry, size, location). Return company name, website, location, and any contact info found as a structured table.",
       },
     ],
   },

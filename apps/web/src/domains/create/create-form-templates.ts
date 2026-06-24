@@ -11,12 +11,19 @@
  *
  * Inspired by mira-ai's template library: "fill a template with your own
  * inputs → get an output". Each template is mapped to an EXISTING Cue skill
- * (app-builder / document-editor / research) via its parent mode.
+ * (app-builder / document-editor / research / replicate / apify) via its mode.
  *
  * Skill mapping (verified against create-templates.ts CreateSkill):
  *   - app-builder      → dashboards, trackers, calculators, slide decks
  *   - document-editor  → long-form docs (PRDs, blog posts, one-pagers)
  *   - research         → competitor / market / person briefs (web + browser)
+ *   - replicate        → image & video generation (replicate_run, any model)
+ *   - apify            → lead-gen / contact scraping (apify_run_actor)
+ *
+ * The Image / Video / Leads templates compose prompts that explicitly instruct
+ * the agent to invoke the daemon skill (skill_execute → replicate_run /
+ * apify_run_actor) with the user's typed inputs. The Replicate + Apify keys are
+ * configured at runtime, so these produce real media / real lead lists.
  */
 
 import type { CreateSkill } from "@/domains/create/create-templates";
@@ -796,6 +803,258 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         ),
         "",
         "Use the web (and the link above if given) and cite where each fact came from.",
+      ),
+  },
+
+  /* ------------------------------ Images ----------------------------- */
+  /* Backed by the `replicate` daemon skill (replicate_run, any model).   */
+  {
+    id: "form-generate-image",
+    mode: "images",
+    title: "Generate image",
+    description: "Create an image from a prompt with any Replicate model.",
+    skill: "replicate",
+    inputs: [
+      {
+        key: "prompt",
+        label: "Prompt",
+        type: "textarea",
+        placeholder: "A golden retriever astronaut floating above Earth, cinematic lighting",
+        required: true,
+      },
+      {
+        key: "style",
+        label: "Style",
+        type: "select",
+        options: ["Photoreal", "Illustration", "3D render", "Flat / vector"],
+      },
+      {
+        key: "aspect",
+        label: "Aspect ratio",
+        type: "select",
+        options: ["1:1", "16:9", "9:16", "4:5"],
+      },
+      {
+        key: "model",
+        label: "Model",
+        type: "select",
+        options: [
+          "black-forest-labs/flux-1.1-pro",
+          "black-forest-labs/flux-schnell",
+          "stability-ai/sdxl",
+        ],
+        help: "flux-1.1-pro = highest quality · flux-schnell = fastest · sdxl = classic.",
+      },
+    ],
+    composePrompt: (v) =>
+      block(
+        `Use the replicate_run skill with model ${str(v, "model") || "black-forest-labs/flux-1.1-pro"} to generate an image.`,
+        "",
+        `Prompt: ${str(v, "prompt")}${str(v, "style") ? `, in a ${str(v, "style").toLowerCase()} style` : ""}.`,
+        line("Aspect ratio", str(v, "aspect") || "1:1"),
+        "",
+        "Pass the prompt and the aspect_ratio in the model's input object, run the model, and return the resulting image URL(s).",
+      ),
+  },
+  {
+    id: "form-logo-concept",
+    mode: "images",
+    title: "Logo concept",
+    description: "Generate a logo direction for a brand with Replicate.",
+    skill: "replicate",
+    inputs: [
+      {
+        key: "brand",
+        label: "Brand name",
+        type: "text",
+        placeholder: "Cue",
+        required: true,
+      },
+      {
+        key: "vibe",
+        label: "Vibe / keywords",
+        type: "text",
+        placeholder: "minimal, trustworthy, tech-forward",
+        required: true,
+      },
+      {
+        key: "symbol",
+        label: "Symbol idea (optional)",
+        type: "text",
+        placeholder: "an abstract speech bubble / soundwave",
+      },
+      {
+        key: "model",
+        label: "Model",
+        type: "select",
+        options: [
+          "black-forest-labs/flux-1.1-pro",
+          "black-forest-labs/flux-schnell",
+          "stability-ai/sdxl",
+        ],
+        help: "flux-1.1-pro = highest quality · flux-schnell = fastest.",
+      },
+    ],
+    composePrompt: (v) =>
+      block(
+        `Use the replicate_run skill with model ${str(v, "model") || "black-forest-labs/flux-1.1-pro"} to generate a logo concept.`,
+        "",
+        `Prompt: a clean, modern vector logo for "${str(v, "brand")}" — vibe: ${str(v, "vibe")}.${str(v, "symbol") ? ` Incorporate: ${str(v, "symbol")}.` : ""} Centered on a plain background, simple and scalable, no text artifacts.`,
+        "- Aspect ratio: 1:1",
+        "",
+        "Pass the prompt and a 1:1 aspect_ratio in the model's input object, run the model, and return the resulting logo image URL(s).",
+      ),
+  },
+  {
+    id: "form-social-graphic",
+    mode: "images",
+    title: "Social graphic",
+    description: "An eye-catching post image generated with Replicate.",
+    skill: "replicate",
+    inputs: [
+      {
+        key: "theme",
+        label: "Theme / message",
+        type: "textarea",
+        placeholder: "Announcing our Series A — bold, celebratory",
+        required: true,
+      },
+      {
+        key: "style",
+        label: "Style",
+        type: "select",
+        options: ["Photoreal", "Illustration", "3D render", "Flat / vector"],
+      },
+      {
+        key: "aspect",
+        label: "Aspect ratio",
+        type: "select",
+        options: ["1:1", "4:5", "9:16", "16:9"],
+        help: "1:1 = feed · 4:5 = portrait feed · 9:16 = story/reel.",
+      },
+      {
+        key: "model",
+        label: "Model",
+        type: "select",
+        options: [
+          "black-forest-labs/flux-1.1-pro",
+          "black-forest-labs/flux-schnell",
+          "stability-ai/sdxl",
+        ],
+        help: "flux-1.1-pro = highest quality · flux-schnell = fastest.",
+      },
+    ],
+    composePrompt: (v) =>
+      block(
+        `Use the replicate_run skill with model ${str(v, "model") || "black-forest-labs/flux-1.1-pro"} to generate a social media graphic.`,
+        "",
+        `Prompt: a bold, scroll-stopping social graphic — ${str(v, "theme")}${str(v, "style") ? `, ${str(v, "style").toLowerCase()} style` : ""}. Strong composition with clear negative space for an overlaid headline.`,
+        line("Aspect ratio", str(v, "aspect") || "1:1"),
+        "",
+        "Pass the prompt and the aspect_ratio in the model's input object, run the model, and return the resulting image URL(s).",
+      ),
+  },
+
+  /* ------------------------------ Video ------------------------------ */
+  /* Backed by the `replicate` daemon skill (replicate_run, video model). */
+  {
+    id: "form-generate-video",
+    mode: "video",
+    title: "Generate video",
+    description: "Text-to-video clip generated with a Replicate model.",
+    skill: "replicate",
+    inputs: [
+      {
+        key: "prompt",
+        label: "Prompt",
+        type: "textarea",
+        placeholder: "A drone shot flying over a misty mountain range at sunrise",
+        required: true,
+      },
+      {
+        key: "duration",
+        label: "Duration",
+        type: "select",
+        options: ["5s", "10s"],
+      },
+      {
+        key: "aspect",
+        label: "Aspect ratio",
+        type: "select",
+        options: ["16:9", "9:16", "1:1"],
+      },
+      {
+        key: "model",
+        label: "Model",
+        type: "select",
+        options: [
+          "kwaivgi/kling-v1.6-standard",
+          "minimax/video-01",
+          "wan-video/wan-2.1-t2v-480p",
+        ],
+        help: "Default Kling 1.6. You can paste any other Replicate text-to-video model id.",
+      },
+    ],
+    composePrompt: (v) =>
+      block(
+        `Use the replicate_run skill with model ${str(v, "model") || "kwaivgi/kling-v1.6-standard"} to generate a video from text.`,
+        "",
+        `Prompt: ${str(v, "prompt")}.`,
+        line("Target duration", str(v, "duration") || "5s"),
+        line("Aspect ratio", str(v, "aspect") || "16:9"),
+        "",
+        "Pass the prompt plus duration and aspect_ratio in the model's input object (map them to whatever keys this model expects), set a generous wait_seconds since video jobs are slow, run the model, and return the resulting video URL. If a different current Replicate text-to-video model would do better, you may substitute it.",
+      ),
+  },
+
+  /* ------------------------------ Leads ------------------------------ */
+  /* Backed by the `apify` daemon skill (apify_run_actor, scraper actor).  */
+  {
+    id: "form-find-leads",
+    mode: "leads",
+    title: "Find leads",
+    description: "Scrape a structured lead list matching your criteria.",
+    skill: "apify",
+    inputs: [
+      {
+        key: "industry",
+        label: "Industry",
+        type: "text",
+        placeholder: "B2B SaaS / fintech / logistics",
+        required: true,
+      },
+      {
+        key: "role",
+        label: "Role / title",
+        type: "text",
+        placeholder: "VP of Sales, Head of Growth",
+        required: true,
+      },
+      {
+        key: "location",
+        label: "Location",
+        type: "text",
+        placeholder: "San Francisco Bay Area",
+        required: true,
+      },
+      {
+        key: "count",
+        label: "How many leads",
+        type: "number",
+        placeholder: "25",
+        help: "Number of leads to return.",
+      },
+    ],
+    composePrompt: (v) =>
+      block(
+        "Use the apify_run_actor skill with an appropriate lead/contact scraping actor (an apollo- or linkedin-style scraper, e.g. apify/contact-info-scraper or a Google-search-based people finder — pick the closest fit and state your choice) to produce a structured lead list matching these criteria:",
+        "",
+        line("Industry", str(v, "industry")),
+        line("Role / title", str(v, "role")),
+        line("Location", str(v, "location")),
+        line("Number of leads", str(v, "count") || "25"),
+        "",
+        "Set max_items to the requested count, run the actor, and return the results as a clean table with name, title, company, location, and any contact info (email / LinkedIn) found.",
       ),
   },
 ];
