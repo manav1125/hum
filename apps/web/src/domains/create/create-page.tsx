@@ -31,7 +31,7 @@ function newDraftConversationId(): string {
 export function CreatePage() {
   const navigate = useNavigate();
 
-  const handleSelectTemplate = useCallback(
+  const handleRunPrompt = useCallback(
     (prompt: string) => {
       useViewerStore.getState().setMainView("chat");
       const id = newDraftConversationId();
@@ -45,7 +45,7 @@ export function CreatePage() {
 
   return (
     <PageShell>
-      <CreateView onSelectTemplate={handleSelectTemplate} />
+      <CreateView onRunPrompt={handleRunPrompt} />
     </PageShell>
   );
 }

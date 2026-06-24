@@ -2,12 +2,17 @@
  * Create view — the "What do you want to get done?" entry point.
  *
  * A mode picker (Slides / Dashboards / Docs / Research / Images / Canvas /
- * Video) where each mode surfaces predefined templates. Each template is a
- * concrete prefilled prompt wired to a real Cue skill (see create-templates.ts).
+ * Video). Each mode surfaces TWO sections:
  *
- * Picking a template seeds a brand-new chat thread via `onSelectTemplate`,
- * which routes through the standard `?prompt=` auto-send path so the backing
- * skill actually runs and produces the asset.
+ *   1. **Templates** — structured-input forms (create-form-templates.ts). Pick
+ *      one to open its detail form, fill typed fields, and on submit the values
+ *      compose into a skill-targeted prompt.
+ *   2. **Quick start** — one-tap prefilled prompts (create-templates.ts) that
+ *      seed a thread directly.
+ *
+ * Both paths route through `onRunPrompt`, which seeds a brand-new chat thread
+ * via the standard `?prompt=` auto-send path so the backing skill actually runs
+ * and produces the asset.
  */
 
 import { ArrowUpRight } from "lucide-react";
@@ -18,6 +23,12 @@ import {
   type CreateMode,
   type CreateTemplate,
 } from "@/domains/create/create-templates";
+import {
+  type TemplateDefinition,
+  findTemplate,
+  templatesForMode,
+} from "@/domains/create/create-form-templates";
+import { CreateTemplateForm } from "@/domains/create/create-template-form";
 
 // Editorial tokens — mirrors the Library surface (design/HANDOFF.md):
 // Instrument Serif headline + DM Mono section labels over design-library
@@ -34,14 +45,31 @@ const sectionLabel = {
 };
 
 export interface CreateViewProps {
-  /** Seeds a new chat thread with the template's prompt and runs it. */
-  onSelectTemplate: (prompt: string) => void;
+  /** Seeds a new chat thread with a prompt and runs it. */
+  onRunPrompt: (prompt: string) => void;
 }
 
-export function CreateView({ onSelectTemplate }: CreateViewProps) {
+export function CreateView({ onRunPrompt }: CreateViewProps) {
   const [activeModeId, setActiveModeId] = useState<string>(CREATE_MODES[0].id);
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+
   const activeMode: CreateMode =
     CREATE_MODES.find((mode) => mode.id === activeModeId) ?? CREATE_MODES[0];
+  const formTemplates = templatesForMode(activeMode.id);
+  const activeTemplate = activeTemplateId
+    ? findTemplate(activeTemplateId)
+    : undefined;
+
+  // Detail (form) view takes over the whole surface when a template is open.
+  if (activeTemplate) {
+    return (
+      <CreateTemplateForm
+        template={activeTemplate}
+        onBack={() => setActiveTemplateId(null)}
+        onSubmit={onRunPrompt}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -54,8 +82,8 @@ export function CreateView({ onSelectTemplate }: CreateViewProps) {
           What do you want to get done?
         </h1>
         <p className="mt-1.5 text-sm text-[var(--text-muted)]">
-          Pick a starting point. Each one kicks off a thread and builds the
-          asset for real.
+          Fill a template with your own inputs, or grab a quick start. Each one
+          kicks off a thread and builds the asset for real.
         </p>
       </header>
 
@@ -74,7 +102,10 @@ export function CreateView({ onSelectTemplate }: CreateViewProps) {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setActiveModeId(mode.id)}
+              onClick={() => {
+                setActiveModeId(mode.id);
+                setActiveTemplateId(null);
+              }}
               className="group flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors"
               style={{
                 borderColor: active
@@ -98,33 +129,93 @@ export function CreateView({ onSelectTemplate }: CreateViewProps) {
         })}
       </div>
 
-      {/* Active mode templates */}
+      {/* Sections */}
       <section className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mb-4 flex items-baseline justify-between">
-          <h2 style={sectionLabel}>{activeMode.tagline}</h2>
-          <span
-            className="rounded-full border border-[var(--border-base)] px-2 py-0.5 text-[var(--text-dim)]"
-            style={{ fontFamily: MONO, fontSize: 10, letterSpacing: ".06em" }}
-          >
-            {activeMode.skillLabel}
-          </span>
-        </div>
+        {/* Structured templates (forms) */}
+        {formTemplates.length > 0 ? (
+          <div className="mb-8">
+            <div className="mb-4 flex items-baseline justify-between">
+              <h2 style={sectionLabel}>Templates · fill &amp; generate</h2>
+              <span
+                className="rounded-full border border-[var(--border-base)] px-2 py-0.5 text-[var(--text-dim)]"
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  letterSpacing: ".06em",
+                }}
+              >
+                {activeMode.skillLabel}
+              </span>
+            </div>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4">
+              {formTemplates.map((template) => (
+                <FormTemplateCard
+                  key={template.id}
+                  template={template}
+                  onOpen={() => setActiveTemplateId(template.id)}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
 
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4 pb-6">
-          {activeMode.templates.map((template) => (
-            <TemplateCard
-              key={template.id}
-              template={template}
-              onSelect={() => onSelectTemplate(template.prompt)}
-            />
-          ))}
+        {/* Quick-start prompts */}
+        <div className="pb-6">
+          <h2 className="mb-4" style={sectionLabel}>
+            Quick start · {activeMode.tagline}
+          </h2>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4">
+            {activeMode.templates.map((template) => (
+              <QuickTemplateCard
+                key={template.id}
+                template={template}
+                onSelect={() => onRunPrompt(template.prompt)}
+              />
+            ))}
+          </div>
         </div>
       </section>
     </div>
   );
 }
 
-function TemplateCard({
+/** Structured-template card — opens the input form. */
+function FormTemplateCard({
+  template,
+  onOpen,
+}: {
+  template: TemplateDefinition;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex h-full flex-col items-start rounded-xl border border-[var(--border-base)] bg-[var(--surface-base)] p-4 text-left transition-all hover:border-[var(--accent-cue)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-cue)]"
+    >
+      <div className="flex w-full items-start justify-between gap-2">
+        <h3 className="text-[15px] font-semibold text-[var(--text-base)]">
+          {template.title}
+        </h3>
+        <span
+          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+          style={{
+            backgroundColor: "var(--accent-cue-subtle, var(--surface-lift))",
+            color: "var(--accent-cue)",
+          }}
+        >
+          {template.inputs.length} fields
+        </span>
+      </div>
+      <p className="mt-1.5 text-[13px] leading-snug text-[var(--text-muted)]">
+        {template.description}
+      </p>
+    </button>
+  );
+}
+
+/** Quick-start card — seeds the thread directly with a prefilled prompt. */
+function QuickTemplateCard({
   template,
   onSelect,
 }: {
