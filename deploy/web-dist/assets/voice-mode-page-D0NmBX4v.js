@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-CVSDxk6A.js";import{G as t}from"./index-B8HGbKg2.js";var n=e();function r(){return(0,n.jsx)(t,{})}export{r as VoiceModePage};
