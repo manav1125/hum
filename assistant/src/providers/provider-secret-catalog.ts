@@ -23,6 +23,7 @@
 
 import { listCatalogProviders } from "../tts/provider-catalog.js";
 import { PROVIDER_CATALOG } from "./model-catalog.js";
+import { TOOLING_API_KEY_PROVIDERS } from "./provider-env-vars.js";
 import { BYOK_SEARCH_PROVIDERS } from "./search-provider-catalog.js";
 import { listCredentialProviderNames as listSttCredentialProviderNames } from "./speech-to-text/provider-catalog.js";
 
@@ -135,7 +136,9 @@ function catalogApiKeyNames(): string[] {
  * includes it here. Adding a new TTS provider to the TTS catalog with a
  * bare-name secret requirement automatically includes it here. Adding a
  * new STT provider to the STT catalog automatically includes it here.
- * Shared credential names across domains (e.g. `openai` for both LLM
+ * Adding a tooling/generation provider to `TOOLING_API_KEY_PROVIDERS`
+ * (`provider-env-vars.ts`) — e.g. Replicate, Apify — automatically includes
+ * it here. Shared credential names across domains (e.g. `openai` for both LLM
  * and STT; `deepgram` for both STT and TTS) are deduplicated so the
  * list contains no duplicates.
  */
@@ -147,6 +150,7 @@ export const API_KEY_PROVIDERS: readonly string[] = (() => {
     ...LLM_AND_SEARCH_API_KEY_PROVIDERS,
     ...sttApiKeyProviderNames(),
     ...catalogApiKeyNames(),
+    ...TOOLING_API_KEY_PROVIDERS,
   ]) {
     if (!seen.has(name)) {
       seen.add(name);

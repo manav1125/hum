@@ -19,6 +19,8 @@ import * as acpListAgents from "./bundled-skills/acp/tools/acp-list-agents.js";
 import * as acpSpawn from "./bundled-skills/acp/tools/acp-spawn.js";
 import * as acpStatus from "./bundled-skills/acp/tools/acp-status.js";
 import * as acpSteer from "./bundled-skills/acp/tools/acp-steer.js";
+// ── apify ──────────────────────────────────────────────────────────────────────
+import * as apifyRunActor from "./bundled-skills/apify/tools/apify-run-actor.js";
 // ── app-builder ────────────────────────────────────────────────────────────────
 import * as appCreate from "./bundled-skills/app-builder/tools/app-create.js";
 import * as appDelete from "./bundled-skills/app-builder/tools/app-delete.js";
@@ -99,6 +101,8 @@ import * as playbookCreate from "./bundled-skills/playbooks/tools/playbook-creat
 import * as playbookDelete from "./bundled-skills/playbooks/tools/playbook-delete.js";
 import * as playbookList from "./bundled-skills/playbooks/tools/playbook-list.js";
 import * as playbookUpdate from "./bundled-skills/playbooks/tools/playbook-update.js";
+// ── replicate ──────────────────────────────────────────────────────────────────
+import * as replicateRun from "./bundled-skills/replicate/tools/replicate-run.js";
 // ── schedule ───────────────────────────────────────────────────────────────────
 import * as scheduleCreate from "./bundled-skills/schedule/tools/schedule-create.js";
 import * as scheduleDelete from "./bundled-skills/schedule/tools/schedule-delete.js";
@@ -140,6 +144,9 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["acp:tools/acp-abort.ts", acpAbort],
   ["acp:tools/acp-steer.ts", acpSteer],
   ["acp:tools/acp-list-agents.ts", acpListAgents],
+
+  // apify
+  ["apify:tools/apify-run-actor.ts", apifyRunActor],
 
   // app-builder
   ["app-builder:tools/app-create.ts", appCreate],
@@ -238,6 +245,9 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["playbooks:tools/playbook-list.ts", playbookList],
   ["playbooks:tools/playbook-update.ts", playbookUpdate],
   ["playbooks:tools/playbook-delete.ts", playbookDelete],
+
+  // replicate
+  ["replicate:tools/replicate-run.ts", replicateRun],
 
   // schedule
   ["schedule:tools/schedule-create.ts", scheduleCreate],

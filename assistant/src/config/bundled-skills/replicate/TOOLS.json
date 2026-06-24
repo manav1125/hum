@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "replicate_run",
+      "description": "Run any Replicate-hosted model (image or video generation, upscalers, etc.). Creates a prediction, polls until it succeeds or fails, and returns the output media URL(s).",
+      "category": "media",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Replicate model identifier: 'owner/name' (latest version), 'owner/name:version' (pinned), or a bare 64-hex version hash. E.g. 'black-forest-labs/flux-schnell'."
+          },
+          "input": {
+            "type": "object",
+            "description": "Model-specific input parameters passed through to Replicate (e.g. prompt, aspect_ratio, num_outputs, image, seed). The prompt key varies by model; most use 'prompt'.",
+            "additionalProperties": true
+          },
+          "wait_seconds": {
+            "type": "number",
+            "description": "Maximum seconds to poll for completion (default 120, max 600). Increase for long video jobs."
+          }
+        },
+        "required": ["model", "input"]
+      },
+      "executor": "tools/replicate-run.ts",
+      "execution_target": "host"
+    }
+  ]
+}

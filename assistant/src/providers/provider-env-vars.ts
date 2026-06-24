@@ -61,15 +61,82 @@ export function getSttProviderEnvVar(providerId: string): string | undefined {
 }
 
 /**
+ * Tooling / generation provider env var names. These providers (Replicate for
+ * image+video generation, Apify for web-scraping / lead-gen actors) are not
+ * part of the LLM/search/STT catalogs but back agent skills that call their
+ * HTTP APIs directly.
+ *
+ * Honouring these env vars is **required** on deployments whose credential
+ * store is not durable across restarts: an `assistant keys set replicate ...`
+ * value is lost on restart, but `REPLICATE_API_TOKEN` / `APIFY_API_TOKEN`
+ * supplied via the process environment survive.
+ *
+ * Apify is documented under two env var names in the wild (`APIFY_API_TOKEN`
+ * is the canonical one, `APIFY_TOKEN` is the older short form). Only one value
+ * can be returned for the secure-store fallback, so the canonical name wins;
+ * the alias is honoured separately by {@link getToolingProviderEnvKey}.
+ */
+const TOOLING_PROVIDER_ENV_VAR_NAMES: Record<string, string> = Object.freeze({
+  replicate: "REPLICATE_API_TOKEN",
+  apify: "APIFY_API_TOKEN",
+});
+
+/**
+ * Additional accepted env var aliases for tooling providers, tried in order
+ * after the canonical name in {@link TOOLING_PROVIDER_ENV_VAR_NAMES}. Used by
+ * the skill tools to resolve a key from any of the documented env var spellings.
+ */
+const TOOLING_PROVIDER_ENV_VAR_ALIASES: Record<string, readonly string[]> =
+  Object.freeze({
+    apify: ["APIFY_TOKEN"],
+  });
+
+/**
+ * Canonical list of tooling/generation provider ids that are API-key
+ * addressable via `assistant keys set <provider> <key>`. Consumed by
+ * `provider-secret-catalog.ts` to extend the known-provider set.
+ */
+export const TOOLING_API_KEY_PROVIDERS: readonly string[] = Object.freeze(
+  Object.keys(TOOLING_PROVIDER_ENV_VAR_NAMES),
+);
+
+export function getToolingProviderEnvVar(
+  providerId: string,
+): string | undefined {
+  return TOOLING_PROVIDER_ENV_VAR_NAMES[providerId];
+}
+
+/**
+ * Resolve a tooling provider's API token from any accepted env var spelling,
+ * trying the canonical name first then any documented aliases. Returns
+ * `undefined` when none of the env vars are set or the provider is unknown.
+ */
+export function getToolingProviderEnvKey(
+  providerId: string,
+): string | undefined {
+  const names = [
+    TOOLING_PROVIDER_ENV_VAR_NAMES[providerId],
+    ...(TOOLING_PROVIDER_ENV_VAR_ALIASES[providerId] ?? []),
+  ].filter((n): n is string => Boolean(n));
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/**
  * Resolve a provider env-var name from any source — LLM catalog first, then
- * the search-provider mirror, then STT providers. Returns `undefined` when no
- * provider scope declares an env var for the given ID (keyless LLM providers
- * like Ollama, unknown IDs, etc.).
+ * the search-provider mirror, then STT providers, then tooling/generation
+ * providers (Replicate, Apify). Returns `undefined` when no provider scope
+ * declares an env var for the given ID (keyless LLM providers like Ollama,
+ * unknown IDs, etc.).
  */
 export function getAnyProviderEnvVar(providerId: string): string | undefined {
   return (
     getLlmProviderEnvVar(providerId) ??
     getSearchProviderEnvVar(providerId) ??
-    getSttProviderEnvVar(providerId)
+    getSttProviderEnvVar(providerId) ??
+    getToolingProviderEnvVar(providerId)
   );
 }
