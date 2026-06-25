@@ -95,11 +95,13 @@ export interface ResolveCallSiteOpts {
 /**
  * Self-host-on-OpenRouter override. When `OPENROUTER_API_KEY` is set (the
  * single-tenant Render deploy), force every resolved call site onto
- * DeepSeek-via-OpenRouter regardless of the workspace's active/default profile —
- * a fresh self-host hatch points those at Anthropic (BYO key), which has no
- * platform proxy and, here, a usage cap. The canonical `openrouter` connection
- * is seeded at boot and the key lives in the secure store. Read once at module
- * load so the resolver stays effectively pure per call.
+ * OpenRouter regardless of the workspace's active/default profile — a fresh
+ * self-host hatch points those at Anthropic-direct (BYO key), which has no
+ * platform proxy and, here, an exhausted credit balance. The model defaults to
+ * Claude via OpenRouter (fast + reliable tool use), overridable per-env via
+ * `CUE_OPENROUTER_MODEL` / `CUE_OPENROUTER_FLASH_MODEL`. The canonical
+ * `openrouter` connection is seeded at boot and the key lives in the secure
+ * store. Read once at module load so the resolver stays effectively pure.
  */
 const FORCE_OPENROUTER_DEEPSEEK = !!process.env.OPENROUTER_API_KEY;
 
@@ -160,16 +162,19 @@ export function resolveCallSiteConfig(
   } else {
     delete (resolved as { logitBias?: unknown }).logitBias;
   }
-  // Self-host OpenRouter override (see FORCE_OPENROUTER_DEEPSEEK): route the
-  // main chat through DeepSeek Pro and every other call site through Flash,
-  // overriding whatever provider the profile layers resolved to.
+  // Self-host OpenRouter override (see FORCE_OPENROUTER_DEEPSEEK): force every
+  // resolved call site onto OpenRouter regardless of the profile layers.
+  // mainAgent runs a strong tool-calling model; other call sites run a faster
+  // one. Defaults to Claude via OpenRouter (fast + reliable tool use);
+  // overridable per-env via CUE_OPENROUTER_MODEL / CUE_OPENROUTER_FLASH_MODEL.
   if (FORCE_OPENROUTER_DEEPSEEK && resolved.provider !== "openrouter") {
     resolved.provider = "openrouter";
     resolved.provider_connection = "openrouter";
     resolved.model =
       callSite === "mainAgent"
-        ? "deepseek/deepseek-v4-pro"
-        : "deepseek/deepseek-v4-flash";
+        ? (process.env.CUE_OPENROUTER_MODEL ?? "anthropic/claude-sonnet-4.5")
+        : (process.env.CUE_OPENROUTER_FLASH_MODEL ??
+          "anthropic/claude-haiku-4.5");
   }
   return resolved;
 }
