@@ -25,6 +25,7 @@
 import { isHttpAuthDisabled } from "../../config/env.js";
 import { getLogger } from "../../util/logger.js";
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../assistant-scope.js";
+import { findLocalGuardianPrincipalId } from "../local-actor-identity.js";
 import { extractBearerToken } from "../middleware/auth.js";
 import { buildAuthContext } from "./context.js";
 import { resolveScopeProfile } from "./scopes.js";
@@ -163,8 +164,15 @@ export function authenticateRequest(req: Request): AuthenticateResult {
     };
   }
 
-  // Build normalized AuthContext from verified claims
-  const contextResult = buildAuthContext(verifyResult.claims);
+  // Build normalized AuthContext from verified claims. For a `local`
+  // principal (self-host owner over the local session / native app), resolve
+  // the actorPrincipalId to the vellum-bound guardian's principal id so the
+  // owner is a fully-recognized principal at the root — see the ROOT FIX note
+  // in context.ts. The resolver is injected here (not imported by context.ts)
+  // to keep the builder free of the DB-touching contacts layer.
+  const contextResult = buildAuthContext(verifyResult.claims, {
+    resolveOwnerPrincipalId: findLocalGuardianPrincipalId,
+  });
   if (!contextResult.ok) {
     log.warn(
       { reason: contextResult.reason, path, sub: verifyResult.claims.sub },
@@ -186,5 +194,3 @@ export function authenticateRequest(req: Request): AuthenticateResult {
 
   return { ok: true, context: contextResult.context };
 }
-
-

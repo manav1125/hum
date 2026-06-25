@@ -48,6 +48,22 @@ describe("requireBoundGuardian", () => {
     expect(result).toBeNull();
   });
 
+  test("allows a local principal that now carries the owner guardian principal", () => {
+    // ROOT FIX: buildAuthContext resolves the local owner's actorPrincipalId
+    // to the vellum guardian principal. With that populated, the gate's
+    // principal-equality path (not just the `local` short-circuit) also
+    // recognizes the owner — belt-and-suspenders with the existing patch.
+    const result = requireBoundGuardian(
+      ctx({
+        subject: "local:self:conv-1",
+        principalType: "local",
+        actorPrincipalId: "guardian-1",
+        conversationId: "conv-1",
+      }),
+    );
+    expect(result).toBeNull();
+  });
+
   test("allows an actor whose principal matches the bound guardian", () => {
     const result = requireBoundGuardian(
       ctx({ principalType: "actor", actorPrincipalId: "guardian-1" }),

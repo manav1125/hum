@@ -56,6 +56,9 @@ describe("buildAuthContext", () => {
         sub: "local:self:session-123",
         scope_profile: "local_v1",
       }),
+      // Inject a stub owner resolver so the test does not depend on a live
+      // contacts DB (the production default reads the vellum guardian binding).
+      { resolveOwnerPrincipalId: () => undefined },
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -63,6 +66,64 @@ describe("buildAuthContext", () => {
       expect(result.context.assistantId).toBe("self");
       expect(result.context.conversationId).toBe("session-123");
       expect(result.context.scopes.has("local.all")).toBe(true);
+    }
+  });
+
+  test("local principal resolves actorPrincipalId to the owner guardian principal", () => {
+    // ROOT FIX: a `local` sub carries no actorPrincipalId, so the builder
+    // resolves it to the vellum-bound guardian's principalId — making the
+    // self-host owner a fully-recognized principal that downstream gates
+    // (require-bound-guardian, trust-context resolution) accept.
+    const result = buildAuthContext(
+      validClaims({
+        sub: "local:self:session-123",
+        scope_profile: "local_v1",
+      }),
+      { resolveOwnerPrincipalId: () => "vellum-principal-owner-xyz" },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.context.principalType).toBe("local");
+      expect(result.context.actorPrincipalId).toBe(
+        "vellum-principal-owner-xyz",
+      );
+    }
+  });
+
+  test("local principal carries no actorPrincipalId before guardian bootstrap", () => {
+    // Pre-bootstrap (no guardian binding) the resolver returns undefined.
+    // This preserves the pre-fix behavior for fresh installs; downstream
+    // gates already tolerate a missing principal in that window.
+    const result = buildAuthContext(
+      validClaims({
+        sub: "local:self:session-123",
+        scope_profile: "local_v1",
+      }),
+      { resolveOwnerPrincipalId: () => undefined },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.context.principalType).toBe("local");
+      expect(result.context.actorPrincipalId).toBeUndefined();
+    }
+  });
+
+  test("non-local principal ignores the owner resolver (unaffected by fix)", () => {
+    // A remote/actor principal must NOT pick up the owner principal id — its
+    // actorPrincipalId comes solely from its own sub. The owner resolver is
+    // a poisoned stub here to prove it is never consulted for `actor`.
+    const result = buildAuthContext(
+      validClaims({ sub: "actor:self:remote-principal-abc" }),
+      {
+        resolveOwnerPrincipalId: () => {
+          throw new Error("owner resolver must not run for actor principals");
+        },
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.context.principalType).toBe("actor");
+      expect(result.context.actorPrincipalId).toBe("remote-principal-abc");
     }
   });
 
