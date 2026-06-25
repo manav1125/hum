@@ -1,9 +1,21 @@
 /**
- * JIT download and cache of esbuild binary + preact for app compilation.
+ * Resolution of the esbuild binary + preact for app compilation.
  *
- * Instead of shipping these in the .app bundle (~11 MB), we download them
- * on first compile to $VELLUM_WORKSPACE_DIR/compiler-tools/. Follows the
- * same pattern as EmbeddingRuntimeManager.
+ * Two strategies, tried in order:
+ *
+ * 1. **Installed dependencies** (preferred). When `esbuild` and `preact` are
+ *    present in the assistant's `node_modules` — the case for every
+ *    container/server deploy, where `bun install` materialises the
+ *    platform-correct `@esbuild/<os>-<arch>` native binary — we use those
+ *    directly. No network, no wrong-platform binary risk, no subprocess
+ *    permission prompts. This is what makes app compilation work in the
+ *    Render Linux container.
+ *
+ * 2. **JIT download** (fallback). The macOS `.app` is built with
+ *    `bun build --compile` and intentionally does not ship these (~11 MB), so
+ *    when they can't be resolved from disk we download the pinned versions to
+ *    `$VELLUM_WORKSPACE_DIR/compiler-tools/` on first compile. Follows the
+ *    same pattern as EmbeddingRuntimeManager.
  */
 
 import { createHash } from "node:crypto";
@@ -15,8 +27,9 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { arch, platform } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { getLogger } from "../util/logger.js";
 import { getWorkspaceDir } from "../util/platform.js";
@@ -174,10 +187,104 @@ function isReady(baseDir: string): boolean {
 }
 
 /**
- * Ensure esbuild binary + preact are downloaded and cached.
+ * Resolve esbuild + preact from the assistant's installed `node_modules`.
+ *
+ * `esbuild` and `preact` are declared as dependencies of the assistant
+ * package, so on any deploy that runs `bun install` (notably the Render
+ * Linux container) both are present and esbuild's platform-correct native
+ * binary lives in `@esbuild/<os>-<arch>`. Using them directly avoids the JIT
+ * download entirely — no network call, no chance of a wrong-platform binary,
+ * no `tar`/subprocess work that could be sandboxed.
+ *
+ * Returns null when either cannot be resolved (e.g. the macOS `--compile`
+ * bundle, which ships neither), so the caller falls back to JIT download.
+ */
+function resolveInstalledTools(): CompilerTools | null {
+  let require: NodeRequire;
+  try {
+    require = createRequire(import.meta.url);
+  } catch {
+    return null;
+  }
+
+  // The native esbuild executable lives at `bin/esbuild` inside the
+  // platform package (`@esbuild/<os>-<arch>`). That package declares no `bin`
+  // field, so the binary path is by convention `bin/esbuild` relative to the
+  // package root — we read any `bin` override defensively but default to it.
+  let esbuildBin: string | undefined;
+  try {
+    const esbuildPlatform = installedEsbuildPlatformPkg();
+    const pkgJsonPath = require.resolve(`${esbuildPlatform}/package.json`);
+    const pkgDir = dirname(pkgJsonPath);
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as {
+      bin?: Record<string, string> | string;
+    };
+    const binRel =
+      typeof pkgJson.bin === "string"
+        ? pkgJson.bin
+        : (pkgJson.bin?.esbuild ?? "bin/esbuild");
+    const candidate = join(pkgDir, binRel);
+    if (existsSync(candidate)) {
+      esbuildBin = candidate;
+    }
+  } catch {
+    // platform package not installed (e.g. cross-platform install) — fall back
+  }
+
+  if (!esbuildBin) return null;
+
+  let preactDir: string | undefined;
+  try {
+    const preactPkgJson = require.resolve("preact/package.json");
+    preactDir = dirname(preactPkgJson);
+  } catch {
+    return null;
+  }
+
+  if (!existsSync(preactDir)) return null;
+
+  return { esbuildBin, preactDir };
+}
+
+/** The `@esbuild/<os>-<arch>` package name for the current platform. */
+function installedEsbuildPlatformPkg(): string {
+  const os = platform();
+  const cpu = arch();
+  const platformTag =
+    os === "darwin"
+      ? cpu === "arm64"
+        ? "darwin-arm64"
+        : "darwin-x64"
+      : cpu === "arm64"
+        ? "linux-arm64"
+        : "linux-x64";
+  return `@esbuild/${platformTag}`;
+}
+
+/** Cached result of the installed-tools probe (null = not available). */
+let installedToolsProbe: CompilerTools | null | undefined;
+
+/**
+ * Ensure esbuild binary + preact are available, preferring the versions
+ * installed in `node_modules` and falling back to a JIT download.
  * Safe to call concurrently — deduplicates via PromiseGuard.
  */
 export async function ensureCompilerTools(): Promise<CompilerTools> {
+  // Prefer installed deps (container/server path). Probe once and cache.
+  if (installedToolsProbe === undefined) {
+    installedToolsProbe = resolveInstalledTools();
+    if (installedToolsProbe) {
+      log.info(
+        { esbuildBin: installedToolsProbe.esbuildBin },
+        "Using esbuild + preact from installed node_modules",
+      );
+    }
+  }
+  if (installedToolsProbe) {
+    return installedToolsProbe;
+  }
+
+  // Fallback: JIT download into the workspace (macOS .app path).
   const baseDir = getToolsDir();
 
   if (!isReady(baseDir)) {
