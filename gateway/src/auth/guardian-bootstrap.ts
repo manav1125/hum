@@ -206,6 +206,36 @@ export async function createGuardianBinding(
       `SELECT id FROM contacts WHERE role = 'guardian' AND principal_id = ? LIMIT 1`,
       [params.guardianPrincipalId],
     );
+
+    // Belt-and-suspenders against duplicate guardians on re-bootstrap.
+    //
+    // The principal-keyed lookup above only matches when the SAME principal is
+    // reused. On re-bootstrap the gateway mints a FRESH vellum principal, so
+    // that lookup misses any guardian already bound to the (old) principal and
+    // we would INSERT a second `role='guardian'` row — the exact duplicate
+    // `reconcileGuardianContacts` (assistant migration 283) later heals.
+    //
+    // Per that migration's identity model, an *active vellum channel* is the
+    // canonical owner identity. So when this binding IS the vellum channel and
+    // no principal match was found, adopt any existing vellum-bound guardian
+    // instead of creating a new one. The contact UPDATE below then re-keys that
+    // canonical guardian onto the fresh principal — keeping a single guardian.
+    if (!existingContacts[0] && params.channel === "vellum") {
+      const vellumGuardians = await assistantDbQuery<{ id: string }>(
+        `SELECT c.id
+         FROM contacts c
+         JOIN contact_channels cc ON cc.contact_id = c.id
+         WHERE c.role = 'guardian'
+           AND cc.type = 'vellum'
+           AND cc.status = 'active'
+         ORDER BY c.created_at ASC, c.id ASC
+         LIMIT 1`,
+      );
+      if (vellumGuardians[0]) {
+        existingContacts[0] = vellumGuardians[0];
+      }
+    }
+
     const existingGuardianContactId = existingContacts[0]?.id;
 
     const claimableChannels = await assistantDbQuery<ExistingChannelRow>(

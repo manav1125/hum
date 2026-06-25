@@ -28,8 +28,10 @@ import { renderTemplate } from "../tasks/task-runner.js";
 import {
   createTask,
   createTaskRun,
+  dedupeTasks,
   deleteTask,
   deleteTasks,
+  findActiveTaskByTitle,
   getTask,
   getTaskRun,
   listTasks,
@@ -46,6 +48,7 @@ import { executeTaskListUpdate } from "../tools/tasks/work-item-update.js";
 import type { ToolContext } from "../tools/types.js";
 import {
   createWorkItem,
+  dedupeWorkItems,
   deleteWorkItem,
   findActiveWorkItemBySource,
   findActiveWorkItemsByTaskId,
@@ -594,6 +597,211 @@ describe("findActiveWorkItemBySource (enqueue dedup guard)", () => {
         i.status !== "cancelled",
     );
     expect(active).toHaveLength(1);
+  });
+});
+
+describe("createTask dedup guard", () => {
+  beforeEach(clearTables);
+
+  test("reuses an identical active template instead of inserting a duplicate", () => {
+    const first = createTask({
+      title: "Send OTP to Aileen",
+      template: "do it",
+    });
+    const second = createTask({
+      title: "Send OTP to Aileen",
+      template: "do it",
+    });
+    expect(second.id).toBe(first.id);
+    expect(listTasks()).toHaveLength(1);
+  });
+
+  test("normalizes title (case + whitespace) when deduping", () => {
+    const first = createTask({
+      title: "Send OTP to Aileen",
+      template: "do it",
+    });
+    const second = createTask({
+      title: "  send   otp to aileen ",
+      template: "do it",
+    });
+    expect(second.id).toBe(first.id);
+    expect(listTasks()).toHaveLength(1);
+  });
+
+  test("does NOT collapse same title with a different template", () => {
+    const first = createTask({ title: "Send OTP", template: "via slack" });
+    const second = createTask({ title: "Send OTP", template: "via email" });
+    expect(second.id).not.toBe(first.id);
+    expect(listTasks()).toHaveLength(2);
+  });
+
+  test("findActiveTaskByTitle returns the oldest match", () => {
+    const raw = getRawDb();
+    raw
+      .query(
+        `INSERT INTO tasks (id, title, template, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)`,
+      )
+      .run("task-old", "Send OTP", "do it", 100, 100);
+    raw
+      .query(
+        `INSERT INTO tasks (id, title, template, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)`,
+      )
+      .run("task-new", "send otp", "do it", 200, 200);
+    const found = findActiveTaskByTitle({
+      title: "Send OTP",
+      template: "do it",
+    });
+    expect(found?.id).toBe("task-old");
+  });
+});
+
+describe("dedupeTasks (collapse existing duplicates)", () => {
+  beforeEach(clearTables);
+
+  function seedTask(
+    id: string,
+    title: string,
+    template: string,
+    createdAt: number,
+  ) {
+    getRawDb()
+      .query(
+        `INSERT INTO tasks (id, title, template, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)`,
+      )
+      .run(id, title, template, createdAt, createdAt);
+  }
+
+  test("collapses an exact-dup group, keeps the oldest, repoints work items", () => {
+    seedTask("t-old", "Send OTP to Aileen", "do it", 100);
+    seedTask("t-mid", "send otp to aileen", "do it", 200);
+    seedTask("t-new", "SEND OTP TO AILEEN", "do it", 300);
+    // A work item under each donor must survive, repointed to the canonical.
+    createWorkItem({ taskId: "t-mid", title: "wi-mid" });
+    createWorkItem({ taskId: "t-new", title: "wi-new" });
+
+    const result = dedupeTasks();
+    expect(result.collapsed).toBe(2);
+    expect(result.groups).toBe(1);
+
+    const remaining = listTasks();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe("t-old");
+
+    // No work item was orphaned — both now point at the canonical task.
+    const items = listWorkItems();
+    expect(items).toHaveLength(2);
+    expect(items.every((i) => i.taskId === "t-old")).toBe(true);
+  });
+
+  test("leaves non-duplicate templates untouched and is idempotent", () => {
+    seedTask("t-a", "Task A", "a", 100);
+    seedTask("t-b1", "Task B", "b", 100);
+    seedTask("t-b2", "task b", "b", 200);
+
+    const first = dedupeTasks();
+    expect(first.collapsed).toBe(1);
+    expect(listTasks()).toHaveLength(2);
+
+    // Second run is a no-op.
+    const second = dedupeTasks();
+    expect(second.collapsed).toBe(0);
+    expect(listTasks()).toHaveLength(2);
+  });
+});
+
+describe("dedupeWorkItems (collapse existing duplicates)", () => {
+  beforeEach(clearTables);
+
+  function seedWorkItem(
+    id: string,
+    taskId: string,
+    title: string,
+    createdAt: number,
+    source?: { sourceType?: string; sourceId?: string },
+  ) {
+    getRawDb()
+      .query(
+        `INSERT INTO work_items (id, task_id, title, status, priority_tier, source_type, source_id, created_at, updated_at)
+         VALUES (?, ?, ?, 'queued', 1, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        taskId,
+        title,
+        source?.sourceType ?? null,
+        source?.sourceId ?? null,
+        createdAt,
+        createdAt,
+      );
+  }
+
+  test("collapses source-keyed duplicates keeping the oldest", () => {
+    const task = createTask({ title: "T", template: "t" });
+    seedWorkItem("wi-1", task.id, "Send OTP", 100, {
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    seedWorkItem("wi-2", task.id, "send otp", 200, {
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    seedWorkItem("wi-3", task.id, "Send OTP", 300, {
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+
+    const result = dedupeWorkItems();
+    expect(result.collapsed).toBe(2);
+    const remaining = listWorkItems();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe("wi-1");
+  });
+
+  test("does NOT collapse same title across different sources", () => {
+    const task = createTask({ title: "T", template: "t" });
+    seedWorkItem("wi-a", task.id, "Send OTP", 100, {
+      sourceType: "slack",
+      sourceId: "thread-a",
+    });
+    seedWorkItem("wi-b", task.id, "Send OTP", 200, {
+      sourceType: "slack",
+      sourceId: "thread-b",
+    });
+    const result = dedupeWorkItems();
+    expect(result.collapsed).toBe(0);
+    expect(listWorkItems()).toHaveLength(2);
+  });
+
+  test("collapses source-less duplicates by title and is idempotent", () => {
+    const task = createTask({ title: "T", template: "t" });
+    seedWorkItem("wi-1", task.id, "Ad-hoc thing", 100);
+    seedWorkItem("wi-2", task.id, "ad-hoc thing", 200);
+
+    const first = dedupeWorkItems();
+    expect(first.collapsed).toBe(1);
+    expect(listWorkItems()).toHaveLength(1);
+    expect(listWorkItems()[0]!.id).toBe("wi-1");
+
+    const second = dedupeWorkItems();
+    expect(second.collapsed).toBe(0);
+  });
+
+  test("ignores terminal items so history/retries are preserved", () => {
+    const task = createTask({ title: "T", template: "t" });
+    seedWorkItem("wi-1", task.id, "Send OTP", 100, {
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    seedWorkItem("wi-done", task.id, "Send OTP", 200, {
+      sourceType: "task",
+      sourceId: "src-1",
+    });
+    updateWorkItem("wi-done", { status: "done" });
+
+    const result = dedupeWorkItems();
+    expect(result.collapsed).toBe(0);
+    expect(listWorkItems()).toHaveLength(2);
   });
 });
 

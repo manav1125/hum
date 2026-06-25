@@ -114,9 +114,7 @@ const OkContentResponse = z.object({
 // ── Task template handlers ────────────────────────────────────────────
 
 async function handleTaskSave({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskSave } = await import(
-    "../../tools/tasks/task-save.js"
-  );
+  const { executeTaskSave } = await import("../../tools/tasks/task-save.js");
   const { conversation_id, title } = TaskSaveParams.parse(body);
   const context = buildToolContext(conversation_id);
   const input: Record<string, unknown> = {};
@@ -131,9 +129,7 @@ async function handleTaskSave({ body = {} }: RouteHandlerArgs) {
 }
 
 async function handleTaskList() {
-  const { executeTaskList } = await import(
-    "../../tools/tasks/task-list.js"
-  );
+  const { executeTaskList } = await import("../../tools/tasks/task-list.js");
   const context = buildToolContext();
   const result = await executeTaskList({}, context);
   if (result.isError) {
@@ -143,9 +139,7 @@ async function handleTaskList() {
 }
 
 async function handleTaskRun({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskRun } = await import(
-    "../../tools/tasks/task-run.js"
-  );
+  const { executeTaskRun } = await import("../../tools/tasks/task-run.js");
   const { task_name, task_id, inputs } = TaskRunParams.parse(body);
   const context = buildToolContext();
   const input: Record<string, unknown> = {};
@@ -161,9 +155,8 @@ async function handleTaskRun({ body = {} }: RouteHandlerArgs) {
 }
 
 async function handleTaskDelete({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskDelete } = await import(
-    "../../tools/tasks/task-delete.js"
-  );
+  const { executeTaskDelete } =
+    await import("../../tools/tasks/task-delete.js");
   const { task_ids } = TaskDeleteParams.parse(body);
   const context = buildToolContext();
   const result = await executeTaskDelete({ task_ids }, context);
@@ -174,12 +167,22 @@ async function handleTaskDelete({ body = {} }: RouteHandlerArgs) {
   return { ok: true, content: result.content };
 }
 
+async function handleTaskDedupe() {
+  const { executeTaskDedupe } =
+    await import("../../tools/tasks/task-dedupe.js");
+  const result = await executeTaskDedupe({}, buildToolContext());
+  if (result.isError) {
+    throw new BadRequestError(result.content);
+  }
+  broadcastMessage({ type: "tasks_changed" });
+  return { ok: true, content: result.content };
+}
+
 // ── Task queue handlers ───────────────────────────────────────────────
 
 async function handleTaskQueueShow({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskListShow } = await import(
-    "../../tools/tasks/work-item-list.js"
-  );
+  const { executeTaskListShow } =
+    await import("../../tools/tasks/work-item-list.js");
   const input = TaskQueueShowParams.parse(body);
   const result = await executeTaskListShow(
     input as Record<string, unknown>,
@@ -189,9 +192,8 @@ async function handleTaskQueueShow({ body = {} }: RouteHandlerArgs) {
 }
 
 async function handleTaskQueueAdd({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskListAdd } = await import(
-    "../../tools/tasks/work-item-enqueue.js"
-  );
+  const { executeTaskListAdd } =
+    await import("../../tools/tasks/work-item-enqueue.js");
   const input = TaskQueueAddParams.parse(body);
   const result = await executeTaskListAdd(
     input as Record<string, unknown>,
@@ -204,9 +206,8 @@ async function handleTaskQueueAdd({ body = {} }: RouteHandlerArgs) {
 }
 
 async function handleTaskQueueUpdate({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskListUpdate } = await import(
-    "../../tools/tasks/work-item-update.js"
-  );
+  const { executeTaskListUpdate } =
+    await import("../../tools/tasks/work-item-update.js");
   const input = TaskQueueUpdateParams.parse(body);
   const result = await executeTaskListUpdate(
     input as Record<string, unknown>,
@@ -219,9 +220,8 @@ async function handleTaskQueueUpdate({ body = {} }: RouteHandlerArgs) {
 }
 
 async function handleTaskQueueRemove({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskListRemove } = await import(
-    "../../tools/tasks/work-item-remove.js"
-  );
+  const { executeTaskListRemove } =
+    await import("../../tools/tasks/work-item-remove.js");
   const input = TaskQueueRemoveParams.parse(body);
   const result = await executeTaskListRemove(
     input as Record<string, unknown>,
@@ -234,9 +234,8 @@ async function handleTaskQueueRemove({ body = {} }: RouteHandlerArgs) {
 }
 
 async function handleTaskQueueRun({ body = {} }: RouteHandlerArgs) {
-  const { executeTaskQueueRun } = await import(
-    "../../tools/tasks/work-item-run.js"
-  );
+  const { executeTaskQueueRun } =
+    await import("../../tools/tasks/work-item-run.js");
   const input = TaskQueueRunParams.parse(body);
   const result = await executeTaskQueueRun(
     input as Record<string, unknown>,
@@ -311,6 +310,21 @@ export const ROUTES: RouteDefinition[] = [
     requestBody: TaskDeleteParams,
     responseBody: OkContentResponse,
   },
+  {
+    operationId: "task_dedupe",
+    endpoint: "tasks/dedupe",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+    },
+    handler: handleTaskDedupe,
+    summary: "Deduplicate tasks",
+    description:
+      "Collapse existing exact-duplicate task templates and work items, keeping the oldest of each group. Idempotent and non-destructive to non-duplicate data.",
+    tags: ["tasks"],
+    responseBody: OkContentResponse,
+  },
 
   // ── Task queue (work items) ─────────────────────────────────────────
   {
@@ -323,7 +337,8 @@ export const ROUTES: RouteDefinition[] = [
     },
     handler: handleTaskQueueShow,
     summary: "Show task queue",
-    description: "List work items in the task queue, optionally filtered by status.",
+    description:
+      "List work items in the task queue, optionally filtered by status.",
     tags: ["tasks"],
     requestBody: TaskQueueShowParams,
     responseBody: ContentResponse,

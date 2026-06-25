@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 
 import { getDb } from "../memory/db-connection.js";
 import { workItems } from "../memory/schema.js";
@@ -286,6 +286,61 @@ export function findActiveWorkItemBySource(opts: {
 
   // Return the most-recently-updated candidate.
   return matches.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+}
+
+export interface DedupeWorkItemsResult {
+  /** Number of duplicate work items removed (donors). */
+  collapsed: number;
+  /** Number of dedup groups that had duplicates. */
+  groups: number;
+}
+
+/**
+ * Collapse EXISTING duplicate active work items into one canonical row per
+ * dedup group. The grouping mirrors {@link findActiveWorkItemBySource}: items
+ * with a source are keyed on `(sourceType, sourceId, normalizedTitle)`;
+ * source-less items fall back to title-only. The OLDEST item in each group is
+ * kept; the rest are deleted. Only `queued | running | awaiting_review` items
+ * are eligible — terminal items (done/failed/cancelled/archived) are left
+ * alone so historical/retry records are never destroyed.
+ *
+ * Idempotent: a second run finds no remaining duplicates and is a no-op.
+ */
+export function dedupeWorkItems(): DedupeWorkItemsResult {
+  const db = getDb();
+  const active = listWorkItems().filter((i) =>
+    ACTIVE_DEDUP_STATUSES.has(i.status),
+  );
+
+  const groups = new Map<string, WorkItem[]>();
+  for (const i of active) {
+    const title = i.title.trim().toLowerCase();
+    // Source-keyed when a stable source exists; title-only otherwise — same
+    // key the live enqueue guard uses.
+    const key = i.sourceId
+      ? `s:${i.sourceType ?? ""} ${i.sourceId} ${title}`
+      : `t:${title}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(i);
+    else groups.set(key, [i]);
+  }
+
+  let collapsed = 0;
+  let dupGroups = 0;
+
+  for (const bucket of groups.values()) {
+    if (bucket.length <= 1) continue;
+    dupGroups += 1;
+    // Oldest wins; ties broken by id for determinism.
+    const ranked = [...bucket].sort(
+      (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1),
+    );
+    const donorIds = ranked.slice(1).map((d) => d.id);
+    db.delete(workItems).where(inArray(workItems.id, donorIds)).run();
+    collapsed += donorIds.length;
+  }
+
+  return { collapsed, groups: dupGroups };
 }
 
 /**

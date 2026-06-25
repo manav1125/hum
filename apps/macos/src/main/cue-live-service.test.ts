@@ -6,6 +6,13 @@ class FakeHelperChild extends FakeChild {
   stdin = {
     writes: [] as string[],
     ended: false,
+    // The real stdin is a Writable stream. mac-helper's attachChild subscribes
+    // to its "error" event, and writeFrame reads these state flags before
+    // writing — the fake must expose them or attachChild throws (which would
+    // tear down startup and drop the first write).
+    destroyed: false,
+    writableEnded: false,
+    on: mock(() => undefined),
     write: mock((data: string, callback?: (err?: Error) => void) => {
       this.stdin.writes.push(data);
       callback?.();
@@ -13,6 +20,7 @@ class FakeHelperChild extends FakeChild {
     }),
     end: mock(() => {
       this.stdin.ended = true;
+      this.stdin.writableEnded = true;
     }),
   };
   kill = mock(() => true);

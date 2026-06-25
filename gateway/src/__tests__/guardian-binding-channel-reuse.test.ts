@@ -141,7 +141,68 @@ function seedRevokedGuardianSlackChannel(): void {
     .run();
 }
 
+function seedVellumGuardian(principalId: string): void {
+  db()
+    .prepare(
+      `INSERT INTO contacts
+         (id, display_name, role, principal_id, notes, created_at, updated_at)
+       VALUES
+         ('vellum-guardian', 'Example User', 'guardian', ?, 'guardian', 1, 1)`,
+    )
+    .run(principalId);
+  db()
+    .prepare(
+      `INSERT INTO contact_channels
+         (id, contact_id, type, address, external_user_id, external_chat_id,
+          is_primary, status, policy, created_at, updated_at)
+       VALUES
+         ('vellum-channel', 'vellum-guardian', 'vellum', ?, ?, ?,
+          1, 'active', 'allow', 1, 1)`,
+    )
+    .run(principalId, principalId, principalId);
+}
+
 describe("createGuardianBinding", () => {
+  test("re-bootstrap with a fresh vellum principal adopts the existing vellum guardian instead of minting a duplicate", async () => {
+    // An existing vellum guardian bound to an OLD principal (the canonical
+    // owner identity per assistant migration 283).
+    seedVellumGuardian("vellum-principal-old");
+
+    // Re-bootstrap mints a FRESH principal — the principal-keyed lookup misses,
+    // but the guard must adopt the active-vellum guardian rather than INSERT a
+    // second `role='guardian'` row.
+    const result = await createGuardianBinding({
+      channel: "vellum",
+      externalUserId: "vellum-principal-new",
+      deliveryChatId: "vellum-principal-new",
+      guardianPrincipalId: "vellum-principal-new",
+      displayName: "Example User",
+      verifiedVia: "challenge",
+    });
+
+    expect(result.contactId).toBe("vellum-guardian");
+
+    // Exactly ONE guardian, now re-keyed onto the fresh principal.
+    const guardians = db()
+      .query<
+        { id: string; principal_id: string },
+        []
+      >("SELECT id, principal_id FROM contacts WHERE role = 'guardian'")
+      .all();
+    expect(guardians).toEqual([
+      { id: "vellum-guardian", principal_id: "vellum-principal-new" },
+    ]);
+
+    // Still a single vellum channel under the one guardian.
+    const channels = db()
+      .query<
+        { contact_id: string },
+        []
+      >("SELECT contact_id FROM contact_channels WHERE type = 'vellum'")
+      .all();
+    expect(channels).toEqual([{ contact_id: "vellum-guardian" }]);
+  });
+
   test("claims a preseeded Slack channel for the guardian instead of inserting a duplicate", async () => {
     seedGuardianContact();
     seedSlackContactChannel("U123EXAMPLE");
