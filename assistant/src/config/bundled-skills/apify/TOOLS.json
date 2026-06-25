@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "apify_run_actor",
-      "description": "Run an Apify actor (web scraping / lead generation), wait for the run to finish, and return its dataset items as structured JSON.",
+      "description": "Run an Apify actor (web scraping / lead generation), wait for it to finish, and return its dataset items as structured JSON. Pass exactly two arguments: `actor_id` (a string) and `input` (an object). Example call: { \"actor_id\": \"apify/google-search-scraper\", \"input\": { \"queries\": \"dentists in Austin TX\" } }. The actor's parameters MUST go inside the `input` object, NOT at the top level.",
       "category": "research",
       "risk": "low",
       "input_schema": {
@@ -11,20 +11,29 @@
         "properties": {
           "actor_id": {
             "type": "string",
-            "description": "Apify actor identifier: 'username~actor-name' or 'username/actor-name' (e.g. 'apify/web-scraper')."
+            "description": "The Apify actor to run, as a single string in 'username/actor-name' (or 'username~actor-name') form. This is a string, NOT an object.",
+            "examples": [
+              "apify/web-scraper",
+              "apify/google-search-scraper",
+              "apify/google-maps-scraper"
+            ]
           },
           "input": {
             "type": "object",
-            "description": "The actor's input object (actor-specific). E.g. apify/web-scraper expects 'startUrls'; apify/google-search-scraper expects 'queries'.",
-            "additionalProperties": true
+            "description": "The actor's input parameters, as an OBJECT — the exact keys depend on the actor. apify/web-scraper expects `startUrls` (an array of { url } objects); apify/google-search-scraper expects `queries` (a newline-separated string or array); apify/google-maps-scraper expects `searchStringsArray` and `locationQuery`. Put ALL actor parameters inside this object.",
+            "additionalProperties": true,
+            "examples": [
+              { "queries": "coffee shops in Seattle" },
+              { "startUrls": [{ "url": "https://example.com" }] }
+            ]
           },
           "wait_seconds": {
             "type": "number",
-            "description": "Maximum seconds to wait for the run to finish (default 120, max 600). Increase for large crawls."
+            "description": "Optional. Maximum seconds to wait for the run to finish (default 120, max 600). Increase for large crawls."
           },
           "max_items": {
             "type": "number",
-            "description": "Maximum dataset items to return (default 50, max 1000)."
+            "description": "Optional. Maximum dataset items to return (default 50, max 1000)."
           }
         },
         "required": ["actor_id", "input"]

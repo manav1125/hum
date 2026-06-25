@@ -846,15 +846,18 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         help: "flux-1.1-pro = highest quality · flux-schnell = fastest · sdxl = classic.",
       },
     ],
-    composePrompt: (v) =>
-      block(
-        `Use the replicate_run skill with model ${str(v, "model") || "black-forest-labs/flux-1.1-pro"} to generate an image.`,
+    composePrompt: (v) => {
+      const model = str(v, "model") || "black-forest-labs/flux-1.1-pro";
+      const prompt = `${str(v, "prompt")}${str(v, "style") ? `, in a ${str(v, "style").toLowerCase()} style` : ""}`;
+      const aspect = str(v, "aspect") || "1:1";
+      return block(
+        "Generate an image by calling the `replicate_run` tool exactly once.",
+        `Call it with model="${model}" and input set to an object with a "prompt" key and an "aspect_ratio" key:`,
+        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "${aspect}" } })`,
         "",
-        `Prompt: ${str(v, "prompt")}${str(v, "style") ? `, in a ${str(v, "style").toLowerCase()} style` : ""}.`,
-        line("Aspect ratio", str(v, "aspect") || "1:1"),
-        "",
-        "Pass the prompt and the aspect_ratio in the model's input object, run the model, and return the resulting image URL(s).",
-      ),
+        "When it returns, show me the resulting image URL(s).",
+      );
+    },
   },
   {
     id: "form-logo-concept",
@@ -895,15 +898,17 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         help: "flux-1.1-pro = highest quality · flux-schnell = fastest.",
       },
     ],
-    composePrompt: (v) =>
-      block(
-        `Use the replicate_run skill with model ${str(v, "model") || "black-forest-labs/flux-1.1-pro"} to generate a logo concept.`,
+    composePrompt: (v) => {
+      const model = str(v, "model") || "black-forest-labs/flux-1.1-pro";
+      const prompt = `a clean, modern vector logo for '${str(v, "brand")}' — vibe: ${str(v, "vibe")}.${str(v, "symbol") ? ` Incorporate: ${str(v, "symbol")}.` : ""} Centered on a plain background, simple and scalable, no text artifacts.`;
+      return block(
+        "Generate a logo concept by calling the `replicate_run` tool exactly once.",
+        `Call it with model="${model}" and a 1:1 aspect ratio:`,
+        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "1:1" } })`,
         "",
-        `Prompt: a clean, modern vector logo for "${str(v, "brand")}" — vibe: ${str(v, "vibe")}.${str(v, "symbol") ? ` Incorporate: ${str(v, "symbol")}.` : ""} Centered on a plain background, simple and scalable, no text artifacts.`,
-        "- Aspect ratio: 1:1",
-        "",
-        "Pass the prompt and a 1:1 aspect_ratio in the model's input object, run the model, and return the resulting logo image URL(s).",
-      ),
+        "When it returns, show me the resulting logo image URL(s).",
+      );
+    },
   },
   {
     id: "form-social-graphic",
@@ -944,15 +949,18 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         help: "flux-1.1-pro = highest quality · flux-schnell = fastest.",
       },
     ],
-    composePrompt: (v) =>
-      block(
-        `Use the replicate_run skill with model ${str(v, "model") || "black-forest-labs/flux-1.1-pro"} to generate a social media graphic.`,
+    composePrompt: (v) => {
+      const model = str(v, "model") || "black-forest-labs/flux-1.1-pro";
+      const prompt = `a bold, scroll-stopping social graphic — ${str(v, "theme")}${str(v, "style") ? `, ${str(v, "style").toLowerCase()} style` : ""}. Strong composition with clear negative space for an overlaid headline.`;
+      const aspect = str(v, "aspect") || "1:1";
+      return block(
+        "Generate a social media graphic by calling the `replicate_run` tool exactly once.",
+        `Call it with model="${model}" and the chosen aspect ratio:`,
+        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "${aspect}" } })`,
         "",
-        `Prompt: a bold, scroll-stopping social graphic — ${str(v, "theme")}${str(v, "style") ? `, ${str(v, "style").toLowerCase()} style` : ""}. Strong composition with clear negative space for an overlaid headline.`,
-        line("Aspect ratio", str(v, "aspect") || "1:1"),
-        "",
-        "Pass the prompt and the aspect_ratio in the model's input object, run the model, and return the resulting image URL(s).",
-      ),
+        "When it returns, show me the resulting image URL(s).",
+      );
+    },
   },
 
   /* ------------------------------ Video ------------------------------ */
@@ -995,16 +1003,19 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         help: "Default Kling 1.6. You can paste any other Replicate text-to-video model id.",
       },
     ],
-    composePrompt: (v) =>
-      block(
-        `Use the replicate_run skill with model ${str(v, "model") || "kwaivgi/kling-v1.6-standard"} to generate a video from text.`,
+    composePrompt: (v) => {
+      const model = str(v, "model") || "kwaivgi/kling-v1.6-standard";
+      const prompt = str(v, "prompt");
+      const aspect = str(v, "aspect") || "16:9";
+      const duration = (str(v, "duration") || "5s").replace(/s$/, "");
+      return block(
+        "Generate a video from text by calling the `replicate_run` tool exactly once.",
+        `Call it with model="${model}", a "prompt" in the input object, plus aspect_ratio and duration keys, and a generous wait_seconds (video jobs are slow):`,
+        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "${aspect}", "duration": ${duration} }, "wait_seconds": 300 })`,
         "",
-        `Prompt: ${str(v, "prompt")}.`,
-        line("Target duration", str(v, "duration") || "5s"),
-        line("Aspect ratio", str(v, "aspect") || "16:9"),
-        "",
-        "Pass the prompt plus duration and aspect_ratio in the model's input object (map them to whatever keys this model expects), set a generous wait_seconds since video jobs are slow, run the model, and return the resulting video URL. If a different current Replicate text-to-video model would do better, you may substitute it.",
-      ),
+        "If this model rejects a key, map duration/aspect_ratio to whatever keys it expects and retry. When it returns, show me the resulting video URL.",
+      );
+    },
   },
 
   /* ------------------------------ Leads ------------------------------ */
@@ -1045,17 +1056,21 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         help: "Number of leads to return.",
       },
     ],
-    composePrompt: (v) =>
-      block(
-        "Use the apify_run_actor skill with an appropriate lead/contact scraping actor (an apollo- or linkedin-style scraper, e.g. apify/contact-info-scraper or a Google-search-based people finder — pick the closest fit and state your choice) to produce a structured lead list matching these criteria:",
+    composePrompt: (v) => {
+      const industry = str(v, "industry");
+      const role = str(v, "role");
+      const location = str(v, "location");
+      const count = str(v, "count") || "25";
+      const query = `${role} ${industry} ${location}`.trim();
+      return block(
+        `Find a lead list of ${count} ${role} in ${industry} located in ${location} by calling the \`apify_run_actor\` tool exactly once.`,
+        "Use a Google-search-based people/contact finder actor. A reliable default is apify/google-search-scraper; call it like this:",
+        `apify_run_actor({ "actor_id": "apify/google-search-scraper", "input": { "queries": "${query.replace(/"/g, "'")}" }, "max_items": ${count} })`,
         "",
-        line("Industry", str(v, "industry")),
-        line("Role / title", str(v, "role")),
-        line("Location", str(v, "location")),
-        line("Number of leads", str(v, "count") || "25"),
-        "",
-        "Set max_items to the requested count, run the actor, and return the results as a clean table with name, title, company, location, and any contact info (email / LinkedIn) found.",
-      ),
+        "(If a better-fitting lead/contact scraper actor exists, you may substitute its actor_id and its expected input keys — but always put the search criteria inside the `input` object and set max_items to the requested count.)",
+        "When it returns, show me the results as a clean table with name, title, company, location, and any contact info (email / LinkedIn) found.",
+      );
+    },
   },
 ];
 

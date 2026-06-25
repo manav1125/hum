@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "replicate_run",
-      "description": "Run any Replicate-hosted model (image or video generation, upscalers, etc.). Creates a prediction, polls until it succeeds or fails, and returns the output media URL(s).",
+      "description": "Generate an image or video with a Replicate-hosted model and return the output media URL(s). Pass exactly two arguments: `model` (a string) and `input` (an object). For image generation, set `model` to 'black-forest-labs/flux-schnell' and `input` to { \"prompt\": \"<your description>\" }. Example call: { \"model\": \"black-forest-labs/flux-schnell\", \"input\": { \"prompt\": \"a single red circle on white\" } }. Do NOT put the prompt at the top level — it MUST go inside the `input` object.",
       "category": "media",
       "risk": "low",
       "input_schema": {
@@ -11,16 +11,28 @@
         "properties": {
           "model": {
             "type": "string",
-            "description": "Replicate model identifier: 'owner/name' (latest version), 'owner/name:version' (pinned), or a bare 64-hex version hash. E.g. 'black-forest-labs/flux-schnell'."
+            "description": "The Replicate model to run, as a single string. Use 'black-forest-labs/flux-schnell' for fast image generation (the default for images). Other valid forms: 'owner/name' (latest version), 'owner/name:version' (pinned version), or a bare 64-hex version hash. This is a string, NOT an object.",
+            "examples": [
+              "black-forest-labs/flux-schnell",
+              "black-forest-labs/flux-1.1-pro",
+              "stability-ai/stable-video-diffusion"
+            ]
           },
           "input": {
             "type": "object",
-            "description": "Model-specific input parameters passed through to Replicate (e.g. prompt, aspect_ratio, num_outputs, image, seed). The prompt key varies by model; most use 'prompt'.",
-            "additionalProperties": true
+            "description": "The model's input parameters, as an OBJECT. The text description MUST go under the `prompt` key — e.g. { \"prompt\": \"a golden retriever puppy in a field\" }. You may add other model-specific keys like `aspect_ratio`, `num_outputs`, `image` (an input image URL), or `seed`. Required key for image/video models: `prompt`.",
+            "additionalProperties": true,
+            "examples": [
+              { "prompt": "a single red circle on white" },
+              {
+                "prompt": "a neon city skyline at night",
+                "aspect_ratio": "16:9"
+              }
+            ]
           },
           "wait_seconds": {
             "type": "number",
-            "description": "Maximum seconds to poll for completion (default 120, max 600). Increase for long video jobs."
+            "description": "Optional. Maximum seconds to wait for completion (default 120, max 600). Increase for long video jobs. Leave unset for image generation."
           }
         },
         "required": ["model", "input"]

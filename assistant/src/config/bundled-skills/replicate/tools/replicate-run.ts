@@ -134,11 +134,23 @@ export async function run(
     "Content-Type": "application/json",
   };
 
+  // `Prefer: wait` asks Replicate to hold the create request open until the
+  // prediction reaches a terminal state (or the sync window elapses), so fast
+  // models (e.g. flux-schnell) return a finished prediction in a single round
+  // trip instead of create-then-poll. Replicate caps the sync hold at 60s; if
+  // the job outlives it the response comes back still "processing" and the
+  // polling loop below takes over — so this is a pure latency win for short
+  // image jobs with no downside for long video jobs.
+  const createHeaders = {
+    ...headers,
+    Prefer: `wait=${Math.min(60, waitSeconds)}`,
+  };
+
   let prediction: PredictionResponse;
   try {
     const res = await fetch(created.url, {
       method: "POST",
-      headers,
+      headers: createHeaders,
       body: JSON.stringify(created.body),
       signal: context.signal,
     });
