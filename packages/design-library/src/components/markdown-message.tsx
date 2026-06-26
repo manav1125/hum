@@ -265,14 +265,28 @@ function buildMarkdownComponents(
     img: ({ src, alt }) => {
       const srcStr = typeof src === "string" ? src : "";
       const altStr = typeof alt === "string" ? alt : "";
-      const isLocal =
+      // Render inline for local/data/blob sources and any https image URL.
+      // An https <img src> cannot execute scripts, so allowing external https
+      // sources broadly (S3 / *.amazonaws.com, replicate.delivery,
+      // *.googleusercontent.com, fal.media, OpenAI blob storage, etc.) is safe
+      // and lets the user's own generation tools display their output inline.
+      // Only non-https, non-local schemes fall through to the placeholder.
+      const isRenderable =
         !srcStr ||
         srcStr.startsWith("/") ||
         srcStr.startsWith("data:") ||
         srcStr.startsWith("blob:") ||
-        srcStr.startsWith(".");
-      if (isLocal) {
-        return <img src={srcStr} alt={altStr} className="my-1 max-w-full rounded" />;
+        srcStr.startsWith(".") ||
+        srcStr.startsWith("https://");
+      if (isRenderable) {
+        return (
+          <img
+            src={srcStr}
+            alt={altStr}
+            loading="lazy"
+            className="my-1 max-w-full rounded"
+          />
+        );
       }
       return (
         <span className="inline-flex items-center gap-1 rounded bg-stone-100 px-1.5 py-0.5 text-body-small-default text-stone-500 dark:bg-moss-800 dark:text-stone-400">
