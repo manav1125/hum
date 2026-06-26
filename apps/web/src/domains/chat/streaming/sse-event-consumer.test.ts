@@ -37,9 +37,8 @@ mock.module("@/lib/diagnostics", () => ({
   recordDiagnostic: recordDiagnosticMock,
 }));
 
-const { createSseEventConsumer } = await import(
-  "@/domains/chat/streaming/sse-event-consumer"
-);
+const { createSseEventConsumer } =
+  await import("@/domains/chat/streaming/sse-event-consumer");
 
 // Test fixture builds a `ConsumableEnvelope` — the narrow input type
 // the consumer actually reads. The runtime envelope from the bus
@@ -52,15 +51,18 @@ const makeEnvelope = (override: {
   seq?: number;
 }) => override;
 
-const makeDeps = (override: {
-  activeConversationId?: string | null;
-  reconcileActive?: () => Promise<unknown>;
-  handleStreamEvent?: (event: AssistantEvent, epoch: number) => void;
-} = {}) => {
+const makeDeps = (
+  override: {
+    activeConversationId?: string | null;
+    reconcileActive?: () => Promise<unknown>;
+    handleStreamEvent?: (event: AssistantEvent, epoch: number) => void;
+  } = {},
+) => {
   const activeConversationIdRef = {
     current: override.activeConversationId ?? "conv-1",
   };
-  const reconcileActive = override.reconcileActive ?? mock(() => Promise.resolve());
+  const reconcileActive =
+    override.reconcileActive ?? mock(() => Promise.resolve());
   const handleStreamEvent = override.handleStreamEvent ?? mock(() => {});
   return {
     activeConversationIdRef,
@@ -151,6 +153,97 @@ describe("sse-event-consumer — cross-conversation filter", () => {
     expect(recordDiagnosticMock).toHaveBeenCalledWith(
       "sse_event_wrong_conversation_filtered",
       expect.objectContaining({ reason: "missing" }),
+    );
+  });
+
+  // A minimal valid `confirmation_request` AssistantEvent for adoption tests.
+  const makeConfirmationRequest = (): AssistantEvent => ({
+    type: "confirmation_request",
+    requestId: "req-1",
+    toolName: "replicate_run",
+    input: {},
+    riskLevel: "high",
+    allowlistOptions: [],
+    scopeOptions: [],
+  });
+
+  test("missing-conversationId confirmation_request is ADOPTED into the active conversation", () => {
+    // GIVEN an approval prompt the daemon failed to stamp with a
+    // conversationId (the recurring self-host `local:` owner case)
+    const { deps, handleStreamEvent } = makeDeps({
+      activeConversationId: "conv-1",
+    });
+    const consumer = createSseEventConsumer(deps);
+
+    // WHEN it arrives with no conversationId
+    consumer.handleSseEvent(
+      makeEnvelope({
+        message: makeConfirmationRequest(),
+      }),
+    );
+
+    // THEN it is adopted into the active conversation and dispatched (the
+    // inline approve/deny card renders) rather than dropped — and the drop
+    // diagnostic is NOT emitted.
+    expect(handleStreamEvent).toHaveBeenCalledTimes(1);
+    expect(recordDiagnosticMock).toHaveBeenCalledWith(
+      "sse_confirmation_request_adopted",
+      expect.objectContaining({ activeConversationId: "conv-1" }),
+    );
+    expect(recordDiagnosticMock).not.toHaveBeenCalledWith(
+      "sse_event_wrong_conversation_filtered",
+      expect.anything(),
+    );
+  });
+
+  test("mismatched-conversationId confirmation_request is still DROPPED", () => {
+    // GIVEN an approval prompt that genuinely belongs to another conversation
+    const { deps, handleStreamEvent } = makeDeps({
+      activeConversationId: "conv-1",
+    });
+    const consumer = createSseEventConsumer(deps);
+
+    // WHEN it arrives stamped with a different conversationId
+    consumer.handleSseEvent(
+      makeEnvelope({
+        conversationId: "conv-OTHER",
+        message: makeConfirmationRequest(),
+      }),
+    );
+
+    // THEN it is dropped (mismatch) — adoption only covers missing ids, never
+    // mismatched ones, so it must not leak into the active view.
+    expect(handleStreamEvent).not.toHaveBeenCalled();
+    expect(recordDiagnosticMock).toHaveBeenCalledWith(
+      "sse_event_wrong_conversation_filtered",
+      expect.objectContaining({ reason: "mismatch" }),
+    );
+  });
+
+  test("missing-conversationId NON-prompt event is still DROPPED (not adopted)", () => {
+    // GIVEN a non-prompt conversation-scoped event with no conversationId
+    const { deps, handleStreamEvent } = makeDeps({
+      activeConversationId: "conv-1",
+    });
+    const consumer = createSseEventConsumer(deps);
+
+    // WHEN it arrives without a conversationId
+    consumer.handleSseEvent(
+      makeEnvelope({
+        message: { type: "assistant_text_delta", text: "hi" },
+      }),
+    );
+
+    // THEN it is dropped — adoption is scoped to user-blocking prompts;
+    // mis-routing a delta would corrupt the active transcript.
+    expect(handleStreamEvent).not.toHaveBeenCalled();
+    expect(recordDiagnosticMock).toHaveBeenCalledWith(
+      "sse_event_wrong_conversation_filtered",
+      expect.objectContaining({ reason: "missing" }),
+    );
+    expect(recordDiagnosticMock).not.toHaveBeenCalledWith(
+      "sse_confirmation_request_adopted",
+      expect.anything(),
     );
   });
 
@@ -266,7 +359,9 @@ describe("sse-event-consumer — seq-gap detection", () => {
 
   test("a gap caused by an event on a background conversation is still detected", () => {
     // GIVEN a consumer scoped to conv-1 with a seeded cursor
-    const { deps, reconcileActive } = makeDeps({ activeConversationId: "conv-1" });
+    const { deps, reconcileActive } = makeDeps({
+      activeConversationId: "conv-1",
+    });
     const consumer = createSseEventConsumer(deps);
     consumer.handleSseEvent(
       makeEnvelope({
@@ -292,7 +387,9 @@ describe("sse-event-consumer — seq-gap detection", () => {
 
   test("gap (seq > stored + 1) triggers reconcile, cursor advances only after resolve", async () => {
     let resolveReconcile!: () => void;
-    const reconcilePromise = new Promise<void>((r) => { resolveReconcile = r; });
+    const reconcilePromise = new Promise<void>((r) => {
+      resolveReconcile = r;
+    });
     const reconcileActive = mock(() => reconcilePromise);
     const { deps } = makeDeps({ reconcileActive });
     const consumer = createSseEventConsumer(deps);
@@ -334,7 +431,9 @@ describe("sse-event-consumer — seq-gap detection", () => {
 
   test("gap reconcile failure leaves cursor pinned for retry", async () => {
     let rejectReconcile!: () => void;
-    const reconcilePromise = new Promise<void>((_, rej) => { rejectReconcile = rej; });
+    const reconcilePromise = new Promise<void>((_, rej) => {
+      rejectReconcile = rej;
+    });
     const reconcileActive = mock(() => reconcilePromise);
     const { deps } = makeDeps({ reconcileActive });
     const consumer = createSseEventConsumer(deps);
@@ -384,7 +483,9 @@ describe("sse-event-consumer — seq-gap detection", () => {
 
   test("gap reconcile debounces — events during in-flight track latest seq", async () => {
     let resolveReconcile!: () => void;
-    const reconcilePromise = new Promise<void>((r) => { resolveReconcile = r; });
+    const reconcilePromise = new Promise<void>((r) => {
+      resolveReconcile = r;
+    });
     const reconcileActive = mock(() => reconcilePromise);
     const { deps } = makeDeps({ reconcileActive });
     const consumer = createSseEventConsumer(deps);
@@ -433,7 +534,9 @@ describe("sse-event-consumer — seq-gap detection", () => {
 
   test("gap reconcile does not advance cursor when the stream reconnected (epoch changed) during reconcile", async () => {
     let resolveReconcile!: () => void;
-    const reconcilePromise = new Promise<void>((r) => { resolveReconcile = r; });
+    const reconcilePromise = new Promise<void>((r) => {
+      resolveReconcile = r;
+    });
     const reconcileActive = mock(() => reconcilePromise);
     const { deps } = makeDeps({ reconcileActive });
     const consumer = createSseEventConsumer(deps);

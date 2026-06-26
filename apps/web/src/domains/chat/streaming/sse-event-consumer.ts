@@ -18,6 +18,17 @@
  *      rather than "broadcast," because under the bus-owned unfiltered
  *      SSE there is no per-conversation subscription URL to fall back
  *      to for routing.
+ *   3. Exception — adoption: a user-blocking approval/permission prompt
+ *      (`confirmation_request` / `secret_request`) that arrives with a
+ *      MISSING conversationId is adopted into the active conversation and
+ *      dispatched, rather than dropped. The daemon occasionally fails to
+ *      stamp the id on these (a self-host `local:` owner whose actor
+ *      principal is undefined), and dropping them strands the turn — the
+ *      inline approve/deny card never renders and the daemon's permission
+ *      timeout elapses. A prompt with a MISMATCHED id is still dropped
+ *      (it belongs to another conversation), and a non-prompt event with a
+ *      missing id is still dropped (it is not user-blocking and
+ *      mis-routing a delta would corrupt the transcript).
  *
  * The active-conversation key is read from a ref the caller updates
  * in the commit phase — see `use-event-stream.ts`. The ref pattern
@@ -67,7 +78,10 @@
  */
 
 import { useStreamStore } from "@/domains/chat/stream-store";
-import { isConversationScopedStreamEvent } from "@/domains/chat/utils/chat";
+import {
+  isApprovalPromptStreamEvent,
+  isConversationScopedStreamEvent,
+} from "@/domains/chat/utils/chat";
 import { recordDiagnostic } from "@/lib/diagnostics";
 import { getLocalSeq, recordLocalSeq } from "@/lib/streaming/local-seq";
 import {
@@ -160,7 +174,8 @@ export function createSseEventConsumer(
           if (!reconcileInFlight) {
             reconcileInFlight = true;
             const reconcileEpoch = useStreamStore.getState().streamEpoch;
-            deps.reconcileActive()
+            deps
+              .reconcileActive()
               .then(() => {
                 // Only advance if the epoch is still current. A stale
                 // reconcile (SSE reconnected during the fetch) resolves
@@ -200,11 +215,7 @@ export function createSseEventConsumer(
         // in-flight reconcile). Re-applying would double-append deltas,
         // so skip it and leave the frontier untouched.
         const localSeq = getLocalSeq(eventConversationId);
-        if (
-          eventSeq != null &&
-          localSeq != null &&
-          eventSeq <= localSeq
-        ) {
+        if (eventSeq != null && localSeq != null && eventSeq <= localSeq) {
           recordDiagnostic("sse_event_seq_replayed", {
             conversationId: eventConversationId,
             eventType: event.type,
@@ -220,6 +231,31 @@ export function createSseEventConsumer(
           // `recordLocalSeq` ignores a null/undefined seq itself.
           recordLocalSeq(eventConversationId, eventSeq);
         }
+      } else if (
+        eventConversationId === undefined &&
+        deps.activeConversationIdRef.current !== null &&
+        isApprovalPromptStreamEvent(event)
+      ) {
+        // Adoption: a user-blocking approval/permission prompt
+        // (`confirmation_request` / `secret_request`) arrived without a
+        // `conversationId` — the daemon failed to stamp it (a self-host
+        // `local:` owner whose actor principal is undefined is the recurring
+        // cause). Dropping it strands the turn: the inline approve/deny card
+        // never renders and the daemon's permission timeout elapses, failing
+        // the tool call. There is exactly one conversation a missing-id prompt
+        // can belong to — the active one the user is looking at — so adopt it
+        // into the active conversation and dispatch so the card renders.
+        //
+        // Only prompts are adopted. A non-prompt event with a missing id is
+        // still dropped (handled in the final branch) because it is not
+        // user-blocking and mis-routing a delta would corrupt the transcript.
+        // A MISMATCHED id (handled above by the equality check failing) is also
+        // dropped — that prompt genuinely belongs to another conversation.
+        recordDiagnostic("sse_confirmation_request_adopted", {
+          activeConversationId: deps.activeConversationIdRef.current,
+          eventType: event.type,
+        });
+        deps.handleStreamEvent(event, useStreamStore.getState().streamEpoch);
       } else {
         recordDiagnostic("sse_event_wrong_conversation_filtered", {
           eventConversationId,

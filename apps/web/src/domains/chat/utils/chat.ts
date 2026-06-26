@@ -1,4 +1,7 @@
-import { type DisplayMessage, isSurfaceInteractive } from "@/domains/chat/types/types";
+import {
+  type DisplayMessage,
+  isSurfaceInteractive,
+} from "@/domains/chat/types/types";
 import type { IdentityGetResponse } from "@/generated/daemon/types.gen";
 import type { Conversation } from "@/types/conversation-types";
 import type { AssistantEvent } from "@/types/event-types";
@@ -69,6 +72,33 @@ export function isConversationScopedStreamEvent(
   event: AssistantEvent,
 ): event is ConversationScopedAssistantEvent {
   return !GLOBAL_STREAM_EVENT_TYPES.has(event.type);
+}
+
+// Approval/permission prompts that block a turn waiting on the user. When one
+// of these arrives with a MISSING `conversationId` (the daemon failed to stamp
+// it — e.g. a self-host `local:` owner whose actor principal is undefined), the
+// SSE consumer adopts it into the active conversation rather than dropping it.
+// Dropping it silently strands the agent: the inline approve/deny card never
+// renders and the daemon's permission timeout elapses, failing every
+// approve-required tool call ("Permission prompt timed out"). A MISMATCHED
+// conversationId is still dropped — that prompt genuinely belongs to another
+// conversation and must not leak into the active view.
+const PROMPT_STREAM_EVENT_TYPE_NAMES = [
+  "confirmation_request",
+  "secret_request",
+] as const;
+
+const PROMPT_STREAM_EVENT_TYPES: ReadonlySet<string> = new Set(
+  PROMPT_STREAM_EVENT_TYPE_NAMES,
+);
+
+/**
+ * Whether an event is a user-blocking approval/permission prompt eligible for
+ * active-conversation adoption when its `conversationId` is missing. See
+ * `PROMPT_STREAM_EVENT_TYPE_NAMES`.
+ */
+export function isApprovalPromptStreamEvent(event: AssistantEvent): boolean {
+  return PROMPT_STREAM_EVENT_TYPES.has(event.type);
 }
 
 export function hasPendingAssistantResponse(

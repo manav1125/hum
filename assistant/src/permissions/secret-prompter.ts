@@ -65,6 +65,9 @@ export class SecretPrompter {
     allowedDomains?: string[],
   ): Promise<SecretPromptResult> {
     const requestId = uuid();
+    // Internal tracking key — never empty, so pendingInteractions lookups and
+    // route resolution always have a stable handle even when the caller had no
+    // conversation binding.
     const effectiveConversationId = conversationId ?? "unknown";
 
     return new Promise((resolve, reject) => {
@@ -97,7 +100,13 @@ export class SecretPrompter {
         label,
         description,
         placeholder,
-        conversationId: effectiveConversationId,
+        // Wire payload carries the REAL conversationId (undefined when the
+        // caller had none) rather than the internal "unknown" sentinel. A
+        // sentinel would read as a MISMATCHED id on the web client and be
+        // dropped; leaving it undefined lets the client adopt the prompt into
+        // the active conversation so the secure-input card renders. The daemon
+        // still stamps the real id whenever it has one (the common path).
+        conversationId,
         purpose,
         allowedTools,
         allowedDomains,
@@ -135,9 +144,9 @@ export class SecretPrompter {
       value === undefined ? "cancelled" : "answered",
     );
     this.ownedIds.delete(requestId);
-    (interaction?.rpcResolve as ((v: SecretPromptResult) => void) | undefined)?.(
-      { value: value ?? null, delivery: delivery ?? "store" },
-    );
+    (
+      interaction?.rpcResolve as ((v: SecretPromptResult) => void) | undefined
+    )?.({ value: value ?? null, delivery: delivery ?? "store" });
   }
 
   dispose(): void {
