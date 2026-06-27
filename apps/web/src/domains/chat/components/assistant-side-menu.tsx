@@ -3,6 +3,7 @@ import {
     Hash,
     Home,
     LayoutGrid,
+    Mic,
     Pin,
     Rocket,
     Search,
@@ -510,6 +511,13 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/create")}
           onSelect={() => cueNav("/assistant/create")}
+        />
+        <SideMenu.Item
+          icon={Mic}
+          label="Voice"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/voice")}
+          onSelect={() => cueNav("/assistant/voice")}
         />
         <SideMenu.Item
           icon={Sparkles}

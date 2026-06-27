@@ -39,6 +39,7 @@ import { Dropdown } from "@vellumai/design-library/components/dropdown";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useLiveVoice } from "@/domains/chat/voice/live-voice/use-live-voice";
+import { VoiceDictationSurface } from "@/domains/chat/voice/voice-dictation-surface";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { ttsProvidersGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 // eslint-disable-next-line local/no-cross-domain-imports -- pre-existing; settings TTS types reused by the voice surface
@@ -236,6 +237,19 @@ export function VoiceModeSurface({
     () => providers.map((p) => ({ value: p.id, label: p.displayName })),
     [providers],
   );
+
+  // Full-duplex live voice is OFF for this assistant (the `voice-mode` flag,
+  // default off) — and on a plain cloud self-host the live-voice WebSocket
+  // (velay / a gateway ingress) isn't reachable even when it IS on. Rather
+  // than a dead "Voice mode isn't enabled" panel, fall back to the dictation
+  // experience: record → transcribe via the configured STT provider (e.g.
+  // Deepgram) → send as a chat message. This has no WebSocket dependency and
+  // no flag gate, so the Voice tab actually works wherever STT does. All hooks
+  // above run unconditionally so this early return keeps hook order stable;
+  // the idle `useLiveVoice` controller is harmless when never started.
+  if (!voiceMode) {
+    return <VoiceDictationSurface onExit={onExit} />;
+  }
 
   return (
     <div
