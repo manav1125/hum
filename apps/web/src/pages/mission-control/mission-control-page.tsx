@@ -21,7 +21,6 @@
  * scrollable lane-tab bar (swipe-equivalent).
  */
 
-import { useQuery } from "@tanstack/react-query";
 import {
   CalendarClock,
   CheckCircle2,
@@ -33,6 +32,7 @@ import { useState } from "react";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { LiveDot } from "@/components/live-dot";
+import { useActivityList } from "@/hooks/use-activity-list";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { C, mono, serif } from "@/domains/activity/theme";
 import { NeedsYouSection } from "@/domains/activity/sections/needs-you-section";
@@ -41,17 +41,10 @@ import { RunningSection } from "@/domains/activity/sections/running-section";
 import { ScheduledSection } from "@/domains/activity/sections/scheduled-section";
 import { SequencesSection } from "@/domains/activity/sections/sequences-section";
 import { WatchingSection } from "@/domains/activity/sections/watching-section";
-import {
-  pendinginteractionsGetOptions,
-  schedulesGetOptions,
-  workitemsGetOptions,
-} from "@/generated/daemon/@tanstack/react-query.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 
 import { InboundLane } from "./inbound-lane";
 import { MissionLane } from "./mission-lane";
-
-const SAFETY_NET_MS = 60_000;
 
 type LaneId = "inbound" | "awaiting" | "in_progress" | "scheduled" | "done";
 
@@ -73,52 +66,31 @@ const LANES: LaneDef[] = [
     urgent: true,
   },
   { id: "in_progress", title: "In progress", icon: Zap, accent: C.blue },
-  { id: "scheduled", title: "Scheduled", icon: CalendarClock, accent: C.violet },
+  {
+    id: "scheduled",
+    title: "Scheduled",
+    icon: CalendarClock,
+    accent: C.violet,
+  },
   { id: "done", title: "Done", icon: CheckCircle2, accent: C.green },
 ];
 
 /**
- * Header tally — reads the same react-query caches the lanes use (deduped by
- * key), so the counts never trigger a second fetch and stay honest. Polls are a
- * 60s safety-net; SSE drives the real-time updates.
+ * Header tally + lane counts — derived from the SINGLE unified `activity_list`
+ * call (docs/MISSION_CONTROL.md §3 P3). The server unions the stores once and
+ * returns per-lane `counts`, so the header no longer fans out four separate
+ * queries (work-items×2 / schedules / pending-interactions). SSE keeps the one
+ * query fresh via `useActivitySync`; the poll under it is a 60s safety-net.
  */
 function useTally(assistantId: string) {
-  const running = useQuery({
-    ...workitemsGetOptions({
-      path: { assistant_id: assistantId },
-      query: { status: "running" },
-    }),
-    refetchInterval: SAFETY_NET_MS,
-    staleTime: 15_000,
-  });
-  const done = useQuery({
-    ...workitemsGetOptions({
-      path: { assistant_id: assistantId },
-      query: { status: "done" },
-    }),
-    refetchInterval: SAFETY_NET_MS,
-    staleTime: 20_000,
-  });
-  const schedules = useQuery({
-    ...schedulesGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: SAFETY_NET_MS,
-    staleTime: 20_000,
-  });
-  const awaiting = useQuery({
-    ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: SAFETY_NET_MS,
-    staleTime: 10_000,
-  });
-
-  const standing = (schedules.data?.schedules ?? []).filter(
-    (s) => s.status !== "cancelled",
-  ).length;
+  const data = useActivityList(assistantId);
+  const counts = data?.counts;
 
   return {
-    awaiting: awaiting.data?.interactions?.length ?? 0,
-    running: running.data?.items?.length ?? 0,
-    standing,
-    done: done.data?.items?.length ?? 0,
+    awaiting: counts?.awaiting_you ?? 0,
+    running: counts?.in_progress ?? 0,
+    standing: counts?.scheduled ?? 0,
+    done: counts?.done ?? 0,
   };
 }
 
@@ -319,7 +291,9 @@ export function MissionControlPage({
           minHeight: 0,
           display: isMobile ? "flex" : "grid",
           flexDirection: isMobile ? "column" : undefined,
-          gridTemplateColumns: isMobile ? undefined : "repeat(5, minmax(0, 1fr))",
+          gridTemplateColumns: isMobile
+            ? undefined
+            : "repeat(5, minmax(0, 1fr))",
           gap: isMobile ? 0 : 14,
           padding: isMobile ? 12 : 16,
           overflowX: isMobile ? "hidden" : "auto",

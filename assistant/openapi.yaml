@@ -325,6 +325,19 @@ paths:
                 - task
                 - conversationId
               additionalProperties: false
+  /v1/activity:
+    get:
+      operationId: activity_get
+      summary: List the unified Mission Control activity board
+      description:
+        Union the work-item, home-feed, pending-interaction, schedule, watcher, sequence, and subagent stores into
+        one normalized ActivityItem[] with lanes, normalized status, and a canonical control set. Replaces the seven
+        separate client queries the Mission Control lanes used to make.
+      tags:
+        - activity
+      responses:
+        "200":
+          description: Successful response
   /v1/admin/rollback-migrations:
     post:
       operationId: admin_rollbackmigrations_post
@@ -27946,6 +27959,31 @@ paths:
           schema:
             type: string
           description: Conversation that owns the surface
+  /v1/tasks/dedupe:
+    post:
+      operationId: tasks_dedupe_post
+      summary: Deduplicate tasks
+      description:
+        Collapse existing exact-duplicate task templates and work items, keeping the oldest of each group.
+        Idempotent and non-destructive to non-duplicate data.
+      tags:
+        - tasks
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  content:
+                    type: string
+                required:
+                  - ok
+                  - content
+                additionalProperties: false
   /v1/tasks/delete:
     post:
       operationId: tasks_delete_post
@@ -29965,8 +30003,6 @@ paths:
       responses:
         "200":
           description: Successful response
-        "403":
-          description: Required tool permissions not approved
         "404":
           description: Work item or associated task not found
         "409":

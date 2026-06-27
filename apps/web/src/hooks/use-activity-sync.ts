@@ -94,21 +94,32 @@ export function useActivitySync(
       });
     };
 
+    // The unified Mission Control read model (`activity_list`) backs the header
+    // tally + lane counts. It's a superset of every store below, so refresh it
+    // on any command-center event.
+    const refreshActivityList = (): void => invalidateGenerated("activityGet");
     // Work-items move between the running / queued / done lanes. Refresh all
     // status buckets in one shot.
-    const refreshWorkItems = (): void => invalidateGenerated("workitemsGet");
+    const refreshWorkItems = (): void => {
+      invalidateGenerated("workitemsGet");
+      refreshActivityList();
+    };
     // Pending interactions = the "Needs you" / "Awaiting you" lane.
-    const refreshInteractions = (): void =>
+    const refreshInteractions = (): void => {
       invalidateGenerated("pendinginteractionsGet");
+      refreshActivityList();
+    };
     // Live subagents = the In-progress lane's agent rows.
     const refreshSubagents = (): void => {
       invalidateGenerated("subagentsGet");
       invalidateGenerated("subagentsReconcileGet");
+      refreshActivityList();
     };
 
     switch (event.type) {
       case "home_feed_updated":
         invalidateGenerated("homeFeedGet");
+        refreshActivityList();
         return;
 
       case "confirmation_request":
@@ -156,6 +167,7 @@ export function useActivitySync(
           case "surface_action_completed":
             invalidateGenerated("homeFeedGet");
             refreshWorkItems();
+            refreshActivityList();
             return;
           default:
             return;
@@ -178,6 +190,7 @@ export function useActivitySync(
     // Refresh every command-center cache once so no lane is left stale.
     void queryClient.invalidateQueries({
       predicate: (q) =>
+        isGeneratedQueryKey(q.queryKey, "activityGet") ||
         isGeneratedQueryKey(q.queryKey, "workitemsGet") ||
         isGeneratedQueryKey(q.queryKey, "pendinginteractionsGet") ||
         isGeneratedQueryKey(q.queryKey, "schedulesGet") ||
