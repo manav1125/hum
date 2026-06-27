@@ -29,6 +29,10 @@ import {
   templatesForMode,
 } from "@/domains/create/create-form-templates";
 import { CreateTemplateForm } from "@/domains/create/create-template-form";
+import {
+  CreatePreview,
+  previewForTemplate,
+} from "@/domains/create/create-previews";
 
 // Editorial tokens — mirrors the Library surface (design/HANDOFF.md):
 // Instrument Serif headline + DM Mono section labels over design-library
@@ -152,6 +156,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                 <FormTemplateCard
                   key={template.id}
                   template={template}
+                  modeId={activeMode.id}
                   onOpen={() => setActiveTemplateId(template.id)}
                 />
               ))}
@@ -169,6 +174,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
               <QuickTemplateCard
                 key={template.id}
                 template={template}
+                modeId={activeMode.id}
                 onSelect={() => onRunPrompt(template.prompt)}
               />
             ))}
@@ -182,34 +188,43 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
 /** Structured-template card — opens the input form. */
 function FormTemplateCard({
   template,
+  modeId,
   onOpen,
 }: {
   template: TemplateDefinition;
+  modeId: string;
   onOpen: () => void;
 }) {
+  const { kind, variant } = previewForTemplate(modeId, template.id);
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group flex h-full flex-col items-start rounded-xl border border-[var(--border-base)] bg-[var(--surface-base)] p-4 text-left transition-all hover:border-[var(--accent-cue)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-cue)]"
+      className="group flex h-full flex-col items-start overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--surface-base)] text-left transition-all hover:border-[var(--accent-cue)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-cue)]"
     >
-      <div className="flex w-full items-start justify-between gap-2">
-        <h3 className="text-[15px] font-semibold text-[var(--text-base)]">
-          {template.title}
-        </h3>
-        <span
-          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
-          style={{
-            backgroundColor: "var(--accent-cue-subtle, var(--surface-lift))",
-            color: "var(--accent-cue)",
-          }}
-        >
-          {template.inputs.length} fields
-        </span>
+      {/* Visual preview of the artifact this template produces. */}
+      <div className="w-full p-3 pb-0 transition-transform duration-200 group-hover:scale-[1.015]">
+        <CreatePreview kind={kind} variant={variant} />
       </div>
-      <p className="mt-1.5 text-[13px] leading-snug text-[var(--text-muted)]">
-        {template.description}
-      </p>
+      <div className="flex w-full flex-col p-4 pt-3">
+        <div className="flex w-full items-start justify-between gap-2">
+          <h3 className="text-[15px] font-semibold text-[var(--text-base)]">
+            {template.title}
+          </h3>
+          <span
+            className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
+            style={{
+              backgroundColor: "var(--accent-cue-subtle, var(--surface-lift))",
+              color: "var(--accent-cue)",
+            }}
+          >
+            {template.inputs.length} fields
+          </span>
+        </div>
+        <p className="mt-1.5 text-[13px] leading-snug text-[var(--text-muted)]">
+          {template.description}
+        </p>
+      </div>
     </button>
   );
 }
@@ -217,29 +232,38 @@ function FormTemplateCard({
 /** Quick-start card — seeds the thread directly with a prefilled prompt. */
 function QuickTemplateCard({
   template,
+  modeId,
   onSelect,
 }: {
   template: CreateTemplate;
+  modeId: string;
   onSelect: () => void;
 }) {
+  const { kind, variant } = previewForTemplate(modeId, template.id);
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="group flex h-full flex-col items-start rounded-xl border border-[var(--border-base)] bg-[var(--surface-base)] p-4 text-left transition-all hover:border-[var(--accent-cue)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-cue)]"
+      className="group flex h-full flex-col items-start overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--surface-base)] text-left transition-all hover:border-[var(--accent-cue)] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-cue)]"
     >
-      <div className="flex w-full items-start justify-between gap-2">
-        <h3 className="text-[15px] font-semibold text-[var(--text-base)]">
-          {template.title}
-        </h3>
-        <ArrowUpRight
-          className="size-4 shrink-0 text-[var(--text-dim)] opacity-0 transition-opacity group-hover:opacity-100"
-          aria-hidden="true"
-        />
+      {/* Visual preview of the artifact this prompt produces. */}
+      <div className="w-full p-3 pb-0 transition-transform duration-200 group-hover:scale-[1.015]">
+        <CreatePreview kind={kind} variant={variant} />
       </div>
-      <p className="mt-1.5 text-[13px] leading-snug text-[var(--text-muted)]">
-        {template.description}
-      </p>
+      <div className="flex w-full flex-col p-4 pt-3">
+        <div className="flex w-full items-start justify-between gap-2">
+          <h3 className="text-[15px] font-semibold text-[var(--text-base)]">
+            {template.title}
+          </h3>
+          <ArrowUpRight
+            className="size-4 shrink-0 text-[var(--text-dim)] opacity-0 transition-opacity group-hover:opacity-100"
+            aria-hidden="true"
+          />
+        </div>
+        <p className="mt-1.5 text-[13px] leading-snug text-[var(--text-muted)]">
+          {template.description}
+        </p>
+      </div>
     </button>
   );
 }
