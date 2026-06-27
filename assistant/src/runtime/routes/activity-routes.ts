@@ -268,7 +268,7 @@ function workItemUrgency(item: WorkItem): ActivityUrgency {
   return "low";
 }
 
-function projectWorkItem(item: WorkItem): ActivityItem {
+function projectWorkItem(item: WorkItem, includeResult: boolean): ActivityItem {
   const lane = workItemLane(item);
 
   const controls: ActivityControl[] = [];
@@ -297,9 +297,11 @@ function projectWorkItem(item: WorkItem): ActivityItem {
       break;
   }
 
-  // Done items carry an inline result via the shared extractor.
+  // Done items carry an inline result via the shared extractor. Each extraction
+  // is a conversation read, so the caller bounds this to the most-recent few
+  // terminal items (see buildActivityList) — never every historical work-item.
   let result: ActivityResult | undefined;
-  if (TERMINAL_WORK_ITEM_STATUSES.has(item.status)) {
+  if (includeResult && TERMINAL_WORK_ITEM_STATUSES.has(item.status)) {
     const { conversationId } = resolveWorkItemRunConversationId(item);
     if (conversationId) {
       try {
@@ -555,8 +557,20 @@ export function buildActivityList(): {
   } catch (err) {
     log.warn({ err: String(err) }, "activity_list: failed to read work-items");
   }
+  // Only the most-recent terminal work-items get an inline result — each
+  // extraction is a conversation read, so extracting for every historical
+  // work-item makes this O(N) DB reads and times the request out. Bound it to
+  // the items the Done lane would actually surface.
+  const RESULT_LIMIT = 15;
+  const recentTerminalIds = new Set(
+    workItems
+      .filter((w) => TERMINAL_WORK_ITEM_STATUSES.has(w.status))
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+      .slice(0, RESULT_LIMIT)
+      .map((w) => w.id),
+  );
   for (const wi of workItems) {
-    items.push(projectWorkItem(wi));
+    items.push(projectWorkItem(wi, recentTerminalIds.has(wi.id)));
   }
 
   // Set of work-item ids already projected — used to dedup feed cards that are
