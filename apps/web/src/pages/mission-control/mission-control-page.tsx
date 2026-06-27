@@ -29,11 +29,16 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { LiveDot } from "@/components/live-dot";
-import { useActivityList } from "@/hooks/use-activity-list";
 import { useActivitySync } from "@/hooks/use-activity-sync";
+import {
+  pendinginteractionsGetOptions,
+  schedulesGetOptions,
+  workitemsGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { C, mono, serif } from "@/domains/activity/theme";
 import { NeedsYouSection } from "@/domains/activity/sections/needs-you-section";
 import { RecentlyDoneSection } from "@/domains/activity/sections/recently-done-section";
@@ -75,22 +80,55 @@ const LANES: LaneDef[] = [
   { id: "done", title: "Done", icon: CheckCircle2, accent: C.green },
 ];
 
+const SAFETY_NET_MS = 60_000;
+
 /**
- * Header tally + lane counts — derived from the SINGLE unified `activity_list`
- * call (docs/MISSION_CONTROL.md §3 P3). The server unions the stores once and
- * returns per-lane `counts`, so the header no longer fans out four separate
- * queries (work-items×2 / schedules / pending-interactions). SSE keeps the one
- * query fresh via `useActivitySync`; the poll under it is a 60s safety-net.
+ * Header tally + lane counts from the command-center queries (work-items ×2 /
+ * schedules / pending-interactions). SSE (`useActivitySync`) invalidates these
+ * keys, so the poll under them is just a 60s safety-net.
+ *
+ * NOTE: the unified `activity_list` read model (P3, docs/MISSION_CONTROL.md §3)
+ * exists server-side and is the intended single-call source, but adopting it
+ * for the tally is deferred to the full-lane migration — so a single endpoint
+ * hiccup can never zero the header.
  */
 function useTally(assistantId: string) {
-  const data = useActivityList(assistantId);
-  const counts = data?.counts;
+  const running = useQuery({
+    ...workitemsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { status: "running" },
+    }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 15_000,
+  });
+  const done = useQuery({
+    ...workitemsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { status: "done" },
+    }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 20_000,
+  });
+  const schedules = useQuery({
+    ...schedulesGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 20_000,
+  });
+  const awaiting = useQuery({
+    ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 10_000,
+  });
+
+  const standing = (schedules.data?.schedules ?? []).filter(
+    (s) => s.status !== "cancelled",
+  ).length;
 
   return {
-    awaiting: counts?.awaiting_you ?? 0,
-    running: counts?.in_progress ?? 0,
-    standing: counts?.scheduled ?? 0,
-    done: counts?.done ?? 0,
+    awaiting: awaiting.data?.interactions?.length ?? 0,
+    running: running.data?.items?.length ?? 0,
+    standing,
+    done: done.data?.items?.length ?? 0,
   };
 }
 
