@@ -16,6 +16,7 @@ import type { GatewayConfig } from "../../config.js";
 import { fetchImpl } from "../../fetch.js";
 import { getLogger } from "../../logger.js";
 import { isLoopbackAddress } from "../../util/is-loopback-address.js";
+import { toFlatDaemonPath } from "./assistant-scoped-path.js";
 import { tryIpcProxy } from "./ipc-runtime-proxy.js";
 
 const log = getLogger("runtime-proxy");
@@ -93,15 +94,11 @@ export function createRuntimeProxyHandler(config: GatewayConfig) {
       exchangeToken = mintServiceToken();
     }
 
-    // The daemon uses flat /v1/... paths. Rewrite any legacy
+    // The daemon uses flat /v1/... paths. Rewrite any
     // /v1/assistants/:assistantId/... requests from clients to flat paths.
-    let upstreamPath = url.pathname;
-    const assistantScopedMatch = url.pathname.match(
-      /^\/v1\/assistants\/[^/]+\/(.+)$/,
-    );
-    if (assistantScopedMatch) {
-      upstreamPath = `/v1/${assistantScopedMatch[1]}`;
-    }
+    // Shared with the IPC proxy via toFlatDaemonPath so the two transports can
+    // never disagree on which daemon route a client path maps to.
+    const upstreamPath = toFlatDaemonPath(url.pathname);
 
     const upstream = buildUpstreamUrl(
       config.assistantRuntimeBaseUrl,

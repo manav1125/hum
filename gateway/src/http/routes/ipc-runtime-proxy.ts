@@ -29,6 +29,7 @@ import {
   type RouteSchemaPolicy,
 } from "../../ipc/route-schema-cache.js";
 import { getLogger } from "../../logger.js";
+import { toFlatDaemonPath } from "./assistant-scoped-path.js";
 
 const log = getLogger("ipc-runtime-proxy");
 
@@ -96,7 +97,10 @@ export async function tryIpcProxy(
     );
   }
 
-  const routePath = pathname.slice(V1_PREFIX.length);
+  // Rewrite assistant-scoped client paths to the flat path the daemon's route
+  // schema is keyed on, mirroring `runtime-proxy.ts` via the shared helper.
+  // `/v1/assistants/<id>/<route>` → `/v1/<route>`; flat paths pass through.
+  const routePath = toFlatDaemonPath(pathname).slice(V1_PREFIX.length);
   const match = matchRoute(req.method, routePath);
   if (!match) {
     return Response.json(
