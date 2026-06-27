@@ -1,1 +1,0 @@
-function e(e){return[...e].sort((e,t)=>e.priority===t.priority?new Date(t.createdAt).getTime()-new Date(e.createdAt).getTime():t.priority-e.priority)}function t(e){return n(e)[0]??null}function n(t){return e(t.filter(e=>(e.urgency===`high`||e.urgency===`critical`)&&e.status!==`dismissed`&&e.status!==`acted_on`))}export{e as n,t};
