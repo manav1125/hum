@@ -6,7 +6,6 @@ import { refreshBackgroundWakeIntent } from "../background-wake/publisher.js";
 import { registerBackgroundWakeRuntime } from "../background-wake/runtime-registry.js";
 import { setPointerMessageProcessor } from "../calls/call-pointer-messages.js";
 import { reconcileCallsOnStartup } from "../calls/call-recovery.js";
-import { reconcileGuardianContacts } from "../contacts/contact-store.js";
 import { setRelayBroadcast } from "../calls/relay-server.js";
 import { TwilioConversationRelayProvider } from "../calls/twilio-provider.js";
 import { setVoiceBridgeDeps } from "../calls/voice-session-bridge.js";
@@ -21,6 +20,7 @@ import {
 import { loadConfig, mergeDefaultWorkspaceConfig } from "../config/loader.js";
 import type { AssistantConfig } from "../config/schema.js";
 import { seedInferenceProfiles } from "../config/seed-inference-profiles.js";
+import { reconcileGuardianContacts } from "../contacts/contact-store.js";
 import type { CesClient } from "../credential-execution/client.js";
 import { createCesClient } from "../credential-execution/client.js";
 import { refreshManagedConnectionCache } from "../credential-execution/managed-catalog.js";
