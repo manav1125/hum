@@ -52,6 +52,28 @@ export interface ResolvedAssistant {
 }
 
 /**
+ * Collapse entries that share an `id`, keeping the first occurrence.
+ *
+ * The picker renders this list directly, so a duplicated id would surface as
+ * two identical "Local Assistant" cards. Duplicates can arise when the same
+ * assistant is present in both the lockfile's local set and the platform list
+ * synced into it (self-host → cloud), or from a double host-write landing
+ * before reconciliation. This is a presentation-layer guard only — it never
+ * deletes any persisted record (no lockfile / API mutation), it just prevents
+ * the same identity from appearing twice in one render.
+ */
+function dedupeById(assistants: ResolvedAssistant[]): ResolvedAssistant[] {
+  const seen = new Set<string>();
+  const out: ResolvedAssistant[] = [];
+  for (const a of assistants) {
+    if (seen.has(a.id)) continue;
+    seen.add(a.id);
+    out.push(a);
+  }
+  return out;
+}
+
+/**
  * Assistants usable under the active org: local entries (no org), legacy
  * entries with no org (`organizationId == null`), and platform entries owned
  * by the active org. Cross-org platform entries are dropped.
@@ -105,14 +127,16 @@ const useResolvedAssistantsStoreBase = create<ResolvedAssistantsStore>(
 
     setFromLockfile: (lockfile) => {
       const wasHydrated = get().assistantsHydrated;
-      const assistants = lockfile.assistants.map((a) => ({
-        id: a.assistantId,
-        name: a.name,
-        hatchedAt: a.hatchedAt,
-        isLocal: isLocalAssistant(a),
-        isPlatformHosted: isPlatformAssistant(a),
-        organizationId: a.organizationId,
-      }));
+      const assistants = dedupeById(
+        lockfile.assistants.map((a) => ({
+          id: a.assistantId,
+          name: a.name,
+          hatchedAt: a.hatchedAt,
+          isLocal: isLocalAssistant(a),
+          isPlatformHosted: isPlatformAssistant(a),
+          organizationId: a.organizationId,
+        })),
+      );
       set({ assistants, assistantsHydrated: true });
       // The lockfile carries every org's entries, so an id absent from it is
       // genuinely gone — safe to prune. (The API list is org-scoped, so
@@ -143,13 +167,15 @@ const useResolvedAssistantsStoreBase = create<ResolvedAssistantsStore>(
     setFromApi: (assistants) =>
       set({
         assistantsHydrated: true,
-        assistants: assistants.map((a) => ({
-          id: a.id,
-          name: a.name,
-          hatchedAt: a.created,
-          isLocal: a.is_local,
-          isPlatformHosted: !a.is_local,
-        })),
+        assistants: dedupeById(
+          assistants.map((a) => ({
+            id: a.id,
+            name: a.name,
+            hatchedAt: a.created,
+            isLocal: a.is_local,
+            isPlatformHosted: !a.is_local,
+          })),
+        ),
       }),
 
     upsertFromApi: (assistant) =>

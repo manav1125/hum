@@ -233,6 +233,25 @@ export async function createGuardianBinding(
       );
       if (vellumGuardians[0]) {
         existingContacts[0] = vellumGuardians[0];
+      } else {
+        // No vellum-bound guardian, but a guardian may still exist holding only
+        // Slack/email channels (its vellum channel was never created or was
+        // pruned). Without this fallback, minting the vellum binding here would
+        // INSERT a second `role='guardian'` row and strand those channel
+        // bindings on the old guardian — the user then sees "Slack not
+        // connected" because the actor token binds to the new, empty guardian.
+        // Adopt the oldest existing guardian instead; the UPDATE below re-keys
+        // it onto the fresh principal and attaches the vellum channel, keeping a
+        // single guardian (non-destructive — no rows are deleted).
+        const anyGuardians = await assistantDbQuery<{ id: string }>(
+          `SELECT id FROM contacts
+           WHERE role = 'guardian'
+           ORDER BY created_at ASC, id ASC
+           LIMIT 1`,
+        );
+        if (anyGuardians[0]) {
+          existingContacts[0] = anyGuardians[0];
+        }
       }
     }
 

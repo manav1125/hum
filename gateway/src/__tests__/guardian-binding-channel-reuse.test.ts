@@ -82,6 +82,7 @@ beforeEach(() => {
       verified_via TEXT,
       revoked_reason TEXT,
       blocked_reason TEXT,
+      interaction_count INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER
     );
@@ -201,6 +202,60 @@ describe("createGuardianBinding", () => {
       >("SELECT contact_id FROM contact_channels WHERE type = 'vellum'")
       .all();
     expect(channels).toEqual([{ contact_id: "vellum-guardian" }]);
+  });
+
+  test("re-bootstrap adopts a Slack-only guardian (no vellum channel) instead of minting a duplicate", async () => {
+    // The surviving guardian holds ONLY a Slack channel — its vellum channel
+    // was never created (or was pruned), so `findVellumGuardian` / the
+    // active-vellum guard both miss it. This is the exact state behind the
+    // "Slack connected on another assistant" report.
+    seedGuardianContact(); // 'guardian-contact', principal 'guardian-principal'
+    db()
+      .prepare(
+        `INSERT INTO contact_channels
+           (id, contact_id, type, address, external_user_id, external_chat_id,
+            is_primary, status, policy, created_at, updated_at)
+         VALUES
+           ('slack-only-channel', 'guardian-contact', 'slack', 'U999OWNER',
+            'U999OWNER', 'D999OWNER', 1, 'active', 'allow', 1, 1)`,
+      )
+      .run();
+
+    // Re-bootstrap mints a FRESH vellum principal.
+    const result = await createGuardianBinding({
+      channel: "vellum",
+      externalUserId: "vellum-principal-new",
+      deliveryChatId: "vellum-principal-new",
+      guardianPrincipalId: "vellum-principal-new",
+      displayName: "Example User",
+      verifiedVia: "challenge",
+    });
+
+    // The existing Slack-only guardian is adopted and re-keyed — NOT duplicated.
+    expect(result.contactId).toBe("guardian-contact");
+
+    const guardians = db()
+      .query<
+        { id: string; principal_id: string },
+        []
+      >("SELECT id, principal_id FROM contacts WHERE role = 'guardian'")
+      .all();
+    expect(guardians).toEqual([
+      { id: "guardian-contact", principal_id: "vellum-principal-new" },
+    ]);
+
+    // Both channels now live on the single guardian: the original Slack channel
+    // is preserved (non-destructive) and the new vellum channel is attached.
+    const channels = db()
+      .query<
+        { contact_id: string; type: string },
+        []
+      >("SELECT contact_id, type FROM contact_channels ORDER BY type")
+      .all();
+    expect(channels).toEqual([
+      { contact_id: "guardian-contact", type: "slack" },
+      { contact_id: "guardian-contact", type: "vellum" },
+    ]);
   });
 
   test("claims a preseeded Slack channel for the guardian instead of inserting a duplicate", async () => {

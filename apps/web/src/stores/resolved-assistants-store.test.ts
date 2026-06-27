@@ -61,6 +61,41 @@ describe("setFromLockfile", () => {
     expect(entry.isLocal).toBe(true);
     expect(entry.organizationId).toBeUndefined();
   });
+
+  it("collapses duplicate ids so the picker shows one card per assistant", () => {
+    // The same id present twice (e.g. the local set and a synced platform list
+    // both carrying it) must not render as two identical cards.
+    const lockfile: Lockfile = {
+      assistants: [localAssistant, { ...localAssistant, name: "Local (dupe)" }],
+      activeAssistant: null,
+    };
+    useResolvedAssistantsStore.getState().setFromLockfile(lockfile);
+
+    const { assistants } = useResolvedAssistantsStore.getState();
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].id).toBe("asst-local");
+    // First occurrence wins.
+    expect(assistants[0].name).toBe("Local");
+  });
+});
+
+describe("setFromApi dedup", () => {
+  it("collapses duplicate ids from the platform list", () => {
+    type ApiAssistant = Parameters<
+      ReturnType<typeof useResolvedAssistantsStore.getState>["setFromApi"]
+    >[0][number];
+    const entries: ApiAssistant[] = [
+      { id: "asst-x", name: "X", is_local: true, created: "2026-01-01" },
+      { id: "asst-x", name: "X again", is_local: true, created: "2026-01-02" },
+      { id: "asst-y", name: "Y", is_local: false, created: "2026-01-03" },
+    ] as ApiAssistant[];
+    useResolvedAssistantsStore.getState().setFromApi(entries);
+
+    const ids = useResolvedAssistantsStore
+      .getState()
+      .assistants.map((a) => a.id);
+    expect(ids).toEqual(["asst-x", "asst-y"]);
+  });
 });
 
 describe("upsertFromApi", () => {
