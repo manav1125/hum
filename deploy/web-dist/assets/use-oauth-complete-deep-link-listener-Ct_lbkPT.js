@@ -1,1 +1,0 @@
-import{o as e}from"./chunk-jRWAZmH_.js";import{t}from"./react-DJZBPgpf.js";import{P as n}from"./index-B0G6qtFo.js";var r=e(t(),1);function i(e){(0,r.useEffect)(()=>{let t=t=>{e(t.detail)};return window.addEventListener(n,t),()=>{window.removeEventListener(n,t)}},[e])}export{i as t};
