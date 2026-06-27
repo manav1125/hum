@@ -60,7 +60,10 @@ jobs:
               echo "profile_key=IOS_PROVISIONING_PROFILE" >> "$GITHUB_OUTPUT"
               echo "profile_name=Cue App Store" >> "$GITHUB_OUTPUT"
               echo "apple_app_id_key=APPLE_APP_ID_PROD" >> "$GITHUB_OUTPUT"
-              echo "vellum_env=production" >> "$GITHUB_OUTPUT"
+              # cap sync env MUST be "cue" so server.url resolves to the Cue
+              # cloud (cue-app-3yne.onrender.com); "production" points the shell
+              # at the old www.vellum.ai site.
+              echo "vellum_env=cue" >> "$GITHUB_OUTPUT"
               echo "testflight_internal=false" >> "$GITHUB_OUTPUT"
               ;;
             staging)
