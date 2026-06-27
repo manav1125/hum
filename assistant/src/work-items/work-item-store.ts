@@ -249,14 +249,26 @@ export function findActiveWorkItemsByTitle(title: string): WorkItem[] {
 /**
  * Find an existing active (queued/running/awaiting_review) work item that
  * represents the same commitment, so the enqueue path can skip minting a
- * duplicate. Keyed on `(sourceType, sourceId)` when a stable source exists
- * (the strongest signal — the same feed item / channel thread), and
- * additionally narrowed by a normalized title so two *distinct* commitments
- * that happen to share a source bucket (e.g. two different asks in the same
- * Slack thread) are NOT collapsed.
+ * duplicate. Match precedence, strongest first:
  *
- * When no `sourceId` is available, falls back to a title-only match so the
- * guard still suppresses obvious duplicates for source-less items.
+ *  1. **`(sourceType, sourceId, title)`** — same source bucket (feed item /
+ *     channel thread) AND same normalized title. The title guard keeps two
+ *     genuinely different commitments from one thread from collapsing.
+ *  2. **`(sourceType, title)` — channel + title fallback.** When the strict
+ *     key misses but the item carries a real channel `sourceType`, match any
+ *     active item on the *same channel* with the *same normalized title*. This
+ *     closes the duplicate-in-queue bug: an action-board card's derived
+ *     `sourceId` is its feed-item id (`action-board:<date>:<index>`), which
+ *     changes between board builds when the LLM reorders cards — so the same
+ *     commitment ("Send OTP to Aileen…") re-dispatched from a rebuilt board got
+ *     a *different* `sourceId`, slipped past key #1, and minted a second
+ *     work-item with an identical title + channel. Scoping the fallback to the
+ *     same `sourceType` + normalized title + still-active status collapses that
+ *     duplicate without over-collapsing: two different titles, or the same
+ *     title on a different channel, still stay distinct (key #1's
+ *     cross-channel/cross-title guarantees are preserved).
+ *  3. **title-only** — when no source at all is available (genuine local
+ *     tasks), fall back to a title-only match.
  *
  * Returns the most recently-updated match, or `undefined` if none.
  */
@@ -269,23 +281,38 @@ export function findActiveWorkItemBySource(opts: {
   const sourceType = opts.sourceType ?? null;
   const sourceId = opts.sourceId ?? null;
 
-  const matches = listWorkItems().filter((i) => {
-    if (!ACTIVE_DEDUP_STATUSES.has(i.status)) return false;
-    if (sourceId) {
-      // Strong key: same source bucket AND same title. The title guard keeps
-      // two genuinely different commitments from one thread from collapsing.
-      return (
-        i.sourceType === sourceType &&
-        i.sourceId === sourceId &&
-        i.title.trim().toLowerCase() === normalizedTitle
-      );
-    }
-    // No source to key on — fall back to title-only dedup.
-    return i.title.trim().toLowerCase() === normalizedTitle;
-  });
+  const active = listWorkItems().filter((i) =>
+    ACTIVE_DEDUP_STATUSES.has(i.status),
+  );
+  const titleEq = (i: WorkItem) =>
+    i.title.trim().toLowerCase() === normalizedTitle;
 
-  // Return the most-recently-updated candidate.
-  return matches.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  if (sourceId) {
+    // 1. Strong key: same source bucket AND same title.
+    const strict = active.filter(
+      (i) =>
+        i.sourceType === sourceType && i.sourceId === sourceId && titleEq(i),
+    );
+    if (strict.length > 0) {
+      return strict.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    }
+    // 2. Channel + title fallback: same channel sourceType + same title, even
+    // when the per-build sourceId differs. Only when a channel sourceType is
+    // present, so two source-less commitments on no channel never collapse here.
+    if (sourceType) {
+      const byChannel = active.filter(
+        (i) => i.sourceType === sourceType && titleEq(i),
+      );
+      if (byChannel.length > 0) {
+        return byChannel.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      }
+    }
+    return undefined;
+  }
+
+  // No source to key on — title-only dedup.
+  const byTitle = active.filter(titleEq);
+  return byTitle.sort((a, b) => b.updatedAt - a.updatedAt)[0];
 }
 
 export interface DedupeWorkItemsResult {
@@ -315,11 +342,12 @@ export function dedupeWorkItems(): DedupeWorkItemsResult {
   const groups = new Map<string, WorkItem[]>();
   for (const i of active) {
     const title = i.title.trim().toLowerCase();
-    // Source-keyed when a stable source exists; title-only otherwise — same
-    // key the live enqueue guard uses.
-    const key = i.sourceId
-      ? `s:${i.sourceType ?? ""} ${i.sourceId} ${title}`
-      : `t:${title}`;
+    // Channel-keyed on (sourceType, title) — sourceId is deliberately
+    // excluded so the same commitment re-dispatched from a rebuilt action
+    // board (whose per-build sourceId changes) collapses to one row, matching
+    // the live enqueue guard's channel+title fallback. Source-less items key
+    // on title only.
+    const key = i.sourceType ? `s:${i.sourceType} ${title}` : `t:${title}`;
     const bucket = groups.get(key);
     if (bucket) bucket.push(i);
     else groups.set(key, [i]);

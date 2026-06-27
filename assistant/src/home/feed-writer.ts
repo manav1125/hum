@@ -41,6 +41,7 @@ import { buildAssistantEvent } from "../runtime/assistant-event.js";
 import { assistantEventHub } from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
 import { getDataDir } from "../util/platform.js";
+import type { WorkItem } from "../work-items/work-item-store.js";
 import {
   type FeedItem,
   type FeedItemStatus,
@@ -48,6 +49,7 @@ import {
   type HomeFeedFile,
   parseFeedFile,
 } from "./feed-types.js";
+import { feedItemMatchesWorkItem } from "./work-item-feed.js";
 
 const log = getLogger("home-feed-writer");
 
@@ -222,6 +224,80 @@ export async function clearAllConversationIds(): Promise<number> {
   return stripConversationIds("*");
 }
 
+/**
+ * Reconcile the feed against a work-item that has reached a terminal state
+ * (`done` / `cancelled` / `archived` / `failed`). Any feed card that is the
+ * surface representation of this work-item (see
+ * {@link feedItemMatchesWorkItem}) is marked `"dismissed"` so a finished /
+ * cancelled task's "Run it" card stops lingering in the Inbound lane.
+ *
+ * This is the *mutation side* of the FeedItem ↔ WorkItem coupling: previously
+ * the two only joined at read time (`mergeWorkItemsIntoFeed`), so a cancelled
+ * work-item and its feed card could drift — the card persisted on disk as
+ * actionable even though the underlying commitment was dead.
+ *
+ * Idempotent: a card already `"dismissed"` is left untouched, so repeated
+ * terminal broadcasts for the same id are no-ops. Returns the number of cards
+ * newly dismissed. Never throws — failures degrade to a warn-log so callers on
+ * a work-item's terminal path don't need a try/catch (matches the daemon
+ * fire-and-forget philosophy).
+ */
+export async function resolveFeedItemsForWorkItem(
+  workItem: Pick<WorkItem, "id" | "title" | "sourceType" | "sourceId">,
+): Promise<number> {
+  let resolveResult!: (count: number) => void;
+  const resultPromise = new Promise<number>((resolve) => {
+    resolveResult = resolve;
+  });
+  pendingWorkItemResolves.push({ workItem, resolve: resolveResult });
+  void scheduleWrite();
+  return resultPromise;
+}
+
+/**
+ * Work-item statuses that are *terminal* for feed-coupling purposes: the
+ * commitment is finished or dead, so its actionable feed card should leave the
+ * Inbound lane. `failed` is included — a failed task's "Run it" card is just as
+ * stale as a cancelled one (a deliberate retry mints a fresh card/work-item).
+ */
+const TERMINAL_FEED_COUPLING_STATUSES: ReadonlySet<WorkItem["status"]> =
+  new Set(["done", "cancelled", "archived", "failed"]);
+
+/**
+ * Fire-and-forget feed reconciliation hook for a work-item status change.
+ * Called from the `broadcastWorkItemStatus` chokepoints so every terminal
+ * transition (cancel / complete / archive / fail, from any code path) keeps the
+ * feed consistent without each call site re-deriving the link. A no-op for
+ * non-terminal statuses (`queued` / `running` / `awaiting_review`) — those stay
+ * surfaced. Never throws; logs and continues on failure.
+ */
+export function reconcileFeedForWorkItemStatus(
+  workItem: Pick<WorkItem, "id" | "title" | "sourceType" | "sourceId"> & {
+    status: WorkItem["status"];
+  },
+): void {
+  if (!TERMINAL_FEED_COUPLING_STATUSES.has(workItem.status)) return;
+  void resolveFeedItemsForWorkItem(workItem)
+    .then((count) => {
+      if (count > 0) {
+        log.info(
+          {
+            workItemId: workItem.id,
+            status: workItem.status,
+            dismissed: count,
+          },
+          "Dismissed feed card(s) for terminal work item",
+        );
+      }
+    })
+    .catch((err) => {
+      log.warn(
+        { err, workItemId: workItem.id },
+        "Failed to reconcile feed for terminal work item",
+      );
+    });
+}
+
 // ─── Internal: coalescing queue ────────────────────────────────────────
 
 /**
@@ -242,6 +318,10 @@ const pendingContentPatches: Array<{
 }> = [];
 const pendingStrips: Array<{
   conversationId: string;
+  resolve: (count: number) => void;
+}> = [];
+const pendingWorkItemResolves: Array<{
+  workItem: Pick<WorkItem, "id" | "title" | "sourceType" | "sourceId">;
   resolve: (count: number) => void;
 }> = [];
 
@@ -287,6 +367,10 @@ async function runWrite(): Promise<void> {
     pendingContentPatches.length,
   );
   const stripsToApply = pendingStrips.splice(0, pendingStrips.length);
+  const workItemResolvesToApply = pendingWorkItemResolves.splice(
+    0,
+    pendingWorkItemResolves.length,
+  );
 
   const current = readHomeFeed();
   let items = current.items.slice();
@@ -365,6 +449,27 @@ async function runWrite(): Promise<void> {
     stripResults.push({ resolve: strip.resolve, count });
   }
 
+  // Reconcile feed cards against terminal work-items: dismiss any card that is
+  // the surface representation of the work-item so a cancelled/done task's
+  // "Run it" card leaves the Inbound lane. Idempotent — already-dismissed
+  // cards are skipped, so re-broadcasts for the same id don't re-count.
+  const workItemResolveResults: Array<{
+    resolve: (count: number) => void;
+    count: number;
+  }> = [];
+  for (const { workItem, resolve } of workItemResolvesToApply) {
+    let count = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
+      if (item.status === "dismissed") continue;
+      if (feedItemMatchesWorkItem(item, workItem)) {
+        items[i] = { ...item, status: "dismissed" };
+        count++;
+      }
+    }
+    workItemResolveResults.push({ resolve, count });
+  }
+
   items.sort(compareFeedItems);
 
   const updatedAt = new Date().toISOString();
@@ -406,6 +511,9 @@ async function runWrite(): Promise<void> {
     resolve(wrote ? value : null);
   }
   for (const { resolve, count } of stripResults) {
+    resolve(wrote ? count : 0);
+  }
+  for (const { resolve, count } of workItemResolveResults) {
     resolve(wrote ? count : 0);
   }
 }

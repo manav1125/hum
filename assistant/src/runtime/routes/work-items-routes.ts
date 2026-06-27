@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { findConversation } from "../../daemon/conversation-registry.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
+import { reconcileFeedForWorkItemStatus } from "../../home/feed-writer.js";
 import { getMessages } from "../../memory/conversation-crud.js";
 import { check, classifyRisk } from "../../permissions/checker.js";
 import { getSubagentManager } from "../../subagent/index.js";
@@ -59,6 +60,9 @@ function broadcastWorkItemStatus(id: string): void {
         updatedAt: item.updatedAt,
       },
     });
+    // Couple the feed lifecycle: a terminal work-item dismisses its matching
+    // "Run it" card so it stops lingering in the Inbound lane.
+    reconcileFeedForWorkItemStatus(item);
   }
 }
 
@@ -617,6 +621,9 @@ export const ROUTES: RouteDefinition[] = [
         throw new NotFoundError("Work item not found");
       }
       deleteWorkItem(id);
+      // Strip the matching feed card too — a deleted work-item must not leave
+      // its "Run it" card behind in the Inbound lane.
+      reconcileFeedForWorkItemStatus({ ...existing, status: "archived" });
       publishEvent({ type: "tasks_changed" });
       return { id, success: true };
     },

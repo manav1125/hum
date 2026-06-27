@@ -49,6 +49,7 @@ const {
   getHomeFeedPath,
   patchFeedItemStatus,
   readHomeFeed,
+  resolveFeedItemsForWorkItem,
   stripConversationIds,
 } = await import("../feed-writer.js");
 
@@ -639,6 +640,122 @@ describe("feed-writer", () => {
       };
       expect(event.message.type).toBe("home_feed_updated");
       expect(event.message.newItemCount).toBe(0);
+    });
+  });
+
+  describe("resolveFeedItemsForWorkItem (FeedItem ↔ WorkItem coupling)", () => {
+    test("dismisses the work-item-derived card by exact id", async () => {
+      await appendFeedItem(makeItem({ id: "work-item:wi-1", status: "new" }));
+
+      const count = await resolveFeedItemsForWorkItem({
+        id: "wi-1",
+        title: "anything",
+        sourceType: null,
+        sourceId: null,
+      });
+
+      expect(count).toBe(1);
+      const items = readHomeFeed().items;
+      expect(items.find((i) => i.id === "work-item:wi-1")!.status).toBe(
+        "dismissed",
+      );
+    });
+
+    test("dismisses a card carrying metadata.workItemId", async () => {
+      await appendFeedItem({
+        ...makeItem({ id: "action-board:2026-06-22:0", status: "new" }),
+        metadata: { kind: "action-board-item", workItemId: "wi-7" },
+      } as unknown as TestFeedItem);
+
+      const count = await resolveFeedItemsForWorkItem({
+        id: "wi-7",
+        title: "Send OTP",
+        sourceType: null,
+        sourceId: null,
+      });
+
+      expect(count).toBe(1);
+      const card = readHomeFeed().items.find(
+        (i) => i.id === "action-board:2026-06-22:0",
+      )!;
+      expect(card.status).toBe("dismissed");
+    });
+
+    test("dismisses an action-board card by (sourceType, sourceId) + title", async () => {
+      await appendFeedItem({
+        ...makeItem({
+          id: "action-board:2026-06-22:0",
+          title: "Send OTP to Aileen",
+          status: "new",
+        }),
+        metadata: { channel: "slack", sourceConversationId: "C123" },
+      } as unknown as TestFeedItem);
+
+      const count = await resolveFeedItemsForWorkItem({
+        id: "wi-9",
+        title: "send otp to aileen", // case-insensitive
+        sourceType: "slack",
+        sourceId: "C123",
+      });
+
+      expect(count).toBe(1);
+      const card = readHomeFeed().items.find(
+        (i) => i.id === "action-board:2026-06-22:0",
+      )!;
+      expect(card.status).toBe("dismissed");
+    });
+
+    test("does NOT dismiss an unrelated card (different title, same thread)", async () => {
+      await appendFeedItem({
+        ...makeItem({
+          id: "action-board:2026-06-22:0",
+          title: "Forward the invoice",
+          status: "new",
+        }),
+        metadata: { channel: "slack", sourceConversationId: "C123" },
+      } as unknown as TestFeedItem);
+
+      const count = await resolveFeedItemsForWorkItem({
+        id: "wi-9",
+        title: "Send OTP to Aileen",
+        sourceType: "slack",
+        sourceId: "C123",
+      });
+
+      expect(count).toBe(0);
+      const card = readHomeFeed().items.find(
+        (i) => i.id === "action-board:2026-06-22:0",
+      )!;
+      expect(card.status).toBe("new");
+    });
+
+    test("is idempotent — a second call dismisses nothing new", async () => {
+      await appendFeedItem(makeItem({ id: "work-item:wi-1", status: "new" }));
+      const first = await resolveFeedItemsForWorkItem({
+        id: "wi-1",
+        title: "x",
+        sourceType: null,
+        sourceId: null,
+      });
+      const second = await resolveFeedItemsForWorkItem({
+        id: "wi-1",
+        title: "x",
+        sourceType: null,
+        sourceId: null,
+      });
+      expect(first).toBe(1);
+      expect(second).toBe(0);
+    });
+
+    test("returns 0 when no card matches", async () => {
+      await appendFeedItem(makeItem({ id: "work-item:other", status: "new" }));
+      const count = await resolveFeedItemsForWorkItem({
+        id: "wi-missing",
+        title: "x",
+        sourceType: null,
+        sourceId: null,
+      });
+      expect(count).toBe(0);
     });
   });
 });

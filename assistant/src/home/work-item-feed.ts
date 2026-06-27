@@ -236,6 +236,50 @@ export function dedupeFeedItems(items: FeedItem[]): FeedItem[] {
 }
 
 /**
+ * Decide whether a feed card is the surface representation of a given
+ * work-item — i.e. they describe the *same commitment*. This is the canonical
+ * FeedItem ↔ WorkItem link, used by the lifecycle-coupling path (when a
+ * work-item reaches a terminal state, its matching feed card is resolved so a
+ * cancelled task's "Run it" card stops lingering in Inbound).
+ *
+ * Three link shapes, checked strongest-first:
+ *   1. **Exact id** — the card is the work-item-derived card `work-item:<id>`.
+ *   2. **Metadata back-reference** — the card carries `metadata.workItemId`
+ *      (set by `workItemToFeedItem` and by the dispatch path) equal to the id.
+ *   3. **Source + title** — an action-board / channel-triage card that spawned
+ *      this work-item: same `(sourceType, sourceId)` provenance AND the same
+ *      normalized title. The title guard keeps two distinct commitments from
+ *      one thread from being cross-linked.
+ *
+ * Pure — no I/O.
+ */
+export function feedItemMatchesWorkItem(
+  item: FeedItem,
+  workItem: Pick<WorkItem, "id" | "title" | "sourceType" | "sourceId">,
+): boolean {
+  // 1. Exact work-item-derived card id.
+  if (item.id === `${WORK_ITEM_FEED_PREFIX}${workItem.id}`) return true;
+
+  // 2. Explicit back-reference in metadata.
+  const md = item.metadata as { workItemId?: unknown } | undefined;
+  if (typeof md?.workItemId === "string" && md.workItemId === workItem.id) {
+    return true;
+  }
+
+  // 3. Same channel/source provenance + same normalized title.
+  if (workItem.sourceType && workItem.sourceId) {
+    const itemSource = feedItemSourceKey(item);
+    if (itemSource === `${workItem.sourceType}:${workItem.sourceId}`) {
+      const itemTitle = item.title?.trim().toLowerCase();
+      const wiTitle = workItem.title?.trim().toLowerCase();
+      if (itemTitle && wiTitle && itemTitle === wiTitle) return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Union the on-disk feed items with queued work-items mapped to FeedItems,
  * then dedupe the combined list.
  *

@@ -544,7 +544,7 @@ describe("findActiveWorkItemBySource (enqueue dedup guard)", () => {
     expect(found).toBeUndefined();
   });
 
-  test("does NOT collapse same title across different sources", () => {
+  test("does NOT collapse same title across different channels (sourceType)", () => {
     const task = createTask({ title: "T", template: "t" });
     createWorkItem({
       taskId: task.id,
@@ -552,10 +552,69 @@ describe("findActiveWorkItemBySource (enqueue dedup guard)", () => {
       sourceType: "slack",
       sourceId: "thread-a",
     });
+    // Same title, DIFFERENT channel — the channel+title fallback must not fire.
     const found = findActiveWorkItemBySource({
       title: "Send OTP",
-      sourceType: "slack",
+      sourceType: "telegram",
       sourceId: "thread-b",
+    });
+    expect(found).toBeUndefined();
+  });
+
+  test("DEDUP BUG: collapses same channel + same title when sourceId differs", () => {
+    // This is the duplicate-in-queue root cause: an action-board card's derived
+    // sourceId is its feed-item id (action-board:<date>:<index>), which changes
+    // between board builds when the LLM reorders cards. The original strict
+    // (sourceType, sourceId, title) key missed this and minted a second
+    // work-item with an identical title + channel but a fresh UUID.
+    const task = createTask({ title: "T", template: "t" });
+    const first = createWorkItem({
+      taskId: task.id,
+      title: "Send OTP to Aileen for Guillermo's flight",
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-22:0",
+    });
+    // Same commitment, same channel, but the per-build sourceId shifted (the
+    // card landed at a different index in the rebuilt board).
+    const found = findActiveWorkItemBySource({
+      title: "Send OTP to Aileen for Guillermo's flight",
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-23:2",
+    });
+    expect(found?.id).toBe(first.id);
+  });
+
+  test("channel+title fallback still requires the SAME title (distinct asks stay split)", () => {
+    // Two different commitments on the same channel with differing sourceIds —
+    // the fallback keys on title, so these must NOT collapse.
+    const task = createTask({ title: "T", template: "t" });
+    createWorkItem({
+      taskId: task.id,
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-22:0",
+    });
+    const found = findActiveWorkItemBySource({
+      title: "Forward the invoice to finance",
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-23:1",
+    });
+    expect(found).toBeUndefined();
+  });
+
+  test("channel+title fallback ignores terminal items (retry can re-enqueue)", () => {
+    const task = createTask({ title: "T", template: "t" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-22:0",
+    });
+    updateWorkItem(wi.id, { status: "done" });
+    const found = findActiveWorkItemBySource({
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-23:2",
     });
     expect(found).toBeUndefined();
   });
@@ -758,19 +817,39 @@ describe("dedupeWorkItems (collapse existing duplicates)", () => {
     expect(remaining[0]!.id).toBe("wi-1");
   });
 
-  test("does NOT collapse same title across different sources", () => {
+  test("does NOT collapse same title across different channels (sourceType)", () => {
     const task = createTask({ title: "T", template: "t" });
     seedWorkItem("wi-a", task.id, "Send OTP", 100, {
       sourceType: "slack",
       sourceId: "thread-a",
     });
     seedWorkItem("wi-b", task.id, "Send OTP", 200, {
-      sourceType: "slack",
+      sourceType: "telegram",
       sourceId: "thread-b",
     });
     const result = dedupeWorkItems();
     expect(result.collapsed).toBe(0);
     expect(listWorkItems()).toHaveLength(2);
+  });
+
+  test("collapses same channel + same title even when sourceId differs (per-build action-board dup)", () => {
+    // Mirrors the live enqueue guard's channel+title fallback: the same
+    // commitment re-dispatched from a rebuilt action board gets a fresh
+    // sourceId (action-board:<date>:<index>) but is still one commitment.
+    const task = createTask({ title: "T", template: "t" });
+    seedWorkItem("wi-old", task.id, "Send OTP to Aileen", 100, {
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-22:0",
+    });
+    seedWorkItem("wi-new", task.id, "send otp to aileen", 200, {
+      sourceType: "slack",
+      sourceId: "action-board:2026-06-23:2",
+    });
+    const result = dedupeWorkItems();
+    expect(result.collapsed).toBe(1);
+    const remaining = listWorkItems();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe("wi-old"); // oldest wins
   });
 
   test("collapses source-less duplicates by title and is idempotent", () => {

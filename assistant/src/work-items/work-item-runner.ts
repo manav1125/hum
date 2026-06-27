@@ -7,6 +7,7 @@
 
 import { getOrCreateConversation } from "../daemon/conversation-store.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
+import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { recordImpact } from "../home/impact-store.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import {
@@ -113,6 +114,9 @@ export function broadcastWorkItemStatus(id: string): void {
         updatedAt: item.updatedAt,
       },
     } as ServerMessage);
+    // Couple the feed lifecycle: a terminal work-item dismisses its matching
+    // "Run it" card so it stops lingering in the Inbound lane.
+    reconcileFeedForWorkItemStatus(item);
   }
 }
 

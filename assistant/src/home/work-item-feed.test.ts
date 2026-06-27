@@ -11,6 +11,7 @@ import type { WorkItem } from "../work-items/work-item-store.js";
 import type { FeedItem } from "./feed-types.js";
 import {
   dedupeFeedItems,
+  feedItemMatchesWorkItem,
   mergeWorkItemsIntoFeed,
   sourceTypeToCategory,
   WORK_ITEM_FEED_PREFIX,
@@ -169,6 +170,79 @@ describe("mergeWorkItemsIntoFeed", () => {
     expect(
       merged.filter((i) => i.id === `${WORK_ITEM_FEED_PREFIX}538fffa3`),
     ).toHaveLength(1);
+  });
+});
+
+describe("feedItemMatchesWorkItem (FeedItem ↔ WorkItem link)", () => {
+  it("matches the work-item-derived card by exact id", () => {
+    const wi = makeWorkItem({ id: "wi-1" });
+    const card = makeFeedItem({ id: `${WORK_ITEM_FEED_PREFIX}wi-1` });
+    expect(feedItemMatchesWorkItem(card, wi)).toBe(true);
+  });
+
+  it("matches a card carrying metadata.workItemId", () => {
+    const wi = makeWorkItem({ id: "wi-7" });
+    const card = makeFeedItem({
+      id: "action-board:2026-06-20:0",
+      metadata: { workItemId: "wi-7" },
+    });
+    expect(feedItemMatchesWorkItem(card, wi)).toBe(true);
+  });
+
+  it("matches an action-board card by (sourceType, sourceId) + title (case-insensitive)", () => {
+    const wi = makeWorkItem({
+      id: "wi-9",
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "C123",
+    });
+    const card = makeFeedItem({
+      id: "action-board:2026-06-20:0",
+      title: "send otp to aileen",
+      metadata: { channel: "slack", sourceConversationId: "C123" },
+    });
+    expect(feedItemMatchesWorkItem(card, wi)).toBe(true);
+  });
+
+  it("does NOT match a different title on the same thread", () => {
+    const wi = makeWorkItem({
+      id: "wi-9",
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "C123",
+    });
+    const card = makeFeedItem({
+      id: "action-board:2026-06-20:0",
+      title: "Forward the invoice",
+      metadata: { channel: "slack", sourceConversationId: "C123" },
+    });
+    expect(feedItemMatchesWorkItem(card, wi)).toBe(false);
+  });
+
+  it("does NOT match the same title on a different thread", () => {
+    const wi = makeWorkItem({
+      id: "wi-9",
+      title: "Send OTP to Aileen",
+      sourceType: "slack",
+      sourceId: "C123",
+    });
+    const card = makeFeedItem({
+      id: "action-board:2026-06-20:0",
+      title: "Send OTP to Aileen",
+      metadata: { channel: "slack", sourceConversationId: "C999" },
+    });
+    expect(feedItemMatchesWorkItem(card, wi)).toBe(false);
+  });
+
+  it("does NOT match a source-less work-item against an unrelated card", () => {
+    const wi = makeWorkItem({
+      id: "wi-1",
+      title: "Local task",
+      sourceType: null,
+      sourceId: null,
+    });
+    const card = makeFeedItem({ id: "action-board:2026-06-20:0" });
+    expect(feedItemMatchesWorkItem(card, wi)).toBe(false);
   });
 });
 
