@@ -52,6 +52,17 @@ final class CueLiveController: @unchecked Sendable {
     @MainActor private var pttMonitor: CuePushToTalkMonitor?
     @MainActor private var voiceWired = false
 
+    /// User-configurable hotkeys (backlog #29). The summon binding replaces the
+    /// previously-hardcoded Control+Option+Space; `run` is the new ⌥R
+    /// push-to-run key. Mutated only from the main actor (via JSON-RPC).
+    @MainActor private var bindings = CueHotkeyBindings.defaults
+
+    /// Vision-capture mode (backlog #29 "scoped / always-on capture modes").
+    /// `manual` (default) = capture only when explicitly asked, preserving the
+    /// current one-shot `captureScreen` behavior. The mode is scaffolding the
+    /// daemon reads back; the helper does not yet stream frames on its own.
+    @MainActor private var captureMode: CueCaptureMode = .manual
+
     init(emit: @escaping (String, [String: Any]?) -> Void) {
         self.emit = emit
     }
@@ -154,6 +165,42 @@ final class CueLiveController: @unchecked Sendable {
             emitSummon(question: question)
         }
         return ["ok": true]
+    }
+
+    /// Configure the summon / push-to-run hotkeys (backlog #29). Accepts a
+    /// partial update — keys absent from `params` keep their current binding,
+    /// an explicit empty string disables one. Re-arms the global monitors when
+    /// Cue Live is already trusted + running, so a rebind takes effect without
+    /// a relaunch. Echoes the resulting bindings back for the UI.
+    func setHotkeys(params: [String: Any]) -> [String: Any] {
+        // Extract the Sendable scalars BEFORE hopping to the main actor — a
+        // [String: Any] can't cross the isolation boundary. A `.present(nil)`
+        // means "key was sent but empty/invalid" → clear that binding; `.absent`
+        // means "key omitted" → keep the current binding.
+        let summonField = CueHotkeyField.from(params: params, key: "summon")
+        let runField = CueHotkeyField.from(params: params, key: "run")
+        let specs: (summon: String?, run: String?) = MainActor.assumeIsolated {
+            bindings = bindings.applying(summon: summonField, run: runField)
+            // Re-install only if the global monitor was already armed (trusted).
+            if hotkeyMonitor != nil || localHotkeyMonitor != nil {
+                removeHotkeyMonitors()
+                installHotkeyMonitors()
+            }
+            return (bindings.summon?.spec, bindings.run?.spec)
+        }
+        let bindingsEcho: [String: Any] = [
+            "summon": specs.summon.map { $0 as Any } ?? NSNull(),
+            "run": specs.run.map { $0 as Any } ?? NSNull(),
+        ]
+        return ["ok": true, "bindings": bindingsEcho]
+    }
+
+    /// Set the vision-capture mode (backlog #29). Scaffolding: the helper stores
+    /// the mode and reports it; `manual` preserves today's one-shot capture.
+    func setCaptureMode(params: [String: Any]) -> [String: Any] {
+        let mode = CueCaptureMode.parse(params["mode"])
+        MainActor.assumeIsolated { captureMode = mode }
+        return ["ok": true, "mode": mode.rawValue]
     }
 
     func stop() -> [String: Any] {
@@ -673,29 +720,30 @@ final class CueLiveController: @unchecked Sendable {
     private func installHotkeyMonitors() {
         installVoice()
         guard hotkeyMonitor == nil else { return }
-        // Control+Option+Space summons Cue (mirrors clicky's Control+Option).
-        func matches(_ event: NSEvent) -> Bool {
-            event.keyCode == 49 // Space
-                && event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                    .isSuperset(of: [.control, .option])
-        }
-        hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return }
-            if event.keyCode == 53 {  // Escape aborts an in-progress auto run
+        // Dispatch a key event against the configured bindings (backlog #29).
+        // Returns true when the event was a recognized Cue Live chord (so the
+        // local monitor can swallow it). Escape always aborts an in-progress
+        // auto run regardless of bindings.
+        func dispatch(_ event: NSEvent) -> Bool {
+            if event.keyCode == 53 {  // Escape
                 self.emit("cuelive.abort", nil)
-                return
+                return false  // don't swallow Escape — other apps may want it
             }
-            if matches(event) { self.emitSummon() }
+            if let summon = self.bindings.summon, summon.matches(event) {
+                self.emitSummon()
+                return true
+            }
+            if let run = self.bindings.run, run.matches(event) {
+                self.emitRun()
+                return true
+            }
+            return false
         }
-        localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            if event.keyCode == 53 {
-                self.emit("cuelive.abort", nil)
-                return event
-            }
-            guard matches(event) else { return event }
-            self.emitSummon()
-            return nil
+        hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            _ = dispatch(event)
+        }
+        localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            dispatch(event) ? nil : event
         }
     }
 
@@ -717,6 +765,24 @@ final class CueLiveController: @unchecked Sendable {
         ]
         if let question, !question.isEmpty { params["question"] = question }
         emit("cuelive.summoned", params)
+    }
+
+    /// The ⌥R push-to-run key (backlog #29). Distinct from summon: it asks the
+    /// daemon to *act now* on the current context (the in-app "Run"/take-control
+    /// trigger) rather than open the guide card. Carries the cursor position +
+    /// the active capture mode so the daemon can scope its capture.
+    @MainActor
+    private func emitRun() {
+        let mouse = NSEvent.mouseLocation
+        let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+        emit(
+            "cuelive.run",
+            [
+                "x": mouse.x,
+                "y": screenHeight - mouse.y,  // AX top-left coords
+                "captureMode": captureMode.rawValue,
+            ]
+        )
     }
 
     /// Convert AX (top-left) element rect to AppKit (bottom-left) screen rect.

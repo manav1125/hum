@@ -235,6 +235,18 @@ final class MacHelper: @unchecked Sendable {
             let object = (params as? [String: Any]) ?? [:]
             return self.ensureCueLive().setVoiceConfig(params: object)
         }
+        // Backlog #29: user-configurable summon / ⌥R push-to-run hotkeys.
+        router.register("cuelive.setHotkeys") { [weak self] params in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            let object = (params as? [String: Any]) ?? [:]
+            return self.ensureCueLive().setHotkeys(params: object)
+        }
+        // Backlog #29: scoped / always-on capture-mode scaffolding.
+        router.register("cuelive.setCaptureMode") { [weak self] params in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            let object = (params as? [String: Any]) ?? [:]
+            return self.ensureCueLive().setCaptureMode(params: object)
+        }
         router.register("cuelive.speak") { [weak self] params in
             guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
             let object = (params as? [String: Any]) ?? [:]
