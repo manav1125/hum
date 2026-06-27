@@ -131,20 +131,96 @@ function normalize(raw: unknown): NextMove {
   };
 }
 
+/**
+ * Resilient client-side fallback: when the daemon's LLM-reasoned endpoint is
+ * unavailable, compute the single best move from the SAME working stores the
+ * command center already reads (queued work-items). Deterministic ranking
+ * (oldest queued = most urgent), grounded entirely in the item's real fields —
+ * no fabrication. This keeps the hero useful even if the next-move route can't
+ * be reached, and the LLM phrasing transparently takes over once it can.
+ */
+async function computeClientSideMove(assistantId: string): Promise<NextMove> {
+  try {
+    const { data, response } = await client.get<Record<string, unknown>, unknown>(
+      {
+        url: "/v1/assistants/{assistant_id}/work-items",
+        path: { assistant_id: assistantId },
+        query: { status: "queued" },
+        throwOnError: false,
+      },
+    );
+    if (!response?.ok || !data || typeof data !== "object") return CAUGHT_UP;
+    const items = Array.isArray((data as Record<string, unknown>).items)
+      ? ((data as Record<string, unknown>).items as Record<string, unknown>[])
+      : [];
+    if (items.length === 0) return CAUGHT_UP;
+
+    // Oldest queued item is the most urgent (longest unanswered).
+    const top = [...items].sort((a, b) => {
+      const ca = typeof a.createdAt === "number" ? a.createdAt : 0;
+      const cb = typeof b.createdAt === "number" ? b.createdAt : 0;
+      return ca - cb;
+    })[0];
+
+    const id = typeof top.id === "string" ? top.id : null;
+    const title = typeof top.title === "string" ? top.title : "Queued task";
+    const notes = typeof top.notes === "string" ? top.notes : "";
+    const convId =
+      typeof top.lastRunConversationId === "string"
+        ? top.lastRunConversationId
+        : undefined;
+    if (!id) return CAUGHT_UP;
+
+    const reasoning =
+      (notes || "This is the oldest item still waiting in your queue.").slice(
+        0,
+        320,
+      );
+    const actions: NextMoveAction[] = [
+      {
+        id: "run",
+        label: "Run it",
+        kind: "run",
+        endpoint: `/v1/work-items/${id}/run`,
+        method: "POST",
+      },
+    ];
+    if (convId) {
+      actions.push({ id: "open", label: "Open thread", kind: "open_thread" });
+    }
+
+    return {
+      hasMove: true,
+      itemId: id,
+      kind: "work_item",
+      headline: title,
+      reasoning,
+      actions,
+      sourceConversationId: convId,
+    };
+  } catch {
+    return CAUGHT_UP;
+  }
+}
+
 async function fetchNextMove(assistantId: string): Promise<NextMove> {
-  const { data, error, response } = await client.get<
-    Record<string, unknown>,
-    unknown
-  >({
-    url: "/v1/assistants/{assistant_id}/next-move",
-    path: { assistant_id: assistantId },
-    throwOnError: false,
-  });
-  // The route may not exist yet (parallel build) — treat any non-OK as a calm
-  // "caught up" rather than throwing into an error card. A real move only ever
-  // comes from a 200 body.
-  if (error || !response || !response.ok) return CAUGHT_UP;
-  return normalize(data);
+  // 1) Prefer the daemon's LLM-reasoned move when the route is reachable.
+  try {
+    const { data, error, response } = await client.get<
+      Record<string, unknown>,
+      unknown
+    >({
+      url: "/v1/assistants/{assistant_id}/next-move",
+      path: { assistant_id: assistantId },
+      throwOnError: false,
+    });
+    if (!error && response?.ok) return normalize(data);
+  } catch {
+    // fall through to the resilient client-side computation
+  }
+  // 2) Endpoint unreachable (e.g. gateway route propagation) — never leave the
+  // hero blank. Compute a real, grounded move from the working stores.
+  return computeClientSideMove(assistantId);
 }
 
 export interface UseNextMoveResult {
