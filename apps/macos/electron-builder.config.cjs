@@ -67,7 +67,6 @@ module.exports = {
     entitlements: "./scripts/entitlements/app.plist",
     entitlementsInherit: "./scripts/entitlements/inherit.plist",
     extendInfo: {
-      CFBundleIconName: "AppIcon",
       NSMicrophoneUsageDescription:
         "Cue uses the microphone to record voice input for chat.",
       NSCameraUsageDescription:

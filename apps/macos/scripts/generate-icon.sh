@@ -263,6 +263,19 @@ iconutil --convert icns --output "$OUTPUT_DIR/icon.icns" "$ICONSET_DIR"
 
 echo "generate-icon: wrote $OUTPUT_DIR/icon.icns ($VELLUM_ENVIRONMENT)"
 
+# When the env ships a complete, pre-composed `full-icon.svg` (the Cue brand
+# mark — a stroked "C" arc plus a blue dot that the single-filled-path Icon
+# Composer manifest below CANNOT reproduce), the full-bleed `icon.icns` above IS
+# the canonical app icon (CFBundleIconFile). Building Assets.car from the manifest
+# would composite the manifest's foreground glyph (historically the old Vellum
+# "V") and win via CFBundleIconName — shipping the wrong icon. So skip the
+# manifest entirely and remove any stale Assets.car so it can't be bundled.
+if [ -f "$FULL_ICON_SVG" ]; then
+    rm -f "$OUTPUT_DIR/Assets.car"
+    echo "generate-icon: full-icon.svg present — using full-bleed icon.icns as the app icon; skipped Assets.car ($VELLUM_ENVIRONMENT)"
+    exit 0
+fi
+
 # Compile the Icon Composer .icon bundle into Assets.car so Finder/Dock can use
 # the Liquid Glass icon on Tahoe and actool's rounded raster fallback on pre-Tahoe.
 # The .icns above is a full-bleed square (required for Tahoe edge-alpha check) and
