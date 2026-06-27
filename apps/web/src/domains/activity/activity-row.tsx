@@ -127,6 +127,7 @@ export function ActivityRow({
   statusLabel,
   statusTone = "neutral",
   actions,
+  children,
   last = false,
   highlight = false,
 }: {
@@ -140,6 +141,13 @@ export function ActivityRow({
   statusLabel?: string;
   statusTone?: PillTone;
   actions?: ReactNode;
+  /**
+   * Optional expanded content rendered below the title/provenance line within
+   * the text column — e.g. the Done lane's inline result highlights. The row
+   * switches from center- to top-alignment when present so the block flows
+   * naturally beneath the single-line header.
+   */
+  children?: ReactNode;
   last?: boolean;
   /**
    * Deep-link focus: when this row is the target of Home's `?focus=` link, it
@@ -158,7 +166,9 @@ export function ActivityRow({
       ref={ref}
       style={{
         display: "flex",
-        alignItems: "center",
+        // Top-align when an expanded child block is present so it flows below
+        // the header; otherwise keep the compact center-aligned single-line row.
+        alignItems: children ? "flex-start" : "center",
         gap: 12,
         padding: "12px 14px",
         borderBottom: last ? "none" : `1px solid ${C.line}`,
@@ -222,6 +232,7 @@ export function ActivityRow({
             ) : null}
           </div>
         ) : null}
+        {children}
       </div>
       {statusLabel ? <StatusPill label={statusLabel} tone={statusTone} /> : null}
       {actions ? (

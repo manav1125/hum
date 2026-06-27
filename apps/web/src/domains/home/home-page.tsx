@@ -8,6 +8,7 @@ import type {
     SuggestedPrompt,
 } from "@vellumai/assistant-api";
 import { ResizablePanel } from "@vellumai/design-library";
+import { useActivitySync } from "@/hooks/use-activity-sync";
 import { HomeDetailPanel } from "./detail-panel/home-detail-panel";
 import { HomeFeedList } from "./home-feed-list";
 import { HomeGreetingHeader } from "./home-greeting-header";
@@ -63,6 +64,10 @@ export function HomePage({
 }: HomePageProps) {
   const isMobile = useIsMobile();
   const avatar = useAssistantAvatar(assistantId);
+  // Real-time: keep the feed (and the work-items folded into it) live off the
+  // SSE stream — `home_feed_updated`, `surface_action_completed`, work-item
+  // status changes — instead of relying on the staleTime + focus refetch.
+  useActivitySync(assistantId, true);
   const feedQuery = useHomeFeedQuery(assistantId);
   useHomeStateQuery(assistantId);
 

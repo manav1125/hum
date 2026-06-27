@@ -300,8 +300,16 @@ export const routeTree = [
                 },
                 // v0.3 flagship surfaces (design-matched; live-data wiring is Phase 3).
                 {
+                  // Mission Control — the unified five-lane command center.
+                  path: "mission-control",
+                  lazy: { Component: () => import("@/pages/mission-control/mission-control-page").then((m) => m.MissionControlPage) },
+                },
+                {
+                  // Next-moves was a duplicate render of the Home feed; it now
+                  // redirects to Mission Control's Inbound lane (the canonical
+                  // triage surface), like /dashboard → Home above.
                   path: "next-moves",
-                  lazy: { Component: () => import("@/domains/next-moves/next-moves-page").then((m) => m.NextMovesPage) },
+                  element: <Navigate to={routes.missionControl} replace />,
                 },
                 {
                   // The Dashboard folded into Home (the command center now
@@ -313,6 +321,8 @@ export const routeTree = [
                 {
                   // Activity — the background-work command center: every task
                   // Cue runs, with its trigger provenance + steer controls.
+                  // Kept routable as a parallel-safe fallback; Mission Control
+                  // is the primary surface.
                   path: "activity",
                   lazy: { Component: () => import("@/domains/activity/activity-page").then((m) => m.ActivityPage) },
                 },

@@ -12,11 +12,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2 } from "lucide-react";
 import { useMemo } from "react";
+import { useNavigate } from "react-router";
 
 import { heartbeatRunsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 
+import {
+  useWorkItemResultsStore,
+  type WorkItemResult,
+} from "@/stores/work-item-results-store";
+
 import { ActivitySection } from "../activity-section";
-import { ActivityRow, type PillTone } from "../activity-row";
+import { ActivityRow, RowButton, type PillTone } from "../activity-row";
 import { C, relativeTime } from "../theme";
 import { useWorkItems } from "../use-work-items";
 
@@ -31,6 +37,9 @@ interface DoneRow {
   statusLabel: string;
   statusTone: PillTone;
   at: number;
+  /** Inline P2 result (summary + highlights + thread), when the work-item
+   *  emitted a `work_item_completed` event this session. */
+  result?: WorkItemResult;
 }
 
 function runTone(status: string, skipped: boolean): PillTone {
@@ -43,14 +52,18 @@ function runTone(status: string, skipped: boolean): PillTone {
 }
 
 export function RecentlyDoneSection({ assistantId }: { assistantId: string }) {
+  const navigate = useNavigate();
   const done = useWorkItems(assistantId, "done");
+  // P2: inline results stashed by `use-activity-sync` off `work_item_completed`.
+  const resultsById = useWorkItemResultsStore((s) => s.byId);
 
   const heartbeat = useQuery({
+    // SSE (`useActivitySync`) drives freshness; poll is a 60s safety-net.
     ...heartbeatRunsGetOptions({
       path: { assistant_id: assistantId },
       query: { limit: 12 },
     }),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     staleTime: 20_000,
   });
 
@@ -58,15 +71,18 @@ export function RecentlyDoneSection({ assistantId }: { assistantId: string }) {
     const out: DoneRow[] = [];
 
     for (const item of done.items) {
+      const result = resultsById[item.id];
       out.push({
         key: `wi-${item.id}`,
         title: item.title,
-        subtitle: null,
+        // Prefer the inline result summary when we have it (zero extra fetch).
+        subtitle: result?.summary ?? null,
         provenance: item.provenance ?? "background work",
         meta: item.at != null ? relativeTime(item.at) : null,
-        statusLabel: "done",
-        statusTone: "green",
+        statusLabel: result?.status === "failed" ? "failed" : "done",
+        statusTone: result?.status === "failed" ? "danger" : "green",
         at: item.at ?? 0,
+        result,
       });
     }
 
@@ -91,7 +107,7 @@ export function RecentlyDoneSection({ assistantId }: { assistantId: string }) {
     }
 
     return out.sort((a, b) => b.at - a.at).slice(0, MAX_ROWS);
-  }, [done.items, heartbeat.data?.runs]);
+  }, [done.items, heartbeat.data?.runs, resultsById]);
 
   const isLoading = done.isLoading || heartbeat.isLoading;
   const isError = done.isError || heartbeat.isError;
@@ -108,19 +124,50 @@ export function RecentlyDoneSection({ assistantId }: { assistantId: string }) {
       empty={empty}
       emptyLabel="Nothing finished recently — completed background work and Cue’s check-ins show up here."
     >
-      {rows.map((r, i) => (
-        <ActivityRow
-          key={r.key}
-          dotColor={r.statusTone === "danger" ? C.danger : C.green}
-          title={r.title}
-          subtitle={r.subtitle}
-          provenance={r.provenance}
-          meta={r.meta}
-          statusLabel={r.statusLabel}
-          statusTone={r.statusTone}
-          last={i === rows.length - 1}
-        />
-      ))}
+      {rows.map((r, i) => {
+        const highlights = r.result?.highlights ?? [];
+        const threadId = r.result?.conversationId;
+        return (
+          <ActivityRow
+            key={r.key}
+            dotColor={r.statusTone === "danger" ? C.danger : C.green}
+            title={r.title}
+            subtitle={r.subtitle}
+            provenance={r.provenance}
+            meta={r.meta}
+            statusLabel={r.statusLabel}
+            statusTone={r.statusTone}
+            last={i === rows.length - 1}
+            actions={
+              threadId ? (
+                <RowButton
+                  label="Open thread"
+                  variant="ghost"
+                  onClick={() =>
+                    navigate(`/assistant/conversations/${threadId}`)
+                  }
+                />
+              ) : undefined
+            }
+          >
+            {highlights.length > 0 ? (
+              <ul
+                style={{
+                  margin: "6px 0 0",
+                  padding: "0 0 0 16px",
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: C.t2,
+                }}
+              >
+                {highlights.slice(0, 4).map((h, hi) => (
+                  <li key={hi}>{h}</li>
+                ))}
+              </ul>
+            ) : null}
+          </ActivityRow>
+        );
+      })}
     </ActivitySection>
   );
 }

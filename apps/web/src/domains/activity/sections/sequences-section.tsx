@@ -78,7 +78,9 @@ export function SequencesSection({ assistantId }: { assistantId: string }) {
       });
       return res.data;
     },
-    refetchInterval: 30_000,
+    // No dedicated SSE event yet; reconnect catch-up + this 60s poll keep it
+    // fresh (was 30s).
+    refetchInterval: 60_000,
     staleTime: 20_000,
   });
 

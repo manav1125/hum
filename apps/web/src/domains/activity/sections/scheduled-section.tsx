@@ -35,8 +35,9 @@ function lastStatusTone(status: string | null): PillTone {
 export function ScheduledSection({ assistantId }: { assistantId: string }) {
   const queryClient = useQueryClient();
   const query = useQuery({
+    // SSE (`useActivitySync`) drives freshness; poll is a 60s safety-net.
     ...schedulesGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     staleTime: 20_000,
   });
 

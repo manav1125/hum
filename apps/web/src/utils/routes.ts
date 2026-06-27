@@ -98,6 +98,10 @@ export const routes = {
   // Home's feed, Meeting from Home's record action, People + Trust from Contacts.
   nextMoves: r("/assistant/next-moves"),
   dashboard: r("/assistant/dashboard"),
+  // Mission Control — the unified five-lane command center (Inbound · Awaiting
+  // you · In progress · Scheduled · Done). The primary activity surface; the
+  // standalone Activity + Agents pages remain routable as fallbacks.
+  missionControl: r("/assistant/mission-control"),
   activity: r("/assistant/activity"),
   agentsAtWork: r("/assistant/agents"),
   meeting: r("/assistant/meeting"),

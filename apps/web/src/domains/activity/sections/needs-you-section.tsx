@@ -49,8 +49,9 @@ export function NeedsYouSection({ assistantId }: { assistantId: string }) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
+    // SSE (`useActivitySync`) drives freshness; poll is a 60s safety-net.
     ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
     staleTime: 10_000,
   });
 

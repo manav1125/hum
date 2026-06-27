@@ -4,8 +4,9 @@
  * On mobile the three-column desktop layout collapses, so primary navigation
  * moves to a persistent bottom tab bar matching the mobile design's clean
  * 4-item rail: Today · Tasks · Voice · You.
- *   - Today  → the Home command center (`/home`).
- *   - Tasks  → the Next-moves work queue (`/next-moves`).
+ *   - Today   → the Home command center (`/home`).
+ *   - Mission → Mission Control, the unified five-lane board
+ *               (`/mission-control`; the old `/next-moves` redirects here).
  *   - Voice  → the full-bleed Voice mode screen (owns the live-voice session).
  *   - You    → identity hub (Channels / Memory / Settings), entered at Channels.
  * Chat is no longer a tab — it is a full-screen push reached by opening a
@@ -14,7 +15,7 @@
  * inset the shell pads). Active = brand accent; inactive = secondary at .5.
  */
 
-import { Home, ListChecks, Mic, User } from "lucide-react";
+import { Home, LayoutDashboard, Mic, User } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
 import { routes } from "@/utils/routes";
@@ -37,11 +38,12 @@ const TABS: NavTab[] = [
     match: (p) => p.endsWith("/home"),
   },
   {
-    key: "tasks",
-    label: "Tasks",
-    to: routes.nextMoves,
-    icon: <ListChecks size={20} strokeWidth={2} />,
-    match: (p) => p.includes("/next-moves"),
+    key: "mission-control",
+    label: "Mission",
+    to: routes.missionControl,
+    icon: <LayoutDashboard size={20} strokeWidth={2} />,
+    // `/next-moves` redirects to Mission Control, so highlight for both.
+    match: (p) => p.includes("/mission-control") || p.includes("/next-moves"),
   },
   {
     key: "voice",

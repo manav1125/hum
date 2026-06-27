@@ -83,11 +83,13 @@ export function useWorkItems(
   status: WorkItemStatus,
 ): WorkItemsResult {
   const query = useQuery({
+    // SSE (`useActivitySync`) drives freshness off `work_item_status_changed` /
+    // `work_item_completed` / `tasks_changed`; poll is a 60s safety-net.
     ...workitemsGetOptions({
       path: { assistant_id: assistantId },
       query: { status },
     }),
-    refetchInterval: 20_000,
+    refetchInterval: 60_000,
     staleTime: 15_000,
   });
 

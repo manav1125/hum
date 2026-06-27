@@ -32,7 +32,9 @@ import {
   usageTotalsGetOptions,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
+import { LiveDot } from "@/components/live-dot";
 import { watchersListPost } from "@/generated/daemon/sdk.gen";
+import { useActivitySync } from "@/hooks/use-activity-sync";
 import { getBudgetConfig } from "@/lib/budget-api";
 import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
@@ -46,6 +48,11 @@ import { SequencesSection } from "./sections/sequences-section";
 import { WatchingSection } from "./sections/watching-section";
 import { asRecord, C, mono, serif } from "./theme";
 
+// SSE (`useActivitySync`) now drives freshness across the command center, so
+// every poll here is demoted to a 60s safety-net — it only catches events the
+// stream dropped, not the steady state.
+const SAFETY_NET_MS = 60_000;
+
 function useSummary(assistantId: string) {
   // Each of these shares its query key with the matching section, so React
   // Query dedupes the request — the summary reads live cache, never a 2nd call.
@@ -54,17 +61,17 @@ function useSummary(assistantId: string) {
       path: { assistant_id: assistantId },
       query: { status: "running" },
     }),
-    refetchInterval: 20_000,
+    refetchInterval: SAFETY_NET_MS,
     staleTime: 15_000,
   });
   const schedules = useQuery({
     ...schedulesGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: 30_000,
+    refetchInterval: SAFETY_NET_MS,
     staleTime: 20_000,
   });
   const needsYou = useQuery({
     ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
-    refetchInterval: 15_000,
+    refetchInterval: SAFETY_NET_MS,
     staleTime: 10_000,
   });
   const watchers = useQuery({
@@ -77,7 +84,7 @@ function useSummary(assistantId: string) {
       });
       return res.data;
     },
-    refetchInterval: 30_000,
+    refetchInterval: SAFETY_NET_MS,
     staleTime: 20_000,
   });
 
@@ -216,6 +223,9 @@ function SpendMeter({ assistantId }: { assistantId: string }) {
 
 export function ActivityPage() {
   const assistantId = useActiveAssistantId();
+  // Real-time: invalidate this page's caches off the SSE stream so rows update
+  // the instant the daemon broadcasts, not on the 60s safety-net poll.
+  useActivitySync(assistantId, true);
   const summary = useSummary(assistantId);
 
   // Deep-link from Home's "Run it" toast: `?focus=<workItemId>` highlights the
@@ -259,15 +269,25 @@ export function ActivityPage() {
         {/* Editorial header */}
         <div
           style={{
-            fontFamily: mono,
-            fontSize: 11.5,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: C.blueS,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
             marginBottom: 8,
           }}
         >
-          Activity
+          <div
+            style={{
+              fontFamily: mono,
+              fontSize: 11.5,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: C.blueS,
+            }}
+          >
+            Activity
+          </div>
+          <LiveDot />
         </div>
         <div
           data-slot="activity-hero"

@@ -4,6 +4,7 @@ import {
     Clock,
     Hash,
     Home,
+    LayoutDashboard,
     LayoutGrid,
     Pin,
     Rocket,
@@ -501,6 +502,18 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/create")}
           onSelect={() => cueNav("/assistant/create")}
+        />
+        {/*
+          Mission Control is the primary command center — the unified five-lane
+          view of the whole activity lifecycle. The standalone Activity + Agents
+          pages stay reachable below (de-emphasized) as parallel-safe fallbacks.
+        */}
+        <SideMenu.Item
+          icon={LayoutDashboard}
+          label="Mission Control"
+          showCollapsedTooltip
+          active={location.pathname.endsWith("/mission-control")}
+          onSelect={() => cueNav("/assistant/mission-control")}
         />
         <SideMenu.Item
           icon={Activity}
