@@ -20,7 +20,7 @@ import {
   listSequences,
   updateSequence,
 } from "../../sequence/store.js";
-import { LOCAL_PRINCIPALS } from "../auth/route-policy.js";
+import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { BadRequestError, NotFoundError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -208,7 +208,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.read"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/list",
     handler: handleSequenceList,
@@ -223,7 +223,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.read"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/get",
     handler: handleSequenceGet,
@@ -238,7 +238,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/pause",
     handler: handleSequencePause,
@@ -253,7 +253,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/resume",
     handler: handleSequenceResume,
@@ -268,7 +268,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/cancel-enrollment",
     handler: handleCancelEnrollment,
@@ -283,7 +283,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "GET",
     policy: {
       requiredScopes: ["settings.read"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/stats",
     handler: handleSequenceStats,
@@ -297,7 +297,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "GET",
     policy: {
       requiredScopes: ["settings.read"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/guardrails",
     handler: handleGuardrailsShow,
@@ -311,7 +311,7 @@ export const ROUTES: RouteDefinition[] = [
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
-      allowedPrincipalTypes: LOCAL_PRINCIPALS,
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     endpoint: "sequences/guardrails",
     handler: handleGuardrailsSet,

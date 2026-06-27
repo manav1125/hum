@@ -315,6 +315,70 @@ export function findActiveWorkItemBySource(opts: {
   return byTitle.sort((a, b) => b.updatedAt - a.updatedAt)[0];
 }
 
+/**
+ * Terminal statuses — a work item that has finished its lifecycle. These are
+ * the items the Activity "Recently done" lane surfaces.
+ */
+const TERMINAL_DEDUP_STATUSES: ReadonlySet<WorkItemStatus> = new Set([
+  "done",
+  "failed",
+  "cancelled",
+  "archived",
+]);
+
+/**
+ * Collapse duplicate TERMINAL work items for a read surface (Activity →
+ * "Recently done"). Two terminal items collapse when they share the same
+ * normalized title AND the same source channel (`sourceType`); the
+ * most-recently-updated row in each group is kept.
+ *
+ * This is the terminal-state analogue of {@link findActiveWorkItemBySource}'s
+ * channel+title fallback: the same commitment re-dispatched from a rebuilt
+ * action board lands two distinct work-item rows (the per-build `sourceId`
+ * differs), and once both finish they BOTH show in "Recently done" as the same
+ * task twice (e.g. "Reply on WordPress guidance" ×2). Grouping on
+ * `(sourceType, title)` — sourceId deliberately excluded — collapses that.
+ *
+ * Pure and non-destructive: unlike {@link dedupeWorkItems} this only filters
+ * the in-memory list for display, never deleting rows, so historical/retry
+ * records are preserved. Source-less items key on title only; an item with a
+ * title but no source never collapses with one carrying a channel (their keys
+ * differ), so genuinely distinct tasks stay separate.
+ */
+export function dedupeTerminalWorkItemsForDisplay(
+  items: WorkItem[],
+): WorkItem[] {
+  const groups = new Map<string, WorkItem>();
+  const passthrough: WorkItem[] = [];
+
+  for (const item of items) {
+    if (!TERMINAL_DEDUP_STATUSES.has(item.status)) {
+      // Non-terminal items are never collapsed here — pass them through
+      // untouched so this helper is safe to run over a mixed list.
+      passthrough.push(item);
+      continue;
+    }
+    const title = item.title.trim().toLowerCase();
+    const key = item.sourceType
+      ? `s:${item.sourceType} ${title}`
+      : `t:${title}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, item);
+      continue;
+    }
+    // Keep the most-recently-updated row; ties broken by id for determinism.
+    if (
+      item.updatedAt > existing.updatedAt ||
+      (item.updatedAt === existing.updatedAt && item.id < existing.id)
+    ) {
+      groups.set(key, item);
+    }
+  }
+
+  return [...passthrough, ...groups.values()];
+}
+
 export interface DedupeWorkItemsResult {
   /** Number of duplicate work items removed (donors). */
   collapsed: number;

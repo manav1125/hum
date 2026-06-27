@@ -35,6 +35,7 @@ import { TERMINAL_STATUSES } from "../../subagent/types.js";
 import { getLogger } from "../../util/logger.js";
 import { listWatchers } from "../../watcher/watcher-store.js";
 import {
+  dedupeTerminalWorkItemsForDisplay,
   listWorkItems,
   type WorkItem,
 } from "../../work-items/work-item-store.js";
@@ -553,7 +554,11 @@ export function buildActivityList(): {
   // --- work items (the spine: carries the live controls + results) ---
   let workItems: WorkItem[] = [];
   try {
-    workItems = listWorkItems();
+    // Collapse duplicate terminal work-items before projection so the
+    // "Recently done" lane never shows the same finished task twice (same
+    // normalized title + same source channel, keeping the most recent).
+    // Active items pass through untouched — they still feed the other lanes.
+    workItems = dedupeTerminalWorkItemsForDisplay(listWorkItems());
   } catch (err) {
     log.warn({ err: String(err) }, "activity_list: failed to read work-items");
   }

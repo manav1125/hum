@@ -20444,6 +20444,82 @@ paths:
               required:
                 - modelId
               additionalProperties: false
+  /v1/next-move:
+    get:
+      operationId: nextmove_get
+      summary: Get the single most important next move
+      description:
+        "Pick the one thing the user should do right now — across pending approvals, queued/awaiting-review work
+        items, and top home-feed action items — ranked deterministically and narrated by the flash LLM.
+        Stale-while-revalidate: returns the cached/fallback move immediately and refreshes the narration in the
+        background. Returns hasMove:false with a 'You're all caught up.' headline when nothing is pending."
+      tags:
+        - activity
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hasMove:
+                    type: boolean
+                  itemId:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  kind:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - approval
+                          - work_item
+                          - feed
+                      - type: "null"
+                  headline:
+                    type: string
+                  reasoning:
+                    type: string
+                  actions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        label:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - approve
+                            - decline
+                            - run
+                            - open_thread
+                            - snooze
+                        endpoint:
+                          type: string
+                        method:
+                          type: string
+                      required:
+                        - id
+                        - label
+                        - kind
+                      additionalProperties: false
+                  sourceConversationId:
+                    type: string
+                  generatedAt:
+                    type: string
+                required:
+                  - hasMove
+                  - itemId
+                  - kind
+                  - headline
+                  - reasoning
+                  - actions
+                  - generatedAt
+                additionalProperties: false
   /v1/notification-intent-result:
     post:
       operationId: notificationintentresult_post
