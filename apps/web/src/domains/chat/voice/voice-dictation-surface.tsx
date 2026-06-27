@@ -27,7 +27,7 @@ import { Keyboard } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { postChatMessage } from "@/domains/chat/api/messages";
+import { postVoiceIntake } from "@/domains/chat/voice/voice-intake-api";
 import {
   VoiceInputButton,
   type VoiceInputButtonHandle,
@@ -69,10 +69,11 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
   const recording = phase === "recording";
   const processing = phase === "processing";
 
-  // On a final transcript: show it, then auto-send into a fresh server-minted
-  // conversation and navigate. Auto-send mirrors the Voice tab's "talk and Cue
-  // answers" promise (the live surface auto-turns too). Posts via the same
-  // `postChatMessage(null)` mint flow the dashboard query bar uses.
+  // On a final transcript: show it, then run voice intake — Cue reads it back,
+  // lists the action items you spoke as the first message in a fresh thread, and
+  // queues each as a runnable task — and navigate straight into that thread so it
+  // is ready to "go to work". This is the Voice tab's "just talk and it gets
+  // organized" promise.
   const handleTranscript = useCallback(
     (text: string) => {
       const next = text.trim();
@@ -82,14 +83,12 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
       setSubmitting(true);
       void (async () => {
         try {
-          const result = await postChatMessage(assistantId, null, next);
+          const result = await postVoiceIntake(assistantId, next);
           if (!result.ok) {
-            setSendError(
-              result.error.detail ?? "Couldn’t reach Cue — try again.",
-            );
+            setSendError(result.error);
             return;
           }
-          navigate(routes.conversation(result.conversationId));
+          navigate(routes.conversation(result.data.conversationId));
         } catch {
           setSendError("Couldn’t reach Cue — try again.");
         } finally {
@@ -117,7 +116,7 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
   const statusLabel = processing
     ? "transcribing…"
     : submitting
-      ? "sending…"
+      ? "organizing…"
       : recording
         ? "● listening"
         : "tap to talk";
@@ -230,8 +229,8 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
         ) : (
           <div style={{ fontSize: 17, lineHeight: 1.45, color: TEXT_2 }}>
             {recording
-              ? "Listening — say something."
-              : "Tap the mic and speak. Cue opens a conversation with the answer."}
+              ? "Listening — say what's on your mind."
+              : "Tap the mic and talk. Cue opens a thread with your action items, ready to run."}
           </div>
         )}
       </div>

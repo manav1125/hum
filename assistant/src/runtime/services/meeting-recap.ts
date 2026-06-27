@@ -21,7 +21,6 @@
  */
 
 import { getConfig } from "../../config/loader.js";
-import type { ServerMessage } from "../../daemon/message-protocol.js";
 import {
   addMessage,
   createConversation,
@@ -37,13 +36,8 @@ import {
   getConfiguredProvider,
   userMessage,
 } from "../../providers/provider-send-message.js";
-import { broadcastMessage } from "../../runtime/assistant-event-hub.js";
-import { createTask } from "../../tasks/task-store.js";
 import { getLogger } from "../../util/logger.js";
-import {
-  createWorkItemWithPermissions,
-  findActiveWorkItemBySource,
-} from "../../work-items/work-item-store.js";
+import { actionItemsToWorkItems } from "./action-item-work-items.js";
 
 const log = getLogger("meeting-recap-service");
 
@@ -356,90 +350,20 @@ function parseRecapToolInput(input: Record<string, unknown>): RecapBody {
 const MEETING_WORK_ITEM_SOURCE_TYPE = "meeting";
 
 /**
- * Map a recap's open action items to executable work items so the user can
- * run them from Activity → Cued (or have them auto-run per autonomy policy).
- *
- * Behaviour:
- *   - Only **open** action items (`done === false`) become work items — an
- *     action the meeting already completed is not work to do.
- *   - **Idempotent**: keyed on `(sourceType=meeting, sourceId=conversationId,
- *     title)` via {@link findActiveWorkItemBySource}, so re-running the recap
- *     on the same meeting reuses the existing active rows rather than minting
- *     duplicates. Two recap runs that produce the same action text collapse
- *     to one work item.
- *   - Each item gets a lightweight task template (the executor needs a
- *     `taskId`); the action text is the template (the instruction the model
- *     receives at run time) and the work item title.
- *   - Priority defaults to medium (tier 1); status is `queued` (the default
- *     from `createWorkItem`).
- *
- * Works for the self-host **local owner**: work-item/task creation is keyed on
- * the conversation, not on a principal — there is no actor gate here — so a
- * `local:` owner with `actorPrincipalId` undefined gets the same rows.
- *
- * Best-effort and isolated per item: a failure on one action item is logged
- * and skipped; the others (and the recap itself) are unaffected.
+ * Bridge this recap's open action items into executable work items, tagged
+ * `meeting` so the idempotency key is `(meeting, conversationId, title)` —
+ * re-running the recap on the same meeting reuses the active rows. Delegates to
+ * the shared {@link actionItemsToWorkItems} (also used by voice intake).
  */
 function createWorkItemsFromActionItems(
   actionItems: RecapActionItem[],
   conversationId: string,
 ): RecapWorkItemRef[] {
-  const refs: RecapWorkItemRef[] = [];
-  const seenTitles = new Set<string>();
-
-  for (const item of actionItems) {
-    if (item.done) continue;
-    const title = item.text.trim();
-    if (!title) continue;
-
-    // Collapse intra-recap duplicates (the same action emitted twice) before
-    // touching the store.
-    const titleKey = title.toLowerCase();
-    if (seenTitles.has(titleKey)) continue;
-    seenTitles.add(titleKey);
-
-    try {
-      // Idempotency: reuse an active work item already minted for this
-      // (meeting, conversation, title) — re-running recap must not duplicate.
-      const existing = findActiveWorkItemBySource({
-        title,
-        sourceType: MEETING_WORK_ITEM_SOURCE_TYPE,
-        sourceId: conversationId,
-      });
-      if (existing) {
-        refs.push({ id: existing.id, title: existing.title, created: false });
-        continue;
-      }
-
-      // The executor runs against a task template, so mint a lightweight one.
-      const task = createTask({
-        title,
-        template: title,
-        createdFromConversationId: conversationId,
-      });
-      const workItem = createWorkItemWithPermissions({
-        taskId: task.id,
-        title,
-        notes: item.owner ? `Owner: ${item.owner}` : undefined,
-        priorityTier: 1, // medium
-        sourceType: MEETING_WORK_ITEM_SOURCE_TYPE,
-        sourceId: conversationId,
-      });
-      refs.push({ id: workItem.id, title: workItem.title, created: true });
-    } catch (err) {
-      log.warn(
-        { err, conversationId, title },
-        "Failed to create work item from recap action item (skipped)",
-      );
-    }
-  }
-
-  // If this run minted any new rows, tell Activity to refresh live.
-  if (refs.some((r) => r.created)) {
-    broadcastMessage({ type: "tasks_changed" } as ServerMessage);
-  }
-
-  return refs;
+  return actionItemsToWorkItems(
+    actionItems,
+    MEETING_WORK_ITEM_SOURCE_TYPE,
+    conversationId,
+  );
 }
 
 // ---------------------------------------------------------------------------

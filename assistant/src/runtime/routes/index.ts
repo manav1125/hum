@@ -139,6 +139,7 @@ import { ROUTES as UPGRADE_BROADCAST_ROUTES } from "./upgrade-broadcast-routes.j
 import { ROUTES as USAGE_ROUTES } from "./usage-routes.js";
 import { ROUTES as USER_ROUTES } from "./user-routes.js";
 import { ROUTES as USER_ROUTES_CLI } from "./user-routes-cli.js";
+import { ROUTES as VOICE_INTAKE_ROUTES } from "./voice-intake-routes.js";
 import { ROUTES as WAKE_CONVERSATION_ROUTES } from "./wake-conversation-routes.js";
 import { ROUTES as WATCHER_ROUTES } from "./watcher-routes.js";
 import { ROUTES as WEBHOOK_ROUTES } from "./webhook-routes.js";
@@ -234,6 +235,7 @@ export const ROUTES: RouteDefinition[] = [
   ...MIGRATION_ROLLBACK_ROUTES,
   ...MIGRATION_ROUTES,
   ...NEXT_MOVE_ROUTES,
+  ...VOICE_INTAKE_ROUTES,
   ...NOTIFICATION_ROUTES,
   ...OAUTH_APPS_ROUTES,
   ...OAUTH_LIFECYCLE_ROUTES,
