@@ -287,50 +287,54 @@ export const routeTree = [
               Component: ActiveAssistantGate,
               children: [
                 {
+                  // Home IS the Command Center — the one real-time operating-
+                  // system landing that consolidates the four old surfaces
+                  // (Home feed · Mission Control · Activity · Agents-at-work)
+                  // into a single calm, prioritized vertical stream. The legacy
+                  // elevated Home (`@/home-elevated-route`) and the standalone
+                  // surfaces below redirect here; their page components stay
+                  // importable (Command Center composes the Activity sections +
+                  // Mission Control's InboundLane) but are no longer routed.
                   path: "home",
-                  // Elevated, design-matched Home. Revert to the classic Home by
-                  // swapping this back to `@/home-page-route` -> HomePageRoute.
-                  lazy: { Component: () => import("@/home-elevated-route").then((m) => m.HomeElevatedRoute) },
+                  lazy: { Component: () => import("@/pages/command-center/command-center-page").then((m) => m.CommandCenterPage) },
                 },
                 {
-                  // Full-bleed Core surface (reached from Home's recap), not an
+                  // Full-bleed Core surface (reached from the impact rail), not an
                   // "About Assistant" tab.
                   path: "impact",
                   lazy: { Component: () => import("@/domains/intelligence/impact-page").then((m) => m.ImpactPage) },
                 },
-                // v0.3 flagship surfaces (design-matched; live-data wiring is Phase 3).
+                // ── Consolidated surfaces → Command Center (Home) ───────────────
+                // The founder found Home / Mission Control / Activity / Agents
+                // redundant ("the same thing in different displays"). They now
+                // all redirect to the one Command Center at /home. Handlers are
+                // not deleted — every legacy URL still resolves.
                 {
-                  // Mission Control — the unified five-lane command center.
+                  // Mission Control folded into the Command Center stream.
                   path: "mission-control",
-                  lazy: { Component: () => import("@/pages/mission-control/mission-control-page").then((m) => m.MissionControlPage) },
+                  element: <Navigate to={routes.home} replace />,
                 },
                 {
-                  // Next-moves was a duplicate render of the Home feed; it now
-                  // redirects to Mission Control's Inbound lane (the canonical
-                  // triage surface), like /dashboard → Home above.
+                  // Next-moves was a duplicate render of the Home feed.
                   path: "next-moves",
-                  element: <Navigate to={routes.missionControl} replace />,
+                  element: <Navigate to={routes.home} replace />,
                 },
                 {
-                  // The Dashboard folded into Home (the command center now
-                  // carries the query bar + template widgets). Redirect the old
-                  // route + any lingering links so they don't 404.
+                  // The Dashboard folded into Home.
                   path: "dashboard",
                   element: <Navigate to={routes.home} replace />,
                 },
                 {
-                  // Activity — the background-work command center: every task
-                  // Cue runs, with its trigger provenance + steer controls.
-                  // Kept routable as a parallel-safe fallback; Mission Control
-                  // is the primary surface.
+                  // Activity (background-work command center) folded into the
+                  // Command Center's "In motion" + "Up next" + "Done" groups.
                   path: "activity",
-                  lazy: { Component: () => import("@/domains/activity/activity-page").then((m) => m.ActivityPage) },
+                  element: <Navigate to={routes.home} replace />,
                 },
                 {
-                  // Agents at Work — live fleet view of the in-chat sub-agents
-                  // (SubagentManager) spawned inside conversations.
+                  // Agents-at-work (live subagent fleet) folded into the Command
+                  // Center's "In motion" group.
                   path: "agents",
-                  lazy: { Component: () => import("@/domains/agents-at-work/agents-at-work-page").then((m) => m.AgentsAtWorkPage) },
+                  element: <Navigate to={routes.home} replace />,
                 },
                 {
                   path: "meeting",

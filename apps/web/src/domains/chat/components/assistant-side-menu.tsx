@@ -1,10 +1,7 @@
 import {
-    Activity,
-    Bot,
     Clock,
     Hash,
     Home,
-    LayoutDashboard,
     LayoutGrid,
     Pin,
     Rocket,
@@ -481,19 +478,30 @@ export function AssistantSideMenu({
           </div>
         ) : null}
         {/*
-          The clean rail: Home · Activity · Intelligence · Library · People.
+          The clean rail: Home · Create · Intelligence · Library · People.
           "Chat" is the conversation-thread list below (labeled in the body).
-          People opens the relationship dossier (/people). The Dashboard folded
-          into Home (query bar + template widgets); Workspace, Connections
-          (channel setup), Memory, Connectors live as Intelligence tabs;
-          Next moves = Home feed; Meeting = a Home action; Trust = a link on
-          People. (See docblock.)
+          People opens the relationship dossier (/people).
+
+          Home IS the Command Center — the one real-time operating-system
+          landing. The four old surfaces (Home feed · Mission Control · Activity
+          · Agents-at-work) collapsed into this single primary item; all four
+          legacy routes now redirect to /home, so the rail carries one entry, not
+          four "same thing in different displays" duplicates.
+
+          The Dashboard folded into Home; Workspace, Connections (channel setup),
+          Memory, Connectors live as Intelligence tabs; Meeting = a Home action;
+          Trust = a link on People. (See docblock.)
         */}
         <SideMenu.Item
           icon={Home}
           label="Home"
           showCollapsedTooltip
-          active={location.pathname.endsWith("/home")}
+          active={
+            location.pathname.endsWith("/home") ||
+            location.pathname.endsWith("/mission-control") ||
+            location.pathname.endsWith("/activity") ||
+            location.pathname.endsWith("/agents")
+          }
           onSelect={() => cueNav("/assistant/home")}
         />
         <SideMenu.Item
@@ -502,32 +510,6 @@ export function AssistantSideMenu({
           showCollapsedTooltip
           active={location.pathname.endsWith("/create")}
           onSelect={() => cueNav("/assistant/create")}
-        />
-        {/*
-          Mission Control is the primary command center — the unified five-lane
-          view of the whole activity lifecycle. The standalone Activity + Agents
-          pages stay reachable below (de-emphasized) as parallel-safe fallbacks.
-        */}
-        <SideMenu.Item
-          icon={LayoutDashboard}
-          label="Mission Control"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/mission-control")}
-          onSelect={() => cueNav("/assistant/mission-control")}
-        />
-        <SideMenu.Item
-          icon={Activity}
-          label="Activity"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/activity")}
-          onSelect={() => cueNav("/assistant/activity")}
-        />
-        <SideMenu.Item
-          icon={Bot}
-          label="Agents"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/agents")}
-          onSelect={() => cueNav("/assistant/agents")}
         />
         <SideMenu.Item
           icon={Sparkles}

@@ -3,10 +3,12 @@
  *
  * On mobile the three-column desktop layout collapses, so primary navigation
  * moves to a persistent bottom tab bar matching the mobile design's clean
- * 4-item rail: Today · Tasks · Voice · You.
- *   - Today   → the Home command center (`/home`).
- *   - Mission → Mission Control, the unified five-lane board
- *               (`/mission-control`; the old `/next-moves` redirects here).
+ * 4-item rail: Today · Create · Voice · You.
+ *   - Today  → the Home Command Center (`/home`) — the one consolidated
+ *              operating-system landing. The old "Mission" tab folded in here;
+ *              `/mission-control`, `/activity`, `/agents`, `/next-moves` all
+ *              redirect to `/home`, so Today highlights for every one of them.
+ *   - Create → the "what do you want to get done?" picker (`/create`).
  *   - Voice  → the full-bleed Voice mode screen (owns the live-voice session).
  *   - You    → identity hub (Channels / Memory / Settings), entered at Channels.
  * Chat is no longer a tab — it is a full-screen push reached by opening a
@@ -15,7 +17,7 @@
  * inset the shell pads). Active = brand accent; inactive = secondary at .5.
  */
 
-import { Home, LayoutDashboard, Mic, User } from "lucide-react";
+import { Home, Mic, User, Wand2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
 import { routes } from "@/utils/routes";
@@ -35,15 +37,21 @@ const TABS: NavTab[] = [
     label: "Today",
     to: routes.home,
     icon: <Home size={20} strokeWidth={2} />,
-    match: (p) => p.endsWith("/home"),
+    // Home is the consolidated Command Center; the old Mission / Activity /
+    // Agents / Next-moves routes all redirect here, so Today owns them all.
+    match: (p) =>
+      p.endsWith("/home") ||
+      p.includes("/mission-control") ||
+      p.includes("/activity") ||
+      p.includes("/agents") ||
+      p.includes("/next-moves"),
   },
   {
-    key: "mission-control",
-    label: "Mission",
-    to: routes.missionControl,
-    icon: <LayoutDashboard size={20} strokeWidth={2} />,
-    // `/next-moves` redirects to Mission Control, so highlight for both.
-    match: (p) => p.includes("/mission-control") || p.includes("/next-moves"),
+    key: "create",
+    label: "Create",
+    to: routes.create,
+    icon: <Wand2 size={20} strokeWidth={2} />,
+    match: (p) => p.endsWith("/create"),
   },
   {
     key: "voice",
