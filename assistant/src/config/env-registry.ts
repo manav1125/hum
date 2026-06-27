@@ -149,6 +149,19 @@ export function getMinikubeStorageSize(): string | undefined {
 }
 
 /**
+ * VELLUM_DISABLE_DISK_PRESSURE — boolean, default: false
+ * When set, the disk-pressure guard stays disabled and never locks. Intended
+ * for deployments where the workspace lives on a large shared host filesystem
+ * (e.g. a Render overlay) rather than a dedicated volume, so `statfs` of the
+ * workspace reflects other tenants' usage and false-locks the assistant into
+ * storage-cleanup mode. A pure flag check, so it can never silently fail the
+ * way the `du`-vs-`statfs` measurement heuristic can.
+ */
+export function getDiskPressureDisabled(): boolean {
+  return flag("VELLUM_DISABLE_DISK_PRESSURE");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.
@@ -233,6 +246,7 @@ const KNOWN_VELLUM_VARS = new Set([
   "VELLUM_CPU_LIMIT",
   "VELLUM_MEMORY_LIMIT",
   "VELLUM_MINIKUBE_STORAGE_SIZE",
+  "VELLUM_DISABLE_DISK_PRESSURE",
 ]);
 
 /**

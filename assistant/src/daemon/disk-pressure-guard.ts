@@ -3,6 +3,7 @@ import {
   type DiskPressureState,
   type DiskPressureStatus,
 } from "../api/events/disk-pressure-status-changed.js";
+import { getDiskPressureDisabled } from "../config/env-registry.js";
 import { buildAssistantEvent } from "../runtime/assistant-event.js";
 import { assistantEventHub } from "../runtime/assistant-event-hub.js";
 import { cancelBackgroundTools } from "../tools/background-tool-registry.js";
@@ -179,6 +180,14 @@ function rejectTransition(
 }
 
 export function startDiskPressureGuard(): DiskPressureStatus {
+  // Hard kill-switch for deployments where the workspace sits on a shared host
+  // filesystem (statfs reflects other tenants and false-locks the assistant).
+  if (getDiskPressureDisabled()) {
+    log.info("Disk pressure guard disabled via VELLUM_DISABLE_DISK_PRESSURE");
+    state.status = cloneStatus(DISABLED_STATUS);
+    return cloneStatus(state.status);
+  }
+
   ensureEnabledStatus();
 
   if (!state.timer) {
@@ -198,6 +207,10 @@ export function stopDiskPressureGuard(): void {
 }
 
 export function evaluateDiskPressureNow(): DiskPressureStatus {
+  if (getDiskPressureDisabled()) {
+    return replaceStatus(cloneStatus(DISABLED_STATUS));
+  }
+
   ensureEnabledStatus();
 
   let usageInfo: ReturnType<typeof getDiskUsageInfo>;
