@@ -1,1 +1,0 @@
-import{o as e}from"./chunk-jRWAZmH_.js";import{t}from"./react-DJZBPgpf.js";import{t as n}from"./jsx-runtime-CVSDxk6A.js";var r=e(t(),1),i=n(),a=(0,r.createContext)(null);function o({container:e,children:t}){return(0,i.jsx)(a,{value:e,children:t})}function s(){return(0,r.useContext)(a)}export{s as n,o as t};
