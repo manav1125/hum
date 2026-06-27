@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "replicate_run",
-      "description": "Generate an image or video with a Replicate-hosted model and return the output media URL(s). Pass exactly two arguments: `model` (a string) and `input` (an object). For image generation, set `model` to 'black-forest-labs/flux-schnell' and `input` to { \"prompt\": \"<your description>\" }. Example call: { \"model\": \"black-forest-labs/flux-schnell\", \"input\": { \"prompt\": \"a single red circle on white\" } }. Do NOT put the prompt at the top level — it MUST go inside the `input` object.",
+      "description": "Preferred tool to generate or create an image, or make/render a video, using a Replicate-hosted model; returns the output media URL(s). Use this for plain requests like 'generate an image of X' or 'make a video of Y' — you do not need the user to name a model. Pass exactly two arguments: `model` (a string) and `input` (an object). For image generation, set `model` to 'black-forest-labs/flux-schnell' and `input` to { \"prompt\": \"<your description>\" }. For video, set `model` to a text-to-video model (e.g. 'minimax/video-01') and raise `wait_seconds`. Example call: { \"model\": \"black-forest-labs/flux-schnell\", \"input\": { \"prompt\": \"a single red circle on white\" } }. Do NOT put the prompt at the top level — it MUST go inside the `input` object.",
       "category": "media",
       "risk": "low",
       "input_schema": {

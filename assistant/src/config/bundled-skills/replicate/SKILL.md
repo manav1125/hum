@@ -1,6 +1,6 @@
 ---
 name: replicate
-description: Generate images and video from any Replicate-hosted model (flux, SDXL, video models, upscalers, etc.). Use when the user names a specific Replicate model, wants a model not covered by Image Studio, or wants video generation. Runs the model on Replicate and returns the output media URL(s).
+description: THE tool for image AND video generation. Use `replicate_run` to generate or create an image, make or render a video, or run any Replicate-hosted model (flux, SDXL, upscalers, video models, etc.) when a Replicate token is configured. Handles plain requests like "generate an image of X", "create a picture of Y", and "make a video of Z" — not only when the user names a specific model. Runs the model on Replicate and returns the output media URL(s).
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🛰️"
@@ -8,13 +8,15 @@ metadata:
     display-name: "Replicate"
     category: "content"
     activation-hints:
+      - "User asks to generate, create, draw, or render an image from a text prompt"
+      - "User asks to make, generate, or render a video from a text prompt or image"
       - "User names a specific Replicate model (e.g. black-forest-labs/flux-schnell, stability-ai/sdxl)"
-      - "User wants to generate a video from a text prompt or image"
-      - "User wants an image model or capability not offered by Image Studio"
       - "User wants to upscale, restyle, or otherwise transform media via a Replicate model"
 ---
 
-Use the `replicate_run` tool via `skill_execute` to run any Replicate model.
+Use the `replicate_run` tool via `skill_execute` to generate images and video on Replicate.
+
+This is the preferred path for image and video generation whenever a Replicate token is configured (secure store under provider `replicate`, or the `REPLICATE_API_TOKEN` env var). For a plain "generate / create an image" or "make a video" request, default to `replicate_run` with the model defaults below — you do NOT need the user to name a model first. Image Studio (`media_generate_image`) stays available for editing an existing image the user provides (background/watermark removal, in-painting, retouch) and multi-variant runs; reach for it only when the request is explicitly an edit.
 
 Replicate is the universal backend for image and video generation. Given a model identifier plus a prompt and parameters, the tool calls Replicate's predictions API, polls until the prediction succeeds or fails, and returns the output media URL(s).
 
