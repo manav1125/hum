@@ -6,6 +6,7 @@ import { refreshBackgroundWakeIntent } from "../background-wake/publisher.js";
 import { registerBackgroundWakeRuntime } from "../background-wake/runtime-registry.js";
 import { setPointerMessageProcessor } from "../calls/call-pointer-messages.js";
 import { reconcileCallsOnStartup } from "../calls/call-recovery.js";
+import { reconcileGuardianContacts } from "../contacts/contact-store.js";
 import { setRelayBroadcast } from "../calls/relay-server.js";
 import { TwilioConversationRelayProvider } from "../calls/twilio-provider.js";
 import { setVoiceBridgeDeps } from "../calls/voice-session-bridge.js";
@@ -454,6 +455,26 @@ export async function runDaemon(): Promise<void> {
         log.warn(
           { err },
           "Manual-token connection backfill failed — continuing startup",
+        );
+      }
+
+      // Collapse any duplicate guardian contacts formed across re-bootstraps.
+      // Idempotent: a no-op when ≤1 guardian; otherwise moves channels onto the
+      // canonical guardian and removes the empty donor rows. Belt-and-suspenders
+      // to the gateway bootstrap dedup so a verified Slack/email can never strand
+      // on a stale guardian. Safe on every startup; must run after migrations.
+      try {
+        const mergedGuardians = reconcileGuardianContacts();
+        if (mergedGuardians > 0) {
+          log.info(
+            { mergedGuardians },
+            "Reconciled duplicate guardian contacts on startup",
+          );
+        }
+      } catch (err) {
+        log.warn(
+          { err },
+          "Guardian reconcile failed — continuing startup",
         );
       }
 
