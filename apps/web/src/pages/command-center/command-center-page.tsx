@@ -54,6 +54,8 @@ import { SequencesSection } from "@/domains/activity/sections/sequences-section"
 import { WatchingSection } from "@/domains/activity/sections/watching-section";
 import { InboundLane } from "@/pages/mission-control/inbound-lane";
 
+import { NextMoveHero } from "./next-move-hero";
+
 // SSE (`useActivitySync`) drives freshness across the whole stream, so every
 // poll below is demoted to a 60s safety-net — it only catches events the stream
 // dropped, never the steady state.
@@ -311,6 +313,45 @@ function GroupBlock({ children }: { children: ReactNode }) {
   return <div style={{ marginBottom: 30 }}>{children}</div>;
 }
 
+/**
+ * Collapsed empty section — a single slim, calm inline line instead of a full
+ * serif headline + empty card. Keeps real content above the fold when a lane
+ * (Needs you / In motion) has nothing in it. The dot colour borrows the lane's
+ * accent so the stream still reads as the same four prioritized acts.
+ */
+function SlimEmptyLine({ accent, label }: { accent: string; label: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        padding: "11px 14px",
+        marginBottom: 14,
+        border: `1px solid ${C.line}`,
+        borderRadius: 10,
+        background: C.surface,
+        fontFamily: mono,
+        fontSize: 12.5,
+        color: C.t3,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          background: accent,
+          opacity: 0.5,
+          flexShrink: 0,
+        }}
+      />
+      {label}
+    </div>
+  );
+}
+
 export function CommandCenterPage({
   validConversationIds,
 }: {
@@ -335,6 +376,12 @@ export function CommandCenterPage({
     `${tally.done} done today`,
   ].filter(Boolean) as string[];
 
+  // Compress the two high-priority lanes to a slim line ONLY once their tally is
+  // known to be zero — while the tally is still loading we keep the full section
+  // so its own skeleton renders rather than flashing a premature "all clear".
+  const needsYouEmpty = !tally.loading && tally.awaiting === 0;
+  const inMotionEmpty = !tally.loading && tally.running === 0;
+
   return (
     <div
       data-slot="command-center-page"
@@ -344,7 +391,23 @@ export function CommandCenterPage({
           serif greeting and 24px gutter don't overflow the ~390px viewport. */}
       <style
         dangerouslySetInnerHTML={{
-          __html: `@media (max-width:640px){[data-slot="command-center-page"] [data-slot="command-center-inner"]{padding:18px 16px !important;}[data-slot="command-center-page"] [data-slot="command-center-greeting"]{font-size:30px !important;}}`,
+          __html: [
+            // Hero reveal + a soft staggered fade for the stream below it.
+            "@keyframes cueHeroReveal{from{opacity:0;transform:translateY(8px) scale(.992)}to{opacity:1;transform:none}}",
+            "@keyframes cueStreamReveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",
+            '[data-slot="command-center-stream"]>*{animation:cueStreamReveal .45s cubic-bezier(.22,.61,.36,1) both}',
+            '[data-slot="command-center-stream"]>*:nth-child(1){animation-delay:.04s}',
+            '[data-slot="command-center-stream"]>*:nth-child(2){animation-delay:.08s}',
+            '[data-slot="command-center-stream"]>*:nth-child(3){animation-delay:.12s}',
+            '[data-slot="command-center-stream"]>*:nth-child(4){animation-delay:.16s}',
+            // Subtle hover lift on every activity row — premium, restrained.
+            '[data-slot="command-center-page"] [data-slot="activity-row"]{transition:background .14s ease,box-shadow .14s ease}',
+            '[data-slot="command-center-page"] [data-slot="activity-row"]:hover{background:#FBFCFE}',
+            // Respect reduced-motion.
+            "@media (prefers-reduced-motion:reduce){[data-slot=\"command-center-page\"] *{animation:none !important}}",
+            // Mobile rhythm.
+            '@media (max-width:640px){[data-slot="command-center-page"] [data-slot="command-center-inner"]{padding:18px 16px !important;}[data-slot="command-center-page"] [data-slot="command-center-greeting"]{font-size:30px !important;}}',
+          ].join(""),
         }}
       />
       <div
@@ -431,63 +494,77 @@ export function CommandCenterPage({
           </div>
         </header>
 
-        {/* 1 · NEEDS YOU — pinned at top; the highest-value human-in-the-loop
-            moment. Empty state is calm + honest (handled by the section). */}
-        <GroupBlock>
-          <GroupHeader
-            kicker="Needs you"
-            title={
-              tally.awaiting > 0
-                ? "A decision is waiting."
-                : "Nothing's waiting on you."
-            }
-            accent={C.danger}
-            pinned={tally.awaiting > 0}
-          />
-          <NeedsYouSection assistantId={assistantId} />
-        </GroupBlock>
+        {/* HERO — "Your next move": the AI chief-of-staff focus card, the first
+            thing the eye lands on. Renders a calm caught-up card when there's
+            no move (never a void). */}
+        <NextMoveHero assistantId={assistantId} />
 
-        {/* 2 · IN MOTION — running work + live subagents, unified. */}
-        <GroupBlock>
-          <GroupHeader
-            kicker="In motion"
-            title={tally.running > 0 ? "Cue is on it." : "Cue is standing by."}
-            accent={C.blue}
-            hint={
-              tally.running > 0
-                ? "Open a row for the live output, or cancel it."
-                : undefined
-            }
-          />
-          <RunningSection assistantId={assistantId} />
-        </GroupBlock>
+        {/* The calm editorial stream below the hero. Empty high-priority lanes
+            (Needs you / In motion) collapse to a single slim line so real
+            content stays above the fold; only lanes WITH items earn the full
+            serif headline + card. */}
+        <div data-slot="command-center-stream">
+          {/* 1 · NEEDS YOU — pinned at top when it has a decision waiting. */}
+          {needsYouEmpty ? (
+            <SlimEmptyLine accent={C.danger} label="✓ Nothing needs you" />
+          ) : (
+            <GroupBlock>
+              <GroupHeader
+                kicker="Needs you"
+                title="A decision is waiting."
+                accent={C.danger}
+                pinned
+              />
+              <NeedsYouSection assistantId={assistantId} />
+            </GroupBlock>
+          )}
 
-        {/* 3 · UP NEXT — inbound triage + scheduled + watchers + sequences. */}
-        <GroupBlock>
-          <GroupHeader
-            kicker="Up next"
-            title="Queued and watching."
-            accent={C.violet}
-            hint="What came in, what's scheduled, and what Cue is keeping an eye on."
-          />
-          <InboundCard
-            assistantId={assistantId}
-            validConversationIds={validConversationIds}
-          />
-          <ScheduledSection assistantId={assistantId} />
-          <WatchingSection assistantId={assistantId} />
-          <SequencesSection assistantId={assistantId} />
-        </GroupBlock>
+          {/* 2 · IN MOTION — running work + live subagents, unified. */}
+          {inMotionEmpty ? (
+            <SlimEmptyLine accent={C.blue} label="Cue is standing by" />
+          ) : (
+            <GroupBlock>
+              <GroupHeader
+                kicker="In motion"
+                title="Cue is on it."
+                accent={C.blue}
+                hint="Open a row for the live output, or cancel it."
+              />
+              <RunningSection assistantId={assistantId} />
+            </GroupBlock>
+          )}
 
-        {/* 4 · DONE TODAY — recently completed, with the result inline. */}
-        <GroupBlock>
-          <GroupHeader
-            kicker="Done today"
-            title={tally.done > 0 ? "Already handled." : "The day's still young."}
-            accent={C.green}
-          />
-          <RecentlyDoneSection assistantId={assistantId} />
-        </GroupBlock>
+          {/* 3 · UP NEXT — inbound triage + scheduled + watchers + sequences.
+              Kept always-visible: it's the calm "what's queued" act and its
+              sub-sections each carry their own honest empty copy. */}
+          <GroupBlock>
+            <GroupHeader
+              kicker="Up next"
+              title="Queued and watching."
+              accent={C.violet}
+              hint="What came in, what's scheduled, and what Cue is keeping an eye on."
+            />
+            <InboundCard
+              assistantId={assistantId}
+              validConversationIds={validConversationIds}
+            />
+            <ScheduledSection assistantId={assistantId} />
+            <WatchingSection assistantId={assistantId} />
+            <SequencesSection assistantId={assistantId} />
+          </GroupBlock>
+
+          {/* 4 · DONE TODAY — recently completed, with the result inline. */}
+          <GroupBlock>
+            <GroupHeader
+              kicker="Done today"
+              title={
+                tally.done > 0 ? "Already handled." : "The day's still young."
+              }
+              accent={C.green}
+            />
+            <RecentlyDoneSection assistantId={assistantId} />
+          </GroupBlock>
+        </div>
       </div>
     </div>
   );

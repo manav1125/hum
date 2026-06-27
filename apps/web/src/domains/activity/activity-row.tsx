@@ -164,6 +164,7 @@ export function ActivityRow({
   return (
     <div
       ref={ref}
+      data-slot="activity-row"
       style={{
         display: "flex",
         // Top-align when an expanded child block is present so it flows below
