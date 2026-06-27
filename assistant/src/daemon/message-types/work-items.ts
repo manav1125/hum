@@ -214,6 +214,25 @@ export interface TaskRunConversationCreated {
   title: string;
 }
 
+/**
+ * Server push — broadcast when a background work item reaches a terminal
+ * state, carrying the run's result inline so the UI does not have to poll
+ * `getWorkItemOutput()` to learn what happened. Paired with (and emitted
+ * after) the terminal `work_item_status_changed` for the same item.
+ */
+export interface WorkItemCompleted {
+  type: "work_item_completed";
+  workItemId: string;
+  status: "done" | "awaiting_review" | "failed";
+  result: {
+    summary: string;
+    highlights: string[];
+    conversationId?: string;
+  };
+  /** ISO-8601 completion timestamp. */
+  completedAt: string;
+}
+
 // --- Domain-level union aliases (consumed by the barrel file) ---
 
 export type _WorkItemsClientMessages =
@@ -239,5 +258,6 @@ export type _WorkItemsServerMessages =
   | WorkItemApprovePermissionsResponse
   | WorkItemCancelResponse
   | WorkItemStatusChanged
+  | WorkItemCompleted
   | TaskRunConversationCreated
   | TasksChanged;

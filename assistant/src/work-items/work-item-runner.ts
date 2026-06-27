@@ -7,7 +7,12 @@
 
 import { getOrCreateConversation } from "../daemon/conversation-store.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
+import { recordImpact } from "../home/impact-store.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
+import {
+  extractWorkItemResult,
+  resolveWorkItemRunConversationId,
+} from "../runtime/routes/work-items-routes.js";
 import { runTask } from "../tasks/task-runner.js";
 import { getTask } from "../tasks/task-store.js";
 import {
@@ -19,10 +24,76 @@ import { resolveRequiredTools } from "./resolve-required-tools.js";
 import {
   getWorkItem,
   updateWorkItem,
+  type WorkItem,
   type WorkItemStatus,
 } from "./work-item-store.js";
 
 const log = getLogger("work-item-runner");
+
+/** Terminal statuses we surface a `work_item_completed` event + impact for. */
+type TerminalWorkItemStatus = "done" | "awaiting_review" | "failed";
+
+/**
+ * Conservative estimate of the operator time a hands-off background work-item
+ * run saves: roughly the minutes it would have taken to do the task manually.
+ * Kept modest and consistent with `impact-store`'s other estimates so the
+ * hours-saved recap stays honest.
+ */
+const WORK_ITEM_MINUTES_SAVED = 8;
+
+/**
+ * Emit the inline-result completion event and record impact for a work item
+ * that just reached a terminal state. Idempotency is the caller's concern —
+ * see `broadcastWorkItemCompleted` usage in the runner, which fires exactly
+ * once per terminal transition.
+ */
+function broadcastWorkItemCompleted(
+  item: WorkItem,
+  status: TerminalWorkItemStatus,
+): void {
+  const { conversationId } = resolveWorkItemRunConversationId(item);
+  let summary = "";
+  let highlights: string[] = [];
+  if (conversationId) {
+    try {
+      const extracted = extractWorkItemResult(conversationId);
+      summary = extracted.summary;
+      highlights = extracted.highlights;
+    } catch (err) {
+      log.warn(
+        { err: String(err), workItemId: item.id },
+        "failed to extract work item result for completion event",
+      );
+    }
+  }
+
+  broadcastMessage({
+    type: "work_item_completed",
+    workItemId: item.id,
+    status,
+    result: {
+      summary,
+      highlights,
+      ...(conversationId ? { conversationId } : {}),
+    },
+    completedAt: new Date().toISOString(),
+  } as ServerMessage);
+
+  // Record background completions in the impact recap too. Interactive actions
+  // record their own impact elsewhere; background work-item runs did not, so a
+  // hands-off task that finished overnight never showed up in "your week with
+  // Cue". Only successful completions count — a failed run saved no time, so
+  // crediting it would inflate the hours-saved number. Fire-and-forget:
+  // recordImpact never throws.
+  if (status !== "failed") {
+    recordImpact({
+      type: "work_item_completed",
+      category: "other",
+      minutesSaved: WORK_ITEM_MINUTES_SAVED,
+      detail: `Cue handled: ${item.title}`,
+    });
+  }
+}
 
 // ── Public API ───────────────────────────────────────────────────────
 
@@ -155,9 +226,11 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
       }
 
       const current = getWorkItem(workItemId);
+      let terminalStatus: TerminalWorkItemStatus | null = null;
       if (current?.status !== "cancelled") {
         const finalStatus: WorkItemStatus =
           result.status === "completed" ? "awaiting_review" : "failed";
+        terminalStatus = finalStatus;
         updateWorkItem(workItemId, {
           status: finalStatus,
           lastRunId: result.taskRunId,
@@ -168,6 +241,16 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
 
       broadcastWorkItemStatus(workItemId);
       broadcastMessage({ type: "tasks_changed" } as ServerMessage);
+
+      // After the status change, carry the result inline so the UI doesn't
+      // have to poll getWorkItemOutput(). Skip when the run was cancelled —
+      // there was no terminal completion to report.
+      if (terminalStatus) {
+        const completed = getWorkItem(workItemId);
+        if (completed) {
+          broadcastWorkItemCompleted(completed, terminalStatus);
+        }
+      }
     } catch (err) {
       const errConversation = conversation as { headlessLock: boolean } | null;
       if (errConversation) {
@@ -180,6 +263,11 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
       });
       broadcastWorkItemStatus(workItemId);
       broadcastMessage({ type: "tasks_changed" } as ServerMessage);
+
+      const failed = getWorkItem(workItemId);
+      if (failed) {
+        broadcastWorkItemCompleted(failed, "failed");
+      }
     }
   })();
 

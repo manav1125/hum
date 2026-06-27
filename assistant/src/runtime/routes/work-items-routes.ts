@@ -211,13 +211,27 @@ export interface WorkItemOutputResult {
   };
 }
 
-function getWorkItemOutput(id: string): WorkItemOutputResult {
-  const workItem = getWorkItem(id);
-  if (!workItem) {
-    return { success: false, error: "Work item not found" };
-  }
+/**
+ * The extracted result of a work-item run: the latest assistant summary plus
+ * bullet highlights, anchored to the run conversation. Shared by the
+ * `getWorkItemOutput` route (poll-based) and the `work_item_completed` event
+ * emitted by the runner (push-based) so both surfaces report the same thing.
+ */
+export interface WorkItemRunResult {
+  conversationId: string;
+  summary: string;
+  highlights: string[];
+}
 
-  // Use the task run's conversationId as the authoritative source.
+/**
+ * Resolve the authoritative conversation id for a work item's most recent run.
+ * Prefers the task run's recorded conversationId, falling back to the work
+ * item's stored `lastRunConversationId`.
+ */
+export function resolveWorkItemRunConversationId(workItem: {
+  lastRunId: string | null;
+  lastRunConversationId: string | null;
+}): { conversationId: string | null; completedAt: number | null } {
   let conversationId: string | null = null;
   let completedAt: number | null = null;
 
@@ -230,18 +244,22 @@ function getWorkItemOutput(id: string): WorkItemOutputResult {
     }
   }
 
-  // Fall back to the work item's stored conversationId
   if (!conversationId) {
     conversationId = workItem.lastRunConversationId;
   }
 
-  if (!conversationId) {
-    return {
-      success: false,
-      error: "This task has not been run yet. No output is available.",
-    };
-  }
+  return { conversationId, completedAt };
+}
 
+/**
+ * Extract the summary + highlights for a completed run conversation. This is
+ * the single source of truth for work-item result extraction: scan the run's
+ * messages for the latest assistant text (summary) and bullet highlights,
+ * supplementing with tool outcomes when the prose is thin.
+ */
+export function extractWorkItemResult(
+  conversationId: string,
+): WorkItemRunResult {
   let summary = "";
   let highlights: string[] = [];
 
@@ -286,6 +304,27 @@ function getWorkItemOutput(id: string): WorkItemOutputResult {
       highlights = toolHighlights.slice(0, 5);
     }
   }
+
+  return { conversationId, summary, highlights };
+}
+
+function getWorkItemOutput(id: string): WorkItemOutputResult {
+  const workItem = getWorkItem(id);
+  if (!workItem) {
+    return { success: false, error: "Work item not found" };
+  }
+
+  const { conversationId, completedAt } =
+    resolveWorkItemRunConversationId(workItem);
+
+  if (!conversationId) {
+    return {
+      success: false,
+      error: "This task has not been run yet. No output is available.",
+    };
+  }
+
+  const { summary, highlights } = extractWorkItemResult(conversationId);
 
   return {
     success: true,
