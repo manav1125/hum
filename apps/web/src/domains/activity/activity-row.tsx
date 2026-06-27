@@ -169,7 +169,12 @@ export function ActivityRow({
         // Top-align when an expanded child block is present so it flows below
         // the header; otherwise keep the compact center-aligned single-line row.
         alignItems: children ? "flex-start" : "center",
-        gap: 12,
+        // Wrap the status pill + action cluster beneath the title when the row
+        // is squeezed (e.g. a narrow Mission Control lane). A no-op on the wide
+        // Activity page, where everything fits on one line.
+        flexWrap: "wrap",
+        columnGap: 12,
+        rowGap: 8,
         padding: "12px 14px",
         borderBottom: last ? "none" : `1px solid ${C.line}`,
         background: highlight ? C.blueW : undefined,
@@ -188,7 +193,7 @@ export function ActivityRow({
           }}
         />
       ) : null}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: "1 1 110px", minWidth: 110 }}>
         <div
           style={{
             fontSize: 13.5,
@@ -222,6 +227,10 @@ export function ActivityRow({
               alignItems: "center",
               gap: 8,
               marginTop: 4,
+              // Wrap the meta beneath the provenance chip in a narrow lane
+              // rather than spilling past the column edge.
+              flexWrap: "wrap",
+              rowGap: 2,
             }}
           >
             {provenance ? <ProvenanceChip label={provenance} /> : null}
@@ -237,7 +246,17 @@ export function ActivityRow({
       {statusLabel ? <StatusPill label={statusLabel} tone={statusTone} /> : null}
       {actions ? (
         <div
-          style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            flexShrink: 0,
+            // Stack the buttons when the cluster is wider than a narrow lane
+            // (e.g. Scheduled's Run/Pause/Cancel) instead of overflowing it.
+            flexWrap: "wrap",
+            rowGap: 6,
+            maxWidth: "100%",
+          }}
         >
           {actions}
         </div>
