@@ -111,7 +111,7 @@ export async function run(
   if (!token) {
     return {
       content:
-        "Replicate is not configured. Set a token via `assistant keys set replicate <token>` or the REPLICATE_API_TOKEN environment variable. Report this error to the user as-is; do not change configuration to fix it.",
+        "Replicate is not configured. Replicate is a DIRECT api.replicate.com integration — it does NOT use Composio or any OAuth connection. Tell the user to set a Replicate API token via `assistant keys set replicate <token>` or the REPLICATE_API_TOKEN environment variable. Report this as-is; do NOT change configuration and do NOT attempt a Composio/OAuth 'Connect Replicate' flow to fix it.",
       isError: true,
     };
   }

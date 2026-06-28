@@ -76,9 +76,11 @@ The tool returns the output media URL(s) Replicate produced. Present the URL(s) 
 
 Requires a Replicate API token. It is resolved from the secure store under the provider name `replicate`, or from the `REPLICATE_API_TOKEN` environment variable. If the tool reports a missing token, report the error to the user as-is — do not change configuration.
 
+**Replicate is a DIRECT integration, NOT a Composio connector.** It calls `api.replicate.com` with a bearer token; there is no Composio toolkit, OAuth flow, or "connection" to set up. If Replicate is not configured, the ONLY correct response is to tell the user to set a Replicate API token (`REPLICATE_API_TOKEN` or the secure store). NEVER search Composio for "replicate", and NEVER offer or initiate a Composio/OAuth "Connect Replicate" link. The same rule applies to other direct tooling providers such as Apify.
+
 ## Error handling
 
-- **Missing token / auth error**: report to the user as-is.
+- **Missing token / auth error**: report to the user as-is. Do NOT attempt a Composio or OAuth connection — Replicate is a direct token integration (see Credential).
 - **Model or version not found**: the model identifier is wrong. Ask the user for the exact `owner/name` (or `owner/name:version`).
 - **Prediction failed**: Replicate returns an error string. Report it. Do not silently retry on the same model with the same input.
 - **Timed out while polling**: the job may still be running on Replicate; retry with a larger `wait_seconds`.

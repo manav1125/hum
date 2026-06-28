@@ -46,6 +46,14 @@ envVarGroups:
       # The brain runs on Claude Fable 5 (per CUE-INFRA-SPEC). Set in dashboard.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Replicate token for the bundled `replicate` skill (image/video gen via
+      # replicate_run — a DIRECT api.replicate.com integration, NOT Composio).
+      # This env var is the DURABLE home: the cloud secure-store is not
+      # persistent across restarts, and resolveToolingProviderToken("replicate")
+      # falls back to it (providers/tooling-credentials.ts). Set the value in the
+      # dashboard (sync:false) so it survives every redeploy.
+      - key: REPLICATE_API_TOKEN
+        sync: false
       # Shared JWT signing key for the co-located gateway + daemon. WITHOUT a
       # shared key each generates its own disk key, so the gateway's exchange
       # token fails the daemon's verify (invalid_signature) on every /v1/* call.

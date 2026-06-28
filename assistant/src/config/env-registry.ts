@@ -162,6 +162,22 @@ export function getDiskPressureDisabled(): boolean {
 }
 
 /**
+ * CUE_DISABLE_MEMORY_ROUTER — boolean, default: false
+ * When set, the memory-v2 "Sonnet router" (a blocking per-turn LLM call that
+ * selects concept pages to inject) is suppressed even when
+ * `config.memory.v2.router.enabled` is true, falling through to the fast
+ * activation pipeline (ANN + BM25, no extra LLM call). The router roughly
+ * doubles per-turn latency — it runs a full model call before the main agent
+ * call — and is unreliable through OpenRouter (its forced tool call frequently
+ * fails schema validation, so it pays the latency and injects nothing). A pure
+ * env flag so the latency-critical path can be cut without a per-workspace
+ * config migration.
+ */
+export function getMemoryV2RouterDisabled(): boolean {
+  return flag("CUE_DISABLE_MEMORY_ROUTER");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.

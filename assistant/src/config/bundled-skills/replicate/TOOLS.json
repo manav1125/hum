@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "replicate_run",
-      "description": "Preferred tool to generate or create an image, or make/render a video, using a Replicate-hosted model; returns the output media URL(s). Use this for plain requests like 'generate an image of X' or 'make a video of Y' — you do not need the user to name a model. Pass exactly two arguments: `model` (a string) and `input` (an object). For image generation, set `model` to 'black-forest-labs/flux-schnell' and `input` to { \"prompt\": \"<your description>\" }. For video, set `model` to a text-to-video model (e.g. 'minimax/video-01') and raise `wait_seconds`. Example call: { \"model\": \"black-forest-labs/flux-schnell\", \"input\": { \"prompt\": \"a single red circle on white\" } }. Do NOT put the prompt at the top level — it MUST go inside the `input` object.",
+      "description": "Preferred tool to generate or create an image, or make/render a video, using a Replicate-hosted model; returns the output media URL(s). Use this for plain requests like 'generate an image of X' or 'make a video of Y' — you do not need the user to name a model. Pass exactly two arguments: `model` (a string) and `input` (an object). For image generation, set `model` to 'black-forest-labs/flux-schnell' and `input` to { \"prompt\": \"<your description>\" }. For video, set `model` to a text-to-video model (e.g. 'minimax/video-01') and raise `wait_seconds`. Example call: { \"model\": \"black-forest-labs/flux-schnell\", \"input\": { \"prompt\": \"a single red circle on white\" } }. Do NOT put the prompt at the top level — it MUST go inside the `input` object. IMPORTANT: Replicate is a DIRECT api.replicate.com integration — it does NOT use Composio or any OAuth 'connection'. To use it you only need a Replicate API token in the secure store (or REPLICATE_API_TOKEN). If the token is missing, THIS tool returns a clear message — relay it to the user (ask them to set a Replicate token). NEVER search for, offer, or initiate a Composio/OAuth 'Connect Replicate' flow; there is no Composio connection for Replicate.",
       "category": "media",
       "risk": "low",
       "input_schema": {
@@ -23,7 +23,9 @@
             "description": "The model's input parameters, as an OBJECT. The text description MUST go under the `prompt` key — e.g. { \"prompt\": \"a golden retriever puppy in a field\" }. You may add other model-specific keys like `aspect_ratio`, `num_outputs`, `image` (an input image URL), or `seed`. Required key for image/video models: `prompt`.",
             "additionalProperties": true,
             "examples": [
-              { "prompt": "a single red circle on white" },
+              {
+                "prompt": "a single red circle on white"
+              },
               {
                 "prompt": "a neon city skyline at night",
                 "aspect_ratio": "16:9"

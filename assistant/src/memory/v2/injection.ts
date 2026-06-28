@@ -23,6 +23,7 @@
 // user message only — prior turns' attachments are left alone. This keeps the
 // cached prefix bytes-identical across turns.
 
+import { getMemoryV2RouterDisabled } from "../../config/env-registry.js";
 import type { AssistantConfig } from "../../config/types.js";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspaceDir } from "../../util/platform.js";
@@ -179,7 +180,7 @@ export async function injectMemoryV2Block(
   // empties the list before this code runs. Router abstention on
   // context-load means no v2 pages restored that turn, which is preferable
   // to letting the activation graph pick something arbitrary.
-  if (config.memory.v2.router.enabled) {
+  if (config.memory.v2.router.enabled && !getMemoryV2RouterDisabled()) {
     return injectViaRouter({
       workspaceDir,
       database,
