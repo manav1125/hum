@@ -30,6 +30,7 @@ import {
   isLocalAssistant,
   isPlatformAssistant,
 } from "@/lib/local-mode";
+import { isCueSelfHostDeploy } from "@/lib/self-hosted/cue-self-host";
 import {
   SELECTED_ASSISTANT_STORAGE_KEY,
   clearSelectedAssistantId,
@@ -126,6 +127,16 @@ const useResolvedAssistantsStoreBase = create<ResolvedAssistantsStore>(
     assistantsHydrated: false,
 
     setFromLockfile: (lockfile) => {
+      // Self-host deploy build (cloud, or the desktop app pointed at a
+      // self-host gateway): this SPA is a remote gateway client, not a local
+      // multi-assistant host. Ignore the lockfile (including the persisted
+      // localStorage mirror) so the local-assistant chooser never appears —
+      // the gateway-auth short-circuit resolves the single `self` assistant,
+      // exactly as the cloud browser already does.
+      if (isCueSelfHostDeploy()) {
+        set({ assistants: [], assistantsHydrated: true });
+        return;
+      }
       const wasHydrated = get().assistantsHydrated;
       const assistants = dedupeById(
         lockfile.assistants.map((a) => ({

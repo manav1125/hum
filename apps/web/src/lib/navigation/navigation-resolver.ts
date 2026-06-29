@@ -278,6 +278,11 @@ function resolveOnboardingIntercept(
   state: NavigationState,
   intendedDestination: string,
 ): NavigationDecision {
+  // Gateway-auth (self-host) sessions are already authenticated to a gateway
+  // and resolve the single `self` assistant — never route them into local
+  // onboarding. Mirrors `allowGatewayAuth` in the route-guard pipeline (which
+  // the onboarding-intercept path does not run through).
+  if (state.isGatewayAuth) return { action: "allow" };
   if (state.isLocalMode && state.hasAssistants) return { action: "allow" };
   if (hasCompletedOnboarding(state)) return { action: "allow" };
 

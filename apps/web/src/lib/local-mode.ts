@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth/gateway-session";
 import { setSelfHostedConnection } from "@/lib/self-hosted/connection";
 import {
+  isCueSelfHostDeploy,
   isSelfHostMode,
   isStoredActorTokenValid,
   rehydrateGatewayTokenFromActor,
@@ -122,6 +123,16 @@ export function isPlatformDisabled(): boolean {
 }
 
 export async function loadLockfile(): Promise<Lockfile> {
+  // Self-host deploy build (cloud, or the desktop app pointed at a self-host
+  // gateway via CUE_SERVER_URL): this SPA is a remote client to a gateway, not
+  // a local-lockfile host. Never read the Electron lockfile here — populating
+  // local assistants would surface the local-assistant chooser and route to
+  // the dead local-daemon flow instead of letting the gateway-auth
+  // short-circuit boot straight into the `self` assistant (mirrors how the
+  // cloud browser, which has no lockfile bridge, already behaves).
+  if (isCueSelfHostDeploy()) {
+    return { ...EMPTY_LOCKFILE };
+  }
   try {
     const data = await loadLockfileHost();
     commitLockfile(data);
