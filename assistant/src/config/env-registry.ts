@@ -178,6 +178,22 @@ export function getMemoryV2RouterDisabled(): boolean {
 }
 
 /**
+ * CUE_DISABLE_BACKGROUND_MEMORY — boolean, default: false
+ * When set, the background memory re-processing jobs (v2 consolidation and the
+ * memory retrospective) bail immediately. These jobs each make a long
+ * (30s+) background LLM call and persist a `conversation_type='background'`
+ * row per run — they were the source of the 45k-conversation runaway and, when
+ * they fire during a user turn, they contend with it and stall the reply.
+ * Disabling them stops the re-bloat and the stalls; memory RECALL/INJECTION
+ * (which uses the already-built graph) is unaffected — only the ongoing
+ * re-extraction pauses. A pure env flag so it can be cut without a per-workspace
+ * config migration, matching {@link getMemoryV2RouterDisabled}.
+ */
+export function getDisableBackgroundMemory(): boolean {
+  return flag("CUE_DISABLE_BACKGROUND_MEMORY");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.

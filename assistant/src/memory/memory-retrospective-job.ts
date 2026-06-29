@@ -41,6 +41,7 @@ import {
   parseInterfaceId,
 } from "../channels/types.js";
 import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
+import { getDisableBackgroundMemory } from "../config/env-registry.js";
 import type { AssistantConfig } from "../config/types.js";
 import { extractTurnContextTimestamp } from "../context/compactor.js";
 import { findConversation } from "../daemon/conversation-registry.js";
@@ -130,6 +131,10 @@ export async function memoryRetrospectiveJob(
   job: MemoryJob<{ conversationId?: string }>,
   config: AssistantConfig,
 ): Promise<MemoryRetrospectiveOutcome> {
+  if (getDisableBackgroundMemory()) {
+    log.debug("CUE_DISABLE_BACKGROUND_MEMORY set; retrospective skipped");
+    return { kind: "no_new_messages" };
+  }
   const sourceConversationId = job.payload.conversationId;
   if (!sourceConversationId) {
     log.warn({ jobId: job.id }, "Skipping job: missing conversationId");

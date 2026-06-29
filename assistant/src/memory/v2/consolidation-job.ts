@@ -65,6 +65,7 @@ import {
 import { dirname, join } from "node:path";
 
 import { isAssistantFeatureFlagEnabled } from "../../config/assistant-feature-flags.js";
+import { getDisableBackgroundMemory } from "../../config/env-registry.js";
 import type { AssistantConfig } from "../../config/types.js";
 import { runBackgroundJob } from "../../runtime/background-job-runner.js";
 import { getLogger } from "../../util/logger.js";
@@ -157,6 +158,10 @@ export async function memoryV2ConsolidateJob(
   _job: MemoryJob,
   config: AssistantConfig,
 ): Promise<ConsolidationOutcome> {
+  if (getDisableBackgroundMemory()) {
+    log.debug("CUE_DISABLE_BACKGROUND_MEMORY set; consolidation skipped");
+    return { kind: "disabled" };
+  }
   if (config.memory.enabled === false) {
     log.debug("memory.enabled is false; consolidation skipped");
     return { kind: "disabled" };
