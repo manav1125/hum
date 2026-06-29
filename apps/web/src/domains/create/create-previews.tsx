@@ -420,6 +420,52 @@ function LeadsPreview() {
   );
 }
 
+/** Audio → a waveform with a play affordance. */
+function AudioPreview() {
+  // Deterministic, symmetric-ish waveform so the thumb reads as "audio".
+  const heights = [
+    18, 34, 52, 70, 88, 64, 40, 56, 80, 96, 72, 48, 30, 50, 74, 90, 66, 42, 58,
+    78, 94, 70, 46, 28, 44, 62, 38, 22,
+  ];
+  const barW = 6;
+  const gap = 4;
+  const startX = 30;
+  const midY = 84;
+  return (
+    <Frame>
+      <defs>
+        <linearGradient id="aud-grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor={C.accentStrong} />
+          <stop offset="100%" stopColor={C.accentViolet} />
+        </linearGradient>
+      </defs>
+      {/* Waveform bars mirrored around the centre line */}
+      {heights.map((h, i) => {
+        const x = startX + i * (barW + gap);
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={midY - h / 2}
+            width={barW}
+            height={h}
+            rx={barW / 2}
+            fill="url(#aud-grad)"
+            opacity={0.55 + (h / 96) * 0.45}
+          />
+        );
+      })}
+      {/* Transport bar */}
+      <rect x="22" y="132" width="276" height="22" rx="5" fill={C.base} stroke={C.line} />
+      <circle cx="38" cy="143" r="7" fill={C.accent} />
+      <path d="M35 139 L43 143 L35 147 Z" fill="#ffffff" />
+      <rect x="54" y="141" width="200" height="4" rx="2" fill={C.line} />
+      <rect x="54" y="141" width="96" height="4" rx="2" fill={C.accent} />
+      <circle cx="150" cy="143" r="5" fill={C.accent} />
+    </Frame>
+  );
+}
+
 /* ----------------------------------------------------------------------- */
 /* Public component + lookup                                                */
 /* ----------------------------------------------------------------------- */
@@ -432,6 +478,7 @@ export type PreviewKind =
   | "images"
   | "canvas"
   | "video"
+  | "audio"
   | "leads";
 
 /** Renders the mode-level preview, with optional template variant tuning. */
@@ -457,6 +504,8 @@ export function CreatePreview({
       return <CanvasPreview variant={variant} />;
     case "video":
       return <VideoPreview />;
+    case "audio":
+      return <AudioPreview />;
     case "leads":
       return <LeadsPreview />;
   }

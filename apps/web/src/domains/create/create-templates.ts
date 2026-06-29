@@ -25,6 +25,7 @@ import {
   BarChart3,
   FileText,
   Image as ImageIcon,
+  Music,
   Palette,
   Presentation,
   Search,
@@ -296,11 +297,53 @@ export const CREATE_MODES: CreateMode[] = [
   {
     id: "video",
     label: "Video",
-    tagline: "Generate video, analyze footage & pull clips",
+    tagline: "Generate clips, animate scenes, analyze footage",
     icon: Video,
     skill: "replicate",
     skillLabel: "Replicate",
     templates: [
+      {
+        id: "cinematic-clip",
+        title: "Cinematic clip",
+        description: "A short, filmic shot from a text prompt.",
+        prompt:
+          "Generate a short, cinematic video clip from a text prompt using a Replicate text-to-video model. Aim for a filmic look — nice lighting, shallow depth of field, smooth camera motion. Suggest a striking subject/scene if I don't give one, then create it and show me the result.",
+      },
+      {
+        id: "product-reveal",
+        title: "Product reveal",
+        description: "A slick product shot in motion.",
+        prompt:
+          "Generate a short product-reveal video clip — a slick, well-lit hero shot of a product with subtle camera motion (slow rotate, push-in, or reveal), studio or lifestyle backdrop. Ask me the product if I don't say, then create it with a Replicate text-to-video model.",
+      },
+      {
+        id: "logo-animation",
+        title: "Logo animation",
+        description: "An animated logo sting or reveal.",
+        prompt:
+          "Generate a short animated logo sting / reveal as a video clip — clean motion, a tasteful build-on or shimmer, brand-appropriate background. Tell me a sensible style if I don't specify, then create it with a Replicate text-to-video model.",
+      },
+      {
+        id: "social-ad-clip",
+        title: "Social ad clip",
+        description: "A punchy vertical video for social.",
+        prompt:
+          "Generate a punchy short vertical (9:16) video clip for social — eye-catching motion that stops the scroll, room for a short caption. Ask me the topic/brand if I don't give one, then create it with a Replicate text-to-video model.",
+      },
+      {
+        id: "anime-scene",
+        title: "Anime scene",
+        description: "A short anime / Ghibli-style animation.",
+        prompt:
+          "Generate a short anime / Ghibli-style animated video clip — soft painterly backgrounds, gentle camera drift, a whimsical subject. Suggest a charming scene if I don't specify one, then create it with a Replicate text-to-video model.",
+      },
+      {
+        id: "explainer-clip",
+        title: "Explainer clip",
+        description: "A short clip that illustrates an idea.",
+        prompt:
+          "Generate a short video clip that visually illustrates a concept or idea I'll give you — clear, simple, motion that helps explain the point. Tell me the concept (or pick a good example), then create it with a Replicate text-to-video model.",
+      },
       {
         id: "summarize-video",
         title: "Summarize a video",
@@ -321,6 +364,44 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Pull a short segment out of a video.",
         prompt:
           "I want to extract a short clip from a longer video I'll provide. Ingest it, help me pick the segment, and produce the clipped output.",
+      },
+    ],
+  },
+  {
+    id: "audio",
+    label: "Audio",
+    tagline: "Generate music, voiceover & sound",
+    icon: Music,
+    skill: "replicate",
+    skillLabel: "Replicate",
+    templates: [
+      {
+        id: "background-music",
+        title: "Background music",
+        description: "An original track in a chosen mood.",
+        prompt:
+          "Generate an original background music track using a Replicate music-generation model. I'll give you a mood/genre and rough length (or pick something fitting) — produce an instrumental bed I could use under a video or podcast, and share the audio.",
+      },
+      {
+        id: "voiceover",
+        title: "Voiceover",
+        description: "Natural narration from your script.",
+        prompt:
+          "Generate a natural-sounding voiceover from a script using a Replicate text-to-speech model. I'll paste the script and tell you the voice/tone I want (warm, energetic, neutral) — produce the narration audio and share it.",
+      },
+      {
+        id: "sound-effect",
+        title: "Sound effect",
+        description: "A short custom sound or sting.",
+        prompt:
+          "Generate a short custom sound effect or audio sting using a Replicate audio-generation model. I'll describe the sound I need (a notification chime, a whoosh, an ambient loop) — create it and share the audio.",
+      },
+      {
+        id: "podcast-intro",
+        title: "Podcast intro",
+        description: "A spoken hook over a music bed.",
+        prompt:
+          "Create a short podcast intro: generate an upbeat music bed with a Replicate music model and a spoken intro line with a Replicate text-to-speech model, then combine them into a single intro clip. I'll give you the show name and tagline.",
       },
     ],
   },
