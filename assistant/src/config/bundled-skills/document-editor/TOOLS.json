@@ -21,7 +21,7 @@
     },
     {
       "name": "document_create",
-      "description": "Create a new long-form document with a rich text editor. Use this when the user asks to write a blog post, article, or any long-form content. The editor opens in workspace mode with chat docked to the side.",
+      "description": "Create a new long-form document in a rich text editor that opens in workspace mode with chat docked to the side. Use this for ANY document or written piece the user asks you to write, draft, compose, or prepare — a letter (cover/business/formal/reference/support/application letter), memo, proposal, report, brief, essay, article, blog post, plan, statement, contract draft, story, or similar. Returns a surface_id for subsequent document_update calls. Do NOT write documents to a scratch/temp file or dump them inline in chat — create them here so the user can review, edit, sign/send, and export.",
       "category": "document-editor",
       "risk": "low",
       "input_schema": {

@@ -1,6 +1,6 @@
 ---
 name: document-editor
-description: Use whenever the user wants to write or draft an article, blog post, essay, report, or any long-form content. Creates the content in a rich text editor instead of dumping it in chat, so it can be streamed, reviewed, edited, and exported.
+description: Use whenever the user wants to write or draft ANY document or long-form content — a letter (cover letter, business/formal letter, reference, support, or application letter), memo, proposal, report, brief, essay, article, blog post, plan, statement, contract draft, story, or any multi-paragraph written piece. Creates the content in a rich text editor instead of dumping it in chat or writing it to a scratch file, so it can be streamed, reviewed, edited, and exported.
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "✍️"
@@ -8,8 +8,8 @@ metadata:
     display-name: "Document Writer"
     category: "content"
     activation-hints:
-      - "User asks to write, draft, or compose an article, blog post, essay, report, story, or any long-form content — always create it in the document editor, not as a chat reply"
-      - "User wants written content they will iterate on, review, or export — use the editor instead of inline markdown"
+      - "User asks to write, draft, compose, or prepare ANY document — a letter (cover/business/formal/reference/support/application letter), memo, proposal, report, brief, essay, article, blog post, plan, statement, contract draft, story, or any multi-paragraph written piece — ALWAYS create it in the document editor, never as a chat reply and never by writing to a scratch/temp file"
+      - "User wants written content they will iterate on, review, sign, send, or export — use the editor instead of inline markdown"
       - "A file attachment contains a draft or document the user wants to revise — open it in the editor"
     avoid-when:
       - "The user wants an interactive app, dashboard, calculator, game, or anything with state or data — use app-builder instead"
