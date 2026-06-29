@@ -42,20 +42,23 @@ export const AUTONOMY_MODES = ["auto", "ask", "never"] as const;
 export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
 
 /**
- * SAFE DEFAULTS — applied when a category has no stored row.
+ * DEFAULTS — applied when a category has no stored row.
  *
- * Research and drafting are low-consequence and auto-run by default. Anything
- * that can send a message, move money, or delete data defaults to "ask", and
- * the catch-all "other" defaults to "ask" too. NEVER default money/send/delete
- * to "auto".
+ * Tuned for "just get a result": research, drafting, sending, and the catch-all
+ * "other" (builds, file ops, most tools) auto-run, so the assistant isn't
+ * gated on a prompt for everyday work. Only the two genuinely irreversible /
+ * costly categories — moving money and destructive deletes — ask by default.
+ * The user can tighten any category to "ask"/"never" (or loosen money/delete)
+ * from the Trust console. Keep money + delete at "ask" unless the user
+ * explicitly opts into full autonomy.
  */
 export const SAFE_DEFAULT_POLICIES: Record<AutonomyCategory, AutonomyMode> = {
   research: "auto",
   draft: "auto",
-  send: "ask",
+  send: "auto",
   money: "ask",
   delete: "ask",
-  other: "ask",
+  other: "auto",
 };
 
 function isValidCategory(value: unknown): value is AutonomyCategory {

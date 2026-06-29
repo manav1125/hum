@@ -24,9 +24,9 @@ export const TimeoutConfigSchema = z
       .number({ error: "timeouts.permissionTimeoutSec must be a number" })
       .finite("timeouts.permissionTimeoutSec must be finite")
       .positive("timeouts.permissionTimeoutSec must be a positive number")
-      .default(300)
+      .default(3600)
       .describe(
-        "How long to wait for user permission approval before timing out (seconds)",
+        "How long to wait for user permission approval before timing out (seconds). Default 1h so an approval survives the user navigating between threads or stepping away, rather than auto-denying after a few minutes and stranding a late Allow.",
       ),
     toolExecutionTimeoutSec: z
       .number({ error: "timeouts.toolExecutionTimeoutSec must be a number" })
