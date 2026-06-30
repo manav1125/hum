@@ -134,10 +134,34 @@ export async function ensureGatewayToken(
     cachedTokenSource ??
     localStorage.getItem(LS_TOKEN_SOURCE_KEY) ??
     localStorage.getItem(LEGACY_TOKEN_SOURCE_KEY);
+  const existing = getGatewayToken();
   if (storedSource && storedSource !== source) {
+    // A source-string difference is NOT proof the token is for a different
+    // gateway. The self-host seed (cue-self-host.ts) records the page ORIGIN
+    // (e.g. `http://127.0.0.1:7831`) while the local mint records the token URL
+    // (e.g. `/assistant/__gateway/7831/auth/token`) — so the SAME local gateway
+    // gets stored under two different source strings. Eagerly clearing a token
+    // that is still time-valid here was the root of a reload → sign-out →
+    // "repair" loop: once a `?cueToken=` seed had stamped the origin, every
+    // subsequent local-mode boot saw a mismatch, discarded a working token, and
+    // then sometimes failed to re-mint, stranding the app on the chooser.
+    //
+    // Prefer a LAZY clear: keep a still-valid token, re-stamp its source to the
+    // current one, and rely on the gateway to reject it with a real 401 if it
+    // is genuinely for a different gateway (the 401 path calls
+    // `clearGatewayToken`, after which the next call re-mints cleanly). Only
+    // clear eagerly when there is no usable token to fall back on.
+    if (existing) {
+      try {
+        localStorage.setItem(LS_TOKEN_SOURCE_KEY, source);
+      } catch {
+        // localStorage unavailable — the in-memory cache still suffices.
+      }
+      cachedTokenSource = source;
+      return existing;
+    }
     clearGatewayToken();
   }
-  const existing = getGatewayToken();
   if (existing) return existing;
   return acquireGatewayToken(tokenUrl, guardianToken);
 }

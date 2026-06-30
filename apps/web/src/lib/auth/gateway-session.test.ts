@@ -65,6 +65,33 @@ describe("ensureGatewayToken mint failure", () => {
   });
 });
 
+describe("ensureGatewayToken source mismatch", () => {
+  test("keeps a still-valid token when the source changes (lazy clear, no re-mint)", async () => {
+    // Mint a token under source A (the local mint URL).
+    globalThis.fetch = mock(async () => ({
+      ok: true,
+      json: async () => ({ token: "tok-A", expiresAt: 9_999_999_999 }),
+    })) as unknown as typeof fetch;
+    const first = await ensureGatewayToken(
+      "/assistant/__gateway/7831/auth/token",
+      "guardian-token",
+    );
+    expect(first).toBe("tok-A");
+
+    // Now ask again under a DIFFERENT source string (e.g. the page origin a
+    // self-host seed would have stamped). The still-valid token must be reused,
+    // NOT discarded and re-minted — re-minting would call fetch (and fail here).
+    let reminted = false;
+    globalThis.fetch = mock(async () => {
+      reminted = true;
+      return { ok: false, status: 500 };
+    }) as unknown as typeof fetch;
+    const second = await ensureGatewayToken("http://127.0.0.1:7831", "g");
+    expect(second).toBe("tok-A");
+    expect(reminted).toBe(false);
+  });
+});
+
 describe("isRepairableGatewayTokenError", () => {
   test("true only for a 401 GatewayTokenError", () => {
     expect(isRepairableGatewayTokenError(new GatewayTokenError(401, "x"))).toBe(
