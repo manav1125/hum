@@ -3,6 +3,9 @@
   "version": "0.8.12",
   "license": "MIT",
   "type": "module",
+  "trustedDependencies": [
+    "ffmpeg-static"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
