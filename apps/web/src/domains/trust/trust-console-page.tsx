@@ -237,6 +237,75 @@ const AUTONOMY_MODE_OPTIONS: ReadonlyArray<{
   { mode: "never", label: "Never" },
 ];
 
+// ---------------------------------------------------------------------------
+// Master autonomy presets — a one-tap way to set every category at once. The
+// per-category controls below stay the source of truth; these just write a
+// whole map. The current selection is DERIVED from the policies (so editing a
+// single category drops the master into "Custom").
+// ---------------------------------------------------------------------------
+
+type MasterMode = "autonomous" | "balanced" | "careful";
+
+const MASTER_PRESETS: Record<MasterMode, AutonomyPolicies> = {
+  // Full autonomy — the "bypass permissions" equivalent. Deny rules + risk
+  // checks still apply; this only flips the ask/auto policy per category.
+  autonomous: {
+    research: "auto",
+    draft: "auto",
+    send: "auto",
+    money: "auto",
+    delete: "auto",
+    other: "auto",
+  },
+  // The recommended default: everyday work runs itself; only irreversible /
+  // costly actions (money, deletes) pause for a yes.
+  balanced: {
+    research: "auto",
+    draft: "auto",
+    send: "auto",
+    money: "ask",
+    delete: "ask",
+    other: "auto",
+  },
+  // Maximum oversight — every category asks first.
+  careful: {
+    research: "ask",
+    draft: "ask",
+    send: "ask",
+    money: "ask",
+    delete: "ask",
+    other: "ask",
+  },
+};
+
+const MASTER_OPTIONS: ReadonlyArray<{
+  mode: MasterMode;
+  label: string;
+  sub: string;
+}> = [
+  { mode: "autonomous", label: "Autonomous", sub: "Run everything without asking" },
+  { mode: "balanced", label: "Balanced", sub: "Auto-run, but ask for money & deletes" },
+  { mode: "careful", label: "Careful", sub: "Ask before every action" },
+];
+
+const MASTER_MODES: readonly MasterMode[] = [
+  "autonomous",
+  "balanced",
+  "careful",
+];
+
+/** Which preset (if any) the current per-category policies exactly match. */
+function deriveMasterMode(p: AutonomyPolicies): MasterMode | "custom" {
+  for (const mode of MASTER_MODES) {
+    const preset = MASTER_PRESETS[mode];
+    const matches = (Object.keys(preset) as AutonomyCategory[]).every(
+      (key) => preset[key] === p[key],
+    );
+    if (matches) return mode;
+  }
+  return "custom";
+}
+
 function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
   const queryClient = useQueryClient();
   const queryKey = ["autonomyPolicies", assistantId] as const;
@@ -277,6 +346,13 @@ function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
     [mutation],
   );
 
+  const setMaster = useCallback(
+    (mode: MasterMode) => {
+      mutation.mutate(MASTER_PRESETS[mode]);
+    },
+    [mutation],
+  );
+
   const policies = query.data;
 
   return (
@@ -306,15 +382,20 @@ function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
           }}
         >
           Couldn&rsquo;t load your autonomy policy. Until it loads, Cue applies
-          its safe defaults — research and drafting auto-run; messages, money,
-          and deletes always ask.
+          its safe defaults — everyday work auto-runs; only money and deletes
+          always ask.
         </div>
       ) : (
         <>
-          <div style={{ fontSize: 12.5, color: C.t2, marginTop: -2 }}>
-            Choose what Cue may do on its own. <b>Ask</b> always prompts you
-            first — even at Full access. <b>Never</b> blocks the category
-            outright. These never weaken Cue&rsquo;s deny rules or risk checks.
+          <MasterModeToggle
+            current={deriveMasterMode(policies)}
+            disabled={mutation.isPending}
+            onSelect={setMaster}
+          />
+          <div style={{ fontSize: 12.5, color: C.t2 }}>
+            Or fine-tune by action type. <b>Ask</b> always prompts you first —
+            even at Full access. <b>Never</b> blocks the category outright. These
+            never weaken Cue&rsquo;s deny rules or risk checks.
           </div>
           <div style={{ display: "grid", gap: 8 }}>
             {AUTONOMY_ROWS.map((row) => (
@@ -330,6 +411,103 @@ function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
         </>
       )}
     </Panel>
+  );
+}
+
+function MasterModeToggle({
+  current,
+  disabled,
+  onSelect,
+}: {
+  current: MasterMode | "custom";
+  disabled: boolean;
+  onSelect: (mode: MasterMode) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 7, marginTop: -2 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div style={{ fontSize: 12.5, color: C.t2 }}>
+          <b style={{ color: C.t1 }}>Overall autonomy</b> — set every action
+          type at once.
+        </div>
+        {current === "custom" && (
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 10.5,
+              letterSpacing: "0.04em",
+              color: C.t2,
+              background: C.sunken,
+              border: `1px solid ${C.line2}`,
+              borderRadius: 6,
+              padding: "2px 7px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            CUSTOM
+          </span>
+        )}
+      </div>
+      <div
+        role="radiogroup"
+        aria-label="Overall autonomy"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 8,
+        }}
+      >
+        {MASTER_OPTIONS.map((opt) => {
+          const active = opt.mode === current;
+          return (
+            <button
+              key={opt.mode}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={disabled}
+              onClick={() => {
+                if (!active) onSelect(opt.mode);
+              }}
+              style={{
+                textAlign: "left",
+                display: "grid",
+                gap: 3,
+                padding: "10px 12px",
+                borderRadius: 12,
+                cursor: disabled ? "default" : "pointer",
+                background: active ? C.surface : C.sunken,
+                border: active
+                  ? `1.5px solid ${C.blueS}`
+                  : `1px solid ${C.line2}`,
+                boxShadow: active ? "0 1px 3px rgba(26,34,48,0.10)" : "none",
+                transition: "background 120ms, border-color 120ms",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: active ? C.blueS : C.t1,
+                }}
+              >
+                {opt.label}
+              </span>
+              <span style={{ fontSize: 11.5, color: C.t2, lineHeight: 1.3 }}>
+                {opt.sub}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

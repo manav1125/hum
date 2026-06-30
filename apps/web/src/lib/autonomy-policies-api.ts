@@ -41,10 +41,10 @@ export type AutonomyPolicies = Record<AutonomyCategory, AutonomyMode>;
 const SAFE_DEFAULTS: AutonomyPolicies = {
   research: "auto",
   draft: "auto",
-  send: "ask",
+  send: "auto",
   money: "ask",
   delete: "ask",
-  other: "ask",
+  other: "auto",
 };
 
 function isMode(value: unknown): value is AutonomyMode {

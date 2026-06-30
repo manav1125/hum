@@ -162,7 +162,29 @@ export async function handleConfirmationSubmit(
     );
 
     if (!result.ok) {
-      useChatSessionStore.getState().setError({ message: result.error });
+      // A 404 means the interaction is no longer pending: it expired (the user
+      // stepped away past the approval window) or was already handled on
+      // another surface. Don't surface the raw "No pending interaction found"
+      // error or leave the stale Allow/Deny buttons hanging — clear the card
+      // and show a calm, actionable note instead of a hard failure.
+      if (result.status === 404) {
+        useInteractionStore.getState().dismissConfirmation();
+        useInteractionStore.getState().setInlineConfirmationToolCallId(null);
+        useChatSessionStore
+          .getState()
+          .setMessages((prev) =>
+            clearConfirmationByRequestId(prev, snapshot.requestId),
+          );
+        useChatSessionStore
+          .getState()
+          .deleteConfirmationToolCall(snapshot.requestId);
+        useChatSessionStore.getState().setError({
+          message:
+            "That request expired or was already handled — just ask again if you still want it done.",
+        });
+      } else {
+        useChatSessionStore.getState().setError({ message: result.error });
+      }
       useInteractionStore.getState().submitConfirmationEnd();
       return;
     }
