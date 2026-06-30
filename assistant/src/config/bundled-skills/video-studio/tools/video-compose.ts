@@ -29,6 +29,9 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 
+import ffmpegStaticPath from "ffmpeg-static";
+import ffprobeStatic from "ffprobe-static";
+
 import { uploadFileBackedAttachment } from "../../../../memory/attachments-store.js";
 import type {
   ToolContext,
@@ -64,12 +67,31 @@ const FONT_CANDIDATES = [
 // Binary resolution
 // ---------------------------------------------------------------------------
 
+/** Path to the vendored static binary (full-featured: includes drawtext). */
+function staticBinaryPath(name: "ffmpeg" | "ffprobe"): string | null {
+  try {
+    if (name === "ffmpeg") {
+      return typeof ffmpegStaticPath === "string" ? ffmpegStaticPath : null;
+    }
+    const p = (ffprobeStatic as { path?: string } | undefined)?.path;
+    return typeof p === "string" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveBinary(name: "ffmpeg" | "ffprobe"): string {
   const override =
     name === "ffmpeg"
       ? process.env.CUE_FFMPEG_PATH
       : process.env.CUE_FFPROBE_PATH;
   if (override && existsSync(override)) return override;
+
+  // Prefer the vendored static build: it includes libfreetype/drawtext (for
+  // caption burn-in) and is identical across macOS and the Render Linux host,
+  // so behaviour doesn't depend on whatever ffmpeg the system happens to have.
+  const vendored = staticBinaryPath(name);
+  if (vendored && existsSync(vendored)) return vendored;
 
   const home = process.env.HOME ?? "";
   const candidates = [
