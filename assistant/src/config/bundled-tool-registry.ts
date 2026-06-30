@@ -133,6 +133,8 @@ import * as subagentSpawn from "./bundled-skills/subagent/tools/subagent-spawn.j
 import * as subagentStatus from "./bundled-skills/subagent/tools/subagent-status.js";
 // ── transcribe ─────────────────────────────────────────────────────────────────
 import * as transcribeMedia from "./bundled-skills/transcribe/tools/transcribe-media.js";
+// ── video-studio ───────────────────────────────────────────────────────────────
+import * as videoCompose from "./bundled-skills/video-studio/tools/video-compose.js";
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 
@@ -284,4 +286,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
 
   // transcribe
   ["transcribe:tools/transcribe-media.ts", transcribeMedia],
+
+  // video-studio
+  ["video-studio:tools/video-compose.ts", videoCompose],
 ]);

@@ -22,14 +22,24 @@ export function spawnWithTimeout(
   timeoutMs: number,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    // Augment PATH so Homebrew-installed tools (ffmpeg, ffprobe)
-    // are found even when the daemon runs as a bundled binary with minimal PATH.
+    // Augment PATH so Homebrew-installed tools (ffmpeg, ffprobe) are found even
+    // when the daemon runs as a bundled binary with minimal PATH. Covers the
+    // standard prefixes plus a per-user Homebrew under $HOME/homebrew (the
+    // non-default prefix some installs use), and /usr/bin.
+    const home = process.env.HOME;
     const proc = Bun.spawn(cmd, {
       stdout: "pipe",
       stderr: "pipe",
       env: {
         ...process.env,
-        PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"]
+        PATH: [
+          process.env.PATH,
+          "/opt/homebrew/bin",
+          "/usr/local/bin",
+          home ? `${home}/homebrew/bin` : "",
+          home ? `${home}/.local/bin` : "",
+          "/usr/bin",
+        ]
           .filter(Boolean)
           .join(":"),
       },

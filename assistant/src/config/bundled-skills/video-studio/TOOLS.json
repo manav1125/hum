@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "video_compose",
+      "description": "Assemble a finished video from already-generated assets: an ordered list of scene visuals (image or clip URLs/paths), an optional narration voiceover track, and an optional background music track. Renders each scene to a uniform size, burns optional per-scene captions (when the ffmpeg build supports it), concatenates them, mixes the audio bed, and returns the final mp4 as an in-chat attachment. This is the FINAL step of the video-studio pipeline — generate the visuals/voiceover/music FIRST with replicate_run, collect their output URLs, then call this once. Do NOT use it to generate media (it only assembles); do NOT try to assemble video yourself by other means.",
+      "category": "media",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "segments": {
+            "type": "array",
+            "description": "Ordered list of scenes. Each scene plays for its duration in sequence. Provide at least one.",
+            "minItems": 1,
+            "maxItems": 40,
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "URL (http/https) or local file path to the scene's visual — a still image (e.g. a flux-schnell output) or a video clip (e.g. a text-to-video output). Images are held for `duration_seconds`; clips are trimmed to it (or play in full if omitted)."
+                },
+                "duration_seconds": {
+                  "type": "number",
+                  "description": "How long this scene lasts. Defaults to 4s for images, or the clip's own length for videos. Range 0.5–60."
+                },
+                "caption": {
+                  "type": "string",
+                  "description": "Optional on-screen caption for this scene, burned at the bottom. Keep it short (a line or two). Skipped automatically if the ffmpeg build can't render text."
+                }
+              },
+              "required": ["source"]
+            }
+          },
+          "narration_url": {
+            "type": "string",
+            "description": "Optional URL/path to a voiceover audio track (e.g. a TTS output from replicate_run). Plays over the whole video; the video length is preserved and narration is padded with silence if shorter."
+          },
+          "music_url": {
+            "type": "string",
+            "description": "Optional URL/path to a background music track. Looped to fill the video and ducked under narration."
+          },
+          "music_volume": {
+            "type": "number",
+            "description": "Music level 0–1 (default 0.22, kept low so narration stays clear)."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": ["16:9", "9:16", "1:1"],
+            "description": "Output aspect ratio. 16:9 (default) for standard/landscape, 9:16 for social/vertical, 1:1 for square."
+          },
+          "resolution": {
+            "type": "string",
+            "enum": ["1080p", "720p"],
+            "description": "Output resolution (default 1080p)."
+          },
+          "captions": {
+            "type": "boolean",
+            "description": "Whether to burn the per-scene captions (default true). Set false to render clean visuals even when captions are provided."
+          },
+          "fps": {
+            "type": "number",
+            "description": "Frame rate (default 30, range 1–60)."
+          },
+          "output_title": {
+            "type": "string",
+            "description": "Optional title used for the output filename."
+          }
+        },
+        "required": ["segments"]
+      },
+      "executor": "tools/video-compose.ts",
+      "execution_target": "host"
+    }
+  ]
+}
