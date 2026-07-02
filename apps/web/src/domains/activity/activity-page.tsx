@@ -39,6 +39,7 @@ import { getBudgetConfig } from "@/lib/budget-api";
 import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
+import { AwaitingReviewSection } from "./sections/awaiting-review-section";
 import { NeedsYouSection } from "./sections/needs-you-section";
 import { QueuedSection } from "./sections/queued-section";
 import { RecentlyDoneSection } from "./sections/recently-done-section";
@@ -332,6 +333,7 @@ export function ActivityPage() {
         </div>
 
         <NeedsYouSection assistantId={assistantId} />
+        <AwaitingReviewSection assistantId={assistantId} />
         <RunningSection assistantId={assistantId} focusId={focusId} />
         <QueuedSection assistantId={assistantId} focusId={focusId} />
         <ScheduledSection assistantId={assistantId} />

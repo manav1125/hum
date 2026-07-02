@@ -211,6 +211,18 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             } as ServerMessage);
             conversation.taskRunId = taskRunId;
             conversation.headlessLock = true;
+            // Work items are captured from the owner's own surfaces (chat,
+            // voice, meetings, the web UI) — running one executes the owner's
+            // request, so the run carries guardian trust, matching the
+            // scheduler/watcher precedent for owner-initiated background work.
+            // Without this the run's tools hit the unverified-channel guardian
+            // gate and every side-effect tool is denied, so background runs
+            // "complete" having done nothing. Risk gates, trust rules, and the
+            // per-category autonomy policy still apply to each tool call.
+            conversation.setTrustContext({
+              sourceChannel: "vellum",
+              trustClass: "guardian",
+            });
           }
           await conversation.processMessage({
             content: message,

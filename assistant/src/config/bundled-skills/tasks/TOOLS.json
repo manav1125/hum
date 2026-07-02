@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "task_list_add",
+      "description": "Add a task to the user's task queue. Use whenever the user asks to add/track/remember a to-do, action item, or commitment (\"add to my tasks\", \"put this on my list\", \"track this\", \"I need to do X later\"). Provide a short `title` and, when the task needs real instructions to execute, an `execution_prompt` with the full detail. After enqueueing, Cue auto-triages the item (urgency + priority) and — when the user's autonomy policy allows — runs it in the background and brings the result back for review. Dedupes on title by default.",
+      "category": "tasks",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short, user-facing task title (imperative, e.g. \"Book the Uber for tomorrow morning\")."
+          },
+          "execution_prompt": {
+            "type": "string",
+            "description": "Full instruction the executor should receive at run time — include every detail needed to do the work cold (paths, names, links). Defaults to notes/title when omitted."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional context shown with the task."
+          },
+          "priority_tier": {
+            "type": "number",
+            "description": "0 = high, 1 = medium, 2 = low. Omit to let auto-triage score it."
+          },
+          "required_tools": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional explicit tool allowlist snapshot for the run."
+          },
+          "if_exists": {
+            "type": "string",
+            "enum": ["reuse_existing", "create_duplicate", "error"],
+            "description": "Duplicate handling when an active item with the same title exists (default reuse_existing)."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Enqueue from a saved task template by id (instead of ad-hoc title)."
+          },
+          "task_name": {
+            "type": "string",
+            "description": "Enqueue from a saved task template by name."
+          }
+        }
+      },
+      "executor": "tools/task-list-add.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "task_list_show",
+      "description": "Show the user's task queue. Use when the user asks what's on their list / task queue / what's pending, running, awaiting review, or done. Optionally filter by status.",
+      "category": "tasks",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Optional status filter: queued | running | awaiting_review | done | failed | cancelled | archived."
+          }
+        }
+      },
+      "executor": "tools/task-list-show.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "task_list_update",
+      "description": "Update a task on the queue — change priority, notes, sort order, or status (e.g. approve an awaiting_review item to done). Select the item by work_item_id (preferred), task_id, task_name, or title.",
+      "category": "tasks",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "work_item_id": {
+            "type": "string",
+            "description": "Work item id (preferred selector)."
+          },
+          "task_id": { "type": "string" },
+          "task_name": { "type": "string" },
+          "title": {
+            "type": "string",
+            "description": "Title selector (matches the active item)."
+          },
+          "priority_tier": {
+            "type": "number",
+            "description": "0 = high, 1 = medium, 2 = low."
+          },
+          "notes": { "type": "string" },
+          "status": {
+            "type": "string",
+            "description": "New status. Note: done is only reachable from awaiting_review."
+          },
+          "sort_index": { "type": "number" }
+        }
+      },
+      "executor": "tools/task-list-update.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "task_list_remove",
+      "description": "Remove a task from the queue (when the user says it's no longer needed). Select by work_item_id (preferred), task_name, or title.",
+      "category": "tasks",
+      "risk": "medium",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "work_item_id": { "type": "string" },
+          "task_name": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
+      "executor": "tools/task-list-remove.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "task_queue_run",
+      "description": "Start executing a queued task in the background right now (the user says \"run it\", \"do it now\", \"go ahead with that task\"). Select by work_item_id (preferred), task_name, or title. Returns immediately; the run reports back to the Review lane when finished.",
+      "category": "tasks",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "work_item_id": { "type": "string" },
+          "task_name": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
+      "executor": "tools/task-queue-run.ts",
+      "execution_target": "host"
+    }
+  ]
+}

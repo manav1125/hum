@@ -131,6 +131,12 @@ import * as subagentMessage from "./bundled-skills/subagent/tools/subagent-messa
 import * as subagentRead from "./bundled-skills/subagent/tools/subagent-read.js";
 import * as subagentSpawn from "./bundled-skills/subagent/tools/subagent-spawn.js";
 import * as subagentStatus from "./bundled-skills/subagent/tools/subagent-status.js";
+// ── tasks ──────────────────────────────────────────────────────────────────────
+import * as taskListAdd from "./bundled-skills/tasks/tools/task-list-add.js";
+import * as taskListRemove from "./bundled-skills/tasks/tools/task-list-remove.js";
+import * as taskListShow from "./bundled-skills/tasks/tools/task-list-show.js";
+import * as taskListUpdate from "./bundled-skills/tasks/tools/task-list-update.js";
+import * as taskQueueRun from "./bundled-skills/tasks/tools/task-queue-run.js";
 // ── transcribe ─────────────────────────────────────────────────────────────────
 import * as transcribeMedia from "./bundled-skills/transcribe/tools/transcribe-media.js";
 // ── video-studio ───────────────────────────────────────────────────────────────
@@ -283,6 +289,13 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["subagent:tools/subagent-abort.ts", subagentAbort],
   ["subagent:tools/subagent-message.ts", subagentMessage],
   ["subagent:tools/subagent-read.ts", subagentRead],
+
+  // tasks
+  ["tasks:tools/task-list-add.ts", taskListAdd],
+  ["tasks:tools/task-list-show.ts", taskListShow],
+  ["tasks:tools/task-list-update.ts", taskListUpdate],
+  ["tasks:tools/task-list-remove.ts", taskListRemove],
+  ["tasks:tools/task-queue-run.ts", taskQueueRun],
 
   // transcribe
   ["transcribe:tools/transcribe-media.ts", transcribeMedia],

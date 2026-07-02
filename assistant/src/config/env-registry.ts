@@ -194,6 +194,18 @@ export function getDisableBackgroundMemory(): boolean {
 }
 
 /**
+ * CUE_DISABLE_WORKITEM_AUTORUN — boolean, default: false
+ * Kill-switch for autonomy-policy-gated auto-execution of freshly captured
+ * work items (work-items/work-item-triage.ts). When set, captured items stay
+ * queued until the user runs them manually — triage scoring still applies.
+ * A pure env flag so it can be cut without a per-workspace config migration,
+ * matching {@link getDisableBackgroundMemory}.
+ */
+export function getDisableWorkItemAutoRun(): boolean {
+  return flag("CUE_DISABLE_WORKITEM_AUTORUN");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.

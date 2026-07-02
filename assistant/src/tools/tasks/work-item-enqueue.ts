@@ -8,6 +8,7 @@ import {
   identifyEntityById,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
+import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import type { ToolContext, ToolExecutionResult } from "../types.js";
 
 const log = getLogger("task-list-add");
@@ -229,6 +230,9 @@ export async function executeTaskListAdd(
         requiredTools: adHocRequiredTools,
         ...source,
       });
+      triageAndMaybeAutoRunWorkItem(workItem.id, {
+        callerSetPriority: priorityTier != null,
+      });
 
       log.info(
         {
@@ -353,6 +357,9 @@ export async function executeTaskListAdd(
       sortIndex,
       requiredTools: resolvedRequiredTools,
       ...source,
+    });
+    triageAndMaybeAutoRunWorkItem(workItem.id, {
+      callerSetPriority: priorityTier != null,
     });
 
     log.info(

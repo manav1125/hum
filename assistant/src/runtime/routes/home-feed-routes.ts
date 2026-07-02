@@ -62,6 +62,7 @@ import {
   listWorkItems,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
+import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { runBackgroundJob } from "../background-job-runner.js";
 import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
@@ -504,12 +505,17 @@ function createFeedActionWorkItem(
   }
 
   const task = createTask({ title, template: action.prompt });
-  return createWorkItem({
+  const workItem = createWorkItem({
     taskId: task.id,
     title,
     notes: action.prompt,
     ...source,
   });
+  // Rank the fresh item so the queue is urgency-ordered. Auto-run is skipped:
+  // the caller's execution-mode logic (thread/background/needs_you) owns the
+  // run decision for feed actions — needs_you items must wait for approval.
+  triageAndMaybeAutoRunWorkItem(workItem.id, { skipAutoRun: true });
+  return workItem;
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   createWorkItemWithPermissions,
   findActiveWorkItemBySource,
 } from "../../work-items/work-item-store.js";
+import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import { broadcastMessage } from "../assistant-event-hub.js";
 
 const log = getLogger("action-item-work-items");
@@ -97,10 +98,13 @@ export function actionItemsToWorkItems(
         taskId: task.id,
         title,
         notes: item.owner ? `Owner: ${item.owner}` : undefined,
-        priorityTier: 1, // medium
+        priorityTier: 1, // medium default — background triage refines it
         sourceType,
         sourceId: conversationId,
       });
+      // Rank the fresh capture and, when the autonomy policy allows, hand it
+      // straight to the background runner instead of parking it in the queue.
+      triageAndMaybeAutoRunWorkItem(workItem.id);
       refs.push({ id: workItem.id, title: workItem.title, created: true });
     } catch (err) {
       log.warn(
