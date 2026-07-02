@@ -12,10 +12,10 @@ import {
   getDocumentsForConversation,
   saveDocument,
 } from "../../documents/document-store.js";
+import { renderMarkdownToPDF } from "../../documents/pdf-render.js";
 import { rawAll } from "../../memory/raw-query.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
-import { renderMarkdownToPDF } from "../../documents/pdf-render.js";
 import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
 import type { RouteDefinition } from "./types.js";
 import { RouteResponse } from "./types.js";
