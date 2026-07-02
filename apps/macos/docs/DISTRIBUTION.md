@@ -1,5 +1,8 @@
 # Distributing the Cue macOS app
 
+> **Default auth:** notarization uses the App Store Connect API key already on this Mac (`~/.appstoreconnect/private_keys/AuthKey_753495X7A6.p8`) — no Apple ID or app-specific password needed. The env vars below are the FALLBACK path only.
+
+
 How to ship signed, notarized, auto-updating builds of `apps/macos` beyond
 the founder's machine. Local unsigned dev packs (`bun run pack`) keep working
 without any of this — every step below no-ops with a logged message when its
