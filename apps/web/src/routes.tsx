@@ -299,6 +299,18 @@ export const routeTree = [
                   lazy: { Component: () => import("@/pages/command-center/command-center-page").then((m) => m.CommandCenterPage) },
                 },
                 {
+                  path: "projects",
+                  lazy: { Component: () => import("@/pages/projects/projects-page").then((m) => m.ProjectsPage) },
+                },
+                {
+                  path: "projects/:projectId",
+                  lazy: { Component: () => import("@/pages/projects/project-detail-page").then((m) => m.ProjectDetailPage) },
+                },
+                {
+                  path: "work",
+                  lazy: { Component: () => import("@/pages/projects/all-work-page").then((m) => m.AllWorkPage) },
+                },
+                {
                   // Full-bleed Core surface (reached from the impact rail), not an
                   // "About Assistant" tab.
                   path: "impact",

@@ -40,6 +40,7 @@ import { getAutonomyPolicy } from "../permissions/autonomy-policy-reader.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
 import { getLogger } from "../util/logger.js";
+import { listProjects, type Project } from "./project-store.js";
 import {
   broadcastWorkItemStatus,
   runWorkItemInBackground,
@@ -75,6 +76,10 @@ interface TriageScore {
   urgency: number;
   /** 0 = high, 1 = medium, 2 = low — mirrors workItems.priorityTier. */
   tier: 0 | 1 | 2;
+  /** An EXISTING project id this item clearly belongs to, else null. */
+  projectId: string | null;
+  /** Explicit deadline extracted from the text, epoch ms, else null. */
+  dueAt: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,57 +94,93 @@ const LOW_URGENCY_RE =
 
 function heuristicScore(item: WorkItem): TriageScore {
   const text = `${item.title} ${item.notes ?? ""}`;
-  if (HIGH_URGENCY_RE.test(text)) return { urgency: 85, tier: 0 };
-  if (LOW_URGENCY_RE.test(text)) return { urgency: 25, tier: 2 };
-  return { urgency: 50, tier: 1 };
+  const base = { projectId: null, dueAt: null };
+  if (HIGH_URGENCY_RE.test(text)) return { urgency: 85, tier: 0, ...base };
+  if (LOW_URGENCY_RE.test(text)) return { urgency: 25, tier: 2, ...base };
+  return { urgency: 50, tier: 1, ...base };
 }
 
 // ---------------------------------------------------------------------------
 // Flash-LLM scoring (best-effort)
 // ---------------------------------------------------------------------------
 
-function buildTriagePrompt(item: WorkItem): string {
+function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
   const source = item.sourceType ? ` (captured from ${item.sourceType})` : "";
+  const projectLines = projects
+    .slice(0, 20)
+    .map((p) => `  - ${p.id}: ${p.title}`);
   return [
+    `Today is ${new Date().toString()}.`,
     `Task${source}: ${item.title}`,
     item.notes ? `Details: ${item.notes.slice(0, 500)}` : "",
+    projectLines.length > 0
+      ? `Existing projects:\n${projectLines.join("\n")}`
+      : "",
     "",
-    'Score how urgent this task is for a busy professional. Reply with ONLY a JSON object, no prose: {"urgency": <0-100>, "tier": <0|1|2>}.',
+    "Triage this task for a busy professional. Reply with ONLY a JSON object, no prose:",
+    '{"urgency": <0-100>, "tier": <0|1|2>, "projectId": <string|null>, "dueAt": <"YYYY-MM-DDTHH:MM"|null>}.',
     "tier 0 = must happen soon (hard deadline, time-sensitive, blocking someone). tier 1 = normal. tier 2 = whenever.",
+    "projectId: the id of the ONE existing project this clearly belongs to, else null. Never invent an id.",
+    'dueAt: only when the text states an explicit deadline ("by Friday", "before the flight tomorrow") — resolve it to a local date-time; else null. When only a day is given, use 17:00.',
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function parseTriageResponse(text: string): TriageScore | null {
+export function parseTriageResponse(
+  text: string,
+  validProjectIds: ReadonlySet<string>,
+  now = Date.now(),
+): TriageScore | null {
   const match = text.match(/\{[^{}]*\}/);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[0]) as {
       urgency?: unknown;
       tier?: unknown;
+      projectId?: unknown;
+      dueAt?: unknown;
     };
     const urgency = Number(parsed.urgency);
     const tier = Number(parsed.tier);
     if (!Number.isFinite(urgency) || !Number.isFinite(tier)) return null;
     const clampedTier = Math.min(2, Math.max(0, Math.round(tier))) as 0 | 1 | 2;
+    // Hallucinated project ids are dropped — the scorer may only pick from
+    // the ids it was shown, never mint one.
+    const projectId =
+      typeof parsed.projectId === "string" &&
+      validProjectIds.has(parsed.projectId)
+        ? parsed.projectId
+        : null;
+    // "YYYY-MM-DDTHH:MM" parses as local time; reject unparseable values and
+    // anything more than a day in the past (a nonsense extraction).
+    let dueAt: number | null = null;
+    if (typeof parsed.dueAt === "string") {
+      const t = Date.parse(parsed.dueAt);
+      if (Number.isFinite(t) && t > now - 24 * 3600_000) dueAt = t;
+    }
     return {
       urgency: Math.min(100, Math.max(0, Math.round(urgency))),
       tier: clampedTier,
+      projectId,
+      dueAt,
     };
   } catch {
     return null;
   }
 }
 
-async function scoreWithFlashLlm(item: WorkItem): Promise<TriageScore | null> {
+async function scoreWithFlashLlm(
+  item: WorkItem,
+  projects: Project[],
+): Promise<TriageScore | null> {
   try {
     const provider = await getConfiguredProvider("conversationTitle");
     if (!provider) return null;
     const config = getConfig();
     const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
     const result = await runBtwSidechain({
-      content: buildTriagePrompt(item),
+      content: buildTriagePrompt(item, projects),
       provider,
       systemPrompt:
         "You are a triage scorer. Reply with ONLY the requested JSON object.",
@@ -149,7 +190,7 @@ async function scoreWithFlashLlm(item: WorkItem): Promise<TriageScore | null> {
       maxTokens: resolved.maxTokens,
       timeoutMs: TRIAGE_TIMEOUT_MS,
     });
-    return parseTriageResponse(result.text);
+    return parseTriageResponse(result.text, new Set(projects.map((p) => p.id)));
   } catch (err) {
     log.debug({ err: String(err) }, "flash triage failed; using heuristic");
     return null;
@@ -224,12 +265,24 @@ async function triageWorkItem(
   const item = getWorkItem(workItemId);
   if (!item || item.status !== "queued") return;
 
-  const score = (await scoreWithFlashLlm(item)) ?? heuristicScore(item);
+  const projects = listProjects();
+  const score =
+    (await scoreWithFlashLlm(item, projects)) ?? heuristicScore(item);
 
-  const updates: { priorityTier?: number; sortIndex?: number } = {};
+  const updates: {
+    priorityTier?: number;
+    sortIndex?: number;
+    projectId?: string;
+    dueAt?: number;
+  } = {};
   if (!opts.callerSetPriority) updates.priorityTier = score.tier;
   // Higher urgency → smaller sortIndex → sorts first within its tier.
   if (item.sortIndex == null) updates.sortIndex = 100 - score.urgency;
+  // Never overwrite a human/caller assignment — triage only fills blanks.
+  if (item.projectId == null && score.projectId) {
+    updates.projectId = score.projectId;
+  }
+  if (item.dueAt == null && score.dueAt) updates.dueAt = score.dueAt;
 
   if (Object.keys(updates).length === 0) return;
 
@@ -237,7 +290,7 @@ async function triageWorkItem(
   // edited the item while the LLM call was in flight.
   const fresh = getWorkItem(workItemId);
   if (!fresh || fresh.status !== "queued") return;
-  updateWorkItem(workItemId, updates);
+  updateWorkItem(workItemId, updates, { actor: "triage" });
   log.info(
     { workItemId, urgency: score.urgency, tier: score.tier, ...opts },
     "work item triaged",

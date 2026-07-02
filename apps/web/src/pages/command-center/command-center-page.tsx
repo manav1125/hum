@@ -28,7 +28,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import type { ReactNode } from "react";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { LiveDot } from "@/components/live-dot";
@@ -46,6 +45,7 @@ import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { C, mono, serif } from "@/domains/activity/theme";
+import { GroupBlock, GroupHeader } from "@/domains/activity/group-header";
 import { useWorkItems } from "@/domains/activity/use-work-items";
 import { AwaitingReviewSection } from "@/domains/activity/sections/awaiting-review-section";
 import { NeedsYouSection } from "@/domains/activity/sections/needs-you-section";
@@ -234,57 +234,6 @@ function ImpactRail({ assistantId }: { assistantId: string }) {
  * is rejecting. `pinned` adds a subtle accent rail for the highest-value
  * "Needs you" act.
  */
-function GroupHeader({
-  kicker,
-  title,
-  hint,
-  accent = C.t2,
-  pinned = false,
-}: {
-  kicker: string;
-  title: string;
-  hint?: string;
-  accent?: string;
-  pinned?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        marginBottom: 14,
-        paddingLeft: pinned ? 12 : 0,
-        borderLeft: pinned ? `3px solid ${accent}` : undefined,
-      }}
-    >
-      <div
-        style={{
-          fontFamily: mono,
-          fontSize: 11,
-          letterSpacing: "0.16em",
-          textTransform: "uppercase",
-          color: accent,
-        }}
-      >
-        {kicker}
-      </div>
-      <div
-        style={{
-          fontFamily: serif,
-          fontSize: 26,
-          letterSpacing: "-0.4px",
-          lineHeight: 1.1,
-          color: C.ink,
-          marginTop: 2,
-        }}
-      >
-        {title}
-      </div>
-      {hint ? (
-        <div style={{ fontSize: 12.5, color: C.t3, marginTop: 4 }}>{hint}</div>
-      ) : null}
-    </div>
-  );
-}
-
 /** A titled card wrapping the inbound triage feed (matches section chrome). */
 function InboundCard({
   assistantId,
@@ -309,10 +258,6 @@ function InboundCard({
       />
     </div>
   );
-}
-
-function GroupBlock({ children }: { children: ReactNode }) {
-  return <div style={{ marginBottom: 30 }}>{children}</div>;
 }
 
 /**
@@ -559,12 +504,28 @@ export function CommandCenterPage({
               Kept always-visible: it's the calm "what's queued" act and its
               sub-sections each carry their own honest empty copy. */}
           <GroupBlock>
-            <GroupHeader
-              kicker="Up next"
-              title="Queued and watching."
-              accent={C.violet}
-              hint="What came in, what's scheduled, and what Cue is keeping an eye on."
-            />
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+              <GroupHeader
+                kicker="Up next"
+                title="Queued and watching."
+                accent={C.violet}
+                hint="What came in, what's scheduled, and what Cue is keeping an eye on."
+              />
+              <div style={{ display: "flex", gap: 12, paddingTop: 4, flexShrink: 0 }}>
+                <Link
+                  to={routes.projects}
+                  style={{ fontFamily: mono, fontSize: 11.5, color: C.t3, textDecoration: "none" }}
+                >
+                  → Projects
+                </Link>
+                <Link
+                  to={routes.allWork}
+                  style={{ fontFamily: mono, fontSize: 11.5, color: C.t3, textDecoration: "none" }}
+                >
+                  → All work
+                </Link>
+              </div>
+            </div>
             <InboundCard
               assistantId={assistantId}
               validConversationIds={validConversationIds}

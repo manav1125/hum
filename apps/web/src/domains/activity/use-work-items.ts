@@ -25,6 +25,14 @@ export interface WorkItemView {
   provenance: string | null;
   /** Best-effort created/updated epoch for a "12m ago" meta line. */
   at: number | null;
+  /** Deadline, epoch ms, when the item carries one. */
+  dueAt: number | null;
+  /** Owning project id, when grouped. */
+  projectId: string | null;
+  /** Freeform labels (parsed from the JSON column, [] when absent). */
+  labels: string[];
+  /** "cue" | "you" | contact name; null reads as "cue". */
+  assignee: string | null;
 }
 
 /**
@@ -66,7 +74,28 @@ function narrow(raw: unknown): WorkItemView | null {
     num(rec.createdAt) ??
     num(rec.completedAt) ??
     null;
-  return { id, title, status, provenance: provenanceFor(rec), at };
+  let labels: string[] = [];
+  if (typeof rec.labels === "string") {
+    try {
+      const parsed = JSON.parse(rec.labels) as unknown;
+      if (Array.isArray(parsed)) {
+        labels = parsed.filter((l): l is string => typeof l === "string");
+      }
+    } catch {
+      // Malformed labels column — render none rather than crash the row.
+    }
+  }
+  return {
+    id,
+    title,
+    status,
+    provenance: provenanceFor(rec),
+    at,
+    dueAt: num(rec.dueAt),
+    projectId: str(rec.projectId),
+    labels,
+    assignee: str(rec.assignee),
+  };
 }
 
 export interface WorkItemsResult {
@@ -80,14 +109,14 @@ export interface WorkItemsResult {
 /** Query a single work-item status bucket, narrowed + provenance-tagged. */
 export function useWorkItems(
   assistantId: string,
-  status: WorkItemStatus,
+  status?: WorkItemStatus,
 ): WorkItemsResult {
   const query = useQuery({
     // SSE (`useActivitySync`) drives freshness off `work_item_status_changed` /
     // `work_item_completed` / `tasks_changed`; poll is a 60s safety-net.
     ...workitemsGetOptions({
       path: { assistant_id: assistantId },
-      query: { status },
+      query: status ? { status } : {},
     }),
     refetchInterval: 60_000,
     staleTime: 15_000,

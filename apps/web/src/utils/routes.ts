@@ -91,6 +91,9 @@ export const routes = {
   },
 
   home: r("/assistant/home"),
+  projects: r("/assistant/projects"),
+  project: (id: string) => dyn(r("/assistant/projects"), id),
+  allWork: r("/assistant/work"),
   // "What do you want to get done?" template / asset-creation picker.
   create: r("/assistant/create"),
   // v0.3 flagship surfaces. Demoted off the primary nav rail (per the clean-rail

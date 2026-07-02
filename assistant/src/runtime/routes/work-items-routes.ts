@@ -22,6 +22,11 @@ import {
 import { createAbortReason } from "../../util/abort-reasons.js";
 import { truncate } from "../../util/truncate.js";
 import { resolveRequiredTools } from "../../work-items/resolve-required-tools.js";
+import {
+  cycleTimeMs,
+  listWorkItemEvents,
+  recordWorkItemEvent,
+} from "../../work-items/work-item-events.js";
 import { runWorkItemInBackground } from "../../work-items/work-item-runner.js";
 import {
   deleteWorkItem,
@@ -43,6 +48,35 @@ import type { RouteDefinition } from "./types.js";
 function publishEvent(msg: ServerMessage): void {
   void assistantEventHub.publish(buildAssistantEvent(msg));
 }
+
+/**
+ * Typed wire shape for a work item — shared by the work-items and projects
+ * routes so the generated web SDK gets real fields instead of `unknown`.
+ */
+export const workItemSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  title: z.string(),
+  notes: z.string().nullable(),
+  status: z.string(),
+  priorityTier: z.number().int(),
+  sortIndex: z.number().int().nullable(),
+  projectId: z.string().nullable(),
+  dueAt: z.number().int().nullable().describe("Due deadline, epoch ms"),
+  labels: z.string().nullable().describe("JSON array string of labels"),
+  assignee: z
+    .string()
+    .nullable()
+    .describe('"cue" | "you" | contact name; null reads as "cue"'),
+  lastRunId: z.string().nullable(),
+  lastRunConversationId: z.string().nullable(),
+  lastRunStatus: z.string().nullable(),
+  sourceType: z.string().nullable(),
+  sourceId: z.string().nullable(),
+  approvalStatus: z.string().nullable(),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+});
 
 function broadcastWorkItemStatus(id: string): void {
   const item = getWorkItem(id);
@@ -470,9 +504,14 @@ export const ROUTES: RouteDefinition[] = [
           ],
         },
       },
+      {
+        name: "projectId",
+        description: "Filter to a single project",
+        schema: { type: "string" },
+      },
     ],
     responseBody: z.object({
-      items: z.array(z.unknown()),
+      items: z.array(workItemSchema),
     }),
     handler: ({ queryParams }) => {
       const status = queryParams?.status ?? undefined;
@@ -487,9 +526,11 @@ export const ROUTES: RouteDefinition[] = [
         status === "pending"
           ? "queued"
           : (status as WorkItemStatus | undefined);
-      const items = listWorkItems(
-        resolvedStatus ? { status: resolvedStatus } : undefined,
-      );
+      const projectId = queryParams?.projectId ?? undefined;
+      const items = listWorkItems({
+        ...(resolvedStatus ? { status: resolvedStatus } : {}),
+        ...(projectId ? { projectId } : {}),
+      });
       return { items };
     },
   },
@@ -532,6 +573,10 @@ export const ROUTES: RouteDefinition[] = [
       status: z.string(),
       priorityTier: z.number().int(),
       sortIndex: z.number().int(),
+      projectId: z.string().nullable().describe("null clears the project"),
+      dueAt: z.number().int().nullable().describe("null clears the deadline"),
+      labels: z.array(z.string()).describe("Freeform labels"),
+      assignee: z.string().describe('"cue" | "you" | contact name'),
     }),
     handler: ({ pathParams, body }) => {
       const id = pathParams!.id;
@@ -542,6 +587,12 @@ export const ROUTES: RouteDefinition[] = [
         status?: string;
         priorityTier?: number;
         sortIndex?: number;
+      };
+      const { projectId, dueAt, labels, assignee } = (body ?? {}) as {
+        projectId?: string | null;
+        dueAt?: number | null;
+        labels?: string[];
+        assignee?: string;
       };
 
       if (status !== undefined) {
@@ -557,10 +608,15 @@ export const ROUTES: RouteDefinition[] = [
       if (status !== undefined) updates.status = status;
       if (priorityTier !== undefined) updates.priorityTier = priorityTier;
       if (sortIndex !== undefined) updates.sortIndex = sortIndex;
+      if (projectId !== undefined) updates.projectId = projectId;
+      if (dueAt !== undefined) updates.dueAt = dueAt;
+      if (labels !== undefined) updates.labels = JSON.stringify(labels);
+      if (assignee !== undefined) updates.assignee = assignee;
 
       const item =
-        updateWorkItem(id, updates as Parameters<typeof updateWorkItem>[1]) ??
-        null;
+        updateWorkItem(id, updates as Parameters<typeof updateWorkItem>[1], {
+          actor: "user",
+        }) ?? null;
 
       if (item) {
         broadcastWorkItemStatus(item.id);
@@ -594,12 +650,57 @@ export const ROUTES: RouteDefinition[] = [
         );
       }
 
-      const item = updateWorkItem(id, { status: "done" }) ?? null;
+      const item =
+        updateWorkItem(id, { status: "done" }, { actor: "user" }) ?? null;
       if (item) {
+        recordWorkItemEvent({
+          workItemId: id,
+          kind: "approved",
+          fromStatus: "awaiting_review",
+          toStatus: "done",
+          actor: "user",
+        });
         broadcastWorkItemStatus(item.id);
         publishEvent({ type: "tasks_changed" });
       }
       return { item };
+    },
+  },
+
+  {
+    operationId: "getWorkItemEvents",
+    endpoint: "work-items/:id/events",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Work item history",
+    description:
+      "Return the audit trail of lifecycle events for a work item, plus its cycle time (creation to first completion) when computable.",
+    tags: ["work-items"],
+    responseBody: z.object({
+      events: z.array(
+        z.object({
+          id: z.string(),
+          workItemId: z.string(),
+          kind: z.string(),
+          fromStatus: z.string().nullable(),
+          toStatus: z.string().nullable(),
+          actor: z.string().nullable(),
+          at: z.number().int(),
+        }),
+      ),
+      cycleTimeMs: z.number().int().nullable(),
+    }),
+    handler: ({ pathParams }) => {
+      const id = pathParams!.id;
+      const existing = getWorkItem(id);
+      if (!existing) {
+        throw new NotFoundError(`Work item not found: ${id}`);
+      }
+      const events = listWorkItemEvents(id);
+      return { events, cycleTimeMs: cycleTimeMs(events) };
     },
   },
 

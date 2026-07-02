@@ -87,9 +87,11 @@ import {
   migrateCreateMemoryGraphNodeEdits,
   migrateCreateMemoryGraphTables,
   migrateCreateMemoryRecallLogs,
+  migrateCreateProjectsTable,
   migrateCreateProviderConnections,
   migrateCreateThreadStartersTable,
   migrateCreateTraceEventsTable,
+  migrateCreateWorkItemEvents,
   migrateDeletePrivateConversations,
   migrateDropAccountsTable,
   migrateDropAssistantIdColumns,
@@ -217,6 +219,7 @@ import {
   migrateUsageLlmCallCount,
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
+  migrateWorkItemPmColumns,
   recoverCrashedMigrations,
   runComplexMigrations,
   runLateMigrations,
@@ -504,6 +507,9 @@ export function initializeDb(): void {
     migrateMemoryRetrospectiveRememberedLog,
     migrateScheduleInferenceProfile,
     migrateReconcileDuplicateGuardians,
+    migrateCreateProjectsTable,
+    migrateWorkItemPmColumns,
+    migrateCreateWorkItemEvents,
   ];
 
   // Run each migration step, catching and logging individual failures so one

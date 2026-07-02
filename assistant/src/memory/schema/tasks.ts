@@ -58,8 +58,34 @@ export const workItems = sqliteTable("work_items", {
   requiredTools: text("required_tools"), // JSON array snapshot of tools needed for this run (null=unknown, []=none, ["bash",...]=specific)
   approvedTools: text("approved_tools"), // JSON array of pre-approved tool names
   approvalStatus: text("approval_status").default("none"), // 'none' | 'approved' | 'denied'
+  projectId: text("project_id"), // nullable reference-by-convention to projects.id (store-enforced)
+  dueAt: integer("due_at"), // nullable deadline, epoch ms (triage-extracted or user-set)
+  labels: text("labels"), // nullable JSON array string of freeform labels
+  assignee: text("assignee"), // nullable; null reads as "cue" (the AI runs it)
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
+});
+
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  emoji: text("emoji"),
+  color: text("color"),
+  status: text("status").notNull().default("active"), // 'active' | 'archived'
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const workItemEvents = sqliteTable("work_item_events", {
+  id: text("id").primaryKey(),
+  workItemId: text("work_item_id")
+    .notNull()
+    .references(() => workItems.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // 'created' | 'status_changed' | 'run_started' | 'run_finished' | 'approved'
+  fromStatus: text("from_status"),
+  toStatus: text("to_status"),
+  actor: text("actor"), // 'user' | 'runner' | 'triage' | 'system'
+  at: integer("at").notNull(),
 });
 
 export const followups = sqliteTable("followups", {

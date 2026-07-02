@@ -1,8 +1,9 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { getDb } from "../memory/db-connection.js";
 import { workItems } from "../memory/schema.js";
 import { getTask } from "../tasks/task-store.js";
+import { recordWorkItemEvent } from "./work-item-events.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -31,6 +32,10 @@ export interface WorkItem {
   requiredTools: string | null;
   approvedTools: string | null;
   approvalStatus: string | null;
+  projectId: string | null;
+  dueAt: number | null;
+  labels: string | null;
+  assignee: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -46,6 +51,14 @@ export function createWorkItem(opts: {
   sourceType?: string;
   sourceId?: string;
   requiredTools?: string;
+  projectId?: string;
+  dueAt?: number;
+  /** JSON array string of freeform labels. */
+  labels?: string;
+  /** Defaults to "cue" — the AI runs it unless a human claims it. */
+  assignee?: string;
+  /** Audit-trail attribution for the created event (default "system"). */
+  actor?: string;
 }): WorkItem {
   const db = getDb();
   const now = Date.now();
@@ -66,10 +79,20 @@ export function createWorkItem(opts: {
     requiredTools: opts.requiredTools ?? null,
     approvedTools: null,
     approvalStatus: "none",
+    projectId: opts.projectId ?? null,
+    dueAt: opts.dueAt ?? null,
+    labels: opts.labels ?? null,
+    assignee: opts.assignee ?? "cue",
     createdAt: now,
     updatedAt: now,
   };
   db.insert(workItems).values(item).run();
+  recordWorkItemEvent({
+    workItemId: id,
+    kind: "created",
+    toStatus: "queued",
+    actor: opts.actor ?? "system",
+  });
   return item;
 }
 
@@ -98,14 +121,25 @@ export function getWorkItem(id: string): WorkItem | undefined {
     | undefined;
 }
 
-export function listWorkItems(opts?: { status?: WorkItemStatus }): WorkItem[] {
+export function listWorkItems(opts?: {
+  status?: WorkItemStatus;
+  projectId?: string;
+}): WorkItem[] {
   const db = getDb();
   let query = db.select().from(workItems);
   if (opts?.status) {
     query = query.where(eq(workItems.status, opts.status)) as typeof query;
   }
+  if (opts?.projectId) {
+    query = query.where(
+      eq(workItems.projectId, opts.projectId),
+    ) as typeof query;
+  }
+  // Overdue live items float above everything, then the normal tier/rank order.
+  const overdueFirst = sql`CASE WHEN ${workItems.dueAt} IS NOT NULL AND ${workItems.dueAt} < ${Date.now()} AND ${workItems.status} IN ('queued','running','awaiting_review') THEN 0 ELSE 1 END`;
   return query
     .orderBy(
+      overdueFirst,
       asc(workItems.priorityTier),
       asc(workItems.sortIndex),
       desc(workItems.updatedAt),
@@ -129,14 +163,36 @@ export function updateWorkItem(
       | "requiredTools"
       | "approvedTools"
       | "approvalStatus"
+      | "projectId"
+      | "dueAt"
+      | "labels"
+      | "assignee"
     >
   >,
+  opts?: { actor?: string },
 ): WorkItem | undefined {
   const db = getDb();
+  // Read-before-write so status transitions land in the audit trail from a
+  // single choke point (routes, runner, triage, and cancel all pass through
+  // here).
+  const existing = getWorkItem(id);
   db.update(workItems)
     .set({ ...updates, updatedAt: Date.now() })
     .where(eq(workItems.id, id))
     .run();
+  if (
+    existing &&
+    updates.status !== undefined &&
+    updates.status !== existing.status
+  ) {
+    recordWorkItemEvent({
+      workItemId: id,
+      kind: "status_changed",
+      fromStatus: existing.status,
+      toStatus: updates.status,
+      actor: opts?.actor ?? "system",
+    });
+  }
   return getWorkItem(id);
 }
 

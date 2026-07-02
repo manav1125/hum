@@ -22,6 +22,7 @@ import {
 } from "../tasks/tool-sanitizer.js";
 import { getLogger } from "../util/logger.js";
 import { resolveRequiredTools } from "./resolve-required-tools.js";
+import { recordWorkItemEvent } from "./work-item-events.js";
 import {
   getWorkItem,
   updateWorkItem,
@@ -184,7 +185,14 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   const approvedTools = requiredTools;
 
   // Set status to running
-  updateWorkItem(workItemId, { status: "running" });
+  updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
+  recordWorkItemEvent({
+    workItemId,
+    kind: "run_started",
+    fromStatus: "queued",
+    toStatus: "running",
+    actor: "runner",
+  });
 
   broadcastWorkItemStatus(workItemId);
   broadcastMessage({ type: "tasks_changed" } as ServerMessage);
@@ -247,11 +255,21 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
         const finalStatus: WorkItemStatus =
           result.status === "completed" ? "awaiting_review" : "failed";
         terminalStatus = finalStatus;
-        updateWorkItem(workItemId, {
-          status: finalStatus,
-          lastRunId: result.taskRunId,
-          lastRunConversationId: result.conversationId,
-          lastRunStatus: result.status,
+        updateWorkItem(
+          workItemId,
+          {
+            status: finalStatus,
+            lastRunId: result.taskRunId,
+            lastRunConversationId: result.conversationId,
+            lastRunStatus: result.status,
+          },
+          { actor: "runner" },
+        );
+        recordWorkItemEvent({
+          workItemId,
+          kind: "run_finished",
+          toStatus: finalStatus,
+          actor: "runner",
         });
       }
 
@@ -273,9 +291,19 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
         errConversation.headlessLock = false;
       }
       log.error({ err, workItemId }, "work item background run failed");
-      updateWorkItem(workItemId, {
-        status: "failed",
-        lastRunStatus: "failed",
+      updateWorkItem(
+        workItemId,
+        {
+          status: "failed",
+          lastRunStatus: "failed",
+        },
+        { actor: "runner" },
+      );
+      recordWorkItemEvent({
+        workItemId,
+        kind: "run_finished",
+        toStatus: "failed",
+        actor: "runner",
       });
       broadcastWorkItemStatus(workItemId);
       broadcastMessage({ type: "tasks_changed" } as ServerMessage);

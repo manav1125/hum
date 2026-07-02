@@ -278,6 +278,9 @@ export {
   downReconcileDuplicateGuardians,
   migrateReconcileDuplicateGuardians,
 } from "./283-reconcile-duplicate-guardians.js";
+export { migrateCreateProjectsTable } from "./284-projects-table.js";
+export { migrateWorkItemPmColumns } from "./285-work-item-pm-columns.js";
+export { migrateCreateWorkItemEvents } from "./286-work-item-events.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

@@ -17662,6 +17662,19 @@ paths:
                   description: Upper bound epoch ms
                   type: number
               additionalProperties: false
+  /v1/maintenance/prune-runaway:
+    post:
+      operationId: maintenance_prunerunaway_post
+      summary: Prune background-job conversation runaway + VACUUM
+      description:
+        Delete background-job conversations (memory consolidation/retrospective runaway), drain the completed
+        memory-job queue, clear telemetry, and VACUUM. Preserves all user-visible data; returns before/after table
+        counts.
+      tags:
+        - maintenance
+      responses:
+        "200":
+          description: Successful response
   /v1/meetings/recap:
     post:
       operationId: meetings_recap_post
@@ -22777,6 +22790,452 @@ paths:
           required: true
           schema:
             type: string
+  /v1/projects:
+    get:
+      operationId: projects_get
+      summary: List projects
+      description: Return projects, filtered by status (default active).
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        emoji:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        color:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        status:
+                          type: string
+                          enum:
+                            - active
+                            - archived
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - title
+                        - emoji
+                        - color
+                        - status
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - projects
+                additionalProperties: false
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - archived
+          description: Project status filter
+    post:
+      operationId: projects_post
+      summary: Create a project
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      emoji:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      color:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - archived
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - emoji
+                      - color
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - project
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                emoji:
+                  type: string
+                color:
+                  type: string
+              required:
+                - title
+              additionalProperties: false
+  /v1/projects/{id}:
+    delete:
+      operationId: projects_by_id_delete
+      summary: Delete a project
+      description: Hard-delete a project. Its work items keep living with project_id cleared.
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    get:
+      operationId: projects_by_id_get
+      summary: Get a project
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      emoji:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      color:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - archived
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - emoji
+                      - color
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - project
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: projects_by_id_patch
+      summary: Update a project
+      description: Rename, restyle, or archive/unarchive a project.
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      emoji:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      color:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - archived
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - emoji
+                      - color
+                      - status
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - project
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                emoji:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                color:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                status:
+                  type: string
+                  enum:
+                    - active
+                    - archived
+              additionalProperties: false
+  /v1/projects/{id}/work-items:
+    get:
+      operationId: projects_by_id_workitems_get
+      summary: List a project's work items
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        taskId:
+                          type: string
+                        title:
+                          type: string
+                        notes:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        status:
+                          type: string
+                        priorityTier:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        sortIndex:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        dueAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Due deadline, epoch ms
+                        labels:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: JSON array string of labels
+                        assignee:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: '"cue" | "you" | contact name; null reads as "cue"'
+                        lastRunId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        lastRunConversationId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        lastRunStatus:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sourceType:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sourceId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        approvalStatus:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - taskId
+                        - title
+                        - notes
+                        - status
+                        - priorityTier
+                        - sortIndex
+                        - projectId
+                        - dueAt
+                        - labels
+                        - assignee
+                        - lastRunId
+                        - lastRunConversationId
+                        - lastRunStatus
+                        - sourceType
+                        - sourceId
+                        - approvalStatus
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - items
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - running
+              - awaiting_review
+              - done
+              - failed
+              - cancelled
+              - archived
+          description: Filter by work item status
   /v1/ps:
     get:
       operationId: ps_get
@@ -29545,6 +30004,81 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/voice-intake:
+    post:
+      operationId: voiceintake_post
+      summary: Turn a voice transcript into a working thread
+      description:
+        "Create a conversation from a dictated transcript: a read-back summary plus the spoken action items (listed
+        as the first assistant message) and an executable work item per open action item. Returns the conversation id to
+        navigate into."
+      tags:
+        - voice
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversationId:
+                    type: string
+                  summary:
+                    type: string
+                  actionItems:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        text:
+                          type: string
+                        owner:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        done:
+                          type: boolean
+                      required:
+                        - text
+                        - owner
+                        - done
+                      additionalProperties: false
+                  workItems:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        created:
+                          type: boolean
+                      required:
+                        - id
+                        - title
+                        - created
+                      additionalProperties: false
+                required:
+                  - conversationId
+                  - summary
+                  - actionItems
+                  - workItems
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                transcript:
+                  type: string
+                  description: The dictated transcript to turn into a working thread.
+              required:
+                - transcript
+              additionalProperties: false
   /v1/watchers/create:
     post:
       operationId: watchers_create_post
@@ -29842,7 +30376,105 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: {}
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        taskId:
+                          type: string
+                        title:
+                          type: string
+                        notes:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        status:
+                          type: string
+                        priorityTier:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        sortIndex:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        dueAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Due deadline, epoch ms
+                        labels:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: JSON array string of labels
+                        assignee:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: '"cue" | "you" | contact name; null reads as "cue"'
+                        lastRunId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        lastRunConversationId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        lastRunStatus:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sourceType:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sourceId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        approvalStatus:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - taskId
+                        - title
+                        - notes
+                        - status
+                        - priorityTier
+                        - sortIndex
+                        - projectId
+                        - dueAt
+                        - labels
+                        - assignee
+                        - lastRunId
+                        - lastRunConversationId
+                        - lastRunStatus
+                        - sourceType
+                        - sourceId
+                        - approvalStatus
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
                 required:
                   - items
                 additionalProperties: false
@@ -29861,6 +30493,12 @@ paths:
               - cancelled
               - archived
           description: Filter by work item status
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to a single project
   /v1/work-items/{id}:
     delete:
       operationId: workitems_by_id_delete
@@ -29928,12 +30566,36 @@ paths:
                   type: integer
                   minimum: -9007199254740991
                   maximum: 9007199254740991
+                projectId:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                  description: null clears the project
+                dueAt:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                  description: null clears the deadline
+                labels:
+                  type: array
+                  items:
+                    type: string
+                  description: Freeform labels
+                assignee:
+                  type: string
+                  description: '"cue" | "you" | contact name'
               required:
                 - title
                 - notes
                 - status
                 - priorityTier
                 - sortIndex
+                - projectId
+                - dueAt
+                - labels
+                - assignee
               additionalProperties: false
   /v1/work-items/{id}/approve-permissions:
     post:
@@ -29995,6 +30657,75 @@ paths:
       responses:
         "200":
           description: Successful response
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/work-items/{id}/events:
+    get:
+      operationId: workitems_by_id_events_get
+      summary: Work item history
+      description:
+        Return the audit trail of lifecycle events for a work item, plus its cycle time (creation to first
+        completion) when computable.
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        workItemId:
+                          type: string
+                        kind:
+                          type: string
+                        fromStatus:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        toStatus:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        actor:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        at:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - workItemId
+                        - kind
+                        - fromStatus
+                        - toStatus
+                        - actor
+                        - at
+                      additionalProperties: false
+                  cycleTimeMs:
+                    anyOf:
+                      - type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      - type: "null"
+                required:
+                  - events
+                  - cycleTimeMs
+                additionalProperties: false
       parameters:
         - name: id
           in: path
