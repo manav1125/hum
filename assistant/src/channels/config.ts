@@ -94,6 +94,15 @@ const CHANNEL_POLICIES = {
       codeRedemptionEnabled: false,
     },
   },
+  sms: {
+    notification: {
+      deliveryEnabled: true,
+      conversationStrategy: "continue_existing_conversation",
+    },
+    invite: {
+      codeRedemptionEnabled: true,
+    },
+  },
   a2a: {
     notification: {
       deliveryEnabled: false,

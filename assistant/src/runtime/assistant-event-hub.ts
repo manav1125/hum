@@ -602,6 +602,22 @@ export function broadcastMessage(
     void createCanonicalRequestForConfirmation(msg, resolvedConversationId);
   }
 
+  // Mobile remote-push side effect: mirror review-ready work-item
+  // completions and approval requests to registered APNs devices, so the
+  // user's phone is paged even when the app holds no SSE connection.
+  // Fire-and-forget with a lazy import — a silent no-op when APNs is not
+  // configured, and never able to fail the publish path.
+  if (
+    msg.type === "work_item_completed" ||
+    msg.type === "confirmation_request"
+  ) {
+    void import("../notifications/push-dispatch.js")
+      .then((m) => m.dispatchPushForServerMessage(msg))
+      .catch((err: unknown) => {
+        log.debug({ err }, "mobile push dispatch side effect failed");
+      });
+  }
+
   // `conversation_list_invalidated` is a list-level system event — publish
   // it unscoped so every subscriber refreshes its sidebar.
   const scopedConversationId =

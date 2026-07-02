@@ -4,6 +4,7 @@ export type {
   InboundChannelId,
   TelegramInboundEvent,
   WhatsAppInboundEvent,
+  SmsInboundEvent,
   SlackInboundEvent,
   EmailInboundEvent,
   A2aInboundEvent,

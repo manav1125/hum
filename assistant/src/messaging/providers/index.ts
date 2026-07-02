@@ -5,7 +5,7 @@
  * matcher and send logic here.  The gateway-client consults
  * `isDirectDelivery()` before falling back to the HTTP proxy path.
  *
- * Currently supported: WhatsApp, Telegram, Slack, A2A.
+ * Currently supported: WhatsApp, Telegram, Slack, A2A, SMS (Twilio).
  */
 
 import type {
@@ -28,6 +28,7 @@ import {
   sendTelegramReply,
   sendTelegramTypingIndicator,
 } from "./telegram-bot/send.js";
+import { sendSmsReply } from "./twilio-sms/send.js";
 import { sendWhatsAppAttachments, sendWhatsAppReply } from "./whatsapp/send.js";
 
 const log = getLogger("direct-delivery");
@@ -62,6 +63,10 @@ function isSlackCallback(callbackUrl: string): boolean {
 
 function isA2ACallback(callbackUrl: string): boolean {
   return matchesPathname(callbackUrl, "/deliver/a2a");
+}
+
+function isSmsCallback(callbackUrl: string): boolean {
+  return matchesPathname(callbackUrl, "/deliver/sms");
 }
 
 function parseSlackCallbackParams(callbackUrl: string): {
@@ -111,6 +116,50 @@ async function deliverWhatsApp(
   }
 
   log.info({ chatId, hasText: !!text }, "WhatsApp reply delivered (direct)");
+  return { ok: true };
+}
+
+async function deliverSms(
+  payload: ChannelReplyPayload,
+): Promise<ChannelDeliveryResult> {
+  const { chatId, text, attachments, approval, chatAction } = payload;
+
+  // SMS has no typing indicator — treat it as a successful no-op rather
+  // than sending a spurious message.
+  if (chatAction === "typing") {
+    return { ok: true };
+  }
+
+  if (text) {
+    await sendSmsReply(chatId, text, approval);
+  } else if (approval) {
+    await sendSmsReply(chatId, "", approval);
+  }
+
+  // Attachments cannot be delivered over SMS in v1 (MMS is future work).
+  // Send a plain-text notice so the user knows content was withheld.
+  if (attachments && attachments.length > 0) {
+    const names = attachments
+      .map((a) => a.filename ?? a.id)
+      .filter((n): n is string => typeof n === "string" && n.length > 0);
+    const notice =
+      names.length > 0
+        ? `${attachments.length} attachment(s) could not be delivered over SMS: ${names.join(", ")}. Ask for them on another channel.`
+        : `${attachments.length} attachment(s) could not be delivered over SMS. Ask for them on another channel.`;
+    try {
+      await sendSmsReply(chatId, notice);
+    } catch (err) {
+      log.warn({ err, chatId }, "Failed to send SMS attachment notice");
+    }
+    if (!text && !approval) {
+      throw new ChannelDeliveryError(
+        502,
+        `Attachments are not supported over SMS (${attachments.length} withheld)`,
+      );
+    }
+  }
+
+  log.info({ chatId, hasText: !!text }, "SMS reply delivered (direct)");
   return { ok: true };
 }
 
@@ -245,7 +294,8 @@ export function isDirectDelivery(callbackUrl: string): boolean {
     isWhatsAppCallback(callbackUrl) ||
     isTelegramCallback(callbackUrl) ||
     isSlackCallback(callbackUrl) ||
-    isA2ACallback(callbackUrl)
+    isA2ACallback(callbackUrl) ||
+    isSmsCallback(callbackUrl)
   );
 }
 
@@ -268,6 +318,9 @@ export async function deliverDirect(
   }
   if (isA2ACallback(callbackUrl)) {
     return deliverA2AReply(callbackUrl, payload);
+  }
+  if (isSmsCallback(callbackUrl)) {
+    return deliverSms(payload);
   }
 
   // Defensive — isDirectDelivery should have returned false.

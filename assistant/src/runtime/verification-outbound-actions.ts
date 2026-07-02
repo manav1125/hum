@@ -13,6 +13,7 @@ import { startVerificationCall } from "../calls/call-domain.js";
 import type { ChannelId } from "../channels/types.js";
 import { sendSlackReply } from "../messaging/providers/slack/send.js";
 import { sendTelegramReply } from "../messaging/providers/telegram-bot/send.js";
+import { sendSmsReply } from "../messaging/providers/twilio-sms/send.js";
 import { getTelegramBotUsername } from "../telegram/bot-username.js";
 import { getLogger } from "../util/logger.js";
 import { normalizePhoneNumber } from "../util/phone.js";
@@ -28,6 +29,7 @@ import {
 import {
   composeVerificationEmail,
   composeVerificationSlack,
+  composeVerificationSms,
   composeVerificationTelegram,
   GUARDIAN_VERIFY_TEMPLATE_KEYS,
 } from "./verification-templates.js";
@@ -164,6 +166,32 @@ export function deliverVerificationTelegram(
 }
 
 // ---------------------------------------------------------------------------
+// SMS delivery helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Deliver a verification SMS via the Twilio Messages API directly.
+ * Fire-and-forget with error logging.
+ */
+function deliverVerificationSms(
+  phoneNumber: string,
+  text: string,
+  assistantId: string,
+): void {
+  (async () => {
+    try {
+      await sendSmsReply(phoneNumber, text);
+      log.info({ phoneNumber, assistantId }, "Verification SMS delivered");
+    } catch (err) {
+      log.error(
+        { err, phoneNumber, assistantId },
+        "Failed to deliver verification SMS",
+      );
+    }
+  })();
+}
+
+// ---------------------------------------------------------------------------
 // Voice call delivery helper
 // ---------------------------------------------------------------------------
 
@@ -252,13 +280,111 @@ export async function startOutbound(
       params.rebind,
       originConversationId,
     );
+  } else if (channel === "sms") {
+    return startOutboundSms(
+      params.destination,
+      assistantId,
+      channel,
+      params.rebind,
+      originConversationId,
+    );
   }
 
   return {
     success: false,
     error: "unsupported_channel",
-    message: `Outbound verification is not supported for ${channel}. Supported channels: Telegram, phone, Slack, email.`,
+    message: `Outbound verification is not supported for ${channel}. Supported channels: Telegram, phone, SMS, Slack, email.`,
     channel,
+  };
+}
+
+function startOutboundSms(
+  rawDestination: string | undefined,
+  assistantId: string,
+  channel: ChannelId,
+  rebind?: boolean,
+  originConversationId?: string,
+): OutboundActionResult {
+  if (!rawDestination) {
+    return {
+      success: false,
+      error: "missing_destination",
+      message:
+        "A destination phone number is required for outbound SMS verification.",
+      channel,
+    };
+  }
+
+  const destination = normalizePhoneNumber(rawDestination);
+  if (!destination) {
+    return {
+      success: false,
+      error: "invalid_destination",
+      message:
+        "Could not parse phone number. Please enter a valid number (e.g. +15551234567, (555) 123-4567, or 555-123-4567).",
+      channel,
+    };
+  }
+
+  const existingBinding = getGuardianBinding(assistantId, channel);
+  if (existingBinding && !rebind) {
+    return {
+      success: false,
+      error: "already_bound",
+      message:
+        "A guardian is already bound for this channel. Set rebind: true to replace.",
+      channel,
+    };
+  }
+
+  const recentSendCount = countRecentSendsToDestination(
+    channel,
+    destination,
+    DESTINATION_RATE_WINDOW_MS,
+  );
+  if (recentSendCount >= MAX_SENDS_PER_DESTINATION_WINDOW) {
+    return {
+      success: false,
+      error: "rate_limited",
+      message:
+        "Too many verification attempts to this phone number. Please try again later.",
+      channel,
+    };
+  }
+
+  const sessionResult = createOutboundSession({
+    channel,
+    expectedPhoneE164: destination,
+    expectedExternalUserId: destination,
+    destinationAddress: destination,
+    codeDigits: 6,
+    verificationPurpose: "guardian",
+  });
+
+  const smsBody = composeVerificationSms(
+    GUARDIAN_VERIFY_TEMPLATE_KEYS.SMS_CHALLENGE_REQUEST,
+    {
+      code: sessionResult.secret,
+      expiresInMinutes: Math.floor(SESSION_TTL_SECONDS / 60),
+    },
+  );
+
+  const now = Date.now();
+  const nextResendAt = now + RESEND_COOLDOWN_MS;
+  const sendCount = 1;
+
+  updateSessionDelivery(sessionResult.sessionId, now, sendCount, nextResendAt);
+  deliverVerificationSms(destination, smsBody, assistantId);
+
+  return {
+    success: true,
+    verificationSessionId: sessionResult.sessionId,
+    secret: sessionResult.secret,
+    expiresAt: sessionResult.expiresAt,
+    nextResendAt,
+    sendCount,
+    channel,
+    originConversationId,
   };
 }
 
@@ -1003,12 +1129,51 @@ export function resendOutbound(
         assistantId,
       },
     };
+  } else if (channel === "sms") {
+    const newSession = createOutboundSession({
+      channel,
+      expectedPhoneE164: destination,
+      expectedExternalUserId: destination,
+      destinationAddress: destination,
+      codeDigits: 6,
+      verificationPurpose: "guardian",
+    });
+
+    const smsBody = composeVerificationSms(
+      GUARDIAN_VERIFY_TEMPLATE_KEYS.SMS_RESEND,
+      {
+        code: newSession.secret,
+        expiresInMinutes: Math.floor(SESSION_TTL_SECONDS / 60),
+      },
+    );
+
+    const now = Date.now();
+    const newSendCount = currentSendCount + 1;
+    const nextResendAt = now + RESEND_COOLDOWN_MS;
+
+    updateSessionDelivery(
+      newSession.sessionId,
+      now,
+      newSendCount,
+      nextResendAt,
+    );
+    deliverVerificationSms(destination, smsBody, assistantId);
+
+    return {
+      success: true,
+      verificationSessionId: newSession.sessionId,
+      secret: newSession.secret,
+      nextResendAt,
+      sendCount: newSendCount,
+      channel,
+      originConversationId,
+    };
   }
 
   return {
     success: false,
     error: "unsupported_channel",
-    message: `Resend is only supported for Telegram, phone, Slack, and email. Got: ${channel}`,
+    message: `Resend is only supported for Telegram, phone, SMS, Slack, and email. Got: ${channel}`,
     channel,
   };
 }

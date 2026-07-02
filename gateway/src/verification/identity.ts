@@ -6,7 +6,7 @@
  */
 
 /** Channels whose raw sender IDs are phone numbers. */
-const PHONE_CHANNELS = new Set(["phone", "whatsapp"]);
+const PHONE_CHANNELS = new Set(["phone", "sms", "whatsapp"]);
 
 /** Channels whose raw sender IDs are email addresses. */
 const EMAIL_CHANNELS = new Set(["email"]);

@@ -23280,6 +23280,109 @@ paths:
                       - name
                       - status
                     additionalProperties: false
+  /v1/push-devices:
+    post:
+      operationId: pushdevices_post
+      summary: Register a push device token
+      description:
+        Register (or refresh) a mobile device token for remote push notifications. Idempotent — re-registering a
+        known token updates its metadata.
+      tags:
+        - push-devices
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      platform:
+                        type: string
+                        enum:
+                          - ios
+                          - android
+                      token:
+                        type: string
+                      deviceName:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      lastSeenAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - platform
+                      - token
+                      - deviceName
+                      - createdAt
+                      - updatedAt
+                      - lastSeenAt
+                    additionalProperties: false
+                required:
+                  - device
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                platform:
+                  type: string
+                  enum:
+                    - ios
+                    - android
+                token:
+                  type: string
+                deviceName:
+                  type: string
+              required:
+                - platform
+                - token
+              additionalProperties: false
+  /v1/push-devices/{token}:
+    delete:
+      operationId: pushdevices_by_token_delete
+      summary: Unregister a push device token
+      description: Remove a device token from the push registry. Idempotent — deleting an unknown token succeeds with removed=false.
+      tags:
+        - push-devices
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  removed:
+                    type: boolean
+                required:
+                  - removed
+                additionalProperties: false
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/question-response:
     post:
       operationId: questionresponse_post

@@ -175,3 +175,27 @@ export const conversationAssistantAttentionState = sqliteTable(
     index("idx_conv_attn_state_last_seen").on(table.lastSeenAssistantMessageAt),
   ],
 );
+
+/**
+ * Mobile devices registered for remote push (APNs today, FCM later).
+ * One row per device token; re-registering an existing token refreshes
+ * its metadata (`push-device-store.registerPushDevice`). Rows are pruned
+ * when APNs reports the token invalid (410 Unregistered / BadDeviceToken).
+ */
+export const pushDevices = sqliteTable(
+  "push_devices",
+  {
+    id: text("id").primaryKey(),
+    /** "ios" | "android" */
+    platform: text("platform").notNull(),
+    token: text("token").notNull(),
+    deviceName: text("device_name"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    lastSeenAt: integer("last_seen_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("push_devices_token_unique").on(table.token),
+    index("push_devices_platform_idx").on(table.platform),
+  ],
+);

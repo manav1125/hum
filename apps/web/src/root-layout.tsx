@@ -1,4 +1,4 @@
-import { lazy, useState } from "react";
+import { lazy, useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router";
 
 import { LazyBoundary } from "@/components/lazy-boundary";
@@ -17,6 +17,7 @@ import {
 } from "@/stores/auth-store";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { getSelectedAssistant } from "@/lib/local-mode";
+import { initPushNotifications } from "@/lib/push-notifications";
 import { useVellumCommands } from "@/runtime/vellum-commands";
 
 import { routes } from "@/utils/routes";
@@ -110,6 +111,16 @@ export function RootLayout() {
   useFeatureFlagBusSync(assistantId, isAssistantActive);
   useNotificationIntentSync(assistantId);
   useDocumentEditorSync();
+
+  // Remote push (Capacitor iOS/Android only): once the assistant is
+  // resolved and active, request notification permission and register the
+  // device's APNs token with the daemon so background completions and
+  // approval requests page the phone even when the app is suspended.
+  // No-op on desktop browsers and Electron.
+  useEffect(() => {
+    if (!assistantId || !isAssistantActive) return;
+    void initPushNotifications(assistantId);
+  }, [assistantId, isAssistantActive]);
 
   // Keep the browser favicon in sync with the assistant's avatar across
   // every authenticated route (chat, settings, logs, etc.). Mounted here

@@ -10,7 +10,7 @@ import type { ChannelId } from "./types.js";
 
 export type InboundChannelId = Extract<
   ChannelId,
-  "telegram" | "whatsapp" | "slack" | "email" | "a2a"
+  "telegram" | "whatsapp" | "sms" | "slack" | "email" | "a2a"
 >;
 
 interface InboundEventBase<C extends InboundChannelId> {
@@ -65,6 +65,13 @@ interface InboundEventBase<C extends InboundChannelId> {
 
 export type TelegramInboundEvent = InboundEventBase<"telegram">;
 export type WhatsAppInboundEvent = InboundEventBase<"whatsapp">;
+/**
+ * Twilio SMS inbound event. Text-only in v1 — MMS media (NumMedia > 0) is
+ * acknowledged but not ingested as attachments yet. Both
+ * `conversationExternalId` and `actorExternalId` are the sender's E.164
+ * phone number (same identity vocabulary as phone/whatsapp).
+ */
+export type SmsInboundEvent = InboundEventBase<"sms">;
 export type SlackInboundEvent = InboundEventBase<"slack">;
 export type EmailInboundEvent = InboundEventBase<"email">;
 export type A2aInboundEvent = InboundEventBase<"a2a">;
@@ -72,6 +79,7 @@ export type A2aInboundEvent = InboundEventBase<"a2a">;
 export type GatewayInboundEvent =
   | TelegramInboundEvent
   | WhatsAppInboundEvent
+  | SmsInboundEvent
   | SlackInboundEvent
   | EmailInboundEvent
   | A2aInboundEvent;

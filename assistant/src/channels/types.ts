@@ -1,6 +1,7 @@
 export const CHANNEL_IDS = [
   "telegram",
   "phone",
+  "sms",
   "vellum",
   "whatsapp",
   "slack",
@@ -108,6 +109,19 @@ export const CHANNEL_METADATA: Partial<Record<ChannelId, ChannelInfo>> = {
         "I'd like to verify a contact's phone number. Can you help me set that up?",
     },
   },
+  sms: {
+    id: "sms",
+    label: "SMS",
+    subtitle: "Text your assistant from any phone",
+    icon: "message-circle",
+    supportsVerification: true,
+    setupMessages: {
+      guardian:
+        "I'd like to verify my identity as your guardian over SMS. Can you help me set that up?",
+      contact:
+        "I'd like to verify a contact's SMS number. Can you walk me through it?",
+    },
+  },
   email: {
     id: "email",
     label: "Email",
@@ -154,6 +168,7 @@ export const INTERFACE_IDS = [
   "cli",
   "telegram",
   "phone",
+  "sms",
   "web",
   "whatsapp",
   "slack",

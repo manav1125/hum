@@ -74,6 +74,7 @@ export async function syncConfiguredTwilioPhoneNumberWebhooks(
       {
         phoneNumber,
         voiceUrl: urls.voiceUrl,
+        smsUrl: urls.smsUrl,
         statusCallbackUrl: urls.statusCallbackUrl,
       },
       "Synced Twilio phone number webhooks",

@@ -251,6 +251,67 @@ export function getProfilerMinFreeMb(): number | undefined {
   return int("VELLUM_PROFILER_MIN_FREE_MB");
 }
 
+// ── APNs (direct Apple Push Notification service) ────────────────────────────
+// Credentials for token-based APNs auth (.p8 signing key). These carry
+// credential material, so they are intentionally NOT added to
+// tools/terminal/safe-env.ts — agent-spawned child processes never need them.
+
+/**
+ * CUE_APNS_KEY_P8 — string, default: undefined
+ * Contents of the APNs .p8 signing key (PEM). Literal "\n" sequences are
+ * normalized to real newlines so the key can be pasted into single-line
+ * env configuration UIs (e.g. the Render dashboard). Takes precedence over
+ * CUE_APNS_KEY_PATH.
+ */
+export function getApnsKeyP8(): string | undefined {
+  const raw = str("CUE_APNS_KEY_P8");
+  return raw ? raw.replace(/\\n/g, "\n") : undefined;
+}
+
+/**
+ * CUE_APNS_KEY_PATH — string, default: undefined
+ * Filesystem path to the APNs .p8 signing key. Used when CUE_APNS_KEY_P8
+ * is not set.
+ */
+export function getApnsKeyPath(): string | undefined {
+  return str("CUE_APNS_KEY_PATH");
+}
+
+/**
+ * CUE_APNS_KEY_ID — string, default: undefined
+ * The 10-character Key ID of the APNs signing key (Apple Developer portal,
+ * Certificates, Identifiers & Profiles → Keys). JWT `kid` header.
+ */
+export function getApnsKeyId(): string | undefined {
+  return str("CUE_APNS_KEY_ID");
+}
+
+/**
+ * CUE_APNS_TEAM_ID — string, default: undefined
+ * The Apple Developer Team ID that owns the signing key. JWT `iss` claim.
+ */
+export function getApnsTeamId(): string | undefined {
+  return str("CUE_APNS_TEAM_ID");
+}
+
+/**
+ * CUE_APNS_BUNDLE_ID — string, default: "com.ventureverse.cue"
+ * The iOS app bundle identifier, sent as the `apns-topic` header.
+ */
+export function getApnsBundleId(): string {
+  return str("CUE_APNS_BUNDLE_ID") ?? "com.ventureverse.cue";
+}
+
+/**
+ * CUE_APNS_ENV — "sandbox" | "production", default: "production"
+ * Which APNs environment to send to. Development builds (run from Xcode)
+ * register sandbox tokens; TestFlight and App Store builds register
+ * production tokens.
+ */
+export function getApnsEnv(): "sandbox" | "production" {
+  return str("CUE_APNS_ENV") === "sandbox" ? "sandbox" : "production";
+}
+
 // ── Known env var names ──────────────────────────────────────────────────────
 
 /**

@@ -116,7 +116,7 @@ export async function handleCreateVerificationSession({
     // Normalize destination to prevent rate-limit bypass via format variations
     let rateLimitKey: string | undefined = destination;
     if (rateLimitKey) {
-      if (channel === "phone") {
+      if (channel === "phone" || channel === "sms") {
         rateLimitKey = normalizePhoneNumber(rateLimitKey) ?? rateLimitKey;
       } else if (channel === "telegram") {
         rateLimitKey = normalizeTelegramDestination(rateLimitKey);
@@ -185,7 +185,8 @@ function handleGetVerificationStatus({
   queryParams = {},
   body = {},
 }: RouteHandlerArgs) {
-  const channel = (queryParams.channel ?? (body as Record<string, unknown>).channel) as ChannelId | undefined;
+  const channel = (queryParams.channel ??
+    (body as Record<string, unknown>).channel) as ChannelId | undefined;
   return getVerificationStatus(channel);
 }
 

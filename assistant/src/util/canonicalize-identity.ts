@@ -14,7 +14,11 @@ import type { ChannelId } from "../channels/types.js";
 import { normalizePhoneNumber } from "./phone.js";
 
 /** Channels whose raw sender IDs are phone numbers. */
-const PHONE_CHANNELS: ReadonlySet<ChannelId> = new Set(["phone", "whatsapp"]);
+const PHONE_CHANNELS: ReadonlySet<ChannelId> = new Set([
+  "phone",
+  "sms",
+  "whatsapp",
+]);
 
 /**
  * Canonicalize a raw inbound sender identity for the given channel.

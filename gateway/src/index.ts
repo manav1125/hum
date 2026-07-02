@@ -6,6 +6,7 @@ import {
   TWILIO_CONNECT_ACTION_WEBHOOK_PATH,
   TWILIO_MEDIA_STREAM_WEBHOOK_PATH,
   TWILIO_RELAY_WEBHOOK_PATH,
+  TWILIO_SMS_WEBHOOK_PATH,
   TWILIO_STATUS_WEBHOOK_PATH,
   TWILIO_VOICE_WEBHOOK_PATH,
 } from "@vellumai/service-contracts/twilio-ingress";
@@ -40,6 +41,8 @@ import { createTwilioVoiceWebhookHandler } from "./http/routes/twilio-voice-webh
 import { createTwilioStatusWebhookHandler } from "./http/routes/twilio-status-webhook.js";
 import { createTwilioConnectActionWebhookHandler } from "./http/routes/twilio-connect-action-webhook.js";
 import { createTwilioVoiceVerifyCallbackHandler } from "./http/routes/twilio-voice-verify-callback.js";
+import { createTwilioSmsWebhookHandler } from "./http/routes/twilio-sms-webhook.js";
+import { createSmsDeliverHandler } from "./http/routes/sms-deliver.js";
 import {
   createTwilioRelayWebsocketHandler,
   getRelayWebsocketHandlers,
@@ -440,6 +443,12 @@ async function main() {
     createTwilioConnectActionWebhookHandler(config, twilioValidationCaches);
   const handleTwilioVoiceVerifyCallback =
     createTwilioVoiceVerifyCallbackHandler(config, twilioValidationCaches);
+  const { handler: handleTwilioSmsWebhook, dedupCache: smsDedupCache } =
+    createTwilioSmsWebhookHandler(config, twilioValidationCaches);
+  const handleSmsDeliver = createSmsDeliverHandler(
+    config,
+    twilioValidationCaches,
+  );
   const handleTwilioRelayWs = createTwilioRelayWebsocketHandler(config, {
     configFile: configFileCache,
   });
@@ -589,6 +598,10 @@ async function main() {
       handler: (req) => handleTwilioVoiceWebhook(req),
     },
     {
+      path: TWILIO_SMS_WEBHOOK_PATH,
+      handler: (req) => handleTwilioSmsWebhook(req),
+    },
+    {
       path: TWILIO_STATUS_WEBHOOK_PATH,
       handler: (req) => handleTwilioStatusWebhook(req),
     },
@@ -616,6 +629,16 @@ async function main() {
     {
       path: "/webhooks/mailgun",
       handler: (req) => handleMailgunWebhook(req),
+    },
+
+    // ── SMS reply egress (loopback-only; used by gateway-owned verification
+    //    replies — the daemon delivers agent replies directly via Twilio) ──
+    {
+      path: "/deliver/sms",
+      method: "POST",
+      auth: "custom",
+      handler: (req, _params, getClientIp) =>
+        handleSmsDeliver(req, getClientIp),
     },
 
     // ── BYO provider registration (auto-verify guardian email) ──
@@ -1980,6 +2003,7 @@ async function main() {
   // Start periodic background cleanup for dedup caches
   telegramDedupCache.startCleanup();
   whatsappDedupCache.startCleanup();
+  smsDedupCache.startCleanup();
   emailDedupCache.startCleanup();
 
   const telegramCaches = {
@@ -2607,6 +2631,7 @@ async function main() {
     ipcServer.stop();
     telegramDedupCache.stopCleanup();
     whatsappDedupCache.stopCleanup();
+    smsDedupCache.stopCleanup();
     emailDedupCache.stopCleanup();
     if (slackSocketClient) {
       slackSocketClient.stop();

@@ -36,6 +36,28 @@ export function buildWhatsAppTransportMetadata(): {
   };
 }
 
+export const SMS_CHANNEL_TRANSPORT_HINTS = [
+  "chat-first-medium",
+  "channel-safe-onboarding",
+  "defer-dashboard-only-tasks",
+  "sms-formatting",
+] as const;
+
+export const SMS_CHANNEL_TRANSPORT_UX_BRIEF =
+  "SMS is a plain-text mobile channel with no formatting, buttons, or attachments. " +
+  "Keep responses short (ideally under 300 characters), use plain text only — no markdown, " +
+  "no tables, no links unless essential — and ask for approvals as plain-text questions.";
+
+export function buildSmsTransportMetadata(): {
+  hints: string[];
+  uxBrief: string;
+} {
+  return {
+    hints: [...SMS_CHANNEL_TRANSPORT_HINTS],
+    uxBrief: SMS_CHANNEL_TRANSPORT_UX_BRIEF,
+  };
+}
+
 export const EMAIL_CHANNEL_TRANSPORT_HINTS = [
   "email-medium",
   "defer-dashboard-only-tasks",

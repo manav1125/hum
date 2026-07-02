@@ -10,6 +10,7 @@ import type { CesProcessManager } from "../credential-execution/process-manager.
 import { AssistantIpcServer } from "../ipc/assistant-server.js";
 import { SkillIpcServer } from "../ipc/skill-server.js";
 import { getApp, getAppDirPath, isMultifileApp } from "../memory/app-store.js";
+import { logApnsStartupStatus } from "../notifications/apns-sender.js";
 import { syncIdentityNameToPlatform } from "../platform/sync-identity.js";
 import { initializeProviders } from "../providers/registry.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
@@ -327,6 +328,10 @@ export class DaemonServer {
     this.unsubscribeContactChange = onContactChange(() => {
       broadcastMessage({ type: "contacts_changed" });
     });
+
+    // One boot-time status line for the APNs push sender (configured vs
+    // silently disabled). Never throws.
+    logApnsStartupStatus();
 
     log.info("DaemonServer started (HTTP-only mode)");
   }

@@ -30,6 +30,10 @@ export const GUARDIAN_VERIFY_TEMPLATE_KEYS = {
   EMAIL_CHALLENGE_REQUEST: "guardian_verify.email.challenge_request",
   /** Resend email verification prompt (includes the code). */
   EMAIL_RESEND: "guardian_verify.email.resend",
+  /** Initial outbound SMS verification prompt (includes the code). */
+  SMS_CHALLENGE_REQUEST: "guardian_verify.sms.challenge_request",
+  /** Resend SMS verification prompt (includes the code). */
+  SMS_RESEND: "guardian_verify.sms.resend",
   /** Outbound voice call intro prompt: asks guardian to enter verification code via keypad. */
   VOICE_CALL_INTRO: "guardian_verify.voice.call_intro",
   /** Voice retry prompt after an incorrect code entry. */
@@ -56,7 +60,9 @@ type TextVerifyTemplateKey =
   | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.SLACK_TRUSTED_CONTACT_CHALLENGE
   | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.SLACK_TRUSTED_CONTACT_RESEND
   | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.EMAIL_CHALLENGE_REQUEST
-  | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.EMAIL_RESEND;
+  | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.EMAIL_RESEND
+  | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.SMS_CHALLENGE_REQUEST
+  | typeof GUARDIAN_VERIFY_TEMPLATE_KEYS.SMS_RESEND;
 
 /** Template keys for deterministic channel verification reply messages. */
 type ChannelVerifyReplyTemplateKey =
@@ -129,6 +135,14 @@ const templates: Record<
   [GUARDIAN_VERIFY_TEMPLATE_KEYS.EMAIL_RESEND]: (vars) => {
     return `Cue guardian verification requested.\n\nYour new verification code is: ${vars.code}\n\nReply to this email with only the 6-digit code above to complete verification. This code expires in ${vars.expiresInMinutes} minutes. (resent)`;
   },
+
+  [GUARDIAN_VERIFY_TEMPLATE_KEYS.SMS_CHALLENGE_REQUEST]: (vars) => {
+    return `Cue guardian verification: your code is ${vars.code}. Reply with only this code to complete verification. It expires in ${vars.expiresInMinutes} minutes.`;
+  },
+
+  [GUARDIAN_VERIFY_TEMPLATE_KEYS.SMS_RESEND]: (vars) => {
+    return `Cue guardian verification: your new code is ${vars.code}. Reply with only this code to complete verification. It expires in ${vars.expiresInMinutes} minutes. (resent)`;
+  },
 };
 
 /**
@@ -148,6 +162,18 @@ export function composeVerificationSlack(
  * Returns plain string content suitable for email delivery.
  */
 export function composeVerificationEmail(
+  templateKey: TextVerifyTemplateKey,
+  vars: GuardianVerifyTemplateVars,
+): string {
+  const composer = templates[templateKey];
+  return composer(vars);
+}
+
+/**
+ * Compose an outbound verification SMS from a template key and typed variables.
+ * Returns plain string content suitable for SMS delivery.
+ */
+export function composeVerificationSms(
   templateKey: TextVerifyTemplateKey,
   vars: GuardianVerifyTemplateVars,
 ): string {

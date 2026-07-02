@@ -1,6 +1,7 @@
 import { normalizePublicBaseUrl } from "./ingress.js";
 
 export const TWILIO_VOICE_WEBHOOK_PATH = "/webhooks/twilio/voice";
+export const TWILIO_SMS_WEBHOOK_PATH = "/webhooks/twilio/sms";
 export const TWILIO_STATUS_WEBHOOK_PATH = "/webhooks/twilio/status";
 export const TWILIO_CONNECT_ACTION_WEBHOOK_PATH =
   "/webhooks/twilio/connect-action";
@@ -32,6 +33,7 @@ export { normalizePublicBaseUrl } from "./ingress.js";
 export type TwilioPhoneNumberWebhookUrls = {
   statusCallbackUrl: string;
   voiceUrl: string;
+  smsUrl: string;
 };
 
 export function resolveTwilioPublicBaseUrl(
@@ -52,6 +54,10 @@ export function buildTwilioVoiceWebhookUrl(
     return `${baseUrl}${TWILIO_VOICE_WEBHOOK_PATH}?callSessionId=${callSessionId}`;
   }
   return `${baseUrl}${TWILIO_VOICE_WEBHOOK_PATH}`;
+}
+
+export function buildTwilioSmsWebhookUrl(baseUrl: string): string {
+  return `${baseUrl}${TWILIO_SMS_WEBHOOK_PATH}`;
 }
 
 export function buildTwilioStatusWebhookUrl(baseUrl: string): string {
@@ -76,6 +82,7 @@ export function buildTwilioPhoneNumberWebhookUrls(
   return {
     statusCallbackUrl: buildTwilioStatusWebhookUrl(baseUrl),
     voiceUrl: buildTwilioVoiceWebhookUrl(baseUrl),
+    smsUrl: buildTwilioSmsWebhookUrl(baseUrl),
   };
 }
 

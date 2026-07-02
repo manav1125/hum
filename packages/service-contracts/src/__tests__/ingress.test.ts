@@ -9,6 +9,7 @@ import {
   buildTwilioMediaStreamUrl,
   buildTwilioPhoneNumberWebhookUrls,
   buildTwilioRelayUrl,
+  buildTwilioSmsWebhookUrl,
   buildTwilioVoiceWebhookUrl,
   resolveTwilioPublicBaseUrl,
 } from "../twilio-ingress.js";
@@ -99,9 +100,13 @@ describe("Twilio ingress helpers", () => {
     expect(buildTwilioMediaStreamUrl("http://example.test")).toBe(
       "ws://example.test/webhooks/twilio/media-stream",
     );
+    expect(buildTwilioSmsWebhookUrl("https://example.test")).toBe(
+      "https://example.test/webhooks/twilio/sms",
+    );
     expect(buildTwilioPhoneNumberWebhookUrls("https://example.test")).toEqual({
       statusCallbackUrl: "https://example.test/webhooks/twilio/status",
       voiceUrl: "https://example.test/webhooks/twilio/voice",
+      smsUrl: "https://example.test/webhooks/twilio/sms",
     });
   });
 });

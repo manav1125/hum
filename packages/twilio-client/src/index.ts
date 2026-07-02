@@ -17,6 +17,8 @@ export interface TwilioRequestOptions {
 export interface TwilioWebhookUrls {
   voiceUrl: string;
   statusCallbackUrl: string;
+  /** Incoming-SMS webhook URL. Optional so voice-only callers stay valid. */
+  smsUrl?: string;
 }
 
 export interface TwilioRestErrorOptions {
@@ -132,6 +134,9 @@ export async function updateIncomingPhoneNumberWebhooks(
     VoiceMethod: "POST",
     StatusCallback: input.webhooks.statusCallbackUrl,
     StatusCallbackMethod: "POST",
+    ...(input.webhooks.smsUrl
+      ? { SmsUrl: input.webhooks.smsUrl, SmsMethod: "POST" }
+      : {}),
   });
 
   const response = await resolveFetch(input.fetchImpl)(
@@ -176,4 +181,54 @@ export async function updatePhoneNumberWebhooks(
     ...input,
     phoneNumberSid,
   });
+}
+
+interface TwilioMessageResponse {
+  sid?: string;
+}
+
+/**
+ * Send an outbound SMS via the Twilio Messages API
+ * (POST /2010-04-01/Accounts/{sid}/Messages.json).
+ *
+ * Returns the created Message SID. Callers are responsible for splitting
+ * text into <=1600-character bodies (Twilio's per-message limit).
+ */
+export async function sendSmsMessage(
+  input: TwilioCredentials &
+    TwilioRequestOptions & {
+      to: string;
+      from: string;
+      body: string;
+    },
+): Promise<{ sid?: string }> {
+  const form = new URLSearchParams({
+    To: input.to,
+    From: input.from,
+    Body: input.body,
+  });
+
+  const response = await resolveFetch(input.fetchImpl)(
+    `${twilioBaseUrl(input.accountSid)}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: twilioAuthHeader(input.accountSid, input.authToken),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+      signal: resolveSignal(input),
+    },
+  );
+
+  if (!response.ok) {
+    const detail = await safeResponseText(response);
+    throw new TwilioRestError(
+      `Twilio API error ${response.status} sending SMS: ${detail}`,
+      { status: response.status },
+    );
+  }
+
+  const data = await safeJson<TwilioMessageResponse>(response, "sending SMS");
+  return { sid: data.sid };
 }
