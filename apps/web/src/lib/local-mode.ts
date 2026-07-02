@@ -146,6 +146,13 @@ export async function loadLockfile(): Promise<Lockfile> {
 }
 
 export function getLockfile(): Lockfile {
+  // Same guard as loadLockfile(): a self-host deploy is a remote client — the
+  // persisted lockfile mirror (written before this build, or by a sibling
+  // origin) must not resurrect a local-assistant selection the gateway can't
+  // reach. Without this, the desktop app pins a dead local daemon forever.
+  if (isCueSelfHostDeploy()) {
+    return { ...EMPTY_LOCKFILE };
+  }
   const cached = getCachedLockfile();
   if (cached) return cached;
 

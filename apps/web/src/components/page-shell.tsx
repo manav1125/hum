@@ -7,6 +7,10 @@ import { cn } from "@vellumai/design-library";
  * (Intelligence "About Assistant" tabs, Library). Keeps the surface,
  * border, padding, and min-h-0 flex behavior consistent across pages so
  * children only own their per-page header/body layout.
+ *
+ * On mobile (max-md) the rounded "floating panel" chrome is dropped so the
+ * page fills the viewport edge-to-edge instead of reading as a card with
+ * gaps around it.
  */
 export function PageShell({
   children,
@@ -19,6 +23,7 @@ export function PageShell({
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col rounded-lg border border-[var(--border-base)] bg-[var(--surface-overlay)] px-6 py-5",
+        "max-md:rounded-none max-md:border-0 max-md:px-4 max-md:py-3",
         className,
       )}
     >

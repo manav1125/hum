@@ -101,10 +101,12 @@ export function MemoryRow({
     <div
       onClick={() => onSelect(item)}
       style={{
-        border: `1px solid ${selected ? "#3D6EE8" : "#E5E9F0"}`,
+        border: `1px solid ${selected ? "var(--accent-cue)" : "var(--border-base)"}`,
         borderRadius: 13,
         padding: "13px 15px",
-        background: selected ? "#FAFBFF" : "#FFFFFF",
+        background: selected
+          ? "color-mix(in srgb, var(--accent-cue) 5%, var(--surface-lift))"
+          : "var(--surface-lift)",
         cursor: "pointer",
       }}
     >
@@ -143,7 +145,7 @@ export function MemoryRow({
               marginLeft: "auto",
               fontFamily: MONO,
               fontSize: 10,
-              color: "#9AA6B2",
+              color: "var(--content-tertiary)",
             }}
           >
             conf {conf}
@@ -169,8 +171,9 @@ export function MemoryRow({
             style={{
               fontSize: 14,
               fontWeight: 500,
-              color: "#1A2230",
-              border: "1px solid #3D6EE8",
+              color: "var(--content-default)",
+              background: "var(--field-bg)",
+              border: "1px solid var(--accent-cue)",
               borderRadius: 8,
               padding: "7px 10px",
               outline: "none",
@@ -184,8 +187,8 @@ export function MemoryRow({
               disabled={isSaving || draft.trim().length === 0}
               style={{
                 fontSize: 11.5,
-                background: "#1A2230",
-                color: "#fff",
+                background: "var(--primary-base)",
+                color: "var(--content-inset)",
                 border: "none",
                 borderRadius: 8,
                 padding: "6px 12px",
@@ -202,8 +205,8 @@ export function MemoryRow({
               style={{
                 fontSize: 11.5,
                 background: "transparent",
-                color: "#5A6672",
-                border: "1px solid #D7DDE7",
+                color: "var(--content-secondary)",
+                border: "1px solid var(--border-base)",
                 borderRadius: 8,
                 padding: "6px 12px",
                 cursor: "pointer",
@@ -214,7 +217,7 @@ export function MemoryRow({
           </div>
         </div>
       ) : (
-        <div style={{ fontSize: 14, fontWeight: 500, color: "#1A2230" }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--content-default)" }}>
           {item.statement}
         </div>
       )}
@@ -251,8 +254,8 @@ export function MemoryRow({
                 fontSize: 10,
                 padding: "1px 6px",
                 borderRadius: 5,
-                background: "#EEF1F6",
-                color: "#5A6672",
+                background: "var(--surface-base)",
+                color: "var(--content-secondary)",
               }}
             >
               {source}
@@ -267,7 +270,7 @@ export function MemoryRow({
               }}
               style={{
                 fontSize: 11.5,
-                color: "#5A6672",
+                color: "var(--content-secondary)",
                 background: "transparent",
                 border: "none",
                 padding: 0,

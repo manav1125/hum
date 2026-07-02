@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import {
+  listPushDevices,
   registerPushDevice,
   removePushDevice,
 } from "../../notifications/push-device-store.js";
@@ -34,6 +35,24 @@ const pushDeviceSchema = z.object({
 const MAX_TOKEN_LENGTH = 512;
 
 export const ROUTES: RouteDefinition[] = [
+  {
+    operationId: "listPushDevices",
+    endpoint: "push-devices",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "List registered push devices",
+    description:
+      "Return all registered push device tokens with metadata. Used by the notification settings surface and monitoring.",
+    tags: ["push-devices"],
+    responseBody: z.object({
+      devices: z.array(pushDeviceSchema),
+    }),
+    handler: () => ({ devices: listPushDevices() }),
+  },
+
   {
     operationId: "registerPushDevice",
     endpoint: "push-devices",

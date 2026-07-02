@@ -93,14 +93,28 @@ export function IntelligenceLayout() {
       ? [BASE_INTELLIGENCE_TABS[0], PLUGINS_TAB, ...BASE_INTELLIGENCE_TABS.slice(1)]
       : BASE_INTELLIGENCE_TABS;
 
+  // Tabs whose mobile rendering is a full-bleed designed surface that paints
+  // its own background + padding (the "You" screen on Channels & Agents, the
+  // Memory surface). For those the outlet wrapper drops its mobile padding so
+  // the surface reaches the viewport edges; every other tab keeps a standard
+  // gutter.
+  const isFullBleedMobileTab =
+    isMobile &&
+    [routes.channels, routes.memory].some(
+      (to) => pathname === to || pathname.startsWith(to + "/"),
+    );
+
   return (
-    <PageShell>
+    // On mobile the shell goes edge-to-edge (no padding): the tab strip and
+    // the outlet wrapper below own their gutters so full-bleed tabs can fill
+    // the viewport width instead of floating inside a padded panel.
+    <PageShell className="max-md:px-0 max-md:py-0">
       <h1 className="mb-4 shrink-0 text-title-large text-[var(--content-default)] max-md:hidden">
         About {assistantName || "Assistant"}
       </h1>
 
       <nav
-        className="mb-4 flex shrink-0 items-center overflow-x-auto border-b border-[var(--border-base)]"
+        className="mb-4 flex shrink-0 items-center overflow-x-auto border-b border-[var(--border-base)] max-md:mb-0 max-md:px-2"
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
         aria-label="About assistant sections"
       >
@@ -128,7 +142,12 @@ export function IntelligenceLayout() {
         })}
       </nav>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-y-auto",
+          !isFullBleedMobileTab && "max-md:px-4 max-md:py-3",
+        )}
+      >
         <Outlet />
       </div>
     </PageShell>

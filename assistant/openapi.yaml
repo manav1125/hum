@@ -3855,6 +3855,7 @@ paths:
                           enum:
                             - telegram
                             - phone
+                            - sms
                             - vellum
                             - whatsapp
                             - slack
@@ -13574,6 +13575,16 @@ paths:
                   anyOf:
                     - type: string
                     - type: "null"
+                maxDailyRuns:
+                  description: Max heartbeat runs per calendar day, or null for unlimited
+                  anyOf:
+                    - type: number
+                    - type: "null"
+                maxConsecutiveRuns:
+                  description: Max consecutive heartbeat runs without a guardian message, or null for unlimited
+                  anyOf:
+                    - type: number
+                    - type: "null"
               additionalProperties: false
   /v1/heartbeat/run-now:
     post:
@@ -23281,6 +23292,62 @@ paths:
                       - status
                     additionalProperties: false
   /v1/push-devices:
+    get:
+      operationId: pushdevices_get
+      summary: List registered push devices
+      description: Return all registered push device tokens with metadata. Used by the notification settings surface and monitoring.
+      tags:
+        - push-devices
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        platform:
+                          type: string
+                          enum:
+                            - ios
+                            - android
+                        token:
+                          type: string
+                        deviceName:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        lastSeenAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - platform
+                        - token
+                        - deviceName
+                        - createdAt
+                        - updatedAt
+                        - lastSeenAt
+                      additionalProperties: false
+                required:
+                  - devices
+                additionalProperties: false
     post:
       operationId: pushdevices_post
       summary: Register a push device token

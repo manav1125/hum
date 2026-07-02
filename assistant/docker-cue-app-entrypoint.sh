@@ -96,6 +96,30 @@ if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   ) &
 fi
 
+# Tooling providers (Replicate, Apify): `replicate_run` falls back to the env
+# var, but the skill_execute/CES credential path reads the secure store only —
+# so a store wiped by a restart makes those skills prompt the user for a token
+# that is already configured. Re-seed from env like the LLM keys above.
+for pair in "replicate:REPLICATE_API_TOKEN" "apify:APIFY_API_TOKEN"; do
+  service="${pair%%:*}"
+  var="${pair#*:}"
+  eval "value=\${${var}:-}"
+  if [ -n "$value" ]; then
+    (
+      j=0
+      while [ "$j" -lt 30 ]; do
+        if ( cd /app/assistant && bun run src/index.ts keys set "$service" "$value" ) >/dev/null 2>&1; then
+          echo "[cue-app] $service key seeded from env into secure store" >&2
+          exit 0
+        fi
+        j=$((j + 1))
+        sleep 3
+      done
+      echo "[cue-app] WARN: could not seed $service key after retries" >&2
+    ) &
+  fi
+done
+
 # Gateway in the foreground = the public service. On container stop it receives
 # SIGTERM and shuts down cleanly; the daemon is torn down with the container
 # (its SQLite WAL replays on next boot).

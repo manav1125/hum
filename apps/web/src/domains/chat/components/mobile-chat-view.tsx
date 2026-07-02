@@ -33,23 +33,25 @@ import {
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import { routes } from "@/utils/routes";
 
-// Dark-v1 mobile tokens — mirrors the inline hexes in `Cue Mobile.dc.html`
-// (README §1, Dark). Kept local so the mobile chat reads as one coherent dark
-// surface independent of the light desktop canvas, matching `TodayMobile`.
+// Mobile design-book tokens — the theme-aware `--mv1-*` palette (defined in
+// `index.css`). Under the dark/velvet themes these resolve to the exact
+// dark-v1 hexes from `Cue Mobile.dc.html` (README §1, Dark); under the light
+// theme they fall back to the semantic tokens so the chat screen matches the
+// light chrome instead of pasting a dark canvas onto a light page.
 const M = {
-  ink: "#1A2230",
-  inkDeep: "#11161F",
-  inkBottom: "#0C1018",
-  surface: "#212B3B",
-  surface2: "#2A3547",
-  blue: "#3D6EE8",
-  blueEyebrow: "#86A9F2",
-  t1: "#FFFFFF",
-  t2: "#8A97AC",
-  t3: "#5E6B80",
+  ink: "var(--mv1-ink)",
+  inkDeep: "var(--mv1-ink-deep)",
+  inkBottom: "var(--mv1-ink-bottom)",
+  surface: "var(--mv1-surface)",
+  surface2: "var(--mv1-surface-2)",
+  blue: "var(--mv1-blue)",
+  blueEyebrow: "var(--mv1-blue-eyebrow)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
   danger: "#E5634B",
-  line: "rgba(255,255,255,.08)",
-  markChip: "#0F1620",
+  line: "var(--mv1-line)",
+  markChip: "var(--mv1-chip)",
 } as const;
 
 const mono = "'DM Mono', ui-monospace, monospace";
@@ -60,10 +62,12 @@ const MCHAT_KEYFRAMES = `
 @media (prefers-reduced-motion: reduce){.cue-mchat-anim *{animation:none !important}}
 `;
 
-// Scoped dark theme for the reused transcript. We rebind the design-library
+// Scoped theme for the reused transcript. We rebind the design-library
 // semantic tokens (read by transcript rows / markdown / tool chips) to the
-// dark-v1 palette, and recolour the user bubble (which uses --surface-lift) to
-// the design book's blue. This keeps the transcript a single reused component.
+// theme-aware mobile palette (dark-v1 under dark/velvet, semantic-token
+// fallbacks under light), and recolour the user bubble (which uses
+// --surface-lift) to the design book's blue. This keeps the transcript a
+// single reused component.
 const MCHAT_TRANSCRIPT_THEME = `
 .cue-mchat {
   --background: ${M.ink};
@@ -323,7 +327,7 @@ export function MobileChatView({
           paddingBottom: keyboardOpen
             ? 9
             : "calc(9px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
-          background: "rgba(12,16,24,.55)",
+          background: "var(--mv1-composer-veil)",
           backdropFilter: "blur(8px)",
           transform: composerLift ? `translateY(-${composerLift}px)` : undefined,
           transition: "transform .18s ease",
@@ -399,7 +403,9 @@ export function MobileChatView({
                   : canSend
                     ? M.blue
                     : M.surface2,
-                color: "#fff",
+                // White on the blue/danger fills; muted on the idle surface
+                // (which is light under the light theme, so white would vanish).
+                color: canStopGenerating || canSend ? "#fff" : M.t2,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

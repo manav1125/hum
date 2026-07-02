@@ -259,6 +259,18 @@ export const ROUTES: RouteDefinition[] = [
         .nullable()
         .optional()
         .describe("Timezone for cron evaluation"),
+      maxDailyRuns: z
+        .number()
+        .nullable()
+        .optional()
+        .describe("Max heartbeat runs per calendar day, or null for unlimited"),
+      maxConsecutiveRuns: z
+        .number()
+        .nullable()
+        .optional()
+        .describe(
+          "Max consecutive heartbeat runs without a guardian message, or null for unlimited",
+        ),
     }),
     responseBody: z.object({
       enabled: z.boolean(),
@@ -295,6 +307,14 @@ export const ROUTES: RouteDefinition[] = [
       if ("timezone" in body)
         heartbeatPatch.timezone =
           typeof body.timezone === "string" ? body.timezone : null;
+      if ("maxDailyRuns" in body)
+        heartbeatPatch.maxDailyRuns =
+          typeof body.maxDailyRuns === "number" ? body.maxDailyRuns : null;
+      if ("maxConsecutiveRuns" in body)
+        heartbeatPatch.maxConsecutiveRuns =
+          typeof body.maxConsecutiveRuns === "number"
+            ? body.maxConsecutiveRuns
+            : null;
 
       try {
         const raw = loadRawConfig();

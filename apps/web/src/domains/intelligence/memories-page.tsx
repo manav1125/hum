@@ -8,6 +8,7 @@ import { MEMORY_TYPES, type MemoryType } from "@vellumai/design-library";
 import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   memoryitemsByIdDelete,
   memoryitemsByIdPatch,
@@ -49,6 +50,7 @@ export function MemoriesPage() {
   const assistantId = useActiveAssistantId();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { data, isLoading, isError, refetch } =
     useMemoryItemsQuery(assistantId);
 
@@ -167,16 +169,22 @@ export function MemoriesPage() {
   const showEmpty = !isLoading && !isError && filteredItems.length === 0;
 
   return (
+    // Desktop: center column + fixed 280px provenance rail. Mobile: a single
+    // stacked column — the list first, the provenance detail as a full-width
+    // section pinned beneath it (never overlapping absolute columns).
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) 280px",
+        gridTemplateColumns: isMobile
+          ? "minmax(0, 1fr)"
+          : "minmax(0, 1fr) 280px",
+        gridTemplateRows: isMobile ? "minmax(0, 1fr) auto" : undefined,
         minHeight: 0,
         flex: 1,
         height: "100%",
-        background: "#FFFFFF",
+        background: "var(--surface-overlay)",
         fontFamily: "'DM Sans', system-ui, sans-serif",
-        color: "#1A2230",
+        color: "var(--content-default)",
         lineHeight: 1.5,
       }}
     >
@@ -193,7 +201,7 @@ export function MemoriesPage() {
         <div
           style={{
             padding: "22px 24px 18px",
-            borderBottom: "1px solid #E5E9F0",
+            borderBottom: "1px solid var(--border-base)",
             display: "flex",
             alignItems: "center",
             gap: 16,
@@ -214,12 +222,12 @@ export function MemoriesPage() {
               }}
             >
               Cue remembers{" "}
-              <span style={{ fontStyle: "italic", color: "#2B53C4" }}>
+              <span style={{ fontStyle: "italic", color: "var(--accent-cue-strong)" }}>
                 {total.toLocaleString()} things
               </span>{" "}
               about how you work.
             </div>
-            <div style={{ fontSize: 12.5, color: "#5A6672", marginTop: 3 }}>
+            <div style={{ fontSize: 12.5, color: "var(--content-secondary)", marginTop: 3 }}>
               Across 8 memory types · every one traceable to its source · you
               can edit or forget anything.
             </div>
@@ -231,7 +239,7 @@ export function MemoriesPage() {
               >
                 +{addedThisWeek}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "#9AA6B2" }}>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--content-tertiary)" }}>
                 this week
               </div>
             </div>
@@ -241,7 +249,7 @@ export function MemoriesPage() {
               >
                 {avgConfidence !== null ? avgConfidence.toFixed(2) : "—"}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "#9AA6B2" }}>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--content-tertiary)" }}>
                 avg conf
               </div>
             </div>
@@ -260,7 +268,7 @@ export function MemoriesPage() {
           <div
             style={{
               flex: 1,
-              border: "1px solid #D7DDE7",
+              border: "1px solid var(--border-base)",
               borderRadius: 10,
               padding: "8px 12px",
               display: "flex",
@@ -282,7 +290,7 @@ export function MemoriesPage() {
                 outline: "none",
                 background: "transparent",
                 fontSize: 13,
-                color: "#1A2230",
+                color: "var(--content-default)",
                 fontFamily: "'DM Sans', system-ui, sans-serif",
               }}
             />
@@ -298,8 +306,8 @@ export function MemoriesPage() {
             }
             style={{
               fontSize: 12,
-              background: confidentOnly ? "#1A2230" : "#EEF1F6",
-              color: confidentOnly ? "#fff" : "#5A6672",
+              background: confidentOnly ? "var(--primary-base)" : "var(--surface-base)",
+              color: confidentOnly ? "var(--content-inset)" : "var(--content-secondary)",
               border: "none",
               borderRadius: 8,
               padding: "7px 12px",
@@ -314,8 +322,8 @@ export function MemoriesPage() {
             onClick={() => void navigate("/assistant/")}
             style={{
               fontSize: 12.5,
-              background: "#1A2230",
-              color: "#fff",
+              background: "var(--primary-base)",
+              color: "var(--content-inset)",
               border: "none",
               borderRadius: 8,
               padding: "8px 14px",
@@ -345,9 +353,9 @@ export function MemoriesPage() {
             onClick={() => setFilter("all")}
             style={{
               fontSize: 12,
-              background: filter === "all" ? "#1A2230" : "#FFFFFF",
-              color: filter === "all" ? "#fff" : "#1A2230",
-              border: filter === "all" ? "none" : "1px solid #E5E9F0",
+              background: filter === "all" ? "var(--primary-base)" : "var(--surface-lift)",
+              color: filter === "all" ? "var(--content-inset)" : "var(--content-default)",
+              border: filter === "all" ? "none" : "1px solid var(--border-base)",
               borderRadius: 8,
               padding: "6px 11px",
               cursor: "pointer",
@@ -366,9 +374,9 @@ export function MemoriesPage() {
                 onClick={() => setFilter(active ? "all" : kind)}
                 style={{
                   fontSize: 12,
-                  background: active ? c.wash : "#FFFFFF",
-                  color: active ? c.text : "#1A2230",
-                  border: `1px solid ${active ? c.dot : "#E5E9F0"}`,
+                  background: active ? c.wash : "var(--surface-lift)",
+                  color: active ? c.text : "var(--content-default)",
+                  border: `1px solid ${active ? c.dot : "var(--border-base)"}`,
                   borderRadius: 8,
                   padding: "6px 11px",
                   display: "inline-flex",
@@ -435,11 +443,17 @@ export function MemoriesPage() {
       </div>
 
       {/* ── PROVENANCE RAIL ───────────────────────────────────────── */}
-      <ProvenanceRail
-        memory={isError ? null : selected}
-        onEdit={startEdit}
-        onForget={setPendingForget}
-      />
+      {/* Desktop: always-visible right rail. Mobile: a full-width detail
+          section stacked beneath the list, shown only once a memory is
+          selected (there's no room for a persistent empty rail). */}
+      {isMobile && (isError || !selected) ? null : (
+        <ProvenanceRail
+          memory={isError ? null : selected}
+          onEdit={startEdit}
+          onForget={setPendingForget}
+          stacked={isMobile}
+        />
+      )}
 
       <ConfirmDialog
         open={pendingForget !== null}
@@ -470,21 +484,27 @@ function ProvenanceRail({
   memory,
   onEdit,
   onForget,
+  stacked = false,
 }: {
   memory: MemoryItem | null;
   onEdit: (item: MemoryItem) => void;
   onForget: (item: MemoryItem) => void;
+  /** Mobile: render as a full-width section under the list (border on top,
+   *  capped height) instead of the desktop right-hand rail. */
+  stacked?: boolean;
 }) {
   return (
     <aside
       style={{
-        background: "#F4F6F9",
-        borderLeft: "1px solid #E5E9F0",
+        background: "var(--surface-base)",
+        borderLeft: stacked ? "none" : "1px solid var(--border-base)",
+        borderTop: stacked ? "1px solid var(--border-base)" : "none",
         padding: 18,
         display: "flex",
         flexDirection: "column",
         gap: 14,
         minHeight: 0,
+        maxHeight: stacked ? "45dvh" : undefined,
         overflowY: "auto",
       }}
     >
@@ -494,7 +514,7 @@ function ProvenanceRail({
           fontFamily: MONO,
           letterSpacing: ".1em",
           textTransform: "uppercase",
-          color: "#9AA6B2",
+          color: "var(--content-tertiary)",
         }}
       >
         Selected · provenance
@@ -505,12 +525,12 @@ function ProvenanceRail({
       ) : (
         <div
           style={{
-            background: "#FFFFFF",
-            border: "1px solid #E5E9F0",
+            background: "var(--surface-lift)",
+            border: "1px solid var(--border-base)",
             borderRadius: 13,
             padding: "20px 15px",
             fontSize: 12.5,
-            color: "#9AA6B2",
+            color: "var(--content-tertiary)",
             textAlign: "center",
           }}
         >
@@ -553,8 +573,8 @@ function RailContent({
       {/* Selected memory card */}
       <div
         style={{
-          background: "#FFFFFF",
-          border: "1px solid #E5E9F0",
+          background: "var(--surface-lift)",
+          border: "1px solid var(--border-base)",
           borderRadius: 13,
           padding: "14px 15px",
         }}
@@ -582,7 +602,7 @@ function RailContent({
             marginTop: 12,
             fontSize: 11,
             fontFamily: MONO,
-            color: "#9AA6B2",
+            color: "var(--content-tertiary)",
           }}
         >
           Confidence
@@ -591,7 +611,7 @@ function RailContent({
           style={{
             height: 7,
             borderRadius: 4,
-            background: "#EEF1F6",
+            background: "var(--surface-base)",
             marginTop: 5,
             overflow: "hidden",
           }}
@@ -600,7 +620,7 @@ function RailContent({
             style={{
               width: `${confPct}%`,
               height: "100%",
-              background: "#3D6EE8",
+              background: "var(--accent-cue)",
               borderRadius: 4,
             }}
           />
@@ -609,7 +629,7 @@ function RailContent({
           style={{
             fontSize: 11,
             fontFamily: MONO,
-            color: "#5A6672",
+            color: "var(--content-secondary)",
             marginTop: 4,
           }}
         >
@@ -620,8 +640,8 @@ function RailContent({
       {/* Sources card */}
       <div
         style={{
-          background: "#FFFFFF",
-          border: "1px solid #E5E9F0",
+          background: "var(--surface-lift)",
+          border: "1px solid var(--border-base)",
           borderRadius: 13,
           padding: "14px 15px",
         }}
@@ -630,13 +650,13 @@ function RailContent({
           style={{
             fontSize: 11,
             fontFamily: MONO,
-            color: "#9AA6B2",
+            color: "var(--content-tertiary)",
             marginBottom: 8,
           }}
         >
           SOURCES
         </div>
-        <div style={{ fontSize: 12.5, color: "#5A6672", lineHeight: 1.7 }}>
+        <div style={{ fontSize: 12.5, color: "var(--content-secondary)", lineHeight: 1.7 }}>
           {source ? <div>· {source}</div> : null}
           {memory.scopeLabel ? <div>· {memory.scopeLabel}</div> : null}
           {firstSeen ? <div>· first seen {firstSeen}</div> : null}
@@ -663,9 +683,9 @@ function RailContent({
             flex: 1,
             textAlign: "center",
             fontSize: 12.5,
-            border: "1px solid #D7DDE7",
-            background: "#fff",
-            color: "#1A2230",
+            border: "1px solid var(--border-base)",
+            background: "var(--surface-lift)",
+            color: "var(--content-default)",
             borderRadius: 8,
             padding: 8,
             cursor: "pointer",
@@ -710,7 +730,7 @@ function LoadingState() {
             height: 78,
             borderRadius: 13,
             background:
-              "linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%)",
+              "linear-gradient(90deg,var(--surface-base) 0%,var(--border-base) 50%,var(--surface-base) 100%)",
             backgroundSize: "340px 100%",
             animation: "cueShimmer 1.3s linear infinite",
           }}
@@ -746,7 +766,7 @@ function EmptyState({
       <div style={{ fontSize: 17, fontWeight: 500 }}>
         {firstRun ? "Cue learns as you go" : "No memories match this filter"}
       </div>
-      <p style={{ fontSize: 13.5, color: "#5A6672", maxWidth: 360 }}>
+      <p style={{ fontSize: 13.5, color: "var(--content-secondary)", maxWidth: 360 }}>
         Cue forms memories as you work — from chats, email, meetings, and the
         things you tell it to remember.
       </p>
@@ -755,7 +775,7 @@ function EmptyState({
         onClick={firstRun ? onTeach : onClearFilters}
         style={{
           fontSize: 12.5,
-          background: "#3D6EE8",
+          background: "var(--accent-cue)",
           color: "#fff",
           border: "none",
           borderRadius: 8,

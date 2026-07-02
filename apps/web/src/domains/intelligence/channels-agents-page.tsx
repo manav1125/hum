@@ -78,19 +78,23 @@ export function ChannelsAgentsPage() {
 
 /* ───────────────────────── mobile "You" screen ───────────────────────── */
 
-// Dark tokens (mobile design book §1).
+// Mobile design-book tokens — the theme-aware `--mv1-*` palette (defined in
+// `index.css`). Dark/velvet themes resolve to the exact dark-v1 hexes from
+// the design book (§1); the light theme falls back to the semantic tokens so
+// this screen follows the active theme instead of rendering a hardcoded dark
+// panel on a light page.
 const M = {
-  ink: "#1A2230",
-  inkDeep: "#11161F",
-  inkBottom: "#0C1018",
-  surface: "#212B3B",
-  blue: "#3D6EE8",
-  blueText: "#86A9F2",
+  ink: "var(--mv1-ink)",
+  inkDeep: "var(--mv1-ink-deep)",
+  inkBottom: "var(--mv1-ink-bottom)",
+  surface: "var(--mv1-surface)",
+  blue: "var(--mv1-blue)",
+  blueText: "var(--mv1-blue-eyebrow)",
   green: "#3FB871",
-  t1: "#FFFFFF",
-  t2: "#8A97AC",
-  t3: "#5E6B80",
-  line: "rgba(255,255,255,.08)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  line: "var(--mv1-line)",
 } as const;
 const M_MONO = "'DM Mono', ui-monospace, monospace";
 const M_SANS = "'DM Sans', system-ui, sans-serif";
@@ -130,19 +134,21 @@ interface MergedChannel extends AvailableChannel {
   channelHandle: string | null;
 }
 
-/** Per-channel icon tile chrome (dark mobile palette), keyed by channel id. */
+/** Per-channel icon tile chrome, keyed by channel id. Brand tiles (Slack,
+ * Telegram, WhatsApp, email) keep their brand colors in both themes; neutral
+ * tiles use the theme-aware chip color (dark app-icon chip in both themes). */
 const M_ICON: Record<ChannelId, { bg: string; fg: string }> = {
-  phone: { bg: "#0F1620", fg: M.blueText },
+  phone: { bg: "var(--mv1-chip)", fg: "#86A9F2" },
   email: { bg: "#FDECEA", fg: "#EA4335" },
   slack: { bg: "#4A154B", fg: "#fff" },
   telegram: { bg: "#E7F3FB", fg: "#229ED9" },
   whatsapp: { bg: "#0B2C1A", fg: "#25D366" },
-  vellum: { bg: "#0F1620", fg: "#fff" },
-  platform: { bg: "#0F1620", fg: "#EEF2F7" },
-  a2a: { bg: "#0F1620", fg: M.t2 },
+  vellum: { bg: "var(--mv1-chip)", fg: "#fff" },
+  platform: { bg: "var(--mv1-chip)", fg: "#EEF2F7" },
+  a2a: { bg: "var(--mv1-chip)", fg: "#8A97AC" },
 };
 function mIconStyle(id: ChannelId): { bg: string; fg: string } {
-  return M_ICON[id] ?? { bg: "#0F1620", fg: M.t2 };
+  return M_ICON[id] ?? { bg: "var(--mv1-chip)", fg: "#8A97AC" };
 }
 
 /** A status dot — green when the channel is connected, dim otherwise. */
@@ -373,8 +379,10 @@ function YouMobilePage() {
         color: M.t1,
         minHeight: "100%",
         background: `linear-gradient(180deg, ${M.ink} 0%, ${M.inkDeep} 78%, ${M.inkBottom} 100%)`,
-        paddingTop:
-          "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
+        // No safe-area top padding here: this screen renders below the app
+        // header inside the About-Assistant layout, which already clears the
+        // notch. Adding it again produced a phantom gap above the hero.
+        paddingTop: 0,
         paddingBottom:
           "calc(28px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
         paddingLeft:

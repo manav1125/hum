@@ -7,6 +7,53 @@ body {
   color: var(--content-default);
 }
 
+/* Mobile design-book palette (`--mv1-*`) — theme-aware.
+ *
+ * The mobile screens built from the dark-v1 design book (mobile chat, the
+ * "You" tab, …) originally hardcoded the book's dark hexes, which clashed
+ * when the active theme was light (dark navy panels pasted onto a light
+ * page). These vars keep the exact dark-v1 palette under the dark/velvet
+ * themes and fall back to the semantic tokens in light, so those screens
+ * follow the ACTIVE theme like the rest of the app.
+ *
+ * Light values reference the semantic tokens; var() substitution happens at
+ * computed-value time on :root, so scopes that later rebind the semantic
+ * tokens (e.g. `.cue-mchat`) still inherit the already-resolved values —
+ * no circularity. */
+:root {
+  --mv1-ink: var(--surface-overlay);
+  --mv1-ink-deep: var(--surface-overlay);
+  --mv1-ink-bottom: var(--surface-base);
+  --mv1-surface: var(--surface-lift);
+  --mv1-surface-2: var(--surface-base);
+  --mv1-t1: var(--content-default);
+  --mv1-t2: var(--content-secondary);
+  --mv1-t3: var(--content-tertiary);
+  --mv1-line: var(--border-base);
+  --mv1-blue: var(--accent-cue);
+  --mv1-blue-eyebrow: var(--accent-cue-strong);
+  --mv1-chip: #1a2230;
+  --mv1-composer-veil: rgba(253, 253, 252, 0.55);
+}
+
+[data-theme="dark"],
+[data-theme="velvet"] {
+  /* Dark v1 design-book literals (`Cue Mobile.dc.html`, README §1). */
+  --mv1-ink: #1a2230;
+  --mv1-ink-deep: #11161f;
+  --mv1-ink-bottom: #0c1018;
+  --mv1-surface: #212b3b;
+  --mv1-surface-2: #2a3547;
+  --mv1-t1: #ffffff;
+  --mv1-t2: #8a97ac;
+  --mv1-t3: #5e6b80;
+  --mv1-line: rgba(255, 255, 255, 0.08);
+  --mv1-blue: #3d6ee8;
+  --mv1-blue-eyebrow: #86a9f2;
+  --mv1-chip: #0f1620;
+  --mv1-composer-veil: rgba(12, 16, 24, 0.55);
+}
+
 /* Electron prechat onboarding typography — mirror the lighter DM Sans (Swift
  * VFont) weights/sizes so the macOS Electron funnel matches the native Swift
  * client. Scoped via `.electron-prechat-type` (applied ONLY on Electron) so the
