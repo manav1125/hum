@@ -62,10 +62,7 @@ let mockIpcResult: {
 
 mock.module("../ipc/cli-client.js", () => ({
   cliIpcCall: async () => mockIpcResult,
-  exitFromIpcResult: (r: {
-    error?: string;
-    statusCode?: number;
-  }) => {
+  exitFromIpcResult: (r: { error?: string; statusCode?: number }) => {
     process.stderr.write((r.error ?? "Unknown error") + "\n");
     if (r.statusCode === undefined) {
       process.exit(10);

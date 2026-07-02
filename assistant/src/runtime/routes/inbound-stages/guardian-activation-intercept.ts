@@ -110,7 +110,7 @@ export async function handleGuardianActivationIntercept(
   // Only checked here; marked as processed after successful session creation
   // so transient failures remain retryable.
   if (isAlreadyProcessed(externalMessageId)) {
-    return ({ accepted: true, guardianActivation: true });
+    return { accepted: true, guardianActivation: true };
   }
 
   // ── Idempotency: check for an existing active session from this sender ──
@@ -138,7 +138,7 @@ export async function handleGuardianActivationIntercept(
         });
       }
       markProcessed(externalMessageId);
-      return ({ accepted: true, guardianActivationPending: true });
+      return { accepted: true, guardianActivationPending: true };
     }
   }
 
@@ -193,5 +193,5 @@ export async function handleGuardianActivationIntercept(
     dedupeKey: `guardian-activation:${sessionResult.sessionId}`,
   });
 
-  return ({ accepted: true, guardianActivation: true });
+  return { accepted: true, guardianActivation: true };
 }

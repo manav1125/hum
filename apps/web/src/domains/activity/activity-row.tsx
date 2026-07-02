@@ -14,13 +14,18 @@ import { C, mono } from "./theme";
 
 export type PillTone = "neutral" | "blue" | "green" | "amber" | "danger" | "violet";
 
+// Washes derive from the theme accents via color-mix so the pills read
+// correctly on both the light canvas and the dark ink.
+const wash = (accent: string, pct: number) =>
+  `color-mix(in srgb, ${accent} ${pct}%, transparent)`;
+
 const PILL: Record<PillTone, { fg: string; bg: string; border: string }> = {
   neutral: { fg: C.t2, bg: C.sunken, border: C.line2 },
-  blue: { fg: C.blueS, bg: C.blueW, border: "#C3D3F6" },
-  green: { fg: C.green, bg: "#E4F2E8", border: "#BFE0CA" },
-  amber: { fg: "#8C7225", bg: "#FCF3DD", border: "#ECD9A6" },
-  danger: { fg: C.danger, bg: "#FDE7E2", border: "#F3C5BA" },
-  violet: { fg: C.violetS, bg: "#EEEDFB", border: "#D6D2F4" },
+  blue: { fg: C.blueS, bg: C.blueW, border: wash(C.blue, 32) },
+  green: { fg: C.green, bg: wash(C.green, 14), border: wash(C.green, 32) },
+  amber: { fg: C.amber, bg: wash(C.amber, 14), border: wash(C.amber, 34) },
+  danger: { fg: C.danger, bg: wash(C.danger, 12), border: wash(C.danger, 30) },
+  violet: { fg: C.violetS, bg: wash(C.violet, 14), border: wash(C.violet, 32) },
 };
 
 export function StatusPill({

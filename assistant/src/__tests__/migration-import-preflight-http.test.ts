@@ -711,7 +711,9 @@ describe("DefaultPathResolver", () => {
 describe("route policy registration", () => {
   test("migrations/import-preflight policy requires settings.write scope", async () => {
     const { ROUTES } = await import("../runtime/routes/index.js");
-    const policy = (ROUTES.find((r) => r.endpoint === "migrations/import-preflight")?.policy ?? null);
+    const policy =
+      ROUTES.find((r) => r.endpoint === "migrations/import-preflight")
+        ?.policy ?? null;
 
     expect(policy).not.toBeNull();
     expect(policy?.requiredScopes).toContain("settings.write");
@@ -722,9 +724,13 @@ describe("route policy registration", () => {
 
   test("import-preflight policy matches export but differs from validate on scopes", async () => {
     const { ROUTES } = await import("../runtime/routes/index.js");
-    const preflightPolicy = (ROUTES.find((r) => r.endpoint === "migrations/import-preflight")?.policy ?? null);
-    const validatePolicy = (ROUTES.find((r) => r.endpoint === "migrations/validate")?.policy ?? null);
-    const exportPolicy = (ROUTES.find((r) => r.endpoint === "migrations/export")?.policy ?? null);
+    const preflightPolicy =
+      ROUTES.find((r) => r.endpoint === "migrations/import-preflight")
+        ?.policy ?? null;
+    const validatePolicy =
+      ROUTES.find((r) => r.endpoint === "migrations/validate")?.policy ?? null;
+    const exportPolicy =
+      ROUTES.find((r) => r.endpoint === "migrations/export")?.policy ?? null;
 
     // preflight and export both require settings.write
     expect(preflightPolicy!.requiredScopes).toEqual(

@@ -69,7 +69,6 @@ mock.module("../runtime/channel-verification-service.js", () => ({
   },
 }));
 
-
 import type { TrustContext } from "../daemon/trust-context.js";
 import {
   createCanonicalGuardianRequest,

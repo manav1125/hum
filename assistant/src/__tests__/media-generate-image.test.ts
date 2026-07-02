@@ -86,8 +86,38 @@ mock.module("../providers/platform-proxy/context.js", () => ({
   resolveManagedProxyContext: async () => mockManagedProxyContext,
 }));
 
+// Replicate token for the direct fallback path. Mocked so the host's real
+// REPLICATE_API_TOKEN env var can never leak into these tests.
+let mockReplicateToken: string | undefined;
+
+mock.module("../providers/tooling-credentials.js", () => ({
+  resolveToolingProviderToken: async (providerId: string) =>
+    providerId === "replicate" ? mockReplicateToken : undefined,
+}));
+
+let mockRuntimeMode: "docker" | "bare-metal" = "bare-metal";
+
+mock.module("../runtime/runtime-mode.js", () => ({
+  getDaemonRuntimeMode: () => mockRuntimeMode,
+}));
+
 // Import after mocking
 import { run } from "../config/bundled-skills/image-studio/tools/media-generate-image.js";
+
+/**
+ * Swap `globalThis.fetch` for a hermetic handler; returns a restore function.
+ * Used by the Replicate-fallback tests so no real network calls happen.
+ */
+function withStubbedFetch(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response>,
+): () => void {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) =>
+    handler(String(input), init)) as unknown as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
 
 // Clean up after this file to prevent contamination of later test files.
 afterAll(() => {
@@ -124,6 +154,8 @@ beforeEach(() => {
     platformBaseUrl: "",
     assistantApiKey: "",
   };
+  mockReplicateToken = undefined;
+  mockRuntimeMode = "bare-metal";
 });
 
 const fakeContext = {
@@ -426,6 +458,185 @@ describe("image-studio skill script wrapper", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("outside the working directory");
+  });
+});
+
+describe("replicate direct fallback (managed proxy unavailable)", () => {
+  const PNG_BYTES = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  test("falls back to flux-schnell and returns inline image blocks", async () => {
+    mockImageGenMode = "managed";
+    mockReplicateToken = "r8_test_token";
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const restore = withStubbedFetch(async (url, init) => {
+      requests.push({ url, init });
+      if (url.includes("api.replicate.com")) {
+        return new Response(
+          JSON.stringify({
+            id: "pred-1",
+            status: "succeeded",
+            output: ["https://replicate.delivery/out.png"],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+    try {
+      const result = await run(
+        { prompt: "a minimalist mountain logo" },
+        fakeContext,
+      );
+
+      expect(result.isError).toBe(false);
+      expect(result.content).toContain("black-forest-labs/flux-schnell");
+      expect(result.content).toContain("Replicate");
+      expect(result.contentBlocks).toHaveLength(1);
+      const block = result.contentBlocks![0] as {
+        type: string;
+        source: { type: string; media_type: string; data: string };
+      };
+      expect(block.type).toBe("image");
+      expect(block.source.type).toBe("base64");
+      expect(block.source.media_type).toBe("image/png");
+      expect(block.source.data).toBe(Buffer.from(PNG_BYTES).toString("base64"));
+
+      // Prediction was created against flux-schnell with the resolved token.
+      const create = requests[0]!;
+      expect(create.url).toBe(
+        "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+      );
+      const headers = create.init?.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer r8_test_token");
+      const body = JSON.parse(String(create.init?.body)) as {
+        input: Record<string, unknown>;
+      };
+      expect(body.input.prompt).toBe("a minimalist mountain logo");
+      expect(body.input.num_outputs).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  test("passes variants through as num_outputs and returns all images", async () => {
+    mockImageGenMode = "managed";
+    mockReplicateToken = "r8_test_token";
+    let createBody: { input: Record<string, unknown> } | undefined;
+    const restore = withStubbedFetch(async (url, init) => {
+      if (url.includes("api.replicate.com")) {
+        createBody = JSON.parse(String(init?.body)) as {
+          input: Record<string, unknown>;
+        };
+        return new Response(
+          JSON.stringify({
+            id: "pred-2",
+            status: "succeeded",
+            output: [
+              "https://replicate.delivery/a.png",
+              "https://replicate.delivery/b.png",
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(PNG_BYTES, {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+    try {
+      const result = await run(
+        { prompt: "logo options", variants: 2 },
+        fakeContext,
+      );
+
+      expect(result.isError).toBe(false);
+      expect(result.content).toContain("Generated 2 images");
+      expect(result.contentBlocks).toHaveLength(2);
+      expect(createBody?.input.num_outputs).toBe(2);
+    } finally {
+      restore();
+    }
+  });
+
+  test("fallback failure reports a fresh live error with the configured token", async () => {
+    mockImageGenMode = "managed";
+    mockReplicateToken = "r8_test_token";
+    const restore = withStubbedFetch(
+      async () => new Response("insufficient credit", { status: 402 }),
+    );
+    try {
+      const result = await run({ prompt: "a cat" }, fakeContext);
+
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain("HTTP 402");
+      expect(result.content).toContain("A Replicate token IS configured");
+      expect(result.content).toContain("fresh, live result");
+      expect(result.content).not.toContain("log in to Vellum");
+    } finally {
+      restore();
+    }
+  });
+
+  test("edit mode does not fall back to replicate and explains why", async () => {
+    mockImageGenMode = "managed";
+    mockReplicateToken = "r8_test_token";
+
+    const result = await run(
+      {
+        prompt: "remove the watermark",
+        mode: "edit",
+        source_paths: ["/tmp/whatever.png"],
+      },
+      fakeContext,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("only supports text-to-image generation");
+    expect(result.content).toContain("Your Own mode");
+  });
+
+  test("no replicate token on a self-hosted docker deployment steers to a direct token, not Vellum login", async () => {
+    mockImageGenMode = "managed";
+    mockReplicateToken = undefined;
+    mockRuntimeMode = "docker";
+
+    const result = await run({ prompt: "a cat" }, fakeContext);
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("self-hosted deployment");
+    expect(result.content).toContain("logging in to Vellum will not fix it");
+    expect(result.content).toContain("REPLICATE_API_TOKEN");
+    expect(result.content).toContain("NOT Composio");
+    expect(result.content).not.toContain("Please log in to Vellum");
+  });
+
+  test("no replicate token on bare metal keeps the login hint but adds the token option", async () => {
+    mockImageGenMode = "managed";
+    mockReplicateToken = undefined;
+    mockRuntimeMode = "bare-metal";
+
+    const result = await run({ prompt: "a cat" }, fakeContext);
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      "Managed proxy is not available. Please log in to Vellum or switch to Your Own mode.",
+    );
+    expect(result.content).toContain("REPLICATE_API_TOKEN");
+  });
+
+  test("your-own mode with a missing provider key does NOT fall back to replicate", async () => {
+    mockImageGenMode = "your-own";
+    mockGeminiKey = undefined;
+    mockReplicateToken = "r8_test_token";
+
+    const result = await run({ prompt: "a cat" }, fakeContext);
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("No Gemini API key");
   });
 });
 

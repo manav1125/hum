@@ -185,7 +185,6 @@ describe("VellumAcpClientHandler", () => {
       expect(sent).toHaveLength(0);
       expect(handler.pendingRequestIds.size).toBe(0);
     });
-
   });
 });
 

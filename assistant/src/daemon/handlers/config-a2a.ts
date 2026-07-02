@@ -44,6 +44,12 @@ export const A2AConfigResultSchema = z.object({
   success: z.boolean(),
   enabled: z.boolean(),
   activeConnections: z.number(),
+  /**
+   * Whether the A2A channel is available on this deployment (feature flag).
+   * Only populated by the GET config route — `enabled` is the stored user
+   * toggle, `available` is the deployment capability gating it.
+   */
+  available: z.boolean().optional(),
   error: z.string().optional(),
 });
 export type A2AConfigResult = z.infer<typeof A2AConfigResultSchema>;

@@ -18,6 +18,8 @@ import { CapacityBar } from "@/domains/settings/components/capacity-bar";
 import { DevModeVersionUnlock } from "@/domains/settings/components/dev-mode-version-unlock";
 import type { HealthzGetResponse } from "@/generated/daemon/types.gen";
 import { captureError } from "@/lib/sentry/capture-error";
+import { isCueSelfHostDeploy } from "@/lib/self-hosted/cue-self-host";
+import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useEnvironmentStore } from "@/stores/environment-store";
 import { isTransientNetworkError } from "@/utils/is-transient-network-error";
@@ -209,6 +211,8 @@ export function AssistantStatusPanel({
   const isNonProduction = useEnvironmentStore.use.isNonProduction();
   const user = useAuthStore.use.user();
   const email = user?.email;
+  const identityName = useAssistantIdentityStore.use.name();
+  const identityVersion = useAssistantIdentityStore.use.version();
 
   if (assistantLoading) {
     return (
@@ -220,6 +224,43 @@ export function AssistantStatusPanel({
   }
 
   if (!assistant) {
+    // Self-host cloud deploy: there is always exactly one always-on managed
+    // cloud assistant behind this gateway (the lifecycle resolves it as
+    // `self`), but it never surfaces through the platform/lockfile assistant
+    // lookup this panel is built on — so the "hatch an assistant" empty
+    // state would be wrong here. Render the identity we do have (the
+    // daemon-reported name/version from the identity store, plus the gateway
+    // origin) instead of prompting a hatch.
+    if (isCueSelfHostDeploy()) {
+      return (
+        <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-y-3">
+          {email && (
+            <>
+              <Label>Account</Label>
+              <Value>{email}</Value>
+            </>
+          )}
+
+          <Label>Name</Label>
+          <Value>{identityName ?? "Cue"}</Value>
+
+          <Label>Hosting</Label>
+          <Value>Managed cloud assistant</Value>
+
+          <Label>Gateway</Label>
+          <span className="break-all font-mono text-body-small-default text-[var(--content-tertiary)]">
+            {window.location.origin}
+          </span>
+
+          {identityVersion && (
+            <>
+              <Label>Version</Label>
+              <Value>{identityVersion}</Value>
+            </>
+          )}
+        </div>
+      );
+    }
     return (
       <p className="text-body-medium-lighter text-[var(--content-tertiary)]">
         No assistant found. Hatch an assistant to get started.

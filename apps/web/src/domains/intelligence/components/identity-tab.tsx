@@ -49,14 +49,14 @@ export function IdentityCard({
     <div
       style={{
         width: "100%",
-        border: "1px solid #E5E9F0",
+        border: "1px solid var(--mv1-line)",
         borderRadius: 16,
         padding: 24,
         display: "flex",
         flexDirection: "column",
-        background: "#FFFFFF",
+        background: "var(--mv1-card)",
         fontFamily: "'DM Sans', system-ui, sans-serif",
-        color: "#1A2230",
+        color: "var(--mv1-t1)",
         lineHeight: 1.5,
       }}
     >
@@ -110,7 +110,7 @@ export function IdentityCard({
             justifyContent: "center",
             boxShadow: "0 16px 36px -16px rgba(26,34,48,.5)",
             overflow: "hidden",
-            background: customImageUrl ? "transparent" : "#1A2230",
+            background: customImageUrl ? "transparent" : "var(--mv1-chip)",
           }}
         >
           <ChatAvatar
@@ -126,11 +126,11 @@ export function IdentityCard({
           onClick={onOpenModal}
           style={{
             fontSize: 13.5,
-            border: "1px solid #D7DDE7",
+            border: "1px solid var(--mv1-line-strong)",
             borderRadius: 10,
             padding: "9px 18px",
-            background: "#FFFFFF",
-            color: "#1A2230",
+            background: "var(--mv1-card)",
+            color: "var(--mv1-t1)",
             cursor: "pointer",
             fontFamily: "inherit",
           }}
@@ -143,7 +143,9 @@ export function IdentityCard({
       <MetaRow
         label="Role"
         value={assistantRole}
-        valueColor={assistantRole === "Not set" ? "#9AA6B2" : "#1A2230"}
+        valueColor={
+          assistantRole === "Not set" ? "var(--mv1-t3)" : "var(--mv1-t1)"
+        }
         marginTop={24}
         edit={
           <EditPencil
@@ -159,7 +161,7 @@ export function IdentityCard({
       <MetaRow
         label="Personality"
         value={assistantPersonality || "Not set"}
-        valueColor={assistantPersonality ? "#1A2230" : "#9AA6B2"}
+        valueColor={assistantPersonality ? "var(--mv1-t1)" : "var(--mv1-t3)"}
         marginTop={18}
         truncate
         edit={
@@ -174,7 +176,7 @@ export function IdentityCard({
 
       {/* Hatched — pinned to the bottom of the card */}
       <div style={{ marginTop: "auto", paddingTop: 24 }}>
-        <div style={{ fontSize: 13, color: "#5A6672" }}>Hatched</div>
+        <div style={{ fontSize: 13, color: "var(--mv1-t2)" }}>Hatched</div>
         <div style={{ fontSize: 15, marginTop: 3 }}>{hatchedDate}</div>
       </div>
     </div>
@@ -200,7 +202,7 @@ function MetaRow({
   return (
     <div
       style={{
-        borderTop: "1px solid #E5E9F0",
+        borderTop: "1px solid var(--mv1-line)",
         marginTop,
         paddingTop: 18,
         display: "flex",
@@ -210,7 +212,7 @@ function MetaRow({
       }}
     >
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 13, color: "#5A6672" }}>{label}</div>
+        <div style={{ fontSize: 13, color: "var(--mv1-t2)" }}>{label}</div>
         <div
           title={value}
           style={{
@@ -266,7 +268,7 @@ function EditPencil({
         flexShrink: 0,
         border: "none",
         background: "transparent",
-        color: "#9AA6B2",
+        color: "var(--mv1-t3)",
         cursor: onOpenThread ? "pointer" : "default",
         opacity: onOpenThread ? 1 : 0.5,
       }}

@@ -81,6 +81,140 @@ function extractUrls(output: unknown): string[] {
   return [];
 }
 
+export interface ReplicatePredictionOptions {
+  /** Model identifier: `owner/name`, `owner/name:version`, or a 64-hex version hash. */
+  model: string;
+  /** Model-specific input parameters (e.g. `{ prompt: "..." }`). */
+  input: Record<string, unknown>;
+  /** Replicate API token (already resolved by the caller). */
+  token: string;
+  /** Max seconds to poll for completion. Clamped to [1, MAX_WAIT_SECONDS]. */
+  waitSeconds?: number;
+  /** Abort signal for the underlying HTTP requests. */
+  signal?: AbortSignal;
+}
+
+export type ReplicatePredictionResult =
+  | { ok: true; urls: string[]; output: unknown }
+  | { ok: false; error: string; timedOut?: boolean };
+
+/**
+ * Create a Replicate prediction and poll it to a terminal state.
+ *
+ * Shared executor behind the `replicate_run` tool; also used by the
+ * image-studio `media_generate_image` tool as its direct-Replicate fallback
+ * when the managed proxy is unavailable. Returns a discriminated result
+ * instead of a ToolExecutionResult so each call site can format its own
+ * user/LLM-facing message.
+ */
+export async function executeReplicatePrediction(
+  opts: ReplicatePredictionOptions,
+): Promise<ReplicatePredictionResult> {
+  const { model, token, signal } = opts;
+  const waitSeconds = Math.min(
+    MAX_WAIT_SECONDS,
+    Math.max(1, Number(opts.waitSeconds) || DEFAULT_WAIT_SECONDS),
+  );
+
+  const created = buildCreateRequest(model, opts.input);
+  if ("error" in created) {
+    return { ok: false, error: created.error };
+  }
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+
+  // `Prefer: wait` asks Replicate to hold the create request open until the
+  // prediction reaches a terminal state (or the sync window elapses), so fast
+  // models (e.g. flux-schnell) return a finished prediction in a single round
+  // trip instead of create-then-poll. Replicate caps the sync hold at 60s; if
+  // the job outlives it the response comes back still "processing" and the
+  // polling loop below takes over — so this is a pure latency win for short
+  // image jobs with no downside for long video jobs.
+  const createHeaders = {
+    ...headers,
+    Prefer: `wait=${Math.min(60, waitSeconds)}`,
+  };
+
+  let prediction: PredictionResponse;
+  try {
+    const res = await fetch(created.url, {
+      method: "POST",
+      headers: createHeaders,
+      body: JSON.stringify(created.body),
+      signal,
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `Replicate prediction request failed (HTTP ${res.status}): ${text.slice(0, 500)}`,
+      };
+    }
+    prediction = JSON.parse(text) as PredictionResponse;
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Failed to start Replicate prediction: ${(err as Error).message}`,
+    };
+  }
+
+  const getUrl =
+    prediction.urls?.get ??
+    `${REPLICATE_API_BASE}/predictions/${prediction.id}`;
+  const deadline = Date.now() + waitSeconds * 1000;
+
+  // Poll until terminal status or deadline.
+  while (
+    prediction.status !== "succeeded" &&
+    prediction.status !== "failed" &&
+    prediction.status !== "canceled"
+  ) {
+    if (signal?.aborted) {
+      return { ok: false, error: "Cancelled." };
+    }
+    if (Date.now() >= deadline) {
+      return {
+        ok: false,
+        error: `Replicate prediction ${prediction.id} did not finish within ${waitSeconds}s (status: ${prediction.status}). The job may still be running; retry with a larger wait_seconds.`,
+        timedOut: true,
+      };
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    try {
+      const res = await fetch(getUrl, { headers, signal });
+      const text = await res.text();
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: `Replicate poll failed (HTTP ${res.status}): ${text.slice(0, 500)}`,
+        };
+      }
+      prediction = JSON.parse(text) as PredictionResponse;
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Failed to poll Replicate prediction: ${(err as Error).message}`,
+      };
+    }
+  }
+
+  if (prediction.status !== "succeeded") {
+    return {
+      ok: false,
+      error: `Replicate prediction ${prediction.status}: ${prediction.error ?? "no error detail provided"}`,
+    };
+  }
+
+  return {
+    ok: true,
+    urls: extractUrls(prediction.output),
+    output: prediction.output,
+  };
+}
+
 export async function run(
   input: Record<string, unknown>,
   context: ToolContext,
@@ -116,110 +250,26 @@ export async function run(
     };
   }
 
-  const waitSeconds = Math.min(
-    MAX_WAIT_SECONDS,
-    Math.max(1, Number(input.wait_seconds) || DEFAULT_WAIT_SECONDS),
-  );
-
-  const created = buildCreateRequest(
+  const result = await executeReplicatePrediction({
     model,
-    modelInput as Record<string, unknown>,
-  );
-  if ("error" in created) {
-    return { content: created.error, isError: true };
-  }
+    input: modelInput as Record<string, unknown>,
+    token,
+    waitSeconds: Number(input.wait_seconds) || undefined,
+    signal: context.signal,
+  });
 
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
-  // `Prefer: wait` asks Replicate to hold the create request open until the
-  // prediction reaches a terminal state (or the sync window elapses), so fast
-  // models (e.g. flux-schnell) return a finished prediction in a single round
-  // trip instead of create-then-poll. Replicate caps the sync hold at 60s; if
-  // the job outlives it the response comes back still "processing" and the
-  // polling loop below takes over — so this is a pure latency win for short
-  // image jobs with no downside for long video jobs.
-  const createHeaders = {
-    ...headers,
-    Prefer: `wait=${Math.min(60, waitSeconds)}`,
-  };
-
-  let prediction: PredictionResponse;
-  try {
-    const res = await fetch(created.url, {
-      method: "POST",
-      headers: createHeaders,
-      body: JSON.stringify(created.body),
-      signal: context.signal,
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return {
-        content: `Replicate prediction request failed (HTTP ${res.status}): ${text.slice(0, 500)}`,
-        isError: true,
-      };
-    }
-    prediction = JSON.parse(text) as PredictionResponse;
-  } catch (err) {
+  if (!result.ok) {
     return {
-      content: `Failed to start Replicate prediction: ${(err as Error).message}`,
+      content: result.error,
       isError: true,
+      ...(result.timedOut ? { status: "timed out" as const } : {}),
     };
   }
 
-  const getUrl =
-    prediction.urls?.get ??
-    `${REPLICATE_API_BASE}/predictions/${prediction.id}`;
-  const deadline = Date.now() + waitSeconds * 1000;
-
-  // Poll until terminal status or deadline.
-  while (
-    prediction.status !== "succeeded" &&
-    prediction.status !== "failed" &&
-    prediction.status !== "canceled"
-  ) {
-    if (context.signal?.aborted) {
-      return { content: "Cancelled.", isError: true };
-    }
-    if (Date.now() >= deadline) {
-      return {
-        content: `Replicate prediction ${prediction.id} did not finish within ${waitSeconds}s (status: ${prediction.status}). The job may still be running; retry with a larger wait_seconds.`,
-        isError: true,
-        status: "timed out",
-      };
-    }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    try {
-      const res = await fetch(getUrl, { headers, signal: context.signal });
-      const text = await res.text();
-      if (!res.ok) {
-        return {
-          content: `Replicate poll failed (HTTP ${res.status}): ${text.slice(0, 500)}`,
-          isError: true,
-        };
-      }
-      prediction = JSON.parse(text) as PredictionResponse;
-    } catch (err) {
-      return {
-        content: `Failed to poll Replicate prediction: ${(err as Error).message}`,
-        isError: true,
-      };
-    }
-  }
-
-  if (prediction.status !== "succeeded") {
-    return {
-      content: `Replicate prediction ${prediction.status}: ${prediction.error ?? "no error detail provided"}`,
-      isError: true,
-    };
-  }
-
-  const urls = extractUrls(prediction.output);
+  const urls = result.urls;
   if (urls.length === 0) {
     return {
-      content: `Replicate prediction succeeded but returned no media URL. Raw output: ${JSON.stringify(prediction.output).slice(0, 500)}`,
+      content: `Replicate prediction succeeded but returned no media URL. Raw output: ${JSON.stringify(result.output).slice(0, 500)}`,
       isError: false,
     };
   }

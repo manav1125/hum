@@ -16,7 +16,10 @@ import {
   loadRawConfig,
   saveRawConfig,
 } from "../../config/loader.js";
-import { listHeartbeatRuns } from "../../heartbeat/heartbeat-run-store.js";
+import {
+  getLatestCompletedHeartbeatRunFinishedAt,
+  listHeartbeatRuns,
+} from "../../heartbeat/heartbeat-run-store.js";
 import { HeartbeatService } from "../../heartbeat/heartbeat-service.js";
 import { getConversation } from "../../memory/conversation-crud.js";
 import { getUsageCostForConversationWindow } from "../../memory/llm-usage-store.js";
@@ -24,7 +27,11 @@ import { readTextFileSync } from "../../util/fs.js";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspacePromptPath } from "../../util/platform.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
-import { BadRequestError, InternalError } from "./errors.js";
+import {
+  BadRequestError,
+  InternalError,
+  ServiceUnavailableError,
+} from "./errors.js";
 import {
   paginateRuns,
   parseRunsBeforeCursor,
@@ -104,6 +111,23 @@ function handleWriteChecklist(body: Record<string, unknown>) {
   } catch (err) {
     log.error({ err }, "Failed to write heartbeat checklist");
     throw new InternalError("Failed to write checklist");
+  }
+}
+
+/**
+ * Durable `lastRunAt` for `GET heartbeat/config` when the service singleton
+ * is not constructed yet (early-boot request). Best-effort: a DB that is not
+ * ready yields null rather than failing the whole config read.
+ */
+function readLastRunAtFromStore(): number | null {
+  try {
+    return getLatestCompletedHeartbeatRunFinishedAt();
+  } catch (err) {
+    log.debug(
+      { err: err instanceof Error ? err.message : String(err) },
+      "heartbeat/config lastRunAt store fallback failed (DB not ready?)",
+    );
+    return null;
   }
 }
 
@@ -218,7 +242,11 @@ export const ROUTES: RouteDefinition[] = [
         cronExpression: config.cronExpression ?? null,
         timezone: config.timezone ?? null,
         nextRunAt: svc?.nextRunAt ?? null,
-        lastRunAt: svc?.lastRunAt ?? null,
+        // The service getter itself falls back to the run store when its
+        // in-memory value is null (restart persistence); when the service
+        // isn't constructed yet (early-boot request), read the run store
+        // directly so the route still reports a truthful lastRunAt.
+        lastRunAt: svc?.lastRunAt ?? readLastRunAtFromStore(),
         success: true,
       };
     },
@@ -368,7 +396,12 @@ export const ROUTES: RouteDefinition[] = [
     handler: async (_args: RouteHandlerArgs) => {
       const svc = HeartbeatService.getInstance();
       if (!svc) {
-        throw new InternalError("Heartbeat service not available");
+        // The daemon is still booting (the service singleton is constructed
+        // before the HTTP server starts, so this window is tiny). 503 tells
+        // the client "retry shortly" instead of a spurious 500.
+        throw new ServiceUnavailableError(
+          "Heartbeat service is still starting up — retry shortly",
+        );
       }
       try {
         const ran = await svc.runOnce({ force: true });

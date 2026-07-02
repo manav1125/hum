@@ -166,7 +166,11 @@ mock.module("../tools/shared/filesystem/path-policy.js", () => ({
 }));
 
 import { PermissionPrompter } from "../permissions/prompter.js";
-import { isSideEffectTool, ToolExecutor } from "../tools/executor.js";
+import {
+  computePerToolTimeoutMs,
+  isSideEffectTool,
+  ToolExecutor,
+} from "../tools/executor.js";
 import type { ToolContext } from "../tools/types.js";
 
 function makeContext(overrides?: Partial<ToolContext>): ToolContext {
@@ -616,6 +620,59 @@ describe("isSideEffectTool", () => {
     test("credential_store without input is NOT a side-effect", () => {
       expect(isSideEffectTool("credential_store")).toBe(false);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-tool execution timeout budget
+// ---------------------------------------------------------------------------
+
+describe("computePerToolTimeoutMs", () => {
+  // mockConfig.timeouts: shellDefaultTimeoutSec=120, shellMaxTimeoutSec=600,
+  // permissionTimeoutSec=300, toolExecutionTimeoutSec unset (falls back to
+  // the 120s default via safeTimeoutMs).
+
+  test("regular tools get the generic execution timeout", () => {
+    expect(computePerToolTimeoutMs("web_search", {})).toBe(120_000);
+  });
+
+  test("shell tools get their own timeout plus a 5s buffer", () => {
+    expect(computePerToolTimeoutMs("bash", { timeout_seconds: 30 })).toBe(
+      35_000,
+    );
+    expect(computePerToolTimeoutMs("host_bash", {})).toBe(125_000);
+  });
+
+  test("credential_store prompt gets the interactive permission budget plus a 5s buffer", () => {
+    // The secure-input card blocks on a human. The SecretPrompter's own
+    // deadline is permissionTimeoutSec and resolves gracefully; the executor
+    // budget must outlast it so the generic timeout never kills a prompt the
+    // user is still filling in (regression: prompt died at 120s).
+    expect(
+      computePerToolTimeoutMs("credential_store", { action: "prompt" }),
+    ).toBe(305_000);
+  });
+
+  test("credential_store prompt budget exceeds the generic execution timeout", () => {
+    const promptBudget = computePerToolTimeoutMs("credential_store", {
+      action: "prompt",
+    });
+    const genericBudget = computePerToolTimeoutMs("credential_store", {
+      action: "list",
+    });
+    expect(promptBudget).toBeGreaterThan(genericBudget);
+  });
+
+  test("non-interactive credential_store actions keep the generic timeout", () => {
+    expect(
+      computePerToolTimeoutMs("credential_store", { action: "store" }),
+    ).toBe(120_000);
+    expect(
+      computePerToolTimeoutMs("credential_store", { action: "list" }),
+    ).toBe(120_000);
+    expect(
+      computePerToolTimeoutMs("credential_store", { action: "delete" }),
+    ).toBe(120_000);
   });
 });
 

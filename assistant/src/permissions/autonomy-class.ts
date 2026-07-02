@@ -71,14 +71,21 @@ function isDestructiveBash(input: unknown): boolean {
 // ── MCP / connector verb rules ─────────────────────────────────────────────────
 // Connector tools follow a verb-prefixed (or substring) naming convention. We
 // classify by the verb expressed in the tool-name suffix. Order matters: money
-// substrings are checked first (most consequential), then delete, send, draft,
+// segments are checked first (most consequential), then delete, send, draft,
 // research — first match wins.
 
-// Money is matched as a substring anywhere in the name: payment verbs are
+// Money is matched against whole name SEGMENTS (split on non-alphanumerics
+// and camelCase boundaries) anywhere in the name: payment verbs are
 // consequential enough that we never want a near-miss to fall through to a
-// laxer bucket.
-const MONEY_SUBSTRINGS: ReadonlyArray<string> = [
+// laxer bucket. Segment matching — not raw substring matching — is load-
+// bearing: substring matching classified `screen_recorder` as money
+// ("rec-ORDER-er") and `set_payload` as money ("PAY-load"), which fed false
+// hard-denies into the work-item auto-run gate. Trailing plural "s" is
+// normalized so `list_transactions` / `list_orders` still match.
+const MONEY_SEGMENTS: ReadonlySet<string> = new Set([
   "pay",
+  "payment",
+  "payout",
   "charge",
   "transfer",
   "order",
@@ -86,7 +93,30 @@ const MONEY_SUBSTRINGS: ReadonlyArray<string> = [
   "checkout",
   "balance",
   "transaction",
-];
+]);
+
+/**
+ * Split a tool name into lowercase word segments on non-alphanumeric
+ * separators (`_`, `-`, `.`, `__`, …) and camelCase boundaries, so
+ * `createOrder` → ["create", "order"] and `screen_recorder` → ["screen",
+ * "recorder"] (one segment — NOT "order").
+ */
+function toolNameSegments(toolName: string): string[] {
+  return toolName
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** Whether any name segment is a money term (plural-insensitive). */
+function hasMoneySegment(toolName: string): boolean {
+  return toolNameSegments(toolName).some(
+    (segment) =>
+      MONEY_SEGMENTS.has(segment) ||
+      (segment.endsWith("s") && MONEY_SEGMENTS.has(segment.slice(0, -1))),
+  );
+}
 
 // Verb prefixes matched against the tool-name *suffix* (the part after the last
 // connector namespace separator). Each entry maps a set of verb prefixes to a
@@ -161,8 +191,8 @@ export function classifyAutonomy(
   // ── 2. MCP / connector tools by verb ─────────────────────────────────────
   const suffix = toolNameSuffix(name);
 
-  // Money first — substring match anywhere in the full name, most consequential.
-  if (MONEY_SUBSTRINGS.some((s) => name.includes(s))) return "money";
+  // Money first — segment match anywhere in the full name, most consequential.
+  if (hasMoneySegment(toolName)) return "money";
 
   // Delete before send/draft/research so e.g. "unsubscribe_" doesn't shadow a
   // genuine delete verb (none overlap today, but order encodes the priority).

@@ -12,8 +12,7 @@ import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
 function handleAuditList({ queryParams }: RouteHandlerArgs) {
   const limitRaw = queryParams?.limit;
-  const limit =
-    limitRaw !== undefined ? parseInt(limitRaw, 10) : 20;
+  const limit = limitRaw !== undefined ? parseInt(limitRaw, 10) : 20;
   const invocations = getRecentInvocations(
     Number.isFinite(limit) && limit > 0 ? limit : 20,
   );

@@ -105,6 +105,38 @@ mock.module("../../jobs-store.js", () => ({
   isMemoryEnabled: () => true,
 }));
 
+// ── conversation store mocks (stale-conversation sweep) ────────────
+//
+// The handler's ephemeral-conversation cleanup path lists leftover
+// consolidation conversations by source and deletes them. Mocked so the
+// unit test never opens a real DB; `staleConversations` seeds what the
+// sweep sees, `deletedConversationIds` records what it reclaims.
+let staleConversations: Array<{ id: string }> = [];
+const deletedConversationIds: string[] = [];
+const listBySourceCalls: Array<{
+  source: string;
+  limit: number;
+  opts: Record<string, unknown> | undefined;
+}> = [];
+
+mock.module("../../conversation-crud.js", () => ({
+  deleteConversation: (id: string) => {
+    deletedConversationIds.push(id);
+    return { segmentIds: [], deletedSummaryIds: [] };
+  },
+}));
+
+mock.module("../../conversation-queries.js", () => ({
+  listConversationsBySource: (
+    source: string,
+    limit: number,
+    opts?: Record<string, unknown>,
+  ) => {
+    listBySourceCalls.push({ source, limit, opts });
+    return staleConversations;
+  },
+}));
+
 // ── v3 follow-up flag mock ──────────────────────────────────────────
 //
 // A v3 flag being on appends `memory_v3_maintain` to the post-consolidation
@@ -215,6 +247,9 @@ beforeEach(() => {
   emitCalls.length = 0;
   enqueuedJobs.length = 0;
   nextJobIdCounter = 0;
+  staleConversations = [];
+  deletedConversationIds.length = 0;
+  listBySourceCalls.length = 0;
 
   // v3 follow-up flag default: off.
   v3FlagOn = false;
@@ -468,6 +503,10 @@ describe("memoryV2ConsolidateJob — non-empty buffer", () => {
     // because consolidation runs on tight intervals and transient failures
     // would spam the home feed.
     expect(runnerLastArgs?.suppressFailureNotifications).toBe(true);
+    // Zero-persisted-rows contract: the run's conversation is scaffolding —
+    // the runner deletes its row once the run settles, so hourly runs never
+    // accumulate conversation_type='background' rows.
+    expect(runnerLastArgs?.ephemeralConversation).toBe(true);
     expect(runnerLastArgs?.trustContext).toEqual({
       sourceChannel: "vellum",
       trustClass: "guardian",
@@ -735,5 +774,43 @@ describe("article-shape selection — live flag only, never shadow", () => {
     expect(prompt).toContain(V3_MARKER);
     expect(prompt).not.toContain("The `summary` field is required");
     expect(prompt).toContain("memory/core-pages.md");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("memoryV2ConsolidateJob — stale-conversation sweep", () => {
+  test("leftover consolidation conversations are reclaimed at run start (even on an empty-buffer run)", async () => {
+    staleConversations = [{ id: "stale-1" }, { id: "stale-2" }];
+
+    // Empty buffer: the run bails before invoking the runner, but the sweep
+    // (which runs under the lock, before the buffer read) still reclaims
+    // timeout/crash leftovers from prior runs.
+    const outcome = await memoryV2ConsolidateJob(makeJob(), CONFIG);
+
+    expect(outcome.kind).toBe("empty_buffer");
+    expect(runnerCalls).toBe(0);
+    expect(deletedConversationIds).toEqual(["stale-1", "stale-2"]);
+
+    // The sweep only matches this job's own conversations, bounded per pass,
+    // and only rows old enough that no in-flight run can still own them.
+    expect(listBySourceCalls).toHaveLength(1);
+    expect(listBySourceCalls[0]!.source).toBe("memory_v2_consolidation");
+    expect(listBySourceCalls[0]!.limit).toBe(100);
+    const beforeCreatedAt = listBySourceCalls[0]!.opts?.beforeCreatedAt as
+      | number
+      | undefined;
+    expect(typeof beforeCreatedAt).toBe("number");
+    expect(beforeCreatedAt!).toBeLessThan(Date.now());
+  });
+
+  test("no stale conversations → sweep deletes nothing and the run proceeds normally", async () => {
+    writeFileSync(bufferPath(), "- [Apr 27, 9:00 AM] Alice prefers VS Code.\n");
+
+    const outcome = await memoryV2ConsolidateJob(makeJob(), CONFIG);
+
+    expect(outcome.kind).toBe("invoked");
+    expect(deletedConversationIds).toEqual([]);
+    expect(runnerCalls).toBe(1);
   });
 });

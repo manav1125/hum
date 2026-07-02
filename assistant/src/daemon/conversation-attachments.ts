@@ -1,7 +1,9 @@
 import {
   attachInlineAttachmentToMessage,
   AttachmentUploadError,
+  getAttachmentsByIds,
   getFilePathForAttachment,
+  linkAttachmentToMessage,
   setAttachmentThumbnail,
 } from "../memory/attachments-store.js";
 import type { PermissionPrompter } from "../permissions/prompter.js";
@@ -72,6 +74,13 @@ export interface AttachmentResolutionResult {
 /**
  * Resolve accumulated directives and tool content blocks into assistant
  * attachments. Persists attachments and links them to the assistant message.
+ *
+ * `toolAttachmentIds` carries ids of attachments the turn's tools already
+ * persisted to the attachments store (`ToolExecutionResult.attachmentIds`,
+ * e.g. spreadsheet_create / pdf_create output). Those rows exist but are not
+ * linked to any message, and GET messages hydrates a row's attachments
+ * exclusively from the message_attachments link table — so they are linked
+ * to the assistant message here.
  */
 export async function resolveAssistantAttachments(
   accumulatedDirectives: DirectiveRequest[],
@@ -81,6 +90,7 @@ export async function resolveAssistantAttachments(
   approveHostRead: ApproveHostRead,
   lastAssistantMessageId: string | undefined,
   toolContentBlockToolNames?: ReadonlyMap<number, string>,
+  toolAttachmentIds: readonly string[] = [],
 ): Promise<AttachmentResolutionResult> {
   let assistantAttachments: AssistantAttachmentDraft[] = [];
   const emittedAttachments: UserMessageAttachment[] = [];
@@ -89,6 +99,7 @@ export async function resolveAssistantAttachments(
     {
       directiveCount: accumulatedDirectives.length,
       toolBlockCount: accumulatedToolContentBlocks.length,
+      toolAttachmentIdCount: toolAttachmentIds.length,
       workingDir,
     },
     "Resolving assistant attachments",
@@ -228,6 +239,53 @@ export async function resolveAssistantAttachments(
         sourceType: draft.sourceType,
       });
     }
+  }
+
+  // Link attachments the tools stored directly (already persisted rows, so no
+  // re-upload — just the message_attachments link plus a metadata-only emit;
+  // clients hydrate the bytes lazily via /v1/attachments/:id/content).
+  if (toolAttachmentIds.length > 0 && lastAssistantMessageId) {
+    const alreadyEmittedIds = new Set(
+      emittedAttachments
+        .map((a) => a.id)
+        .filter((id): id is string => id != null),
+    );
+    let position = assistantAttachments.length;
+    for (const attachmentId of toolAttachmentIds) {
+      if (alreadyEmittedIds.has(attachmentId)) continue;
+      try {
+        const scopedId = linkAttachmentToMessage(
+          lastAssistantMessageId,
+          attachmentId,
+          position,
+        );
+        position += 1;
+        const [meta] = getAttachmentsByIds([scopedId]);
+        emittedAttachments.push({
+          id: scopedId,
+          filename: meta?.originalFilename ?? "attachment",
+          mimeType: meta?.mimeType ?? "application/octet-stream",
+          data: "",
+          sourceType: "tool_block",
+          ...(meta ? { sizeBytes: meta.sizeBytes } : {}),
+          fileBacked: true,
+          ...(meta?.thumbnailBase64
+            ? { thumbnailData: meta.thumbnailBase64 }
+            : {}),
+        });
+        alreadyEmittedIds.add(scopedId);
+      } catch (err) {
+        log.warn(
+          { attachmentId, messageId: lastAssistantMessageId, err },
+          "Failed to link tool-produced attachment to assistant message (non-fatal)",
+        );
+      }
+    }
+  } else if (toolAttachmentIds.length > 0) {
+    log.warn(
+      { toolAttachmentIds },
+      "Tool-produced attachments have no assistant message row to link to",
+    );
   }
 
   return { assistantAttachments, emittedAttachments, directiveWarnings };

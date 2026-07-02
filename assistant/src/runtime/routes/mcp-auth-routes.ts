@@ -30,12 +30,15 @@ async function handleMcpAuthStart({
   body,
 }: {
   body?: Record<string, unknown>;
-}): Promise<{ auth_url: string; state: string; already_authenticated?: boolean }> {
+}): Promise<{
+  auth_url: string;
+  state: string;
+  already_authenticated?: boolean;
+}> {
   const { serverId } = body as { serverId: string };
 
   const raw = loadRawConfig();
-  const servers =
-    (raw.mcp as Partial<McpConfig> | undefined)?.servers ?? {};
+  const servers = (raw.mcp as Partial<McpConfig> | undefined)?.servers ?? {};
   const serverConfig = servers[serverId];
 
   if (!serverConfig) {
@@ -63,7 +66,11 @@ async function handleMcpAuthStart({
     throw new InternalError(err instanceof Error ? err.message : String(err));
   }
 
-  return { auth_url: result.auth_url, state: serverId, already_authenticated: result.already_authenticated };
+  return {
+    auth_url: result.auth_url,
+    state: serverId,
+    already_authenticated: result.already_authenticated,
+  };
 }
 
 function handleMcpAuthStatus({
@@ -81,7 +88,8 @@ function handleMcpAuthStatus({
     throw new NotFoundError(`No active OAuth flow for server "${serverId}"`);
   }
 
-  if (state.status === "pending") return { status: "pending", auth_url: state.authUrl };
+  if (state.status === "pending")
+    return { status: "pending", auth_url: state.authUrl };
   if (state.status === "complete") return { status: "complete" };
   return { status: "error", error: state.error };
 }
@@ -99,9 +107,9 @@ function triggerReload(context: string): void {
   });
 }
 
-function handleMcpReload(_args: {
-  body?: Record<string, unknown>;
-}): { ok: true } {
+function handleMcpReload(_args: { body?: Record<string, unknown> }): {
+  ok: true;
+} {
   triggerReload("internal_mcp_reload");
   return { ok: true };
 }
@@ -213,15 +221,7 @@ async function handleMcpAdd({
 }: {
   body?: Record<string, unknown>;
 }): Promise<{ added: true }> {
-  const {
-    name,
-    transportType,
-    url,
-    command,
-    args,
-    risk,
-    disabled,
-  } = body as {
+  const { name, transportType, url, command, args, risk, disabled } = body as {
     name: string;
     transportType: string;
     url?: string;

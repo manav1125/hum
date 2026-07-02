@@ -262,12 +262,16 @@ export function MemoriesPage() {
             padding: "18px 24px 8px",
             display: "flex",
             alignItems: "center",
+            // Wrap on narrow viewports so the chip + "Teach Cue" pill drop to
+            // the next line instead of clipping off the 390px edge.
+            flexWrap: "wrap",
             gap: 12,
           }}
         >
           <div
             style={{
-              flex: 1,
+              flex: "1 1 180px",
+              minWidth: 0,
               border: "1px solid var(--border-base)",
               borderRadius: 10,
               padding: "8px 12px",
@@ -312,6 +316,7 @@ export function MemoriesPage() {
               borderRadius: 8,
               padding: "7px 12px",
               fontFamily: MONO,
+              whiteSpace: "nowrap",
               cursor: "pointer",
             }}
           >
@@ -330,6 +335,7 @@ export function MemoriesPage() {
               display: "inline-flex",
               alignItems: "center",
               gap: 7,
+              whiteSpace: "nowrap",
               cursor: "pointer",
             }}
           >

@@ -32,25 +32,26 @@ import {
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ContactsByIdGetResponse } from "@/generated/daemon/types.gen";
 import { postChatMessage } from "@/domains/chat/api/messages";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "#DBE4FB",
-  violet: "#7F77DD",
-  violetS: "#534AB7",
-  surface: "#FFFFFF",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#8D99A5",
-  green: "#277E41",
-  amber: "#F1B21E",
+  ink: "var(--mv1-t1)",
+  blue: "var(--mv1-blue)",
+  blueS: "var(--mv1-blue-strong)",
+  blueW: "var(--mv1-blue-wash)",
+  violet: "var(--mv1-violet)",
+  violetS: "var(--mv1-violet-strong)",
+  surface: "var(--mv1-card)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  green: "var(--mv1-green)",
+  amber: "var(--mv1-amber)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -106,6 +107,7 @@ export function PeoplePage() {
     );
   }, [contactsQuery.data]);
 
+  const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected =
     contacts.find((c) => c.id === selectedId) ?? contacts[0] ?? null;
@@ -152,8 +154,8 @@ export function PeoplePage() {
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              background: "#FFFFFF",
-              border: "1px solid #D7DDE7",
+              background: "var(--mv1-card)",
+              border: `1px solid ${C.line2}`,
               borderRadius: 9,
               padding: "7px 13px",
               fontSize: 12.5,
@@ -186,8 +188,10 @@ export function PeoplePage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(0,260px) minmax(0,1fr)",
-              gap: 22,
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "minmax(0,260px) minmax(0,1fr)",
+              gap: isMobile ? 16 : 22,
               alignItems: "start",
             }}
           >
@@ -443,7 +447,7 @@ function Dossier({
         <div
           style={{
             fontSize: 12,
-            color: "#B42318",
+            color: "var(--mv1-danger)",
             marginBottom: 10,
           }}
         >
@@ -549,7 +553,10 @@ function Dossier({
                       fontSize: 10.5,
                       padding: "1px 6px",
                       borderRadius: 5,
-                      background: ch.status === "active" ? "#E2F0E7" : C.sunken,
+                      background:
+                        ch.status === "active"
+                          ? "var(--mv1-green-wash)"
+                          : C.sunken,
                       color: ch.status === "active" ? C.green : C.t3,
                     }}
                   >

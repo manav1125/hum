@@ -53,16 +53,17 @@ import { Button } from "@vellumai/design-library/components/button";
 
 import type { WorkspaceViewMode } from "@/domains/workspace/components/workspace-browser";
 
-// Literal design tokens from surfaces/Workspace.dc.html.
+// Design tokens from surfaces/Workspace.dc.html, mapped by role onto the
+// theme-aware `--mv1-*` palette so the viewer reads correctly in dark mode.
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  blueWash: "#EAF0FE",
-  line: "#E5E9F0",
-  surfaceTint: "#FCFCFD",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#8D99A5",
+  ink: "var(--mv1-chip)",
+  blue: "var(--mv1-blue)",
+  blueWash: "var(--mv1-blue-wash)",
+  line: "var(--mv1-line)",
+  surfaceTint: "var(--mv1-canvas)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -157,7 +158,7 @@ function ViewModeToggle({
   return (
     <div
       className="inline-flex rounded-md p-0.5"
-      style={{ backgroundColor: "#EEF1F6" }}
+      style={{ backgroundColor: "var(--mv1-sunken)" }}
     >
       {(["preview", "source"] as const).map((mode) => {
         const active = viewMode === mode;
@@ -168,7 +169,7 @@ function ViewModeToggle({
             onClick={() => onChange(mode)}
             className="h-auto rounded border-0 px-2.5 py-1 text-body-small-default hover:bg-transparent"
             style={{
-              backgroundColor: active ? "#fff" : "transparent",
+              backgroundColor: active ? "var(--mv1-card)" : "transparent",
               color: active ? C.t1 : C.t3,
               boxShadow: active ? "0 1px 2px rgba(26,34,48,.12)" : undefined,
             }}
@@ -502,7 +503,7 @@ function FilePreviewActions({
   return (
     <div
       className="flex items-center gap-2 border-t px-9 py-3"
-      style={{ borderColor: "#E5E9F0", background: "#FCFCFD" }}
+      style={{ borderColor: "var(--mv1-line)", background: "var(--mv1-canvas)" }}
     >
       <button
         type="button"
@@ -511,7 +512,7 @@ function FilePreviewActions({
         style={{
           fontSize: 12.5,
           fontWeight: 500,
-          background: "#3D6EE8",
+          background: "var(--mv1-blue)",
           color: "#fff",
           border: "none",
           borderRadius: 8,
@@ -528,9 +529,9 @@ function FilePreviewActions({
         className="inline-flex items-center gap-2"
         style={{
           fontSize: 12.5,
-          color: "#1A2230",
-          background: "#fff",
-          border: "1px solid #D7DDE7",
+          color: "var(--mv1-t1)",
+          background: "var(--mv1-card)",
+          border: "1px solid var(--mv1-line-strong)",
           borderRadius: 8,
           padding: "8px 14px",
           cursor: "pointer",
@@ -1069,7 +1070,7 @@ export function WorkspaceFileViewer({
       >
         <div
           className="w-full max-w-sm rounded-lg border p-6 text-center"
-          style={{ borderColor: C.line, backgroundColor: "#fff" }}
+          style={{ borderColor: C.line, backgroundColor: "var(--mv1-card)" }}
         >
           <FileIcon className="mx-auto h-10 w-10" style={{ color: C.t3 }} />
           <p className="mt-3" style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>

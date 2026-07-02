@@ -20,7 +20,7 @@ import { watchersListPost } from "@/generated/daemon/sdk.gen";
 
 import { ActivitySection } from "../activity-section";
 import { ActivityRow, RowButton } from "../activity-row";
-import { asRecord, bool, num, relativeTime, str } from "../theme";
+import { asRecord, bool, C, num, relativeTime, str } from "../theme";
 
 interface WatcherView {
   id: string | null;
@@ -113,7 +113,7 @@ export function WatchingSection({ assistantId }: { assistantId: string }) {
     <ActivitySection
       icon={Eye}
       title="Watching"
-      accent="#8C7225"
+      accent={C.amber}
       count={rows.length}
       loading={query.isLoading}
       loadingLabel="Loading watchers…"
@@ -122,7 +122,7 @@ export function WatchingSection({ assistantId }: { assistantId: string }) {
       emptyLabel="No watchers yet — connect Gmail, Calendar, GitHub or Linear and Cue will watch them for you."
     >
       {opaque ? (
-        <div style={{ padding: "14px 14px", fontSize: 13, color: "#5A6672" }}>
+        <div style={{ padding: "14px 14px", fontSize: 13, color: C.t2 }}>
           {rawCount} watcher{rawCount === 1 ? "" : "s"} active — Cue is watching
           your connected sources in the background.
         </div>
@@ -132,7 +132,7 @@ export function WatchingSection({ assistantId }: { assistantId: string }) {
           return (
             <ActivityRow
               key={w.id ?? `${w.label}-${i}`}
-              dotColor={w.enabled ? "#C98A1B" : "#8D99A5"}
+              dotColor={w.enabled ? C.amber : C.t3}
               title={w.label}
               subtitle={w.watches}
               provenance={w.source}

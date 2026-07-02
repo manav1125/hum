@@ -10,9 +10,9 @@ describe("LlmRequestLogsConfigSchema", () => {
   });
 
   test("parses an explicit local readSource", () => {
-    expect(
-      LlmRequestLogsConfigSchema.parse({ readSource: "local" }),
-    ).toEqual({ readSource: "local" });
+    expect(LlmRequestLogsConfigSchema.parse({ readSource: "local" })).toEqual({
+      readSource: "local",
+    });
   });
 
   test("parses an explicit clickhouse readSource with defaulted connection fields", () => {

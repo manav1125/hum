@@ -774,9 +774,8 @@ describe("executeBrowserNavigate", () => {
     // follow-on Page.navigate would still route to the dead tab
     // unless we reset the session on the cdp instance too (round-3
     // P1 fix added cdp.setCdpSessionId(undefined)).
-    const { setPinnedTab, getPinnedTab } = await import(
-      "../tools/browser/pinned-tabs.js"
-    );
+    const { setPinnedTab, getPinnedTab } =
+      await import("../tools/browser/pinned-tabs.js");
     setPinnedTab(ctx.conversationId, "stale-pinned-tab-id");
     expect(getPinnedTab(ctx.conversationId)).toBe("stale-pinned-tab-id");
 

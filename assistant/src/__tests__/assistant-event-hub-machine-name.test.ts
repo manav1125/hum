@@ -72,9 +72,7 @@ describe("AssistantEventHub — machineName", () => {
     );
 
     const clients = hub.listClients();
-    const entry = clients.find(
-      (c) => c.clientId === "client-without-name-001",
-    );
+    const entry = clients.find((c) => c.clientId === "client-without-name-001");
     expect(entry).toBeDefined();
     expect(entry?.machineName).toBeUndefined();
 

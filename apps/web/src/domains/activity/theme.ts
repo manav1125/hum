@@ -2,29 +2,31 @@
  * Shared inline palette + type tokens for the Activity surface.
  *
  * Mirrors the v0.3 design-matched surfaces (next-moves-page / impact-page /
- * dashboard): an inline-hex `C` palette so the surface renders identically
- * regardless of theme-variable wiring, plus the editorial serif + DM Mono
- * label fonts.
+ * dashboard). The `C` palette points at the theme-aware `--mv1-*` CSS vars
+ * (src/index.css): in light themes they resolve to the exact v0.3 hexes the
+ * surface was designed with; under dark/velvet they swap to the dark-book
+ * equivalents so these pages follow the active theme instead of pasting a
+ * light canvas onto dark chrome. Editorial serif + DM Mono label fonts.
  */
 
 export const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "#DBE4FB",
-  violet: "#7F77DD",
-  violetS: "#534AB7",
-  bg: "#F4F6F9",
-  surface: "#FFFFFF",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#8D99A5",
-  green: "#277E41",
-  amber: "#C98A1B",
-  danger: "#DA491A",
+  ink: "var(--mv1-t1)",
+  blue: "var(--mv1-blue)",
+  blueS: "var(--mv1-blue-strong)",
+  blueW: "var(--mv1-blue-wash)",
+  violet: "var(--mv1-violet)",
+  violetS: "var(--mv1-violet-strong)",
+  bg: "var(--mv1-canvas)",
+  surface: "var(--mv1-card)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  green: "var(--mv1-green)",
+  amber: "var(--mv1-amber)",
+  danger: "var(--mv1-danger)",
 } as const;
 
 export const mono = "'DM Mono', ui-monospace, monospace";

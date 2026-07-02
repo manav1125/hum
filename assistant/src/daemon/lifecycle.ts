@@ -326,6 +326,26 @@ export async function runDaemon(): Promise<void> {
     const signingKey = resolveSigningKey();
     initAuthSigningKey(signingKey);
 
+    // Construct (but do not start) the heartbeat service BEFORE the HTTP
+    // server begins accepting requests. Construction registers the
+    // `HeartbeatService.getInstance()` singleton that the heartbeat routes
+    // resolve — wiring it up only after providers/tools init left a boot
+    // window in which `POST heartbeat/run-now` failed with "Heartbeat
+    // service not available". The constructor only stores its deps; timers
+    // and startup recovery run at `heartbeat.start()` further down, after
+    // the DB and schedule runtime are ready. A run-now that lands in
+    // between goes through `runOnce`'s own guards/try-catch instead of
+    // failing to resolve the service at all.
+    const heartbeat = new HeartbeatService({
+      alerter: (alert) => broadcastMessage(alert),
+      onConversationCreated: (info) =>
+        broadcastMessage({
+          type: "heartbeat_conversation_created",
+          conversationId: info.conversationId,
+          title: info.title,
+        }),
+    });
+
     // Start the runtime HTTP server early so /healthz answers ASAP.
     let runtimeHttp: RuntimeHttpServer | null = null;
     const httpPort = getRuntimeHttpPort();
@@ -472,10 +492,7 @@ export async function runDaemon(): Promise<void> {
           );
         }
       } catch (err) {
-        log.warn(
-          { err },
-          "Guardian reconcile failed — continuing startup",
-        );
+        log.warn({ err }, "Guardian reconcile failed — continuing startup");
       }
 
       // One-time backfill of `relationship-state.json` for existing or
@@ -1322,16 +1339,10 @@ export async function runDaemon(): Promise<void> {
     const workspaceHeartbeat = new WorkspaceHeartbeatService();
     workspaceHeartbeat.start();
 
+    // Constructed early (before the HTTP server started) so routes can
+    // resolve the singleton; started here once the DB and background
+    // runtimes are ready.
     const heartbeatConfig = config.heartbeat;
-    const heartbeat = new HeartbeatService({
-      alerter: (alert) => broadcastMessage(alert),
-      onConversationCreated: (info) =>
-        broadcastMessage({
-          type: "heartbeat_conversation_created",
-          conversationId: info.conversationId,
-          title: info.title,
-        }),
-    });
     heartbeat.start();
     registerBackgroundWakeRuntime({ scheduler, heartbeat });
     refreshBackgroundWakeIntent("daemon-startup");

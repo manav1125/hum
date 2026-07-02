@@ -271,6 +271,27 @@ export function countRecentConsecutiveRuns(maxToCheck: number): number {
 }
 
 /**
+ * `finishedAt` of the most recently finished `ok` heartbeat run, or `null`
+ * when no run has ever completed. Durable counterpart to the service's
+ * in-memory `_lastRunAt`, which resets to null on every daemon restart —
+ * the `heartbeat/config` route falls back to this so `lastRunAt` survives
+ * restarts.
+ */
+export function getLatestCompletedHeartbeatRunFinishedAt(): number | null {
+  const db = getDb();
+  const row = db
+    .select({ finishedAt: heartbeatRuns.finishedAt })
+    .from(heartbeatRuns)
+    .where(
+      sql`${heartbeatRuns.status} = 'ok' AND ${heartbeatRuns.finishedAt} IS NOT NULL`,
+    )
+    .orderBy(desc(heartbeatRuns.finishedAt))
+    .limit(1)
+    .get();
+  return row?.finishedAt ?? null;
+}
+
+/**
  * List heartbeat runs ordered by `scheduledFor` descending.
  * When `before` is set, only runs with `scheduledFor` strictly older than it
  * are returned (cursor for paginating into history).

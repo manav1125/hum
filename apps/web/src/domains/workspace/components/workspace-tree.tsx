@@ -67,14 +67,14 @@ import { PanelItem } from "@vellumai/design-library/components/panel-item";
 
 export type { WorkspaceSortMode };
 
-// Literal design tokens from surfaces/Workspace.dc.html — this surface is
-// hex-matched like connectors-page / memories-page rather than themed.
+// Design tokens from surfaces/Workspace.dc.html, mapped by role onto the
+// theme-aware `--mv1-*` palette so the tree reads correctly in dark mode.
 const C = {
-  selected: "#EAEEF5",
-  hover: "#F4F6F9",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#8D99A5",
+  selected: "var(--mv1-sunken)",
+  hover: "var(--mv1-canvas)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 

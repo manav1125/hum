@@ -35,7 +35,9 @@ mock.module("../runtime/assistant-event-hub.js", () => ({
       // pending-interactions tracker for every resolution. They are
       // orthogonal to the host-browser wire messages these tests assert
       // on, so swallow them here.
-      if ((event as { type?: string } | null)?.type === "interaction_resolved") {
+      if (
+        (event as { type?: string } | null)?.type === "interaction_resolved"
+      ) {
         return;
       }
       publishedEvents.push(event);

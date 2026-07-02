@@ -36,8 +36,12 @@ mock.module("../util/logger.js", () => ({
   pruneOldLogFiles: () => 0,
 }));
 
-const { loadSkillCatalog, loadSkillBySelector, resolveSkillSelector } =
-  await import("../config/skills.js");
+const {
+  loadSkillCatalog,
+  loadSkillBySelector,
+  resolveSkillSelector,
+  isToolBackedBundledSkill,
+} = await import("../config/skills.js");
 
 /** Return only user-installed skills (filters out bundled skills that ship with the source tree). */
 function loadUserSkillCatalog() {
@@ -89,7 +93,10 @@ describe("skills catalog loading", () => {
     expect(catalog.map((skill) => skill.id)).toEqual(["first", "second"]);
   });
 
-  test("managed skill overrides bundled skill with the same id", () => {
+  test("managed skill does NOT override a tool-backed bundled skill with the same id", () => {
+    // `skill-management` ships bundled with a valid TOOLS.json, so a stale
+    // managed copy must lose: shadowing it would hide the first-class tools
+    // and regress the model to CLI flailing (the prod `tasks` incident).
     writeSkill(
       "skill-management",
       "Custom Skill Management",
@@ -98,9 +105,91 @@ describe("skills catalog loading", () => {
 
     const skill = loadSkillCatalog().find((s) => s.id === "skill-management");
     expect(skill).toBeDefined();
-    expect(skill!.source).toBe("managed");
-    expect(skill!.name).toBe("Custom Skill Management");
-    expect(skill!.bundled).toBeUndefined();
+    expect(skill!.source).toBe("bundled");
+    expect(skill!.bundled).toBe(true);
+    expect(skill!.name).not.toBe("Custom Skill Management");
+    expect(skill!.toolManifest?.valid).toBe(true);
+    expect(skill!.toolManifest!.toolCount).toBeGreaterThan(0);
+  });
+
+  test("managed `tasks` skill does NOT shadow the bundled tool-backed tasks skill", () => {
+    // Regression for the cloud-workspace incident: a stale managed `tasks`
+    // skill (CLI-instruction era) overrode the bundled tool-backed one and
+    // the agent flailed with `assistant task queue add …` bash commands.
+    writeSkill("tasks", "Stale Tasks", "Two-layer task system via CLI");
+
+    const skill = loadSkillCatalog().find((s) => s.id === "tasks");
+    expect(skill).toBeDefined();
+    expect(skill!.source).toBe("bundled");
+    expect(skill!.toolManifest?.toolNames).toContain("task_list_add");
+    expect(skill!.toolManifest?.toolNames).toContain("task_queue_run");
+
+    // skill_load must resolve to the bundled definition, not the stale copy.
+    const loaded = loadSkillBySelector("tasks");
+    expect(loaded.skill).toBeDefined();
+    expect(loaded.skill!.source).toBe("bundled");
+    expect(loaded.skill!.body).toContain("task_list_add");
+  });
+
+  test("isToolBackedBundledSkill only protects bundled skills with a valid, non-empty tool manifest", () => {
+    const base = {
+      id: "x",
+      name: "X",
+      displayName: "X",
+      description: "d",
+      directoryPath: "/tmp/x",
+      skillFilePath: "/tmp/x/SKILL.md",
+    };
+    const manifest = (valid: boolean, toolCount: number) => ({
+      present: true,
+      valid,
+      toolCount,
+      toolNames: toolCount > 0 ? ["t1"] : [],
+    });
+
+    // Tool-backed bundled skill → protected.
+    expect(
+      isToolBackedBundledSkill({
+        ...base,
+        source: "bundled" as const,
+        bundled: true,
+        toolManifest: manifest(true, 2),
+      }),
+    ).toBe(true);
+    // Prompt-only bundled skill (no manifest) → legitimately overridable.
+    expect(
+      isToolBackedBundledSkill({
+        ...base,
+        source: "bundled" as const,
+        bundled: true,
+      }),
+    ).toBe(false);
+    // Invalid manifest → not protected (fails open to the old behavior).
+    expect(
+      isToolBackedBundledSkill({
+        ...base,
+        source: "bundled" as const,
+        bundled: true,
+        toolManifest: manifest(false, 0),
+      }),
+    ).toBe(false);
+    // Valid manifest but zero tools → not protected.
+    expect(
+      isToolBackedBundledSkill({
+        ...base,
+        source: "bundled" as const,
+        bundled: true,
+        toolManifest: manifest(true, 0),
+      }),
+    ).toBe(false);
+    // Non-bundled sources are never protected, manifest or not.
+    expect(
+      isToolBackedBundledSkill({
+        ...base,
+        source: "workspace" as const,
+        toolManifest: manifest(true, 3),
+      }),
+    ).toBe(false);
   });
 
   test("discovers symlinked skill directories that point inside $VELLUM_WORKSPACE_DIR/skills", () => {
@@ -251,6 +340,18 @@ describe("workspace skills", () => {
     expect(skill).toBeDefined();
     expect(skill!.source).toBe("workspace");
     expect(skill!.name).toBe("Workspace Shared");
+  });
+
+  test("workspace skill does NOT override a tool-backed bundled skill with the same id", () => {
+    writeWorkspaceSkill("tasks", "Stale Workspace Tasks", "CLI-era tasks");
+
+    const skill = loadSkillCatalog(workspaceSkillsDir).find(
+      (s) => s.id === "tasks",
+    );
+    expect(skill).toBeDefined();
+    expect(skill!.source).toBe("bundled");
+    expect(skill!.name).not.toBe("Stale Workspace Tasks");
+    expect(skill!.toolManifest?.toolNames).toContain("task_list_add");
   });
 });
 

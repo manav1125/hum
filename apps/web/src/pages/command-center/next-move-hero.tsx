@@ -85,8 +85,16 @@ function HeroButton({
         transition: "transform .12s ease, box-shadow .12s ease, background .12s ease",
         border: primary
           ? "none"
-          : `1px solid ${danger ? "#F3C5BA" : C.line2}`,
-        background: primary ? C.blue : danger ? "#FDE7E2" : C.surface,
+          : `1px solid ${
+              danger
+                ? `color-mix(in srgb, ${C.danger} 30%, transparent)`
+                : C.line2
+            }`,
+        background: primary
+          ? C.blue
+          : danger
+            ? `color-mix(in srgb, ${C.danger} 12%, transparent)`
+            : C.surface,
         color: primary ? "#FFFFFF" : danger ? C.danger : C.t1,
         boxShadow: primary ? "0 1px 2px rgba(61,110,232,.28)" : "none",
       }}
@@ -133,8 +141,8 @@ function CaughtUpCard() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#E4F2E8",
-          border: "1px solid #BFE0CA",
+          background: `color-mix(in srgb, ${C.green} 14%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${C.green} 32%, transparent)`,
           flexShrink: 0,
         }}
       >
@@ -243,7 +251,7 @@ export function NextMoveHero({ assistantId }: { assistantId: string }) {
         position: "relative",
         border: `2px solid ${C.blue}`,
         borderRadius: 16,
-        background: `linear-gradient(180deg, #FBFCFF 0%, ${C.surface} 60%)`,
+        background: `linear-gradient(180deg, color-mix(in srgb, ${C.blue} 4%, ${C.surface}) 0%, ${C.surface} 60%)`,
         padding: "20px 22px 22px",
         marginBottom: 30,
         boxShadow: "0 6px 24px rgba(61,110,232,.10)",

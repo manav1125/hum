@@ -29,6 +29,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 
+import { clearAvatarFileAbsenceCache } from "@/assistant/avatar-api";
 import { useBusSubscription } from "@/hooks/use-bus-subscription";
 import { getClientId } from "@/lib/telemetry/client-identity";
 import {
@@ -69,6 +70,10 @@ export function useAssistantResourceSync(
         for (const tag of event.tags) {
           switch (tag) {
             case SYNC_TAGS.assistantAvatar:
+              // The avatar changed server-side — drop any session-cached
+              // "file is absent" 404 results so the refetch re-probes the
+              // legacy sidecar files instead of short-circuiting to null.
+              clearAvatarFileAbsenceCache(assistantId);
               void queryClient.invalidateQueries({
                 queryKey: avatarQueryKey(assistantId),
               });
@@ -141,6 +146,8 @@ export function useAssistantResourceSync(
         return;
 
       case "avatar_updated":
+        // See SYNC_TAGS.assistantAvatar above — same absence-cache reset.
+        clearAvatarFileAbsenceCache(assistantId);
         void queryClient.invalidateQueries({
           queryKey: avatarQueryKey(assistantId),
         });
@@ -152,7 +159,10 @@ export function useAssistantResourceSync(
     if (!assistantId || !isAssistantActive) return;
     if (cause === "fresh") return;
     // Reconnect — invalidate all assistant-level resource caches so
-    // stale data from missed `sync_changed` events gets refreshed.
+    // stale data from missed `sync_changed` events gets refreshed. The
+    // avatar may have changed during the gap, so also reset the
+    // session-cached 404 ("file absent") results before its refetch.
+    clearAvatarFileAbsenceCache(assistantId);
     void queryClient.invalidateQueries({
       queryKey: avatarQueryKey(assistantId),
     });

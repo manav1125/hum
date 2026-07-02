@@ -21,7 +21,7 @@ import { sequencesListPost } from "@/generated/daemon/sdk.gen";
 
 import { ActivitySection } from "../activity-section";
 import { ActivityRow, RowButton } from "../activity-row";
-import { asRecord, num, str } from "../theme";
+import { asRecord, C, num, str } from "../theme";
 
 interface SequenceView {
   id: string;
@@ -106,7 +106,7 @@ export function SequencesSection({ assistantId }: { assistantId: string }) {
     <ActivitySection
       icon={Workflow}
       title="Sequences"
-      accent="#534AB7"
+      accent={C.violetS}
       count={rows.length}
       loading={query.isLoading}
       loadingLabel="Loading sequences…"
@@ -115,7 +115,7 @@ export function SequencesSection({ assistantId }: { assistantId: string }) {
       emptyLabel="No active sequences."
     >
       {opaque ? (
-        <div style={{ padding: "14px 14px", fontSize: 13, color: "#5A6672" }}>
+        <div style={{ padding: "14px 14px", fontSize: 13, color: C.t2 }}>
           {rawCount} active sequence{rawCount === 1 ? "" : "s"} running.
         </div>
       ) : (
@@ -124,7 +124,7 @@ export function SequencesSection({ assistantId }: { assistantId: string }) {
           return (
             <ActivityRow
               key={s.id}
-              dotColor={paused ? "#8D99A5" : "#7F77DD"}
+              dotColor={paused ? C.t3 : C.violet}
               title={s.label}
               subtitle={s.detail}
               provenance="drip sequence"

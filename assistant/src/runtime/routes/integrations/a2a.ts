@@ -48,8 +48,12 @@ function assertA2AFlag(): void {
 // ---------------------------------------------------------------------------
 
 function handleGetA2AConfig() {
-  assertA2AFlag();
-  return getA2AConfig();
+  // Reading the config is safe even when the A2A feature flag is off —
+  // report availability alongside the stored state instead of 400ing, so
+  // clients can render an honest "not available on this deployment" state
+  // rather than an error. The flag still hard-gates every mutation.
+  const available = isA2AEnabled(getConfig());
+  return { ...getA2AConfig(), available };
 }
 
 function handleSetA2AConfig() {

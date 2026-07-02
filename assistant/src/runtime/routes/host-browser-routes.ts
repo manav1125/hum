@@ -399,10 +399,7 @@ export const ROUTES: RouteDefinition[] = [
       "Marks the target as invalidated in the runtime-side browser session registry.",
     tags: ["host"],
     requestBody: z.object({
-      targetId: z
-        .string()
-        .optional()
-        .describe("CDP target that was detached"),
+      targetId: z.string().optional().describe("CDP target that was detached"),
       reason: z.string().optional().describe("Detach reason"),
       clientId: z
         .string()

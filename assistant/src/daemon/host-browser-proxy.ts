@@ -102,9 +102,7 @@ function hasClientForActor(
   sourceActorPrincipalId?: string,
 ): boolean {
   if (sourceActorPrincipalId == null) return clients.length > 0;
-  return clients.some(
-    (c) => c.actorPrincipalId === sourceActorPrincipalId,
-  );
+  return clients.some((c) => c.actorPrincipalId === sourceActorPrincipalId);
 }
 
 function resolveTargetClient(
@@ -121,14 +119,15 @@ function resolveTargetClient(
   const extension = all.filter((c) => c.interfaceId === "chrome-extension");
   const candidates = isExtensionOnlyMethod(cdpMethod)
     ? extension
-    : [...extension, ...all.filter((c) => c.interfaceId !== "chrome-extension")];
+    : [
+        ...extension,
+        ...all.filter((c) => c.interfaceId !== "chrome-extension"),
+      ];
 
   if (sourceActorPrincipalId == null) {
     return candidates[0];
   }
-  return candidates.find(
-    (c) => c.actorPrincipalId === sourceActorPrincipalId,
-  );
+  return candidates.find((c) => c.actorPrincipalId === sourceActorPrincipalId);
 }
 
 export class HostBrowserProxy {

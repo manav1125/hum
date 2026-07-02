@@ -221,9 +221,7 @@ describe("web_search activity metadata", () => {
     expect(meta.results[0].score).toBe(0.87);
     // PR 5 backfills a synthesized favicon URL via Google s2 when the
     // provider doesn't supply one, so this result now has a faviconUrl too.
-    expect(meta.results[1].faviconUrl).toContain(
-      "google.com/s2/favicons",
-    );
+    expect(meta.results[1].faviconUrl).toContain("google.com/s2/favicons");
     expect(meta.results[1].score).toBe(0.42);
   });
 
@@ -293,9 +291,7 @@ describe("web_search activity metadata", () => {
     const result = await execute({ query: "whitespace title" });
     const meta = result.activityMetadata?.webSearch;
     expect(meta).toBeDefined();
-    expect(meta.results[0].title).toBe(
-      "https://example.net/whitespace-title",
-    );
+    expect(meta.results[0].title).toBe("https://example.net/whitespace-title");
   });
 
   test("Tavily populates errorMessage on auth failure", async () => {

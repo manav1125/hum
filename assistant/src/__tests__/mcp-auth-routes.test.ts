@@ -70,7 +70,7 @@ describe("mcp-auth-routes", () => {
     mockOrchestrateConnect.mockClear();
     mockGetMcpAuthState.mockClear();
     mockGetMcpAuthState.mockImplementation(() => null);
-    mockReloadMcpServers.mockClear();  // ← add this line
+    mockReloadMcpServers.mockClear(); // ← add this line
   });
 
   describe("POST internal/mcp/auth/start", () => {

@@ -743,6 +743,27 @@ function discoverPluginResidentSkills(): SkillSummary[] {
 
 // ─── Catalog loading ─────────────────────────────────────────────────────────
 
+/**
+ * Whether a catalog entry is a bundled skill backed by first-class tools —
+ * a valid `TOOLS.json` declaring at least one tool.
+ *
+ * Tool-backed bundled skills must never be shadowed by a same-id skill from
+ * a lower-trust source (managed/workspace/plugin): the override replaces the
+ * SKILL.md that documents the first-class tools, so the model regresses to
+ * flailing with raw CLI/bash commands while the tools sit unused. (Prod
+ * incident: a stale workspace `tasks` skill shadowed the bundled tool-backed
+ * one and the agent invented `assistant task queue add --required-tools …`
+ * bash calls instead of calling `task_list_add`.) Prompt-only bundled skills
+ * remain freely overridable — that is a legitimate customization path.
+ */
+export function isToolBackedBundledSkill(skill: SkillSummary): boolean {
+  return (
+    skill.source === "bundled" &&
+    skill.toolManifest?.valid === true &&
+    skill.toolManifest.toolCount > 0
+  );
+}
+
 function skillSummaryFromDefinition(
   skill: SkillDefinition,
   source: SkillSource,
@@ -861,6 +882,21 @@ export function loadSkillCatalog(
       const existingIndex = catalog.findIndex((s) => s.id === skill.id);
       if (
         existingIndex !== -1 &&
+        isToolBackedBundledSkill(catalog[existingIndex])
+      ) {
+        log.warn(
+          {
+            id: skill.id,
+            pluginName: skill.owner?.id,
+            refusedDirectory: skill.directoryPath,
+            bundledTools: catalog[existingIndex].toolManifest?.toolNames,
+          },
+          "REFUSING plugin skill override of tool-backed bundled skill — bundled skill wins. Remove or rename the colliding plugin skill.",
+        );
+        continue;
+      }
+      if (
+        existingIndex !== -1 &&
         (catalog[existingIndex].source === "bundled" ||
           catalog[existingIndex].source === "extra")
       ) {
@@ -895,6 +931,20 @@ export function loadSkillCatalog(
       // (already at or above managed precedence) is treated as a true
       // duplicate.
       const existingIndex = catalog.findIndex((s) => s.id === skill.id);
+      if (
+        existingIndex !== -1 &&
+        isToolBackedBundledSkill(catalog[existingIndex])
+      ) {
+        log.warn(
+          {
+            id: skill.id,
+            refusedDirectory: directory,
+            bundledTools: catalog[existingIndex].toolManifest?.toolNames,
+          },
+          "REFUSING managed skill override of tool-backed bundled skill — bundled skill wins. Delete the stale managed copy (e.g. `DELETE /v1/skills/:id`) to silence this warning.",
+        );
+        continue;
+      }
       if (
         existingIndex !== -1 &&
         (catalog[existingIndex].bundled ||
@@ -958,8 +1008,23 @@ export function loadSkillCatalog(
         };
 
         if (seenIds.has(id)) {
-          // Workspace skills override any existing skill
+          // Workspace skills override any existing skill — except a bundled
+          // skill backed by first-class tools, which must stay authoritative.
           const existingIndex = catalog.findIndex((s) => s.id === id);
+          if (
+            existingIndex !== -1 &&
+            isToolBackedBundledSkill(catalog[existingIndex])
+          ) {
+            log.warn(
+              {
+                id,
+                refusedDirectory: directory,
+                bundledTools: catalog[existingIndex].toolManifest?.toolNames,
+              },
+              "REFUSING workspace skill override of tool-backed bundled skill — bundled skill wins. Remove or rename the colliding workspace skill.",
+            );
+            continue;
+          }
           if (existingIndex !== -1) {
             log.info(
               { id, directory },

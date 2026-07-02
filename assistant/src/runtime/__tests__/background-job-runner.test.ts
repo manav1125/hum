@@ -35,12 +35,18 @@ const addMessageCalls: Array<{
   content: string;
 }> = [];
 
+const deleteConversationCalls: string[] = [];
+
 mock.module("../../memory/conversation-crud.js", () => ({
   addMessage: async (conversationId: string, role: string, content: string) => {
     addMessageCalls.push({ conversationId, role, content });
     return { id: `msg-${addMessageCalls.length}` };
   },
   reserveMessage: mock(async () => ({ id: "msg-reserve" })),
+  deleteConversation: (conversationId: string) => {
+    deleteConversationCalls.push(conversationId);
+    return { segmentIds: [], deletedSummaryIds: [] };
+  },
 }));
 
 let processMessageImpl: (
@@ -122,6 +128,7 @@ beforeEach(() => {
   processMessageCalls.length = 0;
   emitCalls.length = 0;
   addMessageCalls.length = 0;
+  deleteConversationCalls.length = 0;
   resetDeferredForTest();
   preFirstMessageGateOpen = true;
   processMessageImpl = async () => ({ messageId: "msg-1" });
@@ -354,6 +361,52 @@ describe("runBackgroundJob", () => {
       expect(result.skipReason).toBeUndefined();
       expect(bootstrapCalls).toBe(1);
       expect(processMessageCalls).toHaveLength(1);
+    });
+  });
+
+  describe("ephemeralConversation", () => {
+    test("success path deletes the bootstrapped conversation row", async () => {
+      const result = await runBackgroundJob(
+        baseOpts({ ephemeralConversation: true }),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(deleteConversationCalls).toEqual([STUB_CONVERSATION_ID]);
+    });
+
+    test("non-timeout failure also deletes the conversation row", async () => {
+      processMessageImpl = async () => {
+        throw new Error("boom");
+      };
+
+      const result = await runBackgroundJob(
+        baseOpts({ ephemeralConversation: true }),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.errorKind).toBe("exception");
+      expect(deleteConversationCalls).toEqual([STUB_CONVERSATION_ID]);
+    });
+
+    test("timeout KEEPS the conversation (raced turn may still be writing)", async () => {
+      processMessageImpl = () => new Promise(() => {});
+
+      const result = await runBackgroundJob(
+        baseOpts({ ephemeralConversation: true, timeoutMs: 30 }),
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.errorKind).toBe("timeout");
+      expect(deleteConversationCalls).toHaveLength(0);
+    });
+
+    test("without the flag, no delete happens on success or failure", async () => {
+      await runBackgroundJob(baseOpts());
+      processMessageImpl = async () => {
+        throw new Error("boom");
+      };
+      await runBackgroundJob(baseOpts());
+      expect(deleteConversationCalls).toHaveLength(0);
     });
   });
 

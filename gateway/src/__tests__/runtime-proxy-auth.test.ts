@@ -17,6 +17,8 @@ mock.module("../fetch.js", () => ({
 
 const { createRuntimeProxyHandler } =
   await import("../http/routes/runtime-proxy.js");
+const { UPSTREAM_RESPONSE_MARKER_HEADER } =
+  await import("../http/middleware/auth.js");
 
 const TEST_SIGNING_KEY = Buffer.from("test-signing-key-at-least-32-bytes-long");
 initSigningKey(TEST_SIGNING_KEY);
@@ -157,5 +159,103 @@ describe("runtime proxy auth enforcement", () => {
     const res = await handler(req);
 
     expect(res.status).toBe(200);
+  });
+});
+
+// The upstream-response marker distinguishes daemon-relayed responses from
+// gateway-authored ones so the "track-failures" wrapper doesn't count daemon
+// 401s (client already passed edge auth) against the auth rate limiter.
+describe("runtime proxy upstream-response marker", () => {
+  test("relayed upstream 401 carries the upstream marker", async () => {
+    // The daemon rejecting an already-gateway-authenticated request (e.g. a
+    // daemon-side policy gate) must be marked so it is NOT treated as a
+    // client auth failure.
+    fetchMock = mock(
+      async () =>
+        new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+    const handler = createRuntimeProxyHandler(makeConfig());
+    const req = new Request("http://localhost:7830/v1/tasks", {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const res = await handler(req);
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe("1");
+  });
+
+  test("relayed upstream success carries the upstream marker", async () => {
+    mockUpstream();
+    const handler = createRuntimeProxyHandler(makeConfig());
+    const req = new Request("http://localhost:7830/v1/health", {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe("1");
+  });
+
+  test("gateway-authored 401 (missing Authorization) has NO marker", async () => {
+    // A genuine client auth failure must keep feeding the rate limiter.
+    mockUpstream();
+    const handler = createRuntimeProxyHandler(makeConfig());
+    const req = new Request("http://localhost:7830/v1/health");
+    const res = await handler(req);
+
+    expect(res.status).toBe(401);
+    expect(res.headers.has(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe(false);
+  });
+
+  test("gateway-authored 401 (invalid edge token) has NO marker", async () => {
+    mockUpstream();
+    const handler = createRuntimeProxyHandler(makeConfig());
+    const req = new Request("http://localhost:7830/v1/health", {
+      headers: { authorization: "Bearer not-a-valid-token" },
+    });
+    const res = await handler(req);
+
+    expect(res.status).toBe(401);
+    expect(res.headers.has(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe(false);
+  });
+
+  test("gateway-authored 502 (upstream connection failure) has NO marker", async () => {
+    fetchMock = mock(async () => {
+      throw new Error("Connection refused");
+    });
+
+    const handler = createRuntimeProxyHandler(makeConfig());
+    const req = new Request("http://localhost:7830/v1/health", {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const res = await handler(req);
+
+    expect(res.status).toBe(502);
+    expect(res.headers.has(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe(false);
+  });
+
+  test("upstream echoing the marker cannot inject its own value", async () => {
+    // A malicious/echoing upstream sends the marker itself; the proxy's
+    // unconditional `set` normalizes it, and the wrapper strips it before
+    // the client sees it — here we only assert the proxy-level overwrite.
+    fetchMock = mock(
+      async () =>
+        new Response("ok", {
+          status: 200,
+          headers: { [UPSTREAM_RESPONSE_MARKER_HEADER]: "evil-value" },
+        }),
+    );
+
+    const handler = createRuntimeProxyHandler(makeConfig());
+    const req = new Request("http://localhost:7830/v1/health", {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    const res = await handler(req);
+
+    expect(res.headers.get(UPSTREAM_RESPONSE_MARKER_HEADER)).toBe("1");
   });
 });

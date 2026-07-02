@@ -26,7 +26,14 @@ fi
 
 echo "[cue-app] starting daemon (workspace=${VELLUM_WORKSPACE_DIR})" >&2
 # Daemon via its normal entrypoint (kata/apt prep, workspace hooks), backgrounded.
-( cd /app/assistant && exec /app/assistant/docker-entrypoint.sh ) &
+# DEBUG_STDOUT_LOGS=1: the daemon's pino logger writes to its rotating file
+# ONLY when stdout is not a TTY (src/util/logger.ts), so without this opt-in
+# none of the daemon's structured logs reach container stdout — Render's log
+# stream showed gateway + raw echo lines but no daemon output. Scoped to the
+# daemon subshell (the `keys set` seeding below discards its output anyway)
+# and overridable: set DEBUG_STDOUT_LOGS=0 in the service env to go back to
+# file-only logging.
+( cd /app/assistant && DEBUG_STDOUT_LOGS="${DEBUG_STDOUT_LOGS:-1}" exec /app/assistant/docker-entrypoint.sh ) &
 DAEMON_PID=$!
 
 # Wait for the daemon's IPC socket — the gateway connects to it on boot.

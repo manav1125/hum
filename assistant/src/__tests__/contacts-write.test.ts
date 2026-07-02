@@ -76,5 +76,4 @@ describe("guardian persona seeding and trust-cache invariants", () => {
     const personaPath = userFilePath(slug);
     expect(existsSync(personaPath)).toBe(false);
   });
-
 });

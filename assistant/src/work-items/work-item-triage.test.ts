@@ -1,9 +1,44 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-import type { WorkItem } from "./work-item-store.js";
+// The auto-run tests exercise `maybeAutoRunWorkItem` against a real DB; mock
+// the runner + policy modules so no background conversation actually spawns
+// and the policy is deterministic ("auto" for everything — the hard-deny
+// guard must hold even under the most permissive policy).
+let runnerCalls: string[] = [];
+mock.module("./work-item-runner.js", () => ({
+  runWorkItemInBackground: (id: string) => {
+    runnerCalls.push(id);
+    return { success: true };
+  },
+  broadcastWorkItemStatus: () => {},
+}));
+
+let mockPolicy: Record<string, string> = {};
+mock.module("../permissions/autonomy-policy-reader.js", () => ({
+  getAutonomyPolicy: async () => mockPolicy,
+}));
+
+// Force the heuristic scoring path — no provider in tests.
+mock.module("../providers/provider-send-message.js", () => ({
+  getConfiguredProvider: async () => null,
+}));
+
+import { getDb } from "../memory/db-connection.js";
+import { initializeDb } from "../memory/db-init.js";
+import { createTask } from "../tasks/task-store.js";
+import {
+  createWorkItem,
+  getWorkItem,
+  updateWorkItem,
+  type WorkItem,
+} from "./work-item-store.js";
 import {
   classifyWorkItemAutonomy,
+  hardDeniedAutoRunTools,
+  isHardDeniedForAutoRun,
+  maybeAutoRunWorkItem,
   parseTriageResponse,
+  triageWorkItem,
 } from "./work-item-triage.js";
 
 function makeItem(overrides: Partial<WorkItem> = {}): WorkItem {
@@ -64,6 +99,184 @@ describe("classifyWorkItemAutonomy", () => {
       requiredTools: JSON.stringify(["read", 42, null]),
     });
     expect(classifyWorkItemAutonomy(item)).toEqual(["research"]);
+  });
+});
+
+describe("isHardDeniedForAutoRun (auto-run safety floor)", () => {
+  test("denies desktop host control tools", () => {
+    expect(isHardDeniedForAutoRun("host_bash")).toBe(true);
+    expect(isHardDeniedForAutoRun("host_cu")).toBe(true);
+    expect(isHardDeniedForAutoRun("host_browser")).toBe(true);
+    expect(isHardDeniedForAutoRun("host_app_control")).toBe(true);
+    expect(isHardDeniedForAutoRun("host_file")).toBe(true);
+  });
+
+  test("denies browser and computer-use automation tools", () => {
+    expect(isHardDeniedForAutoRun("browser_navigate")).toBe(true);
+    expect(isHardDeniedForAutoRun("browser_click")).toBe(true);
+    expect(isHardDeniedForAutoRun("mcp__computer-use__left_click")).toBe(true);
+    expect(isHardDeniedForAutoRun("computer")).toBe(true);
+  });
+
+  test("denies purchase/order-like tools", () => {
+    expect(isHardDeniedForAutoRun("amazon_place_order")).toBe(true);
+    expect(isHardDeniedForAutoRun("create_checkout_session")).toBe(true);
+    expect(isHardDeniedForAutoRun("add_to_cart")).toBe(true);
+    expect(isHardDeniedForAutoRun("buy_now")).toBe(true);
+    expect(isHardDeniedForAutoRun("stripe_create_payment")).toBe(true);
+  });
+
+  test("denies messaging egress and money tools via the autonomy classifier", () => {
+    expect(isHardDeniedForAutoRun("send_email")).toBe(true);
+    expect(isHardDeniedForAutoRun("mcp__slack__post_message")).toBe(true);
+    expect(isHardDeniedForAutoRun("message_send")).toBe(true);
+    expect(isHardDeniedForAutoRun("bank_transfer")).toBe(true);
+  });
+
+  test("allows research/draft tools and does not false-positive on segments", () => {
+    expect(isHardDeniedForAutoRun("web_search")).toBe(false);
+    expect(isHardDeniedForAutoRun("read")).toBe(false);
+    expect(isHardDeniedForAutoRun("write")).toBe(false);
+    expect(isHardDeniedForAutoRun("bash")).toBe(false);
+    // Segment matching, not substring: "coordinate" must not match "order",
+    // "cart", etc.
+    expect(isHardDeniedForAutoRun("coordinate_notes")).toBe(false);
+    expect(isHardDeniedForAutoRun("list_email_templates")).toBe(false);
+  });
+
+  test("hardDeniedAutoRunTools surfaces only the offending tools", () => {
+    const item = makeItem({
+      requiredTools: JSON.stringify([
+        "web_search",
+        "browser_navigate",
+        "host_bash",
+      ]),
+    });
+    expect(hardDeniedAutoRunTools(item)).toEqual([
+      "browser_navigate",
+      "host_bash",
+    ]);
+    expect(hardDeniedAutoRunTools(makeItem())).toEqual([]);
+  });
+});
+
+/** Shared by the DB-backed describes; refreshed in each beforeEach. */
+let taskId = "";
+
+describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
+  initializeDb();
+
+  beforeEach(() => {
+    getDb().run("DELETE FROM work_items");
+    getDb().run("DELETE FROM tasks");
+    taskId = createTask({ title: "Test task", template: "do it" }).id;
+    runnerCalls = [];
+    // Most permissive policy possible — the hard-deny floor must still hold.
+    mockPolicy = {
+      research: "auto",
+      draft: "auto",
+      send: "auto",
+      money: "auto",
+      delete: "auto",
+      other: "auto",
+    };
+  });
+
+  test("hard-denies auto-run when the snapshot includes browser/host/purchase tools, even under an all-auto policy", async () => {
+    for (const tools of [
+      ["browser_navigate", "web_search"],
+      ["host_bash"],
+      ["amazon_place_order"],
+      ["send_email"],
+    ]) {
+      const item = createWorkItem({
+        taskId,
+        title: `Buy stroopwafels via ${tools[0]}`,
+        requiredTools: JSON.stringify(tools),
+      });
+      await maybeAutoRunWorkItem(item.id);
+      expect(runnerCalls).toEqual([]);
+      expect(getWorkItem(item.id)!.status).toBe("queued");
+    }
+  });
+
+  test("still auto-runs research-only items when policy allows", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "Summarize the news",
+      requiredTools: JSON.stringify(["web_search", "read"]),
+    });
+    await maybeAutoRunWorkItem(item.id);
+    expect(runnerCalls).toEqual([item.id]);
+  });
+
+  test("defers to the policy for non-hard-denied classes (ask blocks)", async () => {
+    mockPolicy = { ...mockPolicy, research: "ask" };
+    const item = createWorkItem({
+      taskId,
+      title: "Research something",
+      requiredTools: JSON.stringify(["web_search"]),
+    });
+    await maybeAutoRunWorkItem(item.id);
+    expect(runnerCalls).toEqual([]);
+  });
+});
+
+describe("triageWorkItem stamping (DB-backed)", () => {
+  initializeDb();
+
+  beforeEach(() => {
+    getDb().run("DELETE FROM work_items");
+    getDb().run("DELETE FROM tasks");
+    taskId = createTask({ title: "Test task", template: "do it" }).id;
+  });
+
+  test("stamps priorityTier and sortIndex on a queued item (heuristic path)", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "File the expense report today — deadline",
+    });
+    await triageWorkItem(item.id, {});
+    const fresh = getWorkItem(item.id)!;
+    expect(fresh.sortIndex).not.toBeNull();
+    expect(fresh.priorityTier).toBe(0); // "today"/"deadline" → high urgency
+  });
+
+  test("still blank-fills sortIndex when the item left 'queued' mid-triage, but leaves priority alone", async () => {
+    // Reproduces the prod race: the item was created, then a manual flow
+    // flipped it to running/awaiting_review within ~2s while the (slow) LLM
+    // triage was still in flight — the item ended up with neither dueAt nor
+    // sortIndex. Blank-fill fields must be stamped regardless of status.
+    const item = createWorkItem({
+      taskId,
+      title: "Send the report",
+      priorityTier: 2,
+    });
+    updateWorkItem(item.id, { status: "awaiting_review" });
+    await triageWorkItem(item.id, {});
+    const fresh = getWorkItem(item.id)!;
+    expect(fresh.sortIndex).not.toBeNull();
+    expect(fresh.priorityTier).toBe(2); // not re-scored once no longer queued
+  });
+
+  test("never overwrites caller-provided sortIndex or priority (callerSetPriority)", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "Whenever task — no rush",
+      priorityTier: 0,
+      sortIndex: 7,
+    });
+    await triageWorkItem(item.id, { callerSetPriority: true });
+    const fresh = getWorkItem(item.id)!;
+    expect(fresh.priorityTier).toBe(0);
+    expect(fresh.sortIndex).toBe(7);
+  });
+
+  test("skips archived/cancelled items entirely", async () => {
+    const item = createWorkItem({ taskId, title: "Old junk" });
+    updateWorkItem(item.id, { status: "cancelled" });
+    await triageWorkItem(item.id, {});
+    expect(getWorkItem(item.id)!.sortIndex).toBeNull();
   });
 });
 

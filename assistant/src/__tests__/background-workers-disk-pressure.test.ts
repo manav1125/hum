@@ -186,6 +186,7 @@ mock.module("../memory/jobs-store.js", () => ({
     automatic: "automatic",
     manual: "manual",
   },
+  pruneOldMemoryJobs: mock(() => 0),
   resetRunningJobsToPending: mock(() => 0),
   SLOW_LLM_JOB_TYPES: [],
   upsertAutoAnalysisJob: mock(() => "job-auto-analysis"),

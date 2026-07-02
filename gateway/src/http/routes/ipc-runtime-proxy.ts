@@ -29,9 +29,22 @@ import {
   type RouteSchemaPolicy,
 } from "../../ipc/route-schema-cache.js";
 import { getLogger } from "../../logger.js";
+import { UPSTREAM_RESPONSE_MARKER_HEADER } from "../middleware/auth.js";
 import { toFlatDaemonPath } from "./assistant-scoped-path.js";
 
 const log = getLogger("ipc-runtime-proxy");
+
+/**
+ * Headers for responses that relay a DAEMON result (success or
+ * `IpcHandlerError`). The marker tells the "track-failures" auth wrapper
+ * that a 401 here came from the daemon, not from the gateway's own client
+ * auth — the caller's edge token was already validated before the IPC call,
+ * so daemon 401s must not count against the auth rate limiter. Responses
+ * the gateway authors itself (auth 401s, policy 403s, 404s, transport
+ * 502s, unexpected 500s) intentionally omit the marker. The wrapper strips
+ * it before the response reaches the client.
+ */
+const UPSTREAM_MARKER_HEADERS = { [UPSTREAM_RESPONSE_MARKER_HEADER]: "1" };
 
 const V1_PREFIX = "/v1/";
 const VELLUM_HEADER_PREFIX = "x-vellum-";
@@ -206,15 +219,20 @@ export async function tryIpcProxy(
       "IPC proxy request completed",
     );
 
+    // Daemon-authored results carry the upstream marker (see
+    // UPSTREAM_MARKER_HEADERS above).
     if (result === undefined || result === null) {
-      return new Response(null, { status: 204 });
+      return new Response(null, {
+        status: 204,
+        headers: UPSTREAM_MARKER_HEADERS,
+      });
     }
 
     if (typeof result === "string") {
-      return new Response(result);
+      return new Response(result, { headers: UPSTREAM_MARKER_HEADERS });
     }
 
-    return Response.json(result);
+    return Response.json(result, { headers: UPSTREAM_MARKER_HEADERS });
   } catch (err) {
     const duration = Math.round(performance.now() - start);
 
@@ -230,9 +248,13 @@ export async function tryIpcProxy(
         },
         "IPC proxy handler error",
       );
+      // An IpcHandlerError relays the DAEMON's status code (including 401s
+      // from daemon-side gates). The caller's edge token was already
+      // validated above, so these must not count as client auth failures —
+      // mark the response as upstream-authored.
       return Response.json(
         { error: err.message, code: err.code },
-        { status: err.statusCode },
+        { status: err.statusCode, headers: UPSTREAM_MARKER_HEADERS },
       );
     }
 

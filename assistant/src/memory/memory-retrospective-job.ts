@@ -732,6 +732,24 @@ function finalizeSuccessfulRetrospective(args: {
 
   deleteSupersededPriorRetrospective(config, prior, sourceConversationId);
 
+  // The run's conversation is EPHEMERAL: its useful output (the `remember`
+  // calls, extracted above) is now folded into the persisted
+  // `remembered_log` on the state row, and the memory writes themselves
+  // live in the memory store — the conversation row is scaffolding. Every
+  // retrospective persisting a `conversation_type='background'` row (fork
+  // runs additionally copying the source's full message history) was a
+  // major contributor to the 45k-row conversations-table runaway. Deleting
+  // AFTER `upsertRetrospectiveState` keeps the dedup chain intact: the next
+  // run reads the persisted log, never this conversation. Operators opt out
+  // via `memory.retrospective.keepSupersededRuns` (full run history for
+  // debugging), matching the prior-run GC and startup-sweep gates.
+  if (!config.memory.retrospective.keepSupersededRuns) {
+    safeDeleteRetrospectiveConversation(
+      retrospectiveConversationId,
+      "memory-retrospective: failed to delete completed run conversation; continuing",
+    );
+  }
+
   const followUpJobIds = enqueueFollowUpJobs();
 
   log.info(

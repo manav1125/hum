@@ -14,20 +14,27 @@ import { routes } from "@/utils/routes";
  * tiles, and the value CTA. Wired to GET /v1/home/impact (real recorded data).
  */
 
+/**
+ * Theme-aware `--mv1-*` vars (src/index.css): light themes resolve to the
+ * exact v0.3 hexes, dark/velvet swap to the dark-book equivalents.
+ */
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "#DBE4FB",
-  violet: "#7F77DD",
-  bg: "#F4F6F9",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  t2: "#5A6672",
-  t3: "#9AA6B2",
-  green: "#277E41",
-  amber: "#C98A1B",
+  ink: "var(--mv1-t1)",
+  blue: "var(--mv1-blue)",
+  blueS: "var(--mv1-blue-strong)",
+  blueW: "var(--mv1-blue-wash)",
+  violet: "var(--mv1-violet)",
+  bg: "var(--mv1-canvas)",
+  surface: "var(--mv1-card)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  green: "var(--mv1-green)",
+  amber: "var(--mv1-amber)",
 } as const;
+/** The hero band + value CTA are deliberately ink navy in EVERY theme. */
+const INK_HERO = "#1A2230";
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
 
@@ -45,16 +52,26 @@ const CATEGORY: Record<string, CategoryMeta> = {
     label: "Meetings captured",
     color: C.violet,
     icon: "✦",
-    wash: "#EEEDFB",
+    wash: `color-mix(in srgb, ${C.violet} 14%, transparent)`,
   },
   scheduling: {
     label: "Scheduling",
     color: "#0E8C8C",
     icon: "◷",
-    wash: "#D8F0F0",
+    wash: "color-mix(in srgb, #0E8C8C 14%, transparent)",
   },
-  calls: { label: "Calls & errands", color: C.amber, icon: "☎", wash: "#FBF0DA" },
-  research: { label: "Research", color: "#5A57C4", icon: "❖", wash: "#E6E5F7" },
+  calls: {
+    label: "Calls & errands",
+    color: C.amber,
+    icon: "☎",
+    wash: `color-mix(in srgb, ${C.amber} 14%, transparent)`,
+  },
+  research: {
+    label: "Research",
+    color: "#5A57C4",
+    icon: "❖",
+    wash: "color-mix(in srgb, #5A57C4 14%, transparent)",
+  },
   other: { label: "Other", color: C.t3, icon: "•", wash: C.sunken },
 };
 
@@ -206,7 +223,7 @@ export function ImpactPage() {
           style={{
             position: "relative",
             overflow: "hidden",
-            background: C.ink,
+            background: INK_HERO,
             color: "#fff",
             padding: "34px 36px 30px",
           }}
@@ -533,7 +550,7 @@ export function ImpactPage() {
                   border: `1px solid ${C.line}`,
                   borderRadius: 13,
                   padding: 15,
-                  background: "linear-gradient(180deg,#FAFBFF,#fff)",
+                  background: `linear-gradient(180deg, color-mix(in srgb, ${C.blue} 4%, ${C.surface}), ${C.surface})`,
                 }}
               >
                 <div
@@ -579,7 +596,7 @@ export function ImpactPage() {
             style={{
               position: "relative",
               overflow: "hidden",
-              background: C.ink,
+              background: INK_HERO,
               borderRadius: 16,
               padding: "20px 24px",
               display: "flex",

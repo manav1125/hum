@@ -27,21 +27,21 @@ import {
 } from "@/lib/autonomy-policies-api";
 
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "#DBE4FB",
-  violet: "#7F77DD",
-  surface: "#FFFFFF",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#8D99A5",
-  green: "#277E41",
-  danger: "#DA491A",
-  amber: "#C98A1B",
+  ink: "var(--mv1-t1)",
+  blue: "var(--mv1-blue)",
+  blueS: "var(--mv1-blue-strong)",
+  blueW: "var(--mv1-blue-wash)",
+  violet: "var(--mv1-violet)",
+  surface: "var(--mv1-card)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  green: "var(--mv1-green)",
+  danger: "var(--mv1-danger)",
+  amber: "var(--mv1-amber)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -372,7 +372,7 @@ function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
       ) : query.isError || !policies ? (
         <div
           style={{
-            background: "#fff",
+            background: C.surface,
             border: `1px solid ${C.line}`,
             borderLeft: `3px solid ${C.danger}`,
             borderRadius: "0 12px 12px 0",
@@ -666,7 +666,7 @@ function PermissionRulesPanel({
       ) : error ? (
         <div
           style={{
-            background: "#fff",
+            background: C.surface,
             border: `1px solid ${C.line}`,
             borderLeft: `3px solid ${C.danger}`,
             borderRadius: "0 12px 12px 0",
@@ -835,7 +835,7 @@ function CapturePanel() {
       />
       <div
         style={{
-          background: "#fff",
+          background: C.surface,
           border: `1px solid ${C.line}`,
           borderLeft: `3px solid ${C.blue}`,
           borderRadius: "0 12px 12px 0",
@@ -882,7 +882,7 @@ function AuditPanel({
               "You —",
             )}
             badge="full"
-            badgeBg="#E2F0E7"
+            badgeBg="var(--mv1-green-wash)"
             badgeColor={C.green}
             sub="Every capability, every channel"
           />
@@ -904,8 +904,8 @@ function AuditPanel({
           <AuditCard
             title="Unknown actors"
             badge="denied"
-            badgeBg="#EEEDFB"
-            badgeColor="#534AB7"
+            badgeBg={`color-mix(in srgb, ${C.violet} 14%, transparent)`}
+            badgeColor="var(--mv1-violet-strong)"
             sub="No memory read, no tools — fail closed"
           />
           <div style={{ marginTop: 4 }}>

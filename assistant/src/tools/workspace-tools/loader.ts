@@ -67,7 +67,10 @@ import { pathToFileURL } from "node:url";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspaceToolsDir } from "../../util/platform.js";
 import { isProviderSafeToolName } from "../provider-tool-name.js";
-import { registerWorkspaceTools, removeCoreToolViaWorkspace } from "../registry.js";
+import {
+  registerWorkspaceTools,
+  removeCoreToolViaWorkspace,
+} from "../registry.js";
 import { finalizeTool } from "../tool-defaults.js";
 import type {
   RiskLevel,
@@ -139,14 +142,21 @@ function isValidToolFilenameStem(stem: string): boolean {
  */
 function classifyEntry(
   entry: string,
-): { kind: "live"; stem: string; ext: LiveToolExtension } | { kind: "removed"; stem: string } | undefined {
+):
+  | { kind: "live"; stem: string; ext: LiveToolExtension }
+  | { kind: "removed"; stem: string }
+  | undefined {
   const ext = extname(entry);
   if (ext === REMOVED_EXTENSION) {
     return { kind: "removed", stem: entry.slice(0, -REMOVED_EXTENSION.length) };
   }
   for (const candidate of LIVE_TOOL_EXTENSIONS) {
     if (ext === candidate) {
-      return { kind: "live", stem: entry.slice(0, -candidate.length), ext: candidate };
+      return {
+        kind: "live",
+        stem: entry.slice(0, -candidate.length),
+        ext: candidate,
+      };
     }
   }
   return undefined;
@@ -162,7 +172,9 @@ interface LiveSelection {
   shadowed: LiveToolExtension[];
 }
 
-function selectLiveExtension(extensions: Set<LiveToolExtension>): LiveSelection {
+function selectLiveExtension(
+  extensions: Set<LiveToolExtension>,
+): LiveSelection {
   for (const candidate of LIVE_TOOL_EXTENSIONS) {
     if (extensions.has(candidate)) {
       const shadowed: LiveToolExtension[] = [];
@@ -193,10 +205,7 @@ function selectLiveExtension(extensions: Set<LiveToolExtension>): LiveSelection 
  * never block daemon boot. Always sets `category: "workspace"` so the
  * registry can distinguish workspace overrides from other origins.
  */
-function applyWorkspaceToolDefaults(
-  tool: ToolDefinition,
-  name: string,
-): Tool {
+function applyWorkspaceToolDefaults(tool: ToolDefinition, name: string): Tool {
   const finalized = finalizeTool(
     {
       ...tool,
@@ -285,7 +294,9 @@ async function importToolDefaultBounded(
  * exist for declarative use cases — schema-only tool stubs, override
  * placeholders, etc.
  */
-async function readJsonToolSpec(entryPath: string): Promise<ToolDefinition | undefined> {
+async function readJsonToolSpec(
+  entryPath: string,
+): Promise<ToolDefinition | undefined> {
   let raw: string;
   try {
     raw = await readFile(entryPath, "utf8");
@@ -371,7 +382,10 @@ export async function loadWorkspaceTools(
   const toolsDir = getWorkspaceToolsDir();
 
   if (!existsSync(toolsDir)) {
-    log.debug({ toolsDir }, "Workspace tools directory does not exist — skipping");
+    log.debug(
+      { toolsDir },
+      "Workspace tools directory does not exist — skipping",
+    );
     return { registered: [], removed: [] };
   }
 
@@ -483,7 +497,10 @@ export async function loadWorkspaceTools(
     if (winningExt === ".json") {
       toolSpec = await readJsonToolSpec(entryPath);
     } else {
-      const defaultExport = await importToolDefaultBounded(entryPath, importTimeoutMs);
+      const defaultExport = await importToolDefaultBounded(
+        entryPath,
+        importTimeoutMs,
+      );
       if (defaultExport === undefined) continue; // Failure already logged.
       if (defaultExport === null || typeof defaultExport !== "object") {
         log.error(
@@ -580,7 +597,10 @@ export async function loadSingleWorkspaceTool(
   if (classified.ext === ".json") {
     toolSpec = await readJsonToolSpec(entryPath);
   } else {
-    const defaultExport = await importToolDefaultBounded(entryPath, importTimeoutMs);
+    const defaultExport = await importToolDefaultBounded(
+      entryPath,
+      importTimeoutMs,
+    );
     if (defaultExport === undefined) return undefined;
     if (defaultExport === null || typeof defaultExport !== "object") {
       log.error(
@@ -633,7 +653,11 @@ export function classifyWorkspaceToolEntry(
 export function findWinningWorkspaceToolPath(
   toolsDir: string,
   stem: string,
-): { livePath: string | null; liveExt: LiveToolExtension | null; hasRemovedSentinel: boolean } {
+): {
+  livePath: string | null;
+  liveExt: LiveToolExtension | null;
+  hasRemovedSentinel: boolean;
+} {
   if (!existsSync(toolsDir)) {
     return { livePath: null, liveExt: null, hasRemovedSentinel: false };
   }

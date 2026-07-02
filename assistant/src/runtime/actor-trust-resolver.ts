@@ -228,7 +228,10 @@ export function resolveActorTrust(
     memberRecord = { contact: byExternalId, channel: byExternalIdChannel };
   } else {
     // Address fallback: catches channels where externalUserId is not yet set.
-    const byAddress = findContactByAddress(input.sourceChannel, canonicalSenderId);
+    const byAddress = findContactByAddress(
+      input.sourceChannel,
+      canonicalSenderId,
+    );
     const byAddressChannel = byAddress?.channels.find(
       (ch) =>
         ch.type === input.sourceChannel &&
@@ -244,7 +247,11 @@ export function resolveActorTrust(
       channel: input.sourceChannel,
       canonicalSenderId,
       found: !!memberRecord,
-      via: memberRecord?.channel.externalUserId ? "externalUserId" : memberRecord ? "address" : "none",
+      via: memberRecord?.channel.externalUserId
+        ? "externalUserId"
+        : memberRecord
+          ? "address"
+          : "none",
     },
     "trust-resolver member lookup",
   );
@@ -259,8 +266,8 @@ export function resolveActorTrust(
         input.sourceChannel,
         memberRecord.channel.externalUserId,
       ) === canonicalSenderId
-    : (memberRecord?.channel.address?.toLowerCase() ===
-      canonicalSenderId.toLowerCase());
+    : memberRecord?.channel.address?.toLowerCase() ===
+      canonicalSenderId.toLowerCase();
 
   const memberDisplayName =
     memberMatchesSender &&

@@ -631,7 +631,8 @@ describe("route policy registration", () => {
   test("migrations/validate policy requires settings.read scope", async () => {
     // Import route-policy to verify the registration exists
     const { ROUTES } = await import("../runtime/routes/index.js");
-    const policy = (ROUTES.find((r) => r.endpoint === "migrations/validate")?.policy ?? null);
+    const policy =
+      ROUTES.find((r) => r.endpoint === "migrations/validate")?.policy ?? null;
 
     expect(policy).not.toBeNull();
     expect(policy?.requiredScopes).toContain("settings.read");

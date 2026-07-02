@@ -508,10 +508,40 @@ export function createAuthMiddleware(
 }
 
 /**
+ * Internal marker header set by proxy handlers on responses they RELAY from
+ * the upstream assistant daemon (HTTP or IPC transport).
+ *
+ * Why: the runtime-proxy catch-all runs under "track-failures" auth, which
+ * records any 401 response against the client IP. But a 401 coming from the
+ * DAEMON (e.g. a daemon-side principal/scope policy rejection) is not
+ * evidence that the client failed gateway authentication — the gateway
+ * already validated the client's edge JWT and minted an exchange token
+ * before proxying. Counting those upstream 401s used to block fully
+ * authenticated clients via the auth rate limiter (10 upstream 401s in 60s
+ * → every subsequent request 429'd).
+ *
+ * Contract:
+ * - Proxy handlers set this header ONLY on responses whose status/body came
+ *   from the daemon. Gateway-authored responses (the proxy's own 401s for
+ *   missing/invalid edge tokens, policy 403s, 404s, 502/504s) never carry it.
+ * - `wrapWithAuthFailureTracking` skips failure recording when the marker is
+ *   present, and unconditionally strips it before the response reaches the
+ *   client — it is gateway-internal and must never leak (this also defuses
+ *   an upstream that echoes the header, since stripping is unconditional).
+ */
+export const UPSTREAM_RESPONSE_MARKER_HEADER = "x-vellum-upstream-response";
+
+/**
  * Wrap a handler so that responses with specific status codes automatically
  * record an auth failure. Defaults to tracking 401 responses.
  *
  * Eliminates the repeated `if (res.status === 401) { ... }` boilerplate.
+ *
+ * Responses carrying `UPSTREAM_RESPONSE_MARKER_HEADER` are exempt from
+ * failure recording: they were relayed from the upstream daemon, whose 401s
+ * say nothing about the CLIENT's credentials (the gateway already validated
+ * the client's edge token before proxying). The marker is stripped before
+ * the response is returned.
  */
 export function wrapWithAuthFailureTracking(
   handler: (req: Request) => Promise<Response> | Response,
@@ -521,6 +551,21 @@ export function wrapWithAuthFailureTracking(
 ): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
     const res = await handler(req);
+
+    if (res.headers.has(UPSTREAM_RESPONSE_MARKER_HEADER)) {
+      // Relayed from the upstream daemon — not a client auth failure.
+      // Strip the internal marker so it never leaks to the client. Rebuild
+      // the response rather than mutating headers in place: responses that
+      // originate from fetch() have immutable header guards.
+      const headers = new Headers(res.headers);
+      headers.delete(UPSTREAM_RESPONSE_MARKER_HEADER);
+      return new Response(res.body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers,
+      });
+    }
+
     if (failureStatuses.includes(res.status)) {
       authRateLimiter.recordFailure(getClientIp());
     }

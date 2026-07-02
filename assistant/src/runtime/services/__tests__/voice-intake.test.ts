@@ -160,10 +160,15 @@ describe("generateVoiceIntake — live extraction path", () => {
     providerToReturn = {
       sendMessage: async () =>
         toolResponse({
-          summary: "You want to send Dana the forecast and book a dentist visit.",
+          summary:
+            "You want to send Dana the forecast and book a dentist visit.",
           action_items: [
             { text: "Send Dana the Q3 forecast", owner: "Dana", done: false },
-            { text: "Book a dentist appointment for next week", owner: null, done: false },
+            {
+              text: "Book a dentist appointment for next week",
+              owner: null,
+              done: false,
+            },
           ],
         }),
     };
@@ -195,7 +200,9 @@ describe("generateVoiceIntake — live extraction path", () => {
   test("degrades gracefully when the model returns no tool_use block", async () => {
     providerToReturn = {
       sendMessage: async () =>
-        ({ content: [{ type: "text", text: "ok" }] }) as unknown as ProviderResponse,
+        ({
+          content: [{ type: "text", text: "ok" }],
+        }) as unknown as ProviderResponse,
     };
 
     const result = await generateVoiceIntake(TRANSCRIPT);

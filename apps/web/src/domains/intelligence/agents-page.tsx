@@ -23,6 +23,7 @@ import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { formatFriendlyDate } from "@/utils/format-date";
+import { httpStatusFromError } from "@/utils/query-retry";
 import {
   integrationsA2aConfigDelete,
   integrationsA2aConfigPost,
@@ -278,6 +279,16 @@ export function AgentsPage() {
   );
 
   const enabled = configQuery.data?.enabled ?? false;
+
+  // A2A is feature-flag gated per deployment. Newer daemons report
+  // `available: false` from the GET config route; older daemons 400 the read
+  // outright ("A2A channel is not available"). Both mean the same thing —
+  // render an honest "not available" state instead of an error or a dead
+  // toggle.
+  const a2aUnavailable =
+    configQuery.data?.available === false ||
+    (configQuery.isError && httpStatusFromError(configQuery.error) === 400);
+  const configFailed = configQuery.isError && !a2aUnavailable;
 
   const configToggle = useMutation({
     mutationFn: async (nextEnabled: boolean) => {
@@ -538,11 +549,37 @@ export function AgentsPage() {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>Enable A2A endpoint</div>
           <div style={{ fontSize: 13, color: C.t2, marginTop: 2 }}>
-            Exposes your agent at{" "}
-            <span style={{ fontFamily: mono, fontSize: 12, background: "#F4F6F9", padding: "1px 6px", borderRadius: 5 }}>
-              /a2a/message:send
-            </span>{" "}
-            so paired agents can reach it.
+            {a2aUnavailable ? (
+              <>The A2A channel isn’t available on this deployment.</>
+            ) : configFailed ? (
+              <>
+                Couldn’t load the A2A configuration.{" "}
+                <button
+                  type="button"
+                  onClick={() => void configQuery.refetch()}
+                  style={{
+                    fontSize: 12.5,
+                    border: "none",
+                    background: "transparent",
+                    color: C.blueS,
+                    cursor: "pointer",
+                    padding: 0,
+                    fontWeight: 600,
+                    textDecoration: "underline",
+                  }}
+                >
+                  Retry
+                </button>
+              </>
+            ) : (
+              <>
+                Exposes your agent at{" "}
+                <span style={{ fontFamily: mono, fontSize: 12, background: "#F4F6F9", padding: "1px 6px", borderRadius: 5 }}>
+                  /a2a/message:send
+                </span>{" "}
+                so paired agents can reach it.
+              </>
+            )}
           </div>
         </div>
         <button
@@ -550,7 +587,12 @@ export function AgentsPage() {
           role="switch"
           aria-checked={enabled}
           aria-label="Enable A2A endpoint"
-          disabled={configQuery.isLoading || configToggle.isPending}
+          disabled={
+            configQuery.isLoading ||
+            configToggle.isPending ||
+            a2aUnavailable ||
+            configFailed
+          }
           onClick={() => configToggle.mutate(!enabled)}
           style={{
             width: 46,
@@ -561,8 +603,20 @@ export function AgentsPage() {
             padding: 0,
             position: "relative",
             flexShrink: 0,
-            cursor: configQuery.isLoading || configToggle.isPending ? "default" : "pointer",
-            opacity: configQuery.isLoading || configToggle.isPending ? 0.6 : 1,
+            cursor:
+              configQuery.isLoading ||
+              configToggle.isPending ||
+              a2aUnavailable ||
+              configFailed
+                ? "default"
+                : "pointer",
+            opacity:
+              configQuery.isLoading ||
+              configToggle.isPending ||
+              a2aUnavailable ||
+              configFailed
+                ? 0.6
+                : 1,
             transition: "background .15s ease",
           }}
         >
@@ -610,6 +664,38 @@ export function AgentsPage() {
         >
           <Loader2 size={18} style={{ animation: "cueSpin .9s linear infinite" }} />
           Loading agent network…
+        </div>
+      ) : contactsQuery.isError ? (
+        <div
+          style={{
+            border: `1px solid ${C.line}`,
+            borderRadius: 14,
+            padding: "28px 20px",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600 }}>
+            Couldn’t load paired agents
+          </div>
+          <div style={{ fontSize: 12.5, color: C.t2, marginTop: 4 }}>
+            The contacts lookup failed — the assistant may be unreachable.
+          </div>
+          <button
+            type="button"
+            onClick={() => void contactsQuery.refetch()}
+            style={{
+              marginTop: 14,
+              fontSize: 12.5,
+              background: C.blue,
+              color: "#fff",
+              border: "none",
+              borderRadius: 9,
+              padding: "9px 16px",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
         </div>
       ) : pairedAgents.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>

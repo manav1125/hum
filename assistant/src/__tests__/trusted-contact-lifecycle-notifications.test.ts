@@ -493,5 +493,4 @@ describe("trusted contact activated notification signal", () => {
     expect(resolver).toBeDefined();
     expect(resolver!.kind).toBe("access_request");
   });
-
 });

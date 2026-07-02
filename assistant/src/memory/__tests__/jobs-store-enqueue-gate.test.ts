@@ -73,6 +73,7 @@ mock.module("../qdrant-circuit-breaker.js", () => ({
 mock.module("../raw-query.js", () => ({
   rawAll: () => [],
   rawChanges: () => 0,
+  rawRun: () => 0,
 }));
 
 // Drizzle-shaped no-op db. Tracks inserts/updates so tests can observe
@@ -117,12 +118,10 @@ mock.module("../db-connection.js", () => ({
 
 // Now load the real modules under test.
 const { isMemoryEnabled } = await import("../jobs-store.js");
-const { enqueueAutoAnalysisIfEnabled } = await import(
-  "../auto-analysis-enqueue.js"
-);
-const { enqueueMemoryRetrospectiveIfEnabled } = await import(
-  "../memory-retrospective-enqueue.js"
-);
+const { enqueueAutoAnalysisIfEnabled } =
+  await import("../auto-analysis-enqueue.js");
+const { enqueueMemoryRetrospectiveIfEnabled } =
+  await import("../memory-retrospective-enqueue.js");
 
 beforeEach(() => {
   dbInserts.length = 0;

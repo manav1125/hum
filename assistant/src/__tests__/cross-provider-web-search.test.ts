@@ -264,9 +264,8 @@ mock.module("../util/logger.js", () => ({
 }));
 
 const { webSearchTool } = await import("../tools/network/web-search.js");
-const { WEB_SEARCH_BACKEND_FAILURE_MESSAGE } = await import(
-  "../tools/network/web-search-error.js"
-);
+const { WEB_SEARCH_BACKEND_FAILURE_MESSAGE } =
+  await import("../tools/network/web-search-error.js");
 
 function executeWebSearch(input: Record<string, unknown>) {
   return webSearchTool.execute(input, {} as never);

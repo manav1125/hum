@@ -226,6 +226,76 @@ export function classifyWorkItemAutonomy(item: WorkItem): AutonomyClass[] {
   return [...classes];
 }
 
+// ---------------------------------------------------------------------------
+// Hard-deny guard for auto-run
+// ---------------------------------------------------------------------------
+
+/**
+ * Tool-name segments that indicate a purchase/ordering capability. Matched on
+ * whole name segments (split on non-alphanumerics), not substrings, so
+ * "recorder" or "sort_order_index" style names don't false-positive.
+ */
+const PURCHASE_SEGMENTS: ReadonlySet<string> = new Set([
+  "purchase",
+  "buy",
+  "checkout",
+  "order",
+  "orders",
+  "cart",
+  "pay",
+  "payment",
+  "charge",
+  "transfer",
+  "refund",
+]);
+
+/**
+ * Whether a single tool must never run under the auto-runner without a human
+ * in the loop — REGARDLESS of what the per-category autonomy policy says.
+ *
+ * The autonomy policy is a preference; this is a floor. It exists because the
+ * auto-runner once picked up a physical-world errand ("buy stroopwafels")
+ * whose tool snapshot included browser tools and walked into an Amazon
+ * purchase flow. Categories:
+ *
+ *   - `host_*`: desktop host control (host_bash, host_cu, host_browser,
+ *     host_app_control, host_file) — executes on the user's machine.
+ *   - browser / computer-use automation — can navigate arbitrary flows,
+ *     including checkout pages, with no per-action review.
+ *   - purchase/order-like tools — spend money directly.
+ *   - messaging egress + money (via `classifyAutonomy`) — sends on the
+ *     user's behalf / moves money.
+ */
+export function isHardDeniedForAutoRun(toolName: string): boolean {
+  const name = toolName.toLowerCase();
+  const segments = name.split(/[^a-z0-9]+/).filter(Boolean);
+
+  // Desktop host control tools all share the host_ prefix.
+  if (segments[0] === "host") return true;
+
+  // Browser & computer-use automation (core browser_* tools, MCP
+  // mcp__computer-use__*, connector *_browser_* variants, …).
+  if (segments.includes("browser") || segments.includes("computer")) {
+    return true;
+  }
+
+  // Purchase / order-like tools by name segment.
+  if (segments.some((s) => PURCHASE_SEGMENTS.has(s))) return true;
+
+  // Messaging egress ("send") and money per the shared autonomy classifier.
+  const cls = classifyAutonomy(toolName);
+  return cls === "send" || cls === "money";
+}
+
+/**
+ * The subset of an item's required-tools snapshot that is hard-denied for
+ * auto-run. Non-empty result ⇒ the item must wait for an explicit human
+ * "Run it", no matter how permissive the autonomy policy snapshot is.
+ */
+export function hardDeniedAutoRunTools(item: WorkItem): string[] {
+  return parseRequiredTools(item).filter(isHardDeniedForAutoRun);
+}
+
 function countRunningItems(): number {
   return listWorkItems({ status: "running" }).length;
 }
@@ -258,12 +328,16 @@ export function triageAndMaybeAutoRunWorkItem(
   })();
 }
 
-async function triageWorkItem(
+/** Statuses in which triage has nothing useful left to contribute. */
+const TRIAGE_SKIP_STATUSES: readonly string[] = ["archived", "cancelled"];
+
+/** Exported for tests; production callers go through {@link triageAndMaybeAutoRunWorkItem}. */
+export async function triageWorkItem(
   workItemId: string,
   opts: TriageOptions,
 ): Promise<void> {
   const item = getWorkItem(workItemId);
-  if (!item || item.status !== "queued") return;
+  if (!item || TRIAGE_SKIP_STATUSES.includes(item.status)) return;
 
   const projects = listProjects();
   const score =
@@ -284,12 +358,21 @@ async function triageWorkItem(
   }
   if (item.dueAt == null && score.dueAt) updates.dueAt = score.dueAt;
 
-  if (Object.keys(updates).length === 0) return;
-
-  // Re-check state right before writing — the user may have already run or
-  // edited the item while the LLM call was in flight.
+  // Re-check state right before writing — the item may have started running
+  // or been edited while the LLM call was in flight. Priority re-scoring only
+  // applies while the item is still queued (a run or user edit owns it after
+  // that), but the blank-fill fields (sortIndex/dueAt/projectId) are stamped
+  // regardless: they only ever fill holes, and skipping them entirely used to
+  // leave fast-raced items with no dueAt/sortIndex at all even when the notes
+  // said "by Friday 5pm".
   const fresh = getWorkItem(workItemId);
-  if (!fresh || fresh.status !== "queued") return;
+  if (!fresh) return;
+  if (fresh.status !== "queued") delete updates.priorityTier;
+  if (fresh.sortIndex != null) delete updates.sortIndex;
+  if (fresh.projectId != null) delete updates.projectId;
+  if (fresh.dueAt != null) delete updates.dueAt;
+
+  if (Object.keys(updates).length === 0) return;
   updateWorkItem(workItemId, updates, { actor: "triage" });
   log.info(
     { workItemId, urgency: score.urgency, tier: score.tier, ...opts },
@@ -298,11 +381,26 @@ async function triageWorkItem(
   broadcastWorkItemStatus(workItemId);
 }
 
-async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
+/** Exported for tests; production callers go through {@link triageAndMaybeAutoRunWorkItem}. */
+export async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
   if (isAutoRunDisabled()) return;
 
   const item = getWorkItem(workItemId);
   if (!item || item.status !== "queued") return;
+
+  // Safety floor, evaluated BEFORE the policy: items whose tool snapshot
+  // includes host control, browser/computer-use automation, purchase/order
+  // tools, or messaging/money egress never auto-run — even if the user's
+  // autonomy policy marks every category "auto". They stay queued for an
+  // explicit human "Run it".
+  const hardDenied = hardDeniedAutoRunTools(item);
+  if (hardDenied.length > 0) {
+    log.info(
+      { workItemId, hardDenied },
+      "auto-run hard-denied: required tools need a human in the loop (item stays queued)",
+    );
+    return;
+  }
 
   const policy = await getAutonomyPolicy();
   const classes = classifyWorkItemAutonomy(item);

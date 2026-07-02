@@ -121,9 +121,7 @@ async function handleRollbackMigrations({ body = {} }: RouteHandlerArgs) {
       .filter((m) => {
         const entry = checkpointsBefore.applied[m.id];
         return (
-          entry &&
-          entry.status !== "started" &&
-          entry.status !== "rolling_back"
+          entry && entry.status !== "started" && entry.status !== "rolling_back"
         );
       })
       .map((m) => m.id);
@@ -171,10 +169,7 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["admin"],
     handler: handleRollbackMigrations,
     requestBody: z.object({
-      targetDbVersion: z
-        .number()
-        .int()
-        .describe("Target DB migration version"),
+      targetDbVersion: z.number().int().describe("Target DB migration version"),
       targetWorkspaceMigrationId: z
         .string()
         .describe("Target workspace migration ID"),

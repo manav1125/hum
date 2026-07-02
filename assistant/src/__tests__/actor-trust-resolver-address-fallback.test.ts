@@ -23,13 +23,13 @@ mock.module("../util/logger.js", () => ({
 
 // ── Contact store stubs — filled in per test ─────────────────────────────────
 let _byExternalId: ReturnType<
-  typeof import("../contacts/contact-store.js")["findContactByChannelExternalId"]
+  (typeof import("../contacts/contact-store.js"))["findContactByChannelExternalId"]
 > = null;
 let _byAddress: ReturnType<
-  typeof import("../contacts/contact-store.js")["findContactByAddress"]
+  (typeof import("../contacts/contact-store.js"))["findContactByAddress"]
 > = null;
 let _guardian: ReturnType<
-  typeof import("../contacts/contact-store.js")["findGuardianForChannel"]
+  (typeof import("../contacts/contact-store.js"))["findGuardianForChannel"]
 > = null;
 
 mock.module("../contacts/contact-store.js", () => ({

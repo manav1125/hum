@@ -29,7 +29,8 @@ const logger = getLogger("file-write");
  * never blocks the app-builder workflow it redirects to.
  */
 const STANDALONE_HTML_RE = /<!doctype\s+html|<html[\s>]/i;
-const INLINE_SCRIPT_RE = /<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]{400,}?<\/script>/i;
+const INLINE_SCRIPT_RE =
+  /<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]{400,}?<\/script>/i;
 
 function isSelfContainedArtifactHtml(path: string, content: string): boolean {
   if (!/\.html?$/i.test(path)) return false;

@@ -410,6 +410,28 @@ describe("handleGetHomeFeed", () => {
     expect(body.contextBanner.timeAwayLabel).toBe("2 hours ago");
   });
 
+  test("excludes dismissed items (they must not resurface on Home)", async () => {
+    writeFeedFile([
+      makeItem({ id: "keep-new", status: "new" }),
+      makeItem({ id: "keep-seen", status: "seen" }),
+      makeItem({ id: "gone", status: "dismissed" }),
+      makeItem({ id: "keep-acted", status: "acted_on" }),
+    ]);
+
+    const res = await handleGetHomeFeed(
+      new Request("http://localhost/v1/home/feed?timeAwaySeconds=60"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      items: Array<{ id: string; status: string }>;
+      contextBanner: { newCount: number };
+    };
+    const ids = body.items.map((i) => i.id).sort();
+    expect(ids).toEqual(["keep-acted", "keep-new", "keep-seen"]);
+    expect(body.items.every((i) => i.status !== "dismissed")).toBe(true);
+    expect(body.contextBanner.newCount).toBe(1);
+  });
+
   test("newCount counts only status=new after filtering", async () => {
     writeFeedFile([
       makeItem({ id: "a", status: "new" }),

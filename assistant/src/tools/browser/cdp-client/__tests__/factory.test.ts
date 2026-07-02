@@ -785,7 +785,10 @@ describe("getCdpClient", () => {
     const ctx = makeContext({ conversationId: "auto-targeted-no-ext" });
 
     expect(() =>
-      getCdpClient(ctx, { mode: "auto", targetClientId: "specific-host-client" }),
+      getCdpClient(ctx, {
+        mode: "auto",
+        targetClientId: "specific-host-client",
+      }),
     ).toThrow(
       expect.objectContaining({
         code: "transport_error",
@@ -968,7 +971,6 @@ describe("buildCandidateList", () => {
     expect(isHostBridgeCooldownActive(30_000, "actor-a")).toBe(true);
     expect(isHostBridgeCooldownActive(30_000, "actor-b")).toBe(false);
   });
-
 
   test("ordering on a macOS turn with bridge only: host-bridge > cdp-inspect > local", () => {
     mockSingletonProxy = makeMacosBridgeOnlyProxy();

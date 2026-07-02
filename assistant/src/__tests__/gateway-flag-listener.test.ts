@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach,beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Isolated temp directory for the IPC socket
@@ -51,9 +51,8 @@ mock.module("../runtime/sync/sync-publisher.js", () => ({
 // ---------------------------------------------------------------------------
 // Dynamic imports (after mock.module)
 // ---------------------------------------------------------------------------
-const { startGatewayFlagListener, stopGatewayFlagListener } = await import(
-  "../ipc/gateway-flag-listener.js"
-);
+const { startGatewayFlagListener, stopGatewayFlagListener } =
+  await import("../ipc/gateway-flag-listener.js");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -207,8 +206,7 @@ describe("gateway-flag-listener", () => {
     const countAfterReconnect = refreshCallCount;
     expect(countAfterReconnect).toBeGreaterThan(0);
 
-    const payload =
-      JSON.stringify({ event: "feature_flags_changed" }) + "\n";
+    const payload = JSON.stringify({ event: "feature_flags_changed" }) + "\n";
     secondClient!.write(payload);
     await new Promise((r) => setTimeout(r, 200));
 

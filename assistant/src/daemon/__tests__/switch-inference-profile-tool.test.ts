@@ -43,7 +43,12 @@ const auto: ProfileEntry = {
 
 describe("buildSwitchInferenceProfileToolDef", () => {
   test("excludes the 'auto' profile from available switch targets", () => {
-    const profiles = { auto, balanced, "quality-optimized": quality, "cost-optimized": speed };
+    const profiles = {
+      auto,
+      balanced,
+      "quality-optimized": quality,
+      "cost-optimized": speed,
+    };
     const toolDef = buildSwitchInferenceProfileToolDef(profiles, "auto");
 
     expect(toolDef).not.toBeNull();
@@ -63,7 +68,12 @@ describe("buildSwitchInferenceProfileToolDef", () => {
 
   test("excludes disabled profiles alongside 'auto'", () => {
     const disabled: ProfileEntry = { ...balanced, status: "disabled" };
-    const profiles = { auto, balanced: disabled, "quality-optimized": quality, "cost-optimized": speed };
+    const profiles = {
+      auto,
+      balanced: disabled,
+      "quality-optimized": quality,
+      "cost-optimized": speed,
+    };
     const toolDef = buildSwitchInferenceProfileToolDef(profiles, "auto");
 
     expect(toolDef).not.toBeNull();
@@ -75,7 +85,12 @@ describe("buildSwitchInferenceProfileToolDef", () => {
   });
 
   test("shows 'Auto (starting on Balanced)' as the current profile label", () => {
-    const profiles = { auto, balanced, "quality-optimized": quality, "cost-optimized": speed };
+    const profiles = {
+      auto,
+      balanced,
+      "quality-optimized": quality,
+      "cost-optimized": speed,
+    };
     const toolDef = buildSwitchInferenceProfileToolDef(profiles, "auto");
 
     expect(toolDef).not.toBeNull();
@@ -95,7 +110,11 @@ describe("buildSwitchInferenceProfileToolDef", () => {
       label: "Quality",
       source: "user",
     };
-    const profiles = { auto, "custom-balanced": customBalanced, "custom-quality-optimized": customQuality };
+    const profiles = {
+      auto,
+      "custom-balanced": customBalanced,
+      "custom-quality-optimized": customQuality,
+    };
     const toolDef = buildSwitchInferenceProfileToolDef(profiles, "auto");
 
     expect(toolDef).not.toBeNull();

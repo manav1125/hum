@@ -6,7 +6,7 @@ metadata:
   emoji: "🕷️"
   vellum:
     display-name: "Apify"
-    category: "research"
+    category: "browsing"
     activation-hints:
       - "User wants to scrape a website or extract structured data from pages"
       - "User wants lead generation / contact data gathered from the web"

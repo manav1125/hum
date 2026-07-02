@@ -25,18 +25,12 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildProviderErrorResponsePayload } from "../memory/llm-request-log-store.js";
-import {
-  AssistantError,
-  ErrorCode,
-  ProviderError,
-} from "../util/errors.js";
+import { AssistantError, ErrorCode, ProviderError } from "../util/errors.js";
 
 function persisted(err: Error): { error: Record<string, unknown> } {
   // Round-trip through JSON to assert on the actual stored shape, not the
   // in-memory object reference.
-  return JSON.parse(
-    JSON.stringify(buildProviderErrorResponsePayload(err)),
-  );
+  return JSON.parse(JSON.stringify(buildProviderErrorResponsePayload(err)));
 }
 
 describe("buildProviderErrorResponsePayload", () => {

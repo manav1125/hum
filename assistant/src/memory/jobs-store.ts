@@ -9,7 +9,7 @@ import {
   isQdrantBreakerOpen,
   shouldAllowQdrantProbe,
 } from "./qdrant-circuit-breaker.js";
-import { rawAll, rawChanges } from "./raw-query.js";
+import { rawAll, rawChanges, rawRun } from "./raw-query.js";
 import { memoryJobs } from "./schema.js";
 
 const log = getLogger("memory-jobs-store");
@@ -746,6 +746,48 @@ export function failStalledJobs(timeoutMs: number): number {
     );
   }
   return stalled.length;
+}
+
+/** Terminal-row retention for {@link pruneOldMemoryJobs} (7 days). */
+export const MEMORY_JOBS_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Rows deleted per batch by {@link pruneOldMemoryJobs} — bounds lock time. */
+const MEMORY_JOBS_PRUNE_BATCH_LIMIT = 5_000;
+
+/**
+ * Reaper for terminal `memory_jobs` rows: delete `completed` / `failed`
+ * rows whose `updated_at` is older than `retentionMs`. Terminal rows are
+ * pure history — nothing reads them back except the status-count gauge —
+ * yet high-frequency job types (embed_segment, memory_retrospective, …)
+ * accumulate them without bound (115k completed rows piled up before this
+ * existed). `pending` and `running` rows are never touched.
+ *
+ * Deletes in bounded batches so a large backlog can't hold the write lock
+ * for one giant transaction; loops until the backlog is drained. Returns
+ * the number of rows deleted.
+ */
+export function pruneOldMemoryJobs(
+  retentionMs: number = MEMORY_JOBS_RETENTION_MS,
+  nowMs: number = Date.now(),
+): number {
+  const cutoff = nowMs - retentionMs;
+  let total = 0;
+  for (;;) {
+    const deleted = rawRun(
+      `DELETE FROM memory_jobs WHERE id IN (
+        SELECT id FROM memory_jobs
+        WHERE status IN ('completed', 'failed') AND updated_at < ?
+        LIMIT ${MEMORY_JOBS_PRUNE_BATCH_LIMIT}
+      )`,
+      cutoff,
+    );
+    total += deleted;
+    if (deleted < MEMORY_JOBS_PRUNE_BATCH_LIMIT) break;
+  }
+  if (total > 0) {
+    log.info({ deleted: total, cutoff }, "Pruned old terminal memory jobs");
+  }
+  return total;
 }
 
 export function getMemoryJobCounts(): Record<string, number> {

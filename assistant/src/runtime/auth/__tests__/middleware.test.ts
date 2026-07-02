@@ -34,9 +34,7 @@ mock.module("../../../config/env.js", () => ({
 }));
 
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../../assistant-scope.js";
-import {
-  authenticateRequest,
-} from "../middleware.js";
+import { authenticateRequest } from "../middleware.js";
 import { initAuthSigningKey, mintToken } from "../token-service.js";
 import type { ScopeProfile, TokenAudience } from "../types.js";
 

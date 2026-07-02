@@ -6,7 +6,7 @@ metadata:
   emoji: "🎬"
   vellum:
     display-name: "Video Studio"
-    category: "media"
+    category: "content"
     activation-hints:
       - "User asks to make/create/produce a video, explainer, promo, ad, trailer, montage, slideshow video, social reel/short, or narrated video"
       - "User wants several scenes, on-screen captions, a voiceover, and/or background music combined into one finished video"

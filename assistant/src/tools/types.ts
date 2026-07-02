@@ -99,6 +99,16 @@ export interface ToolExecutionResult {
   /** Optional rich content blocks (e.g. images) to include alongside text in the tool result. */
   contentBlocks?: ContentBlock[];
   /**
+   * Ids of attachments the tool already persisted to the attachments store
+   * (e.g. `spreadsheet_create`, `pdf_create`, `deck_export_pdf`,
+   * `document_export_pdf`). The daemon links these to the assistant message
+   * row at end of turn so history reloads (GET messages) return them in the
+   * message's `attachments` field. This is the typed side channel for
+   * tool-produced attachments — downstream consumers must read this field,
+   * never re-parse `content` for ids.
+   */
+  attachmentIds?: string[];
+  /**
    * Runtime-internal sensitive output bindings (placeholder -> real value).
    * Populated by the executor when tool output contains
    * `<vellum-sensitive-output>` directives. The agent loop merges these

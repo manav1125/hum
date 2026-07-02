@@ -145,3 +145,38 @@ describe("listWorkItems status filter", () => {
     expect(queued.some((i) => i.id === wi.id)).toBe(true);
   });
 });
+
+describe("PATCH work-items/:id", () => {
+  const patchRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items/:id" && r.method === "PATCH",
+  )!;
+
+  test("404s on a nonexistent work item instead of 200 {item: null}", () => {
+    // Regression: the handler used to fall through to updateWorkItem (a
+    // no-op on a missing row) and return {"item": null} with a 200, so
+    // clients patching a stale/deleted id never learned the item was gone.
+    expect(() =>
+      patchRoute.handler({
+        pathParams: { id: "wi-does-not-exist" },
+        headers: {},
+        body: { title: "new title" },
+      }),
+    ).toThrow("Work item not found");
+  });
+
+  test("updates an existing work item and returns it", () => {
+    const task = createTask({ title: "Patch me", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Patch me" });
+
+    const result = patchRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+      body: { title: "Patched title", priorityTier: 0 },
+    }) as { item: { id: string; title: string; priorityTier: number } };
+
+    expect(result.item).not.toBeNull();
+    expect(result.item.id).toBe(wi.id);
+    expect(result.item.title).toBe("Patched title");
+    expect(result.item.priorityTier).toBe(0);
+  });
+});

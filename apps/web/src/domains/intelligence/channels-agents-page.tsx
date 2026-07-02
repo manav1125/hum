@@ -41,7 +41,7 @@ const sectionLabelStyle = {
   fontSize: 10.5,
   letterSpacing: ".1em",
   textTransform: "uppercase" as const,
-  color: "#9AA6B2",
+  color: "var(--mv1-t3)",
   margin: "8px 0 16px",
 };
 
@@ -64,7 +64,7 @@ export function ChannelsAgentsPage() {
           divider + eyebrow is enough to set the two apart. */}
       <div
         style={{
-          borderTop: "1px solid #E5E9F0",
+          borderTop: "1px solid var(--mv1-line)",
           marginTop: 8,
           paddingTop: 28,
         }}
@@ -370,7 +370,12 @@ function YouMobilePage() {
     });
   }, [availableQuery.data, readinessQuery.data]);
 
-  const isLoading = availableQuery.isLoading || readinessQuery.isLoading;
+  // Only the catalog gates the list — readiness live-probes channels and can
+  // take tens of seconds on a cold daemon, so statuses stream in once the
+  // snapshot lands instead of holding the card on a spinner.
+  const isLoading = availableQuery.isLoading;
+  const loadFailed = availableQuery.isError;
+  const readinessPending = readinessQuery.isLoading && channels.length > 0;
 
   return (
     <div
@@ -432,6 +437,36 @@ function YouMobilePage() {
               >
                 Loading channels…
               </div>
+            ) : loadFailed ? (
+              <div style={{ padding: "18px 14px" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: M.t1 }}>
+                  Couldn’t load channels
+                </div>
+                <div style={{ fontSize: 12, color: M.t2, marginTop: 3 }}>
+                  The assistant may be unreachable.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void availableQuery.refetch();
+                    void readinessQuery.refetch();
+                  }}
+                  style={{
+                    marginTop: 10,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    fontFamily: M_SANS,
+                    background: M.blue,
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 9,
+                    padding: "8px 16px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
             ) : channels.length === 0 ? (
               <button
                 type="button"
@@ -462,6 +497,18 @@ function YouMobilePage() {
               ))
             )}
           </div>
+          {readinessPending && (
+            <div
+              style={{
+                fontSize: 11.5,
+                color: M.t3,
+                marginTop: 8,
+                fontFamily: M_SANS,
+              }}
+            >
+              Checking live channel status…
+            </div>
+          )}
         </section>
 
         {/* MEMORY & CONFIG — links into the existing Memory + Settings

@@ -1087,4 +1087,3 @@ describe("cross-milestone integration checks", () => {
     expect(freshReq?.followupState).toBeNull();
   });
 });
-

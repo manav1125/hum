@@ -121,9 +121,7 @@ function createCollectorDeps(): {
 
 describe("formatSearchStatusText", () => {
   test("surfaces the query in quotes", () => {
-    expect(formatSearchStatusText("web_search", "foo")).toBe(
-      'Searching "foo"',
-    );
+    expect(formatSearchStatusText("web_search", "foo")).toBe('Searching "foo"');
   });
 
   test("truncates queries longer than 60 chars with an ellipsis", () => {

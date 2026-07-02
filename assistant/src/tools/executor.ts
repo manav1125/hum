@@ -454,13 +454,24 @@ export { isSideEffectTool } from "./side-effects.js";
  *
  * Shell tools (`bash`, `host_bash`) manage their own timeouts with SIGKILL
  * on expiry. We add a 5s buffer so the shell's own deadline fires first and
- * handles cleanup before the executor wrapper trips. Non-shell tools use
- * the generic `toolExecutionTimeoutSec` configuration value.
+ * handles cleanup before the executor wrapper trips.
+ *
+ * Interactive prompt tools (`credential_store` with `action: "prompt"`)
+ * block on a human filling in a secure-input card. The SecretPrompter
+ * enforces its own deadline — `permissionTimeoutSec`, the same budget
+ * confirmation prompts get — and resolves gracefully (null value, no error)
+ * on expiry. Mirror the shell pattern: budget for that inner deadline plus
+ * a 5s buffer so the prompt's own graceful resolution always fires first,
+ * instead of the generic execution timeout killing a prompt the user is
+ * still filling in.
+ *
+ * All other tools use the generic `toolExecutionTimeoutSec` configuration
+ * value.
  *
  * Consumed by `executeInternal` via `executeWithTimeout`, which is the
- * sole enforcer of the per-tool budget.
+ * sole enforcer of the per-tool budget. Exported for unit tests.
  */
-function computePerToolTimeoutMs(
+export function computePerToolTimeoutMs(
   name: string,
   input: Record<string, unknown>,
 ): number {
@@ -475,6 +486,15 @@ function computePerToolTimeoutMs(
       Math.min(requestedSec, shellMaxTimeoutSec),
     );
     return (shellTimeoutSec + 5) * 1000;
+  }
+  if (name === "credential_store" && input.action === "prompt") {
+    const { permissionTimeoutSec } = getConfig().timeouts;
+    // permissionTimeoutSec is zod-validated as positive & finite, but the
+    // config may arrive unvalidated in embedded/test contexts — fall back to
+    // the safeTimeoutMs default rather than an immediate/NaN timer.
+    if (Number.isFinite(permissionTimeoutSec) && permissionTimeoutSec > 0) {
+      return (permissionTimeoutSec + 5) * 1000;
+    }
   }
   const rawTimeoutSec = getConfig().timeouts.toolExecutionTimeoutSec;
   return safeTimeoutMs(rawTimeoutSec);

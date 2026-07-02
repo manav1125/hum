@@ -14,6 +14,7 @@ import {
 import { isActorTokenRevoked } from "../../auth/actor-token-revocation.js";
 import type { GatewayConfig } from "../../config.js";
 import { fetchImpl } from "../../fetch.js";
+import { UPSTREAM_RESPONSE_MARKER_HEADER } from "../middleware/auth.js";
 import { getLogger } from "../../logger.js";
 import { isLoopbackAddress } from "../../util/is-loopback-address.js";
 import { toFlatDaemonPath } from "./assistant-scoped-path.js";
@@ -171,6 +172,17 @@ export function createRuntimeProxyHandler(config: GatewayConfig) {
 
     const resHeaders = stripHopByHop(new Headers(response.headers));
     const duration = Math.round(performance.now() - start);
+
+    // Mark every response we RELAY from the daemon as upstream-authored so
+    // the "track-failures" wrapper doesn't count daemon 401s (e.g. daemon-side
+    // policy rejections) as CLIENT auth failures — the client's edge token was
+    // already validated above, so those 401s must not feed the auth rate
+    // limiter. Gateway-authored responses (the proxy's own 401s above and the
+    // 502/504s in the catch block) intentionally do NOT carry the marker:
+    // only relayed responses are exempt. `set` also overrides any value an
+    // echoing upstream may have sent, and the wrapper strips the header
+    // before it reaches the client.
+    resHeaders.set(UPSTREAM_RESPONSE_MARKER_HEADER, "1");
 
     if (response.status >= 400) {
       const body = await response.text();

@@ -267,7 +267,7 @@ describe("file_write artifact-HTML guard", () => {
     const html =
       "<!doctype html><html><head><title>Food Market</title></head>" +
       "<body><canvas id='c'></canvas><script>" +
-      ("const data=[{x:1,y:2}];").padEnd(4000, "/") +
+      "const data=[{x:1,y:2}];".padEnd(4000, "/") +
       "new Chart(document.getElementById('c'), {data});</script></body></html>";
 
     const result = await fileWriteTool.execute(

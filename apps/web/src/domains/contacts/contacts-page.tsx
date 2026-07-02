@@ -635,7 +635,10 @@ export function ContactsPage({
   return (
     <div
       className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden"
-      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: "var(--mv1-t1)",
+      }}
     >
       <div className="flex shrink-0 items-center gap-3">
         <div className="flex items-center sm:hidden">
@@ -645,7 +648,7 @@ export function ContactsPage({
           <h1 style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-1px" }}>
             Connections
           </h1>
-          <p style={{ fontSize: 13.5, color: "#5A6672", marginTop: 3 }}>
+          <p style={{ fontSize: 13.5, color: "var(--mv1-t2)", marginTop: 3 }}>
             Connect Cue to Slack, Telegram, phone, email, and other agents — set
             up a channel once and Cue is reachable there.
           </p>

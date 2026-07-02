@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../util/logger.js", () => ({
   getLogger: () =>
@@ -18,8 +18,25 @@ mock.module("../config/loader.js", () => ({
   }),
 }));
 
+// Real modules captured before mock.module replaces them, so every mock below
+// can spread the full export set. mock.module leaks process-wide in bun —
+// a PARTIAL mock breaks any module loaded later in the same test process that
+// imports an export the mock omitted (SyntaxError: Export named ... not found).
+//
+// The namespace objects are LIVE views (they reflect the mock once
+// mock.module runs), so each is snapshotted into a plain object first —
+// spreading the namespace later would spread the mock, not the real module.
+import * as actualVideoThumbnail from "../daemon/video-thumbnail.js";
+import * as actualChecker from "../permissions/checker.js";
+import * as actualPermissionTypes from "../permissions/types.js";
+
+const realChecker = { ...actualChecker };
+const realPermissionTypes = { ...actualPermissionTypes };
+const realVideoThumbnail = { ...actualVideoThumbnail };
+
 // Stub out video thumbnail generation (requires ffmpeg)
 mock.module("../daemon/video-thumbnail.js", () => ({
+  ...realVideoThumbnail,
   generateVideoThumbnail: () => Promise.resolve(null),
   generateVideoThumbnailFromPath: () => Promise.resolve(null),
 }));
@@ -29,31 +46,40 @@ const checkSpy = mock(() => Promise.resolve({ decision: "allow" }));
 const addRuleSpy = mock(() => {});
 
 mock.module("../permissions/checker.js", () => ({
+  ...realChecker,
   check: checkSpy,
   classifyRisk: () => Promise.resolve({ level: "low" }),
   generateAllowlistOptions: () => Promise.resolve([]),
   generateScopeOptions: () => [],
 }));
 
+// Virtual module: no ../permissions/trust-store.ts exists on disk, so there
+// is no real export set to spread — this registration only satisfies legacy
+// specifier lookups.
 mock.module("../permissions/trust-store.js", () => ({
   addRule: addRuleSpy,
 }));
 
 mock.module("../permissions/types.js", () => ({
-  RiskLevel: {
-    Low: "low",
-    Medium: "medium",
-    High: "high",
-  },
+  ...realPermissionTypes,
   isAllowDecision: () => true,
 }));
 
 import type { AssistantAttachmentDraft } from "../daemon/assistant-attachments.js";
-import { getFilePathForAttachment } from "../memory/attachments-store.js";
+// Snapshotted BEFORE any per-test mock.module of this specifier, so the
+// partial mocks below can spread the real exports (see the note above on
+// live namespace views). A partial mock would break later first-time imports
+// of unrelated exports (e.g. daemon/handlers/shared.ts importing
+// estimateBase64Bytes).
+import * as actualAssistantAttachments from "../daemon/assistant-attachments.js";
+
+const realAssistantAttachments = { ...actualAssistantAttachments };
 import {
-  addMessage,
-  createConversation,
-} from "../memory/conversation-crud.js";
+  getAttachmentMetadataForMessage,
+  getFilePathForAttachment,
+  uploadAttachmentFromBytes,
+} from "../memory/attachments-store.js";
+import { addMessage, createConversation } from "../memory/conversation-crud.js";
 import { getDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 initializeDb();
@@ -85,6 +111,16 @@ describe("resolveAssistantAttachments", () => {
     addRuleSpy.mockClear();
   });
 
+  // Individual tests below replace assistant-attachments with a partial mock.
+  // mock.module leaks process-wide in bun, so re-register the real module
+  // after each test — otherwise files that run later in the same process
+  // (e.g. assistant-attachments.test.ts) would silently exercise the mock.
+  afterEach(() => {
+    mock.module("../daemon/assistant-attachments.js", () => ({
+      ...realAssistantAttachments,
+    }));
+  });
+
   test("small attachments are stored on disk via uploadAttachment", async () => {
     const conv = createConversation("test-conv");
     const msg = await addMessage(conv.id, "assistant", "hello");
@@ -102,6 +138,7 @@ describe("resolveAssistantAttachments", () => {
     };
 
     mock.module("../daemon/assistant-attachments.js", () => ({
+      ...realAssistantAttachments,
       resolveDirectives: () =>
         Promise.resolve({ drafts: [draft], warnings: [] }),
       contentBlocksToDrafts: () => [],
@@ -162,6 +199,7 @@ describe("resolveAssistantAttachments", () => {
     };
 
     mock.module("../daemon/assistant-attachments.js", () => ({
+      ...realAssistantAttachments,
       resolveDirectives: () =>
         Promise.resolve({ drafts: [draft], warnings: [] }),
       contentBlocksToDrafts: () => [],
@@ -204,6 +242,85 @@ describe("resolveAssistantAttachments", () => {
 
     // fileBacked flag is always true now
     expect(emitted.fileBacked).toBe(true);
+  });
+
+  test("tool-produced attachment ids are linked to the assistant message", async () => {
+    const conv = createConversation("test-conv-tool-attachment");
+    const msg = await addMessage(conv.id, "assistant", "spreadsheet ready");
+
+    // Simulate an asset tool (spreadsheet_create / pdf_create): the tool
+    // uploads the bytes to the attachments store itself and returns the id
+    // via ToolExecutionResult.attachmentIds — no directive, no content block.
+    const stored = uploadAttachmentFromBytes(
+      "model.xlsx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      new Uint8Array(Buffer.from("fake xlsx bytes")),
+    );
+
+    // Before the fix nothing linked the row: GET messages hydrates from the
+    // message_attachments table, which stayed empty.
+    expect(getAttachmentMetadataForMessage(msg.id)).toHaveLength(0);
+
+    const { resolveAssistantAttachments: resolve } =
+      await import("../daemon/conversation-attachments.js");
+    const result = await resolve(
+      [],
+      [],
+      [],
+      "/tmp",
+      async () => true,
+      msg.id,
+      undefined,
+      [stored.id],
+    );
+
+    // The stored attachment is now linked to the assistant message row.
+    const linked = getAttachmentMetadataForMessage(msg.id);
+    expect(linked).toHaveLength(1);
+    expect(linked[0].originalFilename).toBe("model.xlsx");
+    expect(linked[0].mimeType).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    // And it is emitted for live clients (metadata-only, lazily hydrated).
+    expect(result.emittedAttachments).toHaveLength(1);
+    const emitted = result.emittedAttachments[0];
+    expect(emitted.id).toBe(linked[0].id);
+    expect(emitted.filename).toBe("model.xlsx");
+    expect(emitted.fileBacked).toBe(true);
+    expect(emitted.data).toBe("");
+    expect(emitted.sizeBytes).toBe(linked[0].sizeBytes);
+  });
+
+  test("duplicate and unknown tool attachment ids are handled gracefully", async () => {
+    const conv = createConversation("test-conv-tool-attachment-dupes");
+    const msg = await addMessage(conv.id, "assistant", "done");
+
+    const stored = uploadAttachmentFromBytes(
+      "report.pdf",
+      "application/pdf",
+      new Uint8Array(Buffer.from("%PDF-1.4 fake")),
+    );
+
+    const { resolveAssistantAttachments: resolve } =
+      await import("../daemon/conversation-attachments.js");
+    const result = await resolve(
+      [],
+      [],
+      [],
+      "/tmp",
+      async () => true,
+      msg.id,
+      undefined,
+      // A missing id must not abort linking of the valid one, and a repeated
+      // id must link (and emit) only once.
+      ["does-not-exist", stored.id, stored.id],
+    );
+
+    const linked = getAttachmentMetadataForMessage(msg.id);
+    expect(linked).toHaveLength(1);
+    expect(linked[0].originalFilename).toBe("report.pdf");
+    expect(result.emittedAttachments).toHaveLength(1);
   });
 });
 

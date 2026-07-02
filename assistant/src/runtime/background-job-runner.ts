@@ -22,7 +22,7 @@ import type { LLMCallSite } from "../config/schemas/llm.js";
 import { processMessage } from "../daemon/process-message.js";
 import type { TrustContext } from "../daemon/trust-context.js";
 import { bootstrapConversation } from "../memory/conversation-bootstrap.js";
-import { addMessage } from "../memory/conversation-crud.js";
+import { addMessage, deleteConversation } from "../memory/conversation-crud.js";
 import type { TitleOrigin } from "../memory/conversation-title-service.js";
 import {
   commitDeferredConversation,
@@ -137,6 +137,23 @@ export interface RunBackgroundJobOptions {
    * run completes successfully. See `notifications/deferred-emit.ts`.
    */
   deferNotifications?: boolean;
+  /**
+   * Treat the bootstrapped conversation as scaffolding: delete its
+   * `conversations` row (and cascaded messages) once the run settles, so
+   * recurring jobs don't accumulate one background conversation per run.
+   * The job's useful OUTPUT must live elsewhere (memory files, memory
+   * items, notifications) — anything the agent wrote into the conversation
+   * itself is discarded.
+   *
+   * Deletion happens on success and on non-timeout failure. On TIMEOUT the
+   * conversation is kept: the raced `processMessage` promise is not
+   * cancelled and may still be writing message rows; deleting under it
+   * would strand orphan message rows with no parent conversation. Callers
+   * that opt in should sweep their own stale conversations (matched by
+   * `source`) to reclaim timeout leftovers — see
+   * `sweepStaleConsolidationConversations` for the pattern.
+   */
+  ephemeralConversation?: boolean;
 }
 
 export interface RunBackgroundJobResult {
@@ -301,6 +318,9 @@ export async function runBackgroundJob(
     if (opts.deferNotifications) {
       await commitDeferredConversation(conversation.id);
     }
+    if (opts.ephemeralConversation) {
+      deleteEphemeralConversation(conversation.id, opts.jobName);
+    }
     return { conversationId: conversation.id, ok: true };
   } catch (err) {
     const errorKind = classifyError(err);
@@ -359,6 +379,21 @@ export async function runBackgroundJob(
       });
     }
 
+    // Ephemeral cleanup on failure. Timeout is the exception: the raced
+    // `work` promise keeps running and may still write message rows —
+    // deleting the conversation under it would orphan those rows. Timeout
+    // leftovers are reclaimed by the caller's stale-conversation sweep.
+    if (opts.ephemeralConversation && conversationId) {
+      if (errorKind === "timeout") {
+        log.info(
+          { jobName: opts.jobName, conversationId },
+          "Ephemeral background conversation kept after timeout (turn may still be writing); a later sweep reclaims it",
+        );
+      } else {
+        deleteEphemeralConversation(conversationId, opts.jobName);
+      }
+    }
+
     return {
       conversationId,
       ok: false,
@@ -367,5 +402,33 @@ export async function runBackgroundJob(
     };
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Best-effort delete of an ephemeral background conversation. Failure is
+ * logged and swallowed — a leaked row is strictly better than failing a job
+ * whose real work already succeeded, and the caller's stale sweep gets
+ * another shot at it.
+ */
+function deleteEphemeralConversation(
+  conversationId: string,
+  jobName: string,
+): void {
+  try {
+    deleteConversation(conversationId);
+    log.debug(
+      { jobName, conversationId },
+      "Deleted ephemeral background conversation",
+    );
+  } catch (err) {
+    log.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        jobName,
+        conversationId,
+      },
+      "Failed to delete ephemeral background conversation; continuing",
+    );
   }
 }

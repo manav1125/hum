@@ -190,6 +190,12 @@ export type AgentEvent =
       };
       status?: string;
       contentBlocks?: ContentBlock[];
+      /**
+       * Ids of attachments the tool persisted directly to the attachments
+       * store (see `ToolExecutionResult.attachmentIds`). The daemon links
+       * these onto the assistant message row at end of turn.
+       */
+      attachmentIds?: string[];
       riskLevel?: string;
       riskReason?: string;
       matchedTrustRuleId?: string;
@@ -593,6 +599,7 @@ export type LoopToolExecutor = (
   };
   status?: string;
   contentBlocks?: ContentBlock[];
+  attachmentIds?: string[];
   sensitiveBindings?: SensitiveOutputBinding[];
   yieldToUser?: boolean;
   riskLevel?: string;
@@ -1967,6 +1974,7 @@ export class AgentLoop {
             diff: result.diff,
             status: result.status,
             contentBlocks: result.contentBlocks,
+            attachmentIds: result.attachmentIds,
             riskLevel: result.riskLevel,
             riskReason: result.riskReason,
             matchedTrustRuleId: result.matchedTrustRuleId,

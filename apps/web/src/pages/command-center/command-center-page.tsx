@@ -353,7 +353,7 @@ export function CommandCenterPage({
             '[data-slot="command-center-stream"]>*:nth-child(4){animation-delay:.16s}',
             // Subtle hover lift on every activity row — premium, restrained.
             '[data-slot="command-center-page"] [data-slot="activity-row"]{transition:background .14s ease,box-shadow .14s ease}',
-            '[data-slot="command-center-page"] [data-slot="activity-row"]:hover{background:#FBFCFE}',
+            '[data-slot="command-center-page"] [data-slot="activity-row"]:hover{background:color-mix(in srgb, var(--mv1-t1) 3%, transparent)}',
             // Respect reduced-motion.
             "@media (prefers-reduced-motion:reduce){[data-slot=\"command-center-page\"] *{animation:none !important}}",
             // Mobile rhythm.

@@ -6,11 +6,7 @@ import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 
 import { ensureDataDir, getDbPath } from "../util/platform.js";
-import {
-  clearStoredDb,
-  getStoredDb,
-  setStoredDb,
-} from "./db-singleton.js";
+import { clearStoredDb, getStoredDb, setStoredDb } from "./db-singleton.js";
 import * as schema from "./schema.js";
 
 export type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;

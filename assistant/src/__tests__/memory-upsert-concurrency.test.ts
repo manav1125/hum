@@ -550,4 +550,3 @@ describe("memory segment job atomicity under repeated indexer invocations", () =
     expect(storedSegments.length).toBe(firstCount);
   });
 });
-

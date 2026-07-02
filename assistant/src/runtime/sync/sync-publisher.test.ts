@@ -141,7 +141,9 @@ describe("sync publisher", () => {
     });
 
     try {
-      const message = await publishSyncInvalidation([SYNC_TAGS.assistantAvatar]);
+      const message = await publishSyncInvalidation([
+        SYNC_TAGS.assistantAvatar,
+      ]);
 
       await waitFor(() => received.length === 1);
 

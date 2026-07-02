@@ -16157,6 +16157,8 @@ paths:
                     type: boolean
                   activeConnections:
                     type: number
+                  available:
+                    type: boolean
                   error:
                     type: string
                 required:
@@ -16184,6 +16186,8 @@ paths:
                     type: boolean
                   activeConnections:
                     type: number
+                  available:
+                    type: boolean
                   error:
                     type: string
                 required:
@@ -16211,6 +16215,8 @@ paths:
                     type: boolean
                   activeConnections:
                     type: number
+                  available:
+                    type: boolean
                   error:
                     type: string
                 required:
@@ -30709,6 +30715,8 @@ paths:
       responses:
         "200":
           description: Successful response
+        "404":
+          description: Work item not found
       parameters:
         - name: id
           in: path

@@ -118,12 +118,12 @@ export async function handleBootstrapIntercept(
   const now = Date.now();
   updateSessionDelivery(newSession.sessionId, now, 1, now + RESEND_COOLDOWN_MS);
 
-  return ({
+  return {
     accepted: true,
     duplicate: false,
     eventId,
     verificationOutcome: "bootstrap_bound",
-  });
+  };
 }
 
 // ---------------------------------------------------------------------------

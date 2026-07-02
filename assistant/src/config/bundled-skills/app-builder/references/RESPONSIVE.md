@@ -7,13 +7,13 @@ Every app must work across phone (~360px) to desktop (~1400px+).
 The conversation context's `<turn_context>` block carries an `interface:` field.
 
 **If `interface: ios`** (or any future mobile-web / android identifier):
-  → Mobile-first build. Design the narrow viewport first, enhance upward.
+→ Mobile-first build. Design the narrow viewport first, enhance upward.
 
 **If `interface: macos` or `web`**:
-  → Desktop-first build. Design larger composition first; narrow fallback still meets the universal baseline below.
+→ Desktop-first build. Design larger composition first; narrow fallback still meets the universal baseline below.
 
 **If field is absent or ambiguous**:
-  → Default to desktop-first unless the request implies phone use ("for my iPhone", "a tap-tracker I'll use on the go").
+→ Default to desktop-first unless the request implies phone use ("for my iPhone", "a tap-tracker I'll use on the go").
 
 ---
 

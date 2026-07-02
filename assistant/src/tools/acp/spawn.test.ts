@@ -77,8 +77,7 @@ mock.module("../../tools/credentials/metadata-store.js", () => ({
     const existing = metadataStore.get(key);
     metadataStore.set(key, {
       allowedTools: policy?.allowedTools ?? existing?.allowedTools ?? [],
-      usageDescription:
-        policy?.usageDescription ?? existing?.usageDescription,
+      usageDescription: policy?.usageDescription ?? existing?.usageDescription,
     });
     return {
       credentialId: `cred-${key}`,
@@ -148,9 +147,8 @@ mock.module("../../acp/index.js", () => ({
 }));
 
 const { executeAcpSpawn } = await import("./spawn.js");
-const { _resetAdapterInstallCacheForTests } = await import(
-  "../../acp/auto-install.js"
-);
+const { _resetAdapterInstallCacheForTests } =
+  await import("../../acp/auto-install.js");
 
 // ---------------------------------------------------------------------------
 // Helpers

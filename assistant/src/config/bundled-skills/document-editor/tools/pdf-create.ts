@@ -85,6 +85,9 @@ export async function run(
         pageFormat: format,
       }),
       isError: false,
+      // Typed side channel: lets the daemon link the stored attachment onto
+      // the assistant message row so history reloads return it.
+      attachmentIds: [attachment.id],
     };
   } catch (err) {
     return {

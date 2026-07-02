@@ -17,10 +17,7 @@ import { eq } from "drizzle-orm";
 
 import { getDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
-import {
-  enqueueMemoryJob,
-  upsertDebouncedJob,
-} from "../memory/jobs-store.js";
+import { enqueueMemoryJob, upsertDebouncedJob } from "../memory/jobs-store.js";
 import { memoryJobs } from "../memory/schema.js";
 
 describe("upsertDebouncedJob payload refresh", () => {

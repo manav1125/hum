@@ -58,6 +58,7 @@ mock.module("../heartbeat/heartbeat-run-store.js", () => ({
   countCompletedHeartbeatRuns: mock(() => 10),
   countCompletedRunsToday: mock(() => 0),
   countRecentConsecutiveRuns: mock(() => 0),
+  getLatestCompletedHeartbeatRunFinishedAt: mock(() => null),
 }));
 
 mock.module("../schedule/recurrence-engine.js", () => ({
@@ -77,6 +78,7 @@ mock.module("../memory/conversation-crud.js", () => ({
   // but the mock module must still expose every name the real module does.
   addMessage: () => Promise.resolve({ id: "mock-msg-id" }),
   reserveMessage: mock(async () => ({ id: "msg-reserve" })),
+  deleteConversation: () => ({ segmentIds: [], deletedSummaryIds: [] }),
 }));
 
 const mockProcessMessage = mock(() => Promise.resolve({ messageId: "msg-1" }));

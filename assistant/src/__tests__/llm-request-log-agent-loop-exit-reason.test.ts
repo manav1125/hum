@@ -105,7 +105,11 @@ describe("setAgentLoopExitReasonOnLatestLog", () => {
 
     // Current run lands a new log, then exits.
     Bun.sleepSync(2);
-    const current = recordRequestLog("conv-1", '{"cur_req":1}', '{"cur_res":1}');
+    const current = recordRequestLog(
+      "conv-1",
+      '{"cur_req":1}',
+      '{"cur_res":1}',
+    );
     setAgentLoopExitReasonOnLatestLog("conv-1", "yield_to_user");
 
     expect(getRequestLogById(prev)?.agentLoopExitReason).toBe("no_tool_calls");

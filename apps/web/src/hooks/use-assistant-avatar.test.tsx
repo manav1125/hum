@@ -64,12 +64,14 @@ const fetchCharacterComponents = mock(async () => components);
 const fetchAvatarState = mock(async () => noneState as AvatarState | null);
 const fetchAvatarImageUrl = mock(async () => null as string | null);
 const fetchCharacterTraits = mock(async () => null as CharacterTraits | null);
+const clearAvatarFileAbsenceCache = mock(() => {});
 
 mock.module("@/assistant/avatar-api", () => ({
   fetchCharacterComponents,
   fetchAvatarState,
   fetchAvatarImageUrl,
   fetchCharacterTraits,
+  clearAvatarFileAbsenceCache,
 }));
 
 const { useAssistantAvatar } = await import("@/hooks/use-assistant-avatar");

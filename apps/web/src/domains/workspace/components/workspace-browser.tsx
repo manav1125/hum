@@ -35,14 +35,14 @@ import { formatRelativeDate } from "@/utils/format-date";
 export type WorkspaceViewMode = "preview" | "source";
 
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  violet: "#534AB7",
-  line: "#E5E9F0",
-  t1: "#1A2230",
-  t3: "#8D99A5",
-  blueWash: "#EAF0FE",
-  violetWash: "#EEEDFB",
+  ink: "var(--mv1-chip)",
+  blue: "var(--mv1-blue)",
+  violet: "var(--mv1-violet-strong)",
+  line: "var(--mv1-line)",
+  t1: "var(--mv1-t1)",
+  t3: "var(--mv1-t3)",
+  blueWash: "var(--mv1-blue-wash)",
+  violetWash: "color-mix(in srgb, var(--mv1-violet) 14%, transparent)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -125,7 +125,9 @@ function StatCard({
   return (
     <div
       style={{
-        flex: 1,
+        // 160px basis lets the three cards sit in one row on desktop but wrap
+        // to a readable 2+1 / stacked layout on narrow (390px) viewports.
+        flex: "1 1 160px",
         minWidth: 0,
         border: `1px solid ${C.line}`,
         borderRadius: 13,
@@ -133,7 +135,7 @@ function StatCard({
         display: "flex",
         alignItems: "center",
         gap: 12,
-        background: "#fff",
+        background: "var(--mv1-card)",
       }}
     >
       <span
@@ -165,7 +167,16 @@ function StatCard({
         >
           {value}
         </div>
-        <div style={{ fontFamily: mono, fontSize: 10, color: C.t3 }}>
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 10,
+            color: C.t3,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {label}
         </div>
       </div>
@@ -185,7 +196,7 @@ function StatCards({ stats }: { stats: WorkspaceStats | undefined }) {
       : String(stats.files);
 
   return (
-    <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
       <StatCard
         icon={<Layers className="h-4 w-4" aria-hidden />}
         iconBg={C.blueWash}
@@ -375,7 +386,7 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
         <div
           className="hidden min-h-0 min-w-0 flex-col overflow-hidden sm:flex"
           style={{
-            background: "#fff",
+            background: "var(--mv1-card)",
             border: `1px solid ${C.line}`,
             borderRadius: 14,
           }}
@@ -385,7 +396,7 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
         <div
           className="flex min-h-0 min-w-0 flex-col overflow-hidden"
           style={{
-            background: "#fff",
+            background: "var(--mv1-card)",
             border: `1px solid ${C.line}`,
             borderRadius: 14,
           }}

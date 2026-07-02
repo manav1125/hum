@@ -219,7 +219,11 @@ export async function generateVoiceIntake(
   const trimmed = transcript.trim();
   if (trimmed.length === 0) {
     return {
-      error: { kind: "BAD_REQUEST", status: 400, message: "Transcript is empty" },
+      error: {
+        kind: "BAD_REQUEST",
+        status: 400,
+        message: "Transcript is empty",
+      },
     };
   }
 
@@ -269,7 +273,10 @@ export async function generateVoiceIntake(
     const toolBlock = extractToolUse(response);
     if (!toolBlock) {
       // No structured output — degrade gracefully rather than fail the thread.
-      log.warn({ conversationId }, "No tool_use block in voice-intake response");
+      log.warn(
+        { conversationId },
+        "No tool_use block in voice-intake response",
+      );
       parsed = { summary: "", actionItems: [] };
     } else {
       parsed = parseVoiceIntakeInput(toolBlock.input);
@@ -291,7 +298,10 @@ export async function generateVoiceIntake(
     conversationId,
     "assistant",
     JSON.stringify([
-      { type: "text", text: composeAssistantMessage(parsed.summary, parsed.actionItems) },
+      {
+        type: "text",
+        text: composeAssistantMessage(parsed.summary, parsed.actionItems),
+      },
     ]),
   );
 
@@ -300,9 +310,8 @@ export async function generateVoiceIntake(
   //    skips transcripts under ~100 chars — fine; the thread is unaffected.)
   try {
     const config = getConfig();
-    const { runGraphExtraction } = await import(
-      "../../memory/graph/extraction.js"
-    );
+    const { runGraphExtraction } =
+      await import("../../memory/graph/extraction.js");
     await runGraphExtraction(conversationId, "default", config, {
       transcript: trimmed,
     });

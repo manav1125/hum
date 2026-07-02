@@ -29,6 +29,7 @@ mock.module("../config/loader.js", () => ({
 import {
   linkAttachmentToMessage,
   uploadAttachment,
+  uploadAttachmentFromBytes,
 } from "../memory/attachments-store.js";
 import { addMessage, createConversation } from "../memory/conversation-crud.js";
 import { getDb } from "../memory/db-connection.js";
@@ -135,6 +136,100 @@ describe("handleListMessages attachments", () => {
     expect(attachments![0].mimeType).toBe("image/png");
     // Assistant image attachments include base64 data for inline rendering
     expect(attachments![0].data).toBe(IMAGE_BASE64);
+  });
+
+  test("tool-produced attachments (attachmentIds side channel) appear on the assistant row", async () => {
+    // Regression: asset tools (spreadsheet_create, pdf_create,
+    // deck_export_pdf, document_export_pdf) upload their file to the
+    // attachments store and return the id in the tool output. The daemon
+    // must link that id onto the assistant message row at end of turn —
+    // otherwise GET messages returns `attachments: []` after a reload and
+    // clients rendering history show no attachment chip.
+    const conv = createConversation();
+
+    // The attachment exists in the store, exactly as the tool leaves it.
+    const stored = uploadAttachmentFromBytes(
+      "saas-model.xlsx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      new Uint8Array(Buffer.from("fake xlsx bytes")),
+    );
+
+    // The persisted turn: assistant tool_use + its tool_result row carrying
+    // the attachmentId in the output JSON (the flat `attachments` channel is
+    // hydrated from the link table, not from this JSON).
+    const toolOutput = JSON.stringify({
+      message: "Spreadsheet created.",
+      attachmentId: stored.id,
+      filename: "saas-model.xlsx",
+    });
+    const assistantMsg = await addMessage(
+      conv.id,
+      "assistant",
+      JSON.stringify([
+        { type: "text", text: "Here is your model." },
+        {
+          type: "tool_use",
+          id: "toolu_1",
+          name: "spreadsheet_create",
+          input: { filename: "saas-model.xlsx" },
+        },
+      ]),
+    );
+    await addMessage(
+      conv.id,
+      "user",
+      JSON.stringify([
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_1",
+          content: toolOutput,
+          is_error: false,
+        },
+      ]),
+    );
+
+    // End-of-turn attachment resolution with the tool-produced id (the
+    // agent loop passes state.accumulatedToolAttachmentIds here).
+    const { resolveAssistantAttachments } =
+      await import("../daemon/conversation-attachments.js");
+    await resolveAssistantAttachments(
+      [],
+      [],
+      [],
+      "/tmp",
+      async () => true,
+      assistantMsg.id,
+      undefined,
+      [stored.id],
+    );
+
+    const response = handleListMessages(createTestArgs(conv.id));
+    const body = response as {
+      messages: Array<
+        MessagePayload & {
+          attachments?: Array<
+            AttachmentPayload & {
+              id?: string;
+              filename?: string;
+              fileBacked?: boolean;
+            }
+          >;
+        }
+      >;
+    };
+
+    // tool_result rows merge into the assistant row, so one row comes back.
+    expect(body.messages).toHaveLength(1);
+    const attachments = body.messages[0].attachments;
+    expect(attachments).toBeDefined();
+    expect(attachments).toHaveLength(1);
+    expect(attachments![0].filename).toBe("saas-model.xlsx");
+    expect(attachments![0].mimeType).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(attachments![0].fileBacked).toBe(true);
+    // Non-image: metadata-only, bytes are lazily fetched via the content endpoint.
+    expect(attachments![0].data).toBeUndefined();
   });
 
   test("user message with mixed attachments only inlines images", async () => {

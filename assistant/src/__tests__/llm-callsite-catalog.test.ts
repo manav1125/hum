@@ -54,9 +54,7 @@ describe("LLM call-site catalog", () => {
 
   test("CALL_SITE_DEFAULTS covers every LLMCallSite enum value", () => {
     const defaultIds = new Set(Object.keys(CALL_SITE_DEFAULTS));
-    const missing = LLMCallSiteEnum.options.filter(
-      (id) => !defaultIds.has(id),
-    );
+    const missing = LLMCallSiteEnum.options.filter((id) => !defaultIds.has(id));
     expect(missing).toEqual([]);
   });
 

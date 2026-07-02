@@ -567,6 +567,9 @@ export const ROUTES: RouteDefinition[] = [
     description:
       "Partially update a work item's title, notes, status, or priority.",
     tags: ["work-items"],
+    additionalResponses: {
+      "404": { description: "Work item not found" },
+    },
     requestBody: z.object({
       title: z.string(),
       notes: z.string(),
@@ -580,6 +583,16 @@ export const ROUTES: RouteDefinition[] = [
     }),
     handler: ({ pathParams, body }) => {
       const id = pathParams!.id;
+
+      // 404 on unknown ids — previously this fell through to
+      // `updateWorkItem` (a no-op on a missing row) and returned
+      // 200 {"item": null}, so callers patching a stale/deleted id never
+      // learned the item was gone.
+      const existing = getWorkItem(id);
+      if (!existing) {
+        throw new NotFoundError("Work item not found");
+      }
+
       const { title, notes, status, priorityTier, sortIndex } = (body ??
         {}) as {
         title?: string;
@@ -595,11 +608,12 @@ export const ROUTES: RouteDefinition[] = [
         assignee?: string;
       };
 
-      if (status !== undefined) {
-        const existing = getWorkItem(id);
-        if (existing?.status === "cancelled" && status !== "cancelled") {
-          return { item: existing };
-        }
+      if (
+        status !== undefined &&
+        existing.status === "cancelled" &&
+        status !== "cancelled"
+      ) {
+        return { item: existing };
       }
 
       const updates: Record<string, unknown> = {};
@@ -613,15 +627,20 @@ export const ROUTES: RouteDefinition[] = [
       if (labels !== undefined) updates.labels = JSON.stringify(labels);
       if (assignee !== undefined) updates.assignee = assignee;
 
-      const item =
-        updateWorkItem(id, updates as Parameters<typeof updateWorkItem>[1], {
-          actor: "user",
-        }) ?? null;
+      const item = updateWorkItem(
+        id,
+        updates as Parameters<typeof updateWorkItem>[1],
+        { actor: "user" },
+      );
 
-      if (item) {
-        broadcastWorkItemStatus(item.id);
-        publishEvent({ type: "tasks_changed" });
+      // The row existed at the pre-check above, so a null here means it was
+      // deleted while the update was in flight — same outcome for the caller.
+      if (!item) {
+        throw new NotFoundError("Work item not found");
       }
+
+      broadcastWorkItemStatus(item.id);
+      publishEvent({ type: "tasks_changed" });
 
       return { item };
     },

@@ -115,7 +115,10 @@ export function sandboxPolicy(
 
   // Check both the logical path and the symlink-resolved path so a symlink
   // with a non-denied name pointing at a denied file is still caught.
-  if (DENIED_BASENAMES.has(basename(resolved)) || DENIED_BASENAMES.has(basename(realResolved))) {
+  if (
+    DENIED_BASENAMES.has(basename(resolved)) ||
+    DENIED_BASENAMES.has(basename(realResolved))
+  ) {
     return {
       ok: false,
       reason: "denied",

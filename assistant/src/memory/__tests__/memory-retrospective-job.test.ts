@@ -1285,17 +1285,20 @@ describe("memoryRetrospectiveJob", () => {
   // GC of superseded prior retrospectives (memory.retrospective.keepSupersededRuns)
   // -------------------------------------------------------------------------
 
-  test("legacy path: success deletes the superseded prior retrospective", async () => {
+  test("legacy path: success deletes the superseded prior retrospective AND this run's own conversation", async () => {
     priorRetroId = "prior-retro-conv-1";
     priorRetroMessages = [priorRetroMessage(["an old save"])];
 
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
 
     expect(outcome.kind).toBe("invoked");
-    expect(deletedConversationIds).toEqual(["prior-retro-conv-1"]);
+    expect(deletedConversationIds).toEqual([
+      "prior-retro-conv-1",
+      "bg-conv-new",
+    ]);
   });
 
-  test("fork path: success deletes the superseded prior retrospective", async () => {
+  test("fork path: success deletes the superseded prior retrospective AND this run's own fork", async () => {
     forkFlagEnabled = true;
     priorRetroId = "prior-retro-conv-1";
     priorRetroMessages = [priorRetroMessage(["an old save"])];
@@ -1303,14 +1306,17 @@ describe("memoryRetrospectiveJob", () => {
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
 
     expect(outcome.kind).toBe("invoked");
-    expect(deletedConversationIds).toEqual(["prior-retro-conv-1"]);
+    expect(deletedConversationIds).toEqual([
+      "prior-retro-conv-1",
+      "fork-conv-1",
+    ]);
   });
 
-  test("success with no prior retrospective deletes nothing", async () => {
+  test("success with no prior retrospective still deletes this run's own conversation (zero persisted rows per run)", async () => {
     const outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
 
     expect(outcome.kind).toBe("invoked");
-    expect(deletedConversationIds).toEqual([]);
+    expect(deletedConversationIds).toEqual(["bg-conv-new"]);
   });
 
   test("legacy path: wake failure does NOT delete the prior retrospective (dedup chain survives)", async () => {
@@ -1349,10 +1355,11 @@ describe("memoryRetrospectiveJob", () => {
     priorRetroOwnerId = "parent-conv-0"; // not the job's source ("src-conv-1")
     priorRetroMessages = [priorRetroMessage(["parent's preserved save"])];
 
-    // Legacy kind.
+    // Legacy kind. Only the run's own (ephemeral) conversation is deleted —
+    // never the ancestor's prior.
     let outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
     expect(outcome.kind).toBe("invoked");
-    expect(deletedConversationIds).toEqual([]);
+    expect(deletedConversationIds).toEqual(["bg-conv-new"]);
     // Dedup still seeds from the ancestor's retro.
     expect(wakeCalls[0]!.hint).toContain("- parent's preserved save");
 
@@ -1360,7 +1367,7 @@ describe("memoryRetrospectiveJob", () => {
     forkFlagEnabled = true;
     outcome = await memoryRetrospectiveJob(makeJob(), stubConfig);
     expect(outcome.kind).toBe("invoked");
-    expect(deletedConversationIds).toEqual([]);
+    expect(deletedConversationIds).toEqual(["bg-conv-new", "fork-conv-1"]);
     expect(persistedInstructionText()).toContain("- parent's preserved save");
   });
 
@@ -1470,8 +1477,12 @@ describe("memoryRetrospectiveJob", () => {
       "scanned prior save",
       "this run's save",
     ]);
-    // The prior was GC'd, but its saves live on in the log.
-    expect(deletedConversationIds).toEqual(["prior-retro-conv-1"]);
+    // The prior was GC'd (and this run's own conversation deleted), but the
+    // saves live on in the log.
+    expect(deletedConversationIds).toEqual([
+      "prior-retro-conv-1",
+      "bg-conv-new",
+    ]);
   });
 
   test("empty-string-sentinel state row with no log behaves as first-pass dedup (no baseline)", async () => {
@@ -1607,6 +1618,8 @@ describe("memoryRetrospectiveJob", () => {
     expect(outcome.kind).toBe("invoked");
     expect(stateUpserts).toHaveLength(1);
     expect(stateUpserts[0]!.lastProcessedMessageId).toBe("m3");
-    expect(deletedConversationIds).toEqual([]);
+    // The prior's delete threw (non-fatal); this run's own ephemeral
+    // conversation is still cleaned up.
+    expect(deletedConversationIds).toEqual(["bg-conv-new"]);
   });
 });

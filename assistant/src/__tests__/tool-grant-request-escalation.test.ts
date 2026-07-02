@@ -226,7 +226,6 @@ describe("ToolApprovalHandler / grant-miss escalation", () => {
     });
     expect(requests.length).toBe(0);
   });
-
 });
 
 // ---------------------------------------------------------------------------

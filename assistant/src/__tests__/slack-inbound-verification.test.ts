@@ -256,5 +256,4 @@ describe("Slack inbound trusted contact verification", () => {
 
     // No Slack DM was sent
   });
-
 });

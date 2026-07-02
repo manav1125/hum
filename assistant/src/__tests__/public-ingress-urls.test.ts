@@ -66,7 +66,6 @@ describe("IngressConfigSchema", () => {
       }),
     ).toThrow(/ingress\.publicBaseUrl must be an absolute URL/);
   });
-
 });
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  clearAvatarFileAbsenceCache,
   fetchCharacterComponents,
   fetchAvatarState,
   fetchAvatarImageUrl,
@@ -126,10 +127,25 @@ export function useAssistantAvatar(assistantId: string | null) {
     // so a flaky fetch or a briefly-unavailable daemon recovers without a
     // manual invalidate.
     retry: 1,
+    // When the query settles in an error state (e.g. no avatar files AND
+    // character components unavailable), every route navigation mounts new
+    // consumers of this hook — the default retryOnMount would re-run the
+    // queryFn each time, re-firing the legacy workspace-file probes whose
+    // 404s the browser logs to the console on every navigation. The
+    // root-layout keeps one observer of this query mounted for the whole
+    // session, so disabling mount retries caps the probes at one attempt
+    // (plus `retry: 1`) per session; genuine avatar changes still refetch
+    // via the explicit invalidations (upload/remove/regenerate, SSE
+    // `avatar_updated`, and the reconnect sweep in
+    // `use-assistant-resource-sync`).
+    retryOnMount: false,
   });
 
   const invalidate = useCallback(() => {
     if (!assistantId) return;
+    // Explicit invalidation means "the avatar may have changed" — drop any
+    // session-cached 404s so the refetch actually re-probes the files.
+    clearAvatarFileAbsenceCache(assistantId);
     void queryClient.invalidateQueries({
       queryKey: avatarQueryKey(assistantId),
     });

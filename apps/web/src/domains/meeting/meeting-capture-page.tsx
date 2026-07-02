@@ -25,24 +25,30 @@ type RecapJson = MeetingsRecapPostResponses[200];
  * equalizer). Live streaming transcription is a later phase.
  */
 
+/**
+ * Theme-aware `--mv1-*` vars (src/index.css): in light themes they resolve to
+ * the exact v0.3 hexes this page was designed with; under dark/velvet they
+ * swap to the dark-book equivalents. `ink2` stays a literal dark hex — it is
+ * a dark-panel surface color, never body text.
+ */
 const C = {
-  ink: "#1A2230",
+  ink: "var(--mv1-t1)",
   ink2: "#24303F",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "#DBE4FB",
-  violet: "#7F77DD",
-  violetS: "#534AB7",
-  bg: "#F4F6F9",
-  surface: "#FFFFFF",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#8D99A5",
-  green: "#277E41",
-  red: "#E24B4A",
+  blue: "var(--mv1-blue)",
+  blueS: "var(--mv1-blue-strong)",
+  blueW: "var(--mv1-blue-wash)",
+  violet: "var(--mv1-violet)",
+  violetS: "var(--mv1-violet-strong)",
+  bg: "var(--mv1-canvas)",
+  surface: "var(--mv1-card)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  green: "var(--mv1-green)",
+  red: "var(--mv1-danger)",
 } as const;
 /**
  * Dark mobile tokens (README-MOBILE §1). The phone shell is full-bleed dark
@@ -152,7 +158,9 @@ function CaptureFrame({
     <div>
       <div
         style={{
-          background: C.ink,
+          // Intentionally-dark "phone" hero — stays ink navy in every theme
+          // (the content on top is hardcoded light).
+          background: "#1A2230",
           borderRadius: 26,
           width: 300,
           minHeight: 360,
@@ -982,7 +990,7 @@ function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }
         violet: C.violet,
         nestBg: C.surface,
         nestLine: C.line,
-        noteBg: "#fff",
+        noteBg: C.surface,
         radius: 14,
       };
 

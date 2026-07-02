@@ -10,12 +10,117 @@ import {
   providerForModel,
 } from "../../../../media/image-service.js";
 import { getFilePathBySourcePath } from "../../../../memory/attachments-store.js";
+import { resolveToolingProviderToken } from "../../../../providers/tooling-credentials.js";
 import type { ImageContent } from "../../../../providers/types.js";
+import { getDaemonRuntimeMode } from "../../../../runtime/runtime-mode.js";
 import { sandboxPolicy } from "../../../../tools/shared/filesystem/path-policy.js";
 import type {
   ToolContext,
   ToolExecutionResult,
 } from "../../../../tools/types.js";
+import { executeReplicatePrediction } from "../../replicate/tools/replicate-run.js";
+
+/**
+ * Model used when the managed proxy is unavailable and the deployment has a
+ * direct Replicate token instead (typical for self-hosted deployments).
+ */
+const REPLICATE_FALLBACK_MODEL = "black-forest-labs/flux-schnell";
+
+/**
+ * Guidance appended to fallback failures so the LLM reports the live result
+ * instead of asserting stale conclusions ("Replicate is broken") from earlier
+ * conversation memory.
+ */
+const FALLBACK_FRESHNESS_NOTE =
+  "A Replicate token IS configured and was used for this attempt — this is a fresh, live result from just now. Report THIS error to the user as-is. Do not claim Replicate is unconfigured or 'known broken' based on earlier conversation memory, do not offer a Composio/OAuth 'Connect Replicate' flow (Replicate is a direct api.replicate.com integration), and do not change service configuration.";
+
+/**
+ * Generate images via the direct Replicate integration (flux-schnell) and
+ * return them the same way the managed path does: inline base64 content
+ * blocks. Used only when managed-proxy credentials are unavailable but a
+ * Replicate token resolves.
+ */
+async function generateViaReplicateFallback(opts: {
+  prompt: string;
+  variants?: number;
+  token: string;
+  signal?: AbortSignal;
+}): Promise<ToolExecutionResult> {
+  const numOutputs = Math.min(
+    4,
+    Math.max(1, Math.trunc(Number(opts.variants) || 1)),
+  );
+  const result = await executeReplicatePrediction({
+    model: REPLICATE_FALLBACK_MODEL,
+    input: {
+      prompt: opts.prompt,
+      num_outputs: numOutputs,
+      output_format: "png",
+    },
+    token: opts.token,
+    signal: opts.signal,
+  });
+
+  if (!result.ok) {
+    return {
+      content: `Managed proxy is unavailable, so image generation fell back to Replicate (${REPLICATE_FALLBACK_MODEL}) — and that attempt failed: ${result.error}\n\n${FALLBACK_FRESHNESS_NOTE}`,
+      isError: true,
+    };
+  }
+  if (result.urls.length === 0) {
+    return {
+      content: `Replicate fallback (${REPLICATE_FALLBACK_MODEL}) succeeded but returned no media URL. Raw output: ${JSON.stringify(result.output).slice(0, 500)}\n\n${FALLBACK_FRESHNESS_NOTE}`,
+      isError: true,
+    };
+  }
+
+  const contentBlocks: ImageContent[] = [];
+  for (const url of result.urls) {
+    try {
+      const res = await fetch(url, { signal: opts.signal });
+      if (!res.ok) {
+        return {
+          content: `Replicate fallback generated an image but downloading it failed (HTTP ${res.status}) from ${url}.\n\n${FALLBACK_FRESHNESS_NOTE}`,
+          isError: true,
+        };
+      }
+      const mimeType =
+        res.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+      const data = Buffer.from(await res.arrayBuffer()).toString("base64");
+      contentBlocks.push({
+        type: "image",
+        source: { type: "base64", media_type: mimeType, data },
+      });
+    } catch (err) {
+      return {
+        content: `Replicate fallback generated an image but downloading it failed: ${(err as Error).message}\n\n${FALLBACK_FRESHNESS_NOTE}`,
+        isError: true,
+      };
+    }
+  }
+
+  const imageCount = contentBlocks.length;
+  return {
+    content: `Generated ${imageCount} image${imageCount !== 1 ? "s" : ""} using ${REPLICATE_FALLBACK_MODEL} (direct Replicate fallback; the managed proxy is unavailable on this deployment).`,
+    isError: false,
+    contentBlocks,
+  };
+}
+
+/**
+ * Actionable error for the managed-proxy-unavailable case when no Replicate
+ * token resolves either. Tailored by deployment shape: containerized daemons
+ * without managed-proxy prereqs are self-hosted, where "log in to Vellum"
+ * is a dead end — the fix is a direct provider key.
+ */
+function managedUnavailableHint(): string {
+  const keyOptions =
+    "To enable image generation, either set a Replicate API token (direct api.replicate.com integration — NOT Composio, no OAuth 'connection') via `assistant keys set replicate <token>` or the REPLICATE_API_TOKEN environment variable, or configure a Gemini/OpenAI API key in Settings → Models & Services and switch image generation to Your Own mode.";
+  if (getDaemonRuntimeMode() === "docker") {
+    return `Image generation is not configured on this self-hosted deployment: the Vellum managed proxy is not available here, and logging in to Vellum will not fix it. ${keyOptions}`;
+  }
+  return `Managed proxy is not available. Please log in to Vellum or switch to Your Own mode. ${keyOptions}`;
+}
 
 export async function run(
   input: Record<string, unknown>,
@@ -45,16 +150,41 @@ export async function run(
     provider,
     mode: svc.mode,
   });
+
+  const prompt = input.prompt as string;
+  const mode = (input.mode as "generate" | "edit") ?? "generate";
+  const sourcePaths = input.source_paths as string[] | undefined;
+
   if (!credentials) {
+    // Managed mode with no managed proxy (typical self-host deployment):
+    // fall back to the direct Replicate integration when a token resolves,
+    // instead of dead-ending on "log in to Vellum".
+    if (svc.mode === "managed") {
+      const replicateToken = await resolveToolingProviderToken("replicate");
+      if (replicateToken) {
+        if (mode === "edit") {
+          return {
+            content: `The managed proxy is unavailable on this deployment, and the direct Replicate fallback (${REPLICATE_FALLBACK_MODEL}) only supports text-to-image generation, not edits. To edit images, configure a Gemini/OpenAI API key in Settings → Models & Services and switch image generation to Your Own mode. Report this to the user as-is; do not change service configuration yourself.`,
+            isError: true,
+          };
+        }
+        return generateViaReplicateFallback({
+          prompt,
+          variants: input.variants as number | undefined,
+          token: replicateToken,
+          signal: context.signal,
+        });
+      }
+      return {
+        content: `${managedUnavailableHint()}\n\nReport this error to the user as-is. Do not change service configuration (managed/your-own mode or default provider/model settings) to try to fix it.`,
+        isError: true,
+      };
+    }
     return {
       content: `${errorHint ?? "Image generation is not configured."}\n\nReport this error to the user as-is. Do not change service configuration (managed/your-own mode or default provider/model settings) to try to fix it.`,
       isError: true,
     };
   }
-
-  const prompt = input.prompt as string;
-  const mode = (input.mode as "generate" | "edit") ?? "generate";
-  const sourcePaths = input.source_paths as string[] | undefined;
   const model =
     typeof modelOverride === "string" && modelOverride
       ? modelOverride

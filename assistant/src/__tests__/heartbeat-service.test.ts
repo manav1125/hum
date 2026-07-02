@@ -34,6 +34,7 @@ mock.module("../heartbeat/heartbeat-run-store.js", () => ({
   countCompletedHeartbeatRuns: mockCountCompletedHeartbeatRuns,
   countCompletedRunsToday: mock(() => 0),
   countRecentConsecutiveRuns: mock(() => 0),
+  getLatestCompletedHeartbeatRunFinishedAt: mock(() => null),
 }));
 
 // Mock config loader
@@ -137,6 +138,10 @@ mock.module("../memory/conversation-crud.js", () => ({
   setConversationOriginChannelIfUnset: () => {},
   updateConversationContextWindow: () => {},
   deleteMessageById: () => {},
+  // runBackgroundJob (loaded transitively via heartbeat-service) imports
+  // deleteConversation for its ephemeral-conversation cleanup; heartbeats
+  // never opt in, but the mock module must expose the name.
+  deleteConversation: () => ({ segmentIds: [], deletedSummaryIds: [] }),
   updateConversationTitle: () => {},
   updateConversationUsage: () => {},
   addMessage: () => ({ id: "mock-msg-id" }),

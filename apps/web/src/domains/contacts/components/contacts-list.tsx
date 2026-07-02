@@ -41,7 +41,10 @@ export function ContactsList({
     <Card className="h-full">
       <div
         className="flex h-full min-w-0 flex-col gap-[10px]"
-        style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+        style={{
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+          color: "var(--mv1-t1)",
+        }}
       >
         <Input
           type="text"

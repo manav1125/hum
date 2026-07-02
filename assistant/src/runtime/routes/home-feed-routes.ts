@@ -242,6 +242,12 @@ export async function handleGetHomeFeed({
     filtered = feed.items;
   }
 
+  // Dismissed cards are the user saying "go away" — they must not resurface
+  // on Home. The feed file retains them (for `home/feed/query` with
+  // includeDismissed=true and for dedup against re-synthesis), so filter at
+  // the read edge, mirroring the default in `handleListHomeFeed`.
+  filtered = filtered.filter((item) => item.status !== "dismissed");
+
   // Stale-while-revalidate: serve whatever is cached right now and kick
   // off a bounded background regeneration of any stale LLM content. The
   // refresh publishes `home_feed_updated` when fresh content lands, so

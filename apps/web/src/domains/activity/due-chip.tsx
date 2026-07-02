@@ -42,7 +42,9 @@ export function DueChip({
         padding: "2px 7px",
         borderRadius: 6,
         color: overdue ? C.danger : C.t3,
-        background: overdue ? "#FDE7E2" : "transparent",
+        background: overdue
+          ? `color-mix(in srgb, ${C.danger} 12%, transparent)`
+          : "transparent",
         border: overdue ? "none" : `1px solid ${C.line}`,
       }}
     >

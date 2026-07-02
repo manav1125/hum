@@ -191,6 +191,13 @@ export interface EventHandlerState {
   readonly persistedToolUseIds: Set<string>;
   readonly accumulatedDirectives: DirectiveRequest[];
   readonly accumulatedToolContentBlocks: ContentBlock[];
+  /**
+   * Ids of attachments the turn's tools persisted directly to the attachments
+   * store (`ToolExecutionResult.attachmentIds`). Linked onto the assistant
+   * message row at end of turn by `resolveAssistantAttachments` so history
+   * reloads return them.
+   */
+  readonly accumulatedToolAttachmentIds: string[];
   /** Maps index in accumulatedToolContentBlocks → tool name that produced it. */
   readonly toolContentBlockToolNames: Map<number, string>;
   readonly directiveWarnings: string[];
@@ -347,6 +354,7 @@ export function createEventHandlerState(): EventHandlerState {
     persistedToolUseIds: new Set(),
     accumulatedDirectives: [],
     accumulatedToolContentBlocks: [],
+    accumulatedToolAttachmentIds: [],
     toolContentBlockToolNames: new Map(),
     directiveWarnings: [],
     toolUseIdToName: new Map(),
@@ -1347,6 +1355,21 @@ export async function handleToolResult(
             toolName,
           );
         }
+      }
+    }
+  }
+
+  // Attachments the tool persisted directly to the attachments store (asset
+  // tools like spreadsheet_create / pdf_create return the stored id instead
+  // of raw file bytes). Accumulated here and linked onto the assistant
+  // message row at end of turn so GET messages returns them after a reload.
+  if (event.attachmentIds) {
+    for (const attachmentId of event.attachmentIds) {
+      if (
+        attachmentId &&
+        !state.accumulatedToolAttachmentIds.includes(attachmentId)
+      ) {
+        state.accumulatedToolAttachmentIds.push(attachmentId);
       }
     }
   }

@@ -32,6 +32,14 @@ When you do need to choose, use an alias, not a concrete model ID. Aliases alway
 
 Pass a concrete model ID only if the user names one explicitly. If the tool rejects an unknown model ID, the error lists the currently available models and aliases.
 
+## Self-hosted deployments (Replicate fallback)
+
+On self-hosted deployments the Vellum managed proxy is not available. When that happens and a Replicate API token is configured (secure store provider `replicate`, or the `REPLICATE_API_TOKEN` env var), `media_generate_image` automatically falls back to the direct Replicate integration (`black-forest-labs/flux-schnell`) for **generate** mode and returns the image inline exactly like the managed path — just call the tool normally; no special handling needed. `replicate_run` (from the `replicate` skill) remains the direct path for image/video generation on these deployments.
+
+- The fallback covers text-to-image generation only. Edit mode still requires the managed proxy or a Gemini/OpenAI key in Your Own mode; the tool's error says so when an edit can't run.
+- If a fallback attempt fails, the error explicitly states that a Replicate token IS configured and was used. Treat that as a fresh, live result: report THAT error. Never assert from earlier conversation memory that "Replicate is broken" without retesting — a remembered failure proves nothing about the current call.
+- Replicate is a DIRECT api.replicate.com integration. Never offer a Composio/OAuth "Connect Replicate" flow, and on a self-hosted deployment never tell the user to "log in to Vellum" to fix image generation.
+
 ## Example calls
 
 Generate (no model parameter, default is correct):
@@ -90,10 +98,11 @@ Images return as inline content blocks in the tool result; they are not written 
 
 ## Error handling
 
-Two kinds of failure. Treat them differently:
+Three kinds of failure. Treat them differently:
 
 1. **Configuration errors** (missing API key, provider not set up): report the error to the user as-is. Do NOT change service configuration (managed vs your-own mode, default provider, or default model in Settings). Configuration changes happen only at the user's explicit request.
-2. **Generation failures** (any other error: "invalid", content policy, safety rejection, provider error). Do not diagnose the cause; switch providers. The error message names the model that failed:
+2. **Replicate fallback failures** (the error names `black-forest-labs/flux-schnell` and says a Replicate token is configured): the managed providers are unavailable, so do NOT retry with a different `model` parameter — report the live error as-is, and do not substitute remembered failures from earlier conversations.
+3. **Generation failures** (any other error: "invalid", content policy, safety rejection, provider error). Do not diagnose the cause; switch providers. The error message names the model that failed:
    - If the error names a `gemini-*` model (or no model) → retry ONCE with `model: "openai"`.
    - If the error names `gpt-image-2` or another `gpt-*` model → retry ONCE with `model: "quality"`.
    - If the retry also fails → stop and report both errors to the user.

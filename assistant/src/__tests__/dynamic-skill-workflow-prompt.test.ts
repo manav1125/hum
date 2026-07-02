@@ -46,9 +46,8 @@ mock.module("../config/loader.js", () => ({
 }));
 
 const { buildSystemPrompt } = await import("../prompts/system-prompt.js");
-const { setOverridesForTesting } = await import(
-  "./feature-flag-test-helpers.js"
-);
+const { setOverridesForTesting } =
+  await import("./feature-flag-test-helpers.js");
 
 describe("Dynamic Skill Authoring Workflow moved to tool descriptions", () => {
   beforeEach(() => {

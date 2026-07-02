@@ -34,6 +34,24 @@ body {
   --mv1-blue-eyebrow: var(--accent-cue-strong);
   --mv1-chip: #1a2230;
   --mv1-composer-veil: rgba(253, 253, 252, 0.55);
+
+  /* Desktop v0.3 surface slots — the light literals the v0.3 desktop
+   * surfaces (command center / projects / all-work / people / trust /
+   * meeting / impact / workspace) were built with, kept verbatim in light
+   * and swapped for dark-book equivalents under the dark/velvet themes so
+   * those pages stop pasting a light canvas onto dark chrome. */
+  --mv1-canvas: #f4f6f9;
+  --mv1-card: #ffffff;
+  --mv1-sunken: #eef1f6;
+  --mv1-line-strong: #d7dde7;
+  --mv1-blue-strong: #2b53c4;
+  --mv1-blue-wash: #dbe4fb;
+  --mv1-violet: #7f77dd;
+  --mv1-violet-strong: #534ab7;
+  --mv1-green: #277e41;
+  --mv1-green-wash: #e2f0e7;
+  --mv1-amber: #c98a1b;
+  --mv1-danger: #da491a;
 }
 
 [data-theme="dark"],
@@ -52,6 +70,21 @@ body {
   --mv1-blue-eyebrow: #86a9f2;
   --mv1-chip: #0f1620;
   --mv1-composer-veil: rgba(12, 16, 24, 0.55);
+
+  /* Desktop v0.3 slots — dark-book equivalents. Canvas/cards step down the
+   * ink ramp; text accents lighten for contrast against the ink. */
+  --mv1-canvas: #11161f;
+  --mv1-card: #1a2230;
+  --mv1-sunken: #0f1620;
+  --mv1-line-strong: rgba(255, 255, 255, 0.14);
+  --mv1-blue-strong: #86a9f2;
+  --mv1-blue-wash: rgba(61, 110, 232, 0.18);
+  --mv1-violet: #9b94ec;
+  --mv1-violet-strong: #a9a2f0;
+  --mv1-green: #3fb871;
+  --mv1-green-wash: rgba(63, 184, 113, 0.16);
+  --mv1-amber: #d9a84e;
+  --mv1-danger: #e5634b;
 }
 
 /* Electron prechat onboarding typography — mirror the lighter DM Sans (Swift

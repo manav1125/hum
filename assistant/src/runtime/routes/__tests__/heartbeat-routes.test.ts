@@ -23,6 +23,15 @@ mock.module("../../../heartbeat/heartbeat-service.js", () => ({
   },
 }));
 
+// Stub the run store: `getHeartbeatConfig` falls back to it for `lastRunAt`
+// when the service singleton is unavailable, and it must never open a real
+// DB in these tests.
+let storeLastRunAt: number | null = null;
+mock.module("../../../heartbeat/heartbeat-run-store.js", () => ({
+  listHeartbeatRuns: () => [],
+  getLatestCompletedHeartbeatRunFinishedAt: () => storeLastRunAt,
+}));
+
 // ─── Setup ─────────────────────────────────────────────────────────────────
 
 let workspaceDir: string;
@@ -44,6 +53,7 @@ beforeEach(() => {
   origWorkspaceDir = process.env.VELLUM_WORKSPACE_DIR;
   process.env.VELLUM_WORKSPACE_DIR = workspaceDir;
   configPath = join(workspaceDir, "config.json");
+  storeLastRunAt = null;
   invalidateConfigCache();
 });
 
@@ -108,5 +118,45 @@ describe("setHeartbeatConfig handler", () => {
     expect(onDisk).toEqual({
       heartbeat: { intervalMs: 60000, enabled: true },
     });
+  });
+});
+
+describe("getHeartbeatConfig handler", () => {
+  test("lastRunAt falls back to the run store when the service is not constructed", async () => {
+    writeFileSync(configPath, JSON.stringify({}, null, 2) + "\n");
+    storeLastRunAt = 1_700_000_123_456;
+
+    const handler = findHandler("getHeartbeatConfig");
+    const result = (await handler({})) as { lastRunAt: number | null };
+
+    expect(result.lastRunAt).toBe(1_700_000_123_456);
+  });
+
+  test("lastRunAt is null when neither the service nor the run store has a completed run", async () => {
+    writeFileSync(configPath, JSON.stringify({}, null, 2) + "\n");
+
+    const handler = findHandler("getHeartbeatConfig");
+    const result = (await handler({})) as { lastRunAt: number | null };
+
+    expect(result.lastRunAt).toBeNull();
+  });
+});
+
+describe("runHeartbeatNow handler", () => {
+  test("service not constructed yet → 503 SERVICE_UNAVAILABLE, not a 500", async () => {
+    writeFileSync(configPath, JSON.stringify({}, null, 2) + "\n");
+
+    const handler = findHandler("runHeartbeatNow");
+    let thrown: unknown;
+    try {
+      await handler({});
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeDefined();
+    const routeError = thrown as { statusCode: number; code: string };
+    expect(routeError.statusCode).toBe(503);
+    expect(routeError.code).toBe("SERVICE_UNAVAILABLE");
   });
 });

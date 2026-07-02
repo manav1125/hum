@@ -41,7 +41,11 @@ export function LiveDot({ label = true }: { label?: boolean }) {
           height: 7,
           borderRadius: 999,
           background: isConnected ? C.green : C.t3,
-          boxShadow: isConnected ? `0 0 0 0 ${C.green}66` : "none",
+          // `C.green` is a CSS var reference, so alpha comes from color-mix
+          // rather than a hex-suffix concat.
+          boxShadow: isConnected
+            ? `0 0 0 0 color-mix(in srgb, ${C.green} 40%, transparent)`
+            : "none",
           animation: isConnected ? "cueLivePulse 2s ease-out infinite" : "none",
         }}
       />

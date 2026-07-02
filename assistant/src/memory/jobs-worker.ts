@@ -71,6 +71,7 @@ import {
   MEMORY_V2_CONSOLIDATION_JOB_TRIGGERS,
   type MemoryJob,
   type MemoryJobType,
+  pruneOldMemoryJobs,
   resetRunningJobsToPending,
   SLOW_LLM_JOB_TYPES,
 } from "./jobs-store.js";
@@ -282,6 +283,7 @@ export async function runMemoryJobsOnce(
       maybeEnqueueScheduledCleanupJobs(config);
     }
     maybeEnqueueGraphMaintenanceJobs(config);
+    maybePruneOldMemoryJobs();
     await maybeRunDbMaintenance();
     return 0;
   }
@@ -336,8 +338,39 @@ export async function runMemoryJobsOnce(
     maybeEnqueueScheduledCleanupJobs(config);
   }
   maybeEnqueueGraphMaintenanceJobs(config);
+  maybePruneOldMemoryJobs();
   await maybeRunDbMaintenance();
   return slowProcessed + fastProcessed + embedProcessed;
+}
+
+// ── memory_jobs reaper ─────────────────────────────────────────────
+
+/** How often the terminal-row reaper actually runs (per checkpoint). */
+const MEMORY_JOBS_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+export const MEMORY_JOBS_PRUNE_CHECKPOINT_KEY = "memory_jobs_prune:last_run";
+
+/**
+ * Checkpoint-gated wrapper around `pruneOldMemoryJobs` (jobs-store.ts):
+ * delete completed/failed `memory_jobs` rows older than the 7-day retention
+ * on a periodic worker tick. Mirrors `maybeRunDbMaintenance`'s durable
+ * checkpoint so the cadence survives daemon restarts, and runs BEFORE db
+ * maintenance in the tick so a VACUUM on the same tick can reclaim the freed
+ * pages. Best-effort: a prune failure is logged and the checkpoint still
+ * advances so a persistent error can't hammer every tick.
+ */
+export function maybePruneOldMemoryJobs(nowMs = Date.now()): void {
+  const lastRun = parseInt(
+    getMemoryCheckpoint(MEMORY_JOBS_PRUNE_CHECKPOINT_KEY) ?? "0",
+    10,
+  );
+  if (nowMs - lastRun < MEMORY_JOBS_PRUNE_INTERVAL_MS) return;
+  try {
+    pruneOldMemoryJobs(undefined, nowMs);
+  } catch (err) {
+    log.error({ err }, "Failed to prune old terminal memory jobs");
+  }
+  setMemoryCheckpoint(MEMORY_JOBS_PRUNE_CHECKPOINT_KEY, String(nowMs));
 }
 
 /**

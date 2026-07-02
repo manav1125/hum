@@ -179,15 +179,24 @@ export function getMemoryV2RouterDisabled(): boolean {
 
 /**
  * CUE_DISABLE_BACKGROUND_MEMORY — boolean, default: false
- * When set, the background memory re-processing jobs (v2 consolidation and the
- * memory retrospective) bail immediately. These jobs each make a long
- * (30s+) background LLM call and persist a `conversation_type='background'`
- * row per run — they were the source of the 45k-conversation runaway and, when
- * they fire during a user turn, they contend with it and stall the reply.
- * Disabling them stops the re-bloat and the stalls; memory RECALL/INJECTION
- * (which uses the already-built graph) is unaffected — only the ongoing
- * re-extraction pauses. A pure env flag so it can be cut without a per-workspace
- * config migration, matching {@link getMemoryV2RouterDisabled}.
+ * EMERGENCY BRAKE: when set, the background memory re-processing jobs (v2
+ * consolidation and the memory retrospective) bail immediately.
+ *
+ * The default (unset) is safe: both jobs run on EPHEMERAL conversations —
+ * the conversation row is deleted when the run settles (see
+ * `runBackgroundJob`'s `ephemeralConversation` option and the retrospective
+ * handler's delete-on-success) — and terminal `memory_jobs` rows are reaped
+ * on a 7-day retention, so recurring runs no longer accumulate DB rows. Both
+ * jobs execute only via the memory jobs worker's background queue, never in
+ * a user turn's path.
+ *
+ * Setting the flag also disables memory EXTRACTION downstream: `remember`
+ * writes land in `memory/buffer.md` but consolidation never routes them into
+ * searchable concept pages, so "Remember X" is acknowledged and then never
+ * recalled. Leave it unset except while diagnosing a live incident. Memory
+ * RECALL/INJECTION of the already-built graph is unaffected either way. A
+ * pure env flag so it can be cut without a per-workspace config migration,
+ * matching {@link getMemoryV2RouterDisabled}.
  */
 export function getDisableBackgroundMemory(): boolean {
   return flag("CUE_DISABLE_BACKGROUND_MEMORY");

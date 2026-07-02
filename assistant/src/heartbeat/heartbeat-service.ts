@@ -27,6 +27,7 @@ import {
   countCompletedHeartbeatRuns,
   countCompletedRunsToday,
   countRecentConsecutiveRuns,
+  getLatestCompletedHeartbeatRunFinishedAt,
   insertPendingHeartbeatRun,
   markStaleRunningAsError,
   markStaleRunsAsMissed,
@@ -168,9 +169,27 @@ export class HeartbeatService {
     HeartbeatService.instance = this;
   }
 
-  /** Epoch-ms timestamp of the last completed heartbeat run. */
+  /**
+   * Epoch-ms timestamp of the last completed heartbeat run.
+   *
+   * The in-memory value only covers runs completed by THIS process; it is
+   * null after every daemon restart even when runs completed minutes
+   * earlier. Fall back to the run store's latest `ok` row so
+   * `heartbeat/config`'s `lastRunAt` survives restarts. Best-effort: a DB
+   * that isn't ready yet (early-boot route hit) yields null rather than an
+   * error.
+   */
   get lastRunAt(): number | null {
-    return this._lastRunAt;
+    if (this._lastRunAt != null) return this._lastRunAt;
+    try {
+      return getLatestCompletedHeartbeatRunFinishedAt();
+    } catch (err) {
+      log.debug(
+        { err: err instanceof Error ? err.message : String(err) },
+        "lastRunAt fallback query failed (DB not ready?); returning null",
+      );
+      return null;
+    }
   }
 
   /** Epoch-ms timestamp of the next scheduled heartbeat run. */

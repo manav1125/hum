@@ -62,7 +62,14 @@ describe("sendGuardianExpiryNotices", () => {
 
   test("sends external channel expiry notices for sent deliveries", async () => {
     await sendGuardianExpiryNotices(
-      [makeDelivery({ status: "sent" }), makeDelivery({ id: "d2", status: "pending", destinationChatId: "chat-456" })],
+      [
+        makeDelivery({ status: "sent" }),
+        makeDelivery({
+          id: "d2",
+          status: "pending",
+          destinationChatId: "chat-456",
+        }),
+      ],
       "assistant-1",
     );
 

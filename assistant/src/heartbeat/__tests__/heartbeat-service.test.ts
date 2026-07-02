@@ -199,7 +199,12 @@ mock.module("../heartbeat-run-store.js", () => ({
   countCompletedHeartbeatRuns: () => 10,
   countCompletedRunsToday: () => 0,
   countRecentConsecutiveRuns: () => 0,
+  getLatestCompletedHeartbeatRunFinishedAt: () => storeLatestFinishedAt,
 }));
+// `lastRunAt` falls back to the run store when the in-memory value is null
+// (fresh process after a restart). Tests set this to simulate a persisted
+// completed run.
+let storeLatestFinishedAt: number | null = null;
 
 // Stub the pre-first-message gate so tests can flip it on/off without
 // needing to seed the SQLite messages table. Defaults to OPEN so existing
@@ -221,6 +226,7 @@ beforeEach(() => {
   runBackgroundJobCalls.length = 0;
   skipHeartbeatRunCalls.length = 0;
   preFirstMessageGateOpen = true;
+  storeLatestFinishedAt = null;
   stubConfig.heartbeat.maxConsecutiveRuns = null;
   runBackgroundJobImpl = async () => ({
     conversationId: STUB_CONVERSATION_ID,
@@ -242,6 +248,18 @@ afterEach(() => {
 });
 
 describe("HeartbeatService", () => {
+  test("lastRunAt falls back to the run store's latest completed run when in-memory is null (post-restart)", () => {
+    const service = new HeartbeatService({ alerter: () => {} });
+
+    // Fresh process: no in-memory run yet, no persisted run either.
+    storeLatestFinishedAt = null;
+    expect(service.lastRunAt).toBeNull();
+
+    // A run completed by a PREVIOUS process is visible via the store.
+    storeLatestFinishedAt = 1_700_000_999_000;
+    expect(service.lastRunAt).toBe(1_700_000_999_000);
+  });
+
   test("invokes runBackgroundJob with expected options on each tick", async () => {
     const service = new HeartbeatService({
       alerter: () => {},

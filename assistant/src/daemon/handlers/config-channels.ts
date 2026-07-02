@@ -560,7 +560,11 @@ export async function handleChannelVerificationSession(
           const { to, text, subject, assistantId: aid } = result._pendingEmail;
           deliverVerificationEmail(to, text, subject, aid);
         }
-        const { _pendingSlackDm: _, _pendingEmail: __, ...publicResult } = result;
+        const {
+          _pendingSlackDm: _,
+          _pendingEmail: __,
+          ...publicResult
+        } = result;
         broadcastMessage({
           type: "channel_verification_session_response",
           ...publicResult,

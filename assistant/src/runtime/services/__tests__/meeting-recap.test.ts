@@ -215,7 +215,11 @@ describe("generateMeetingRecap — live path", () => {
                 ],
                 decisions: ["Pricing stays unchanged.", 42],
                 people: [
-                  { name: "Alice", tone: "decisive", note: "owns the forecast" },
+                  {
+                    name: "Alice",
+                    tone: "decisive",
+                    note: "owns the forecast",
+                  },
                   { name: "Bob", tone: "engaged" },
                   // Malformed entry (no name) — should be dropped.
                   { tone: "unknown" },
@@ -265,8 +269,12 @@ describe("generateMeetingRecap — live path", () => {
 
     // Generic 8-type extraction runs tagged with the meeting conversation id.
     expect(mockRunGraphExtraction).toHaveBeenCalledTimes(1);
-    const extractionArgs = mockRunGraphExtraction.mock
-      .calls[0] as unknown as [string, string, unknown, { transcript: string }];
+    const extractionArgs = mockRunGraphExtraction.mock.calls[0] as unknown as [
+      string,
+      string,
+      unknown,
+      { transcript: string },
+    ];
     expect(extractionArgs[0]).toBe(MEETING_CONV_ID);
     expect(extractionArgs[1]).toBe("default");
   });

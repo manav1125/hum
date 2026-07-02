@@ -14,6 +14,13 @@
  * assistant's voice are the point — there is no "consolidator persona" to
  * substitute in.
  *
+ * The conversation is EPHEMERAL (`ephemeralConversation: true`): the run's
+ * useful output is its memory-file writes, and the runner deletes the
+ * conversation row once the run settles so hourly runs never accumulate
+ * `conversation_type='background'` rows. Timeout/crash leftovers are
+ * reclaimed by `sweepStaleConsolidationConversations` at the start of the
+ * next run.
+ *
  * Lifecycle:
  *   1. Bail if `config.memory.enabled` or `config.memory.v2.enabled` is false
  *      (the worker may have claimed a stale row from before memory was
@@ -71,6 +78,8 @@ import { runBackgroundJob } from "../../runtime/background-job-runner.js";
 import { getLogger } from "../../util/logger.js";
 import { getWorkspaceDir } from "../../util/platform.js";
 import { isProcessAlive } from "../../util/process-liveness.js";
+import { deleteConversation } from "../conversation-crud.js";
+import { listConversationsBySource } from "../conversation-queries.js";
 import { formatBufferTimestamp } from "../graph/tool-handlers.js";
 import {
   enqueueMemoryJob,
@@ -118,6 +127,22 @@ const CONSOLIDATION_TIMEOUT_MS = 15 * 60 * 1000;
  * within a couple of scheduled passes.
  */
 const STALE_LOCK_TTL_MS = 4 * CONSOLIDATION_TIMEOUT_MS;
+
+/**
+ * Age past which a leftover consolidation conversation is reclaimed by
+ * {@link sweepStaleConsolidationConversations}. Consolidation runs on
+ * EPHEMERAL conversations — `runBackgroundJob` deletes the row when the run
+ * settles — so under normal operation nothing matches this sweep. Leftovers
+ * exist only when (a) the run TIMED OUT (the runner keeps the row because the
+ * raced turn may still be writing) or (b) the daemon crashed mid-run. Reusing
+ * the lock's stale TTL guarantees the previous run's turn is long dead: a run
+ * holds its conversation for at most `CONSOLIDATION_TIMEOUT_MS`, and the
+ * sweep runs under the consolidation lock so no sibling run is in flight.
+ */
+const STALE_CONVERSATION_TTL_MS = STALE_LOCK_TTL_MS;
+
+/** Max stale conversations reclaimed per run — bounds sweep cost per pass. */
+const STALE_CONVERSATION_SWEEP_LIMIT = 100;
 
 /**
  * Follow-up jobs to fan out after a successful consolidation.
@@ -185,6 +210,11 @@ export async function memoryV2ConsolidateJob(
   }
 
   try {
+    // Reclaim leftover consolidation conversations from timed-out or crashed
+    // prior runs (normal runs are ephemeral — the runner deletes their row).
+    // Runs under the lock so it can never race an in-flight sibling.
+    sweepStaleConsolidationConversations();
+
     // Step 2: bail on empty buffer. Nothing for the agent to consolidate.
     // The lock is released in finally below.
     const bufferContent = readBufferContent(bufferPath);
@@ -296,6 +326,13 @@ export async function memoryV2ConsolidateJob(
       timeoutMs: CONSOLIDATION_TIMEOUT_MS,
       origin: "memory_consolidation",
       suppressFailureNotifications: true,
+      // Consolidation's useful output is its memory-file writes (concept
+      // pages, recent.md, buffer trim) — the conversation transcript is
+      // scaffolding. Hourly runs each persisting a conversation row was the
+      // source of the 45k-row conversations-table runaway; the runner
+      // deletes the row once the run settles (timeout leftovers are
+      // reclaimed by the sweep above on the next pass).
+      ephemeralConversation: true,
     });
 
     if (!runResult.ok) {
@@ -353,6 +390,51 @@ export async function memoryV2ConsolidateJob(
   } finally {
     releaseLock(lockPath);
   }
+}
+
+/**
+ * Delete leftover consolidation conversations older than
+ * {@link STALE_CONVERSATION_TTL_MS}.
+ *
+ * Consolidation conversations are ephemeral (deleted by `runBackgroundJob`
+ * when the run settles), so anything this sweep matches is a timeout or
+ * crash leftover — plus any backlog persisted by builds that predate the
+ * ephemeral change. Best-effort: per-row delete failures are logged and the
+ * sweep continues; the next run gets another shot. Exported for tests.
+ */
+export function sweepStaleConsolidationConversations(
+  now: number = Date.now(),
+): number {
+  let stale: ReturnType<typeof listConversationsBySource>;
+  try {
+    stale = listConversationsBySource(
+      MEMORY_V2_CONSOLIDATION_SOURCE,
+      STALE_CONVERSATION_SWEEP_LIMIT,
+      { beforeCreatedAt: now - STALE_CONVERSATION_TTL_MS },
+    );
+  } catch (err) {
+    log.warn(
+      { err },
+      "consolidation: failed to list stale consolidation conversations; skipping sweep",
+    );
+    return 0;
+  }
+  let swept = 0;
+  for (const row of stale) {
+    try {
+      deleteConversation(row.id);
+      swept++;
+    } catch (err) {
+      log.warn(
+        { err, conversationId: row.id },
+        "consolidation: failed to delete stale consolidation conversation; continuing",
+      );
+    }
+  }
+  if (swept > 0) {
+    log.info({ swept }, "consolidation: swept stale run conversations");
+  }
+  return swept;
 }
 
 /**

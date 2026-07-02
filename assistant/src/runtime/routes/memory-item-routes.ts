@@ -44,10 +44,7 @@ import type {
   MemoryType,
   NewNode,
 } from "../../memory/graph/types.js";
-import {
-  enqueueMemoryJob,
-  isMemoryEnabled,
-} from "../../memory/jobs-store.js";
+import { enqueueMemoryJob, isMemoryEnabled } from "../../memory/jobs-store.js";
 import { withQdrantBreaker } from "../../memory/qdrant-circuit-breaker.js";
 import { getQdrantClient } from "../../memory/qdrant-client.js";
 import { memoryGraphNodes } from "../../memory/schema.js";

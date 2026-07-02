@@ -32,8 +32,16 @@ const POLL_MS = 3_000;
 /** Visual treatment per coarse status. */
 const STATUS_STYLE: Record<FleetStatus, { bg: string; fg: string; label: string }> = {
   running: { bg: C.blueW, fg: C.blueS, label: "running" },
-  completed: { bg: "#DCEFE2", fg: C.green, label: "completed" },
-  failed: { bg: "#FBE2D8", fg: C.danger, label: "failed" },
+  completed: {
+    bg: `color-mix(in srgb, ${C.green} 14%, transparent)`,
+    fg: C.green,
+    label: "completed",
+  },
+  failed: {
+    bg: `color-mix(in srgb, ${C.danger} 12%, transparent)`,
+    fg: C.danger,
+    label: "failed",
+  },
   aborted: { bg: C.sunken, fg: C.t2, label: "aborted" },
 };
 
@@ -162,8 +170,8 @@ function AgentRow({ agent }: { agent: Subagent }) {
             fontFamily: mono,
             fontSize: 12,
             color: C.danger,
-            background: "#FBE2D8",
-            border: `1px solid #F3C9BA`,
+            background: `color-mix(in srgb, ${C.danger} 12%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${C.danger} 30%, transparent)`,
             borderRadius: 6,
             padding: "6px 9px",
             whiteSpace: "pre-wrap",
@@ -280,8 +288,8 @@ export function AgentsAtWorkPage() {
               fontFamily: mono,
               fontSize: 12.5,
               color: C.danger,
-              background: "#FBE2D8",
-              border: `1px solid #F3C9BA`,
+              background: `color-mix(in srgb, ${C.danger} 12%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${C.danger} 30%, transparent)`,
               borderRadius: 8,
               padding: "10px 12px",
               marginBottom: 18,

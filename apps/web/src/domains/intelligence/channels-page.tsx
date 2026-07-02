@@ -47,6 +47,8 @@ const mono = "'DM Mono', ui-monospace, monospace";
 const KEYFRAMES = `
 @keyframes cueDash{to{stroke-dashoffset:-14}}
 @keyframes cuePulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.45);opacity:0}}
+@keyframes cueSpin{to{transform:rotate(360deg)}}
+.cue-spin{animation:cueSpin 1s linear infinite}
 @media (prefers-reduced-motion: reduce){.cue-anim *{animation:none !important}}
 `;
 
@@ -415,8 +417,56 @@ export function ChannelsPage() {
     [active],
   );
 
-  const isLoading = availableQuery.isLoading || readinessQuery.isLoading;
-  const isEmpty = !isLoading && merged.length === 0;
+  // Only the catalog gates rendering. Readiness probes channels live and can
+  // take tens of seconds on a cold daemon — the page renders as soon as the
+  // catalog arrives and statuses stream in when the snapshot lands, instead
+  // of holding the whole surface on a spinner.
+  const isLoading = availableQuery.isLoading;
+  const isEmpty = !isLoading && !availableQuery.isError && merged.length === 0;
+  const readinessPending = readinessQuery.isLoading && merged.length > 0;
+
+  if (availableQuery.isError) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          minHeight: 320,
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+        }}
+      >
+        <div style={{ fontSize: 14.5, fontWeight: 600, color: C.t1 }}>
+          Couldn’t load channels
+        </div>
+        <div style={{ fontSize: 13, color: C.t2, maxWidth: 360, textAlign: "center" }}>
+          The channel catalog didn’t load — the assistant may be unreachable.
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            void availableQuery.refetch();
+            void readinessQuery.refetch();
+          }}
+          style={{
+            marginTop: 4,
+            fontSize: 12.5,
+            border: "none",
+            background: C.blue,
+            color: "#fff",
+            borderRadius: 9,
+            padding: "8px 18px",
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -623,6 +673,56 @@ export function ChannelsPage() {
           })}
         </div>
       </div>
+
+      {/* Readiness is slow (live channel probes) — surface an honest
+          "checking" line while it streams in, and a retry when it fails,
+          instead of blocking the page or silently mislabeling channels. */}
+      {readinessPending && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 14,
+            fontSize: 12.5,
+            color: C.t2,
+          }}
+        >
+          <Loader2 size={14} color={C.blue} className="cue-spin" />
+          Checking live channel status…
+        </div>
+      )}
+      {readinessQuery.isError && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginTop: 14,
+            fontSize: 12.5,
+            color: C.t2,
+          }}
+        >
+          Couldn’t check live channel status — connection state below may be
+          incomplete.
+          <button
+            type="button"
+            onClick={() => void readinessQuery.refetch()}
+            style={{
+              fontSize: 12,
+              border: `1px solid ${C.line2}`,
+              background: "transparent",
+              borderRadius: 8,
+              padding: "4px 12px",
+              cursor: "pointer",
+              color: C.t1,
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {isEmpty ? (
         /* EMPTY STATE */
