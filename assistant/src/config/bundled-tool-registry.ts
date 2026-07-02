@@ -28,6 +28,7 @@ import * as appGenerateIcon from "./bundled-skills/app-builder/tools/app-generat
 import * as appList from "./bundled-skills/app-builder/tools/app-list.js";
 import * as appBuilder_appRefresh from "./bundled-skills/app-builder/tools/app-refresh.js";
 import * as appUpdate from "./bundled-skills/app-builder/tools/app-update.js";
+import * as deckExportPdf from "./bundled-skills/app-builder/tools/deck-export-pdf.js";
 // ── app-control ────────────────────────────────────────────────────────────────
 import * as appControlClick from "./bundled-skills/app-control/tools/app-control-click.js";
 import * as appControlCombo from "./bundled-skills/app-control/tools/app-control-combo.js";
@@ -60,12 +61,14 @@ import * as commentReply from "./bundled-skills/document-editor/tools/comment-re
 import * as commentResolve from "./bundled-skills/document-editor/tools/comment-resolve.js";
 import * as documentCreate from "./bundled-skills/document-editor/tools/document-create.js";
 import * as documentDelete from "./bundled-skills/document-editor/tools/document-delete.js";
+import * as documentExportPdf from "./bundled-skills/document-editor/tools/document-export-pdf.js";
 import * as documentFind from "./bundled-skills/document-editor/tools/document-find.js";
 import * as documentList from "./bundled-skills/document-editor/tools/document-list.js";
 import * as documentOpen from "./bundled-skills/document-editor/tools/document-open.js";
 import * as documentRead from "./bundled-skills/document-editor/tools/document-read.js";
 import * as documentReplaceText from "./bundled-skills/document-editor/tools/document-replace-text.js";
 import * as documentUpdate from "./bundled-skills/document-editor/tools/document-update.js";
+import * as pdfCreate from "./bundled-skills/document-editor/tools/pdf-create.js";
 // ── followups ──────────────────────────────────────────────────────────────────
 import * as followupCreate from "./bundled-skills/followups/tools/followup-create.js";
 import * as followupList from "./bundled-skills/followups/tools/followup-list.js";
@@ -125,6 +128,8 @@ import * as voiceConfigUpdate from "./bundled-skills/settings/tools/voice-config
 // ── skill-management ───────────────────────────────────────────────────────────
 import * as deleteManaged from "./bundled-skills/skill-management/tools/delete-managed.js";
 import * as scaffoldManaged from "./bundled-skills/skill-management/tools/scaffold-managed.js";
+// ── spreadsheet-studio ─────────────────────────────────────────────────────────
+import * as spreadsheetCreate from "./bundled-skills/spreadsheet-studio/tools/spreadsheet-create.js";
 // ── subagent ───────────────────────────────────────────────────────────────────
 import * as subagentAbort from "./bundled-skills/subagent/tools/subagent-abort.js";
 import * as subagentMessage from "./bundled-skills/subagent/tools/subagent-message.js";
@@ -163,6 +168,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["app-builder:tools/app-refresh.ts", appBuilder_appRefresh],
   ["app-builder:tools/app-generate-icon.ts", appGenerateIcon],
   ["app-builder:tools/app-list.ts", appList],
+  ["app-builder:tools/deck-export-pdf.ts", deckExportPdf],
 
   // app-control
   ["app-control:tools/app-control-start.ts", appControlStart],
@@ -208,6 +214,8 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["document-editor:tools/comment-list.ts", commentList],
   ["document-editor:tools/comment-resolve.ts", commentResolve],
   ["document-editor:tools/comment-reply.ts", commentReply],
+  ["document-editor:tools/document-export-pdf.ts", documentExportPdf],
+  ["document-editor:tools/pdf-create.ts", pdfCreate],
 
   // followups
   ["followups:tools/followup-create.ts", followupCreate],
@@ -282,6 +290,9 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   // skill-management
   ["skill-management:tools/scaffold-managed.ts", scaffoldManaged],
   ["skill-management:tools/delete-managed.ts", deleteManaged],
+
+  // spreadsheet-studio
+  ["spreadsheet-studio:tools/spreadsheet-create.ts", spreadsheetCreate],
 
   // subagent
   ["subagent:tools/subagent-spawn.ts", subagentSpawn],

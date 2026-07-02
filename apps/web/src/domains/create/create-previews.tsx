@@ -466,6 +466,45 @@ function AudioPreview() {
   );
 }
 
+/** Sheets → a spreadsheet grid with a formula bar. */
+function SheetsPreview() {
+  const cols = [40, 96, 152, 208, 264];
+  const rows = [56, 76, 96, 116, 136];
+  return (
+    <Frame>
+      {/* Formula bar */}
+      <rect x="22" y="16" width="276" height="20" rx="5" fill={C.base} stroke={C.line} />
+      <rect x="30" y="23" width="26" height="6" rx="2" fill={C.accent} opacity="0.7" />
+      <rect x="64" y="23" width="120" height="6" rx="2" fill={C.ink} opacity="0.3" />
+      {/* Grid */}
+      <rect x="22" y="42" width="276" height="110" rx="6" fill={C.base} stroke={C.line} />
+      {/* Header row */}
+      <rect x="22" y="42" width="276" height="18" rx="6" fill={C.accent} opacity="0.12" />
+      {cols.map((x, i) => (
+        <line key={`c${i}`} x1={x + 40} y1="42" x2={x + 40} y2="152" stroke={C.line} />
+      ))}
+      {rows.map((y, i) => (
+        <line key={`r${i}`} x1="22" y1={y} x2="298" y2={y} stroke={C.line} />
+      ))}
+      {/* Cell content bars */}
+      {rows.slice(0, 4).map((y, ri) =>
+        cols.slice(0, 4).map((x, ci) => (
+          <rect
+            key={`${ri}-${ci}`}
+            x={x + 46}
+            y={y + 6}
+            width={ci === 0 ? 40 : 28}
+            height="5"
+            rx="2"
+            fill={ci === 3 ? C.accent : C.ink}
+            opacity={ci === 3 ? 0.6 : 0.22}
+          />
+        )),
+      )}
+    </Frame>
+  );
+}
+
 /* ----------------------------------------------------------------------- */
 /* Public component + lookup                                                */
 /* ----------------------------------------------------------------------- */
@@ -479,6 +518,7 @@ export type PreviewKind =
   | "canvas"
   | "video"
   | "audio"
+  | "sheets"
   | "leads";
 
 /** Renders the mode-level preview, with optional template variant tuning. */
@@ -506,6 +546,8 @@ export function CreatePreview({
       return <VideoPreview />;
     case "audio":
       return <AudioPreview />;
+    case "sheets":
+      return <SheetsPreview />;
     case "leads":
       return <LeadsPreview />;
   }

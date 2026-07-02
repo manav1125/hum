@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "spreadsheet_create",
+      "description": "Build a real .xlsx spreadsheet and deliver it as an in-chat attachment. Use for ANY spreadsheet/Excel-file request: financial models, budgets, forecasts, P&Ls, cap tables, pricing models, expense reports, comparison sheets. CRITICAL formula convention: any cell string beginning with \"=\" is written as a LIVE Excel formula (e.g. \"=B2*C2\", \"=SUM(D2:D13)\", \"=Assumptions!B4\") — every derivable value MUST be a formula, never a precomputed number, so the user can change an input and watch everything recalculate. The file opens recalculating in Excel/Numbers/Sheets.",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Output filename, e.g. \"saas-model.xlsx\" (.xlsx appended if missing)."
+          },
+          "sheets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Worksheets in order. For financial models: sheet 1 = Assumptions (every driver as a labeled input), later sheets reference them by cell (\"=Assumptions!B4\").",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Sheet tab name (max 31 chars)."
+                },
+                "rows": {
+                  "type": "array",
+                  "description": "Array of row arrays. Each cell is a string, number, boolean, null — or a rich cell object {\"value\": <cell>, \"format\": \"<Excel number format>\", \"bold\": <bool>}. Strings (plain or in \"value\") starting with \"=\" become LIVE formulas.",
+                  "items": {
+                    "type": "array"
+                  }
+                },
+                "header": {
+                  "type": "boolean",
+                  "description": "Bold + freeze row 1 (default true)."
+                },
+                "column_widths": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "description": "Optional widths per column, in Excel character units (e.g. [24, 12, 12])."
+                },
+                "number_formats": {
+                  "type": "object",
+                  "description": "Optional map of column letter → Excel number format, e.g. { \"B\": \"$#,##0\", \"D\": \"0.0%\" }.",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["name", "rows"]
+            }
+          }
+        },
+        "required": ["filename", "sheets"]
+      },
+      "executor": "tools/spreadsheet-create.ts",
+      "execution_target": "host"
+    }
+  ]
+}

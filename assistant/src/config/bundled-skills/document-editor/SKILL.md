@@ -11,6 +11,7 @@ metadata:
       - "User asks to write, draft, compose, or prepare ANY document — a letter (cover/business/formal/reference/support/application letter), memo, proposal, report, brief, essay, article, blog post, plan, statement, contract draft, story, or any multi-paragraph written piece — ALWAYS create it in the document editor, never as a chat reply and never by writing to a scratch/temp file"
       - "User wants written content they will iterate on, review, sign, send, or export — use the editor instead of inline markdown"
       - "A file attachment contains a draft or document the user wants to revise — open it in the editor"
+      - "User asks for a PDF — a report, invoice, one-pager, or an export of an existing document"
     avoid-when:
       - "The user wants an interactive app, dashboard, calculator, game, or anything with state or data — use app-builder instead"
       - "A one or two sentence answer is enough — just reply in chat"
@@ -28,6 +29,12 @@ Write and edit long-form documents using the built-in rich text editor. Document
 - **document_list** - Lists documents. Without `query`, lists the current conversation's documents. With `query`, searches by title; guardian/local users can search across conversations, while other actors are scoped to the current conversation.
 - **document_open** - Opens an existing document in the editor panel by `surface_id`. Use this when a document exists but isn't visible in the editor — for example after the user switches devices, refreshes the page, or when the editor panel was closed. Fetches the document from storage and sends it to the client.
 - **document_delete** - Deletes a document by `surface_id`. Use to clean up unwanted documents.
+- **document_export_pdf** - Renders an existing document to a polished PDF and delivers it as an in-chat attachment. The share/print/send path.
+- **pdf_create** - Builds a standalone PDF from markdown or self-contained HTML (invoices, one-pagers, flyers) without creating an editable document first.
+
+## Exporting to PDF
+
+When the user says "PDF", "send it", "share it", or "print it": finish the document's content first, then call `document_export_pdf` with its `surface_id` — the PDF arrives as an attachment they can download. For deliverables that are files by nature (an invoice, a one-pager, a flyer), skip the editor and use `pdf_create` directly. When a document you produced is deliverable-shaped (report, proposal, formal letter), proactively offer the export: "Want this as a PDF?"
 
 ## Creating a new document
 

@@ -253,6 +253,62 @@
       },
       "executor": "tools/comment-reply.ts",
       "execution_target": "host"
+    },
+    {
+      "name": "document_export_pdf",
+      "description": "Export an existing document (by surface_id) as a polished PDF delivered as an in-chat attachment the user can download and share. Use when the user asks for a PDF of a document you created, or mentions sending, printing, or sharing it as a file. Finish the document's content first, then export.",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "surface_id": {
+            "type": "string",
+            "description": "The document's surface id (from document_create or <active_documents>)."
+          }
+        },
+        "required": ["surface_id"]
+      },
+      "executor": "tools/document-export-pdf.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "pdf_create",
+      "description": "Create a standalone PDF file from markdown or full self-contained HTML and deliver it as an in-chat attachment — invoices, one-pagers, flyers, formal letters, reports that should be a FILE rather than an editable document. For content the user will iterate on, prefer document_create then document_export_pdf. HTML must be self-contained (no external assets — network is blocked during render).",
+      "category": "content",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Used for the filename."
+          },
+          "markdown": {
+            "type": "string",
+            "description": "Markdown content (rendered with the document print styling). Provide exactly one of markdown/html."
+          },
+          "html": {
+            "type": "string",
+            "description": "Full self-contained HTML (your own styling). Provide exactly one of markdown/html."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["A4", "Letter"],
+            "description": "Paper size (default A4)."
+          },
+          "landscape": {
+            "type": "boolean"
+          },
+          "margin_inches": {
+            "type": "number",
+            "description": "Uniform margin, default 0.75."
+          }
+        },
+        "required": ["title"]
+      },
+      "executor": "tools/pdf-create.ts",
+      "execution_target": "host"
     }
   ]
 }

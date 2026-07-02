@@ -23,7 +23,7 @@
           },
           "auto_open": {
             "type": "boolean",
-            "description": "When true (default), an inline preview card is shown in chat after creation. The app is NOT automatically opened in a workspace panel \u2014 users can open it explicitly via the 'Open App' button on the inline card."
+            "description": "When true (default), an inline preview card is shown in chat after creation. The app is NOT automatically opened in a workspace panel — users can open it explicitly via the 'Open App' button on the inline card."
           },
           "preview": {
             "type": "object",
@@ -43,7 +43,7 @@
               },
               "icon": {
                 "type": "string",
-                "description": "Optional icon \u2014 image URL preferred when available (logo, favicon, photo, etc.), emoji as fallback"
+                "description": "Optional icon — image URL preferred when available (logo, favicon, photo, etc.), emoji as fallback"
               },
               "metrics": {
                 "type": "array",
@@ -219,6 +219,39 @@
         "required": []
       },
       "executor": "tools/app-list.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "deck_export_pdf",
+      "description": "Render a slide-deck app (by app_id) — or raw self-contained deck HTML — to a 16:9 PDF and deliver it as an in-chat attachment. Decks must follow the print contract in the SLIDES reference (each .slide becomes one PDF page; @page 1280x720 margin 0). Use after building a deck whenever the user wants a file to share, send, or present outside Cue. If the result comes back suspiciously short, add the print contract via app_update and export again.",
+      "category": "development",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "The deck app's id in the Library. Provide exactly one of app_id/html."
+          },
+          "html": {
+            "type": "string",
+            "description": "Raw self-contained deck HTML. Provide exactly one of app_id/html."
+          },
+          "output_title": {
+            "type": "string",
+            "description": "Filename base (defaults to the app name)."
+          },
+          "width_px": {
+            "type": "number",
+            "description": "Slide width (default 1280)."
+          },
+          "height_px": {
+            "type": "number",
+            "description": "Slide height (default 720)."
+          }
+        }
+      },
+      "executor": "tools/deck-export-pdf.ts",
       "execution_target": "host"
     }
   ]

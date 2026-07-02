@@ -14,6 +14,7 @@ Slides are a different domain from apps. Skip app-specific patterns (contextual 
 ## Navigation
 
 Build slide navigation as your own component. Common patterns:
+
 - Keyboard: `ArrowLeft` / `ArrowRight` / `Space` / `Escape`
 - Click affordances at left/right edges
 - Slide counter pill in a corner (e.g. `3 / 12`)
@@ -36,3 +37,49 @@ Build slide navigation as your own component. Common patterns:
 - Tiny text below 15px — slides are read across rooms
 - Same layout type used 3+ times in a row — vary the rhythm
 - Body paragraphs longer than 3 sentences — split into multiple slides
+
+## PDF export contract (required)
+
+Every deck must be exportable to a shareable PDF via `deck_export_pdf` (one
+slide per page, 1280×720). That only works when the deck ships this print
+contract — include it in EVERY deck's CSS:
+
+```css
+@page {
+  size: 1280px 720px;
+  margin: 0;
+}
+@media print {
+  .slide {
+    display: block !important;
+    position: static !important;
+    width: 1280px;
+    height: 720px;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+  }
+  .nav,
+  .progress,
+  .counter,
+  [data-chrome] {
+    display: none !important;
+  }
+}
+```
+
+Rules that make the contract hold:
+
+- Author slides at a fixed 1280×720; each slide's root element carries the
+  class `slide`.
+- On-screen show/hide must be class/CSS-based (not inline `style.display`
+  writes) so the `!important` print overrides win.
+- No external network assets — inline or data-URI everything (network is
+  blocked during export).
+- Navigation chrome (arrows, progress bars, counters) gets the `.nav`,
+  `.progress`, `.counter` classes or a `data-chrome` attribute so it
+  disappears in print.
+
+After building or revising a deck, offer the export: "Want this as a PDF to
+send?" — pitch decks intended for investors should always end with that
+offer. `.pptx` export is not supported yet; PDF is the shareable format.

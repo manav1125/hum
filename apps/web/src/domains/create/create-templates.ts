@@ -23,6 +23,7 @@
 
 import {
   BarChart3,
+  Table2,
   FileText,
   Image as ImageIcon,
   Music,
@@ -40,6 +41,7 @@ export type CreateSkill =
   | "document-editor"
   | "image-studio"
   | "media-processing"
+  | "spreadsheet-studio"
   | "research"
   // Daemon skills wired to real provider keys (Replicate / Apify):
   | "replicate" // replicate_run — any image/video generation model
@@ -184,6 +186,37 @@ export const CREATE_MODES: CreateMode[] = [
         description: "A crisp single-page strategic brief.",
         prompt:
           "Write a strategy one-pager in the document editor: context, the decision or recommendation, supporting rationale, trade-offs considered, and next steps. Keep it tight and skimmable — this should fit on a single page.",
+      },
+    ],
+  },
+  {
+    id: "sheets",
+    label: "Sheets",
+    tagline: "Real spreadsheets & financial models",
+    icon: Table2,
+    skill: "spreadsheet-studio",
+    skillLabel: "Spreadsheet Studio",
+    templates: [
+      {
+        id: "financial-model",
+        title: "SaaS financial model",
+        description: "3-year model with live formulas.",
+        prompt:
+          "Build me a SaaS financial model as a real Excel spreadsheet: an Assumptions sheet (starting MRR, growth %, churn %, CAC, headcount costs), a monthly model sheet computing MRR build-up, revenue, costs, and EBITDA entirely with live formulas referencing the assumptions, and an annual summary. Deliver it as an .xlsx I can open and tweak — changing an assumption must recalculate everything.",
+      },
+      {
+        id: "budget-sheet",
+        title: "Budget spreadsheet",
+        description: "Categories × months with totals and variance.",
+        prompt:
+          "Build a budget spreadsheet as a real .xlsx: expense categories down the rows, months across the columns, with live SUM formulas for row and column totals and a variance column against a plan. I'll tell you the categories and rough numbers — everything derivable must be a formula.",
+      },
+      {
+        id: "sales-tracker",
+        title: "Sales pipeline sheet",
+        description: "Deals, stages, weighted forecast.",
+        prompt:
+          "Build a sales pipeline spreadsheet as a real .xlsx: deals down the rows with columns for stage, amount, close probability, and a weighted-value formula (amount × probability), plus a summary section computing the total weighted forecast with live formulas.",
       },
     ],
   },
