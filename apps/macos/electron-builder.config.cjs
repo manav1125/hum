@@ -1,8 +1,16 @@
 // @ts-check
 
 const env = process.env.VELLUM_ENVIRONMENT || "local";
-const bucketEnv = env === "production" ? "prod" : env;
 const targetArch = process.env.ELECTRON_TARGET_ARCH || "arm64";
+
+// Auto-update feed: GitHub Releases on a dedicated PUBLIC releases-only repo.
+// The source repo (manav1125/hum) is private, and electron-updater can only
+// read private-repo release assets with a runtime token — a non-starter for
+// distributed builds. A public releases repo needs no token to read; only
+// publishing (electron-builder --publish) needs GH_TOKEN. This config is baked
+// into the app as app-update.yml, which electron-updater picks up by default.
+const releasesOwner = process.env.CUE_RELEASES_OWNER || "manav1125";
+const releasesRepo = process.env.CUE_RELEASES_REPO || "cue-releases";
 
 // "Cue" is the canonical product name. `production` and the default `local`
 // build (what `bun run pack` produces, and the handoff/self-host artifact)
@@ -29,8 +37,10 @@ module.exports = {
   appId,
   productName,
   publish: {
-    provider: "generic",
-    url: `https://storage.googleapis.com/vellum-ai-${bucketEnv}-releases/mac-electron/${targetArch}/`,
+    provider: "github",
+    owner: releasesOwner,
+    repo: releasesRepo,
+    releaseType: "release",
   },
   directories: {
     output: "dist",

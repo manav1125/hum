@@ -6,7 +6,8 @@ entirely by the `vellum` CLI, which the app invokes as a subprocess — the
 Electron app is a GUI client, not a process manager.
 
 This package is the macOS distribution surface (outside the App Store).
-Code signing, notarization, and auto-update wiring live in follow-up tickets.
+Code signing, notarization, and auto-update are wired — see
+[`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) for the release runbook.
 
 > **Note on workflow filenames.** This directory is `apps/macos/` to match the
 > platform-named convention used by `apps/ios/`, but the CI workflow files are
@@ -72,9 +73,10 @@ separate from the Swift `Vellum.app`, `Vellum Local.app`, and
 `Vellum Dev.app` installs — running this locally won't clobber
 whichever Swift channel you have around.
 
-You don't have to ship a DMG to try it. Packaging (DMG, signing,
-notarization, auto-update) lands in follow-up tickets once we actually
-need a distributable artifact.
+You don't have to ship a DMG to try it — `bun run dev` covers day-to-day
+work. When you do need a distributable artifact, `bun run pack` builds the
+DMG/zip, and [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md) covers signing,
+notarization, and auto-update publishing.
 
 - **Dev (vel up)** — Electron loads `http://localhost:3000/assistant` (edge proxy + the path apps/web's Vite is configured for).
 - **Dev (standalone)** — Electron loads `http://localhost:5173/assistant` (our Vite, same path).

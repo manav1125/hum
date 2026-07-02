@@ -23,6 +23,7 @@
     "pack:debug": "VELLUM_ENABLE_CHROME_DEVTOOLS=true bash scripts/pack.sh"
   },
   "devDependencies": {
+    "@electron/notarize": "2.5.0",
     "@types/bun": "1.3.14",
     "@types/node": "22.10.5",
     "concurrently": "9.1.2",

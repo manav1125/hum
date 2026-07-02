@@ -2,13 +2,16 @@
 //
 // electron-builder signs extraResources executables with entitlementsInherit.
 // Re-sign special bundled executables after that pass, then re-sign the outer
-// app so the final bundle seal covers the updated nested signatures.
+// app so the final bundle seal covers the updated nested signatures. Finally
+// notarize + staple (scripts/notarize.cjs) — which MUST run after the re-sign,
+// since notarizing before it would invalidate the ticket.
 
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { Arch } = require("builder-util");
 const { findIdentity } = require("app-builder-lib/out/codeSign/macCodeSign");
+const { notarizeApp } = require("./notarize.cjs");
 
 function getConfiguredQualifier(options) {
   if (options.identity !== undefined) {
@@ -102,6 +105,7 @@ exports.default = async function afterSign(context) {
   const resourcesDir = path.join(appDir, "Contents", "Resources");
   const identity = await resolveSigningIdentity(context);
   if (identity == null) {
+    await notarizeApp(context, null);
     return;
   }
   const entitlementsDir = path.join(__dirname, "entitlements");
@@ -137,6 +141,8 @@ exports.default = async function afterSign(context) {
     `afterSign: re-signing ${productName}.app with identity="${identity.name}"`
   );
   codesign(appDir, path.join(entitlementsDir, "app.plist"), identity);
+
+  await notarizeApp(context, identity);
 };
 
 exports.__resolveSigningIdentityForTesting = resolveSigningIdentity;

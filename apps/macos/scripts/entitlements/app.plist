@@ -16,5 +16,10 @@
     <true/>
     <key>com.apple.security.device.camera</key>
     <true/>
+    <!-- Dictation text insertion runs AppleScript (osascript) to paste into the
+         frontmost app; hardened-runtime builds need this entitlement to send
+         Apple events (see NSAppleEventsUsageDescription in the builder config). -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
 </dict>
 </plist>

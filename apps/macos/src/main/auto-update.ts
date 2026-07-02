@@ -15,15 +15,30 @@ const ENVIRONMENT: string =
     : "production";
 
 /**
- * Update feed for Cue. Cue has no release channel of its own yet, so the
- * auto-updater is OFF by default: the previous hard-coded default pointed at
- * the upstream vellum-ai releases bucket, which spammed the log with signature
- * failures every launch and — worse — could have replaced the Cue app with an
- * unrelated upstream Vellum build if a signature ever matched. Set
- * CUE_UPDATE_FEED_URL (a full generic-provider URL) to opt back in once Cue
- * publishes its own signed builds.
+ * Update feed for Cue.
+ *
+ * Default: the GitHub Releases feed baked into the build by electron-builder
+ * (`publish` in electron-builder.config.cjs → app-update.yml inside the app;
+ * electron-updater reads it automatically, no setFeedURL needed). The releases
+ * repo is public, so no token is required at runtime.
+ *
+ * Overrides:
+ *  - CUE_UPDATE_FEED_URL: point at a generic-provider feed instead (e.g. a
+ *    static dir on the Render service). Also the only way to enable updates
+ *    for dev/staging side-by-side builds.
+ *  - CUE_AUTO_UPDATE=0: kill switch — disables the updater entirely.
+ *
+ * The default feed is only wired for `production`/`local` environments (both
+ * ship as plain "Cue"); `dev`/`staging` builds share the version line, so
+ * pointing them at the release feed would "update" them onto the production
+ * artifact.
  */
 const CUE_UPDATE_FEED_URL = process.env.CUE_UPDATE_FEED_URL?.trim();
+const AUTO_UPDATE_DISABLED = ["0", "false", "off"].includes(
+  (process.env.CUE_AUTO_UPDATE ?? "").trim().toLowerCase(),
+);
+const DEFAULT_FEED_ENVIRONMENTS = new Set(["production", "local"]);
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 export type { UpdateState, UpdateStatus };
 
@@ -51,22 +66,41 @@ export const installAutoUpdate = (): void => {
     autoUpdater.quitAndInstall(),
   );
 
+  // Updater only makes sense (and only works) on packaged builds — dev runs
+  // have no app-update.yml and nothing installable. IPC handlers above stay
+  // registered either way so the renderer's update UI just sees "idle".
   if (!app.isPackaged) return;
 
-  // No Cue release channel configured → don't wire the updater at all. Keeps
-  // the IPC handlers above (the renderer's update UI just sees "idle"), but no
-  // network checks, no log noise, and no risk of pulling the upstream build.
-  if (!CUE_UPDATE_FEED_URL) {
-    log.info("[auto-update] disabled — no CUE_UPDATE_FEED_URL configured");
+  if (AUTO_UPDATE_DISABLED) {
+    log.info("[auto-update] disabled via CUE_AUTO_UPDATE");
+    return;
+  }
+
+  if (!CUE_UPDATE_FEED_URL && !DEFAULT_FEED_ENVIRONMENTS.has(ENVIRONMENT)) {
+    log.info(
+      `[auto-update] disabled for "${ENVIRONMENT}" builds — set CUE_UPDATE_FEED_URL to opt in`,
+    );
     return;
   }
 
   autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.channel = ENVIRONMENT;
   autoUpdater.allowDowngrade = false;
-  autoUpdater.setFeedURL({ provider: "generic", url: CUE_UPDATE_FEED_URL });
+
+  if (CUE_UPDATE_FEED_URL) {
+    // Explicit generic feed override. Generic feeds are channel-addressed
+    // ({channel}-mac.yml), so keep the environment-named channel here.
+    autoUpdater.channel = ENVIRONMENT;
+    autoUpdater.setFeedURL({ provider: "generic", url: CUE_UPDATE_FEED_URL });
+    log.info(`[auto-update] using generic feed override: ${CUE_UPDATE_FEED_URL}`);
+  } else {
+    // Default: GitHub Releases feed from the baked-in app-update.yml. Do NOT
+    // set a channel — the GitHub provider publishes latest-mac.yml only, and a
+    // custom channel would make the updater look for production-mac.yml that
+    // never exists.
+    log.info("[auto-update] using GitHub Releases feed from app-update.yml");
+  }
 
   autoUpdater.on("checking-for-update", () => {
     setState({ status: "checking" });
@@ -100,6 +134,8 @@ export const installAutoUpdate = (): void => {
     setState({ status: "idle" });
   });
 
+  // Check on launch, then every 4 hours. The app-menu "Check for Updates…"
+  // item (src/main/menu.ts) triggers the same checkForUpdates on demand.
   checkForUpdates();
-  setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
+  setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL_MS);
 };

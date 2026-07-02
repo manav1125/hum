@@ -13,15 +13,22 @@ Build and package the Electron app for the target architecture.
 
 Flags:
   --environment, --env <name>  Set VELLUM_ENVIRONMENT (default: local)
+  --publish                    Publish artifacts to the update feed
+                               (GitHub Releases; requires GH_TOKEN — see
+                               docs/DISTRIBUTION.md)
   --open                       Launch the built .app when done
   --help, -h                   Show this help
 
 Environment:
   ELECTRON_TARGET_ARCH         arm64 | x64 (default: arm64)
+  APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+                               Notarization credentials (skipped when unset)
+  GH_TOKEN                     GitHub token used by --publish
 EOF
 }
 
 OPEN_AFTER_BUILD=false
+PUBLISH=never
 while [ $# -gt 0 ]; do
   case "$1" in
     --environment|--env)
@@ -31,6 +38,10 @@ while [ $# -gt 0 ]; do
       ;;
     --environment=*|--env=*)
       export VELLUM_ENVIRONMENT="${1#*=}"
+      shift
+      ;;
+    --publish)
+      PUBLISH=always
       shift
       ;;
     --open)
@@ -75,7 +86,10 @@ bash scripts/build-mac-helper.sh
 bun run build:web
 bash scripts/generate-cli-lockfile.sh
 electron-vite build
-electron-builder --config electron-builder.config.cjs --publish always
+# --publish never by default: with the GitHub provider, "always" would try to
+# upload every local pack (and fail without GH_TOKEN). Release builds opt in
+# with pack.sh --publish (see docs/DISTRIBUTION.md).
+electron-builder --config electron-builder.config.cjs --publish "$PUBLISH"
 
 if [ "$OPEN_AFTER_BUILD" = true ]; then
   # Newest .app wins — dist/ may hold stale apps from prior envs.
