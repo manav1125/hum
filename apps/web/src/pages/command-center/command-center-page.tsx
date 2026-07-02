@@ -46,6 +46,8 @@ import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { C, mono, serif } from "@/domains/activity/theme";
+import { useWorkItems } from "@/domains/activity/use-work-items";
+import { AwaitingReviewSection } from "@/domains/activity/sections/awaiting-review-section";
 import { NeedsYouSection } from "@/domains/activity/sections/needs-you-section";
 import { RecentlyDoneSection } from "@/domains/activity/sections/recently-done-section";
 import { RunningSection } from "@/domains/activity/sections/running-section";
@@ -381,6 +383,10 @@ export function CommandCenterPage({
   // so its own skeleton renders rather than flashing a premature "all clear".
   const needsYouEmpty = !tally.loading && tally.awaiting === 0;
   const inMotionEmpty = !tally.loading && tally.running === 0;
+  // Review act: AI-completed work waiting for sign-off. React Query dedupes
+  // this against the section's own identical query.
+  const review = useWorkItems(assistantId, "awaiting_review");
+  const reviewEmpty = review.isLoading || review.items.length === 0;
 
   return (
     <div
@@ -516,6 +522,21 @@ export function CommandCenterPage({
                 pinned
               />
               <NeedsYouSection assistantId={assistantId} />
+            </GroupBlock>
+          )}
+
+          {/* 1.5 · REVIEW — AI-completed work waiting for sign-off. Episodic,
+              so it renders nothing at all when empty rather than adding a
+              third slim line to the calm state. */}
+          {!reviewEmpty && (
+            <GroupBlock>
+              <GroupHeader
+                kicker="Review"
+                title="Cue finished something."
+                accent={C.amber}
+                hint="Check the result, then approve it or send it back."
+              />
+              <AwaitingReviewSection assistantId={assistantId} />
             </GroupBlock>
           )}
 
