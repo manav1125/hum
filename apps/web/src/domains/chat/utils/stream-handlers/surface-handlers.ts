@@ -39,9 +39,7 @@ export function handleUISurfaceShow(
   };
   surfaceObj.display = classifySurfaceDisplay(surfaceObj);
   ctx.turnActions.showSurface(isSurfaceInteractive(surfaceObj));
-  ctx.setMessages((prev) =>
-    attachSurface(prev, surfaceObj, event.messageId),
-  );
+  ctx.setMessages((prev) => attachSurface(prev, surfaceObj, event.messageId));
 }
 
 export function handleUISurfaceUpdate(

@@ -5,12 +5,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { AvailableSound } from "@/domains/settings/api/sounds";
 import {
-    defaultSoundsConfig,
-    displayLabelForFilename,
-    SOUND_EVENT_DISPLAY_NAMES,
-    SOUND_EVENT_IDS,
-    type SoundEventConfig,
-    type SoundEventId,
+  defaultSoundsConfig,
+  displayLabelForFilename,
+  SOUND_EVENT_DISPLAY_NAMES,
+  SOUND_EVENT_IDS,
+  type SoundEventConfig,
+  type SoundEventId,
 } from "@/domains/settings/types/sounds";
 import { getSoundManager } from "@/domains/settings/utils/sound-manager";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";

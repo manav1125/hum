@@ -14,7 +14,11 @@ import { patchConversation } from "@/utils/conversation-cache";
  * optimistic-update logic is colocated with the UI rather than threaded
  * through the parent orchestrator's dependency tree.
  */
-export function RenameDialogFromStore({ assistantId }: { assistantId: string | null }) {
+export function RenameDialogFromStore({
+  assistantId,
+}: {
+  assistantId: string | null;
+}) {
   const renameRequest = useRenameRequestStore.use.renameRequest();
   const clearRename = useRenameRequestStore.use.clearRename();
   const queryClient = useQueryClient();

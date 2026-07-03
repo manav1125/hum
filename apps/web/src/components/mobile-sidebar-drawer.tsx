@@ -61,9 +61,8 @@ export function MobileSidebarDrawer({
       if (event.key !== "Tab" || !drawerRef.current) {
         return;
       }
-      const focusable = drawerRef.current.querySelectorAll<HTMLElement>(
-        FOCUSABLE_SELECTOR,
-      );
+      const focusable =
+        drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (!first || !last) {

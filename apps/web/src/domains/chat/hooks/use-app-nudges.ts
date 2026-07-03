@@ -23,7 +23,11 @@ import {
   GITHUB_MIN_USER_MESSAGES,
   type GitHubNudgeState,
 } from "@/hooks/use-github-nudge";
-import { useDiscordNudgeState, ensureFirstSeenAt, type DiscordNudgeState } from "@/hooks/use-discord-nudge";
+import {
+  useDiscordNudgeState,
+  ensureFirstSeenAt,
+  type DiscordNudgeState,
+} from "@/hooks/use-discord-nudge";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -96,7 +100,9 @@ export function useAppNudges(
   const isOnIOS = useIsIOSWeb();
   const isOnMacOS = useIsMacOSWeb();
   const isOnNudgePlatform = isOnIOS || isOnMacOS;
-  const nudgeMinTurns = isOnIOS ? IOS_APP_BANNER_MIN_TURNS : MAC_APP_BANNER_MIN_TURNS;
+  const nudgeMinTurns = isOnIOS
+    ? IOS_APP_BANNER_MIN_TURNS
+    : MAC_APP_BANNER_MIN_TURNS;
 
   // -------------------------------------------------------------------------
   // Turn counting — gate the platform nudge behind a minimum-turn threshold
@@ -132,7 +138,9 @@ export function useAppNudges(
       }
     }
     if (toAdd.length > 0 || toRemove.length > 0) {
-      useChatSessionStore.getState().batchUpdateStreamingMessageIds(toAdd, toRemove);
+      useChatSessionStore
+        .getState()
+        .batchUpdateStreamingMessageIds(toAdd, toRemove);
     }
 
     if (newlyCompleted > 0) {
@@ -161,7 +169,8 @@ export function useAppNudges(
   const macNudge = useMacOsNudgeState();
   const nudge = isOnIOS ? iosNudge : macNudge;
 
-  const showBanner = isOnNudgePlatform && bannerEligible && nudge.bannerShouldShow;
+  const showBanner =
+    isOnNudgePlatform && bannerEligible && nudge.bannerShouldShow;
 
   // -------------------------------------------------------------------------
   // GitHub star nudge — only after platform nudge is resolved
@@ -213,8 +222,7 @@ export function useAppNudges(
   }, [messages, activeConversationId]);
 
   const githubNudge = useGitHubNudgeState();
-  const platformNudgeResolved =
-    !isOnNudgePlatform || !nudge.bannerShouldShow;
+  const platformNudgeResolved = !isOnNudgePlatform || !nudge.bannerShouldShow;
   const showGitHubBanner =
     platformNudgeResolved && githubNudge.bannerShouldShow;
 

@@ -106,9 +106,7 @@ export function SubagentInlineProgressCard({
         disableExpand
         headerActionSlot={actionSlot}
         onHeaderClick={onSubagentClick ? handleHeaderClick : undefined}
-        headerAriaLabel={
-          onSubagentClick ? "Open subagent" : undefined
-        }
+        headerAriaLabel={onSubagentClick ? "Open subagent" : undefined}
       >
         {/* Children unused — `disableExpand` suppresses the body region. */}
         <div className="hidden">

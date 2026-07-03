@@ -47,7 +47,9 @@ function loadEmojiSearch(): Promise<SearchFn> {
  * the returned function performs real lookups.
  */
 export function useEmojiSearch(): SearchFn {
-  const [search, setSearch] = useState<SearchFn>(() => cachedSearch ?? emptySearch);
+  const [search, setSearch] = useState<SearchFn>(
+    () => cachedSearch ?? emptySearch,
+  );
 
   useEffect(() => {
     if (cachedSearch) return;

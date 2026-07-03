@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 
 import { ChatPill } from "@/domains/chat/components/chat-pill";

@@ -1,11 +1,4 @@
-import {
-  afterAll,
-  afterEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 
@@ -18,9 +11,12 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
   documentsByIdGet: async () => ({ data: undefined }),
 }));
 
-mock.module("@/domains/chat/components/chat-attachments/message-attachments", () => ({
-  MessageAttachments: () => <div data-testid="attachments" />,
-}));
+mock.module(
+  "@/domains/chat/components/chat-attachments/message-attachments",
+  () => ({
+    MessageAttachments: () => <div data-testid="attachments" />,
+  }),
+);
 
 mock.module("@/domains/chat/components/chat-markdown-message", () => ({
   ChatMarkdownMessage: ({
@@ -422,7 +418,12 @@ describe("TranscriptMessageBody", () => {
           role: "assistant",
           contentBlocks: [
             thinkingBlock("why I called the tool"),
-            toolUseBlock({ id: "tc-a", name: "bash", input: {}, completedAt: 1 }),
+            toolUseBlock({
+              id: "tc-a",
+              name: "bash",
+              input: {},
+              completedAt: 1,
+            }),
             textBlock("the answer"),
           ],
           timestamp: 1_000,
@@ -530,7 +531,12 @@ describe("TranscriptMessageBody", () => {
           id: "m-tool-thinking",
           role: "assistant",
           contentBlocks: [
-            toolUseBlock({ id: "tc-mix", name: "bash", input: {}, completedAt: 1 }),
+            toolUseBlock({
+              id: "tc-mix",
+              name: "bash",
+              input: {},
+              completedAt: 1,
+            }),
             thinkingBlock("reasoning about the tool"),
             textBlock("done"),
           ],
@@ -581,7 +587,12 @@ describe("TranscriptMessageBody", () => {
           contentBlocks: [
             thinkingBlock("just reasoning"),
             textBlock("answer"),
-            toolUseBlock({ id: "tc-a", name: "bash", input: {}, completedAt: 1 }),
+            toolUseBlock({
+              id: "tc-a",
+              name: "bash",
+              input: {},
+              completedAt: 1,
+            }),
           ],
           timestamp: 1_000,
         }}
@@ -608,7 +619,10 @@ describe("TranscriptMessageBody", () => {
     const html = renderMessage({
       id: "m-think",
       role: "assistant",
-      contentBlocks: [thinkingBlock("chain of thought"), textBlock("the answer")],
+      contentBlocks: [
+        thinkingBlock("chain of thought"),
+        textBlock("the answer"),
+      ],
       timestamp: 1_000,
     });
 
@@ -801,7 +815,9 @@ describe("TranscriptMessageBody", () => {
     );
 
     // Assistant path: separate strip renders, no surface-lift bubble.
-    expect(container.querySelector("[data-testid='attachments']")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid='attachments']"),
+    ).not.toBeNull();
     expect(
       container.querySelector("[class*='bg-[var(--surface-lift)]']"),
     ).toBeNull();
@@ -873,7 +889,12 @@ describe("TranscriptMessageBody", () => {
           role: "user",
           contentBlocks: [
             textBlock("before tool"),
-            toolUseBlock({ id: "tc-1", name: "bash", input: {}, completedAt: 1 }),
+            toolUseBlock({
+              id: "tc-1",
+              name: "bash",
+              input: {},
+              completedAt: 1,
+            }),
             textBlock("after tool"),
           ],
         }}
@@ -918,7 +939,12 @@ describe("TranscriptMessageBody", () => {
           id: "u4",
           role: "user",
           contentBlocks: [
-            toolUseBlock({ id: "tc-1", name: "bash", input: {}, completedAt: 1 }),
+            toolUseBlock({
+              id: "tc-1",
+              name: "bash",
+              input: {},
+              completedAt: 1,
+            }),
           ],
         }}
         onSurfaceAction={noop}

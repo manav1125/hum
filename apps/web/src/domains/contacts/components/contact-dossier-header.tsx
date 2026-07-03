@@ -17,7 +17,13 @@ const MONO = "'DM Mono', ui-monospace, monospace";
 function describeRole(
   role: string | null | undefined,
   contactType: string | null | undefined,
-): { label: string; chipBg: string; chipColor: string; avatarBg: string; avatarColor: string } {
+): {
+  label: string;
+  chipBg: string;
+  chipColor: string;
+  avatarBg: string;
+  avatarColor: string;
+} {
   if (role === "guardian") {
     return {
       label: "GUARDIAN",
@@ -194,16 +200,16 @@ export function ContactDossierHeader({
       >
         <StatTile
           value={String(contact.interactionCount)}
-          label={contact.interactionCount === 1 ? "interaction" : "interactions"}
+          label={
+            contact.interactionCount === 1 ? "interaction" : "interactions"
+          }
         />
         <StatTile value={lastTouch} label="last touch" />
         <StatTile
           value={String(activeChannels)}
           label={activeChannels === 1 ? "channel" : "channels"}
         />
-        {action ? (
-          <div style={{ marginLeft: "auto" }}>{action}</div>
-        ) : null}
+        {action ? <div style={{ marginLeft: "auto" }}>{action}</div> : null}
       </div>
     </div>
   );

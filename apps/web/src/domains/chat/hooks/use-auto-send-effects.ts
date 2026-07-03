@@ -71,7 +71,12 @@ export function useAutoSendEffects({
   // 3. Onboarding initial message — fires once when daemon is reachable.
   const initialMessageConsumedRef = useRef(false);
   useEffect(() => {
-    if (initialMessageConsumedRef.current || !assistantId || !activeConversationId) return;
+    if (
+      initialMessageConsumedRef.current ||
+      !assistantId ||
+      !activeConversationId
+    )
+      return;
     if (reachabilityPhase !== "ready") return;
     const message = getPendingInitialMessageRef.current();
     if (!message) return;

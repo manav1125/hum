@@ -2,30 +2,41 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import {
-    WEB_SEARCH_BYOK_PROVIDER_IDS,
-    WEB_SEARCH_PROVIDER_DISPLAY_NAMES,
-    WEB_SEARCH_PROVIDER_IDS,
-    WEB_SEARCH_PROVIDER_KEY_PLACEHOLDERS,
+  WEB_SEARCH_BYOK_PROVIDER_IDS,
+  WEB_SEARCH_PROVIDER_DISPLAY_NAMES,
+  WEB_SEARCH_PROVIDER_IDS,
+  WEB_SEARCH_PROVIDER_KEY_PLACEHOLDERS,
 } from "@/assistant/generated/web-search-provider-catalog.gen";
 import { secretPlaceholder } from "@/domains/settings/ai/secret-placeholder";
 import { captureError } from "@/lib/sentry/capture-error";
 import {
-    getLocalSetting,
-    removeLocalSetting,
-    setLocalSetting,
+  getLocalSetting,
+  removeLocalSetting,
+  setLocalSetting,
 } from "@/utils/local-settings";
 import { useQueryClient } from "@tanstack/react-query";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Input } from "@vellumai/design-library/components/input";
 import { toast } from "@vellumai/design-library/components/toast";
 
-import { ResetButton, SaveButton, ServiceCard } from "@/domains/settings/ai/ai-shared-ui";
+import {
+  ResetButton,
+  SaveButton,
+  ServiceCard,
+} from "@/domains/settings/ai/ai-shared-ui";
 import type { ServiceMode } from "@/domains/settings/ai/ai-types";
-import { LS_WEB_SEARCH_MODE, LS_WEB_SEARCH_PROVIDER } from "@/domains/settings/ai/ai-types";
+import {
+  LS_WEB_SEARCH_MODE,
+  LS_WEB_SEARCH_PROVIDER,
+} from "@/domains/settings/ai/ai-types";
 import { getWebSearchProviderKeyStorage } from "@/domains/settings/ai/ai-utils";
 import { useProvisionProviderKey } from "@/domains/settings/ai/use-daemon-config";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { configGetOptions, configGetSetQueryData, useConfigPatchMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  configGetOptions,
+  configGetSetQueryData,
+  useConfigPatchMutation,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { useQuery } from "@tanstack/react-query";
 import { useDraftOverride } from "@/domains/settings/ai/use-draft-override";
 import { useStoredCredentialPresence } from "@/domains/settings/ai/use-stored-credential-presence";
@@ -41,7 +52,11 @@ export function WebSearchCard() {
 
   const configMutation = useConfigPatchMutation({
     onSuccess: (data) => {
-      configGetSetQueryData(queryClient, { path: { assistant_id: assistantId } }, data);
+      configGetSetQueryData(
+        queryClient,
+        { path: { assistant_id: assistantId } },
+        data,
+      );
     },
   });
   const provisionProviderKey = useProvisionProviderKey();
@@ -52,38 +67,56 @@ export function WebSearchCard() {
   const { serverWebSearchMode, serverWebSearchProvider } = useMemo(() => {
     if (!daemonConfig) {
       return {
-        serverWebSearchMode: getLocalSetting(LS_WEB_SEARCH_MODE, "your-own") as ServiceMode,
-        serverWebSearchProvider: getLocalSetting(LS_WEB_SEARCH_PROVIDER, "inference-provider-native"),
+        serverWebSearchMode: getLocalSetting(
+          LS_WEB_SEARCH_MODE,
+          "your-own",
+        ) as ServiceMode,
+        serverWebSearchProvider: getLocalSetting(
+          LS_WEB_SEARCH_PROVIDER,
+          "inference-provider-native",
+        ),
       };
     }
     const wsService = daemonConfig.services?.["web-search"];
     const mode = wsService?.mode;
     return {
-      serverWebSearchMode: (mode === "managed" || mode === "your-own" ? mode : getLocalSetting(LS_WEB_SEARCH_MODE, "your-own")) as ServiceMode,
-      serverWebSearchProvider: wsService?.provider || getLocalSetting(LS_WEB_SEARCH_PROVIDER, "inference-provider-native"),
+      serverWebSearchMode: (mode === "managed" || mode === "your-own"
+        ? mode
+        : getLocalSetting(LS_WEB_SEARCH_MODE, "your-own")) as ServiceMode,
+      serverWebSearchProvider:
+        wsService?.provider ||
+        getLocalSetting(LS_WEB_SEARCH_PROVIDER, "inference-provider-native"),
     };
   }, [daemonConfig]);
 
   const [saving, setSaving] = useState(false);
-  const [webSearchMode, setDraftWebSearchMode] = useDraftOverride(serverWebSearchMode);
-  const [webSearchProvider, setDraftWebSearchProvider] = useDraftOverride(serverWebSearchProvider);
+  const [webSearchMode, setDraftWebSearchMode] =
+    useDraftOverride(serverWebSearchMode);
+  const [webSearchProvider, setDraftWebSearchProvider] = useDraftOverride(
+    serverWebSearchProvider,
+  );
 
   const [webSearchApiKey, setWebSearchApiKey] = useState("");
 
-  const requiresProviderCredential = WEB_SEARCH_BYOK_PROVIDER_IDS.has(webSearchProvider);
-  const { hasStoredCredential: webSearchHasStoredKey, queryKey: credentialQueryKey } =
-    useStoredCredentialPresence({
-      assistantId,
-      credentialKind: "api_key",
-      credentialName: webSearchProvider,
-      enabled: requiresProviderCredential,
-      errorContext: "settings-ai-web-search-read-credential",
-    });
+  const requiresProviderCredential =
+    WEB_SEARCH_BYOK_PROVIDER_IDS.has(webSearchProvider);
+  const {
+    hasStoredCredential: webSearchHasStoredKey,
+    queryKey: credentialQueryKey,
+  } = useStoredCredentialPresence({
+    assistantId,
+    credentialKind: "api_key",
+    credentialName: webSearchProvider,
+    enabled: requiresProviderCredential,
+    errorContext: "settings-ai-web-search-read-credential",
+  });
 
   // --- Derived state ---
   const hasNewApiKey = webSearchApiKey.trim().length > 0;
   const effectiveProvider =
-    webSearchMode === "managed" ? "inference-provider-native" : webSearchProvider;
+    webSearchMode === "managed"
+      ? "inference-provider-native"
+      : webSearchProvider;
   const configChanged =
     webSearchMode !== serverWebSearchMode ||
     effectiveProvider !== serverWebSearchProvider;
@@ -95,7 +128,8 @@ export function WebSearchCard() {
   const saveDisabled =
     saving || needsKeyBeforeSave || (!configChanged && !hasNewApiKey);
   const apiKeyPlaceholder = secretPlaceholder(
-    WEB_SEARCH_PROVIDER_KEY_PLACEHOLDERS[webSearchProvider] ?? "Enter your API key",
+    WEB_SEARCH_PROVIDER_KEY_PLACEHOLDERS[webSearchProvider] ??
+      "Enter your API key",
     webSearchHasStoredKey,
   );
 
@@ -103,26 +137,34 @@ export function WebSearchCard() {
     setSaving(true);
     const trimmed = webSearchApiKey.trim();
     const providerToSave =
-      webSearchMode === "managed" ? "inference-provider-native" : webSearchProvider;
+      webSearchMode === "managed"
+        ? "inference-provider-native"
+        : webSearchProvider;
     const storageKey = getWebSearchProviderKeyStorage(providerToSave);
     const hasUserKey =
-      webSearchMode === "your-own" && requiresProviderCredential && trimmed.length > 0;
+      webSearchMode === "your-own" &&
+      requiresProviderCredential &&
+      trimmed.length > 0;
     try {
       if (hasUserKey) {
         await provisionProviderKey(providerToSave, trimmed);
       }
-      await configMutation.mutateAsync({
-        path: { assistant_id: assistantId },
-        body: {
-          services: {
-            "web-search": { mode: webSearchMode, provider: providerToSave },
+      await configMutation
+        .mutateAsync({
+          path: { assistant_id: assistantId },
+          body: {
+            services: {
+              "web-search": { mode: webSearchMode, provider: providerToSave },
+            },
           },
-        },
-      }).catch((error) => {
-        toast.error("Failed to update assistant configuration. Please try again.");
-        captureError(error, { context: "patch_daemon_config" });
-        throw error;
-      });
+        })
+        .catch((error) => {
+          toast.error(
+            "Failed to update assistant configuration. Please try again.",
+          );
+          captureError(error, { context: "patch_daemon_config" });
+          throw error;
+        });
     } catch {
       setSaving(false);
       return;
@@ -182,7 +224,9 @@ export function WebSearchCard() {
           </p>
           <div className="flex items-center gap-2">
             <SaveButton onClick={handleSave} disabled={saveDisabled} />
-            {saving && <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />}
+            {saving && (
+              <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />
+            )}
           </div>
         </div>
       ) : (
@@ -214,7 +258,9 @@ export function WebSearchCard() {
 
           <div className="flex items-center gap-2">
             <SaveButton onClick={handleSave} disabled={saveDisabled} />
-            {saving && <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />}
+            {saving && (
+              <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />
+            )}
             {requiresProviderCredential && (
               <ResetButton onClick={handleReset} filled />
             )}

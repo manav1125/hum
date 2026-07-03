@@ -10,7 +10,11 @@ describe("handleToolUseStart", () => {
   it("cancels reconciliation and creates tool call with generated id", () => {
     const ctx = makeCtx();
     handleToolUseStart(
-      { type: "tool_use_start", toolName: "web_search", input: { query: "test" } },
+      {
+        type: "tool_use_start",
+        toolName: "web_search",
+        input: { query: "test" },
+      },
       ctx,
     );
     expect(ctx.cancelReconciliation).toHaveBeenCalled();
@@ -36,11 +40,17 @@ describe("handleToolUseStart", () => {
   it("creates a new bubble when there is no assistant tail to fold into", () => {
     const ctx = makeCtx();
     handleToolUseStart(
-      { type: "tool_use_start", toolName: "web_search", input: {}, toolUseId: "tc-1" },
+      {
+        type: "tool_use_start",
+        toolName: "web_search",
+        input: {},
+        toolUseId: "tc-1",
+      },
       ctx,
     );
     expect(ctx.setMessages).toHaveBeenCalled();
-    const updater = (ctx.setMessages as unknown as ReturnType<typeof Object>).mock.calls[0][0] as (
+    const updater = (ctx.setMessages as unknown as ReturnType<typeof Object>)
+      .mock.calls[0][0] as (
       prev: never[],
     ) => Array<{ role: string; toolCalls: Array<{ id: string }> }>;
     const next = updater([]);
@@ -65,7 +75,8 @@ describe("handleToolUseStart", () => {
       },
       ctx,
     );
-    const updater = (ctx.setMessages as unknown as ReturnType<typeof Object>).mock.calls[0][0] as (
+    const updater = (ctx.setMessages as unknown as ReturnType<typeof Object>)
+      .mock.calls[0][0] as (
       prev: never[],
     ) => Array<{ id: string; isOptimistic?: boolean }>;
     const next = updater([]);
@@ -79,8 +90,14 @@ describe("handleToolUseStart", () => {
     // must produce ONE assistant row with three tool calls, not three
     // overlapping bubbles or a duplicate.
     const ctx = makeCtx();
-    let current: Array<{ id: string; toolCalls?: Array<{ id: string }>; isOptimistic?: boolean }> = [];
-    const setMessages = ctx.setMessages as unknown as { mock: { calls: unknown[][] } };
+    let current: Array<{
+      id: string;
+      toolCalls?: Array<{ id: string }>;
+      isOptimistic?: boolean;
+    }> = [];
+    const setMessages = ctx.setMessages as unknown as {
+      mock: { calls: unknown[][] };
+    };
 
     for (const [i, toolUseId] of ["tc-1", "tc-2", "tc-3"].entries()) {
       handleToolUseStart(
@@ -103,7 +120,11 @@ describe("handleToolUseStart", () => {
     expect(current[0]!.id).toBe("anchor-1");
     expect(current[0]!.isOptimistic).toBeUndefined();
     expect(current[0]!.toolCalls).toHaveLength(3);
-    expect(current[0]!.toolCalls!.map((tc) => tc.id)).toEqual(["tc-1", "tc-2", "tc-3"]);
+    expect(current[0]!.toolCalls!.map((tc) => tc.id)).toEqual([
+      "tc-1",
+      "tc-2",
+      "tc-3",
+    ]);
   });
 });
 

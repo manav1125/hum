@@ -1,4 +1,3 @@
-
 import { type RefObject, useEffect, useState } from "react";
 
 /**

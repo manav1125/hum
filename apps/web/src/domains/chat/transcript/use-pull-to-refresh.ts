@@ -22,7 +22,13 @@
 // so we compute pull extent as (currentY − startY). Positive extent
 // means the finger has traveled downward — i.e., the user is pulling.
 
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import {
   PULL_ELIGIBLE_BOTTOM_DISTANCE_PX,
@@ -136,12 +142,14 @@ export function usePullToRefresh({
     };
 
     const handleTouchStart = (event: TouchEvent) => {
-      if (!canStartPull({
-        isRefreshing: isRefreshingRef.current,
-        scrollTop: el.scrollTop,
-        scrollHeight: el.scrollHeight,
-        clientHeight: el.clientHeight,
-      })) {
+      if (
+        !canStartPull({
+          isRefreshing: isRefreshingRef.current,
+          scrollTop: el.scrollTop,
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+        })
+      ) {
         return;
       }
       // Only single-finger interactions are pull candidates. Multi-touch

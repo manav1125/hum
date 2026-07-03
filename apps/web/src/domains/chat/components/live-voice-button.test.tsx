@@ -9,14 +9,7 @@
  * Uses happy-dom via the bun:test preload configured in `web/bunfig.toml`.
  */
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 
 import type { LiveVoiceSessionState } from "@/domains/chat/voice/live-voice/live-voice-store";
@@ -30,7 +23,9 @@ mock.module("@/stores/assistant-feature-flag-store", () => ({
   },
 }));
 
-const startSpy = mock(async (_assistantId: string, _conversationId?: string) => {});
+const startSpy = mock(
+  async (_assistantId: string, _conversationId?: string) => {},
+);
 const stopSpy = mock(async () => {});
 let mockState: LiveVoiceSessionState = "idle";
 let mockInputAmplitude = 0;
@@ -48,9 +43,8 @@ mock.module("@/domains/chat/voice/live-voice/use-live-voice", () => ({
 }));
 
 // Imported after the mocks so the component picks up the mocked modules.
-const { LiveVoiceButton } = await import(
-  "@/domains/chat/components/live-voice-button"
-);
+const { LiveVoiceButton } =
+  await import("@/domains/chat/components/live-voice-button");
 
 beforeEach(() => {
   mockVoiceMode = false;

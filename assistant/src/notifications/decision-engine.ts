@@ -131,7 +131,7 @@ function buildSystemPrompt(
     `When a routing intent is present, respect it in your channel selection. A post-decision guard will enforce the intent.`,
     ``,
     `Copy guidelines (three distinct outputs):`,
-    `- \`title\` and \`body\` are for native notification popups (e.g. vellum desktop/mobile) — keep them short and glanceable (title ≤ 8 words, body ≤ 2 sentences).`,
+    `- \`title\` and \`body\` are for native notification popups (e.g. the Cue app on desktop/mobile — channel id \`vellum\`) — keep them short and glanceable (title ≤ 8 words, body ≤ 2 sentences).`,
     `  - Write popup copy as final copy for the guardian or recipient. Do not write instructions for the assistant or another intermediary.`,
     `- \`deliveryText\` is the channel-native message for chat channels (e.g. telegram). It must read naturally as a standalone message.`,
     `  - Do not prepend mechanical labels like "Conversation:".`,
@@ -141,7 +141,7 @@ function buildSystemPrompt(
     `  - Avoid intermediary-instruction phrasing like "consider telling the guardian", "ask the recipient to", or "the assistant should remind them". Rewrite it as final copy the recipient can act on directly.`,
     `  - For telegram: 1-2 concise sentences.`,
     `- \`conversationSeedMessage\` is the opening message in the internal notification conversation and also the expanded detail shown in the home feed. It should be richer and more contextual than the popup body.`,
-    `  - For vellum (desktop): use structured markdown for readability. Break content into bullet points, numbered lists, or short sections with **bold** labels. Avoid long unbroken paragraphs — scan-friendly formatting is preferred.`,
+    `  - For the \`vellum\` channel (the Cue desktop app): use structured markdown for readability. Break content into bullet points, numbered lists, or short sections with **bold** labels. Avoid long unbroken paragraphs — scan-friendly formatting is preferred.`,
     `  - Never dump raw JSON. Include only human-readable context.`,
     ``,
     `Conversation reuse guidelines:`,
@@ -262,7 +262,7 @@ function buildDecisionTool(availableChannels: NotificationChannel[]) {
                   conversationSeedMessage: {
                     type: "string",
                     description:
-                      "Richer opening message for the notification conversation. More contextual than title/body. For vellum: 2-4 sentences. For telegram: 1-2 sentences. Never raw JSON.",
+                      "Richer opening message for the notification conversation. More contextual than title/body. For the vellum channel (the Cue app): 2-4 sentences. For telegram: 1-2 sentences. Never raw JSON.",
                   },
                 },
                 required: ["title", "body"],

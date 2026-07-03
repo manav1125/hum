@@ -4,10 +4,7 @@ import {
   sttTranscribePost,
 } from "@/generated/daemon/sdk.gen";
 import { isNativeDictationSupported } from "@/runtime/native-dictation-partials";
-import {
-  getLocalSetting,
-  removeLocalSetting,
-} from "@/utils/local-settings";
+import { getLocalSetting, removeLocalSetting } from "@/utils/local-settings";
 
 export interface SttTranscribeOk {
   status: "ok";
@@ -160,7 +157,10 @@ async function migrateLegacyLocalSttSettings(
       throwOnError: true,
     });
   } catch (err) {
-    console.warn("postSttTranscribe: legacy STT settings migration failed", err);
+    console.warn(
+      "postSttTranscribe: legacy STT settings migration failed",
+      err,
+    );
     return false;
   }
 

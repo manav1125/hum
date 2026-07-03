@@ -115,16 +115,13 @@ export function UpdateToast(): null {
         dismissedForStatusRef.current = null;
       }
 
-      toast.custom(
-        (id) => <UpdateToastContent state={state} toastId={id} />,
-        {
-          id: TOAST_ID,
-          duration: Infinity,
-          onDismiss: () => {
-            dismissedForStatusRef.current = state.status;
-          },
+      toast.custom((id) => <UpdateToastContent state={state} toastId={id} />, {
+        id: TOAST_ID,
+        duration: Infinity,
+        onDismiss: () => {
+          dismissedForStatusRef.current = state.status;
         },
-      );
+      });
     }
 
     void getUpdateState().then(handleState);

@@ -1,4 +1,11 @@
-import { CheckCircle, ChevronDown, ChevronRight, Hash, Phone, Send } from "lucide-react";
+import {
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  Hash,
+  Phone,
+  Send,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@vellumai/design-library/components/button";
@@ -20,7 +27,10 @@ interface AssistantChannelsDetailProps {
   onDisconnect?: (channelKey: ChannelKey) => void;
   onSaveTelegramToken?: (botToken: string) => Promise<void>;
   onSaveSlackConfig?: (botToken: string, appToken: string) => Promise<void>;
-  onSaveTwilioCredentials?: (accountSid: string, authToken: string) => Promise<void>;
+  onSaveTwilioCredentials?: (
+    accountSid: string,
+    authToken: string,
+  ) => Promise<void>;
   onGenerateInviteLink?: () => void;
   /**
    * Channel to scroll to and auto-expand on mount, set when the user arrives
@@ -68,12 +78,20 @@ export function AssistantChannelsDetail({
   onHighlightConsumed,
 }: AssistantChannelsDetailProps) {
   const displayName = assistantName.trim() || "your assistant";
-  const [pendingDisconnect, setPendingDisconnect] = useState<ChannelKey | null>(null);
-  const [expandedChannels, setExpandedChannels] = useState<Set<ChannelKey>>(new Set());
+  const [pendingDisconnect, setPendingDisconnect] = useState<ChannelKey | null>(
+    null,
+  );
+  const [expandedChannels, setExpandedChannels] = useState<Set<ChannelKey>>(
+    new Set(),
+  );
   const [flashChannel, setFlashChannel] = useState<ChannelKey | null>(null);
-  const rowRefs = useRef<Partial<Record<ChannelKey, HTMLDivElement | null>>>({});
+  const rowRefs = useRef<Partial<Record<ChannelKey, HTMLDivElement | null>>>(
+    {},
+  );
 
-  const disconnectMeta = pendingDisconnect ? CHANNEL_META[pendingDisconnect] : null;
+  const disconnectMeta = pendingDisconnect
+    ? CHANNEL_META[pendingDisconnect]
+    : null;
 
   // Honor a `?channel=` deep-link: expand the requested channel's setup row,
   // scroll it into view, and briefly highlight it. Consumed once.
@@ -146,7 +164,9 @@ export function AssistantChannelsDetail({
                 onToggleExpand={() => toggleExpanded(channel.key)}
                 onSetup={onSetup ? () => onSetup(channel.key) : undefined}
                 onDisconnect={
-                  onDisconnect ? () => setPendingDisconnect(channel.key) : undefined
+                  onDisconnect
+                    ? () => setPendingDisconnect(channel.key)
+                    : undefined
                 }
                 onSaveTelegramToken={onSaveTelegramToken}
                 onSaveSlackConfig={onSaveSlackConfig}
@@ -157,7 +177,9 @@ export function AssistantChannelsDetail({
         </div>
       </DetailCard>
 
-      {onGenerateInviteLink ? <ShareConnectionLinkButton onClick={onGenerateInviteLink} /> : null}
+      {onGenerateInviteLink ? (
+        <ShareConnectionLinkButton onClick={onGenerateInviteLink} />
+      ) : null}
 
       <ConfirmDialog
         open={pendingDisconnect !== null}
@@ -190,7 +212,10 @@ interface ChannelRowProps {
   onDisconnect?: () => void;
   onSaveTelegramToken?: (botToken: string) => Promise<void>;
   onSaveSlackConfig?: (botToken: string, appToken: string) => Promise<void>;
-  onSaveTwilioCredentials?: (accountSid: string, authToken: string) => Promise<void>;
+  onSaveTwilioCredentials?: (
+    accountSid: string,
+    authToken: string,
+  ) => Promise<void>;
 }
 
 function ChannelRow({
@@ -237,7 +262,10 @@ function ChannelRow({
           {meta.label}
         </span>
         {channel.address ? (
-          <span className="text-body-medium-lighter" style={{ color: "var(--content-tertiary)" }}>
+          <span
+            className="text-body-medium-lighter"
+            style={{ color: "var(--content-tertiary)" }}
+          >
             {channel.address}
           </span>
         ) : null}
@@ -336,16 +364,15 @@ function TelegramCredentialEntry({ onSave }: TelegramCredentialEntryProps) {
         fullWidth
       />
       {error ? (
-        <p className="text-label-small" style={{ color: "var(--content-negative)" }}>
+        <p
+          className="text-label-small"
+          style={{ color: "var(--content-negative)" }}
+        >
           {error}
         </p>
       ) : null}
       <div>
-        <Button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave}
-        >
+        <Button type="button" onClick={handleSave} disabled={!canSave}>
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>
@@ -363,7 +390,8 @@ function SlackCredentialEntry({ onSave }: SlackCredentialEntryProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSave = botToken.trim().length > 0 && appToken.trim().length > 0 && !saving;
+  const canSave =
+    botToken.trim().length > 0 && appToken.trim().length > 0 && !saving;
 
   const handleSave = async () => {
     if (!onSave || !canSave) {
@@ -403,16 +431,15 @@ function SlackCredentialEntry({ onSave }: SlackCredentialEntryProps) {
         fullWidth
       />
       {error ? (
-        <p className="text-label-small" style={{ color: "var(--content-negative)" }}>
+        <p
+          className="text-label-small"
+          style={{ color: "var(--content-negative)" }}
+        >
           {error}
         </p>
       ) : null}
       <div>
-        <Button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave}
-        >
+        <Button type="button" onClick={handleSave} disabled={!canSave}>
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>
@@ -430,7 +457,8 @@ function TwilioCredentialEntry({ onSave }: TwilioCredentialEntryProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSave = accountSid.trim().length > 0 && authToken.trim().length > 0 && !saving;
+  const canSave =
+    accountSid.trim().length > 0 && authToken.trim().length > 0 && !saving;
 
   const handleSave = async () => {
     if (!onSave || !canSave) {
@@ -470,16 +498,15 @@ function TwilioCredentialEntry({ onSave }: TwilioCredentialEntryProps) {
         fullWidth
       />
       {error ? (
-        <p className="text-label-small" style={{ color: "var(--content-negative)" }}>
+        <p
+          className="text-label-small"
+          style={{ color: "var(--content-negative)" }}
+        >
           {error}
         </p>
       ) : null}
       <div>
-        <Button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave}
-        >
+        <Button type="button" onClick={handleSave} disabled={!canSave}>
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>

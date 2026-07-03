@@ -17,12 +17,16 @@ import { CallSiteOverridesModal } from "@/domains/settings/ai/call-site-override
 import { ManageProfilesModal } from "@/domains/settings/ai/manage-profiles-modal";
 import { ManageProvidersModal } from "@/domains/settings/ai/manage-providers-modal";
 import {
-    AUTO_PROFILE_NAME,
-    gateAutoProfile,
-    profilePickerLabel,
-    visibleProfilesForPicker,
+  AUTO_PROFILE_NAME,
+  gateAutoProfile,
+  profilePickerLabel,
+  visibleProfilesForPicker,
 } from "@/assistant/profile-pickers";
-import { configGetOptions, configGetSetQueryData, useConfigPatchMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  configGetOptions,
+  configGetSetQueryData,
+  useConfigPatchMutation,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { useDraftOverride } from "@/domains/settings/ai/use-draft-override";
 import { useQuery } from "@tanstack/react-query";
 
@@ -38,20 +42,26 @@ export function LanguageModelCard() {
   const activeProfile = config?.llm?.activeProfile ?? null;
   const callSites = config?.llm?.callSites ?? {};
   const orderedProfiles = useMemo(
-    () => buildOrderedProfiles(
-      config?.llm?.profiles ?? {},
-      config?.llm?.profileOrder ?? [],
-    ),
+    () =>
+      buildOrderedProfiles(
+        config?.llm?.profiles ?? {},
+        config?.llm?.profileOrder ?? [],
+      ),
     [config?.llm?.profiles, config?.llm?.profileOrder],
   );
 
   const configMutation = useConfigPatchMutation({
     onSuccess: (data) => {
-      configGetSetQueryData(queryClient, { path: { assistant_id: assistantId } }, data);
+      configGetSetQueryData(
+        queryClient,
+        { path: { assistant_id: assistantId } },
+        data,
+      );
     },
   });
 
-  const [effectiveActiveProfile, setDraftActiveProfile] = useDraftOverride(activeProfile);
+  const [effectiveActiveProfile, setDraftActiveProfile] =
+    useDraftOverride(activeProfile);
 
   // Modal toggles — ephemeral UI state, correct as useState
   const [manageProfilesOpen, setManageProfilesOpen] = useState(false);
@@ -71,10 +81,16 @@ export function LanguageModelCard() {
   );
 
   const overrideCount = Object.entries(callSites).filter(
-    ([id, s]) => id !== "mainAgent" && (s?.profile != null || s?.provider != null || s?.model != null),
+    ([id, s]) =>
+      id !== "mainAgent" &&
+      (s?.profile != null || s?.provider != null || s?.model != null),
   ).length;
   const overrideLabel =
-    overrideCount === 1 ? "1 Override" : overrideCount > 0 ? `${overrideCount} Overrides` : "Overrides";
+    overrideCount === 1
+      ? "1 Override"
+      : overrideCount > 0
+        ? `${overrideCount} Overrides`
+        : "Overrides";
   const isProfileDirty = effectiveActiveProfile !== activeProfile;
 
   const handleManagedProfileSave = useCallback(async () => {
@@ -115,13 +131,15 @@ export function LanguageModelCard() {
                     : profilePickerLabel(p),
               }))}
             />
-            {queryComplexityRoutingEnabled && effectiveActiveProfile === AUTO_PROFILE_NAME && (
-              <div className="flex items-center gap-2 rounded-lg bg-[var(--surface-warning-subtle)] px-3 py-2">
-                <span className="text-body-small-default text-[var(--content-warning)]">
-                  Auto may use more powerful models when needed, which can increase costs.
-                </span>
-              </div>
-            )}
+            {queryComplexityRoutingEnabled &&
+              effectiveActiveProfile === AUTO_PROFILE_NAME && (
+                <div className="flex items-center gap-2 rounded-lg bg-[var(--surface-warning-subtle)] px-3 py-2">
+                  <span className="text-body-small-default text-[var(--content-warning)]">
+                    Auto may use more powerful models when needed, which can
+                    increase costs.
+                  </span>
+                </div>
+              )}
             {defaultProfilePickerEntries.length === 0 ? (
               <Typography
                 variant="body-small-default"
@@ -159,7 +177,10 @@ export function LanguageModelCard() {
 
           {isProfileDirty && (
             <div className="flex items-center gap-2">
-              <SaveButton onClick={handleManagedProfileSave} disabled={configMutation.isPending} />
+              <SaveButton
+                onClick={handleManagedProfileSave}
+                disabled={configMutation.isPending}
+              />
               {configMutation.isPending && (
                 <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />
               )}

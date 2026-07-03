@@ -46,7 +46,10 @@ describe("HeaderStepCarousel — empty title", () => {
 describe("HeaderStepCarousel — with title", () => {
   test("renders the title, a pipe separator, and the info as tertiary subtext", () => {
     const { getByText, container } = render(
-      <HeaderStepCarousel currentStepTitle="Reading" currentStepInfo="foo.ts" />,
+      <HeaderStepCarousel
+        currentStepTitle="Reading"
+        currentStepInfo="foo.ts"
+      />,
     );
 
     expect(getByText("Reading")).toBeTruthy();

@@ -21,7 +21,9 @@ import type { DisplayMessage } from "@/domains/chat/types/types";
 
 export function useRuleEditorBridge(
   messages: DisplayMessage[],
-  handleOpenRuleEditorForToolCall: (ctx: ReturnType<typeof toolCallToRuleContext>) => void,
+  handleOpenRuleEditorForToolCall: (
+    ctx: ReturnType<typeof toolCallToRuleContext>,
+  ) => void,
 ): void {
   const handleToolDetailRiskBadgeClick = useCallback(() => {
     const detail = useViewerStore.getState().activeToolDetail;

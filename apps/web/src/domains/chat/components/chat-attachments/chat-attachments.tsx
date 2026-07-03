@@ -1,4 +1,3 @@
-
 import { AlertCircle, Paperclip } from "lucide-react";
 import type { ChangeEvent, FC } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -8,8 +7,14 @@ import { Button } from "@vellumai/design-library";
 import { AttachmentChip } from "@/domains/chat/components/chat-attachments/attachment-chip";
 import { AttachmentLoadingChip } from "@/domains/chat/components/chat-attachments/attachment-loading-chip";
 import { AttachmentPreviewModal } from "@/domains/chat/components/chat-attachments/attachment-preview-modal";
-import type { ChatAttachment, UploadedAttachment } from "@/domains/chat/composer-store";
-import { formatAttachmentSize, middleTruncate } from "@/domains/chat/components/chat-attachments/utils";
+import type {
+  ChatAttachment,
+  UploadedAttachment,
+} from "@/domains/chat/composer-store";
+import {
+  formatAttachmentSize,
+  middleTruncate,
+} from "@/domains/chat/components/chat-attachments/utils";
 
 interface ChatAttachmentsStripProps {
   attachments: ChatAttachment[];
@@ -24,7 +29,8 @@ export const ChatAttachmentsStrip: FC<ChatAttachmentsStripProps> = ({
   attachments,
   onRemove,
 }) => {
-  const [previewAttachment, setPreviewAttachment] = useState<UploadedAttachment | null>(null);
+  const [previewAttachment, setPreviewAttachment] =
+    useState<UploadedAttachment | null>(null);
   const handleClosePreview = useCallback(() => setPreviewAttachment(null), []);
 
   if (attachments.length === 0) {
@@ -57,7 +63,9 @@ export const ChatAttachmentsStrip: FC<ChatAttachmentsStripProps> = ({
                 <span className="min-w-0 truncate text-body-small-default">
                   {middleTruncate(att.filename)}
                 </span>
-                <span className="shrink-0 text-body-small-default opacity-70">·</span>
+                <span className="shrink-0 text-body-small-default opacity-70">
+                  ·
+                </span>
                 <span className="shrink-0 text-body-small-default opacity-70">
                   {formatAttachmentSize(att.sizeBytes)}
                 </span>

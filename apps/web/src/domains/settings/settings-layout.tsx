@@ -21,8 +21,10 @@ import { SidebarTree, type SidebarItem } from "@/components/sidebar-tree";
  * navigation) and an `<Outlet />` for the active settings tab page.
  */
 export function SettingsLayout() {
-  const settingsDeveloperNav = useAssistantFeatureFlagStore.use.settingsDeveloperNav();
-  const platformNotifications = useClientFeatureFlagStore.use.platformNotifications();
+  const settingsDeveloperNav =
+    useAssistantFeatureFlagStore.use.settingsDeveloperNav();
+  const platformNotifications =
+    useClientFeatureFlagStore.use.platformNotifications();
   const platformGate = usePlatformGate({ platformHostedOnly: true });
   const billingGate = usePlatformGate();
   const { pathname } = useLocation();
@@ -80,8 +82,7 @@ export function SettingsLayout() {
   const pageTitle = useMemo(() => {
     if (pathname === routes.settings.root) return "Settings";
     const match = SETTINGS_SIDEBAR.find(
-      (item) =>
-        pathname === item.href || pathname.startsWith(item.href + "/"),
+      (item) => pathname === item.href || pathname.startsWith(item.href + "/"),
     );
     if (match) return match.label;
     return "Settings";
@@ -91,7 +92,11 @@ export function SettingsLayout() {
     <SidebarShell
       backHref={routes.assistant}
       sidebar={
-        <SidebarTree items={filteredItems} bottomItems={bottomItems} indexPath={routes.settings.root} />
+        <SidebarTree
+          items={filteredItems}
+          bottomItems={bottomItems}
+          indexPath={routes.settings.root}
+        />
       }
       title={pageTitle}
     >

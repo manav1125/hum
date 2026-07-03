@@ -20,8 +20,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 
 import {
-    assistantsListQueryKey,
-    organizationsBillingSubscriptionRetrieveQueryKey,
+  assistantsListQueryKey,
+  organizationsBillingSubscriptionRetrieveQueryKey,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { SubscriptionResponse } from "@/generated/api/types.gen";
 
@@ -48,7 +48,8 @@ mock.module("@/assistant/use-active-assistant-id", () => ({
   useActiveAssistantId: () => ASSISTANT_ID,
 }));
 
-const { EmailServiceCard } = await import("@/domains/settings/ai/email-service-card");
+const { EmailServiceCard } =
+  await import("@/domains/settings/ai/email-service-card");
 
 const ASSISTANT_HANDLE = "my-assistant";
 
@@ -71,10 +72,9 @@ function renderCard(subscription: SubscriptionResponse): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  client.setQueryData(
-    assistantsListQueryKey(),
-    { results: [{ id: ASSISTANT_ID, handle: ASSISTANT_HANDLE }] },
-  );
+  client.setQueryData(assistantsListQueryKey(), {
+    results: [{ id: ASSISTANT_ID, handle: ASSISTANT_HANDLE }],
+  });
   client.setQueryData(
     organizationsBillingSubscriptionRetrieveQueryKey(),
     subscription,
@@ -101,7 +101,9 @@ describe("EmailServiceCard managed-email gate", () => {
     // plan_id stays "base" — only the entitlement (admin override) is true.
     const html = renderCard(makeSubscription(true, "base"));
     expect(html).not.toContain("Upgrade to Pro");
-    expect(html).not.toContain("Get a dedicated email address for your assistant");
+    expect(html).not.toContain(
+      "Get a dedicated email address for your assistant",
+    );
     // The domain registration form renders for entitled orgs.
     expect(html).toContain("Subdomain");
     expect(html).toContain("Register");
@@ -122,7 +124,9 @@ describe("EmailServiceCard managed-email gate", () => {
     } as unknown as SubscriptionResponse;
     const html = renderCard(subscriptionWithoutEntitlements);
     expect(html).not.toContain("Upgrade to Pro");
-    expect(html).not.toContain("Get a dedicated email address for your assistant");
+    expect(html).not.toContain(
+      "Get a dedicated email address for your assistant",
+    );
     // The domain registration form renders (fail-open).
     expect(html).toContain("Subdomain");
     expect(html).toContain("Register");

@@ -3,8 +3,8 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
-    organizationsBillingSubscriptionRetrieveOptions,
-    useOrganizationsBillingPortalSessionCreateMutation,
+  organizationsBillingSubscriptionRetrieveOptions,
+  useOrganizationsBillingPortalSessionCreateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { openUrl, openUrlFinishedListener } from "@/runtime/browser";
 import { toast } from "@vellumai/design-library/components/toast";
@@ -17,7 +17,9 @@ export interface PortalReturnSnapshot {
   plan_id: string;
 }
 
-export function writePortalReturnSnapshot(snapshot: PortalReturnSnapshot): void {
+export function writePortalReturnSnapshot(
+  snapshot: PortalReturnSnapshot,
+): void {
   try {
     // Clear any stale snapshot before writing. If setItem then throws
     // (quota / private mode), the return-handler falls back to the generic

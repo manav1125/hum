@@ -306,8 +306,7 @@ export function useTranscriptScroll(
     const newAnchorKey = findLatestUserAnchorKey(items);
     const prevAnchorKey = previousAnchorKeyRef.current;
     previousAnchorKeyRef.current = newAnchorKey;
-    const isNewAnchor =
-      newAnchorKey !== null && newAnchorKey !== prevAnchorKey;
+    const isNewAnchor = newAnchorKey !== null && newAnchorKey !== prevAnchorKey;
     if (isNewAnchor) {
       engageAutoPin();
       transcriptRef.current?.scrollToLatest({ behavior: "auto" });
@@ -356,10 +355,7 @@ export function useTranscriptScroll(
       // Gate on the synchronous in-flight lock so a chain-load sequence
       // (response prepends → items change → effect re-runs near top) cannot
       // double-fire on a single render cycle.
-      if (
-        classification.shouldLoadOlder &&
-        !loadOlderInFlightRef.current
-      ) {
+      if (classification.shouldLoadOlder && !loadOlderInFlightRef.current) {
         if (!shouldAutoPinRef.current) {
           const firstItem = items[0];
           if (firstItem) {
@@ -417,9 +413,12 @@ export function useTranscriptScroll(
   }, [items, transcriptRef]);
 
   // Disconnect observer on hook unmount.
-  useEffect(() => () => {
-    resizeObserverRef.current?.disconnect();
-  }, []);
+  useEffect(
+    () => () => {
+      resizeObserverRef.current?.disconnect();
+    },
+    [],
+  );
 
   // -----------------------------------------------------------------------
   // Content resize re-pin. The *content* element (inner wrapper around
@@ -460,9 +459,12 @@ export function useTranscriptScroll(
     contentObserverRef.current = observer;
   }, [items, transcriptRef]);
 
-  useEffect(() => () => {
-    contentObserverRef.current?.disconnect();
-  }, []);
+  useEffect(
+    () => () => {
+      contentObserverRef.current?.disconnect();
+    },
+    [],
+  );
 
   // -----------------------------------------------------------------------
   // User-input scroll cancels the auto-pin window. Any of these gestures

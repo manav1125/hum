@@ -1,18 +1,18 @@
 import { Loader2 } from "lucide-react";
 import {
-    type ReactNode,
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 
 import {
-    type Assistant,
-    getAssistant,
-    getAssistantHealthz,
+  type Assistant,
+  getAssistant,
+  getAssistantHealthz,
 } from "@/assistant/api";
 import { CapacityBar } from "@/domains/settings/components/capacity-bar";
 import { DevModeVersionUnlock } from "@/domains/settings/components/dev-mode-version-unlock";

@@ -49,7 +49,11 @@ function lastContentPartTimestamp(m: DisplayMessage): number | undefined {
 export function sortByTimestamp(messages: DisplayMessage[]): void {
   // Collect the slot positions (indices) and the messages that have timestamps.
   const slots: number[] = [];
-  const withTs: Array<{ origIdx: number; m: DisplayMessage; effectiveTs: number }> = [];
+  const withTs: Array<{
+    origIdx: number;
+    m: DisplayMessage;
+    effectiveTs: number;
+  }> = [];
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!;
     if (m.timestamp != null) {
@@ -82,7 +86,9 @@ export function sortByTimestamp(messages: DisplayMessage[]): void {
   }
 }
 
-export function sortedByTimestamp(messages: DisplayMessage[]): DisplayMessage[] {
+export function sortedByTimestamp(
+  messages: DisplayMessage[],
+): DisplayMessage[] {
   const sorted = [...messages];
   sortByTimestamp(sorted);
   return sorted;

@@ -33,7 +33,11 @@ export const DoctorEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("backup_prompt"), toolName: z.string() }),
   z.object({
     type: z.literal("status"),
-    status: z.union([z.literal("active"), z.literal("completed"), z.literal("error")]),
+    status: z.union([
+      z.literal("active"),
+      z.literal("completed"),
+      z.literal("error"),
+    ]),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
@@ -45,9 +49,12 @@ export type DoctorEvent = z.infer<typeof DoctorEventSchema>;
  * the payload is invalid or represents an unknown event type (forward
  * compatibility — new event types are silently dropped).
  */
-export function parseDoctorEvent(payload: Record<string, unknown> | string): DoctorEvent | null {
+export function parseDoctorEvent(
+  payload: Record<string, unknown> | string,
+): DoctorEvent | null {
   try {
-    const obj: unknown = typeof payload === "string" ? JSON.parse(payload) : payload;
+    const obj: unknown =
+      typeof payload === "string" ? JSON.parse(payload) : payload;
     const result = DoctorEventSchema.safeParse(obj);
     return result.success ? result.data : null;
   } catch {

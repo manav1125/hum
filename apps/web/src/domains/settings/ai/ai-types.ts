@@ -1,4 +1,7 @@
-import type { ConfigGetResponse, ConfigPatchData } from "@/generated/daemon/types.gen";
+import type {
+  ConfigGetResponse,
+  ConfigPatchData,
+} from "@/generated/daemon/types.gen";
 
 import { PROVIDER_DISPLAY_NAMES } from "@/assistant/llm-model-catalog";
 

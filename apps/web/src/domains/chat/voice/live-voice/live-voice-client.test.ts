@@ -12,14 +12,7 @@
  * failure, and clean `end()` / `close()` teardown.
  */
 
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 let mintResult: Promise<{ token: string; expiresAt: string }> = Promise.resolve(
   { token: "tok-abc", expiresAt: "2026-06-01T00:05:00Z" },
@@ -42,7 +35,8 @@ mock.module("@/domains/chat/voice/live-voice/connection", () => ({
       const { token } = await mintResult;
       const url = new URL(`wss://velay.vellum.ai/${assistantId}/v1/live-voice`);
       url.searchParams.set("token", token);
-      if (conversationId) url.searchParams.set("conversationId", conversationId);
+      if (conversationId)
+        url.searchParams.set("conversationId", conversationId);
       return url.toString();
     },
   ),
@@ -53,9 +47,8 @@ import type { LiveVoiceChannelClient as LiveVoiceChannelClientType } from "@/dom
 // Import the module under test *after* registering the connection mock, so the
 // mock is in place before the real connection.ts (which imports the generated
 // SDK client) would otherwise be pulled into the static import graph.
-const { LiveVoiceChannelClient } = await import(
-  "@/domains/chat/voice/live-voice/live-voice-client"
-);
+const { LiveVoiceChannelClient } =
+  await import("@/domains/chat/voice/live-voice/live-voice-client");
 
 // ---------------------------------------------------------------------------
 // Fake WebSocket
@@ -132,7 +125,8 @@ class FakeWebSocket {
 }
 
 function makeClient(connectTimeoutMs = 10_000) {
-  const factory = (url: string) => new FakeWebSocket(url) as unknown as WebSocket;
+  const factory = (url: string) =>
+    new FakeWebSocket(url) as unknown as WebSocket;
   const client = new LiveVoiceChannelClient({
     webSocketFactory: factory,
     connectTimeoutMs,
@@ -240,7 +234,12 @@ describe("server frame dispatch", () => {
     const client = makeClient();
     const ws = await connectAndGetSocket(client);
     ws.open();
-    ws.receive({ type: "ready", seq: 1, sessionId: "s1", conversationId: "c1" });
+    ws.receive({
+      type: "ready",
+      seq: 1,
+      sessionId: "s1",
+      conversationId: "c1",
+    });
     return { client, ws };
   }
 
@@ -307,8 +306,12 @@ describe("server frame dispatch", () => {
       sessionId: "s1",
     });
 
-    expect(got.sttPartial).toEqual([{ type: "stt_partial", seq: 2, text: "hel" }]);
-    expect(got.sttFinal).toEqual([{ type: "stt_final", seq: 3, text: "hello" }]);
+    expect(got.sttPartial).toEqual([
+      { type: "stt_partial", seq: 2, text: "hel" },
+    ]);
+    expect(got.sttFinal).toEqual([
+      { type: "stt_final", seq: 3, text: "hello" },
+    ]);
     expect(got.thinking).toEqual([{ type: "thinking", seq: 4, turnId: "t1" }]);
     expect(got.assistantTextDelta).toEqual([
       { type: "assistant_text_delta", seq: 5, text: "hi" },

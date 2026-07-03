@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { DetailCard } from "@/components/detail-card";
 import { SettingsDivider } from "@/domains/settings/components/settings-divider";
 import {
-    getDeviceBool,
-    getDeviceSetting,
-    setDeviceBool,
-    setDeviceSetting,
+  getDeviceBool,
+  getDeviceSetting,
+  setDeviceBool,
+  setDeviceSetting,
 } from "@/utils/device-settings";
 import { Button } from "@vellumai/design-library/components/button";
 import { Input } from "@vellumai/design-library/components/input";

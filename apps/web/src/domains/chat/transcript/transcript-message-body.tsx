@@ -90,13 +90,15 @@ export function TranscriptMessageBody({
     : `break-words text-[15px] ${textBubbleClass}`;
 
   const forkMessageId = message.id;
-  const forkHandler = forkMessageId && onForkConversation
-    ? () => onForkConversation(forkMessageId)
-    : undefined;
+  const forkHandler =
+    forkMessageId && onForkConversation
+      ? () => onForkConversation(forkMessageId)
+      : undefined;
   const inspectMessageId = message.id;
-  const inspectHandler = inspectMessageId && onInspectMessage
-    ? () => onInspectMessage(inspectMessageId)
-    : undefined;
+  const inspectHandler =
+    inspectMessageId && onInspectMessage
+      ? () => onInspectMessage(inspectMessageId)
+      : undefined;
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [revealed, setRevealed] = useState(false);
@@ -106,7 +108,11 @@ export function TranscriptMessageBody({
     if (!revealed) return;
     const onDocPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null;
-      if (target && wrapperRef.current && !wrapperRef.current.contains(target)) {
+      if (
+        target &&
+        wrapperRef.current &&
+        !wrapperRef.current.contains(target)
+      ) {
         setRevealed(false);
       }
     };
@@ -114,24 +120,27 @@ export function TranscriptMessageBody({
     return () => document.removeEventListener("pointerdown", onDocPointerDown);
   }, [revealed]);
 
-  const handleBubbleClick = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
-    const target = e.target as Element | null;
-    if (isInteractiveClickTarget(target)) {
-      return;
-    }
+  const handleBubbleClick = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      const target = e.target as Element | null;
+      if (isInteractiveClickTarget(target)) {
+        return;
+      }
 
-    if (slackMessageUrl && isPointerCoarse()) {
-      if (window.getSelection()?.toString()) return;
-      window.open(slackMessageUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
+      if (slackMessageUrl && isPointerCoarse()) {
+        if (window.getSelection()?.toString()) return;
+        window.open(slackMessageUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
 
-    if (!isPointerCoarse()) return;
-    setRevealed((v) => !v);
-  }, [slackMessageUrl]);
+      if (!isPointerCoarse()) return;
+      setRevealed((v) => !v);
+    },
+    [slackMessageUrl],
+  );
 
-  const linkedSubagentEntries = useSubagentStore(
-    (s) => lookupSubagentEntriesForMessage(s.byParent, message),
+  const linkedSubagentEntries = useSubagentStore((s) =>
+    lookupSubagentEntriesForMessage(s.byParent, message),
   );
   const byToolUseId = useSubagentStore.use.byToolUseId();
   const claimedSpawnIds = new Set<string>();
@@ -303,8 +312,7 @@ export function TranscriptMessageBody({
     items: Array<{ kind: "text" | "nonText"; node: ReactNode }>,
   ): ReactNode => {
     type Slot =
-      | { kind: "bubble"; nodes: ReactNode[] }
-      | { kind: "raw"; node: ReactNode };
+      { kind: "bubble"; nodes: ReactNode[] } | { kind: "raw"; node: ReactNode };
     const slots: Slot[] = [];
     let textRun: ReactNode[] = [];
 
@@ -364,7 +372,11 @@ export function TranscriptMessageBody({
     if (group.type === "surface") {
       return renderSurfaceNode(group.surface, `b-surface-${gi}`);
     }
-    return renderActivityGroup(group.items, `b-activity-${gi}`, gi === lastGroupIndex);
+    return renderActivityGroup(
+      group.items,
+      `b-activity-${gi}`,
+      gi === lastGroupIndex,
+    );
   };
 
   const wrapperClass = `group/msg flex ${isUser ? "justify-end" : "justify-start"}`;

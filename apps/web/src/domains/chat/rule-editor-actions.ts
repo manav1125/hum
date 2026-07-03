@@ -8,7 +8,12 @@
 
 import { captureError } from "@/lib/sentry/capture-error";
 
-import { addTrustRule, fetchTrustRules, suggestTrustRule, updateTrustRule } from "@/lib/trust-rules-api";
+import {
+  addTrustRule,
+  fetchTrustRules,
+  suggestTrustRule,
+  updateTrustRule,
+} from "@/lib/trust-rules-api";
 import type { DisplayMessage } from "@/domains/chat/types/types";
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
 import { useInteractionStore } from "@/domains/chat/interaction-store";
@@ -19,7 +24,11 @@ import { clearConfirmationByRequestId } from "@/domains/chat/utils/send-message-
 import { deriveCommandText } from "@/domains/chat/utils/chat";
 import { toRiskLevel } from "@/domains/chat/utils/risk";
 import { submitConfirmation } from "@/domains/chat/api/interactions";
-import type { AllowlistOption, DirectoryScopeOption, ScopeOption } from "@/types/interaction-ui-types";
+import type {
+  AllowlistOption,
+  DirectoryScopeOption,
+  ScopeOption,
+} from "@/types/interaction-ui-types";
 import type { TrustRuleItem, TrustRuleRisk } from "@/types/trust-rules";
 
 // ---------------------------------------------------------------------------
@@ -56,9 +65,21 @@ export interface ToolCallRuleContext {
  * (ChatMessage.swift) so neither client leaks secrets into the prompt.
  */
 const SENSITIVE_INPUT_KEYS = new Set([
-  "value", "secret", "password", "token", "client_secret", "api_key",
-  "authorization", "access_token", "refresh_token", "api_secret",
-  "accesstoken", "refreshtoken", "apikey", "apisecret", "clientsecret",
+  "value",
+  "secret",
+  "password",
+  "token",
+  "client_secret",
+  "api_key",
+  "authorization",
+  "access_token",
+  "refresh_token",
+  "api_secret",
+  "accesstoken",
+  "refreshtoken",
+  "apikey",
+  "apisecret",
+  "clientsecret",
   "x-api-key",
 ]);
 
@@ -105,7 +126,10 @@ function buildFullCommandText(input?: Record<string, unknown>): string {
     return isSensitiveKey(k) ? "[redacted]" : stringifyInputValue(v);
   }
   return entries
-    .map(([k, v]) => `${k}: ${isSensitiveKey(k) ? "[redacted]" : stringifyInputValue(v)}`)
+    .map(
+      ([k, v]) =>
+        `${k}: ${isSensitiveKey(k) ? "[redacted]" : stringifyInputValue(v)}`,
+    )
     .join("\n");
 }
 
@@ -125,7 +149,8 @@ async function executeSaveRule(
   rule: TrustRulePayload,
 ): Promise<void> {
   const ctx = useStreamStore.getState().streamContext;
-  const { ruleEditorContext: context, isSavingRule: saving } = useRuleEditorStore.getState();
+  const { ruleEditorContext: context, isSavingRule: saving } =
+    useRuleEditorStore.getState();
   if (!ctx || !context || saving) return;
 
   // Confirmation path: resolve via the interaction API rather than direct save.
@@ -147,19 +172,27 @@ async function executeSaveRule(
     } catch (err) {
       captureError(err, { context: "save_trust_rule" });
       useRuleEditorStore.getState().dismissRuleEditor();
-      useChatSessionStore.getState().setError({ message: "Failed to save trust rule. Please try again." });
+      useChatSessionStore
+        .getState()
+        .setError({ message: "Failed to save trust rule. Please try again." });
       return;
     } finally {
       useRuleEditorStore.getState().setIsSavingRule(false);
       useInteractionStore.getState().submitConfirmationEnd();
     }
 
-    useInteractionStore.getState().dismissConfirmationIfMatches(context.requestId);
+    useInteractionStore
+      .getState()
+      .dismissConfirmationIfMatches(context.requestId);
     useInteractionStore.getState().setInlineConfirmationToolCallId(null);
-    useChatSessionStore.getState().deleteConfirmationToolCall(context.requestId);
-    useChatSessionStore.getState().setMessages((prev: DisplayMessage[]) =>
-      clearConfirmationByRequestId(prev, context.requestId),
-    );
+    useChatSessionStore
+      .getState()
+      .deleteConfirmationToolCall(context.requestId);
+    useChatSessionStore
+      .getState()
+      .setMessages((prev: DisplayMessage[]) =>
+        clearConfirmationByRequestId(prev, context.requestId),
+      );
     useRuleEditorStore.getState().dismissRuleEditor();
     return;
   }
@@ -181,8 +214,15 @@ async function executeSaveRule(
       });
     }
   } catch (err) {
-    captureError(err, { context: strategy === "always-create" ? "save_as_new_trust_rule" : "save_trust_rule_direct" });
-    useChatSessionStore.getState().setError({ message: "Failed to save trust rule. Please try again." });
+    captureError(err, {
+      context:
+        strategy === "always-create"
+          ? "save_as_new_trust_rule"
+          : "save_trust_rule_direct",
+    });
+    useChatSessionStore
+      .getState()
+      .setError({ message: "Failed to save trust rule. Please try again." });
   } finally {
     useRuleEditorStore.getState().setIsSavingRule(false);
     useRuleEditorStore.getState().dismissRuleEditor();
@@ -209,11 +249,16 @@ export function fireSuggestion(params: {
   directoryScopeOptions: DirectoryScopeOption[];
   existingRule?: TrustRuleItem;
 }): void {
-  const abortController = useRuleEditorStore.getState().newSuggestionController();
+  const abortController = useRuleEditorStore
+    .getState()
+    .newSuggestionController();
 
   const scopeOpts =
     params.resolvedAllowlistOptions.length > 0
-      ? params.resolvedAllowlistOptions.map((o) => ({ pattern: o.pattern, label: o.label }))
+      ? params.resolvedAllowlistOptions.map((o) => ({
+          pattern: o.pattern,
+          label: o.label,
+        }))
       : params.scopeOptions.map((o) => ({ pattern: o.scope, label: o.label }));
 
   void (async () => {
@@ -227,10 +272,17 @@ export function fireSuggestion(params: {
           reasonDescription: params.riskReason ?? "",
         },
         scopeOptions: scopeOpts,
-        directoryScopeOptions: params.directoryScopeOptions.map((o) => ({ scope: o.scope, label: o.label })),
+        directoryScopeOptions: params.directoryScopeOptions.map((o) => ({
+          scope: o.scope,
+          label: o.label,
+        })),
         intent: "auto_approve",
         existingRule: params.existingRule
-          ? { id: params.existingRule.id, pattern: params.existingRule.pattern, risk: params.existingRule.risk }
+          ? {
+              id: params.existingRule.id,
+              pattern: params.existingRule.pattern,
+              risk: params.existingRule.risk,
+            }
           : undefined,
       });
       if (!abortController.signal.aborted) {
@@ -247,7 +299,9 @@ export function fireSuggestion(params: {
  * transcript action). Fetches the matched rule if editing, then fires
  * the LLM suggestion in the background.
  */
-export function handleOpenRuleEditorForToolCall(context: ToolCallRuleContext): void {
+export function handleOpenRuleEditorForToolCall(
+  context: ToolCallRuleContext,
+): void {
   const ctx = useStreamStore.getState().streamContext;
   if (!ctx) {
     return;
@@ -278,11 +332,18 @@ export function handleOpenRuleEditorForToolCall(context: ToolCallRuleContext): v
     let existingRule: TrustRuleItem | undefined;
     if (context.matchedTrustRuleId) {
       try {
-        const rules = await fetchTrustRules(ctx.assistantId, { tool: context.toolName });
+        const rules = await fetchTrustRules(ctx.assistantId, {
+          tool: context.toolName,
+        });
         existingRule = rules.find((r) => r.id === context.matchedTrustRuleId);
         if (!existingRule) {
-          const defaultRules = await fetchTrustRules(ctx.assistantId, { origin: "default", tool: context.toolName });
-          existingRule = defaultRules.find((r) => r.id === context.matchedTrustRuleId);
+          const defaultRules = await fetchTrustRules(ctx.assistantId, {
+            origin: "default",
+            tool: context.toolName,
+          });
+          existingRule = defaultRules.find(
+            (r) => r.id === context.matchedTrustRuleId,
+          );
         }
       } catch {
         // Failed to fetch matched rule — fall through to create mode.
@@ -306,7 +367,9 @@ export function handleOpenRuleEditorForToolCall(context: ToolCallRuleContext): v
     });
   };
 
-  openModal().catch((err) => captureError(err, { context: "open_rule_editor" }));
+  openModal().catch((err) =>
+    captureError(err, { context: "open_rule_editor" }),
+  );
 }
 
 /** Save (update-or-create) a trust rule from the editor modal. */

@@ -6,12 +6,21 @@ import type { Surface } from "@/domains/chat/types/types";
 
 interface SurfaceContainerProps {
   surface: Surface;
-  onAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void | Promise<void>;
+  onAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void | Promise<void>;
   hideTitle?: boolean;
   children: ReactNode;
 }
 
-export function SurfaceContainer({ surface, onAction, hideTitle, children }: SurfaceContainerProps) {
+export function SurfaceContainer({
+  surface,
+  onAction,
+  hideTitle,
+  children,
+}: SurfaceContainerProps) {
   const [submittingAction, setSubmittingAction] = useState<string | null>(null);
 
   const handleAction = async (actionId: string) => {
@@ -36,36 +45,35 @@ export function SurfaceContainer({ surface, onAction, hideTitle, children }: Sur
 
       <div>{children}</div>
 
-      {surface.completed ? (
-        surface.completionSummary && (
-          <div className="mt-4 flex justify-end">
-            <span className="flex items-center gap-1.5 text-body-medium-default text-[var(--system-positive-strong)]">
-              <CheckCircle className="h-4 w-4 shrink-0" />
-              {surface.completionSummary}
-            </span>
-          </div>
-        )
-      ) : (
-        surface.actions && surface.actions.length > 0 && (
-          <div className="mt-4 flex gap-2">
-            {surface.actions.map((action) => (
-              <Button
-                key={action.id}
-                variant={action.style === "primary" ? "primary" : "outlined"}
-                disabled={submittingAction !== null}
-                onClick={() => handleAction(action.id)}
-                leftIcon={
-                  submittingAction === action.id
-                    ? <Loader2 className="animate-spin" />
-                    : undefined
-                }
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
-        )
-      )}
+      {surface.completed
+        ? surface.completionSummary && (
+            <div className="mt-4 flex justify-end">
+              <span className="flex items-center gap-1.5 text-body-medium-default text-[var(--system-positive-strong)]">
+                <CheckCircle className="h-4 w-4 shrink-0" />
+                {surface.completionSummary}
+              </span>
+            </div>
+          )
+        : surface.actions &&
+          surface.actions.length > 0 && (
+            <div className="mt-4 flex gap-2">
+              {surface.actions.map((action) => (
+                <Button
+                  key={action.id}
+                  variant={action.style === "primary" ? "primary" : "outlined"}
+                  disabled={submittingAction !== null}
+                  onClick={() => handleAction(action.id)}
+                  leftIcon={
+                    submittingAction === action.id ? (
+                      <Loader2 className="animate-spin" />
+                    ) : undefined
+                  }
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+          )}
     </div>
   );
 }

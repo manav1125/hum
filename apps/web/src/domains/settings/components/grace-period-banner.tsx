@@ -4,10 +4,10 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
-    buildPortalReturnSnapshot,
-    formatGraceDate,
-    getEffectiveCancelDate,
-    useBillingPortalSession,
+  buildPortalReturnSnapshot,
+  formatGraceDate,
+  getEffectiveCancelDate,
+  useBillingPortalSession,
 } from "@/domains/settings/hooks/use-billing-portal-session";
 import { organizationsBillingSubscriptionRetrieveOptions } from "@/generated/api/@tanstack/react-query.gen";
 import { Button } from "@vellumai/design-library/components/button";

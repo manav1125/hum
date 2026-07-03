@@ -5,8 +5,8 @@ import { FileMarkdown } from "@/components/file-markdown";
 import { ToolDefinitionsCard } from "@/domains/chat/inspector/components/tool-definitions-card";
 import { parseToolDefinitions } from "@/domains/chat/inspector/tool-definitions";
 import type {
-    LLMContextSection,
-    LLMRequestLogEntry,
+  LLMContextSection,
+  LLMRequestLogEntry,
 } from "@vellumai/assistant-api";
 import { Button, Card } from "@vellumai/design-library";
 

@@ -353,7 +353,11 @@ function CadenceBuilder({
         <SubField label="On day">
           <Dropdown
             options={DAY_OF_MONTH_OPTIONS}
-            value={cadence.dayOfMonth === "last" ? "last" : String(cadence.dayOfMonth)}
+            value={
+              cadence.dayOfMonth === "last"
+                ? "last"
+                : String(cadence.dayOfMonth)
+            }
             onChange={(value) =>
               onChange({
                 ...cadence,

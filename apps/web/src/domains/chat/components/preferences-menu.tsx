@@ -1,22 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-    ChartColumn,
-    ChevronDown,
-    ChevronUp,
-    Gift,
-    MessageSquareText,
-    Settings as SettingsIcon,
-    Shield,
-    SlidersHorizontal,
+  ChartColumn,
+  ChevronDown,
+  ChevronUp,
+  Gift,
+  MessageSquareText,
+  Settings as SettingsIcon,
+  Shield,
+  SlidersHorizontal,
 } from "lucide-react";
 import { lazy, useState } from "react";
 import { useNavigate } from "react-router";
 
 import {
-    BottomSheet,
-    PanelItem,
-    Popover,
-    SideMenu,
+  BottomSheet,
+  PanelItem,
+  Popover,
+  SideMenu,
 } from "@vellumai/design-library";
 
 import { LazyBoundary } from "@/components/lazy-boundary";
@@ -25,8 +25,8 @@ import { organizationsBillingSummaryRetrieveOptions } from "@/generated/api/@tan
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useIsOrgReady } from "@/hooks/use-is-org-ready";
 import {
-    useActiveAssistantIsPlatformHosted,
-    usePlatformGate,
+  useActiveAssistantIsPlatformHosted,
+  usePlatformGate,
 } from "@/hooks/use-platform-gate";
 import { isElectron } from "@/runtime/is-electron";
 import { useAuthStore, useIsAuthenticated } from "@/stores/auth-store";

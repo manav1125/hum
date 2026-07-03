@@ -6,9 +6,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AddCreditsModal } from "@/components/add-credits-modal";
 import { AutoTopUpCard } from "@/domains/settings/components/auto-top-up-card";
 import {
-    organizationsBillingSummaryRetrieveOptions,
-    organizationsBillingSummaryRetrieveQueryKey,
-    useOrganizationsBillingSummaryCreateMutation,
+  organizationsBillingSummaryRetrieveOptions,
+  organizationsBillingSummaryRetrieveQueryKey,
+  useOrganizationsBillingSummaryCreateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { Button } from "@vellumai/design-library/components/button";
 import { Card } from "@vellumai/design-library/components/card";
@@ -183,11 +183,7 @@ export function BillingPanel() {
             summary.is_degraded ? "Pending Usage (estimated)" : "Pending Usage"
           }
           tone={
-            summary.is_degraded
-              ? "muted"
-              : pendingNeg
-                ? "negative"
-                : "default"
+            summary.is_degraded ? "muted" : pendingNeg ? "negative" : "default"
           }
         />
       </div>
@@ -229,7 +225,8 @@ export function BillingPanel() {
         {summary.is_degraded && (
           <div className="mt-4">
             <Notice tone="warning">
-              Pending charges could not be calculated. The balance shown may be incomplete.
+              Pending charges could not be calculated. The balance shown may be
+              incomplete.
             </Notice>
           </div>
         )}

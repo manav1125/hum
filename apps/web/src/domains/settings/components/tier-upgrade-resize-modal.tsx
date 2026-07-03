@@ -5,15 +5,15 @@ import { useQuery } from "@tanstack/react-query";
 
 import { extractResizeError } from "@/domains/settings/components/resize-errors";
 import {
-    assistantsActiveRetrieveOptions,
-    organizationsBillingSubscriptionOnboardingRetrieveOptions,
-    useAssistantsResizeMutation,
+  assistantsActiveRetrieveOptions,
+  organizationsBillingSubscriptionOnboardingRetrieveOptions,
+  useAssistantsResizeMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { MachineSizeEnum } from "@/generated/api/types.gen";
 import {
-    allowedMachineSizesForTier,
-    SIZE_DESCRIPTION,
-    SIZE_LABEL,
+  allowedMachineSizesForTier,
+  SIZE_DESCRIPTION,
+  SIZE_LABEL,
 } from "@/lib/billing/machine-sizes";
 import { Button } from "@vellumai/design-library/components/button";
 import { Modal } from "@vellumai/design-library/components/modal";
@@ -41,7 +41,8 @@ function ResourceCard({
       <span
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
         style={{
-          backgroundColor: "color-mix(in oklab, var(--system-positive-strong) 10%, transparent)",
+          backgroundColor:
+            "color-mix(in oklab, var(--system-positive-strong) 10%, transparent)",
         }}
       >
         <Icon className="h-4 w-4 text-[var(--system-positive-strong)]" />
@@ -86,7 +87,9 @@ export function TierUpgradeResizeModal({
   const allowedSizes = allowedMachineSizesForTier(maxTier);
 
   const targetSize: MachineSizeEnum =
-    allowedSizes.length > 0 ? allowedSizes[allowedSizes.length - 1] : currentSize;
+    allowedSizes.length > 0
+      ? allowedSizes[allowedSizes.length - 1]
+      : currentSize;
 
   const machineChanged = targetSize !== currentSize;
   const canGrowStorage =
@@ -130,7 +133,8 @@ export function TierUpgradeResizeModal({
         <Modal.Header>
           <Modal.Title icon={Server}>Plan Updated</Modal.Title>
           <Modal.Description>
-            Your new resources are ready. Apply them now to resize your assistant — it will briefly restart.
+            Your new resources are ready. Apply them now to resize your
+            assistant — it will briefly restart.
           </Modal.Description>
         </Modal.Header>
         <Modal.Body>
@@ -140,7 +144,8 @@ export function TierUpgradeResizeModal({
             </div>
           ) : !hasChanges ? (
             <Notice tone="neutral">
-              Your assistant is already running at the maximum size for your plan.
+              Your assistant is already running at the maximum size for your
+              plan.
             </Notice>
           ) : (
             <div className="flex flex-col gap-2">
@@ -206,7 +211,10 @@ export function TierUpgradeResizeModal({
             onClick={() => {
               if (!assistant?.id) return;
               setResizeError(null);
-              const body: { machine_size?: MachineSizeEnum; storage_gib?: number } = {};
+              const body: {
+                machine_size?: MachineSizeEnum;
+                storage_gib?: number;
+              } = {};
               if (machineChanged) {
                 body.machine_size = targetSize;
               }

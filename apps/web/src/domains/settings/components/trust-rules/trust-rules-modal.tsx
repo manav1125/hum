@@ -1,5 +1,12 @@
 import { Pencil, ShieldCheck, Trash2 } from "lucide-react";
-import { type KeyboardEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { deleteTrustRule, fetchTrustRules } from "@/lib/trust-rules-api";
@@ -60,7 +67,10 @@ export interface TrustRulesModalProps {
   onClose: () => void;
 }
 
-export function TrustRulesModal({ assistantId, onClose }: TrustRulesModalProps) {
+export function TrustRulesModal({
+  assistantId,
+  onClose,
+}: TrustRulesModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [rules, setRules] = useState<TrustRuleItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -176,7 +186,9 @@ export function TrustRulesModal({ assistantId, onClose }: TrustRulesModalProps) 
                 onChange={setShowAllDefaults}
                 label="Show all defaults"
               />
-              <Button variant="outlined" onClick={onClose}>Done</Button>
+              <Button variant="outlined" onClick={onClose}>
+                Done
+              </Button>
             </div>
           </div>
 
@@ -203,10 +215,7 @@ export function TrustRulesModal({ assistantId, onClose }: TrustRulesModalProps) 
                 {rules.map((rule) => {
                   const isDefault = isDefaultRule(rule);
                   return (
-                    <li
-                      key={rule.id}
-                      className="flex items-start gap-3 py-3"
-                    >
+                    <li key={rule.id} className="flex items-start gap-3 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-body-medium-default text-[var(--content-default)]">

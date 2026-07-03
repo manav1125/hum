@@ -4,22 +4,22 @@ import { ArrowLeft, Coins, Loader2, Target } from "lucide-react";
 
 import { Card } from "@vellumai/design-library/components/card";
 import {
-    SegmentControl,
-    type SegmentControlItem,
+  SegmentControl,
+  type SegmentControlItem,
 } from "@vellumai/design-library/components/segment-control";
 import { StatSquare } from "@vellumai/design-library/components/stat-square";
 import { Typography } from "@vellumai/design-library/components/typography";
 
 import {
-    DEFAULT_PRESET_DAYS,
-    type DateRange,
-    DateRangeSelect,
-    computeRangeInTimezone,
+  DEFAULT_PRESET_DAYS,
+  type DateRange,
+  DateRangeSelect,
+  computeRangeInTimezone,
 } from "@/components/charts/date-range-select";
 import {
-    DEFAULT_LLM_USAGE_DIMENSION,
-    LLM_USAGE_DIMENSION_ITEMS,
-    type LlmUsageDimension,
+  DEFAULT_LLM_USAGE_DIMENSION,
+  LLM_USAGE_DIMENSION_ITEMS,
+  type LlmUsageDimension,
 } from "@/utils/llm-dimension";
 
 import {
@@ -27,9 +27,9 @@ import {
   type ChartMetric,
 } from "@/domains/settings/components/billing-usage/billing-usage-chart";
 import {
-    type BillingUsageSourceFilter,
-    getDefaultDateRange,
-    useBillingUsageData,
+  type BillingUsageSourceFilter,
+  getDefaultDateRange,
+  useBillingUsageData,
 } from "@/domains/settings/components/billing-usage/use-billing-usage-data";
 import { useEffectiveTimezone } from "@/utils/use-effective-timezone";
 
@@ -77,7 +77,9 @@ export function BillingUsagePanel() {
 
   const dateRange = useMemo<DateRange>(
     () =>
-      presetDays === null ? customRange : computeRangeInTimezone(presetDays, tz),
+      presetDays === null
+        ? customRange
+        : computeRangeInTimezone(presetDays, tz),
     [presetDays, customRange, tz],
   );
 
@@ -213,9 +215,7 @@ export function BillingUsagePanel() {
               <div className="w-56">
                 <SegmentControl
                   items={LLM_USAGE_DIMENSION_ITEMS}
-                  value={
-                    drilldown.llmDimension ?? DEFAULT_LLM_USAGE_DIMENSION
-                  }
+                  value={drilldown.llmDimension ?? DEFAULT_LLM_USAGE_DIMENSION}
                   onChange={(nextDimension) =>
                     setDrilldown({
                       usageSource: "runtime_proxy",
@@ -240,11 +240,11 @@ export function BillingUsagePanel() {
           </div>
         ) : series ? (
           <div className="rounded-xl bg-[var(--surface-base)] p-3">
-              <BillingUsageChart
-                buckets={series.buckets}
-                metric={metric}
-                onBarClick={handleBarClick}
-              />
+            <BillingUsageChart
+              buckets={series.buckets}
+              metric={metric}
+              onBarClick={handleBarClick}
+            />
           </div>
         ) : null}
       </div>

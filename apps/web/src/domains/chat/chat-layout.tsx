@@ -1,26 +1,36 @@
 import {
-    lazy,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type ReactNode,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
 } from "react";
-import { Outlet, useLocation, useNavigate, useNavigationType } from "react-router";
+import {
+  Outlet,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+} from "react-router";
 
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useAssistantIdentityInit } from "@/hooks/use-assistant-identity-init";
 import { MOBILE_MEDIA_QUERY, useIsMobile } from "@/hooks/use-is-mobile";
-import { getLocalBool, getLocalNumber, setLocalBool, setLocalNumber } from "@/utils/local-settings";
+import {
+  getLocalBool,
+  getLocalNumber,
+  setLocalBool,
+  setLocalNumber,
+} from "@/utils/local-settings";
 import { routes } from "@/utils/routes";
 
 import { useChatLayoutSlotsStore } from "@/components/layout/chat-layout-slots-store";
 import { useElectronDockSync } from "@/domains/chat/hooks/use-electron-dock-sync";
 import {
-    chooseSidebarOpenAppDestination,
-    useOpenAppFromChat,
+  chooseSidebarOpenAppDestination,
+  useOpenAppFromChat,
 } from "@/domains/chat/hooks/use-open-app-from-chat";
 import { useHomeUnreadBadge } from "@/hooks/use-home-unread-badge";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
@@ -32,14 +42,14 @@ import { useConversationActions } from "@/domains/chat/hooks/use-conversation-ac
 import { useConversationGroupActions } from "@/domains/chat/hooks/use-conversation-group-actions";
 import { useCanUseLlmInspector } from "@/domains/chat/inspector/access";
 import {
-    navigateToConversation,
-    navigateToNewConversation,
+  navigateToConversation,
+  navigateToNewConversation,
 } from "@/domains/chat/utils/conversation-navigation";
 import { haptic } from "@/utils/haptics";
 
 import {
-    useConversationGroupsQuery,
-    useConversationListQuery,
+  useConversationGroupsQuery,
+  useConversationListQuery,
 } from "@/hooks/conversation-queries";
 import { openCommandPaletteWindow } from "@/runtime/command-palette-window";
 import { isElectron } from "@/runtime/is-electron";
@@ -127,7 +137,8 @@ export function ChatLayout() {
   // chat-layout child route (home, library, contacts, identity, chat)
   // inherits a populated sidebar on direct navigation — not just /assistant.
   // TanStack Query handles dedup with any other consumer using the same key.
-  const conversationGroupsUI = useAssistantFeatureFlagStore.use.conversationGroupsUI();
+  const conversationGroupsUI =
+    useAssistantFeatureFlagStore.use.conversationGroupsUI();
   const { conversations } = useConversationListQuery(
     assistantId,
     isAssistantActive,
@@ -151,11 +162,10 @@ export function ChatLayout() {
   // create/rename/delete affordances are rendered here, not in ChatPage.
   // The hook is self-sufficient (cache invalidation handles rollback), so
   // it can live wherever the sidebar lives.
-  const { handleRenameGroup, handleDeleteGroup } =
-    useConversationGroupActions({
-      assistantId,
-      conversationGroups,
-    });
+  const { handleRenameGroup, handleDeleteGroup } = useConversationGroupActions({
+    assistantId,
+    conversationGroups,
+  });
 
   // Hydrate the sidebar assistant name at the layout level so the
   // sidebar header shows the correct name on every chat-layout child
@@ -165,7 +175,6 @@ export function ChatLayout() {
     assistantId,
     assistantStateKind,
   });
-
 
   // Home page unread indicator — drives the red dot on the Home button in
   // the layout header.
@@ -211,7 +220,9 @@ export function ChatLayout() {
     setHistoryIndex(idx);
     // On PUSH/REPLACE the browser drops forward entries, so max resets to
     // the current index. On POP (back/forward) forward entries still exist.
-    setMaxHistoryIndex(navigationType === "POP" ? (prev) => Math.max(prev, idx) : idx);
+    setMaxHistoryIndex(
+      navigationType === "POP" ? (prev) => Math.max(prev, idx) : idx,
+    );
   }
 
   const canGoBack = historyIndex > 0;
@@ -305,8 +316,10 @@ export function ChatLayout() {
   });
 
   const activeConversationId = useConversationStore.use.activeConversationId();
-  const processingConversationIds = useConversationStore.use.processingConversationIds();
-  const attentionConversationIds = useConversationStore.use.attentionConversationIds();
+  const processingConversationIds =
+    useConversationStore.use.processingConversationIds();
+  const attentionConversationIds =
+    useConversationStore.use.attentionConversationIds();
 
   const handleSelectConversation = useCallback(
     (key: string) => {
@@ -353,24 +366,28 @@ export function ChatLayout() {
   });
 
   const activeConversation = useMemo(
-    () => conversations.find((c) => c.conversationId === activeConversationId) ?? null,
+    () =>
+      conversations.find((c) => c.conversationId === activeConversationId) ??
+      null,
     [conversations, activeConversationId],
   );
 
-  const topBarCenter = topBarCenterSlot ?? (headerSupplements ? (
-    <ChatConversationHeader
-      assistantId={assistantId}
-      activeConversation={activeConversation}
-      headerSupplements={headerSupplements}
-      showLlmInspector={showLlmInspector}
-      onArchive={handleArchiveConversation}
-      onUnarchive={handleUnarchiveConversation}
-      onMarkUnread={handleMarkConversationUnread}
-      onMarkRead={handleMarkConversationRead}
-      onPinToggle={handleTogglePinConversation}
-      onRename={handleRenameConversation}
-    />
-  ) : null);
+  const topBarCenter =
+    topBarCenterSlot ??
+    (headerSupplements ? (
+      <ChatConversationHeader
+        assistantId={assistantId}
+        activeConversation={activeConversation}
+        headerSupplements={headerSupplements}
+        showLlmInspector={showLlmInspector}
+        onArchive={handleArchiveConversation}
+        onUnarchive={handleUnarchiveConversation}
+        onMarkUnread={handleMarkConversationUnread}
+        onMarkRead={handleMarkConversationRead}
+        onPinToggle={handleTogglePinConversation}
+        onRename={handleRenameConversation}
+      />
+    ) : null);
 
   // -------------------------------------------------------------------------
   // Command palette — sections, item dispatch
@@ -550,16 +567,13 @@ export function ChatLayout() {
     [navigate],
   );
 
-  const handleOpenInNewWindow = useCallback(
-    (conversation: Conversation) => {
-      if (isElectron()) {
-        void openPopoutWindow(conversation.conversationId);
-      } else {
-        window.open(routes.conversation(conversation.conversationId), "_blank");
-      }
-    },
-    [],
-  );
+  const handleOpenInNewWindow = useCallback((conversation: Conversation) => {
+    if (isElectron()) {
+      void openPopoutWindow(conversation.conversationId);
+    } else {
+      window.open(routes.conversation(conversation.conversationId), "_blank");
+    }
+  }, []);
 
   const renderSideMenu = (args: SideMenuRenderArgs): ReactNode => (
     <AssistantSideMenu
@@ -633,7 +647,7 @@ export function ChatLayout() {
 
       {isMobile ? (
         <main className="relative flex min-w-0 flex-1 min-h-0 flex-col overflow-hidden">
-          <Outlet  />
+          <Outlet />
           {drawerVisible ? (
             <div
               ref={drawerRef}
@@ -678,7 +692,12 @@ export function ChatLayout() {
             className="shrink-0"
             aria-label="Navigation"
           >
-            {renderSideMenu({ collapsed, variant: "rail", width: sidebarWidth, onWidthChange: handleSidebarWidthChange })}
+            {renderSideMenu({
+              collapsed,
+              variant: "rail",
+              width: sidebarWidth,
+              onWidthChange: handleSidebarWidthChange,
+            })}
           </aside>
           <main className="flex min-w-0 flex-1 min-h-0 flex-col overflow-hidden">
             <Outlet />

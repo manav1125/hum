@@ -82,7 +82,10 @@ function makePayloads(): LlmLogPayload[] {
   ];
 }
 
-function fileContents(files: ReturnType<typeof buildInspectorExportFiles>, path: string): string {
+function fileContents(
+  files: ReturnType<typeof buildInspectorExportFiles>,
+  path: string,
+): string {
   const file = files.find((candidate) => candidate.path === path);
   if (!file) throw new Error(`Missing export file ${path}`);
   return file.contents;
@@ -132,7 +135,10 @@ describe("inspector export", () => {
 
     expect(
       JSON.parse(
-        fileContents(files, "provider-payloads/calls/001-log_alpha/request.json"),
+        fileContents(
+          files,
+          "provider-payloads/calls/001-log_alpha/request.json",
+        ),
       ),
     ).toEqual({
       messages: [{ role: "user", content: "provider envelope" }],

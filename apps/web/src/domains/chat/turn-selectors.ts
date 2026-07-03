@@ -5,7 +5,11 @@
  * previously scattered across the component tree.
  */
 
-import { type TurnPhase, isSending, isThinking } from "@/domains/chat/turn-store";
+import {
+  type TurnPhase,
+  isSending,
+  isThinking,
+} from "@/domains/chat/turn-store";
 
 // ---------------------------------------------------------------------------
 // UI context — values provided by the component that are NOT part of the
@@ -83,7 +87,9 @@ export function shouldShowThinkingIndicator(
     !ctx.hasPendingQuestion &&
     !ctx.hasPendingContactRequest &&
     !ctx.hasUncompletedVisibleSurface &&
-    (isThinking(phase) || restoredProcessing || !ctx.hasStreamingAssistantMessage) &&
+    (isThinking(phase) ||
+      restoredProcessing ||
+      !ctx.hasStreamingAssistantMessage) &&
     // Inline SingleActivity owns the loading state once reasoning is present.
     !ctx.hasStreamingAssistantThinking &&
     activeToolCallCount === 0
@@ -99,10 +105,7 @@ export function shouldShowThinkingIndicator(
  * transcript or conversation processing marker is the only local proof that
  * there is an active turn to stop.
  */
-export function canStopGeneration(
-  phase: TurnPhase,
-  ctx: UIContext,
-): boolean {
+export function canStopGeneration(phase: TurnPhase, ctx: UIContext): boolean {
   if (
     phase === "awaiting_user_input" ||
     ctx.hasPendingSecret ||

@@ -7,10 +7,7 @@ import {
   parseActivator,
 } from "@/utils/ptt-activator";
 import { getLocalSetting, watchSetting } from "@/utils/local-settings";
-import {
-  setFnPushToTalkEnabled,
-  supportsFnPushToTalk,
-} from "@/runtime/hotkey";
+import { setFnPushToTalkEnabled, supportsFnPushToTalk } from "@/runtime/hotkey";
 
 function shouldRegisterFnPushToTalk(): boolean {
   const raw = getLocalSetting(LS_PTT_ACTIVATION_KEY, "");

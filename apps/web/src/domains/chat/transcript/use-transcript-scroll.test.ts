@@ -128,28 +128,31 @@ function makeHandle(): TranscriptHandle & {
 
 describe("classifyScrollPosition — pinned threshold (64 px)", () => {
   test("at the bottom (max scrollTop) is pinned", () => {
-    const c = classifyScrollPosition(
-      metricsAtDistanceFromBottom(0),
-      { hasMore: false, isLoadingOlder: false, hasConversation: true },
-    );
+    const c = classifyScrollPosition(metricsAtDistanceFromBottom(0), {
+      hasMore: false,
+      isLoadingOlder: false,
+      hasConversation: true,
+    });
     expect(c.distanceFromBottom).toBe(0);
     expect(c.isPinned).toBe(true);
   });
 
   test("distance exactly 64 is pinned (<=)", () => {
-    const c = classifyScrollPosition(
-      metricsAtDistanceFromBottom(64),
-      { hasMore: false, isLoadingOlder: false, hasConversation: true },
-    );
+    const c = classifyScrollPosition(metricsAtDistanceFromBottom(64), {
+      hasMore: false,
+      isLoadingOlder: false,
+      hasConversation: true,
+    });
     expect(c.distanceFromBottom).toBe(PINNED_THRESHOLD_PX);
     expect(c.isPinned).toBe(true);
   });
 
   test("distance 65 is NOT pinned", () => {
-    const c = classifyScrollPosition(
-      metricsAtDistanceFromBottom(65),
-      { hasMore: false, isLoadingOlder: false, hasConversation: true },
-    );
+    const c = classifyScrollPosition(metricsAtDistanceFromBottom(65), {
+      hasMore: false,
+      isLoadingOlder: false,
+      hasConversation: true,
+    });
     expect(c.distanceFromBottom).toBe(65);
     expect(c.isPinned).toBe(false);
   });
@@ -168,28 +171,31 @@ describe("classifyScrollPosition — pinned threshold (64 px)", () => {
 
 describe("classifyScrollPosition — show-scroll-button threshold (240 px)", () => {
   test("distance 240 does NOT show the button (>)", () => {
-    const c = classifyScrollPosition(
-      metricsAtDistanceFromBottom(240),
-      { hasMore: false, isLoadingOlder: false, hasConversation: true },
-    );
+    const c = classifyScrollPosition(metricsAtDistanceFromBottom(240), {
+      hasMore: false,
+      isLoadingOlder: false,
+      hasConversation: true,
+    });
     expect(c.distanceFromBottom).toBe(SHOW_SCROLL_BUTTON_THRESHOLD_PX);
     expect(c.showScrollToLatest).toBe(false);
   });
 
   test("distance 241 shows the button", () => {
-    const c = classifyScrollPosition(
-      metricsAtDistanceFromBottom(241),
-      { hasMore: false, isLoadingOlder: false, hasConversation: true },
-    );
+    const c = classifyScrollPosition(metricsAtDistanceFromBottom(241), {
+      hasMore: false,
+      isLoadingOlder: false,
+      hasConversation: true,
+    });
     expect(c.distanceFromBottom).toBe(241);
     expect(c.showScrollToLatest).toBe(true);
   });
 
   test("dropping back under 240 hides the button", () => {
-    const c = classifyScrollPosition(
-      metricsAtDistanceFromBottom(239),
-      { hasMore: false, isLoadingOlder: false, hasConversation: true },
-    );
+    const c = classifyScrollPosition(metricsAtDistanceFromBottom(239), {
+      hasMore: false,
+      isLoadingOlder: false,
+      hasConversation: true,
+    });
     expect(c.distanceFromBottom).toBe(239);
     expect(c.showScrollToLatest).toBe(false);
   });
@@ -328,10 +334,7 @@ describe("findLatestUserAnchorKey", () => {
       makeMessage("a1"),
       makeMessage("a2"),
     ];
-    const afterSubmit: TranscriptItem[] = [
-      ...before,
-      makeUserMessage("u2"),
-    ];
+    const afterSubmit: TranscriptItem[] = [...before, makeUserMessage("u2")];
 
     const prevAnchor = findLatestUserAnchorKey(before);
     const newAnchor = findLatestUserAnchorKey(afterSubmit);
@@ -342,10 +345,7 @@ describe("findLatestUserAnchorKey", () => {
 
   test("does NOT detect a new submit during streaming growth", () => {
     // Assistant items append while the user anchor is unchanged.
-    const before: TranscriptItem[] = [
-      makeUserMessage("u1"),
-      makeMessage("a1"),
-    ];
+    const before: TranscriptItem[] = [makeUserMessage("u1"), makeMessage("a1")];
     const midStream: TranscriptItem[] = [...before, makeMessage("a2")];
 
     const prevAnchor = findLatestUserAnchorKey(before);
@@ -495,10 +495,11 @@ describe("integration — handleScroll-style dispatch via pure helpers", () => {
   test("pinned flips exactly at the 64 px threshold as the user scrolls up then back down", () => {
     let isPinned = true;
     const updateByDistanceFromBottom = (distance: number) => {
-      const c = classifyScrollPosition(
-        metricsAtDistanceFromBottom(distance),
-        { hasMore: false, isLoadingOlder: false, hasConversation: true },
-      );
+      const c = classifyScrollPosition(metricsAtDistanceFromBottom(distance), {
+        hasMore: false,
+        isLoadingOlder: false,
+        hasConversation: true,
+      });
       isPinned = c.isPinned;
     };
     updateByDistanceFromBottom(0); // at bottom
@@ -514,10 +515,11 @@ describe("integration — handleScroll-style dispatch via pure helpers", () => {
   test("showScrollToLatest flips exactly at the 240 px threshold in both directions", () => {
     let show = false;
     const updateByDistanceFromBottom = (distance: number) => {
-      const c = classifyScrollPosition(
-        metricsAtDistanceFromBottom(distance),
-        { hasMore: false, isLoadingOlder: false, hasConversation: true },
-      );
+      const c = classifyScrollPosition(metricsAtDistanceFromBottom(distance), {
+        hasMore: false,
+        isLoadingOlder: false,
+        hasConversation: true,
+      });
       show = c.showScrollToLatest;
     };
     updateByDistanceFromBottom(240); // still hidden

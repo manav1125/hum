@@ -1,4 +1,3 @@
-
 import { memo, type ReactNode } from "react";
 
 import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
@@ -51,7 +50,9 @@ export interface TranscriptRowProps {
     toolCall: ChatMessageToolCall,
   ) => void | Promise<void>;
   /** Callback when the user picks "Allow & Create Rule" from the split button. */
-  onAllowAndCreateRule?: (toolCall: ChatMessageToolCall) => void | Promise<void>;
+  onAllowAndCreateRule?: (
+    toolCall: ChatMessageToolCall,
+  ) => void | Promise<void>;
   onOpenApp?: (appId: string) => void;
   onOpenDocument?: (documentSurfaceId: string) => void;
   /** Forwarded to inline app surfaces so they can render live preview iframes. */

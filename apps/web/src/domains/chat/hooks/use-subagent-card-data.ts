@@ -210,9 +210,7 @@ export function computeSubagentCardData(
   // originating `toolName` (so the resting "Used <Tool>" header can
   // re-humanise the name without re-parsing the title string). Indexed
   // by `steps` position; `undefined` for non-tool entries.
-  const toolMeta: Array<
-    { startTs: number; toolName: string } | undefined
-  > = [];
+  const toolMeta: Array<{ startTs: number; toolName: string } | undefined> = [];
 
   for (const event of entry.events) {
     if (event.type === "text") {

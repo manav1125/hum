@@ -27,8 +27,7 @@ export function groupConversationsByKey(
 
   for (const conv of conversations) {
     const raw = getKey(conv);
-    const key =
-      raw.length > 0 ? raw : `__single__:${conv.conversationId}`;
+    const key = raw.length > 0 ? raw : `__single__:${conv.conversationId}`;
     const existing = byKey.get(key);
     if (existing) {
       existing.conversations.push(conv);

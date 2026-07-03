@@ -25,14 +25,9 @@ export function handleMessageQueued(
   ctx.setRequestIdMapping(requestId, messageId);
 
   if (ctx.consumePendingLocalDeletion(messageId)) {
-    const conversationId =
-      useConversationStore.getState().activeConversationId;
+    const conversationId = useConversationStore.getState().activeConversationId;
     if (ctx.assistantId && conversationId) {
-      void deleteQueuedMessage(
-        ctx.assistantId,
-        conversationId,
-        requestId,
-      );
+      void deleteQueuedMessage(ctx.assistantId, conversationId, requestId);
     }
   } else {
     ctx.setMessages((prev) => setQueuePosition(prev, messageId, position + 1));

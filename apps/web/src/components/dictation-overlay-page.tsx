@@ -54,9 +54,7 @@ export function DictationOverlayPage() {
           <span className="truncate text-[11px] font-medium text-[var(--content-secondary)]">
             {stateLabel(state)}
           </span>
-          {state.kind === "recording" && (
-            <AudioMeter level={audioLevel} />
-          )}
+          {state.kind === "recording" && <AudioMeter level={audioLevel} />}
         </div>
         {transcription && (
           // Bottom-anchored two-line text: the transcript grows as words

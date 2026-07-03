@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 
 import { PULL_THRESHOLD_PX } from "@/domains/chat/transcript/pull-to-refresh-utils";
@@ -50,9 +49,8 @@ export function PullRefreshSpinner({
   // progresses. Once refreshing, we hide the dial and show an
   // indeterminate spinner.
   const dialOffset = CIRCUMFERENCE * (1 - Math.min(1, Math.max(0, progress)));
-  const opacity = phase === "refreshing"
-    ? 1
-    : Math.min(1, height / PULL_THRESHOLD_PX);
+  const opacity =
+    phase === "refreshing" ? 1 : Math.min(1, height / PULL_THRESHOLD_PX);
 
   return (
     <div
@@ -70,9 +68,8 @@ export function PullRefreshSpinner({
         className="flex items-center justify-center"
         style={{
           opacity,
-          transitionProperty: reduceMotion || phase === "dragging"
-            ? "none"
-            : "opacity",
+          transitionProperty:
+            reduceMotion || phase === "dragging" ? "none" : "opacity",
           transitionDuration: reduceMotion ? "0ms" : "180ms",
         }}
       >

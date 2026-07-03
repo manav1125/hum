@@ -13,7 +13,9 @@ import type { ToolDetailPayload } from "@/stores/viewer-store";
 
 const noop = () => {};
 
-function makeDetail(overrides: Partial<ToolDetailPayload> = {}): ToolDetailPayload {
+function makeDetail(
+  overrides: Partial<ToolDetailPayload> = {},
+): ToolDetailPayload {
   return {
     toolCallId: "tc-1",
     toolName: "subagent_spawn",

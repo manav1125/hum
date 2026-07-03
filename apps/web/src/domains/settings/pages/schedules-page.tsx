@@ -7,7 +7,10 @@ import { useNavigate, useParams } from "react-router";
 import { DetailCard } from "@/components/detail-card";
 import { getAssistantHealthz } from "@/assistant/api";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { fetchSchedules, toggleSchedule } from "@/domains/settings/api/schedules";
+import {
+  fetchSchedules,
+  toggleSchedule,
+} from "@/domains/settings/api/schedules";
 import { CreateScheduleModal } from "@/domains/settings/components/create-schedule-modal";
 import { ScheduleDetailView } from "@/domains/settings/components/schedule-detail-view";
 import { ScheduleRow } from "@/domains/settings/components/schedule-row";
@@ -169,10 +172,7 @@ export function SchedulesPage() {
   const usageSummaryByScheduleId = useMemo(
     () =>
       new Map(
-        (usageSummaries ?? []).map((summary) => [
-          summary.scheduleId,
-          summary,
-        ]),
+        (usageSummaries ?? []).map((summary) => [summary.scheduleId, summary]),
       ),
     [usageSummaries],
   );
@@ -224,10 +224,7 @@ export function SchedulesPage() {
   // View routing
   // -------------------------------------------------------------------------
 
-  if (
-    selectedSystemTask === "heartbeat" &&
-    systemTasks.heartbeatConfig
-  ) {
+  if (selectedSystemTask === "heartbeat" && systemTasks.heartbeatConfig) {
     return (
       <SystemTaskDetailView
         key="heartbeat"
@@ -384,8 +381,7 @@ export function SchedulesPage() {
     scheduleList,
     now,
   );
-  const hasActiveSchedules =
-    recurring.length > 0 || upcomingOneTime.length > 0;
+  const hasActiveSchedules = recurring.length > 0 || upcomingOneTime.length > 0;
 
   const renderRow = (schedule: Schedule, past = false) => (
     <ScheduleRow

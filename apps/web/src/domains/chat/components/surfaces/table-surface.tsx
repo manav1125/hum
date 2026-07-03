@@ -34,11 +34,16 @@ function isRichCell(cell: TableCell | undefined): cell is TableCellValue {
 
 function iconColorClass(iconColor?: string): string {
   switch (iconColor) {
-    case "success": return "text-[var(--system-positive-strong)]";
-    case "warning": return "text-[var(--system-mid-strong)]";
-    case "error": return "text-[var(--system-negative-strong)]";
-    case "muted": return "text-[var(--content-tertiary)]";
-    default: return "text-[var(--content-default)]";
+    case "success":
+      return "text-[var(--system-positive-strong)]";
+    case "warning":
+      return "text-[var(--system-mid-strong)]";
+    case "error":
+      return "text-[var(--system-negative-strong)]";
+    case "muted":
+      return "text-[var(--content-tertiary)]";
+    default:
+      return "text-[var(--content-default)]";
   }
 }
 
@@ -58,7 +63,11 @@ interface TableSurfaceData {
 
 interface TableSurfaceProps {
   surface: Surface;
-  onAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void;
+  onAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +79,8 @@ function escapeMd(text: string): string {
 }
 
 function tableToMarkdown(columns: TableColumn[], rows: TableRow[]): string {
-  const header = "| " + columns.map((c) => escapeMd(c.label)).join(" | ") + " |";
+  const header =
+    "| " + columns.map((c) => escapeMd(c.label)).join(" | ") + " |";
   const separator = "| " + columns.map(() => "---").join(" | ") + " |";
   const body = rows.map((row) => {
     const cells = columns.map((col) => {
@@ -119,11 +129,14 @@ export function TableSurface({ surface, onAction }: TableSurfaceProps) {
   const handleCopy = useCallback(() => {
     if (!navigator.clipboard?.writeText) return;
     const md = tableToMarkdown(data.columns, data.rows);
-    navigator.clipboard.writeText(md).then(() => {
-      setCopied(true);
-      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
-      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
+    navigator.clipboard
+      .writeText(md)
+      .then(() => {
+        setCopied(true);
+        if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   }, [data.columns, data.rows]);
 
   useEffect(() => {
@@ -144,16 +157,18 @@ export function TableSurface({ surface, onAction }: TableSurfaceProps) {
             className="flex items-center gap-1 rounded p-1 text-body-small-default text-[var(--content-quiet)] transition-colors hover:bg-[var(--surface-active)] hover:text-[var(--content-default)]"
             aria-label="Copy table as markdown"
           >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
         <table className="w-full text-left text-body-medium-lighter">
           <thead>
             <tr className="border-b border-[var(--border-subtle)]">
-              {isSelectable && (
-                <th className="w-10 px-3 py-2" />
-              )}
+              {isSelectable && <th className="w-10 px-3 py-2" />}
               {data.columns.map((col) => (
                 <th
                   key={col.id}
@@ -178,11 +193,7 @@ export function TableSurface({ surface, onAction }: TableSurfaceProps) {
                     rowSelectable
                       ? "cursor-pointer hover:bg-[var(--surface-hover)]"
                       : ""
-                  } ${
-                    isSelected
-                      ? "bg-[var(--system-positive-weak)]"
-                      : ""
-                  }`}
+                  } ${isSelected ? "bg-[var(--system-positive-weak)]" : ""}`}
                 >
                   {isSelectable && (
                     <td className="px-3 py-2">
@@ -205,23 +216,36 @@ export function TableSurface({ surface, onAction }: TableSurfaceProps) {
                       <td
                         key={col.id}
                         className="px-3 py-2 text-[var(--content-default)]"
-                        style={col.width ? { width: `${col.width}px` } : undefined}
+                        style={
+                          col.width ? { width: `${col.width}px` } : undefined
+                        }
                       >
                         {isRichCell(cell) ? (
                           <span className="flex items-center gap-1.5">
-                            {cell.icon && (() => {
-                              const LucideIcon = sfSymbolToLucideIcon(cell.icon);
-                              return LucideIcon ? (
-                                <LucideIcon className={`h-4 w-4 ${iconColorClass(cell.iconColor)}`} aria-hidden />
-                              ) : (
-                                <span className={iconColorClass(cell.iconColor)} aria-hidden>
-                                  {cell.icon}
-                                </span>
-                              );
-                            })()}
+                            {cell.icon &&
+                              (() => {
+                                const LucideIcon = sfSymbolToLucideIcon(
+                                  cell.icon,
+                                );
+                                return LucideIcon ? (
+                                  <LucideIcon
+                                    className={`h-4 w-4 ${iconColorClass(cell.iconColor)}`}
+                                    aria-hidden
+                                  />
+                                ) : (
+                                  <span
+                                    className={iconColorClass(cell.iconColor)}
+                                    aria-hidden
+                                  >
+                                    {cell.icon}
+                                  </span>
+                                );
+                              })()}
                             {cell.text}
                           </span>
-                        ) : (cell ?? "")}
+                        ) : (
+                          (cell ?? "")
+                        )}
                       </td>
                     );
                   })}
@@ -232,7 +256,9 @@ export function TableSurface({ surface, onAction }: TableSurfaceProps) {
         </table>
 
         {data.caption && (
-          <p className="mt-2 text-body-small-default text-[var(--content-quiet)]">{data.caption}</p>
+          <p className="mt-2 text-body-small-default text-[var(--content-quiet)]">
+            {data.caption}
+          </p>
         )}
       </div>
     </SurfaceContainer>

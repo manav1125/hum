@@ -49,7 +49,9 @@ export function buildInspectorExportFiles(
   payloads: LlmLogPayload[],
   options: BuildInspectorExportFilesOptions = {},
 ): InspectorExportFile[] {
-  const payloadsByLogId = new Map(payloads.map((payload) => [payload.id, payload]));
+  const payloadsByLogId = new Map(
+    payloads.map((payload) => [payload.id, payload]),
+  );
   const exportedAt = options.exportedAt ?? new Date().toISOString();
   const calls = context.logs.map((log, index) => callManifest(log, index));
   const files: InspectorExportFile[] = [
@@ -207,12 +209,17 @@ function callManifest(log: LLMRequestLogEntry, index: number) {
   };
 }
 
-function buildCallDirectoryName(log: LLMRequestLogEntry, index: number): string {
+function buildCallDirectoryName(
+  log: LLMRequestLogEntry,
+  index: number,
+): string {
   return `${String(index + 1).padStart(3, "0")}-${sanitizePathSegment(log.id)}`;
 }
 
 function sanitizePathSegment(value: string): string {
-  const sanitized = value.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  const sanitized = value
+    .replace(/[^A-Za-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
   return sanitized || "unknown";
 }
 

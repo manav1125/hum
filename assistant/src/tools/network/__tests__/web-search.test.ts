@@ -540,7 +540,7 @@ describe("web_search tool", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("Managed search proxy is unavailable");
-    expect(result.content).toContain("Log in to Vellum");
+    expect(result.content).toContain("Log in to Cue");
   });
 
   test("your-own mode keeps direct Brave BYOK behavior unchanged", async () => {

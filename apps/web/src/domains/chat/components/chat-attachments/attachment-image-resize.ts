@@ -1,4 +1,3 @@
-
 export const IMAGE_AUTO_RESIZE_TARGET_BYTES = Math.floor(3.5 * 1024 * 1024);
 export const IMAGE_AUTO_RESIZE_SOURCE_LIMIT_BYTES = 100 * 1024 * 1024;
 
@@ -40,7 +39,9 @@ interface LoadedBrowserImage {
   close: () => void;
 }
 
-export function isAutoResizableImage(file: Pick<File, "name" | "type">): boolean {
+export function isAutoResizableImage(
+  file: Pick<File, "name" | "type">,
+): boolean {
   const mimeType = file.type.trim().toLowerCase();
   if (RESIZABLE_IMAGE_MIME_TYPES.has(mimeType)) {
     return true;
@@ -50,8 +51,12 @@ export function isAutoResizableImage(file: Pick<File, "name" | "type">): boolean
   return extension ? RESIZABLE_IMAGE_EXTENSIONS.has(extension) : false;
 }
 
-export function shouldAutoResizeImageAttachment(file: Pick<File, "name" | "size" | "type">): boolean {
-  return isAutoResizableImage(file) && file.size > IMAGE_AUTO_RESIZE_TARGET_BYTES;
+export function shouldAutoResizeImageAttachment(
+  file: Pick<File, "name" | "size" | "type">,
+): boolean {
+  return (
+    isAutoResizableImage(file) && file.size > IMAGE_AUTO_RESIZE_TARGET_BYTES
+  );
 }
 
 export function filenameForResizedImage(name: string): string {
@@ -79,7 +84,8 @@ export async function prepareImageAttachmentForUpload(
   if (file.size > IMAGE_AUTO_RESIZE_SOURCE_LIMIT_BYTES) {
     return {
       status: "failed",
-      error: "This image is too large to process safely. Please choose a smaller image.",
+      error:
+        "This image is too large to process safely. Please choose a smaller image.",
     };
   }
 
@@ -122,7 +128,9 @@ export async function prepareImageAttachmentForUpload(
 async function loadBrowserImage(file: File): Promise<LoadedBrowserImage> {
   if (typeof createImageBitmap === "function") {
     try {
-      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const bitmap = await createImageBitmap(file, {
+        imageOrientation: "from-image",
+      });
       return {
         source: bitmap,
         width: bitmap.width,
@@ -158,14 +166,18 @@ async function loadBrowserImage(file: File): Promise<LoadedBrowserImage> {
   });
 }
 
-async function isAnimatedWebp(file: Pick<File, "name" | "slice" | "size" | "type">): Promise<boolean> {
+async function isAnimatedWebp(
+  file: Pick<File, "name" | "slice" | "size" | "type">,
+): Promise<boolean> {
   if (!isWebpFile(file)) {
     return false;
   }
 
   let bytes: Uint8Array;
   try {
-    bytes = new Uint8Array(await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer());
+    bytes = new Uint8Array(
+      await file.slice(0, Math.min(file.size, 1024 * 1024)).arrayBuffer(),
+    );
   } catch {
     return true;
   }
@@ -183,7 +195,10 @@ async function isAnimatedWebp(file: Pick<File, "name" | "slice" | "size" | "type
 }
 
 function isWebpFile(file: Pick<File, "name" | "type">): boolean {
-  return file.type.trim().toLowerCase() === "image/webp" || /\.webp$/i.test(file.name);
+  return (
+    file.type.trim().toLowerCase() === "image/webp" ||
+    /\.webp$/i.test(file.name)
+  );
 }
 
 function findAscii(bytes: Uint8Array, pattern: string): number {
@@ -196,7 +211,11 @@ function findAscii(bytes: Uint8Array, pattern: string): number {
   return -1;
 }
 
-function matchesAscii(bytes: Uint8Array, offset: number, pattern: string): boolean {
+function matchesAscii(
+  bytes: Uint8Array,
+  offset: number,
+  pattern: string,
+): boolean {
   if (offset + pattern.length > bytes.length) {
     return false;
   }
@@ -219,7 +238,12 @@ async function resizeImageToTargetBytes(
 
   if (pixelCount <= MAX_FULL_RES_COMPRESSION_PIXELS) {
     for (const quality of QUALITY_STEPS) {
-      const blob = await encodeJpeg(image.source, image.width, image.height, quality);
+      const blob = await encodeJpeg(
+        image.source,
+        image.width,
+        image.height,
+        quality,
+      );
       smallestBlob = smallestBySize(smallestBlob, blob);
       if (blob && blob.size <= IMAGE_AUTO_RESIZE_TARGET_BYTES) {
         return blob;
@@ -256,7 +280,10 @@ async function resizeImageToTargetBytes(
   return null;
 }
 
-function smallestBySize(current: Blob | null, candidate: Blob | null): Blob | null {
+function smallestBySize(
+  current: Blob | null,
+  candidate: Blob | null,
+): Blob | null {
   if (!candidate) {
     return current;
   }

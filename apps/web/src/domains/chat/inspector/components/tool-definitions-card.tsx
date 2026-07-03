@@ -200,8 +200,7 @@ function SchemaProperty({
   const items = isRecord(schema.items) ? schema.items : null;
   const hasNestedObject =
     isRecord(schema.properties) && Object.keys(schema.properties).length > 0;
-  const nestedItems =
-    items && isRecord(items.properties) ? items : null;
+  const nestedItems = items && isRecord(items.properties) ? items : null;
 
   return (
     <li className="py-1">
@@ -221,7 +220,9 @@ function SchemaProperty({
         {isRequired && (
           <span
             className="text-label-default"
-            style={{ color: "var(--content-attention, var(--content-secondary))" }}
+            style={{
+              color: "var(--content-attention, var(--content-secondary))",
+            }}
           >
             required
           </span>

@@ -18,9 +18,7 @@ import { useConversationStore } from "@/stores/conversation-store";
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
 import { useActiveConversation } from "@/domains/chat/hooks/use-active-conversation";
 import { useSlackConversationDisplay } from "@/domains/chat/hooks/use-slack-conversation-display";
-import {
-  formatSlackConversationDisplayLabel,
-} from "@/domains/chat/utils/slack-conversation-display";
+import { formatSlackConversationDisplayLabel } from "@/domains/chat/utils/slack-conversation-display";
 import { ConversationAssetsPill } from "@/domains/chat/components/conversation-assets-pill";
 import { useOpenAppFromChat } from "@/domains/chat/hooks/use-open-app-from-chat";
 import { useViewerStore } from "@/stores/viewer-store";
@@ -50,9 +48,14 @@ export function useChatHeaderRegistration({
   const activeConversationId = useConversationStore.use.activeConversationId();
   const messages = useChatSessionStore.use.messages();
   const setTopBarRightSlot = useChatLayoutSlotsStore.use.setTopBarRightSlot();
-  const setHeaderSupplements = useChatLayoutSlotsStore.use.setHeaderSupplements();
+  const setHeaderSupplements =
+    useChatLayoutSlotsStore.use.setHeaderSupplements();
 
-  const activeConversation = useActiveConversation(assistantId, activeConversationId, true);
+  const activeConversation = useActiveConversation(
+    assistantId,
+    activeConversationId,
+    true,
+  );
 
   // Slack header label derivation
   const slackConversationDisplay = useSlackConversationDisplay({
@@ -72,30 +75,35 @@ export function useChatHeaderRegistration({
     [messages],
   );
 
-  const headerSupplements = useMemo<ChatHeaderSupplements>(() => ({
-    hasPersistedMessage,
-    slackHeaderLabel,
-    onAnalyze: handleAnalyzeConversation,
-    onForkConversation: handleForkConversationFromMenu,
-    onOpenInNewWindow: handleOpenInNewWindow,
-    onInspect: handleInspectConversation,
-    onCopyConversation: messages.length > 0 ? handleCopyConversation : null,
-    onRefresh,
-  }), [
-    hasPersistedMessage,
-    slackHeaderLabel,
-    handleAnalyzeConversation,
-    handleForkConversationFromMenu,
-    handleOpenInNewWindow,
-    handleInspectConversation,
-    handleCopyConversation,
-    messages.length,
-    onRefresh,
-  ]);
+  const headerSupplements = useMemo<ChatHeaderSupplements>(
+    () => ({
+      hasPersistedMessage,
+      slackHeaderLabel,
+      onAnalyze: handleAnalyzeConversation,
+      onForkConversation: handleForkConversationFromMenu,
+      onOpenInNewWindow: handleOpenInNewWindow,
+      onInspect: handleInspectConversation,
+      onCopyConversation: messages.length > 0 ? handleCopyConversation : null,
+      onRefresh,
+    }),
+    [
+      hasPersistedMessage,
+      slackHeaderLabel,
+      handleAnalyzeConversation,
+      handleForkConversationFromMenu,
+      handleOpenInNewWindow,
+      handleInspectConversation,
+      handleCopyConversation,
+      messages.length,
+      onRefresh,
+    ],
+  );
 
   useEffect(() => {
     setHeaderSupplements(headerSupplements);
-    return () => { setHeaderSupplements(null); };
+    return () => {
+      setHeaderSupplements(null);
+    };
   }, [headerSupplements, setHeaderSupplements]);
 
   // Top bar right slot — ConversationAssetsPill
@@ -103,7 +111,8 @@ export function useChatHeaderRegistration({
   const handleOpenDocument = useCallback(
     (surfaceId: string) => {
       haptic.light();
-      if (assistantId) void useViewerStore.getState().loadDocument(assistantId, surfaceId);
+      if (assistantId)
+        void useViewerStore.getState().loadDocument(assistantId, surfaceId);
     },
     [assistantId],
   );
@@ -119,11 +128,18 @@ export function useChatHeaderRegistration({
         onOpenDocument={handleOpenDocument}
       />
     );
-  }, [activeConversation?.conversationId, assistantId, assetsRefreshKey, handleOpenAppFromChat, handleOpenDocument]);
+  }, [
+    activeConversation?.conversationId,
+    assistantId,
+    assetsRefreshKey,
+    handleOpenAppFromChat,
+    handleOpenDocument,
+  ]);
 
   useEffect(() => {
     setTopBarRightSlot(topBarRightContent);
-    return () => { setTopBarRightSlot(null); };
+    return () => {
+      setTopBarRightSlot(null);
+    };
   }, [topBarRightContent, setTopBarRightSlot]);
-
 }

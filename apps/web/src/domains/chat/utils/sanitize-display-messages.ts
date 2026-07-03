@@ -214,9 +214,7 @@ function toolCallsMatch(a: DisplayMessage, b: DisplayMessage): boolean {
 const SYNTHETIC_DANGLING_RESULT =
   "Tool call completed on the server, but the result never reached the client. Subsequent assistant activity confirms the tool returned — this is a client-side data loss, not a tool failure.";
 
-function repairDanglingToolCalls(
-  messages: DisplayMessage[],
-): DisplayMessage[] {
+function repairDanglingToolCalls(messages: DisplayMessage[]): DisplayMessage[] {
   const lastAssistantIdx = findLastAssistantIndex(messages);
   // No subsequent-assistant evidence anywhere → nothing to repair against.
   if (lastAssistantIdx <= 0) return messages;
@@ -225,9 +223,7 @@ function repairDanglingToolCalls(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!;
     const isPatchable =
-      m.role === "assistant" &&
-      i < lastAssistantIdx &&
-      hasDanglingToolCall(m);
+      m.role === "assistant" && i < lastAssistantIdx && hasDanglingToolCall(m);
     if (!isPatchable) {
       if (result) result.push(m);
       continue;
@@ -246,9 +242,7 @@ function findLastAssistantIndex(messages: DisplayMessage[]): number {
 }
 
 function hasDanglingToolCall(message: DisplayMessage): boolean {
-  return (
-    message.toolCalls?.some((tc) => isToolCallRunning(tc)) ?? false
-  );
+  return message.toolCalls?.some((tc) => isToolCallRunning(tc)) ?? false;
 }
 
 function withRepairedToolCalls(message: DisplayMessage): DisplayMessage {

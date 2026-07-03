@@ -222,9 +222,7 @@ describe("handleAssistantActivityState", () => {
       ctx,
     );
     expect(
-      ctx.lastActivityVersionRef.current.get(
-        ctx.streamContext!.conversationId,
-      ),
+      ctx.lastActivityVersionRef.current.get(ctx.streamContext!.conversationId),
     ).toBe(1);
     expect(ctx.turnActions.onActivityThinking).not.toHaveBeenCalled();
     expect(ctx.endTurn).not.toHaveBeenCalled();

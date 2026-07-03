@@ -1,5 +1,12 @@
-
-import { ArrowUp, ChevronUp, Globe, Loader2, Maximize2, Pencil, X } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronUp,
+  Globe,
+  Loader2,
+  Maximize2,
+  Pencil,
+  X,
+} from "lucide-react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { cn } from "@/utils/misc";
@@ -23,7 +30,17 @@ export interface AppNavBarProps {
   onClose: () => void;
 }
 
-export function AppNavBar({ appName, onEdit, isEditing, onShare, isSharing, onDeploy, isDeploying, onToggleFullscreen, onClose }: AppNavBarProps) {
+export function AppNavBar({
+  appName,
+  onEdit,
+  isEditing,
+  onShare,
+  isSharing,
+  onDeploy,
+  isDeploying,
+  onToggleFullscreen,
+  onClose,
+}: AppNavBarProps) {
   const isMobile = useIsMobile();
   // While the bar is acting as the minimized strip on mobile, tapping the
   // title is the primary "open app" affordance — same callback as the
@@ -54,7 +71,9 @@ export function AppNavBar({ appName, onEdit, isEditing, onShare, isSharing, onDe
         {onDeploy != null && (
           <Button
             variant="outlined"
-            iconOnly={isDeploying ? <Loader2 className="animate-spin" /> : <Globe />}
+            iconOnly={
+              isDeploying ? <Loader2 className="animate-spin" /> : <Globe />
+            }
             onClick={onDeploy}
             disabled={isDeploying}
             tooltip={isDeploying ? "Deploying…" : "Deploy"}
@@ -63,7 +82,9 @@ export function AppNavBar({ appName, onEdit, isEditing, onShare, isSharing, onDe
         {onShare != null && (
           <Button
             variant="outlined"
-            iconOnly={isSharing ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+            iconOnly={
+              isSharing ? <Loader2 className="animate-spin" /> : <ArrowUp />
+            }
             onClick={onShare}
             disabled={isSharing}
             tooltip={isSharing ? "Sharing…" : "Share"}
@@ -87,7 +108,12 @@ export function AppNavBar({ appName, onEdit, isEditing, onShare, isSharing, onDe
             className="md:hidden"
           />
         )}
-        <Button variant="outlined" iconOnly={<X />} onClick={onClose} tooltip="Close" />
+        <Button
+          variant="outlined"
+          iconOnly={<X />}
+          onClick={onClose}
+          tooltip="Close"
+        />
       </div>
     </div>
   );

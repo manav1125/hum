@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-
-import type { Conversation, ConversationGroup } from "@/types/conversation-types";
+import type {
+  Conversation,
+  ConversationGroup,
+} from "@/types/conversation-types";
 import { groupConversations } from "@/domains/chat/utils/group-conversations";
 
 function makeConversation(overrides: Partial<Conversation>): Conversation {
@@ -27,11 +29,7 @@ describe("groupConversations · bucket routing", () => {
       makeConversation({ conversationId: "b", isPinned: true }),
       makeConversation({ conversationId: "c", isPinned: true }),
     ]);
-    expect(result.pinned.map((c) => c.conversationId)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
+    expect(result.pinned.map((c) => c.conversationId)).toEqual(["a", "b", "c"]);
     expect(result.recents).toEqual([]);
     expect(result.scheduled).toEqual([]);
     expect(result.background).toEqual([]);
@@ -144,9 +142,9 @@ describe("groupConversations · bucket routing", () => {
       "pinned-slack",
     ]);
     expect(
-      result.customGroups.find((g) => g.id === "grp-work")?.conversations.map(
-        (c) => c.conversationId,
-      ),
+      result.customGroups
+        .find((g) => g.id === "grp-work")
+        ?.conversations.map((c) => c.conversationId),
     ).toEqual(["custom-slack"]);
   });
 
@@ -353,14 +351,14 @@ describe("groupConversations · custom group routing", () => {
 
     expect(result.customGroups).toHaveLength(2);
     expect(
-      result.customGroups.find((g) => g.id === "grp-work")?.conversations.map(
-        (c) => c.conversationId,
-      ),
+      result.customGroups
+        .find((g) => g.id === "grp-work")
+        ?.conversations.map((c) => c.conversationId),
     ).toEqual(["w1"]);
     expect(
-      result.customGroups.find((g) => g.id === "grp-fun")?.conversations.map(
-        (c) => c.conversationId,
-      ),
+      result.customGroups
+        .find((g) => g.id === "grp-fun")
+        ?.conversations.map((c) => c.conversationId),
     ).toEqual(["f1"]);
     expect(result.recents.map((c) => c.conversationId)).toEqual(["r1"]);
   });
@@ -487,11 +485,7 @@ describe("groupConversations · displayOrder for pinned and custom groups", () =
         lastMessageAt: 1704067200000,
       }),
     ]);
-    expect(result.pinned.map((c) => c.conversationId)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
+    expect(result.pinned.map((c) => c.conversationId)).toEqual(["a", "b", "c"]);
   });
 
   test("pinned conversations without displayOrder fall back to lastMessageAt desc", () => {
@@ -507,10 +501,7 @@ describe("groupConversations · displayOrder for pinned and custom groups", () =
         lastMessageAt: 1704412800000,
       }),
     ]);
-    expect(result.pinned.map((c) => c.conversationId)).toEqual([
-      "new",
-      "old",
-    ]);
+    expect(result.pinned.map((c) => c.conversationId)).toEqual(["new", "old"]);
   });
 
   test("displayOrder rows come before rows without displayOrder", () => {

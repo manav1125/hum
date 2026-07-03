@@ -1,4 +1,3 @@
-
 import { Check, Copy, ExternalLink, FileCode, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -87,10 +86,7 @@ export function MessageHoverActions({
   const { role } = message;
   // Flat plain-text body derived from the message's text blocks; this is the
   // copy payload and mirrors the daemon's `joinWithSpacing`.
-  const content = useMemo(
-    () => messagePlainText(message),
-    [message],
-  );
+  const content = useMemo(() => messagePlainText(message), [message]);
   const timestamp = useMemo(
     () => latestMessageActivityTimestamp(message),
     [message],
@@ -114,18 +110,21 @@ export function MessageHoverActions({
   }, []);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content).then(() => {
-      setShowCopied(true);
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-      timerRef.current = setTimeout(() => {
-        setShowCopied(false);
-        timerRef.current = null;
-      }, 1500);
-    }).catch(() => {
-      // Clipboard write denied — silently ignore
-    });
+    navigator.clipboard
+      .writeText(content)
+      .then(() => {
+        setShowCopied(true);
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+        }
+        timerRef.current = setTimeout(() => {
+          setShowCopied(false);
+          timerRef.current = null;
+        }, 1500);
+      })
+      .catch(() => {
+        // Clipboard write denied — silently ignore
+      });
   }, [content]);
 
   return (

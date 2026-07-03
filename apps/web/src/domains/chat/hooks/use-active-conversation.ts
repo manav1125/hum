@@ -76,18 +76,23 @@ export function useActiveConversation(
       return;
     }
     fetchedConversationIdRef.current = conversationId;
-    void refreshConversationRow(
-      queryClient,
-      assistantId,
-      conversationId,
-    ).catch((error) => {
-      fetchedConversationIdRef.current = null;
-      captureError(error, {
-        context: "useActiveConversation.refreshRow",
-        bestEffort: true,
-      });
-    });
-  }, [enabled, assistantId, conversationId, activeConversation, queryClient, isOrgReady]);
+    void refreshConversationRow(queryClient, assistantId, conversationId).catch(
+      (error) => {
+        fetchedConversationIdRef.current = null;
+        captureError(error, {
+          context: "useActiveConversation.refreshRow",
+          bestEffort: true,
+        });
+      },
+    );
+  }, [
+    enabled,
+    assistantId,
+    conversationId,
+    activeConversation,
+    queryClient,
+    isOrgReady,
+  ]);
 
   return activeConversation;
 }

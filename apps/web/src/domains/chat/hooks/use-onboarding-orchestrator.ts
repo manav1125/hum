@@ -45,11 +45,15 @@ export function useOnboardingOrchestrator(): UseOnboardingOrchestratorResult {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const pendingOnboardingContextRef = useRef<PreChatOnboardingContext | null>(null);
+  const pendingOnboardingContextRef = useRef<PreChatOnboardingContext | null>(
+    null,
+  );
   const onboardingDraftConversationIdRef = useRef<string | null>(null);
   const [didOnboarding, setDidOnboarding] = useState(false);
   const [onboardingTasksEmpty, setOnboardingTasksEmpty] = useState(false);
-  const [onboardingConversationId, setOnboardingConversationId] = useState<string | null>(null);
+  const [onboardingConversationId, setOnboardingConversationId] = useState<
+    string | null
+  >(null);
 
   // Consume the `?onboarding=1` signal left by `/onboarding/hatching` when
   // it forwards the user after a successful hatch. Owns the post-hatch
@@ -73,7 +77,9 @@ export function useOnboardingOrchestrator(): UseOnboardingOrchestratorResult {
   // onboarding mount, so peek at the context for the tasks-empty flag.
   useEffect(() => {
     try {
-      const raw = globalThis.sessionStorage?.getItem("onboarding.prechat.pendingContext");
+      const raw = globalThis.sessionStorage?.getItem(
+        "onboarding.prechat.pendingContext",
+      );
       if (!raw) return;
       const ctx = JSON.parse(raw) as { tasks?: string[] };
       if (Array.isArray(ctx.tasks) && ctx.tasks.length === 0) {

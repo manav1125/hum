@@ -14,21 +14,22 @@ import { Input } from "@vellumai/design-library/components/input";
 import { toast } from "@vellumai/design-library/components/toast";
 
 import {
-    ByoServiceCard,
-    CredentialsGuide,
-    ResetButton,
-    SaveButton,
+  ByoServiceCard,
+  CredentialsGuide,
+  ResetButton,
+  SaveButton,
 } from "@/domains/settings/ai/ai-shared-ui";
 import {
-    LS_TTS_API_KEY_PREFIX,
-    LS_TTS_PROVIDER,
-    LS_TTS_VOICE_ID_PREFIX,
-    TTS_PROVIDERS,
+  LS_TTS_API_KEY_PREFIX,
+  LS_TTS_PROVIDER,
+  LS_TTS_VOICE_ID_PREFIX,
+  TTS_PROVIDERS,
 } from "@/domains/settings/ai/ai-types";
 
 export function TextToSpeechCard() {
   const assistantId = useActiveAssistantId();
-  const assistantName = useAssistantIdentityStore.use.name() ?? "your assistant";
+  const assistantName =
+    useAssistantIdentityStore.use.name() ?? "your assistant";
   const isOrgReady = useIsOrgReady();
 
   const { data: catalogData } = useQuery({
@@ -150,10 +151,7 @@ export function TextToSpeechCard() {
     : selectedProvider.apiKeyPlaceholder;
 
   return (
-    <ByoServiceCard
-      title="Text-to-Speech"
-      subtitle={selectedProvider.subtitle}
-    >
+    <ByoServiceCard title="Text-to-Speech" subtitle={selectedProvider.subtitle}>
       <div className="space-y-4">
         <div className="space-y-1">
           <label className="block text-body-small-default text-[var(--content-tertiary)]">
@@ -201,11 +199,7 @@ export function TextToSpeechCard() {
         <CredentialsGuide guide={selectedProvider.credentialsGuide} />
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outlined"
-            onClick={handleTest}
-            disabled={testing}
-          >
+          <Button variant="outlined" onClick={handleTest} disabled={testing}>
             {testing ? "Testing…" : "Test"}
           </Button>
           <div className="ml-auto flex items-center gap-2">

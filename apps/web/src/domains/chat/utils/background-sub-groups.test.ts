@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-
 import type { Conversation } from "@/types/conversation-types";
 import {
   formatBackgroundSubGroupLabel,
@@ -96,10 +95,7 @@ describe("groupBackgroundConversationsBySource", () => {
      * the caller renders it as a single inline row.
      */
     // GIVEN two sourceless conversations
-    const conversations = [
-      makeConversation("a"),
-      makeConversation("b"),
-    ];
+    const conversations = [makeConversation("a"), makeConversation("b")];
 
     // WHEN we group them
     const result = groupBackgroundConversationsBySource(conversations);

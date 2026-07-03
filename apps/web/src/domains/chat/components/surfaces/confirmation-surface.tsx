@@ -1,4 +1,3 @@
-
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 
@@ -20,25 +19,34 @@ interface ConfirmationSurfaceData {
 
 interface ConfirmationSurfaceProps {
   surface: Surface;
-  onAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void;
+  onAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ConfirmationSurface({ surface, onAction }: ConfirmationSurfaceProps) {
+export function ConfirmationSurface({
+  surface,
+  onAction,
+}: ConfirmationSurfaceProps) {
   const data = surface.data as unknown as ConfirmationSurfaceData;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const confirmActionId =
-    surface.actions?.find((a) => a.id === "confirm")?.id
-    ?? surface.actions?.find((a) => a.style === "primary" || a.style === "destructive")?.id
-    ?? "confirm";
+    surface.actions?.find((a) => a.id === "confirm")?.id ??
+    surface.actions?.find(
+      (a) => a.style === "primary" || a.style === "destructive",
+    )?.id ??
+    "confirm";
   const cancelActionId =
-    surface.actions?.find((a) => a.id === "cancel")?.id
-    ?? surface.actions?.find((a) => a.style === "secondary")?.id
-    ?? "cancel";
+    surface.actions?.find((a) => a.id === "cancel")?.id ??
+    surface.actions?.find((a) => a.style === "secondary")?.id ??
+    "cancel";
 
   const confirmLabel = data.confirmLabel ?? "Confirm";
   const cancelLabel = data.cancelLabel ?? "Cancel";

@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, renderHook } from "@testing-library/react";
 
 // `mock.module` is safe for `use-is-mobile` because it's a pure
@@ -36,15 +29,11 @@ import {
 
 let viewerSnapshot: ReturnType<typeof useViewerStore.getState>;
 let conversationSnapshot: ReturnType<typeof useConversationStore.getState>;
-let selectionSnapshot: ReturnType<
-  typeof useResolvedAssistantsStore.getState
->;
+let selectionSnapshot: ReturnType<typeof useResolvedAssistantsStore.getState>;
 
 const loadAppMock = mock(async (_assistantId: string, _appId: string) => {});
 const enterAppEditingMock = mock(() => undefined);
-const setEditingConversationIdMock = mock(
-  (_id: string | null) => undefined,
-);
+const setEditingConversationIdMock = mock((_id: string | null) => undefined);
 
 beforeEach(() => {
   viewerSnapshot = useViewerStore.getState();
@@ -184,17 +173,12 @@ describe("useOpenAppFromChat", () => {
 describe("chooseSidebarOpenAppDestination", () => {
   test("returns null on the chat index path (viewer mounts here via ConversationRedirect)", () => {
     expect(chooseSidebarOpenAppDestination("/assistant", "conv-7")).toBeNull();
-    expect(
-      chooseSidebarOpenAppDestination("/assistant/", "conv-7"),
-    ).toBeNull();
+    expect(chooseSidebarOpenAppDestination("/assistant/", "conv-7")).toBeNull();
   });
 
   test("returns null on a conversation route (viewer mounts under ChatPage)", () => {
     expect(
-      chooseSidebarOpenAppDestination(
-        "/assistant/conversations/abc",
-        "conv-7",
-      ),
+      chooseSidebarOpenAppDestination("/assistant/conversations/abc", "conv-7"),
     ).toBeNull();
   });
 
@@ -205,9 +189,9 @@ describe("chooseSidebarOpenAppDestination", () => {
   });
 
   test("navigates to the chat index when off-chat with no active conversation", () => {
-    expect(
-      chooseSidebarOpenAppDestination("/assistant/home", null),
-    ).toBe("/assistant");
+    expect(chooseSidebarOpenAppDestination("/assistant/home", null)).toBe(
+      "/assistant",
+    );
   });
 
   test("inspector subpath counts as off-chat (viewer panel is not mounted under InspectPage)", () => {

@@ -26,9 +26,7 @@ function isManagedCreditsExhausted(
   return error.errorCategory.endsWith(MANAGED_CREDITS_EXHAUSTED_CATEGORY);
 }
 
-function isProviderBilling(
-  error: ChatErrorLike | null | undefined,
-): boolean {
+function isProviderBilling(error: ChatErrorLike | null | undefined): boolean {
   if (!error?.errorCategory) {
     return false;
   }

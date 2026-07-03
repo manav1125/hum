@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 
 import {
-    AlertCircle,
-    Check,
-    Clock,
-    ExternalLink,
-    Info,
-    Loader2,
+  AlertCircle,
+  Check,
+  Clock,
+  ExternalLink,
+  Info,
+  Loader2,
 } from "lucide-react";
 
 import { DetailCard } from "@/components/detail-card";
@@ -14,8 +14,8 @@ import { Button } from "@vellumai/design-library/components/button";
 import { SegmentControl } from "@vellumai/design-library/components/segment-control";
 
 import type {
-    ProviderCredentialsGuide,
-    ServiceMode,
+  ProviderCredentialsGuide,
+  ServiceMode,
 } from "@/domains/settings/ai/ai-types";
 
 interface ModeToggleProps {
@@ -69,7 +69,14 @@ export function ModeToggle({ mode, onChange }: ModeToggleProps) {
   );
 }
 
-export function ServiceCard({ id, title, subtitle, mode, onModeChange, children }: ServiceCardProps) {
+export function ServiceCard({
+  id,
+  title,
+  subtitle,
+  mode,
+  onModeChange,
+  children,
+}: ServiceCardProps) {
   return (
     <DetailCard
       id={id}
@@ -99,7 +106,12 @@ export function ResetButton({ onClick, filled = false }: ResetButtonProps) {
   );
 }
 
-export function ByoServiceCard({ id, title, subtitle, children }: ByoServiceCardProps) {
+export function ByoServiceCard({
+  id,
+  title,
+  subtitle,
+  children,
+}: ByoServiceCardProps) {
   return (
     <DetailCard id={id} title={title} subtitle={subtitle}>
       <div className="h-px bg-[var(--surface-active)]" />

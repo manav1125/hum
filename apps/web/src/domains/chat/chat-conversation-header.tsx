@@ -41,7 +41,9 @@ export function ChatConversationHeader({
   }
 
   const isReadonly = isChannelConversation(activeConversation);
-  const isPinned = activeConversation.isPinned || activeConversation.groupId === "system:pinned";
+  const isPinned =
+    activeConversation.isPinned ||
+    activeConversation.groupId === "system:pinned";
   const isArchived = activeConversation.archivedAt != null;
 
   return (
@@ -55,33 +57,42 @@ export function ChatConversationHeader({
       onArchive={() => onArchive(activeConversation)}
       onUnarchive={() => onUnarchive(activeConversation)}
       onAnalyze={
-        !isReadonly && headerSupplements?.onAnalyze && activeConversation.conversationId
+        !isReadonly &&
+        headerSupplements?.onAnalyze &&
+        activeConversation.conversationId
           ? () => headerSupplements.onAnalyze!(activeConversation)
           : undefined
       }
       onForkConversation={
-        !isReadonly && headerSupplements?.hasPersistedMessage && headerSupplements?.onForkConversation
+        !isReadonly &&
+        headerSupplements?.hasPersistedMessage &&
+        headerSupplements?.onForkConversation
           ? headerSupplements.onForkConversation
           : undefined
       }
       onOpenInNewWindow={
-        headerSupplements?.onOpenInNewWindow && activeConversation.conversationId
+        headerSupplements?.onOpenInNewWindow &&
+        activeConversation.conversationId
           ? () => headerSupplements.onOpenInNewWindow!(activeConversation)
           : undefined
       }
       onInspect={
-        showLlmInspector && headerSupplements?.onInspect && activeConversation.conversationId
+        showLlmInspector &&
+        headerSupplements?.onInspect &&
+        activeConversation.conversationId
           ? () => headerSupplements.onInspect!(activeConversation)
           : undefined
       }
       onCopyConversation={headerSupplements?.onCopyConversation ?? undefined}
       onRefresh={
-        headerSupplements?.onRefresh && activeConversation.conversationId != null
+        headerSupplements?.onRefresh &&
+        activeConversation.conversationId != null
           ? headerSupplements.onRefresh
           : undefined
       }
       onMarkUnread={
-        !isReadonly && activeConversation.hasUnseenLatestAssistantMessage === false
+        !isReadonly &&
+        activeConversation.hasUnseenLatestAssistantMessage === false
           ? () => onMarkUnread(activeConversation)
           : undefined
       }

@@ -17,7 +17,9 @@ export interface AutoTopUpFormProps {
   onCancel: () => void;
 }
 
-export type AutoTopUpFormErrors = Partial<Record<keyof AutoTopUpFormValues, string>>;
+export type AutoTopUpFormErrors = Partial<
+  Record<keyof AutoTopUpFormValues, string>
+>;
 
 const DEFAULTS: AutoTopUpFormValues = {
   threshold_usd: "100",
@@ -110,7 +112,9 @@ export function AutoTopUpForm({
   onCancel,
 }: AutoTopUpFormProps) {
   const [values, setValues] = useState<AutoTopUpFormValues>(initialValues);
-  const [touched, setTouched] = useState<Record<keyof AutoTopUpFormValues, boolean>>({
+  const [touched, setTouched] = useState<
+    Record<keyof AutoTopUpFormValues, boolean>
+  >({
     threshold_usd: false,
     amount_usd: false,
     monthly_cap_usd: false,
@@ -137,7 +141,11 @@ export function AutoTopUpForm({
     visibleAutoTopUpError(field, clientErrors, serverErrors, touched[field]);
 
   const handleSubmit = () => {
-    setTouched({ threshold_usd: true, amount_usd: true, monthly_cap_usd: true });
+    setTouched({
+      threshold_usd: true,
+      amount_usd: true,
+      monthly_cap_usd: true,
+    });
     // Validate against the COERCED submit values, not the focused-typing
     // snapshot. Otherwise an in-progress decimal like "12.9" can fail
     // hysteresis (12.9 >= 12.5) even though its truncated submit value

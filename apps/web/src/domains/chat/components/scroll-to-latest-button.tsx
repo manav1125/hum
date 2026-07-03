@@ -28,10 +28,7 @@ export function ScrollToLatestButton({
       className="text-[var(--content-emphasised)]"
     >
       {isStreaming && (
-        <span
-          aria-hidden
-          className="inline-flex items-center gap-[3px]"
-        >
+        <span aria-hidden className="inline-flex items-center gap-[3px]">
           {([-0.333, 0, -0.667] as const).map((delay, i) => (
             <span
               key={i}

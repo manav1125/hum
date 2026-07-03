@@ -73,8 +73,7 @@ export function useTranscriptData({
       sanitizedMessages.some((m) =>
         m.toolCalls?.some(
           (tc) =>
-            tc.pendingConfirmation?.requestId ===
-            pendingConfirmation.requestId,
+            tc.pendingConfirmation?.requestId === pendingConfirmation.requestId,
         ),
       ),
     [pendingConfirmation, sanitizedMessages],

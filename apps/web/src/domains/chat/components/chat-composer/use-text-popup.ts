@@ -103,7 +103,9 @@ export function useTextPopup<T>(config: TextPopupConfig<T>): TextPopup<T> {
 
   // Stable ref so dismiss always captures the text at invocation time.
   const textRef = useRef(text);
-  useLayoutEffect(() => { textRef.current = text; });
+  useLayoutEffect(() => {
+    textRef.current = text;
+  });
 
   const [, forceRender] = useState(0);
   const dismiss = useCallback(() => {

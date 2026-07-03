@@ -8,7 +8,15 @@
  * markup (covered by its own test file).
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "bun:test";
 import { act } from "react";
 import { cleanup, render } from "@testing-library/react";
 
@@ -18,13 +26,19 @@ mock.module("@/domains/chat/components/chat-markdown-message", () => ({
   ),
 }));
 
-mock.module("@/domains/chat/components/message-hover-actions/message-hover-actions", () => ({
-  MessageHoverActions: () => <div data-testid="hover-actions" />,
-}));
+mock.module(
+  "@/domains/chat/components/message-hover-actions/message-hover-actions",
+  () => ({
+    MessageHoverActions: () => <div data-testid="hover-actions" />,
+  }),
+);
 
-mock.module("@/domains/chat/components/chat-attachments/message-attachments", () => ({
-  MessageAttachments: () => <div data-testid="message-attachments" />,
-}));
+mock.module(
+  "@/domains/chat/components/chat-attachments/message-attachments",
+  () => ({
+    MessageAttachments: () => <div data-testid="message-attachments" />,
+  }),
+);
 
 mock.module("@/domains/chat/components/surfaces/surface-router", () => ({
   SurfaceRouter: () => <div data-testid="surface-router" />,
@@ -210,12 +224,7 @@ describe("Transcript — inline subagent rendering (PR 8)", () => {
     ];
 
     const { getAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     const cards = getAllByTestId("subagent-inline-card");
@@ -233,12 +242,7 @@ describe("Transcript — inline subagent rendering (PR 8)", () => {
     ];
 
     const { queryAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     expect(queryAllByTestId("subagent-inline-card").length).toBe(0);
@@ -251,12 +255,7 @@ describe("Transcript — inline subagent rendering (PR 8)", () => {
     ];
 
     const { container, getByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     // The subagent renders inline...
@@ -288,12 +287,7 @@ describe("Transcript — running-spawn inline cards (PR 8 fix)", () => {
     ];
 
     const { getAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     const cards = getAllByTestId("subagent-inline-card");
@@ -322,12 +316,7 @@ describe("Transcript — running-spawn inline cards (PR 8 fix)", () => {
     ];
 
     const { getAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     const cards = getAllByTestId("subagent-inline-card");
@@ -370,12 +359,7 @@ describe("Transcript — running-spawn inline cards (PR 8 fix)", () => {
     ];
 
     const { getAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     const cards = getAllByTestId("subagent-inline-card");
@@ -390,12 +374,7 @@ describe("Transcript — running-spawn inline cards (PR 8 fix)", () => {
     ];
 
     const { queryAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     expect(queryAllByTestId("subagent-inline-card").length).toBe(0);
@@ -442,12 +421,7 @@ describe("Transcript — toolUseId anchor (PR 3)", () => {
     ];
 
     const { getAllByTestId, container } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     const cards = getAllByTestId("subagent-inline-card");
@@ -515,12 +489,7 @@ describe("Transcript — cross-group claimed-set (fix-r1-c)", () => {
     ];
 
     const { getAllByTestId } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     const cards = getAllByTestId("subagent-inline-card");
@@ -550,7 +519,11 @@ describe("Transcript — live → reconcile card lifecycle (PR 6)", () => {
         {
           id: toolUseId,
           name: "skill_execute",
-          input: { tool: "subagent_spawn", label: "agent-0", objective: "do a thing" },
+          input: {
+            tool: "subagent_spawn",
+            label: "agent-0",
+            objective: "do a thing",
+          },
           // No `result` — daemon hasn't acked the spawn yet.
         },
       ],
@@ -560,12 +533,7 @@ describe("Transcript — live → reconcile card lifecycle (PR 6)", () => {
 
   function transcript(items: TranscriptItem[]) {
     return (
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />
     );
   }
 
@@ -687,12 +655,7 @@ describe("Transcript — legacy SubagentProgressCard mount is gone (PR 8)", () =
     ];
 
     const { container } = render(
-      <Transcript
-        items={items}
-        conversationId={null}
-        onSurfaceAction={noop}
-
-      />,
+      <Transcript items={items} conversationId={null} onSurfaceAction={noop} />,
     );
 
     // The legacy bottom card used this id. PR 8 removes that mount entirely;

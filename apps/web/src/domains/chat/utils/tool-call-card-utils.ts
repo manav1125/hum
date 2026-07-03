@@ -370,11 +370,17 @@ function computeDurationLabel(
 }
 
 function computeToolDurationMs(tc: ChatMessageToolCall): number | null {
-  return computeDurationMs(tc.startedAt ?? undefined, tc.completedAt ?? undefined);
+  return computeDurationMs(
+    tc.startedAt ?? undefined,
+    tc.completedAt ?? undefined,
+  );
 }
 
 function computeToolDurationLabel(tc: ChatMessageToolCall): string {
-  return computeDurationLabel(tc.startedAt ?? undefined, tc.completedAt ?? undefined);
+  return computeDurationLabel(
+    tc.startedAt ?? undefined,
+    tc.completedAt ?? undefined,
+  );
 }
 
 /** True for a tool call that is rendered as a step AND still in flight. */
@@ -427,9 +433,7 @@ function computeItemDurationMs(
 export function hasRunningItem(items: ToolCallCardItem[]): boolean {
   return items.some((item) =>
     item.kind === "thinking"
-      ? Boolean(item.text) &&
-        item.startedAt != null &&
-        item.completedAt == null
+      ? Boolean(item.text) && item.startedAt != null && item.completedAt == null
       : isRenderableRunningCall(item.toolCall),
   );
 }
@@ -728,7 +732,9 @@ function buildStepForToolCall(
       : buildWebFetchPlaceholderStep();
   }
   if (tc.name === "web_search" && typeof tc.result === "string") {
-    return buildWebSearchStepFromResultText(tc.result) ?? buildEmptyWebSearchStep();
+    return (
+      buildWebSearchStepFromResultText(tc.result) ?? buildEmptyWebSearchStep()
+    );
   }
   return buildEmptyWebSearchStep();
 }
@@ -745,8 +751,9 @@ export function computeToolCallCardDataFromItems(
   nowMs?: number,
 ): ToolCallCardData {
   const toolCalls = items
-    .filter((i): i is { kind: "toolCall"; toolCall: ChatMessageToolCall } =>
-      i.kind === "toolCall",
+    .filter(
+      (i): i is { kind: "toolCall"; toolCall: ChatMessageToolCall } =>
+        i.kind === "toolCall",
     )
     .map((i) => i.toolCall);
   // `subagent_spawn` calls are rendered inline by `SubagentInlineProgressCard`

@@ -1,4 +1,3 @@
-
 import {
   Fragment,
   forwardRef,
@@ -13,6 +12,7 @@ import { partitionLatestTurn } from "@/domains/chat/transcript/partition-latest-
 import type { TranscriptItem } from "@/domains/chat/transcript/types";
 
 import { LatestTurnRow } from "@/domains/chat/transcript/latest-turn-row";
+import { LiveTurnStatus } from "@/domains/chat/transcript/live-turn-status";
 import { PullRefreshSpinner } from "@/domains/chat/transcript/pull-refresh-spinner";
 import { TranscriptRow } from "@/domains/chat/transcript/transcript-row";
 import { PULL_THRESHOLD_PX } from "@/domains/chat/transcript/pull-to-refresh-utils";
@@ -39,11 +39,7 @@ export interface TranscriptProps {
   items: TranscriptItem[];
   conversationId: string | null;
   assistantDisplayName?: string | null;
-  onSurfaceAction: (
-    surfaceId: string,
-    action: string,
-    input?: unknown,
-  ) => void;
+  onSurfaceAction: (surfaceId: string, action: string, input?: unknown) => void;
   /** Callback for "Fork from here" from a message's hover actions. */
   onForkConversation?: (messageId: string) => void;
   /** Callback for "Inspect" from a message's hover actions. */
@@ -77,7 +73,9 @@ export interface TranscriptProps {
     toolCall: ChatMessageToolCall,
   ) => void | Promise<void>;
   /** Callback when the user picks "Allow & Create Rule" from the split button. */
-  onAllowAndCreateRule?: (toolCall: ChatMessageToolCall) => void | Promise<void>;
+  onAllowAndCreateRule?: (
+    toolCall: ChatMessageToolCall,
+  ) => void | Promise<void>;
   onOpenApp?: (appId: string) => void;
   onOpenDocument?: (documentSurfaceId: string) => void;
   /** Forwarded to inline app surfaces so they can render live preview iframes. */
@@ -107,6 +105,13 @@ export interface TranscriptProps {
    *  gated). When `false`, no spinner element renders and no touch
    *  listeners attach. */
   pullRefreshEnabled?: boolean;
+  /** Fallback activity hint for the live turn-status line rendered next to
+   *  the avatar. True when the conversation is known to be processing even
+   *  though the local turn reducer is idle (restored after a conversation
+   *  switch, or an external-channel turn streaming into this tab). The
+   *  status line always shows while the local turn phase is active
+   *  regardless of this flag. */
+  liveStatusFallbackActive?: boolean;
   /** Scroll coordinator state snapshot for debug API inspection. Optional —
    *  when omitted, getScrollState() falls back to defaults. `isPinned`
    *  is derived from scroll geometry inside `getScrollState()` rather
@@ -138,8 +143,13 @@ export interface TranscriptHandle {
 
 export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
   function Transcript(props, ref) {
-    const { items, conversationId, onPullRefresh, pullRefreshEnabled, ...rest } =
-      props;
+    const {
+      items,
+      conversationId,
+      onPullRefresh,
+      pullRefreshEnabled,
+      ...rest
+    } = props;
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const viewportMinHeight = useViewportMinHeight(scrollRef);
@@ -154,7 +164,6 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
       onRefresh: handlePullRefresh,
       enabled: pullEnabled,
     });
-
 
     const partition = useMemo(() => partitionLatestTurn(items), [items]);
 
@@ -195,8 +204,10 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
           return {
             distanceFromBottom,
             isPinned: distanceFromBottom <= PINNED_THRESHOLD_PX,
-            showScrollToLatest: rest.scrollCoordinatorState?.showScrollToLatest ?? false,
-            shouldLoadOlder: rest.scrollCoordinatorState?.shouldLoadOlder ?? false,
+            showScrollToLatest:
+              rest.scrollCoordinatorState?.showScrollToLatest ?? false,
+            shouldLoadOlder:
+              rest.scrollCoordinatorState?.shouldLoadOlder ?? false,
           };
         },
       }),
@@ -288,12 +299,28 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(
                   {...rowProps}
                 />
               )}
-              {rest.renderAvatar && (
+              {rest.renderAvatar ? (
                 <div
                   data-latest-assistant-avatar="true"
-                  className="flex justify-start pl-1 pt-3 pb-2"
+                  className="flex items-center justify-start gap-3 pl-1 pt-3 pb-2"
                 >
                   {rest.renderAvatar()}
+                  {/* Live "show our work" status line — persistent while a
+                   *  turn is active so the pulsing avatar is never the only
+                   *  signal. Renders null when idle. */}
+                  <LiveTurnStatus
+                    fallbackActive={rest.liveStatusFallbackActive}
+                  />
+                </div>
+              ) : (
+                /* No avatar configured — the status line still renders on
+                 *  its own row while a turn is active (`:empty` collapses
+                 *  the padded wrapper away when idle, preserving the legacy
+                 *  no-avatar layout). */
+                <div className="flex items-center justify-start pl-1 pt-3 pb-2 empty:hidden">
+                  <LiveTurnStatus
+                    fallbackActive={rest.liveStatusFallbackActive}
+                  />
                 </div>
               )}
               {partition.anchorMessage && (

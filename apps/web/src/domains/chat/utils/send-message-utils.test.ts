@@ -40,7 +40,11 @@ describe("clearPendingConfirmationsFromMessages", () => {
     const messages = [
       msg({
         toolCalls: [
-          { toolCallId: "tc-1", toolName: "run", pendingConfirmation: { title: "Confirm?" } } as never,
+          {
+            toolCallId: "tc-1",
+            toolName: "run",
+            pendingConfirmation: { title: "Confirm?" },
+          } as never,
         ],
       }),
     ];
@@ -64,7 +68,10 @@ describe("clearPendingConfirmationsFromMessages", () => {
 describe("dismissInteractiveSurfaces", () => {
   it("returns the same reference when no interactive surfaces exist", () => {
     const messages = [msg()];
-    const { updatedMessages, dismissedIds } = dismissInteractiveSurfaces(messages, messages);
+    const { updatedMessages, dismissedIds } = dismissInteractiveSurfaces(
+      messages,
+      messages,
+    );
     expect(updatedMessages).toBe(messages);
     expect(dismissedIds.size).toBe(0);
   });
@@ -76,9 +83,7 @@ describe("dismissInteractiveSurfaces", () => {
       completed: false,
       actions: [{ label: "Submit" }],
     };
-    const messagesWithSurface = [
-      msg({ surfaces: [surface as never] }),
-    ];
+    const messagesWithSurface = [msg({ surfaces: [surface as never] })];
     const { updatedMessages, dismissedIds } = dismissInteractiveSurfaces(
       messagesWithSurface,
       messagesWithSurface,
@@ -141,8 +146,14 @@ describe("completeSubmittedSurface", () => {
 
 describe("resolvePostError", () => {
   it("returns the known error message for a recognized code", () => {
-    const result = resolvePostError("rate_limit_exceeded", undefined, "fallback");
-    expect(result).toBe("Too many requests. Please wait a moment and try again.");
+    const result = resolvePostError(
+      "rate_limit_exceeded",
+      undefined,
+      "fallback",
+    );
+    expect(result).toBe(
+      "Too many requests. Please wait a moment and try again.",
+    );
   });
 
   it("returns the detail when the code is unrecognized", () => {

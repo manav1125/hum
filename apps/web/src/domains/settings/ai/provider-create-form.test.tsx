@@ -91,9 +91,8 @@ mock.module("@/domains/settings/ai/use-provider-credentials-list", () => ({
   }),
 }));
 
-const { ProviderCreateForm } = await import(
-  "@/domains/settings/ai/provider-create-form"
-);
+const { ProviderCreateForm } =
+  await import("@/domains/settings/ai/provider-create-form");
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,8 +1,5 @@
 import type { SubagentStatus } from "@vellumai/assistant-api";
-import {
-  statusColor,
-  statusLabel,
-} from "@/utils/subagent-status";
+import { statusColor, statusLabel } from "@/utils/subagent-status";
 
 export function StatusBadge({ status }: { status: SubagentStatus }) {
   const color = statusColor(status);

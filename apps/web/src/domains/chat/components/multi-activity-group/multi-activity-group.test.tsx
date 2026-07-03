@@ -42,13 +42,11 @@ const exportNames = [...sdkSource.matchAll(/^export const (\w+)/gm)].map(
 const sdkMock = Object.fromEntries(exportNames.map((n) => [n, sdkStub]));
 mock.module("@/generated/daemon/sdk.gen", () => sdkMock);
 
-const { MultiActivityGroup } = await import(
-  "@/domains/chat/components/multi-activity-group/multi-activity-group"
-);
+const { MultiActivityGroup } =
+  await import("@/domains/chat/components/multi-activity-group/multi-activity-group");
 const { useViewerStore } = await import("@/stores/viewer-store");
-const { useChatSessionStore } = await import(
-  "@/domains/chat/chat-session-store"
-);
+const { useChatSessionStore } =
+  await import("@/domains/chat/chat-session-store");
 
 afterEach(() => {
   cleanup();
@@ -78,16 +76,9 @@ function makeToolCall(
 
 function renderCard(
   toolCalls: ChatMessageToolCall[],
-  overrides: Partial<
-    ComponentProps<typeof MultiActivityGroup>
-  > = {},
+  overrides: Partial<ComponentProps<typeof MultiActivityGroup>> = {},
 ) {
-  return render(
-    <MultiActivityGroup
-      toolCalls={toolCalls}
-      {...overrides}
-    />,
-  );
+  return render(<MultiActivityGroup toolCalls={toolCalls} {...overrides} />);
 }
 
 describe("MultiActivityGroup — non-web tool group", () => {
@@ -100,7 +91,8 @@ describe("MultiActivityGroup — non-web tool group", () => {
         input: { command: "git status" },
       }),
     ];
-    const { getByRole, getByText, getByTestId, queryByTestId, queryByText } = renderCard(toolCalls);
+    const { getByRole, getByText, getByTestId, queryByTestId, queryByText } =
+      renderCard(toolCalls);
     // The unified card mounts the shared shell wrapper.
     expect(getByTestId("tool-progress-card-shell")).toBeTruthy();
     // The collapsed header carousels the live step: the tool's "Working"
@@ -165,9 +157,7 @@ describe("MultiActivityGroup — non-web tool group", () => {
     // Expanded: the header's loading dots are gone; the running phase node in
     // the timeline below carries the live indicator instead.
     expect(queryByTestId("tool-progress-card-status-indicator")).toBeNull();
-    expect(
-      getByTestId("phase-header-status-icon").children.length,
-    ).toBe(3);
+    expect(getByTestId("phase-header-status-icon").children.length).toBe(3);
   });
 
   test("keeps the finished checkmark in the header when expanded and complete", () => {
@@ -179,7 +169,9 @@ describe("MultiActivityGroup — non-web tool group", () => {
         input: { command: "git status" },
       }),
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByTestId } = renderCard(toolCalls);
     // Only the loading dots are dropped when expanded — the terminal checkmark
     // still summarises the outcome in the header above the timeline.
@@ -219,7 +211,9 @@ describe("MultiActivityGroup — tool step pill", () => {
         riskLevel: "high",
       }),
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByTestId } = renderCard(toolCalls);
     const pill = getByTestId("tool-step-pill");
     expect(pill).toBeTruthy();
@@ -247,7 +241,9 @@ describe("MultiActivityGroup — tool step pill", () => {
         // Keep the card expanded so the pill is in the DOM post-completion.
       }),
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByTestId } = renderCard(toolCalls);
     fireEvent.click(getByTestId("tool-step-pill"));
     const detail = useViewerStore.getState().activeToolDetail;
@@ -421,7 +417,9 @@ describe("MultiActivityGroup — subagent_spawn filtering", () => {
         input: { command: "ls" },
       }),
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByTestId, queryByText } = renderCard(toolCalls);
     expect(getByTestId("tool-progress-card-shell")).toBeTruthy();
     // Single non-spawn tool call → step pill suppressed (only fires at 2+).
@@ -441,7 +439,9 @@ describe("MultiActivityGroup — unknown-command nudge", () => {
         input: { command: "frobnicate" },
       }),
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByText } = renderCard(toolCalls, {
       unknownNudgeToolCallIds: new Set(["tc-1"]),
       onOpenRuleEditor: () => {},
@@ -467,7 +467,9 @@ describe("MultiActivityGroup — unknown-command nudge", () => {
       }),
     ];
     let captured: { toolName?: string; riskLevel?: string } = {};
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByText } = renderCard(toolCalls, {
       unknownNudgeToolCallIds: new Set(["tc-1"]),
       onOpenRuleEditor: (ctx) => {
@@ -490,7 +492,9 @@ describe("MultiActivityGroup — unknown-command nudge", () => {
       }),
     ];
     const dismissed: { value: string | null } = { value: null };
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByLabelText } = renderCard(toolCalls, {
       unknownNudgeToolCallIds: new Set(["tc-1"]),
       onOpenRuleEditor: () => {},
@@ -511,7 +515,9 @@ describe("MultiActivityGroup — unknown-command nudge", () => {
         input: { command: "ls" },
       }),
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { queryByText } = renderCard(toolCalls, {
       unknownNudgeToolCallIds: new Set([]),
       onOpenRuleEditor: () => {},
@@ -559,9 +565,7 @@ describe("MultiActivityGroup — expansion derived from state", () => {
       }),
     ];
     const { getByRole, rerender } = render(
-      <MultiActivityGroup
-        toolCalls={running}
-      />,
+      <MultiActivityGroup toolCalls={running} />,
     );
     expect(getByRole("button", { name: /expand steps/i })).toBeTruthy();
 
@@ -575,11 +579,7 @@ describe("MultiActivityGroup — expansion derived from state", () => {
         completedAt: 1000,
       }),
     ];
-    rerender(
-      <MultiActivityGroup
-        toolCalls={completed}
-      />,
-    );
+    rerender(<MultiActivityGroup toolCalls={completed} />);
     expect(getByRole("button", { name: /expand steps/i })).toBeTruthy();
   });
 
@@ -593,9 +593,7 @@ describe("MultiActivityGroup — expansion derived from state", () => {
       }),
     ];
     const { getByRole, rerender } = render(
-      <MultiActivityGroup
-        toolCalls={running}
-      />,
+      <MultiActivityGroup toolCalls={running} />,
     );
     // Card mounts collapsed; user expands it manually.
     fireEvent.click(getByRole("button", { name: /expand steps/i }));
@@ -612,11 +610,7 @@ describe("MultiActivityGroup — expansion derived from state", () => {
         completedAt: 1000,
       }),
     ];
-    rerender(
-      <MultiActivityGroup
-        toolCalls={completed}
-      />,
-    );
+    rerender(<MultiActivityGroup toolCalls={completed} />);
     expect(getByRole("button", { name: /collapse steps/i })).toBeTruthy();
   });
 
@@ -624,7 +618,9 @@ describe("MultiActivityGroup — expansion derived from state", () => {
     // Simulates a user who collapsed a running card; after the turn finishes
     // the card remounts in `complete` (e.g. latest-turn → history transition)
     // and must respect the persisted collapse decision.
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", false]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", false]]),
+    });
     const toolCalls = [
       makeToolCall({
         id: "tc-1",
@@ -635,16 +631,14 @@ describe("MultiActivityGroup — expansion derived from state", () => {
         completedAt: 1000,
       }),
     ];
-    const { getByRole } = render(
-      <MultiActivityGroup
-        toolCalls={toolCalls}
-      />,
-    );
+    const { getByRole } = render(<MultiActivityGroup toolCalls={toolCalls} />);
     expect(getByRole("button", { name: /expand steps/i })).toBeTruthy();
   });
 
   test("persisted expanded=true overrides the collapsed default on completion", () => {
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const toolCalls = [
       makeToolCall({
         id: "tc-1",
@@ -655,16 +649,14 @@ describe("MultiActivityGroup — expansion derived from state", () => {
         completedAt: 1000,
       }),
     ];
-    const { getByRole } = render(
-      <MultiActivityGroup
-        toolCalls={toolCalls}
-      />,
-    );
+    const { getByRole } = render(<MultiActivityGroup toolCalls={toolCalls} />);
     expect(getByRole("button", { name: /collapse steps/i })).toBeTruthy();
   });
 
   test("persisted expanded=true overrides the collapsed default while loading", () => {
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const toolCalls = [
       makeToolCall({
         id: "tc-1",
@@ -695,7 +687,9 @@ describe("MultiActivityGroup — expansion derived from state", () => {
   });
 
   test("persisted collapse overrides autoExpand", () => {
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", false]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", false]]),
+    });
     const toolCalls = [
       makeToolCall({
         id: "tc-1",
@@ -720,19 +714,11 @@ describe("MultiActivityGroup — expansion derived from state", () => {
       }),
     ];
     const { getByRole, rerender } = render(
-      <MultiActivityGroup
-        toolCalls={toolCalls}
-        autoExpand
-      />,
+      <MultiActivityGroup toolCalls={toolCalls} autoExpand />,
     );
     expect(getByRole("button", { name: /collapse steps/i })).toBeTruthy();
 
-    rerender(
-      <MultiActivityGroup
-        toolCalls={toolCalls}
-        autoExpand={false}
-      />,
-    );
+    rerender(<MultiActivityGroup toolCalls={toolCalls} autoExpand={false} />);
     expect(getByRole("button", { name: /expand steps/i })).toBeTruthy();
   });
 });
@@ -761,7 +747,9 @@ describe("MultiActivityGroup — lone web group error chrome", () => {
       }),
     ];
     // Expand so the error row is in the DOM.
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByTestId, getAllByText } = renderCard(toolCalls);
     const link = getByTestId("inline-web-link");
     expect(link.className).toContain("text-[var(--system-negative-strong)]");
@@ -807,7 +795,9 @@ describe("MultiActivityGroup — mixed group web_search_error rendering", () => 
       }),
     ];
     // Force expand so the step body is in the DOM regardless of state.
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByTestId, getByText } = renderCard(toolCalls);
     expect(getByTestId("tool-progress-card-shell")).toBeTruthy();
     expect(getByTestId("web-search-error-chip")).toBeTruthy();
@@ -829,7 +819,9 @@ describe("MultiActivityGroup — ordered thinking items", () => {
       { kind: "thinking", text: "Let me check the directory first." },
       { kind: "toolCall", toolCall: toolCalls[0]! },
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByText } = renderCard(toolCalls, { items });
     // The thinking text appears as a separate step row in the expanded body.
     expect(getByText("Let me check the directory first.")).toBeTruthy();
@@ -907,7 +899,9 @@ describe("MultiActivityGroup — thinking pill", () => {
       { kind: "thinking", text: LONG_THINKING },
       { kind: "toolCall", toolCall: toolCalls[0]! },
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByLabelText } = renderCard(toolCalls, { items });
     // The thinking step renders as a clickable pill (a <button>), not a
     // plain row. Scoped by its aria-label so it isn't confused with the
@@ -935,7 +929,9 @@ describe("MultiActivityGroup — thinking pill", () => {
       { kind: "thinking", text: LONG_THINKING },
       { kind: "toolCall", toolCall: toolCalls[0]! },
     ];
-    useChatSessionStore.setState({ expandedCardIds: new Map([["tc-1", true]]) });
+    useChatSessionStore.setState({
+      expandedCardIds: new Map([["tc-1", true]]),
+    });
     const { getByLabelText } = renderCard(toolCalls, { items });
     fireEvent.click(getByLabelText("View thinking"));
     const detail = useViewerStore.getState().activeToolDetail;

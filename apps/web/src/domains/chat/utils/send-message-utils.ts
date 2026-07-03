@@ -5,16 +5,29 @@
  * `useSendMessage` and suitable for direct unit testing.
  */
 
-import { isSurfaceInteractive, type DisplayMessage } from "@/domains/chat/types/types";
+import {
+  isSurfaceInteractive,
+  type DisplayMessage,
+} from "@/domains/chat/types/types";
 
-import { attachConfirmationToToolCall, ERROR_MESSAGES } from "@/domains/chat/utils/chat";
+import {
+  attachConfirmationToToolCall,
+  ERROR_MESSAGES,
+} from "@/domains/chat/utils/chat";
 import {
   filterMessageSurfaces,
   mapMessageSurfaces,
 } from "@/domains/chat/utils/map-message-surfaces";
 import { mapMessageToolCalls } from "@/domains/chat/utils/map-message-tool-calls";
-import type { PendingConfirmationState, PendingSecretState } from "@/domains/chat/types";
-import type { AllowlistOption, DirectoryScopeOption, ScopeOption } from "@/types/interaction-ui-types";
+import type {
+  PendingConfirmationState,
+  PendingSecretState,
+} from "@/domains/chat/types";
+import type {
+  AllowlistOption,
+  DirectoryScopeOption,
+  ScopeOption,
+} from "@/types/interaction-ui-types";
 
 const OPTIMISTIC_COMPLETION_SURFACE_TYPES = [
   "choice",
@@ -67,9 +80,7 @@ export function clearPendingConfirmationsFromMessages(
   let anyChanged = false;
   const updated = prev.map((msg) => {
     const next = mapMessageToolCalls(msg, (tc) =>
-      tc.pendingConfirmation
-        ? { ...tc, pendingConfirmation: undefined }
-        : tc,
+      tc.pendingConfirmation ? { ...tc, pendingConfirmation: undefined } : tc,
     );
     if (next !== msg) {
       anyChanged = true;
@@ -128,7 +139,7 @@ export function completeSubmittedSurface(
             completed: true,
             completionSummary: isCancellation
               ? "Cancelled"
-              : replyText ?? matchedAction?.label ?? undefined,
+              : (replyText ?? matchedAction?.label ?? undefined),
           }
         : s,
     );
@@ -179,7 +190,9 @@ function optionalTypedArray<T>(v: unknown): T[] | undefined {
   return Array.isArray(v) ? (v as T[]) : undefined;
 }
 
-export function parsePendingSecretState(raw: Record<string, unknown>): PendingSecretState {
+export function parsePendingSecretState(
+  raw: Record<string, unknown>,
+): PendingSecretState {
   return {
     requestId: typeof raw.requestId === "string" ? raw.requestId : "",
     label: optionalString(raw.label),
@@ -192,9 +205,10 @@ export function parsePendingSecretState(raw: Record<string, unknown>): PendingSe
   };
 }
 
-export function parsePendingConfirmationData(
-  raw: Record<string, unknown>,
-): { confData: Parameters<typeof attachConfirmationToToolCall>[1]; state: PendingConfirmationState } {
+export function parsePendingConfirmationData(raw: Record<string, unknown>): {
+  confData: Parameters<typeof attachConfirmationToToolCall>[1];
+  state: PendingConfirmationState;
+} {
   const confData = {
     requestId: typeof raw.requestId === "string" ? raw.requestId : "",
     title: optionalString(raw.title),
@@ -204,7 +218,9 @@ export function parsePendingConfirmationData(
     riskReason: optionalString(raw.riskReason),
     allowlistOptions: optionalTypedArray<AllowlistOption>(raw.allowlistOptions),
     scopeOptions: optionalTypedArray<ScopeOption>(raw.scopeOptions),
-    directoryScopeOptions: optionalTypedArray<DirectoryScopeOption>(raw.directoryScopeOptions),
+    directoryScopeOptions: optionalTypedArray<DirectoryScopeOption>(
+      raw.directoryScopeOptions,
+    ),
     persistentDecisionsAllowed: optionalBoolean(raw.persistentDecisionsAllowed),
     input: optionalRecord(raw.input),
     toolUseId: optionalString(raw.toolUseId),

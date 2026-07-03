@@ -748,7 +748,7 @@ export class WorkspaceGitService {
             updated += "\n";
           }
           updated +=
-            "# Vellum runtime state (auto-added)\n" +
+            "# Cue runtime state (auto-added)\n" +
             missingRules.join("\n") +
             "\n";
         }

@@ -28,10 +28,12 @@ const toastErrorMock = mock(
 );
 
 mock.module("@/domains/chat/components/voice-input-button", () => ({
-  VoiceInputButton: forwardRef<unknown, VoiceInputButtonProps>((props, _ref) => {
-    latestVoiceInputProps = props;
-    return null;
-  }),
+  VoiceInputButton: forwardRef<unknown, VoiceInputButtonProps>(
+    (props, _ref) => {
+      latestVoiceInputProps = props;
+      return null;
+    },
+  ),
 }));
 
 mock.module("@/domains/chat/hooks/use-dictation-overlay-sync", () => ({
@@ -82,7 +84,9 @@ const { useViewerStore } = await import("@/stores/viewer-store");
 const renderBridge = (assistantId: string | null = "assistant-1") => {
   render(<GlobalPushToTalkBridge assistantId={assistantId} />);
   if (!latestVoiceInputProps) {
-    throw new Error("Expected GlobalPushToTalkBridge to mount VoiceInputButton");
+    throw new Error(
+      "Expected GlobalPushToTalkBridge to mount VoiceInputButton",
+    );
   }
   return latestVoiceInputProps;
 };

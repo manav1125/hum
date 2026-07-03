@@ -10,7 +10,9 @@ export const CUSTOM_SENTINEL = "__custom__";
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-export function isDraftActive(d: CallSiteOverrideDraft | null | undefined): boolean {
+export function isDraftActive(
+  d: CallSiteOverrideDraft | null | undefined,
+): boolean {
   if (!d) return false;
   return !!(d.profile || d.provider || d.model);
 }

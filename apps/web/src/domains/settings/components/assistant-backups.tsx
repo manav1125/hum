@@ -2,10 +2,10 @@ import { AlertTriangle, Clock, Loader2, RotateCcw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import {
-    type AssistantBackup,
-    createAssistantBackup,
-    listAssistantBackups,
-    restoreAssistantBackup,
+  type AssistantBackup,
+  createAssistantBackup,
+  listAssistantBackups,
+  restoreAssistantBackup,
 } from "@/assistant/api";
 import { Button } from "@vellumai/design-library/components/button";
 import { Card } from "@vellumai/design-library/components/card";

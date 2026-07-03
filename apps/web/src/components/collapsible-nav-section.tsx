@@ -3,9 +3,9 @@ import { type ReactNode, type Ref } from "react";
 
 import { ContextMenu } from "@vellumai/design-library";
 import {
-    Collapsible,
-    type CollapsibleItemProps,
-    type CollapsibleRootProps,
+  Collapsible,
+  type CollapsibleItemProps,
+  type CollapsibleRootProps,
 } from "@vellumai/design-library/components/collapsible";
 import { cn } from "@vellumai/design-library/utils/cn";
 
@@ -45,11 +45,7 @@ function CollapsibleNavSectionRoot({
   ...props
 }: CollapsibleRootProps) {
   return (
-    <Collapsible.Root
-      ref={ref}
-      className={cn("gap-2", className)}
-      {...props}
-    />
+    <Collapsible.Root ref={ref} className={cn("gap-2", className)} {...props} />
   );
 }
 
@@ -57,8 +53,10 @@ function CollapsibleNavSectionRoot({
 // Section
 // ---------------------------------------------------------------------------
 
-export interface CollapsibleNavSectionSectionProps
-  extends Omit<CollapsibleItemProps, "children"> {
+export interface CollapsibleNavSectionSectionProps extends Omit<
+  CollapsibleItemProps,
+  "children"
+> {
   value: string;
   icon?: LucideIcon;
   label: string;
@@ -82,7 +80,10 @@ function CollapsibleNavSectionSection({
   ...itemProps
 }: CollapsibleNavSectionSectionProps) {
   const headerEl = (
-    <div data-slot="collapsible-nav-section-header" className="flex items-center justify-between">
+    <div
+      data-slot="collapsible-nav-section-header"
+      className="flex items-center justify-between"
+    >
       <Collapsible.Trigger
         className={cn(
           "group h-[28px] max-md:h-auto gap-[4px] max-md:gap-[8px]",
@@ -144,7 +145,9 @@ function CollapsibleNavSectionSection({
             {contextMenuContent}
           </ContextMenu.Content>
         </ContextMenu.Root>
-      ) : headerEl}
+      ) : (
+        headerEl
+      )}
       <Collapsible.Content className={contentClassName}>
         {children}
       </Collapsible.Content>

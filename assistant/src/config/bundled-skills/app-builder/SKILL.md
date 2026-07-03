@@ -86,7 +86,7 @@ Every app works phone (~360px) to desktop (~1400px+). The `<turn_context>` block
 
 Full detail when reachable: `{baseDir}/references/RESPONSIVE.md`.
 
-A design-system CSS and widget library are **auto-injected** (inside a `@layer`, so your own styles always win). Use the `--v-*` variables and `.v-*` classes below — they switch light/dark automatically, no manual dark-mode CSS needed. **Always use `window.vellum.widgets.*` chart functions** instead of hand-coded SVG/CSS charts.
+A design-system CSS and the built-in Cue widget library are **auto-injected** (inside a `@layer`, so your own styles always win). Use the `--v-*` variables and `.v-*` classes below — they switch light/dark automatically, no manual dark-mode CSS needed. **Always use `window.vellum.widgets.*` chart functions** instead of hand-coded SVG/CSS charts. (`vellum` is the legacy JS global name — keep it exactly as-is in code, but when talking to the user call this the "Cue widget library", never "Vellum".)
 
 **Design tokens** (use these, don't invent hex values):
 

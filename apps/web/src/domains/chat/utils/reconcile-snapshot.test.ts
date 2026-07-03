@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
-const { reconcileSnapshot } = await import("@/domains/chat/utils/reconcile-snapshot");
+const { reconcileSnapshot } =
+  await import("@/domains/chat/utils/reconcile-snapshot");
 
-const { makeServerMessage, messageText, textBody, wireTextBody, wireTimestamp } =
-  await import("@/domains/chat/utils/message-test-helpers");
+const {
+  makeServerMessage,
+  messageText,
+  textBody,
+  wireTextBody,
+  wireTimestamp,
+} = await import("@/domains/chat/utils/message-test-helpers");
 
 import type { DisplayMessage } from "@/domains/chat/types/types";
 
@@ -22,7 +28,12 @@ describe("reconcileSnapshot", () => {
      */
     // GIVEN the stream has carried the conversation to frontier 10
     const local = [
-      makeLocal({ id: "a1", role: "assistant", ...textBody("AAA"), timestamp: 1000 }),
+      makeLocal({
+        id: "a1",
+        role: "assistant",
+        ...textBody("AAA"),
+        timestamp: 1000,
+      }),
     ];
     const server = [
       makeServerMessage({

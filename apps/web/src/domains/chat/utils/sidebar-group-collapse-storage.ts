@@ -10,11 +10,7 @@
 import { parseStringArray } from "@/domains/chat/utils/storage-validators";
 import { createKeyedStorageAccessor } from "@/utils/typed-storage";
 
-const OPEN_CATEGORY_KEYS = new Set([
-  "scheduled",
-  "background",
-  "slack",
-]);
+const OPEN_CATEGORY_KEYS = new Set(["scheduled", "background", "slack"]);
 
 const categoriesStorage = createKeyedStorageAccessor<string[]>({
   keyFn: (assistantId) => `vellum:sidebar-open-categories:${assistantId}`,
@@ -34,9 +30,9 @@ const customGroupsStorage = createKeyedStorageAccessor<string[]>({
 
 /** Load open built-in sidebar category keys, filtering stale values. */
 export function loadOpenCategories(assistantId: string): string[] {
-  return categoriesStorage.load(assistantId).filter(
-    (category) => OPEN_CATEGORY_KEYS.has(category),
-  );
+  return categoriesStorage
+    .load(assistantId)
+    .filter((category) => OPEN_CATEGORY_KEYS.has(category));
 }
 
 export function saveOpenCategories(

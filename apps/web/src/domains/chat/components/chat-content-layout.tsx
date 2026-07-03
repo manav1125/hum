@@ -18,7 +18,10 @@ import { AnimatedRightDrawer } from "@/domains/chat/components/animated-right-dr
 import { LazyBoundary } from "@/components/lazy-boundary";
 import { AppViewerContainer } from "@/components/app-viewer-container";
 import { DocumentViewerContainer } from "@/domains/chat/components/document-viewer-container";
-import { ChatMainPanel, type ChatMainPanelProps } from "@/domains/chat/components/chat-route-content";
+import {
+  ChatMainPanel,
+  type ChatMainPanelProps,
+} from "@/domains/chat/components/chat-route-content";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useDeployStore } from "@/stores/deploy-store";
@@ -47,7 +50,8 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   const mainView = useViewerStore.use.mainView();
   const openedAppState = useViewerStore.use.openedAppState();
   const openedDocumentState = useViewerStore.use.openedDocumentState();
-  const editingConversationId = useConversationStore.use.editingConversationId();
+  const editingConversationId =
+    useConversationStore.use.editingConversationId();
   const activeSubagentId = useViewerStore.use.activeSubagentId();
   const activeToolDetail = useViewerStore.use.activeToolDetail();
   const closeToolDetail = useViewerStore.use.closeToolDetail();
@@ -83,13 +87,17 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   const handleShareApp = useCallback(() => {
     const app = useViewerStore.getState().openedAppState;
     const aid = useResolvedAssistantsStore.getState().activeAssistantId;
-    if (app && aid) void useDeployStore.getState().shareApp(aid, app.appId, app.name);
+    if (app && aid)
+      void useDeployStore.getState().shareApp(aid, app.appId, app.name);
   }, []);
 
   const handleDeployApp = useCallback(() => {
     const app = useViewerStore.getState().openedAppState;
     const aid = useResolvedAssistantsStore.getState().activeAssistantId;
-    if (app && aid) void useDeployStore.getState().deployApp(aid, app.appId, app.name, app.html);
+    if (app && aid)
+      void useDeployStore
+        .getState()
+        .deployApp(aid, app.appId, app.name, app.html);
   }, []);
 
   const handleCloseDocument = useCallback(() => {
@@ -101,7 +109,8 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   }, []);
 
   const onStopSubagent = useCallback(
-    (subagentId: string) => void useSubagentStore.getState().abortSubagent(subagentId),
+    (subagentId: string) =>
+      void useSubagentStore.getState().abortSubagent(subagentId),
     [],
   );
 
@@ -213,7 +222,12 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   const chatContent = <ChatMainPanel {...props} />;
 
   // Document viewer side panel
-  if (mainView === "document" && !isMobile && openedDocumentState && assistantId) {
+  if (
+    mainView === "document" &&
+    !isMobile &&
+    openedDocumentState &&
+    assistantId
+  ) {
     return (
       <ResizablePanel
         storageKey="documentPanelWidth"
@@ -276,7 +290,8 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   // drawer width 0 → target while the chat reflows in sync. On mobile the panel
   // is shown via the portal-based MobileToolDetailOverlay instead, so the
   // drawer stays closed (`open=false`) and the chat fills the width.
-  const toolDetailOpen = mainView === "tool-detail" && !!activeToolDetail && !isMobile;
+  const toolDetailOpen =
+    mainView === "tool-detail" && !!activeToolDetail && !isMobile;
   return (
     <AnimatedRightDrawer
       storageKey="toolDetailDrawerWidth"
@@ -291,7 +306,9 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
             <ToolDetailPanel
               detail={activeToolDetail}
               onClose={closeToolDetail}
-              onRiskBadgeClick={() => useViewerStore.getState().requestRuleEditorForActiveTool()}
+              onRiskBadgeClick={() =>
+                useViewerStore.getState().requestRuleEditorForActiveTool()
+              }
             />
           </LazyBoundary>
         ) : null

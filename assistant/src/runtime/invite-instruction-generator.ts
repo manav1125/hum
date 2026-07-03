@@ -55,6 +55,10 @@ export async function generateInviteInstruction(params: {
         return "Slack";
       case "phone":
         return "Voice";
+      case "vellum":
+        // "vellum" is the internal channel id for the Cue app — never show
+        // the raw id capitalized as a brand name.
+        return "Cue";
       default:
         return (
           params.channelType.charAt(0).toUpperCase() +

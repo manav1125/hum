@@ -1,4 +1,7 @@
-import type { MachineSizeEnum, MachineTierEnum } from "@/generated/api/types.gen";
+import type {
+  MachineSizeEnum,
+  MachineTierEnum,
+} from "@/generated/api/types.gen";
 import { TIER_TO_SIZES } from "@/lib/billing/machine-sizes";
 
 export const DOMAIN_EXIT_DELAY_MS = 800;
@@ -23,8 +26,7 @@ const ONBOARDING_MACHINE_DRF_FIELD_KEYS = [
 
 export const ONBOARDING_ERROR_CODE_MESSAGES: Record<string, string> = {
   subdomain_taken: "That subdomain is already taken. Try another.",
-  assistant_already_has_domain:
-    "Your assistant already has a custom domain.",
+  assistant_already_has_domain: "Your assistant already has a custom domain.",
   no_assistant_to_attach_domain:
     "We couldn't find an assistant to attach this domain to.",
   exceeds_machine_tier: "That machine size isn't available on your plan.",

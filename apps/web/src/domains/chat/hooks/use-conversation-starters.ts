@@ -24,7 +24,8 @@ const POLL_INTERVAL_MS = 3_000;
 function shouldPoll(
   status: ConversationStartersStatus | undefined,
 ): number | false {
-  if (status === "generating" || status === "refreshing") return POLL_INTERVAL_MS;
+  if (status === "generating" || status === "refreshing")
+    return POLL_INTERVAL_MS;
   return false;
 }
 

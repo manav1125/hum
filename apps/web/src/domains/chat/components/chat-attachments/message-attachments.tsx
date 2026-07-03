@@ -1,4 +1,3 @@
-
 import type { FC } from "react";
 
 import type { DisplayAttachment } from "@/domains/chat/types/types";

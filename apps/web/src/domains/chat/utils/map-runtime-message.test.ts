@@ -8,7 +8,9 @@ import {
   messageText,
   wireTextBody,
 } from "@/domains/chat/utils/message-test-helpers";
-function makeMessage(overrides: Partial<ConversationMessage>): ConversationMessage {
+function makeMessage(
+  overrides: Partial<ConversationMessage>,
+): ConversationMessage {
   return makeServerMessage({ id: "msg-1", role: "assistant", ...overrides });
 }
 

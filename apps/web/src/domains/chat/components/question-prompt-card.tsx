@@ -1,18 +1,17 @@
-
 import {
-    ArrowRight,
-    Check,
-    ChevronLeft,
-    ChevronRight,
-    Pencil,
-    X,
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  X,
 } from "lucide-react";
 import {
-    type KeyboardEvent as ReactKeyboardEvent,
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 
 import type { QuestionResponseEntry } from "@/domains/chat/api/event-types";
@@ -83,9 +82,7 @@ export function QuestionPromptBody({
   // malformed payloads. Warn so QA notices, but still render something.
   useEffect(() => {
     if (entries.length === 0) {
-      console.warn(
-        "[QuestionPromptCard] received zero entries; expected ≥1",
-      );
+      console.warn("[QuestionPromptCard] received zero entries; expected ≥1");
     }
   }, [entries.length]);
 
@@ -93,13 +90,15 @@ export function QuestionPromptBody({
   const [draftResponses, setDraftResponses] = useState<
     Record<string, QuestionResponseEntry>
   >({});
-  const [freeTextDraft, setFreeTextDraft] = useState<Record<string, string>>({});
+  const [freeTextDraft, setFreeTextDraft] = useState<Record<string, string>>(
+    {},
+  );
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isBatched = entries.length > 1;
   const currentEntry = entries[currentIndex];
   const currentFreeText = currentEntry
-    ? freeTextDraft[currentEntry.id] ?? ""
+    ? (freeTextDraft[currentEntry.id] ?? "")
     : "";
   const hasFreeText = currentFreeText.trim().length > 0;
 
@@ -213,9 +212,7 @@ export function QuestionPromptBody({
     },
   );
 
-  const handleInputKeyDown = (
-    event: ReactKeyboardEvent<HTMLInputElement>,
-  ) => {
+  const handleInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
       event.preventDefault();
       handleSubmitFreeText();
@@ -414,7 +411,6 @@ export function QuestionPromptBody({
           </Typography>
         )}
       </div>
-
     </>
   );
 }

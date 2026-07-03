@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { brandLabel, formatBrandLast4 } from "@/domains/settings/utils/payment-method-brand";
 import {
-    organizationsBillingAutoTopUpDisableCreateMutation,
-    organizationsBillingAutoTopUpRetrieveOptions,
-    organizationsBillingAutoTopUpRetrieveQueryKey,
-    organizationsBillingAutoTopUpRetrieveSetQueryData,
-    organizationsBillingAutoTopUpUpdateMutation,
+  brandLabel,
+  formatBrandLast4,
+} from "@/domains/settings/utils/payment-method-brand";
+import {
+  organizationsBillingAutoTopUpDisableCreateMutation,
+  organizationsBillingAutoTopUpRetrieveOptions,
+  organizationsBillingAutoTopUpRetrieveQueryKey,
+  organizationsBillingAutoTopUpRetrieveSetQueryData,
+  organizationsBillingAutoTopUpUpdateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { AutoTopUpConfigResponse } from "@/generated/api/types.gen";
 import { Button } from "@vellumai/design-library/components/button";
@@ -16,8 +19,8 @@ import { Toggle } from "@vellumai/design-library/components/toggle";
 
 import { AutoTopUpDisableConfirm } from "@/domains/settings/components/auto-top-up-disable-confirm";
 import {
-    AutoTopUpForm,
-    type AutoTopUpFormValues,
+  AutoTopUpForm,
+  type AutoTopUpFormValues,
 } from "@/domains/settings/components/auto-top-up-form";
 
 type Mode = "view" | "form";
@@ -82,7 +85,9 @@ export const DISABLED_CONFIG: AutoTopUpConfigResponse = {
  * per field. Exported so unit tests can exercise the parsing without
  * rendering the card.
  */
-export function extractAutoTopUpServerErrors(err: unknown): Record<string, string> {
+export function extractAutoTopUpServerErrors(
+  err: unknown,
+): Record<string, string> {
   if (!err || typeof err !== "object" || Array.isArray(err)) return {};
   const out: Record<string, string> = {};
   for (const [key, messages] of Object.entries(err)) {
@@ -130,7 +135,9 @@ export function formatSavedPaymentMethodLine(args: {
 export function AutoTopUpCard() {
   const queryClient = useQueryClient();
   const configQuery = useQuery(organizationsBillingAutoTopUpRetrieveOptions());
-  const updateMutation = useMutation(organizationsBillingAutoTopUpUpdateMutation());
+  const updateMutation = useMutation(
+    organizationsBillingAutoTopUpUpdateMutation(),
+  );
   const disableMutation = useMutation(
     organizationsBillingAutoTopUpDisableCreateMutation(),
   );
@@ -393,8 +400,8 @@ export function AutoTopUpCard() {
                   className="mt-0.5 text-body-small-default text-[var(--content-tertiary)]"
                   data-testid="auto-top-up-cap-progress"
                 >
-                  {formatUsdShort(config.current_month_credits_purchased_usd)} of{" "}
-                  {formatUsdShort(config.monthly_cap_usd)} this month
+                  {formatUsdShort(config.current_month_credits_purchased_usd)}{" "}
+                  of {formatUsdShort(config.monthly_cap_usd)} this month
                 </p>
               )}
             </div>

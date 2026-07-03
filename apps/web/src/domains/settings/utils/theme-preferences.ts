@@ -10,10 +10,7 @@ interface NormalizeThemeOptions {
 
 function normalizeThemePreference(
   value: string | null | undefined,
-  {
-    velvetEnabled,
-    disabledVelvetFallback = "dark",
-  }: NormalizeThemeOptions,
+  { velvetEnabled, disabledVelvetFallback = "dark" }: NormalizeThemeOptions,
 ): ThemePreference {
   if (value === "light" || value === "dark" || value === "system") {
     return value;

@@ -12,9 +12,16 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useNavigate } from "react-router";
 
-import { DiskPressureBanner, type DiskPressureBannerMode } from "@/components/disk-pressure-banner";
+import {
+  DiskPressureBanner,
+  type DiskPressureBannerMode,
+} from "@/components/disk-pressure-banner";
 import type { UseDiskPressureMonitorResult } from "@/assistant/use-disk-pressure-monitor";
-import { getLocalBool, removeLocalSetting, setLocalBool } from "@/utils/local-settings";
+import {
+  getLocalBool,
+  removeLocalSetting,
+  setLocalBool,
+} from "@/utils/local-settings";
 import { routes } from "@/utils/routes";
 
 // ---------------------------------------------------------------------------
@@ -85,9 +92,13 @@ export function DiskPressureBannerSlot({
   }, [diskPressure.status?.state, warningDismissed, dismissedKey]);
 
   if (!diskPressure.status) return null;
-  const mode = diskPressure.mode === "inactive" ? null : (diskPressure.mode as DiskPressureBannerMode | null);
+  const mode =
+    diskPressure.mode === "inactive"
+      ? null
+      : (diskPressure.mode as DiskPressureBannerMode | null);
   if (!mode) return null;
-  if (mode === "warning" && (warningDismissed || warningSuppressed)) return null;
+  if (mode === "warning" && (warningDismissed || warningSuppressed))
+    return null;
 
   return (
     <DiskPressureBanner
@@ -97,8 +108,14 @@ export function DiskPressureBannerSlot({
       acknowledgeError={diskPressure.acknowledgeError?.message ?? null}
       onAcknowledge={() => void diskPressure.acknowledge()}
       onDismissWarning={dismissWarning}
-      onReviewWorkspaceData={() => void navigate(`${routes.workspace}?sort=size`)}
-      onUpgradeStorage={assistantStateKind === "active" ? () => void navigate(`${routes.settings.billing}?adjust_plan=1`) : null}
+      onReviewWorkspaceData={() =>
+        void navigate(`${routes.workspace}?sort=size`)
+      }
+      onUpgradeStorage={
+        assistantStateKind === "active"
+          ? () => void navigate(`${routes.settings.billing}?adjust_plan=1`)
+          : null
+      }
     />
   );
 }

@@ -368,8 +368,7 @@ function CapRow({
       return;
     }
     const parsed = Number(trimmed);
-    const next =
-      Number.isFinite(parsed) && parsed > 0 ? parsed : cap; // ignore invalid
+    const next = Number.isFinite(parsed) && parsed > 0 ? parsed : cap; // ignore invalid
     if (next !== cap) onSave(next);
     setDraft(next == null ? "" : String(next));
   }, [draft, cap, onSave]);
@@ -436,7 +435,8 @@ function CapProgress({
   if (cap == null) {
     return (
       <p className="text-body-small-default text-[var(--content-quiet)]">
-        No cap set — Cue won't stop on its own. Enter an amount to add a ceiling.
+        No cap set — Cue won't stop on its own. Enter an amount to add a
+        ceiling.
       </p>
     );
   }

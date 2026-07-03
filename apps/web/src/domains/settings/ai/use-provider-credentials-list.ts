@@ -3,7 +3,11 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { secretsGet } from "@/generated/daemon/sdk.gen";
-import { ApiError, assertHasResponse, extractErrorMessage } from "@/utils/api-errors";
+import {
+  ApiError,
+  assertHasResponse,
+  extractErrorMessage,
+} from "@/utils/api-errors";
 import { shouldRetryDaemonError } from "@/utils/daemon-errors";
 import { captureError } from "@/lib/sentry/capture-error";
 import { useIsOrgReady } from "@/hooks/use-is-org-ready";
@@ -51,7 +55,11 @@ export function useProviderCredentialsList({
       if (!response.ok) {
         throw new ApiError(
           response.status,
-          extractErrorMessage(error, response, `Failed to load credentials (HTTP ${response.status})`),
+          extractErrorMessage(
+            error,
+            response,
+            `Failed to load credentials (HTTP ${response.status})`,
+          ),
         );
       }
       return parseCredentialEntries(data!.secrets ?? data!.accounts ?? []);

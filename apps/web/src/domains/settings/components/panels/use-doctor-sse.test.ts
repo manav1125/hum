@@ -20,7 +20,9 @@ import type { DoctorPanelContext } from "@/domains/settings/components/panels/do
 
 let idCounter = 0;
 
-function createMockContext(initialEntries: ChatEntry[] = []): DoctorPanelContext & {
+function createMockContext(
+  initialEntries: ChatEntry[] = [],
+): DoctorPanelContext & {
   entries: ChatEntry[];
   calls: Record<string, unknown[]>;
 } {
@@ -48,12 +50,17 @@ function createMockContext(initialEntries: ChatEntry[] = []): DoctorPanelContext
     setSessionStatus: (s) => calls.setSessionStatus.push(s),
     appendEntry: (entry) => {
       const id = `entry-${++idCounter}`;
-      entries = [...entries, { ...entry, id, timestamp: Date.now() } as ChatEntry];
+      entries = [
+        ...entries,
+        { ...entry, id, timestamp: Date.now() } as ChatEntry,
+      ];
       calls.appendEntry.push(entry);
     },
     nextId: () => `entry-${++idCounter}`,
     getStreamingEntryId: () => streamingEntryId,
-    setStreamingEntryId: (id) => { streamingEntryId = id; },
+    setStreamingEntryId: (id) => {
+      streamingEntryId = id;
+    },
   };
 }
 
@@ -63,27 +70,51 @@ function createMockContext(initialEntries: ChatEntry[] = []): DoctorPanelContext
 
 describe("parseDoctorEvent", () => {
   test("parses message_delta event", () => {
-    const event = parseDoctorEvent(JSON.stringify({ type: "message_delta", content: "hi" }));
+    const event = parseDoctorEvent(
+      JSON.stringify({ type: "message_delta", content: "hi" }),
+    );
     expect(event).toEqual({ type: "message_delta", content: "hi" });
   });
 
   test("parses message event", () => {
-    const event = parseDoctorEvent(JSON.stringify({ type: "message", content: "done" }));
+    const event = parseDoctorEvent(
+      JSON.stringify({ type: "message", content: "done" }),
+    );
     expect(event).toEqual({ type: "message", content: "done" });
   });
 
   test("parses tool_call event", () => {
     const event = parseDoctorEvent(
-      JSON.stringify({ type: "tool_call", toolName: "diag", input: { a: 1 }, id: "tc-1" }),
+      JSON.stringify({
+        type: "tool_call",
+        toolName: "diag",
+        input: { a: 1 },
+        id: "tc-1",
+      }),
     );
-    expect(event).toEqual({ type: "tool_call", toolName: "diag", input: { a: 1 }, id: "tc-1" });
+    expect(event).toEqual({
+      type: "tool_call",
+      toolName: "diag",
+      input: { a: 1 },
+      id: "tc-1",
+    });
   });
 
   test("parses tool_result event", () => {
     const event = parseDoctorEvent(
-      JSON.stringify({ type: "tool_result", toolCallId: "tc-1", content: "ok", isError: false }),
+      JSON.stringify({
+        type: "tool_result",
+        toolCallId: "tc-1",
+        content: "ok",
+        isError: false,
+      }),
     );
-    expect(event).toEqual({ type: "tool_result", toolCallId: "tc-1", content: "ok", isError: false });
+    expect(event).toEqual({
+      type: "tool_result",
+      toolCallId: "tc-1",
+      content: "ok",
+      isError: false,
+    });
   });
 
   test("parses approval_required event", () => {
@@ -106,17 +137,23 @@ describe("parseDoctorEvent", () => {
   });
 
   test("parses backup_prompt event", () => {
-    const event = parseDoctorEvent(JSON.stringify({ type: "backup_prompt", toolName: "tool" }));
+    const event = parseDoctorEvent(
+      JSON.stringify({ type: "backup_prompt", toolName: "tool" }),
+    );
     expect(event).toEqual({ type: "backup_prompt", toolName: "tool" });
   });
 
   test("parses status event", () => {
-    const event = parseDoctorEvent(JSON.stringify({ type: "status", status: "completed" }));
+    const event = parseDoctorEvent(
+      JSON.stringify({ type: "status", status: "completed" }),
+    );
     expect(event).toEqual({ type: "status", status: "completed" });
   });
 
   test("parses error event", () => {
-    const event = parseDoctorEvent(JSON.stringify({ type: "error", message: "fail" }));
+    const event = parseDoctorEvent(
+      JSON.stringify({ type: "error", message: "fail" }),
+    );
     expect(event).toEqual({ type: "error", message: "fail" });
   });
 
@@ -135,7 +172,9 @@ describe("parseDoctorEvent", () => {
   });
 
   test("returns null for unknown type", () => {
-    expect(parseDoctorEvent(JSON.stringify({ type: "unknown_event" }))).toBeNull();
+    expect(
+      parseDoctorEvent(JSON.stringify({ type: "unknown_event" })),
+    ).toBeNull();
   });
 
   test("returns null for numeric type", () => {
@@ -143,32 +182,50 @@ describe("parseDoctorEvent", () => {
   });
 
   test("rejects tool_call missing required fields", () => {
-    expect(parseDoctorEvent(JSON.stringify({ type: "tool_call", toolName: "diag" }))).toBeNull();
+    expect(
+      parseDoctorEvent(JSON.stringify({ type: "tool_call", toolName: "diag" })),
+    ).toBeNull();
   });
 
   test("rejects tool_result with wrong isError type", () => {
     expect(
       parseDoctorEvent(
-        JSON.stringify({ type: "tool_result", toolCallId: "tc-1", content: "ok", isError: "no" }),
+        JSON.stringify({
+          type: "tool_result",
+          toolCallId: "tc-1",
+          content: "ok",
+          isError: "no",
+        }),
       ),
     ).toBeNull();
   });
 
   test("rejects status with invalid status value", () => {
-    expect(parseDoctorEvent(JSON.stringify({ type: "status", status: "paused" }))).toBeNull();
+    expect(
+      parseDoctorEvent(JSON.stringify({ type: "status", status: "paused" })),
+    ).toBeNull();
   });
 
   test("rejects approval_required missing description", () => {
     expect(
       parseDoctorEvent(
-        JSON.stringify({ type: "approval_required", toolName: "exec", input: {}, id: "ap-1" }),
+        JSON.stringify({
+          type: "approval_required",
+          toolName: "exec",
+          input: {},
+          id: "ap-1",
+        }),
       ),
     ).toBeNull();
   });
 
   test("strips unknown extra fields from parsed events", () => {
     const event = parseDoctorEvent(
-      JSON.stringify({ type: "message_delta", content: "hi", extra: "ignored" }),
+      JSON.stringify({
+        type: "message_delta",
+        content: "hi",
+        extra: "ignored",
+      }),
     );
     expect(event).not.toBeNull();
     expect(event!.type).toBe("message_delta");
@@ -244,7 +301,11 @@ describe("handleToolCall", () => {
   test("appends tool_call entry with correct meta", () => {
     const ctx = createMockContext();
 
-    handleToolCall(ctx, { toolName: "run_diag", input: { flag: true }, id: "tc-1" });
+    handleToolCall(ctx, {
+      toolName: "run_diag",
+      input: { flag: true },
+      id: "tc-1",
+    });
 
     expect(ctx.entries).toHaveLength(1);
     const entry = ctx.entries[0]!;
@@ -271,11 +332,20 @@ describe("handleToolResult", () => {
         kind: "tool_call",
         content: "diag",
         timestamp: 0,
-        meta: { toolName: "diag", input: {}, toolCallId: "tc-1", status: "running" as const },
+        meta: {
+          toolName: "diag",
+          input: {},
+          toolCallId: "tc-1",
+          status: "running" as const,
+        },
       },
     ]);
 
-    handleToolResult(ctx, { toolCallId: "tc-1", content: "all good", isError: false });
+    handleToolResult(ctx, {
+      toolCallId: "tc-1",
+      content: "all good",
+      isError: false,
+    });
 
     expect(ctx.entries).toHaveLength(1);
     const entry = ctx.entries[0]!;
@@ -292,11 +362,20 @@ describe("handleToolResult", () => {
         kind: "tool_call",
         content: "diag",
         timestamp: 0,
-        meta: { toolName: "diag", input: {}, toolCallId: "tc-1", status: "running" as const },
+        meta: {
+          toolName: "diag",
+          input: {},
+          toolCallId: "tc-1",
+          status: "running" as const,
+        },
       },
     ]);
 
-    handleToolResult(ctx, { toolCallId: "tc-1", content: "failed", isError: true });
+    handleToolResult(ctx, {
+      toolCallId: "tc-1",
+      content: "failed",
+      isError: true,
+    });
 
     const entry = ctx.entries[0]!;
     if (entry.kind !== "tool_call") throw new Error("unreachable");
@@ -309,7 +388,11 @@ describe("handleToolResult", () => {
       { id: "e-1", kind: "assistant", content: "hello", timestamp: 0 },
     ]);
 
-    handleToolResult(ctx, { toolCallId: "nonexistent", content: "result", isError: false });
+    handleToolResult(ctx, {
+      toolCallId: "nonexistent",
+      content: "result",
+      isError: false,
+    });
 
     expect(ctx.entries).toHaveLength(1);
     expect(ctx.entries[0]!.kind).toBe("assistant");

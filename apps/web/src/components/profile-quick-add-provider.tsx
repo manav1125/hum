@@ -29,20 +29,23 @@
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-    createContext,
-    useCallback,
-    useContext,
-    useMemo,
-    useRef,
-    useState,
-    type ReactNode,
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
 } from "react";
 
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import type { ProfilePatchEntry } from "@/domains/settings/ai/ai-types";
 import { ProfileEditorModal } from "@/domains/settings/ai/profile-editor-modal";
 import { configGet, configPatch } from "@/generated/daemon/sdk.gen";
-import { configGetSetQueryData, inferenceProviderconnectionsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  configGetSetQueryData,
+  inferenceProviderconnectionsGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { toast } from "@vellumai/design-library/components/toast";
 
 interface OpenProfileQuickAddArgs {
@@ -67,9 +70,8 @@ interface ProfileQuickAddContextValue {
   openProfileQuickAdd: (args?: OpenProfileQuickAddArgs) => void;
 }
 
-const ProfileQuickAddContext = createContext<ProfileQuickAddContextValue | null>(
-  null,
-);
+const ProfileQuickAddContext =
+  createContext<ProfileQuickAddContextValue | null>(null);
 
 export function ProfileQuickAddProvider({ children }: { children: ReactNode }) {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();

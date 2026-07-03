@@ -2,10 +2,10 @@ import { Info } from "lucide-react";
 import { useMemo } from "react";
 
 import type {
-    MachineTier,
-    MachineTierEnum,
-    StorageTier,
-    StorageTierEnum,
+  MachineTier,
+  MachineTierEnum,
+  StorageTier,
+  StorageTierEnum,
 } from "@/generated/api/types.gen";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Typography } from "@vellumai/design-library/components/typography";

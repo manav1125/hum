@@ -6,12 +6,12 @@
 import type { AnchorHTMLAttributes } from "react";
 
 import {
-    openMarkdownOAuthLinkInPopup,
-    shouldOpenMarkdownLinkInOAuthPopup,
+  openMarkdownOAuthLinkInPopup,
+  shouldOpenMarkdownLinkInOAuthPopup,
 } from "@/domains/chat/utils/oauth-popup-links";
 import {
-    MarkdownMessage,
-    type MarkdownMessageProps,
+  MarkdownMessage,
+  type MarkdownMessageProps,
 } from "@vellumai/design-library";
 
 function OAuthAwareLink({
@@ -37,7 +37,10 @@ function OAuthAwareLink({
   );
 }
 
-export type ChatMarkdownMessageProps = Omit<MarkdownMessageProps, "linkComponent">;
+export type ChatMarkdownMessageProps = Omit<
+  MarkdownMessageProps,
+  "linkComponent"
+>;
 
 export function ChatMarkdownMessage(props: ChatMarkdownMessageProps) {
   return <MarkdownMessage {...props} linkComponent={OAuthAwareLink} />;

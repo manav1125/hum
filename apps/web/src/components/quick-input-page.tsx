@@ -1,5 +1,12 @@
 import { ArrowUp } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import { dismissQuickInput, submitQuickInput } from "@/runtime/quick-input";
 import { ApertureAvatar } from "@vellumai/design-library";
@@ -34,15 +41,12 @@ export function QuickInputPage() {
     [input],
   );
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        void dismissQuickInput();
-      }
-    },
-    [],
-  );
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      void dismissQuickInput();
+    }
+  }, []);
 
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-transparent p-2">

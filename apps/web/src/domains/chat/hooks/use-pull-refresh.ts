@@ -51,7 +51,9 @@ export function usePullRefresh({
   invalidateHistory,
   onRefreshEpoch,
 }: UsePullRefreshParams): UsePullRefreshReturn {
-  const [refreshFeedback, setRefreshFeedback] = useState<RefreshOutcome | null>(null);
+  const [refreshFeedback, setRefreshFeedback] = useState<RefreshOutcome | null>(
+    null,
+  );
   const abortRef = useRef(false);
 
   // Resolve post-mount to keep SSR/hydration HTML in sync — the gesture

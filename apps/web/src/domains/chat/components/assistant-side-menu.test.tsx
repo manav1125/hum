@@ -90,9 +90,7 @@ describe("AssistantSideMenu · Conversations category rows", () => {
     expect(html).not.toContain(">Recents<");
     expect(html).not.toContain(">Slack<");
 
-    expect(html.indexOf(">Pinned<")).toBeLessThan(
-      html.indexOf(">Chat<"),
-    );
+    expect(html.indexOf(">Pinned<")).toBeLessThan(html.indexOf(">Chat<"));
   });
 
   test("renders Slack as a conditional peer section after Recents", () => {
@@ -304,5 +302,3 @@ describe("AssistantSideMenu · overlay close affordance", () => {
     expect(railHtml).not.toContain('aria-label="Close navigation"');
   });
 });
-
-

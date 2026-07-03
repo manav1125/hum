@@ -1,8 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useReducedMotion } from "motion/react";
 
-import { computeTransforms, resolveDefinitions } from "@/utils/avatar-svg-compositor";
-import type { CharacterComponents, CharacterTraits, EyePathDefinition } from "@/types/avatar";
+import {
+  computeTransforms,
+  resolveDefinitions,
+} from "@/utils/avatar-svg-compositor";
+import type {
+  CharacterComponents,
+  CharacterTraits,
+  EyePathDefinition,
+} from "@/types/avatar";
 
 interface AnimatedAvatarProps {
   components: CharacterComponents;
@@ -49,33 +56,38 @@ function wobblePath(d: string, seed: number, amount: number): string {
   const center = computeCentroid(d);
   const phase = seed * 1.1;
 
-  return d.replace(/-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi, (match, offset: number) => {
-    const val = parseFloat(match);
-    const prevText = d.slice(0, offset);
-    const numsBefore = prevText.match(/-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi);
-    const idx = numsBefore ? numsBefore.length : 0;
-    const isX = idx % 2 === 0;
+  return d.replace(
+    /-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi,
+    (match, offset: number) => {
+      const val = parseFloat(match);
+      const prevText = d.slice(0, offset);
+      const numsBefore = prevText.match(
+        /-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi,
+      );
+      const idx = numsBefore ? numsBefore.length : 0;
+      const isX = idx % 2 === 0;
 
-    const refVal = isX ? center.x : center.y;
-    const otherNums = parsePathNumbers(d);
-    const pairedIdx = isX ? idx + 1 : idx - 1;
-    const pairedVal =
-      pairedIdx >= 0 && pairedIdx < otherNums.length
-        ? otherNums[pairedIdx]!
-        : refVal;
+      const refVal = isX ? center.x : center.y;
+      const otherNums = parsePathNumbers(d);
+      const pairedIdx = isX ? idx + 1 : idx - 1;
+      const pairedVal =
+        pairedIdx >= 0 && pairedIdx < otherNums.length
+          ? otherNums[pairedIdx]!
+          : refVal;
 
-    const px = isX ? val : pairedVal;
-    const py = isX ? pairedVal : val;
+      const px = isX ? val : pairedVal;
+      const py = isX ? pairedVal : val;
 
-    const angle = Math.atan2(py - center.y, px - center.x);
-    const wobble =
-      Math.sin(angle * 2.0 + phase) * 0.7 +
-      Math.sin(angle * 3.0 - phase * 0.5) * 0.3;
-    const scale = 1.0 + wobble * amount;
+      const angle = Math.atan2(py - center.y, px - center.x);
+      const wobble =
+        Math.sin(angle * 2.0 + phase) * 0.7 +
+        Math.sin(angle * 3.0 - phase * 0.5) * 0.3;
+      const scale = 1.0 + wobble * amount;
 
-    const result = refVal + (val - refVal) * scale;
-    return result.toFixed(3);
-  });
+      const result = refVal + (val - refVal) * scale;
+      return result.toFixed(3);
+    },
+  );
 }
 
 function precomputeWobbledPaths(
@@ -172,27 +184,30 @@ export function AnimatedAvatar({
     let cancelled = false;
 
     function scheduleBlink() {
-      const timer = setTimeout(() => {
-        if (cancelled) return;
-        setIsBlinking(true);
-        setTimeout(() => {
+      const timer = setTimeout(
+        () => {
           if (cancelled) return;
-          setIsBlinking(false);
-          if (Math.random() < 0.2) {
-            setTimeout(() => {
-              if (cancelled) return;
-              setIsBlinking(true);
+          setIsBlinking(true);
+          setTimeout(() => {
+            if (cancelled) return;
+            setIsBlinking(false);
+            if (Math.random() < 0.2) {
               setTimeout(() => {
                 if (cancelled) return;
-                setIsBlinking(false);
-                scheduleBlink();
-              }, 150);
-            }, 200);
-          } else {
-            scheduleBlink();
-          }
-        }, 150);
-      }, randomBetween(3000, 7000));
+                setIsBlinking(true);
+                setTimeout(() => {
+                  if (cancelled) return;
+                  setIsBlinking(false);
+                  scheduleBlink();
+                }, 150);
+              }, 200);
+            } else {
+              scheduleBlink();
+            }
+          }, 150);
+        },
+        randomBetween(3000, 7000),
+      );
 
       return timer;
     }
@@ -217,17 +232,19 @@ export function AnimatedAvatar({
     let cancelled = false;
 
     function scheduleTwitch() {
-      const timer = setTimeout(() => {
-        if (cancelled) return;
-        const angle =
-          (Math.random() < 0.5 ? -1 : 1) * randomBetween(1, 2);
-        setTwitchAngle(angle);
-        setTimeout(() => {
+      const timer = setTimeout(
+        () => {
           if (cancelled) return;
-          setTwitchAngle(0);
-          scheduleTwitch();
-        }, 200);
-      }, randomBetween(8000, 15000));
+          const angle = (Math.random() < 0.5 ? -1 : 1) * randomBetween(1, 2);
+          setTwitchAngle(angle);
+          setTimeout(() => {
+            if (cancelled) return;
+            setTwitchAngle(0);
+            scheduleTwitch();
+          }, 200);
+        },
+        randomBetween(8000, 15000),
+      );
 
       return timer;
     }
@@ -313,12 +330,7 @@ export function AnimatedAvatar({
         }}
       >
         {eyeStyle.paths.map((p: EyePathDefinition, i: number) => (
-          <path
-            key={i}
-            d={p.svgPath}
-            fill={p.color}
-            transform={eyeTransform}
-          />
+          <path key={i} d={p.svgPath} fill={p.color} transform={eyeTransform} />
         ))}
       </g>
     </svg>

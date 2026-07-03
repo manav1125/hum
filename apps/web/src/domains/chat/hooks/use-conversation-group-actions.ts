@@ -1,4 +1,3 @@
-
 import { captureError } from "@/lib/sentry/capture-error";
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -22,7 +21,10 @@ import {
   removeGroup,
   replaceOptimisticGroup,
 } from "@/utils/conversation-cache-mutations";
-import { cancelConversationQueries, invalidateConversationQueries } from "@/utils/conversation-cache";
+import {
+  cancelConversationQueries,
+  invalidateConversationQueries,
+} from "@/utils/conversation-cache";
 import { conversationGroupsQueryKey } from "@/lib/sync/query-tags";
 
 import { haptic } from "@/utils/haptics";
@@ -79,9 +81,7 @@ export function useConversationGroupActions({
     if (!assistantId) return;
     haptic.light();
     const name =
-      typeof window === "undefined"
-        ? null
-        : window.prompt("New group name");
+      typeof window === "undefined" ? null : window.prompt("New group name");
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -90,7 +90,12 @@ export function useConversationGroupActions({
     await queryClient.cancelQueries({ queryKey: groupsKey });
 
     const optimisticId = `optimistic-${Date.now()}`;
-    appendGroup(queryClient, assistantId, { id: optimisticId, name: trimmed, sortPosition: 0, isSystemGroup: false });
+    appendGroup(queryClient, assistantId, {
+      id: optimisticId,
+      name: trimmed,
+      sortPosition: 0,
+      isSystemGroup: false,
+    });
 
     try {
       const created = await createGroupAsync({
@@ -108,7 +113,8 @@ export function useConversationGroupActions({
   const handleRenameGroup = useCallback(
     async (groupId: string) => {
       if (!assistantId) return;
-      const current = conversationGroups.find((g) => g.id === groupId)?.name ?? "";
+      const current =
+        conversationGroups.find((g) => g.id === groupId)?.name ?? "";
       const next =
         typeof window === "undefined"
           ? null

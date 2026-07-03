@@ -22,7 +22,8 @@ type DeveloperTabId = (typeof ALL_TABS)[number]["id"];
 export function DeveloperPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const settingsDeveloperNav = useAssistantFeatureFlagStore.use.settingsDeveloperNav();
+  const settingsDeveloperNav =
+    useAssistantFeatureFlagStore.use.settingsDeveloperNav();
   const hasHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
 
   const activeTab: DeveloperTabId = useMemo(() => {
@@ -80,7 +81,9 @@ export function DeveloperPage() {
           <Button
             variant="outlined"
             className="mb-1 shrink-0"
-            onClick={() => void navigate(`${routes.selectAssistant}?fromSettings=1`)}
+            onClick={() =>
+              void navigate(`${routes.selectAssistant}?fromSettings=1`)
+            }
           >
             Choose Assistant
           </Button>

@@ -1,11 +1,11 @@
 import { Button } from "@vellumai/design-library";
 import {
-    ChevronLeft,
-    ChevronRight,
-    House,
-    Menu as MenuIcon,
-    PanelLeft,
-    Search,
+  ChevronLeft,
+  ChevronRight,
+  House,
+  Menu as MenuIcon,
+  PanelLeft,
+  Search,
 } from "lucide-react";
 import { useCallback, useEffect, type ReactNode } from "react";
 
@@ -57,7 +57,9 @@ export function ChatLayoutHeader({
   hasUnreadHome,
 }: ChatLayoutHeaderProps) {
   const toggleCommandPalette = useCommandPaletteStore.use.toggle();
-  const handleSearchClick = useCallback(() => { toggleCommandPalette(); }, [toggleCommandPalette]);
+  const handleSearchClick = useCallback(() => {
+    toggleCommandPalette();
+  }, [toggleCommandPalette]);
 
   // In the Electron shell the header doubles as the macOS title bar: it sits
   // inline with the traffic lights and drives window dragging
@@ -101,8 +103,12 @@ export function ChatLayoutHeader({
           // `minWidth` reserves the sidebar column on desktop only. The Electron
           // inset clears the inline traffic lights regardless of `isMobile` —
           // they stay put even in the narrow mobile layout.
-          ...(isMobile ? {} : { minWidth: collapsed ? 48 : (sidebarWidth ?? 230) }),
-          ...(electron ? { paddingLeft: ELECTRON_TRAFFIC_LIGHT_CLEARANCE } : {}),
+          ...(isMobile
+            ? {}
+            : { minWidth: collapsed ? 48 : (sidebarWidth ?? 230) }),
+          ...(electron
+            ? { paddingLeft: ELECTRON_TRAFFIC_LIGHT_CLEARANCE }
+            : {}),
         }}
       >
         {isMobile ? (
@@ -131,7 +137,11 @@ export function ChatLayoutHeader({
             <Button
               variant="ghost"
               iconOnly={<House />}
-              aria-label={hasUnreadHome && !isHomeActive ? "Home (unread notifications)" : "Home"}
+              aria-label={
+                hasUnreadHome && !isHomeActive
+                  ? "Home (unread notifications)"
+                  : "Home"
+              }
               aria-current={isHomeActive ? "page" : undefined}
               tooltip="Home"
               onClick={onOpenHome}

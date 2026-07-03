@@ -1,4 +1,3 @@
-
 import { BillingErrorBanner } from "@/domains/chat/components/billing-error-banner";
 
 interface CreditsExhaustedBannerProps {

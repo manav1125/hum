@@ -24,14 +24,27 @@ import type { FeedItem } from "@vellumai/assistant-api";
  * Visible only on the empty state (the parent renders the starters slot there).
  */
 
-const MODES: ReadonlyArray<{ icon: LucideIcon; label: string; seed: string }> = [
-  { icon: Mail, label: "Draft a reply", seed: "Draft a reply to " },
-  { icon: CalendarDays, label: "Plan my day", seed: "Plan my day from my calendar and inbox." },
-  { icon: Inbox, label: "Triage inbox", seed: "Triage my inbox and flag anything that needs a reply." },
-  { icon: Search, label: "Research", seed: "Research " },
-  { icon: FileText, label: "Make a doc", seed: "Write a doc about " },
-  { icon: Sparkles, label: "Brief me", seed: "Brief me on what's important right now." },
-];
+const MODES: ReadonlyArray<{ icon: LucideIcon; label: string; seed: string }> =
+  [
+    { icon: Mail, label: "Draft a reply", seed: "Draft a reply to " },
+    {
+      icon: CalendarDays,
+      label: "Plan my day",
+      seed: "Plan my day from my calendar and inbox.",
+    },
+    {
+      icon: Inbox,
+      label: "Triage inbox",
+      seed: "Triage my inbox and flag anything that needs a reply.",
+    },
+    { icon: Search, label: "Research", seed: "Research " },
+    { icon: FileText, label: "Make a doc", seed: "Write a doc about " },
+    {
+      icon: Sparkles,
+      label: "Brief me",
+      seed: "Brief me on what's important right now.",
+    },
+  ];
 
 export function ChatLauncher({
   assistantId,

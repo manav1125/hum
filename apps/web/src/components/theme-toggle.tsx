@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { cn, SegmentControl } from "@vellumai/design-library";
 
 import {
-    applyThemePreference,
-    readStoredThemePreference,
-    type ThemePreference,
-    writeStoredThemePreference,
+  applyThemePreference,
+  readStoredThemePreference,
+  type ThemePreference,
+  writeStoredThemePreference,
 } from "@/domains/settings/utils/theme-preferences";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { watchDeviceSetting } from "@/utils/device-settings";

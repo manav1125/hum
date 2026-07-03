@@ -3,10 +3,10 @@ import { CreditCard, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import {
-    organizationsBillingAutoTopUpRemovePaymentMethodCreateMutation,
-    organizationsBillingAutoTopUpRetrieveOptions,
-    organizationsBillingAutoTopUpRetrieveQueryKey,
-    organizationsBillingAutoTopUpRetrieveSetQueryData,
+  organizationsBillingAutoTopUpRemovePaymentMethodCreateMutation,
+  organizationsBillingAutoTopUpRetrieveOptions,
+  organizationsBillingAutoTopUpRetrieveQueryKey,
+  organizationsBillingAutoTopUpRetrieveSetQueryData,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { AutoTopUpConfigResponse } from "@/generated/api/types.gen";
 import { Button } from "@vellumai/design-library/components/button";
@@ -39,7 +39,8 @@ function PaymentMethodHeading() {
         variant="body-small-default"
         className="mt-2 text-[var(--content-tertiary)]"
       >
-        This is the payment method that will be used for automated credit reloads.
+        This is the payment method that will be used for automated credit
+        reloads.
       </Typography>
     </div>
   );
@@ -169,16 +170,17 @@ export function PaymentMethodsCard() {
                   {brand}
                 </Typography>
                 {last4 ? (
-                  <Typography variant="body-small-default" as="div" className="text-[var(--content-tertiary)]">
+                  <Typography
+                    variant="body-small-default"
+                    as="div"
+                    className="text-[var(--content-tertiary)]"
+                  >
                     Ending in {last4}
                   </Typography>
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  variant="ghost"
-                  onClick={() => setPmModalOpen(true)}
-                >
+                <Button variant="ghost" onClick={() => setPmModalOpen(true)}>
                   Change
                 </Button>
                 <Button

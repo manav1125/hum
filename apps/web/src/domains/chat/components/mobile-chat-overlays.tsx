@@ -45,13 +45,17 @@ export function MobileChatOverlays() {
   const handleShareApp = useCallback(() => {
     const app = useViewerStore.getState().openedAppState;
     const aid = useResolvedAssistantsStore.getState().activeAssistantId;
-    if (app && aid) void useDeployStore.getState().shareApp(aid, app.appId, app.name);
+    if (app && aid)
+      void useDeployStore.getState().shareApp(aid, app.appId, app.name);
   }, []);
 
   const handleDeployApp = useCallback(() => {
     const app = useViewerStore.getState().openedAppState;
     const aid = useResolvedAssistantsStore.getState().activeAssistantId;
-    if (app && aid) void useDeployStore.getState().deployApp(aid, app.appId, app.name, app.html);
+    if (app && aid)
+      void useDeployStore
+        .getState()
+        .deployApp(aid, app.appId, app.name, app.html);
   }, []);
 
   const handleCloseDocument = useCallback(() => {
@@ -72,7 +76,8 @@ export function MobileChatOverlays() {
   }, []);
 
   const handleStopSubagent = useCallback(
-    (subagentId: string) => void useSubagentStore.getState().abortSubagent(subagentId),
+    (subagentId: string) =>
+      void useSubagentStore.getState().abortSubagent(subagentId),
     [],
   );
 
@@ -108,7 +113,9 @@ export function MobileChatOverlays() {
         isDeploying={isDeploying}
       />
       <MobileDocumentOverlay
-        openedDocumentState={mainView === "document" ? openedDocumentState : null}
+        openedDocumentState={
+          mainView === "document" ? openedDocumentState : null
+        }
         assistantId={assistantId}
         onClose={handleCloseDocument}
         onSubmitFeedback={handleDocumentSubmitFeedback}
@@ -116,7 +123,7 @@ export function MobileChatOverlays() {
       <MobileSubagentDetailOverlay
         entry={
           mainView === "subagent-detail" && activeSubagentId
-            ? subagentById[activeSubagentId] ?? null
+            ? (subagentById[activeSubagentId] ?? null)
             : null
         }
         onClose={handleCloseSubagentDetail}

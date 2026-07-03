@@ -13,11 +13,19 @@ import { useCallback, useMemo, useState } from "react";
 export function useSelectionState<T extends { id: string; selected?: boolean }>(
   items: T[],
   selectionMode: "none" | "single" | "multiple",
-  onAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void,
+  onAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void,
 ): {
   selectedIds: string[];
   handleToggle: (id: string) => void;
-  handleAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void;
+  handleAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
 } {
   const dataSelectedIds = useMemo(
     () => items.filter((item) => item.selected).map((item) => item.id),
@@ -41,7 +49,9 @@ export function useSelectionState<T extends { id: string; selected?: boolean }>(
       const prev = selectedIds;
       const next =
         selectionMode === "single"
-          ? prev.includes(id) ? [] : [id]
+          ? prev.includes(id)
+            ? []
+            : [id]
           : prev.includes(id)
             ? prev.filter((existing) => existing !== id)
             : [...prev, id];

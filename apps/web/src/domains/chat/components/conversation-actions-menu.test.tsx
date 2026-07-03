@@ -43,13 +43,26 @@ const mockItem = ({
 }: Record<string, unknown>) =>
   createElement(
     "div",
-    { "data-testid": "menu-item", "data-disabled": disabled || undefined, ...rest },
+    {
+      "data-testid": "menu-item",
+      "data-disabled": disabled || undefined,
+      ...rest,
+    },
     leftIcon as ReactNode,
     children as ReactNode,
   );
 const mockSeparator = () => createElement("hr", { "data-testid": "separator" });
-const mockSubTrigger = ({ children, leftIcon, ...rest }: Record<string, unknown>) =>
-  createElement("div", { "data-testid": "sub-trigger", ...rest }, leftIcon as ReactNode, children as ReactNode);
+const mockSubTrigger = ({
+  children,
+  leftIcon,
+  ...rest
+}: Record<string, unknown>) =>
+  createElement(
+    "div",
+    { "data-testid": "sub-trigger", ...rest },
+    leftIcon as ReactNode,
+    children as ReactNode,
+  );
 const mockTrigger = ({ children }: Record<string, unknown>) =>
   createElement("div", { "data-testid": "trigger" }, children as ReactNode);
 
@@ -74,8 +87,16 @@ mock.module("@vellumai/design-library", () => {
     Body: passthrough,
   };
 
-  const PanelItemMock = ({ label, icon: _icon, ...rest }: Record<string, unknown>) =>
-    createElement("div", { "data-testid": "panel-item", ...rest }, label as string);
+  const PanelItemMock = ({
+    label,
+    icon: _icon,
+    ...rest
+  }: Record<string, unknown>) =>
+    createElement(
+      "div",
+      { "data-testid": "panel-item", ...rest },
+      label as string,
+    );
 
   const ContextMenuMock = {
     Item: mockItem,
@@ -94,9 +115,9 @@ mock.module("@vellumai/design-library", () => {
 });
 
 import {
-    ConversationActionsMenu,
-    renderConversationMenuItems,
-    type ConversationMenuPrimitive,
+  ConversationActionsMenu,
+  renderConversationMenuItems,
+  type ConversationMenuPrimitive,
 } from "@/domains/chat/components/conversation-actions-menu";
 import { Menu } from "@vellumai/design-library";
 
@@ -112,11 +133,13 @@ beforeEach(() => {
 describe("renderConversationMenuItems", () => {
   test("renders Pin and Rename when handlers are provided", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        onPinToggle: () => {},
-        onRename: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          onPinToggle: () => {},
+          onRename: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Pin");
     expect(html).toContain("Rename");
@@ -124,11 +147,13 @@ describe("renderConversationMenuItems", () => {
 
   test("renders Unpin when isPinned is true", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        isPinned: true,
-        onPinToggle: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          isPinned: true,
+          onPinToggle: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Unpin");
     expect(html).not.toContain(">Pin<");
@@ -136,34 +161,40 @@ describe("renderConversationMenuItems", () => {
 
   test("renders Archive when onArchive is provided", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        onArchive: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          onArchive: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Archive");
   });
 
   test("renders Unarchive when isArchived and onUnarchive are provided", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        isArchived: true,
-        onUnarchive: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          isArchived: true,
+          onUnarchive: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Unarchive");
   });
 
   test("hides Mark as unread and Analyze when isReadonly", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        isReadonly: true,
-        onArchive: () => {},
-        onAnalyze: () => {},
-        onMarkUnread: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          isReadonly: true,
+          onArchive: () => {},
+          onAnalyze: () => {},
+          onMarkUnread: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Archive");
     expect(html).not.toContain("Mark as unread");
@@ -172,15 +203,17 @@ describe("renderConversationMenuItems", () => {
 
   test("renders header variant with correct item order", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        variant: "header",
-        onCopyConversation: () => {},
-        onForkConversation: () => {},
-        onAnalyze: () => {},
-        onPinToggle: () => {},
-        onRename: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          variant: "header",
+          onCopyConversation: () => {},
+          onForkConversation: () => {},
+          onAnalyze: () => {},
+          onPinToggle: () => {},
+          onRename: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Copy full conversation");
     expect(html).toContain("Fork conversation");
@@ -198,10 +231,7 @@ describe("ConversationActionsMenu — desktop branch", () => {
   test("renders the default ellipsis trigger with aria-label", () => {
     mockIsMobile = false;
     const html = renderToStaticMarkup(
-      <ConversationActionsMenu
-        onPinToggle={() => {}}
-        onRename={() => {}}
-      />,
+      <ConversationActionsMenu onPinToggle={() => {}} onRename={() => {}} />,
     );
     expect(html).toContain('aria-label="Conversation actions"');
     expect(html).toContain("<button");
@@ -210,10 +240,7 @@ describe("ConversationActionsMenu — desktop branch", () => {
   test("renders Pin and Rename items in the menu content", () => {
     mockIsMobile = false;
     const html = renderToStaticMarkup(
-      <ConversationActionsMenu
-        onPinToggle={() => {}}
-        onRename={() => {}}
-      />,
+      <ConversationActionsMenu onPinToggle={() => {}} onRename={() => {}} />,
     );
     expect(html).toContain("Pin");
     expect(html).toContain("Rename");
@@ -224,10 +251,7 @@ describe("ConversationActionsMenu — mobile branch", () => {
   test("renders BottomSheet surface on mobile", () => {
     mockIsMobile = true;
     const html = renderToStaticMarkup(
-      <ConversationActionsMenu
-        onPinToggle={() => {}}
-        onRename={() => {}}
-      />,
+      <ConversationActionsMenu onPinToggle={() => {}} onRename={() => {}} />,
     );
     expect(html).toContain("Conversation actions");
     expect(html).toContain("Pin");
@@ -246,11 +270,13 @@ describe("ConversationActionsMenu — mobile branch", () => {
 describe("renderConversationMenuItems — mark read/unread exclusivity", () => {
   test("onMarkRead takes precedence when both onMarkRead and onMarkUnread are provided", () => {
     const html = renderToStaticMarkup(
-      <>{renderConversationMenuItems({
-        Primitive: Menu as unknown as ConversationMenuPrimitive,
-        onMarkRead: () => {},
-        onMarkUnread: () => {},
-      })}</>,
+      <>
+        {renderConversationMenuItems({
+          Primitive: Menu as unknown as ConversationMenuPrimitive,
+          onMarkRead: () => {},
+          onMarkUnread: () => {},
+        })}
+      </>,
     );
     expect(html).toContain("Mark as read");
     expect(html).not.toContain("Mark as unread");
@@ -261,10 +287,7 @@ describe("ConversationActionsMenu — mobile panel details", () => {
   test("isMarkUnreadDisabled renders disabled panel item on mobile", () => {
     mockIsMobile = true;
     const html = renderToStaticMarkup(
-      <ConversationActionsMenu
-        onMarkUnread={() => {}}
-        isMarkUnreadDisabled
-      />,
+      <ConversationActionsMenu onMarkUnread={() => {}} isMarkUnreadDisabled />,
     );
     expect(html).toContain("Mark as unread");
     expect(html).toContain("pointer-events-none");
@@ -342,11 +365,7 @@ describe("ConversationActionsMenu — read-only conversations", () => {
   test("Unarchive renders when archived and read-only", () => {
     mockIsMobile = false;
     const html = renderToStaticMarkup(
-      <ConversationActionsMenu
-        isReadonly
-        isArchived
-        onUnarchive={() => {}}
-      />,
+      <ConversationActionsMenu isReadonly isArchived onUnarchive={() => {}} />,
     );
     expect(html).toContain("Unarchive");
   });

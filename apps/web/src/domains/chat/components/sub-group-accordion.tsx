@@ -59,7 +59,9 @@ export function SubGroupAccordion({
           );
         }
         const groupHasAttention = attentionConversationIds
-          ? group.conversations.some(c => attentionConversationIds.has(c.conversationId))
+          ? group.conversations.some((c) =>
+              attentionConversationIds.has(c.conversationId),
+            )
           : false;
         return (
           <CollapsibleNavSection.Root

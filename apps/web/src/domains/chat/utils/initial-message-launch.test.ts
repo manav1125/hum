@@ -59,7 +59,11 @@ function installStorage(storage: Storage): void {
 
 function uninstallStorage(): void {
   if (ORIGINAL_SESSION_STORAGE) {
-    Object.defineProperty(globalThis, "sessionStorage", ORIGINAL_SESSION_STORAGE);
+    Object.defineProperty(
+      globalThis,
+      "sessionStorage",
+      ORIGINAL_SESSION_STORAGE,
+    );
   } else {
     delete (globalThis as { sessionStorage?: Storage }).sessionStorage;
   }

@@ -46,10 +46,7 @@ export function handleConfirmationRequest(
   };
   useInteractionStore.getState().showConfirmation(confData);
 
-  const result = attachConfirmationToToolCall(
-    ctx.messages,
-    confData,
-  );
+  const result = attachConfirmationToToolCall(ctx.messages, confData);
   ctx.setMessages(() => result.updatedMessages);
 
   if (result.attachedToolCallId) {

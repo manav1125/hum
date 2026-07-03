@@ -10,27 +10,27 @@ import { Typography } from "@vellumai/design-library/components/typography";
 
 import { useStoredCredentialPresence } from "@/domains/settings/ai/use-stored-credential-presence";
 import {
-    inferenceProviderconnectionsPost,
-    secretsPost,
+  inferenceProviderconnectionsPost,
+  secretsPost,
 } from "@/generated/daemon/sdk.gen";
 
 import { providerSupportsPlatformAuth } from "@/assistant/llm-model-catalog";
 import { ChatgptOAuthSection } from "@/domains/settings/ai/chatgpt-oauth-section";
 import { deriveProviderDefaults } from "@/domains/settings/ai/profile-prefill";
 import {
-    PROVIDER_DISPLAY_NAMES,
-    type Auth,
-    type ConnectionProvider,
-    type CreateConnectionInput,
-    type ProviderConnection,
+  PROVIDER_DISPLAY_NAMES,
+  type Auth,
+  type ConnectionProvider,
+  type CreateConnectionInput,
+  type ProviderConnection,
 } from "@/domains/settings/ai/provider-connections-client";
 import { ProviderEditorApiKeySection } from "@/domains/settings/ai/provider-editor-api-key-section";
 import {
-    AUTH_TYPE_DISPLAY_NAMES,
-    CONNECTION_PROVIDERS,
-    connectionSaveErrorMessage,
-    parseCredentialRef,
-    type AuthType,
+  AUTH_TYPE_DISPLAY_NAMES,
+  CONNECTION_PROVIDERS,
+  connectionSaveErrorMessage,
+  parseCredentialRef,
+  type AuthType,
 } from "@/domains/settings/ai/provider-editor-constants";
 import { secretPlaceholder } from "@/domains/settings/ai/secret-placeholder";
 import { useLabelKeySync } from "@/domains/settings/ai/use-label-key-sync";
@@ -77,14 +77,18 @@ export function ProviderCreateForm({
   onCancel,
   variant = "modal",
 }: ProviderCreateFormProps) {
-  const initialProvider: ConnectionProvider = defaultProviderType ?? "anthropic";
+  const initialProvider: ConnectionProvider =
+    defaultProviderType ?? "anthropic";
 
   // Seed Display Name (label) + Key (name) from the initial provider type so
   // the form opens pre-filled (e.g. Anthropic → "Anthropic" / "anthropic"),
   // deduped against existing connection names. The user can override both, and
   // a provider-type change re-seeds only while they haven't edited the fields
   // (see the dirty guard in the Provider dropdown's onChange below).
-  const initialDefaults = deriveProviderDefaults(initialProvider, existingNames);
+  const initialDefaults = deriveProviderDefaults(
+    initialProvider,
+    existingNames,
+  );
 
   const [label, setLabel] = useState(initialDefaults.name);
   const [name, setName] = useState(initialDefaults.key);
@@ -114,15 +118,21 @@ export function ProviderCreateForm({
     return CONNECTION_PROVIDERS;
   }, [provider]);
 
-  const { handleLabelChange, handleKeyChange: handleNameChange, getDirty } =
-    useLabelKeySync("create", setLabel, setName);
+  const {
+    handleLabelChange,
+    handleKeyChange: handleNameChange,
+    getDirty,
+  } = useLabelKeySync("create", setLabel, setName);
 
   const [apiKeyValue, setApiKeyValue] = useState("");
   const [isSavingKey, setIsSavingKey] = useState(false);
   const queryClient = useQueryClient();
 
   // --- Credential presence (shared hook) ---
-  const parsedCredRef = useMemo(() => parseCredentialRef(credential), [credential]);
+  const parsedCredRef = useMemo(
+    () => parseCredentialRef(credential),
+    [credential],
+  );
   const needsCredentialCheck = authType === "api_key" && parsedCredRef !== null;
 
   const {
@@ -132,19 +142,19 @@ export function ProviderCreateForm({
   } = useStoredCredentialPresence({
     assistantId,
     credentialKind: "credential",
-    credentialName: parsedCredRef ? `${parsedCredRef.service}:${parsedCredRef.field}` : "",
+    credentialName: parsedCredRef
+      ? `${parsedCredRef.service}:${parsedCredRef.field}`
+      : "",
     enabled: needsCredentialCheck,
     errorContext: "settings-provider-create-credential-presence",
   });
 
   // --- Available credentials list ---
-  const {
-    credentials: availableCredentials,
-    queryKey: credentialsListKey,
-  } = useProviderCredentialsList({
-    assistantId,
-    enabled: true,
-  });
+  const { credentials: availableCredentials, queryKey: credentialsListKey } =
+    useProviderCredentialsList({
+      assistantId,
+      enabled: true,
+    });
 
   const nameError = (() => {
     if (!name.trim()) return null;
@@ -190,7 +200,9 @@ export function ProviderCreateForm({
             // Optimistically mark credential as present and invalidate
             // the credentials list so TQ caches stay in sync.
             queryClient.setQueryData(credentialPresenceKey, true);
-            void queryClient.invalidateQueries({ queryKey: credentialsListKey });
+            void queryClient.invalidateQueries({
+              queryKey: credentialsListKey,
+            });
           } catch {
             setError("Failed to save API key. Please try again.");
             return;
@@ -206,7 +218,9 @@ export function ProviderCreateForm({
       } else if (authType === "oauth_subscription") {
         // OAuth subscription connections are created by the OAuth flow
         // (ChatgptOAuthSection), not through Save.
-        setError("Use the \"Sign in with ChatGPT\" button to connect your subscription.");
+        setError(
+          'Use the "Sign in with ChatGPT" button to connect your subscription.',
+        );
         return;
       } else if (authType === "none") {
         auth = { type: "none" };
@@ -231,10 +245,11 @@ export function ProviderCreateForm({
             : null,
         }),
       };
-      const { data: created, response: createRes } = await inferenceProviderconnectionsPost({
-        path: { assistant_id: assistantId },
-        body: input,
-      });
+      const { data: created, response: createRes } =
+        await inferenceProviderconnectionsPost({
+          path: { assistant_id: assistantId },
+          body: input,
+        });
       if (!createRes?.ok) {
         setError(connectionSaveErrorMessage(createRes?.status, name.trim()));
         return;
@@ -342,10 +357,7 @@ export function ProviderCreateForm({
                 if (prev === "none") {
                   return "api_key";
                 }
-                if (
-                  prev === "oauth_subscription" &&
-                  newProvider !== "openai"
-                ) {
+                if (prev === "oauth_subscription" && newProvider !== "openai") {
                   return "api_key";
                 }
                 if (

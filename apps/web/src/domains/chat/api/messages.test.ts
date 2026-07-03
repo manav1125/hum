@@ -302,8 +302,14 @@ describe("normalizeContentBlocks", () => {
     // `mapRuntimeToolCalls` path synthesizes, so the block-native renderer can
     // key it instead of dropping it
     expect(result).toEqual([
-      { type: "tool_use", toolCall: { name: "bash", input: {}, id: "tool-history-msg-7-0" } },
-      { type: "tool_use", toolCall: { name: "edit", input: {}, id: "tool-history-msg-7-1" } },
+      {
+        type: "tool_use",
+        toolCall: { name: "bash", input: {}, id: "tool-history-msg-7-0" },
+      },
+      {
+        type: "tool_use",
+        toolCall: { name: "edit", input: {}, id: "tool-history-msg-7-1" },
+      },
     ]);
   });
 

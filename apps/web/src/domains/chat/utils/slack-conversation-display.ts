@@ -48,7 +48,8 @@ export function getSlackConversationDisplay({
     messageChannel?.channelName,
   );
   const friendlyChannelName =
-    channelDisplayText && !isChannelIdFallback(channelDisplayText, channelBinding)
+    channelDisplayText &&
+    !isChannelIdFallback(channelDisplayText, channelBinding)
       ? channelDisplayText
       : undefined;
   const fallbackDisplayText =
@@ -62,7 +63,8 @@ export function getSlackConversationDisplay({
   if (!fallbackDisplayText) return null;
 
   const resolvedDisplayText =
-    resolvedChannelName && !isChannelIdFallback(resolvedChannelName, channelBinding)
+    resolvedChannelName &&
+    !isChannelIdFallback(resolvedChannelName, channelBinding)
       ? resolvedChannelName
       : undefined;
   const displayText = !isChannelIdFallback(fallbackDisplayText, channelBinding)
@@ -86,7 +88,10 @@ export function shouldResolveSlackConversationDisplayName(
 }
 
 export function formatSlackConversationDisplayLabel(
-  display: Pick<SlackConversationDisplay, "displayText" | "isDm" | "isFallback">,
+  display: Pick<
+    SlackConversationDisplay,
+    "displayText" | "isDm" | "isFallback"
+  >,
 ): string {
   if (display.isDm || display.isFallback) return display.displayText;
   if (display.displayText.startsWith("#")) return display.displayText;

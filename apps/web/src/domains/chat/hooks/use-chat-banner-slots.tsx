@@ -29,7 +29,8 @@ export interface UseChatBannerSlotsParams {
   onSteerMessage: (messageId: string) => void;
   onEditQueueTail: () => void;
   queueSteering: boolean;
-  activeConversation: { originChannel?: string; conversationId?: string } | null | undefined;
+  activeConversation:
+    { originChannel?: string; conversationId?: string } | null | undefined;
   sanitizedMessages: DisplayMessage[];
   assistantId: string | null;
 }
@@ -57,9 +58,13 @@ export function useChatBannerSlots({
   assistantId,
 }: UseChatBannerSlotsParams): ChatBannerSlots {
   const {
-    showBanner, isOnIOS, nudge,
-    showGitHubBanner, githubNudge,
-    showDiscordBanner, discordNudge,
+    showBanner,
+    isOnIOS,
+    nudge,
+    showGitHubBanner,
+    githubNudge,
+    showDiscordBanner,
+    discordNudge,
   } = nudges;
 
   const mainBannerSlot = useMemo((): ReactNode => {
@@ -101,18 +106,36 @@ export function useChatBannerSlots({
       );
     }
     return null;
-  }, [showBanner, isOnIOS, nudge, showGitHubBanner, githubNudge, showDiscordBanner, discordNudge]);
+  }, [
+    showBanner,
+    isOnIOS,
+    nudge,
+    showGitHubBanner,
+    githubNudge,
+    showDiscordBanner,
+    discordNudge,
+  ]);
 
-  const mainQueuedDrawerSlot = useMemo((): ReactNode => (
-    <QueuedMessagesDrawer
-      queuedMessages={queuedMessages}
-      onCancelMessage={onCancelQueuedMessage}
-      onCancelAll={onCancelAllQueued}
-      onSteer={onSteerMessage}
-      showSteer={queueSteering}
-      onEditTail={onEditQueueTail}
-    />
-  ), [queuedMessages, onCancelQueuedMessage, onCancelAllQueued, onSteerMessage, queueSteering, onEditQueueTail]);
+  const mainQueuedDrawerSlot = useMemo(
+    (): ReactNode => (
+      <QueuedMessagesDrawer
+        queuedMessages={queuedMessages}
+        onCancelMessage={onCancelQueuedMessage}
+        onCancelAll={onCancelAllQueued}
+        onSteer={onSteerMessage}
+        showSteer={queueSteering}
+        onEditTail={onEditQueueTail}
+      />
+    ),
+    [
+      queuedMessages,
+      onCancelQueuedMessage,
+      onCancelAllQueued,
+      onSteerMessage,
+      queueSteering,
+      onEditQueueTail,
+    ],
+  );
 
   const slackReadonlyBannerSlot = useMemo((): ReactNode => {
     if (activeConversation?.originChannel !== "slack") return null;

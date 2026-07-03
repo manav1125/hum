@@ -26,7 +26,9 @@ import { useEffectiveTimezone } from "@/utils/use-effective-timezone";
  * computed in the effective timezone so they stay aligned with the `tz` sent to
  * the billing backend.
  */
-export function getDefaultDateRange(tz: string = getEffectiveTimezone()): DateRange {
+export function getDefaultDateRange(
+  tz: string = getEffectiveTimezone(),
+): DateRange {
   return computeRangeInTimezone(DEFAULT_PRESET_DAYS, tz);
 }
 
@@ -34,9 +36,7 @@ export type UsageChartState = {
   dateRange: DateRange;
   setDateRange: (range: DateRange) => void;
   drilldown: BillingUsageDrilldown | null;
-  setDrilldown: (
-    d: BillingUsageDrilldown | null,
-  ) => void;
+  setDrilldown: (d: BillingUsageDrilldown | null) => void;
 };
 
 export type BillingUsageSourceFilter = "runtime_proxy" | "oauth_proxy";
@@ -48,7 +48,9 @@ export type BillingUsageDrilldown = {
 export function getBillingUsageGroupBy(
   drilldown: BillingUsageDrilldown | null,
 ):
-  | NonNullable<OrganizationsBillingUsageSeriesRetrieveData["query"]>["group_by"]
+  | NonNullable<
+      OrganizationsBillingUsageSeriesRetrieveData["query"]
+    >["group_by"]
   | undefined {
   if (!drilldown) return undefined;
   if (drilldown.usageSource === "oauth_proxy") return "oauth_provider";
@@ -83,9 +85,7 @@ export function buildBillingUsageTotalsQuery(
     from: state.dateRange.from,
     to: state.dateRange.to,
     tz,
-    ...(state.drilldown
-      ? { usage_source: state.drilldown.usageSource }
-      : {}),
+    ...(state.drilldown ? { usage_source: state.drilldown.usageSource } : {}),
   };
 }
 

@@ -1,11 +1,11 @@
 import { Button, Tag, Typography } from "@vellumai/design-library";
 import {
-    CheckCircle,
-    CircleDot,
-    MessageSquare,
-    Quote,
-    Trash2,
-    User,
+  CheckCircle,
+  CircleDot,
+  MessageSquare,
+  Quote,
+  Trash2,
+  User,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 

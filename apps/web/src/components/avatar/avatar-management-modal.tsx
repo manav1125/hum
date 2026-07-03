@@ -163,7 +163,10 @@ export function AvatarManagementModal({
             className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10"
             aria-label="Close"
           >
-            <X className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+            <X
+              className="h-4 w-4"
+              style={{ color: "var(--content-secondary)" }}
+            />
           </button>
         </div>
 
@@ -190,9 +193,15 @@ export function AvatarManagementModal({
               >
                 <div
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
+                  style={{
+                    backgroundColor:
+                      "color-mix(in oklab, var(--content-tertiary) 16%, transparent)",
+                  }}
                 >
-                  <ImageIcon className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+                  <ImageIcon
+                    className="h-4 w-4"
+                    style={{ color: "var(--content-secondary)" }}
+                  />
                 </div>
                 <div className="flex-1 text-left">
                   <p
@@ -222,9 +231,15 @@ export function AvatarManagementModal({
                 >
                   <div
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
+                    style={{
+                      backgroundColor:
+                        "color-mix(in oklab, var(--content-tertiary) 16%, transparent)",
+                    }}
                   >
-                    <Sparkles className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+                    <Sparkles
+                      className="h-4 w-4"
+                      style={{ color: "var(--content-secondary)" }}
+                    />
                   </div>
                   <div className="flex-1 text-left">
                     <p
@@ -256,9 +271,15 @@ export function AvatarManagementModal({
                 >
                   <div
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: "color-mix(in oklab, var(--content-tertiary) 16%, transparent)" }}
+                    style={{
+                      backgroundColor:
+                        "color-mix(in oklab, var(--content-tertiary) 16%, transparent)",
+                    }}
                   >
-                    <RotateCcw className="h-4 w-4" style={{ color: "var(--content-secondary)" }} />
+                    <RotateCcw
+                      className="h-4 w-4"
+                      style={{ color: "var(--content-secondary)" }}
+                    />
                   </div>
                   <div className="flex-1 text-left">
                     <p

@@ -575,7 +575,7 @@ describe("replicate direct fallback (managed proxy unavailable)", () => {
       expect(result.content).toContain("HTTP 402");
       expect(result.content).toContain("A Replicate token IS configured");
       expect(result.content).toContain("fresh, live result");
-      expect(result.content).not.toContain("log in to Vellum");
+      expect(result.content).not.toContain("log in to Cue");
     } finally {
       restore();
     }
@@ -599,7 +599,7 @@ describe("replicate direct fallback (managed proxy unavailable)", () => {
     expect(result.content).toContain("Your Own mode");
   });
 
-  test("no replicate token on a self-hosted docker deployment steers to a direct token, not Vellum login", async () => {
+  test("no replicate token on a self-hosted docker deployment steers to a direct token, not Cue login", async () => {
     mockImageGenMode = "managed";
     mockReplicateToken = undefined;
     mockRuntimeMode = "docker";
@@ -608,10 +608,10 @@ describe("replicate direct fallback (managed proxy unavailable)", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("self-hosted deployment");
-    expect(result.content).toContain("logging in to Vellum will not fix it");
+    expect(result.content).toContain("logging in to Cue will not fix it");
     expect(result.content).toContain("REPLICATE_API_TOKEN");
     expect(result.content).toContain("NOT Composio");
-    expect(result.content).not.toContain("Please log in to Vellum");
+    expect(result.content).not.toContain("Please log in to Cue");
   });
 
   test("no replicate token on bare metal keeps the login hint but adds the token option", async () => {
@@ -623,7 +623,7 @@ describe("replicate direct fallback (managed proxy unavailable)", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain(
-      "Managed proxy is not available. Please log in to Vellum or switch to Your Own mode.",
+      "Managed proxy is not available. Please log in to Cue or switch to Your Own mode.",
     );
     expect(result.content).toContain("REPLICATE_API_TOKEN");
   });

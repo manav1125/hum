@@ -1,18 +1,18 @@
 import { type ReactNode } from "react";
 
 import {
-    displayProvider,
-    displayText,
-    formatCacheTokens,
-    formatCost,
-    formatCount,
-    formattedCreatedAt,
-    isProviderOnlySummary,
-    summaryFallbackMessage,
+  displayProvider,
+  displayText,
+  formatCacheTokens,
+  formatCost,
+  formatCount,
+  formattedCreatedAt,
+  isProviderOnlySummary,
+  summaryFallbackMessage,
 } from "@/domains/chat/inspector/inspector-formatters";
 import type {
-    LLMCallSummary,
-    LLMRequestLogEntry,
+  LLMCallSummary,
+  LLMRequestLogEntry,
 } from "@vellumai/assistant-api";
 import { Card } from "@vellumai/design-library";
 
@@ -137,12 +137,12 @@ function buildUsageRows(summary: LLMCallSummary): MetadataRow[] {
       value: formatCount(summary.requestMessageCount),
     },
     { label: "Tools available", value: formatCount(summary.requestToolCount) },
-    { label: "Tool calls", value: formatCount(summary.responseToolCallCount ?? 0) },
+    {
+      label: "Tool calls",
+      value: formatCount(summary.responseToolCallCount ?? 0),
+    },
   ];
-  if (
-    summary.durationMs != null &&
-    Number.isFinite(summary.durationMs)
-  ) {
+  if (summary.durationMs != null && Number.isFinite(summary.durationMs)) {
     rows.splice(4, 0, {
       label: "Duration",
       value: `${formatCount(Math.round(summary.durationMs))} ms`,

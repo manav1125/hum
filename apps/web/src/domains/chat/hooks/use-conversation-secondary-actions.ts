@@ -8,14 +8,15 @@
  */
 
 import { captureError } from "@/lib/sentry/capture-error";
-import {
-  useCallback,
-} from "react";
+import { useCallback } from "react";
 
 import { useNavigate } from "react-router";
 
 import type { Conversation } from "@/types/conversation-types";
-import { conversationsByIdAnalyzePost, conversationsForkPost } from "@/generated/daemon/sdk.gen";
+import {
+  conversationsByIdAnalyzePost,
+  conversationsForkPost,
+} from "@/generated/daemon/sdk.gen";
 import { isElectron } from "@/runtime/is-electron";
 import { openPopoutWindow } from "@/runtime/popout-window";
 import { routes } from "@/utils/routes";
@@ -86,8 +87,10 @@ export function useConversationSecondaryActions({
 
   const handleForkConversation = useCallback(
     async (throughMessageId: string) => {
-      const assistantId = useResolvedAssistantsStore.getState().activeAssistantId;
-      const activeConversationId = useConversationStore.getState().activeConversationId;
+      const assistantId =
+        useResolvedAssistantsStore.getState().activeAssistantId;
+      const activeConversationId =
+        useConversationStore.getState().activeConversationId;
       if (!assistantId || !activeConversationId) {
         return;
       }
@@ -109,9 +112,9 @@ export function useConversationSecondaryActions({
   );
 
   const handleForkConversationFromMenu = useCallback(() => {
-    const latestPersisted = useChatSessionStore.getState().messages.findLast(
-      (m) => m.id != null,
-    );
+    const latestPersisted = useChatSessionStore
+      .getState()
+      .messages.findLast((m) => m.id != null);
     const throughMessageId = latestPersisted?.id;
     if (!throughMessageId) return;
     void handleForkConversation(throughMessageId);
@@ -119,7 +122,8 @@ export function useConversationSecondaryActions({
 
   const handleAnalyzeConversation = useCallback(
     async (conversation: Conversation) => {
-      const assistantId = useResolvedAssistantsStore.getState().activeAssistantId;
+      const assistantId =
+        useResolvedAssistantsStore.getState().activeAssistantId;
       if (!assistantId) return;
       try {
         const { data } = await conversationsByIdAnalyzePost({
@@ -130,7 +134,9 @@ export function useConversationSecondaryActions({
         switchConversation(data.conversation.id);
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Failed to analyze conversation.";
+          err instanceof Error
+            ? err.message
+            : "Failed to analyze conversation.";
         useChatSessionStore.getState().setError({ message });
         captureError(err, { context: "analyzeConversation" });
       }
@@ -138,16 +144,13 @@ export function useConversationSecondaryActions({
     [refreshConversations, switchConversation],
   );
 
-  const handleOpenInNewWindow = useCallback(
-    (conversation: Conversation) => {
-      if (isElectron()) {
-        void openPopoutWindow(conversation.conversationId);
-      } else {
-        window.open(routes.conversation(conversation.conversationId), "_blank");
-      }
-    },
-    [],
-  );
+  const handleOpenInNewWindow = useCallback((conversation: Conversation) => {
+    if (isElectron()) {
+      void openPopoutWindow(conversation.conversationId);
+    } else {
+      window.open(routes.conversation(conversation.conversationId), "_blank");
+    }
+  }, []);
 
   // Navigate to the per-conversation LLM context inspector (web port of
   // macOS's `MessageInspectorView`). The conversation lives in the path;
@@ -162,11 +165,12 @@ export function useConversationSecondaryActions({
   const handleInspectConversation = useCallback(
     (conversation: Conversation) => {
       const params = new URLSearchParams();
-      const currentActiveId = useConversationStore.getState().activeConversationId;
+      const currentActiveId =
+        useConversationStore.getState().activeConversationId;
       if (conversation.conversationId === currentActiveId) {
-        const latestUser = useChatSessionStore.getState().messages.findLast(
-          (m) => m.role === "user" && m.id != null,
-        );
+        const latestUser = useChatSessionStore
+          .getState()
+          .messages.findLast((m) => m.role === "user" && m.id != null);
         const messageId = latestUser?.id;
         if (messageId) {
           params.set("messageId", messageId);
@@ -181,7 +185,8 @@ export function useConversationSecondaryActions({
 
   const handleInspectMessage = useCallback(
     (messageId: string) => {
-      const activeConversationId = useConversationStore.getState().activeConversationId;
+      const activeConversationId =
+        useConversationStore.getState().activeConversationId;
       if (!activeConversationId) return;
       const params = new URLSearchParams();
       params.set("messageId", turnHeadMessageId(messageId));

@@ -6,7 +6,10 @@ import { Input } from "@vellumai/design-library/components/input";
 import { Typography } from "@vellumai/design-library/components/typography";
 import { ChevronRight, Loader2 } from "lucide-react";
 
-import type { ConnectionProvider, CredentialEntry } from "@/domains/settings/ai/provider-connections-client";
+import type {
+  ConnectionProvider,
+  CredentialEntry,
+} from "@/domains/settings/ai/provider-connections-client";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -187,9 +190,7 @@ export function ProviderEditorApiKeySection({
                     }
                   }}
                 >
-                  {isCreatingNewCredential
-                    ? "Cancel"
-                    : "+ New Credential"}
+                  {isCreatingNewCredential ? "Cancel" : "+ New Credential"}
                 </Button>
               </div>
             </div>

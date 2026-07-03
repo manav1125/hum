@@ -1,29 +1,32 @@
 import { ArrowUp, Square } from "lucide-react";
 import {
-    type Dispatch,
-    type FormEvent,
-    type ReactNode,
-    type RefObject,
-    type SetStateAction,
-    useCallback,
-    useEffect,
-    useLayoutEffect,
-    useMemo,
-    useRef,
-    useState,
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import { flushSync } from "react-dom";
 
 import {
-    AttachFileButton,
-    ChatAttachmentsStrip,
+  AttachFileButton,
+  ChatAttachmentsStrip,
 } from "@/domains/chat/components/chat-attachments/chat-attachments";
-import { type ChatAttachment, useComposerStore } from "@/domains/chat/composer-store";
+import {
+  type ChatAttachment,
+  useComposerStore,
+} from "@/domains/chat/composer-store";
 import { StreamingWaveform } from "@/domains/chat/components/chat-composer/streaming-waveform";
 import { EnterVoiceModeButton } from "@/domains/chat/components/enter-voice-mode-button";
 import {
-    VoiceInputButton,
-    type VoiceInputButtonHandle,
+  VoiceInputButton,
+  type VoiceInputButtonHandle,
 } from "@/domains/chat/components/voice-input-button";
 import { type TurnPhase, useTurnStore } from "@/domains/chat/turn-store";
 import { useLiveVoiceStore } from "@/domains/chat/voice/live-voice/live-voice-store";
@@ -37,20 +40,25 @@ import { isPointerCoarse } from "@/utils/pointer";
 import { Button, Popover } from "@vellumai/design-library";
 
 import {
-    computeGhostSuffix,
-    shouldSubmitOnEnter,
+  computeGhostSuffix,
+  shouldSubmitOnEnter,
 } from "@/domains/chat/components/chat-composer/chat-composer-utils";
-import { EMOJI_MIN_FILTER_LENGTH, EMOJI_TRIGGER_RE, type EmojiEntry, useEmojiSearch } from "@/domains/chat/components/chat-composer/emoji-catalog";
+import {
+  EMOJI_MIN_FILTER_LENGTH,
+  EMOJI_TRIGGER_RE,
+  type EmojiEntry,
+  useEmojiSearch,
+} from "@/domains/chat/components/chat-composer/emoji-catalog";
 import { EmojiPickerPopup } from "@/domains/chat/components/chat-composer/emoji-picker-popup";
 import {
-    applyMarkdownFormatting,
-    matchFormattingShortcut,
+  applyMarkdownFormatting,
+  matchFormattingShortcut,
 } from "@/domains/chat/components/chat-composer/markdown-formatting";
 import {
-    SLASH_PREFIX_RE,
-    type SlashCommand,
-    filteredCommands,
-    selectedInputText,
+  SLASH_PREFIX_RE,
+  type SlashCommand,
+  filteredCommands,
+  selectedInputText,
 } from "@/domains/chat/components/chat-composer/slash-command-catalog";
 import { SlashCommandPopup } from "@/domains/chat/components/chat-composer/slash-command-popup";
 import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
@@ -206,7 +214,8 @@ export function ChatComposer({
   onCancelEdit,
 }: ChatComposerProps) {
   const voicePhase = useVoiceRecordingStore.use.phase();
-  const isVoiceActive = voicePhase === "recording" || voicePhase === "processing";
+  const isVoiceActive =
+    voicePhase === "recording" || voicePhase === "processing";
   // Holds the MediaStream opened by VoiceInputButton so we can reuse it for
   // amplitude analysis rather than opening a second getUserMedia request.
   const voiceStreamRef = useRef<MediaStream | null>(null);
@@ -329,8 +338,7 @@ export function ChatComposer({
     phase === "queued" || phase === "thinking" || phase === "streaming";
   const showInlineVoicePreview =
     isVoiceActive && !isLocallyGenerating && !isElectronHost;
-  const hideTextareaForVoice =
-    isNative && showInlineVoicePreview;
+  const hideTextareaForVoice = isNative && showInlineVoicePreview;
 
   const ghostSuffix = useMemo(
     () =>
@@ -558,7 +566,9 @@ export function ChatComposer({
               // overlay bridge no-ops there.
               <div
                 className={hideTextareaForVoice ? "px-2 pt-3" : "px-2"}
-                aria-label={voicePhase === "processing" ? "Transcribing" : "Recording"}
+                aria-label={
+                  voicePhase === "processing" ? "Transcribing" : "Recording"
+                }
                 aria-live="polite"
               >
                 <StreamingWaveform

@@ -1,4 +1,3 @@
-
 import { type MutableRefObject, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -103,7 +102,12 @@ export function useConversationActions({
   //   onSettled → invalidateQueries (refetch from server)
   // -------------------------------------------------------------------------
 
-  const archiveMutation = useMutation<void, Error, ArchiveVars, MutationContext>({
+  const archiveMutation = useMutation<
+    void,
+    Error,
+    ArchiveVars,
+    MutationContext
+  >({
     mutationFn: async ({ assistantId: aid, conversationId }) => {
       await conversationsByIdArchivePost({
         path: { assistant_id: aid, id: conversationId },
@@ -113,11 +117,14 @@ export function useConversationActions({
     onMutate: async ({ assistantId: aid, conversationId }) => {
       await cancelConversationQueries(queryClient, aid);
       const snapshot = snapshotConversationCaches(queryClient, aid);
-      patchConversation(queryClient, aid, conversationId, { archivedAt: Date.now() });
+      patchConversation(queryClient, aid, conversationId, {
+        archivedAt: Date.now(),
+      });
       return { snapshot };
     },
     onError: (err, _vars, context) => {
-      if (context?.snapshot) restoreConversationCaches(queryClient, context.snapshot);
+      if (context?.snapshot)
+        restoreConversationCaches(queryClient, context.snapshot);
       captureError(err, { context: "archiveConversation" });
     },
     onSettled: (_data, _err, { assistantId: aid }) => {
@@ -125,7 +132,12 @@ export function useConversationActions({
     },
   });
 
-  const unarchiveMutation = useMutation<void, Error, UnarchiveVars, MutationContext>({
+  const unarchiveMutation = useMutation<
+    void,
+    Error,
+    UnarchiveVars,
+    MutationContext
+  >({
     mutationFn: async ({ assistantId: aid, conversationId }) => {
       await conversationsByIdUnarchivePost({
         path: { assistant_id: aid, id: conversationId },
@@ -135,11 +147,14 @@ export function useConversationActions({
     onMutate: async ({ assistantId: aid, conversationId }) => {
       await cancelConversationQueries(queryClient, aid);
       const snapshot = snapshotConversationCaches(queryClient, aid);
-      patchConversation(queryClient, aid, conversationId, { archivedAt: undefined });
+      patchConversation(queryClient, aid, conversationId, {
+        archivedAt: undefined,
+      });
       return { snapshot };
     },
     onError: (err, _vars, context) => {
-      if (context?.snapshot) restoreConversationCaches(queryClient, context.snapshot);
+      if (context?.snapshot)
+        restoreConversationCaches(queryClient, context.snapshot);
       captureError(err, { context: "unarchiveConversation" });
     },
     onSettled: (_data, _err, { assistantId: aid }) => {
@@ -147,7 +162,12 @@ export function useConversationActions({
     },
   });
 
-  const markReadMutation = useMutation<void, Error, MarkReadVars, MutationContext>({
+  const markReadMutation = useMutation<
+    void,
+    Error,
+    MarkReadVars,
+    MutationContext
+  >({
     mutationFn: async ({ assistantId: aid, conversationId }) => {
       await conversationsSeenPost({
         path: { assistant_id: aid },
@@ -158,11 +178,14 @@ export function useConversationActions({
     onMutate: async ({ assistantId: aid, conversationId }) => {
       await cancelConversationQueries(queryClient, aid);
       const snapshot = snapshotConversationCaches(queryClient, aid);
-      patchConversation(queryClient, aid, conversationId, { hasUnseenLatestAssistantMessage: false });
+      patchConversation(queryClient, aid, conversationId, {
+        hasUnseenLatestAssistantMessage: false,
+      });
       return { snapshot };
     },
     onError: (err, _vars, context) => {
-      if (context?.snapshot) restoreConversationCaches(queryClient, context.snapshot);
+      if (context?.snapshot)
+        restoreConversationCaches(queryClient, context.snapshot);
       captureError(err, { context: "markConversationRead" });
     },
     onSettled: (_data, _err, { assistantId: aid }) => {
@@ -170,7 +193,12 @@ export function useConversationActions({
     },
   });
 
-  const markUnreadMutation = useMutation<void, Error, MarkUnreadVars, MutationContext>({
+  const markUnreadMutation = useMutation<
+    void,
+    Error,
+    MarkUnreadVars,
+    MutationContext
+  >({
     mutationFn: async ({ assistantId: aid, conversationId }) => {
       await conversationsUnreadPost({
         path: { assistant_id: aid },
@@ -181,11 +209,14 @@ export function useConversationActions({
     onMutate: async ({ assistantId: aid, conversationId }) => {
       await cancelConversationQueries(queryClient, aid);
       const snapshot = snapshotConversationCaches(queryClient, aid);
-      patchConversation(queryClient, aid, conversationId, { hasUnseenLatestAssistantMessage: true });
+      patchConversation(queryClient, aid, conversationId, {
+        hasUnseenLatestAssistantMessage: true,
+      });
       return { snapshot };
     },
     onError: (err, _vars, context) => {
-      if (context?.snapshot) restoreConversationCaches(queryClient, context.snapshot);
+      if (context?.snapshot)
+        restoreConversationCaches(queryClient, context.snapshot);
       captureError(err, { context: "markConversationUnread" });
     },
     onSettled: (_data, _err, { assistantId: aid }) => {
@@ -193,8 +224,18 @@ export function useConversationActions({
     },
   });
 
-  const moveToGroupMutation = useMutation<void, Error, MoveToGroupVars, MutationContext>({
-    mutationFn: async ({ assistantId: aid, conversationId, groupId, isPinned }) => {
+  const moveToGroupMutation = useMutation<
+    void,
+    Error,
+    MoveToGroupVars,
+    MutationContext
+  >({
+    mutationFn: async ({
+      assistantId: aid,
+      conversationId,
+      groupId,
+      isPinned,
+    }) => {
       await conversationsReorderPost({
         path: { assistant_id: aid },
         body: {
@@ -203,10 +244,18 @@ export function useConversationActions({
         throwOnError: true,
       });
     },
-    onMutate: async ({ assistantId: aid, conversationId, groupId, isPinned }) => {
+    onMutate: async ({
+      assistantId: aid,
+      conversationId,
+      groupId,
+      isPinned,
+    }) => {
       await cancelConversationQueries(queryClient, aid);
       const snapshot = snapshotConversationCaches(queryClient, aid);
-      patchConversation(queryClient, aid, conversationId, { isPinned, groupId });
+      patchConversation(queryClient, aid, conversationId, {
+        isPinned,
+        groupId,
+      });
       return { snapshot };
     },
     onSuccess: (_data, { conversationId, isPinned }) => {
@@ -215,7 +264,8 @@ export function useConversationActions({
       }
     },
     onError: (err, { conversationId, isPinned }, context) => {
-      if (context?.snapshot) restoreConversationCaches(queryClient, context.snapshot);
+      if (context?.snapshot)
+        restoreConversationCaches(queryClient, context.snapshot);
       if (isPinned) {
         prePinGroupIdsRef.current.delete(conversationId);
       }
@@ -226,7 +276,12 @@ export function useConversationActions({
     },
   });
 
-  const reorderMutation = useMutation<void, Error, ReorderVars, MutationContext>({
+  const reorderMutation = useMutation<
+    void,
+    Error,
+    ReorderVars,
+    MutationContext
+  >({
     mutationFn: async ({ assistantId: aid, orderedIds }) => {
       await conversationsReorderPost({
         path: { assistant_id: aid },
@@ -254,7 +309,8 @@ export function useConversationActions({
       return { snapshot };
     },
     onError: (err, _vars, context) => {
-      if (context?.snapshot) restoreConversationCaches(queryClient, context.snapshot);
+      if (context?.snapshot)
+        restoreConversationCaches(queryClient, context.snapshot);
       captureError(err, { context: "reorderConversations" });
     },
     onSettled: (_data, _err, { assistantId: aid }) => {
@@ -273,7 +329,10 @@ export function useConversationActions({
 
       const wasActive = conversation.conversationId === activeConversationId;
       if (wasActive) {
-        const nextKey = findNextConversationId(conversations, conversation.conversationId);
+        const nextKey = findNextConversationId(
+          conversations,
+          conversation.conversationId,
+        );
         if (nextKey) {
           switchConversation(nextKey);
         } else {
@@ -281,15 +340,28 @@ export function useConversationActions({
         }
       }
 
-      archiveMutation.mutate({ assistantId, conversationId: conversation.conversationId });
+      archiveMutation.mutate({
+        assistantId,
+        conversationId: conversation.conversationId,
+      });
     },
-    [activeConversationId, assistantId, conversations, switchConversation, startNewConversation, archiveMutation],
+    [
+      activeConversationId,
+      assistantId,
+      conversations,
+      switchConversation,
+      startNewConversation,
+      archiveMutation,
+    ],
   );
 
   const handleUnarchiveConversation = useCallback(
     (conversation: Conversation) => {
       if (!assistantId) return;
-      unarchiveMutation.mutate({ assistantId, conversationId: conversation.conversationId });
+      unarchiveMutation.mutate({
+        assistantId,
+        conversationId: conversation.conversationId,
+      });
     },
     [assistantId, unarchiveMutation],
   );
@@ -297,8 +369,15 @@ export function useConversationActions({
   const handleMarkConversationUnread = useCallback(
     (conversation: Conversation) => {
       if (!assistantId) return;
-      if (conversation.hasUnseenLatestAssistantMessage || !conversation.latestAssistantMessageAt) return;
-      markUnreadMutation.mutate({ assistantId, conversationId: conversation.conversationId });
+      if (
+        conversation.hasUnseenLatestAssistantMessage ||
+        !conversation.latestAssistantMessageAt
+      )
+        return;
+      markUnreadMutation.mutate({
+        assistantId,
+        conversationId: conversation.conversationId,
+      });
     },
     [assistantId, markUnreadMutation],
   );
@@ -307,7 +386,10 @@ export function useConversationActions({
     (conversation: Conversation) => {
       if (!assistantId) return;
       if (!conversation.hasUnseenLatestAssistantMessage) return;
-      markReadMutation.mutate({ assistantId, conversationId: conversation.conversationId });
+      markReadMutation.mutate({
+        assistantId,
+        conversationId: conversation.conversationId,
+      });
     },
     [assistantId, markReadMutation],
   );
@@ -322,7 +404,10 @@ export function useConversationActions({
       const isPinned = groupId === "system:pinned";
 
       if (isPinned) {
-        prePinGroupIdsRef.current.set(conversation.conversationId, conversation.groupId);
+        prePinGroupIdsRef.current.set(
+          conversation.conversationId,
+          conversation.groupId,
+        );
       }
 
       moveToGroupMutation.mutate({
@@ -369,10 +454,9 @@ export function useConversationActions({
   const handleRenameConversation = useCallback(
     (conversation: Conversation) => {
       if (!assistantId) return;
-      useRenameRequestStore.getState().requestRename(
-        conversation.conversationId,
-        conversation.title ?? "",
-      );
+      useRenameRequestStore
+        .getState()
+        .requestRename(conversation.conversationId, conversation.title ?? "");
     },
     [assistantId],
   );

@@ -26,11 +26,13 @@ export function reconcileSnapshot(
   server: ConversationMessage[],
   options: ReconcileSnapshotOptions,
 ): DisplayMessage[] {
-  return reconcileMessagesWithSeq(local, server.map(mapRuntimeToDisplayMessage), {
-    serverSeq: options.serverSeq,
-    localSeq: options.localSeq,
-    oldestPageTimestamp: options.oldestPageTimestamp,
-  });
+  return reconcileMessagesWithSeq(
+    local,
+    server.map(mapRuntimeToDisplayMessage),
+    {
+      serverSeq: options.serverSeq,
+      localSeq: options.localSeq,
+      oldestPageTimestamp: options.oldestPageTimestamp,
+    },
+  );
 }
-
-

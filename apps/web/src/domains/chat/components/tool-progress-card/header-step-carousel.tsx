@@ -1,4 +1,3 @@
-
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -224,7 +223,9 @@ export function HeaderStepCarousel({
                 // With a title present, the info is subtext (small, tertiary).
                 // With no title it IS the header label, so it takes the
                 // title's emphasis (medium, emphasised) instead.
-                variant={hasTitle ? "body-small-default" : "body-medium-default"}
+                variant={
+                  hasTitle ? "body-small-default" : "body-medium-default"
+                }
                 // `body-small-default` ships line-height: 1, which clips
                 // descenders (e.g. the "g" in "subagent") once `truncate`
                 // adds overflow:hidden. Bump to 16px — the same ~1.3 ratio
@@ -242,7 +243,9 @@ export function HeaderStepCarousel({
                 {displayed.info}
               </Typography>
             ) : (
-              <span className="ml-1 block min-w-0 flex-1">{displayed.info}</span>
+              <span className="ml-1 block min-w-0 flex-1">
+                {displayed.info}
+              </span>
             )}
           </>
         ) : null}

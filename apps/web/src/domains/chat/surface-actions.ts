@@ -38,9 +38,9 @@ export async function handleSurfaceAction(
   actionId: string,
   data?: Record<string, unknown>,
 ): Promise<void> {
-  const exists = useChatSessionStore.getState().messages.some((m) =>
-    m.surfaces?.some((s) => s.surfaceId === surfaceId),
-  );
+  const exists = useChatSessionStore
+    .getState()
+    .messages.some((m) => m.surfaces?.some((s) => s.surfaceId === surfaceId));
   if (!exists) {
     console.warn(`Surface action on unknown surface: ${surfaceId}`);
     return;
@@ -48,7 +48,9 @@ export async function handleSurfaceAction(
 
   const ctx = useStreamStore.getState().streamContext;
   if (!ctx) {
-    useChatSessionStore.getState().setError({ message: "No active session. Please try again." });
+    useChatSessionStore
+      .getState()
+      .setError({ message: "No active session. Please try again." });
     return;
   }
 
@@ -62,12 +64,16 @@ export async function handleSurfaceAction(
     );
   } catch (err) {
     captureError(err, { context: "submit_surface_action" });
-    useChatSessionStore.getState().setError({ message: "Failed to submit. Please try again." });
+    useChatSessionStore
+      .getState()
+      .setError({ message: "Failed to submit. Please try again." });
     return;
   }
 
   if (!result.ok) {
-    useChatSessionStore.getState().setError({ message: "Failed to submit. Please try again." });
+    useChatSessionStore
+      .getState()
+      .setError({ message: "Failed to submit. Please try again." });
     return;
   }
 
@@ -85,7 +91,9 @@ export async function handleSurfaceAction(
       ? formatDecisionReason(result.reason)
       : result.replyText;
 
-  useChatSessionStore.getState().setMessages((prev: DisplayMessage[]) =>
-    completeSubmittedSurface(prev, surfaceId, actionId, completionText),
-  );
+  useChatSessionStore
+    .getState()
+    .setMessages((prev: DisplayMessage[]) =>
+      completeSubmittedSurface(prev, surfaceId, actionId, completionText),
+    );
 }

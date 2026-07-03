@@ -4,14 +4,14 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
-    assistantsActiveRetrieveOptions,
-    assistantsResizeMutation,
+  assistantsActiveRetrieveOptions,
+  assistantsResizeMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
-import type { MachineSizeEnum, MachineTierEnum } from "@/generated/api/types.gen";
-import {
-    SIZE_DESCRIPTION,
-    SIZE_LABEL,
-} from "@/lib/billing/machine-sizes";
+import type {
+  MachineSizeEnum,
+  MachineTierEnum,
+} from "@/generated/api/types.gen";
+import { SIZE_DESCRIPTION, SIZE_LABEL } from "@/lib/billing/machine-sizes";
 import { Button } from "@vellumai/design-library/components/button";
 import { Modal } from "@vellumai/design-library/components/modal";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -19,8 +19,8 @@ import { Typography } from "@vellumai/design-library/components/typography";
 
 import { IconBadge, StepDots } from "./primitives";
 import {
-    allowedMachineSizesForTier,
-    extractOnboardingErrorMessage,
+  allowedMachineSizesForTier,
+  extractOnboardingErrorMessage,
 } from "./utils";
 
 function ResourceCard({
@@ -43,7 +43,8 @@ function ResourceCard({
       <span
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
         style={{
-          backgroundColor: "color-mix(in oklab, var(--system-positive-strong) 10%, transparent)",
+          backgroundColor:
+            "color-mix(in oklab, var(--system-positive-strong) 10%, transparent)",
         }}
       >
         <Icon className="h-4 w-4 text-[var(--system-positive-strong)]" />
@@ -96,12 +97,15 @@ export function SetupStep({
   dotTotal: number;
 }) {
   const { data: activeAssistant } = useQuery(assistantsActiveRetrieveOptions());
-  const currentSize = (activeAssistant?.machine_size as MachineSizeEnum) || "small";
+  const currentSize =
+    (activeAssistant?.machine_size as MachineSizeEnum) || "small";
   const currentGib = activeAssistant?.provisioned_storage_gib ?? null;
 
   const allowedSizes = allowedMachineSizesForTier(maxTier);
   const targetSize: MachineSizeEnum =
-    allowedSizes.length > 0 ? allowedSizes[allowedSizes.length - 1] : currentSize;
+    allowedSizes.length > 0
+      ? allowedSizes[allowedSizes.length - 1]
+      : currentSize;
 
   const machineChanged = targetSize !== currentSize;
   const canGrowStorage =
@@ -180,7 +184,8 @@ export function SetupStep({
           )}
           {!machineChanged && !canGrowStorage && (
             <Notice tone="neutral">
-              Your assistant is already running at the maximum size for your plan.
+              Your assistant is already running at the maximum size for your
+              plan.
             </Notice>
           )}
         </div>

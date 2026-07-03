@@ -17,7 +17,16 @@
  * - `useChatBannerSlots` — nudge/queued/slack banner assembly
  */
 
-import { type Dispatch, type MutableRefObject, type RefObject, type SetStateAction, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
+import {
+  type Dispatch,
+  type MutableRefObject,
+  type RefObject,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 
 import { useEscapeCancel } from "@/domains/chat/hooks/use-escape-cancel";
 import { useChatUIState } from "@/domains/chat/hooks/use-chat-ui-state";
@@ -31,7 +40,11 @@ import { useChatBannerSlots } from "@/domains/chat/hooks/use-chat-banner-slots";
 
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
 import { useChatAttachmentDropZone } from "@/domains/chat/components/chat-attachments/use-chat-attachment-drop-zone";
-import { useComposerStore, selectUploadingCount, selectUploadedIds } from "@/domains/chat/composer-store";
+import {
+  useComposerStore,
+  selectUploadingCount,
+  selectUploadedIds,
+} from "@/domains/chat/composer-store";
 import { ChatBody } from "@/domains/chat/components/chat-body";
 import { ChatRuleEditorModal } from "@/domains/chat/components/chat-rule-editor-modal";
 import { ComposerNotices } from "@/domains/chat/components/composer-notices";
@@ -45,14 +58,23 @@ import { SendErrorModal } from "@/domains/chat/components/send-error-modal";
 import { useEditMessage } from "@/domains/chat/hooks/use-edit-message";
 import { useOnboardingChoice } from "@/domains/chat/hooks/use-onboarding-choice";
 import { usePullRefresh } from "@/domains/chat/hooks/use-pull-refresh";
-import type { TranscriptHandle, TranscriptProps } from "@/domains/chat/transcript/transcript";
+import type {
+  TranscriptHandle,
+  TranscriptProps,
+} from "@/domains/chat/transcript/transcript";
 import { useTranscriptScroll } from "@/domains/chat/transcript/use-transcript-scroll";
 import { useIsNativePlatform } from "@/runtime/native-auth";
 import { Button, Notice } from "@vellumai/design-library";
 import { Link, useLocation, useNavigate } from "react-router";
-import { getChatBillingBannerDecision, shouldShowGenericChatErrorNotice } from "@/domains/chat/utils/error-classification";
+import {
+  getChatBillingBannerDecision,
+  shouldShowGenericChatErrorNotice,
+} from "@/domains/chat/utils/error-classification";
 import { useInteractionStore } from "@/domains/chat/interaction-store";
-import type { DisplayAttachment, DisplayMessage } from "@/domains/chat/types/types";
+import type {
+  DisplayAttachment,
+  DisplayMessage,
+} from "@/domains/chat/types/types";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import type { TranscriptItem } from "@/domains/chat/transcript/types";
 import type { HistoryPaginationResult } from "@/domains/chat/transcript/use-history-pagination";
@@ -71,8 +93,15 @@ import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
 import type { UseDiskPressureMonitorResult } from "@/assistant/use-disk-pressure-monitor";
 import { useAppNudges } from "@/domains/chat/hooks/use-app-nudges";
 import { useGhostTextSuggestion } from "@/domains/chat/hooks/use-ghost-text-suggestion";
-import { handleConfirmationSubmit, handleAllowAndCreateRule } from "@/domains/chat/confirmation-actions";
-import { handleOpenRuleEditorForToolCall, handleSaveRule, handleSaveAsNewRule } from "@/domains/chat/rule-editor-actions";
+import {
+  handleConfirmationSubmit,
+  handleAllowAndCreateRule,
+} from "@/domains/chat/confirmation-actions";
+import {
+  handleOpenRuleEditorForToolCall,
+  handleSaveRule,
+  handleSaveAsNewRule,
+} from "@/domains/chat/rule-editor-actions";
 import { handleSurfaceAction } from "@/domains/chat/surface-actions";
 import { useRuleEditorStore } from "@/domains/chat/rule-editor-store";
 import { useOpenAppFromChat } from "@/domains/chat/hooks/use-open-app-from-chat";
@@ -92,7 +121,10 @@ import { useVellumCommands } from "@/runtime/vellum-commands";
 
 export interface ChatMainPanelProps {
   // Send message (orchestration owns the SSE / queue lifecycle)
-  sendMessage: (content: string, attachments?: DisplayAttachment[]) => Promise<void>;
+  sendMessage: (
+    content: string,
+    attachments?: DisplayAttachment[],
+  ) => Promise<void>;
   handleStopGenerating: () => Promise<void>;
   queuedMessages: DisplayMessage[];
   handleCancelQueuedMessage: (messageId: string) => void;
@@ -189,24 +221,34 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   const input = useComposerStore.use.input();
   const setInput = useComposerStore.use.setInput();
-  const restoredDraftConversationId = useComposerStore.use.restoredDraftConversationId();
+  const restoredDraftConversationId =
+    useComposerStore.use.restoredDraftConversationId();
   const chatAttachments = useComposerStore.use.attachments();
   const attachmentLastError = useComposerStore.use.attachmentLastError();
   const removeChatAttachment = useComposerStore.use.removeAttachment();
-  const dismissChatAttachmentError = useComposerStore.use.dismissAttachmentError();
-  const attachmentsUploadingCount = useMemo(() => selectUploadingCount(chatAttachments), [chatAttachments]);
-  const attachmentUploadedIds = useMemo(() => selectUploadedIds(chatAttachments), [chatAttachments]);
+  const dismissChatAttachmentError =
+    useComposerStore.use.dismissAttachmentError();
+  const attachmentsUploadingCount = useMemo(
+    () => selectUploadingCount(chatAttachments),
+    [chatAttachments],
+  );
+  const attachmentUploadedIds = useMemo(
+    () => selectUploadedIds(chatAttachments),
+    [chatAttachments],
+  );
 
   // -------------------------------------------------------------------------
   // Store reads — identity, lifecycle, feature flags
   // -------------------------------------------------------------------------
   const addChatAttachmentFiles = useCallback(
-    (files: FileList | File[]) => useComposerStore.getState().addFiles(files, assistantId),
+    (files: FileList | File[]) =>
+      useComposerStore.getState().addFiles(files, assistantId),
     [assistantId],
   );
   const assistantState = useAssistantLifecycleStore.use.assistantState();
   const assistantName = useAssistantIdentityStore.use.name();
-  const chatPullToRefreshEnabled = useClientFeatureFlagStore.use.chatPullToRefreshEnabled();
+  const chatPullToRefreshEnabled =
+    useClientFeatureFlagStore.use.chatPullToRefreshEnabled();
 
   // -------------------------------------------------------------------------
   // Store reads — per-conversation state
@@ -215,7 +257,8 @@ export function ChatMainPanel({
   const error = useChatSessionStore.use.error();
   const isLoadingHistory = useChatSessionStore.use.isLoadingHistory();
   const contextWindowUsage = useChatSessionStore.use.contextWindowUsage();
-  const compactionCircuitOpenUntil = useChatSessionStore.use.compactionCircuitOpenUntil();
+  const compactionCircuitOpenUntil =
+    useChatSessionStore.use.compactionCircuitOpenUntil();
   const transcriptPagination = useChatSessionStore.use.transcriptPagination();
 
   // -------------------------------------------------------------------------
@@ -262,29 +305,33 @@ export function ChatMainPanel({
     handleOpenMicSettings,
   } = useVoiceInput({ assistantId, inputRef, setInput });
 
-
-
   const showRuleEditor = useRuleEditorStore.use.showRuleEditor();
   const ruleEditorContext = useRuleEditorStore.use.ruleEditorContext();
   const isSavingRule = useRuleEditorStore.use.isSavingRule();
-  const unknownNudgeToolCallIds = useInteractionStore.use.unknownNudgeToolCallIds();
+  const unknownNudgeToolCallIds =
+    useInteractionStore.use.unknownNudgeToolCallIds();
 
   const handleOpenApp = useOpenAppFromChat();
 
   // -------------------------------------------------------------------------
   // Action callbacks
   // -------------------------------------------------------------------------
-  const handleOpenDocument = useCallback((surfaceId: string) => {
-    haptic.light();
-    if (assistantId) void useViewerStore.getState().loadDocument(assistantId, surfaceId);
-  }, [assistantId]);
+  const handleOpenDocument = useCallback(
+    (surfaceId: string) => {
+      haptic.light();
+      if (assistantId)
+        void useViewerStore.getState().loadDocument(assistantId, surfaceId);
+    },
+    [assistantId],
+  );
 
   const onSubagentClick = useCallback((id: string) => {
     useViewerStore.getState().openSubagentDetail(id);
   }, []);
 
   const onStopSubagent = useCallback(
-    (subagentId: string) => void useSubagentStore.getState().abortSubagent(subagentId),
+    (subagentId: string) =>
+      void useSubagentStore.getState().abortSubagent(subagentId),
     [],
   );
 
@@ -292,22 +339,32 @@ export function ChatMainPanel({
     void navigate(routes.settings.ai);
   }, [navigate]);
 
-  const checkAssistant = useCallback(() => lifecycleService.checkAssistant(), []);
+  const checkAssistant = useCallback(
+    () => lifecycleService.checkAssistant(),
+    [],
+  );
 
   const handleDismissUnknownNudge = useCallback(
-    (toolCallId: string) => useInteractionStore.getState().removeUnknownNudgeToolCallId(toolCallId),
+    (toolCallId: string) =>
+      useInteractionStore.getState().removeUnknownNudgeToolCallId(toolCallId),
     [],
   );
 
   const handleSurfaceActionCallback = useCallback(
     (surfaceId: string, action: string, input: unknown) => {
-      return handleSurfaceAction(surfaceId, action, input as Record<string, unknown> | undefined);
+      return handleSurfaceAction(
+        surfaceId,
+        action,
+        input as Record<string, unknown> | undefined,
+      );
     },
     [],
   );
 
   const handleForkConversationCallback = useCallback(
-    (messageId: string) => { void handleForkConversation(messageId); },
+    (messageId: string) => {
+      void handleForkConversation(messageId);
+    },
     [handleForkConversation],
   );
 
@@ -355,17 +412,21 @@ export function ChatMainPanel({
     sendMessage,
   });
 
-  const renderOnboardingChoice = useCallback(() => (
-    <OnboardingChoiceCard
-      onSelectSpecific={handleSelectSpecific}
-      onSubmitTasks={handleSubmitTasks}
-    />
-  ), [handleSelectSpecific, handleSubmitTasks]);
+  const renderOnboardingChoice = useCallback(
+    () => (
+      <OnboardingChoiceCard
+        onSelectSpecific={handleSelectSpecific}
+        onSubmitTasks={handleSubmitTasks}
+      />
+    ),
+    [handleSelectSpecific, handleSubmitTasks],
+  );
 
   // -------------------------------------------------------------------------
   // Edit-message recall (up-arrow)
   // -------------------------------------------------------------------------
-  const { editingMessageId, isEditing, startEditing, cancelEditing } = useEditMessage(messages);
+  const { editingMessageId, isEditing, startEditing, cancelEditing } =
+    useEditMessage(messages);
 
   const handleRecallLastMessage = useCallback(() => {
     const content = startEditing();
@@ -380,14 +441,19 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   // Nudges + ghost text
   // -------------------------------------------------------------------------
-  const nudges = useAppNudges(messages, conversations.length, liveAssistantMessageId, activeConversationId);
+  const nudges = useAppNudges(
+    messages,
+    conversations.length,
+    liveAssistantMessageId,
+    activeConversationId,
+  );
 
   const lastCompleteAssistantMsgId = useMemo<string | null>(() => {
     const last = messages[messages.length - 1];
     return last &&
       last.role === "assistant" &&
       last.id !== liveAssistantMessageId
-      ? last.id ?? null
+      ? (last.id ?? null)
       : null;
   }, [messages, liveAssistantMessageId]);
 
@@ -401,7 +467,12 @@ export function ChatMainPanel({
   // Transcript data (sanitise + build items)
   // -------------------------------------------------------------------------
   const { sanitizedMessages, transcriptItems } = useTranscriptData({
-    showThinking,
+    // The standalone thinking-dots trailer row is retired in favour of the
+    // persistent `LiveTurnStatus` line next to the avatar (it covers the
+    // same pre-response window plus the between-blocks and long-tool gaps,
+    // with real signal instead of bare dots). `showThinking` still feeds
+    // the status line's fallback-activity hint below.
+    showThinking: false,
     thinkingLabel,
     showOnboardingChoice,
   });
@@ -414,8 +485,12 @@ export function ChatMainPanel({
     };
   }, [uiContextRef, uiContext]);
 
-  useLayoutEffect(() => { sanitizedMessagesRef.current = sanitizedMessages; });
-  useLayoutEffect(() => { transcriptItemsRef.current = transcriptItems; });
+  useLayoutEffect(() => {
+    sanitizedMessagesRef.current = sanitizedMessages;
+  });
+  useLayoutEffect(() => {
+    transcriptItemsRef.current = transcriptItems;
+  });
 
   // -------------------------------------------------------------------------
   // Remaining derived values
@@ -429,7 +504,8 @@ export function ChatMainPanel({
 
   const typingDisabled =
     isLoadingHistory ||
-    (assistantState.kind === "active" && !!assistantState.maintenanceMode?.enabled) ||
+    (assistantState.kind === "active" &&
+      !!assistantState.maintenanceMode?.enabled) ||
     diskPressureInputDisabled ||
     isChannelReadonly;
 
@@ -439,20 +515,24 @@ export function ChatMainPanel({
     !!activeConversationId &&
     !isLoadingHistory &&
     messages.length === 0 &&
-    !(assistantState.kind === "active" && assistantState.maintenanceMode?.enabled);
+    !(
+      assistantState.kind === "active" &&
+      assistantState.maintenanceMode?.enabled
+    );
 
-  const genericChatError = shouldShowGenericChatErrorNotice(error) && error
-    ? {
-        message: error.message,
-        actions: (
-          <Button asChild variant="outlined" size="compact">
-            <Link to={`${routes.settings.debug}?tab=doctor`}>
-              Go to Doctor
-            </Link>
-          </Button>
-        ),
-      }
-    : null;
+  const genericChatError =
+    shouldShowGenericChatErrorNotice(error) && error
+      ? {
+          message: error.message,
+          actions: (
+            <Button asChild variant="outlined" size="compact">
+              <Link to={`${routes.settings.debug}?tab=doctor`}>
+                Go to Doctor
+              </Link>
+            </Button>
+          ),
+        }
+      : null;
 
   const sendErrorModalNode =
     error?.displayAs === "modal" ? (
@@ -607,10 +687,13 @@ export function ChatMainPanel({
     activeConversationId,
   });
 
-  const handleSelectStarter = useCallback((starter: { prompt: string }) => {
-    setInput(starter.prompt);
-    void submitMessage(starter.prompt);
-  }, [setInput, submitMessage]);
+  const handleSelectStarter = useCallback(
+    (starter: { prompt: string }) => {
+      setInput(starter.prompt);
+      void submitMessage(starter.prompt);
+    },
+    [setInput, submitMessage],
+  );
 
   // -------------------------------------------------------------------------
   // Rule editor bridge (viewer-store seq → rule editor open)
@@ -650,18 +733,19 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   // Banner slots (nudge, queued, slack)
   // -------------------------------------------------------------------------
-  const { mainBannerSlot, mainQueuedDrawerSlot, slackReadonlyBannerSlot } = useChatBannerSlots({
-    nudges,
-    queuedMessages,
-    onCancelQueuedMessage: handleCancelQueuedMessage,
-    onCancelAllQueued: handleCancelAllQueued,
-    onSteerMessage: handleSteerMessage,
-    onEditQueueTail: handleEditQueueTail,
-    queueSteering,
-    activeConversation,
-    sanitizedMessages,
-    assistantId,
-  });
+  const { mainBannerSlot, mainQueuedDrawerSlot, slackReadonlyBannerSlot } =
+    useChatBannerSlots({
+      nudges,
+      queuedMessages,
+      onCancelQueuedMessage: handleCancelQueuedMessage,
+      onCancelAllQueued: handleCancelAllQueued,
+      onSteerMessage: handleSteerMessage,
+      onEditQueueTail: handleEditQueueTail,
+      queueSteering,
+      activeConversation,
+      sanitizedMessages,
+      assistantId,
+    });
 
   // -------------------------------------------------------------------------
   // Billing composer banner
@@ -686,7 +770,9 @@ export function ChatMainPanel({
         <div className="mb-2">
           <Notice
             tone="info"
-            onDismiss={() => useComposerStore.getState().clearRestoredDraftNotice()}
+            onDismiss={() =>
+              useComposerStore.getState().clearRestoredDraftNotice()
+            }
           >
             Draft restored from your previous session.
           </Notice>
@@ -713,6 +799,11 @@ export function ChatMainPanel({
     renderAvatar,
     onPullRefresh: handlePullRefresh,
     pullRefreshEnabled: chatPullToRefreshEnabled && touchSupported,
+    // Keeps the live status line alive for restored / external-channel
+    // turns where the local turn reducer never activated (`showThinking`
+    // encapsulates the restored-processing OR plus the prompt/surface
+    // gating from `shouldShowThinkingIndicator`).
+    liveStatusFallbackActive: showThinking,
     scrollCoordinatorState: {
       showScrollToLatest: scrollCoordinator.showScrollToLatest,
       shouldLoadOlder: false,
@@ -723,11 +814,14 @@ export function ChatMainPanel({
   };
 
   const sharedComposerNoticeProps = {
-    billingBannerSlot: billingBannerDecision === "managed_credits"
-      ? <CreditsExhaustedBanner onAddFunds={() => setShowAddCreditsModal(true)} />
-      : billingBannerDecision === "provider_billing"
-      ? <ProviderBillingBanner onOpenSettings={pushToAiSettings} />
-      : null,
+    billingBannerSlot:
+      billingBannerDecision === "managed_credits" ? (
+        <CreditsExhaustedBanner
+          onAddFunds={() => setShowAddCreditsModal(true)}
+        />
+      ) : billingBannerDecision === "provider_billing" ? (
+        <ProviderBillingBanner onOpenSettings={pushToAiSettings} />
+      ) : null,
     diskPressureBanner: diskPressureBannerSlot,
     showMissingApiKeyBanner:
       error?.code === "PROVIDER_NOT_CONFIGURED" ||
@@ -822,8 +916,10 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
-  const editingConversationId = useConversationStore.use.editingConversationId();
-  const isSidePanel = mainView === "app-editing" && !!openedAppState && !!editingConversationId;
+  const editingConversationId =
+    useConversationStore.use.editingConversationId();
+  const isSidePanel =
+    mainView === "app-editing" && !!openedAppState && !!editingConversationId;
   const variant = isSidePanel ? "side-panel" : "main";
 
   // MOBILE — render the design-book chat screen (dark canvas, design-book
@@ -874,7 +970,9 @@ export function ChatMainPanel({
         variant={variant}
         scrollAreaProps={{
           ...chatBodyScrollAreaPropsBase,
-          showMaintenanceRecoveryCard: isSidePanel ? false : isInMaintenanceWithNoMessages,
+          showMaintenanceRecoveryCard: isSidePanel
+            ? false
+            : isInMaintenanceWithNoMessages,
         }}
         composerProps={chatBodyComposerProps}
         dragHandlers={attachmentDropHandlers}

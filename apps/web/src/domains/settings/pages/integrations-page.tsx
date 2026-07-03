@@ -1,10 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-    ChevronDown,
-    Loader2,
-    Search,
-    Sparkles,
-} from "lucide-react";
+import { ChevronDown, Loader2, Search, Sparkles } from "lucide-react";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { useNavigate, useSearchParams } from "react-router";
@@ -23,10 +18,7 @@ import { Notice } from "@vellumai/design-library/components/notice";
 import { Popover } from "@vellumai/design-library/components/popover";
 import { toast } from "@vellumai/design-library/components/toast";
 
-import {
-    getLocalSetting,
-    setLocalSetting,
-} from "@/utils/local-settings";
+import { getLocalSetting, setLocalSetting } from "@/utils/local-settings";
 
 const BANNER_STORAGE_KEY = "vellum:integrations:bannerDismissed";
 
@@ -59,14 +51,13 @@ function IntegrationsPanelInner() {
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
   const [bannerDismissed, setBannerDismissed] = useState(true);
-  const [selectedProviderKey, setSelectedProviderKey] =
-    useState<string | null>(null);
+  const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(
+    null,
+  );
 
   // Hydrate banner dismissal from localStorage on mount.
   useEffect(() => {
-    setBannerDismissed(
-      getLocalSetting(BANNER_STORAGE_KEY, "false") === "true",
-    );
+    setBannerDismissed(getLocalSetting(BANNER_STORAGE_KEY, "false") === "true");
   }, []);
 
   const dismissBanner = () => {
@@ -139,8 +130,7 @@ function IntegrationsPanelInner() {
         state_invalid: "Authorization state was invalid. Please try again.",
         state_expired: "Authorization expired. Please try again.",
         exchange_failed: "Failed to complete authorization. Please try again.",
-        identity_failed:
-          "Failed to verify account identity. Please try again.",
+        identity_failed: "Failed to verify account identity. Please try again.",
       };
       toast.error(
         messages[code] ??
@@ -164,7 +154,9 @@ function IntegrationsPanelInner() {
       if (!needle) {
         return true;
       }
-      const name = (provider.display_name ?? provider.provider_key).toLowerCase();
+      const name = (
+        provider.display_name ?? provider.provider_key
+      ).toLowerCase();
       const description = (provider.description ?? "").toLowerCase();
       return name.includes(needle) || description.includes(needle);
     });
@@ -229,9 +221,9 @@ function IntegrationsPanelInner() {
   const selectedProvider = useMemo(
     () =>
       selectedProviderKey
-        ? managedProviders.find(
+        ? (managedProviders.find(
             (p) => p.provider_key === selectedProviderKey,
-          ) ?? null
+          ) ?? null)
         : null,
     [managedProviders, selectedProviderKey],
   );
@@ -335,9 +327,7 @@ function IntegrationsPanelInner() {
                 key={provider.provider_key}
                 assistantId={assistant.id}
                 providerKey={provider.provider_key}
-                displayName={
-                  provider.display_name ?? provider.provider_key
-                }
+                displayName={provider.display_name ?? provider.provider_key}
                 description={provider.description}
                 logoUrl={provider.logo_url}
                 connection={connectionForProvider(

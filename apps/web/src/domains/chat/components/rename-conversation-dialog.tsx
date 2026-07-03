@@ -51,7 +51,8 @@ function RenameConversationDialog({
   }, [open, currentTitle]);
 
   const trimmed = value.trim();
-  const submitDisabled = trimmed.length === 0 || trimmed === currentTitle.trim();
+  const submitDisabled =
+    trimmed.length === 0 || trimmed === currentTitle.trim();
 
   function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

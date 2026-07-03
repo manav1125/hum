@@ -108,10 +108,7 @@ export function topRoundedRect(
 }
 
 /** Pick evenly-spaced X label indices that avoid overlap on narrow viewports. */
-export function pickXTickIndices(
-  total: number,
-  isMobile: boolean,
-): number[] {
+export function pickXTickIndices(total: number, isMobile: boolean): number[] {
   if (total <= 0) return [];
   if (isMobile) {
     if (total <= 3) return Array.from({ length: total }, (_, i) => i);

@@ -62,9 +62,7 @@ export interface FailedAttachmentUpload {
 }
 
 export type ChatAttachment =
-  | PendingAttachmentUpload
-  | UploadedAttachment
-  | FailedAttachmentUpload;
+  PendingAttachmentUpload | UploadedAttachment | FailedAttachmentUpload;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -93,7 +91,11 @@ function loadDrafts(assistantId: string): Map<string, string> {
   if (!raw) return new Map();
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
       return new Map();
     }
     return new Map(
@@ -106,10 +108,7 @@ function loadDrafts(assistantId: string): Map<string, string> {
   }
 }
 
-function persistDrafts(
-  assistantId: string,
-  drafts: Map<string, string>,
-): void {
+function persistDrafts(assistantId: string, drafts: Map<string, string>): void {
   setLocalSetting(
     draftStorageKey(assistantId),
     JSON.stringify(Object.fromEntries(drafts)),
@@ -132,7 +131,10 @@ function canQueueFile(file: File): boolean {
   if (file.size <= MAX_ATTACHMENT_BYTES) {
     return true;
   }
-  return isAutoResizableImage(file) && file.size <= IMAGE_AUTO_RESIZE_SOURCE_LIMIT_BYTES;
+  return (
+    isAutoResizableImage(file) &&
+    file.size <= IMAGE_AUTO_RESIZE_SOURCE_LIMIT_BYTES
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +263,8 @@ const useComposerStoreBase = create<ComposerStore>()((set, get) => ({
     const savedDraft = (nextKey && draftsMap.get(nextKey)) ?? "";
     set({
       input: savedDraft,
-      restoredDraftConversationId: savedDraft.length > 0 && nextKey ? nextKey : null,
+      restoredDraftConversationId:
+        savedDraft.length > 0 && nextKey ? nextKey : null,
     });
 
     // Persist after the save/restore cycle.
@@ -362,7 +365,8 @@ const useComposerStoreBase = create<ComposerStore>()((set, get) => ({
             }
           }
 
-          const uploadFile = prepared.status === "failed" ? file : prepared.file;
+          const uploadFile =
+            prepared.status === "failed" ? file : prepared.file;
           if (uploadFile.size > MAX_ATTACHMENT_BYTES) {
             markFailed(
               set,
@@ -394,7 +398,11 @@ const useComposerStoreBase = create<ComposerStore>()((set, get) => ({
           }
 
           if (!result.ok) {
-            markFailed(set, pending.localId, result.error.detail ?? "Upload failed");
+            markFailed(
+              set,
+              pending.localId,
+              result.error.detail ?? "Upload failed",
+            );
             return;
           }
 
@@ -438,7 +446,9 @@ const useComposerStoreBase = create<ComposerStore>()((set, get) => ({
       if (target && target.kind === "uploading") {
         cancelledUploads.add(localId);
       }
-      return { attachments: s.attachments.filter((att) => att.localId !== localId) };
+      return {
+        attachments: s.attachments.filter((att) => att.localId !== localId),
+      };
     });
     revokePreview(localId);
   },

@@ -33,11 +33,7 @@ import { useConversationStore } from "@/stores/conversation-store";
 import { isSending, useTurnStore } from "@/domains/chat/turn-store";
 
 export type TurnTerminalReason =
-  | "complete"
-  | "cancelled"
-  | "error"
-  | "session_error"
-  | "rescued";
+  "complete" | "cancelled" | "error" | "session_error" | "rescued";
 
 export interface EndTurnArgs {
   /**
@@ -78,8 +74,7 @@ export function endTurn(args: EndTurnArgs): void {
   if (args.reason === "rescued") {
     const isStaleRescue =
       !isSending(turn.phase) ||
-      (args.rescuedTurnId != null &&
-        turn.activeTurnId !== args.rescuedTurnId);
+      (args.rescuedTurnId != null && turn.activeTurnId !== args.rescuedTurnId);
     if (isStaleRescue) return;
     turn.onPollReconciled(args.rescuedTurnId ?? undefined);
   } else {

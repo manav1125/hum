@@ -5,9 +5,9 @@ import { Toggle } from "@vellumai/design-library/components/toggle";
 
 import { formatCompactTokens } from "@/domains/settings/ai/ai-utils";
 import {
-    type GeminiThinkingLevel,
-    geminiThinkingLevels,
-    type ProfileParamVisibility,
+  type GeminiThinkingLevel,
+  geminiThinkingLevels,
+  type ProfileParamVisibility,
 } from "@/domains/settings/ai/profile-param-visibility";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,9 @@ interface ProfileAdvancedParamsProps {
   thinkingStreamThinking: boolean;
   onThinkingStreamThinkingChange: (v: boolean) => void;
   thinkingLevel: GeminiThinkingLevel | typeof THINKING_LEVEL_INHERIT;
-  onThinkingLevelChange: (v: GeminiThinkingLevel | typeof THINKING_LEVEL_INHERIT) => void;
+  onThinkingLevelChange: (
+    v: GeminiThinkingLevel | typeof THINKING_LEVEL_INHERIT,
+  ) => void;
 }
 
 /**
@@ -120,9 +122,7 @@ export function ProfileAdvancedParams({
               Max Output Tokens
             </label>
             <span className="text-body-small-default text-[var(--content-tertiary)]">
-              {maxTokens !== null
-                ? formatCompactTokens(maxTokens)
-                : "Default"}
+              {maxTokens !== null ? formatCompactTokens(maxTokens) : "Default"}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -310,12 +310,12 @@ export function ProfileAdvancedParams({
             </span>
           </label>
           <SegmentControl
-            items={([THINKING_LEVEL_INHERIT, ...geminiThinkingLevels(model)] as const).map(
-              (v) => ({
-                value: v,
-                label: `${v}`,
-              }),
-            )}
+            items={(
+              [THINKING_LEVEL_INHERIT, ...geminiThinkingLevels(model)] as const
+            ).map((v) => ({
+              value: v,
+              label: `${v}`,
+            }))}
             value={thinkingLevel}
             onChange={onThinkingLevelChange}
             ariaLabel="Thinking level"

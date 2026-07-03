@@ -59,8 +59,7 @@ function buildConnectionProviderDisplayNames(): Record<
     ollama: CATALOG_PROVIDER_DISPLAY_NAMES.ollama,
     fireworks: CATALOG_PROVIDER_DISPLAY_NAMES.fireworks,
     openrouter: CATALOG_PROVIDER_DISPLAY_NAMES.openrouter,
-    "openai-compatible":
-      CATALOG_PROVIDER_DISPLAY_NAMES["openai-compatible"],
+    "openai-compatible": CATALOG_PROVIDER_DISPLAY_NAMES["openai-compatible"],
     minimax: CATALOG_PROVIDER_DISPLAY_NAMES.minimax,
   } satisfies Record<ConnectionProvider, string | undefined>;
   const out = {} as Record<ConnectionProvider, string>;

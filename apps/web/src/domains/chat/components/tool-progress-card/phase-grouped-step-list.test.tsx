@@ -196,10 +196,7 @@ describe("PhaseGroupedStepList — phase header status icon", () => {
 
 describe("PhaseGroupedStepList — renderStep override", () => {
   test("calls renderStep for each step and skips the default pill", () => {
-    const steps: ToolCallCardStep[] = [
-      thinking("First"),
-      thinking("Second"),
-    ];
+    const steps: ToolCallCardStep[] = [thinking("First"), thinking("Second")];
     const seen: string[] = [];
     const { queryAllByTestId, getByText } = render(
       <PhaseGroupedStepList
@@ -238,9 +235,7 @@ describe("PhaseGroupedStepList — timeline mode", () => {
   });
 
   test("completed section renders the circular CheckCircle2 node with data-status", () => {
-    const steps: ToolCallCardStep[] = [
-      bash("ls", "completed", "1s", "tc-a"),
-    ];
+    const steps: ToolCallCardStep[] = [bash("ls", "completed", "1s", "tc-a")];
     const { getAllByTestId } = render(
       <PhaseGroupedStepList steps={steps} timeline />,
     );
@@ -266,9 +261,7 @@ describe("PhaseGroupedStepList — timeline mode", () => {
   });
 
   test("running section keeps the three-dot indicator node", () => {
-    const steps: ToolCallCardStep[] = [
-      bash("sleep 5", "running", "", "tc-a"),
-    ];
+    const steps: ToolCallCardStep[] = [bash("sleep 5", "running", "", "tc-a")];
     const { getAllByTestId } = render(
       <PhaseGroupedStepList steps={steps} timeline />,
     );

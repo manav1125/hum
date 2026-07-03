@@ -3,7 +3,11 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { secretsReadPost } from "@/generated/daemon/sdk.gen";
-import { ApiError, assertHasResponse, extractErrorMessage } from "@/utils/api-errors";
+import {
+  ApiError,
+  assertHasResponse,
+  extractErrorMessage,
+} from "@/utils/api-errors";
 import { shouldRetryDaemonError } from "@/utils/daemon-errors";
 import { captureError } from "@/lib/sentry/capture-error";
 import { useIsOrgReady } from "@/hooks/use-is-org-ready";
@@ -47,7 +51,13 @@ export function useStoredCredentialPresence({
   const isOrgReady = useIsOrgReady();
 
   const queryKey = useMemo(
-    () => [STORED_CREDENTIAL_PRESENCE_QK, assistantId ?? "", credentialKind, credentialName] as const,
+    () =>
+      [
+        STORED_CREDENTIAL_PRESENCE_QK,
+        assistantId ?? "",
+        credentialKind,
+        credentialName,
+      ] as const,
     [assistantId, credentialKind, credentialName],
   );
 

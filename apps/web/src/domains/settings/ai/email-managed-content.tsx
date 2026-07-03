@@ -1,8 +1,4 @@
-import {
-    Crown,
-    Loader2,
-    Trash2,
-} from "lucide-react";
+import { Crown, Loader2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -10,19 +6,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { DomainField } from "@/domains/settings/components/domain-field";
 import {
-    assistantsDomainsCreateMutation,
-    assistantsDomainsDestroyMutation,
-    assistantsDomainsListOptions,
-    assistantsDomainsListQueryKey,
-    assistantsDomainsVerificationStatusRetrieveOptions,
-    assistantsEmailAddressesCreateMutation,
-    assistantsEmailAddressesDestroyMutation,
-    assistantsEmailAddressesListOptions,
-    assistantsEmailAddressesListQueryKey,
-    assistantsEmailAddressesStatusRetrieveOptions,
-    assistantsEmailAddressesStatusRetrieveQueryKey,
-    assistantsListQueryKey,
-    organizationsBillingSubscriptionRetrieveOptions,
+  assistantsDomainsCreateMutation,
+  assistantsDomainsDestroyMutation,
+  assistantsDomainsListOptions,
+  assistantsDomainsListQueryKey,
+  assistantsDomainsVerificationStatusRetrieveOptions,
+  assistantsEmailAddressesCreateMutation,
+  assistantsEmailAddressesDestroyMutation,
+  assistantsEmailAddressesListOptions,
+  assistantsEmailAddressesListQueryKey,
+  assistantsEmailAddressesStatusRetrieveOptions,
+  assistantsEmailAddressesStatusRetrieveQueryKey,
+  assistantsListQueryKey,
+  organizationsBillingSubscriptionRetrieveOptions,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { captureError } from "@/lib/sentry/capture-error";
 import { extractErrorMessage } from "@/utils/api-errors";
@@ -56,7 +52,8 @@ export function EmailManagedContent({
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [registerConfirmOpen, setRegisterConfirmOpen] = useState(false);
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState(false);
-  const [removeAddressConfirmOpen, setRemoveAddressConfirmOpen] = useState(false);
+  const [removeAddressConfirmOpen, setRemoveAddressConfirmOpen] =
+    useState(false);
 
   useEffect(() => {
     if (subdomainPrefilled || !assistantHandle || subdomainDraft) return;
@@ -134,11 +131,14 @@ export function EmailManagedContent({
   useEffect(() => {
     if (searchParams.get("release") !== "1" || !domain || address) return;
     setReleaseConfirmOpen(true);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete("release");
-      return next;
-    }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("release");
+        return next;
+      },
+      { replace: true },
+    );
   }, [address, domain, searchParams, setSearchParams]);
 
   // -- Mutations -------------------------------------------------------------
@@ -289,10 +289,9 @@ export function EmailManagedContent({
           </Button>
         }
       >
-        Pro plans include a managed{" "}
-        {`<your-subdomain>.${emailRootDomain}`} inbox — no provider
-        setup required. Or switch to <strong>Your Own</strong> to bring
-        an existing provider.
+        Pro plans include a managed {`<your-subdomain>.${emailRootDomain}`}{" "}
+        inbox — no provider setup required. Or switch to{" "}
+        <strong>Your Own</strong> to bring an existing provider.
       </Notice>
     );
   }
@@ -315,9 +314,9 @@ export function EmailManagedContent({
         </Button>
       }
     >
-      We couldn&apos;t reach the billing service. The form below
-      assumes managed email is enabled for your org — if it isn&apos;t,
-      registering a domain will fail.
+      We couldn&apos;t reach the billing service. The form below assumes managed
+      email is enabled for your org — if it isn&apos;t, registering a domain
+      will fail.
     </Notice>
   ) : null;
 
@@ -339,8 +338,8 @@ export function EmailManagedContent({
           error={subdomainError}
         />
         <p className="text-body-small-default text-[var(--content-tertiary)]">
-          Each assistant gets its own subdomain. Lowercase letters,
-          numbers, and hyphens only.
+          Each assistant gets its own subdomain. Lowercase letters, numbers, and
+          hyphens only.
         </p>
         <Button
           onClick={() => setRegisterConfirmOpen(true)}
@@ -351,7 +350,15 @@ export function EmailManagedContent({
         <ConfirmDialog
           open={registerConfirmOpen}
           title="Set Subdomain"
-          message={<><code className="rounded bg-[var(--surface-active)] px-1 py-0.5 font-mono text-[0.9em]">{subdomainDraft.trim().toLowerCase() || "subdomain"}</code> will also become your assistant's public handle. You won't be able to change it once set.</>}
+          message={
+            <>
+              <code className="rounded bg-[var(--surface-active)] px-1 py-0.5 font-mono text-[0.9em]">
+                {subdomainDraft.trim().toLowerCase() || "subdomain"}
+              </code>{" "}
+              will also become your assistant's public handle. You won't be able
+              to change it once set.
+            </>
+          }
           confirmLabel="Confirm"
           onConfirm={handleRegisterDomain}
           onCancel={() => setRegisterConfirmOpen(false)}
@@ -389,7 +396,15 @@ export function EmailManagedContent({
           <ConfirmDialog
             open={releaseConfirmOpen}
             title="Release Domain"
-            message={<>Are you sure you want to release <code className="rounded bg-[var(--surface-active)] px-1 py-0.5 font-mono text-[0.9em]">{domain.subdomain}.{emailRootDomain}</code>? The subdomain will become available for others to claim.</>}
+            message={
+              <>
+                Are you sure you want to release{" "}
+                <code className="rounded bg-[var(--surface-active)] px-1 py-0.5 font-mono text-[0.9em]">
+                  {domain.subdomain}.{emailRootDomain}
+                </code>
+                ? The subdomain will become available for others to claim.
+              </>
+            }
             confirmLabel="Release"
             destructive
             onConfirm={handleDeleteDomain}
@@ -402,7 +417,9 @@ export function EmailManagedContent({
             Email address
           </label>
           <div className="flex items-center gap-2">
-            <div className={`flex h-9 min-w-0 flex-1 items-center rounded-md border bg-[var(--field-bg)] text-body-medium-lighter transition-[border-color] duration-150 ${usernameError ? "border-[var(--system-negative-strong)]" : "border-[var(--field-border)] focus-within:border-[var(--border-active)]"}`}>
+            <div
+              className={`flex h-9 min-w-0 flex-1 items-center rounded-md border bg-[var(--field-bg)] text-body-medium-lighter transition-[border-color] duration-150 ${usernameError ? "border-[var(--system-negative-strong)]" : "border-[var(--field-border)] focus-within:border-[var(--border-active)]"}`}
+            >
               <input
                 value={usernameDraft}
                 onChange={(e) => {
@@ -420,9 +437,7 @@ export function EmailManagedContent({
             </div>
             <Button
               onClick={handleRegisterAddress}
-              disabled={
-                registerAddress.isPending || !usernameDraft.trim()
-              }
+              disabled={registerAddress.isPending || !usernameDraft.trim()}
             >
               {registerAddress.isPending ? "Creating…" : "Create"}
             </Button>
@@ -465,7 +480,16 @@ export function EmailManagedContent({
         <ConfirmDialog
           open={removeAddressConfirmOpen}
           title="Remove Email Address"
-          message={<>Are you sure you want to remove <code className="rounded bg-[var(--surface-active)] px-1 py-0.5 font-mono text-[0.9em]">{address.address}</code>? Your assistant will no longer be able to send or receive email at this address.</>}
+          message={
+            <>
+              Are you sure you want to remove{" "}
+              <code className="rounded bg-[var(--surface-active)] px-1 py-0.5 font-mono text-[0.9em]">
+                {address.address}
+              </code>
+              ? Your assistant will no longer be able to send or receive email
+              at this address.
+            </>
+          }
           confirmLabel="Remove"
           destructive
           onConfirm={handleDeleteAddress}

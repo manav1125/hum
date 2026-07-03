@@ -46,9 +46,7 @@ export function useToolCallCardData(
 ): ToolCallCardData {
   const liveWebActivity = useTurnStore.use.liveWebActivity();
   const now = useNow(
-    hasRunningItem(
-      toolCalls.map((tc) => ({ kind: "toolCall", toolCall: tc })),
-    ),
+    hasRunningItem(toolCalls.map((tc) => ({ kind: "toolCall", toolCall: tc }))),
   );
   return computeToolCallCardData(toolCalls, liveWebActivity, now);
 }

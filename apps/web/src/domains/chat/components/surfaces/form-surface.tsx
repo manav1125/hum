@@ -1,4 +1,11 @@
-import { ChevronLeft, ChevronRight, Loader2, Lock, Send, Shield } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Lock,
+  Send,
+  Shield,
+} from "lucide-react";
 import { type FormEvent, useCallback, useMemo, useState } from "react";
 
 import type { Surface } from "@/domains/chat/types/types";
@@ -46,7 +53,11 @@ interface FormSurfaceData {
 
 interface FormSurfaceProps {
   surface: Surface;
-  onAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void;
+  onAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +101,8 @@ function renderField(
           />
           <p className="mt-1 flex items-center gap-1 text-body-small-default text-[var(--content-faint)]">
             <Lock className="h-3 w-3" />
-            This value will be sent securely and will not be stored in your browser.
+            This value will be sent securely and will not be stored in your
+            browser.
           </p>
         </div>
       );
@@ -135,7 +147,13 @@ function renderField(
       return (
         <input
           type="number"
-          value={typeof value === "number" ? value : typeof value === "string" ? value : ""}
+          value={
+            typeof value === "number"
+              ? value
+              : typeof value === "string"
+                ? value
+                : ""
+          }
           onChange={(e) => {
             const num = e.target.value === "" ? "" : Number(e.target.value);
             onChange(field.id, num);
@@ -169,7 +187,9 @@ function PageProgress({ current, total }: { current: number; total: number }) {
         <div
           key={i}
           className={`h-1.5 flex-1 rounded-full transition-colors ${
-            i <= current ? "bg-[var(--primary-base)]" : "bg-[var(--border-subtle)]"
+            i <= current
+              ? "bg-[var(--primary-base)]"
+              : "bg-[var(--border-subtle)]"
           }`}
         />
       ))}
@@ -195,10 +215,14 @@ export function FormSurface({ surface, onAction }: FormSurfaceProps) {
 
   const [currentPage, setCurrentPage] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [validationErrors, setValidationErrors] = useState<
+    Record<string, string>
+  >({});
 
   // Build initial values from defaultValues
-  const [values, setValues] = useState<Record<string, string | number | boolean>>(() => {
+  const [values, setValues] = useState<
+    Record<string, string | number | boolean>
+  >(() => {
     const initial: Record<string, string | number | boolean> = {};
     for (const page of allPages) {
       for (const field of page.fields) {
@@ -216,15 +240,18 @@ export function FormSurface({ surface, onAction }: FormSurfaceProps) {
     return initial;
   });
 
-  const handleChange = useCallback((id: string, value: string | number | boolean) => {
-    setValues((prev) => ({ ...prev, [id]: value }));
-    setValidationErrors((prev) => {
-      if (!prev[id]) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, []);
+  const handleChange = useCallback(
+    (id: string, value: string | number | boolean) => {
+      setValues((prev) => ({ ...prev, [id]: value }));
+      setValidationErrors((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    },
+    [],
+  );
 
   const validatePage = useCallback(
     (pageIndex: number): boolean => {
@@ -261,7 +288,11 @@ export function FormSurface({ surface, onAction }: FormSurfaceProps) {
       if (!validatePage(currentPage)) return;
       setIsSubmitting(true);
       try {
-        await onAction(surface.surfaceId, "submit", values as Record<string, unknown>);
+        await onAction(
+          surface.surfaceId,
+          "submit",
+          values as Record<string, unknown>,
+        );
       } catch {
         setIsSubmitting(false);
       }
@@ -302,9 +333,14 @@ export function FormSurface({ surface, onAction }: FormSurfaceProps) {
         </h3>
       )}
 
-      {(currentPageData.description || (!isMultiPage && formData.description)) && (
+      {(currentPageData.description ||
+        (!isMultiPage && formData.description)) && (
         <ChatMarkdownMessage
-          content={(isMultiPage ? currentPageData.description : formData.description) ?? ""}
+          content={
+            (isMultiPage
+              ? currentPageData.description
+              : formData.description) ?? ""
+          }
           className="mb-3 text-body-medium-lighter text-[var(--content-quiet)]"
         />
       )}
@@ -315,10 +351,17 @@ export function FormSurface({ surface, onAction }: FormSurfaceProps) {
             <label className="mb-1 block text-body-medium-default text-[var(--content-strong)]">
               {field.label}
               {field.required && (
-                <span className="ml-0.5 text-[var(--system-negative-strong)]">*</span>
+                <span className="ml-0.5 text-[var(--system-negative-strong)]">
+                  *
+                </span>
               )}
             </label>
-            {renderField(field, values[field.id] ?? "", handleChange, validationErrors)}
+            {renderField(
+              field,
+              values[field.id] ?? "",
+              handleChange,
+              validationErrors,
+            )}
             {validationErrors[field.id] && (
               <p className="mt-1 text-body-small-default text-[var(--system-negative-strong)]">
                 {validationErrors[field.id]}
@@ -357,9 +400,13 @@ export function FormSurface({ surface, onAction }: FormSurfaceProps) {
                 type="submit"
                 disabled={isSubmitting}
                 leftIcon={
-                  isSubmitting ? <Loader2 className="animate-spin" />
-                    : hasPasswordFields ? <Shield />
-                    : <Send />
+                  isSubmitting ? (
+                    <Loader2 className="animate-spin" />
+                  ) : hasPasswordFields ? (
+                    <Shield />
+                  ) : (
+                    <Send />
+                  )
                 }
               >
                 {submitLabel}

@@ -34,7 +34,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Keyboard, Mic, MicOff } from "lucide-react";
 
-import { VoiceOrb, type VoiceOrbState } from "@vellumai/design-library/components/voice-orb";
+import {
+  VoiceOrb,
+  type VoiceOrbState,
+} from "@vellumai/design-library/components/voice-orb";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";

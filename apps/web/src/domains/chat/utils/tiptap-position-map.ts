@@ -80,10 +80,7 @@ export function charOffsetToPmPos(
  *   (the end of the previous text node or the start of the next one).
  * - Position beyond document end: returns total text length.
  */
-export function pmPosToCharOffset(
-  doc: ProseMirrorNode,
-  pmPos: number,
-): number {
+export function pmPosToCharOffset(doc: ProseMirrorNode, pmPos: number): number {
   let charOffset = 0;
 
   doc.descendants((node, pos) => {

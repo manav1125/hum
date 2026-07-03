@@ -249,12 +249,27 @@ describe("reconcileMessagesWithSeq", () => {
      */
     // GIVEN a transcript holding only the latest page
     const local = [
-      makeRow({ id: "u2", role: "user", ...textBody("recent"), timestamp: 2000 }),
+      makeRow({
+        id: "u2",
+        role: "user",
+        ...textBody("recent"),
+        timestamp: 2000,
+      }),
     ];
     // AND a snapshot that also carries a freshly loaded older page
     const server = [
-      makeRow({ id: "u1", role: "user", ...textBody("older turn"), timestamp: 1000 }),
-      makeRow({ id: "u2", role: "user", ...textBody("recent"), timestamp: 2000 }),
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("older turn"),
+        timestamp: 1000,
+      }),
+      makeRow({
+        id: "u2",
+        role: "user",
+        ...textBody("recent"),
+        timestamp: 2000,
+      }),
     ];
 
     // WHEN merged with the oldest loaded-page timestamp as the boundary
@@ -277,12 +292,27 @@ describe("reconcileMessagesWithSeq", () => {
      */
     // GIVEN a transcript holding only the latest page
     const local = [
-      makeRow({ id: "u2", role: "user", ...textBody("recent"), timestamp: 2000 }),
+      makeRow({
+        id: "u2",
+        role: "user",
+        ...textBody("recent"),
+        timestamp: 2000,
+      }),
     ];
     // AND a snapshot carrying a row older than the local window
     const server = [
-      makeRow({ id: "u1", role: "user", ...textBody("older turn"), timestamp: 1000 }),
-      makeRow({ id: "u2", role: "user", ...textBody("recent"), timestamp: 2000 }),
+      makeRow({
+        id: "u1",
+        role: "user",
+        ...textBody("older turn"),
+        timestamp: 1000,
+      }),
+      makeRow({
+        id: "u2",
+        role: "user",
+        ...textBody("recent"),
+        timestamp: 2000,
+      }),
     ];
 
     // WHEN merged without a loaded-page boundary
@@ -544,13 +574,23 @@ describe("reconcileMessagesWithSeq", () => {
     // GIVEN a local transcript
     const local = [
       makeRow({ id: "u1", role: "user", ...textBody("hi"), timestamp: 1000 }),
-      makeRow({ id: "a1", role: "assistant", ...textBody("answer"), timestamp: 1001 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("answer"),
+        timestamp: 1001,
+      }),
     ];
 
     // AND a stale snapshot of the same rows behind the local seq
     const server = [
       makeRow({ id: "u1", role: "user", ...textBody("hi"), timestamp: 1000 }),
-      makeRow({ id: "a1", role: "assistant", ...textBody("answer"), timestamp: 1001 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("answer"),
+        timestamp: 1001,
+      }),
     ];
 
     // WHEN the snapshot is stale (S < L)
@@ -573,12 +613,22 @@ describe("reconcileMessagesWithSeq", () => {
      */
     // GIVEN a local row already carrying the server id
     const local = [
-      makeRow({ id: "a1", role: "assistant", ...textBody("v1"), timestamp: 1000 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("v1"),
+        timestamp: 1000,
+      }),
     ];
 
     // AND a snapshot of the same row id with corrected content
     const server = [
-      makeRow({ id: "a1", role: "assistant", ...textBody("v2"), timestamp: 1000 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("v2"),
+        timestamp: 1000,
+      }),
     ];
 
     // WHEN the snapshot sits at the local seq (S == L)
@@ -601,12 +651,22 @@ describe("reconcileMessagesWithSeq", () => {
      */
     // GIVEN a local transcript
     const local = [
-      makeRow({ id: "a1", role: "assistant", ...textBody("answer"), timestamp: 1000 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("answer"),
+        timestamp: 1000,
+      }),
     ];
 
     // AND an authoritative snapshot of the same content at the frontier
     const server = [
-      makeRow({ id: "a1", role: "assistant", ...textBody("answer"), timestamp: 1000 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("answer"),
+        timestamp: 1000,
+      }),
     ];
 
     // WHEN the snapshot is authoritative and introduces nothing (S == L)
@@ -627,12 +687,22 @@ describe("reconcileMessagesWithSeq", () => {
      */
     // GIVEN a local transcript
     const local = [
-      makeRow({ id: "a1", role: "assistant", ...textBody("answer"), timestamp: 1000 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("answer"),
+        timestamp: 1000,
+      }),
     ];
 
     // AND a snapshot of the same content with no honest seq
     const server = [
-      makeRow({ id: "a1", role: "assistant", ...textBody("answer"), timestamp: 1000 }),
+      makeRow({
+        id: "a1",
+        role: "assistant",
+        ...textBody("answer"),
+        timestamp: 1000,
+      }),
     ];
 
     // WHEN the merge runs with no honest seq and no new server content

@@ -595,13 +595,11 @@ export function createChatDebugApi(refs: ChatDebugRefs): ChatDebugApi {
     if (conditions.hasUncompletedVisibleSurface) {
       failingConditions.push("hasUncompletedVisibleSurface");
     }
-    if (
-      !(
-        conditions.isThinking ||
-        conditions.restoredProcessing ||
-        !conditions.hasStreamingAssistantMessage
-      )
-    ) {
+    if (!(
+      conditions.isThinking ||
+      conditions.restoredProcessing ||
+      !conditions.hasStreamingAssistantMessage
+    )) {
       failingConditions.push("streamingAssistantMessageActive");
     }
     if (conditions.hasStreamingAssistantThinking) {
@@ -611,7 +609,11 @@ export function createChatDebugApi(refs: ChatDebugRefs): ChatDebugApi {
       failingConditions.push("activeToolCallCount>0");
     }
 
-    const visible = shouldShowThinkingIndicator(turnState.phase, turnState.activeToolCallCount, uiContext);
+    const visible = shouldShowThinkingIndicator(
+      turnState.phase,
+      turnState.activeToolCallCount,
+      uiContext,
+    );
     // Cross-check: the failingConditions list should be empty iff visible is
     // true. If this ever drifts we want the test suite (and DevTools users) to
     // notice immediately rather than chasing a confusing report.
@@ -652,8 +654,11 @@ export function createChatDebugApi(refs: ChatDebugRefs): ChatDebugApi {
     // `isAssistantStreaming` (`showThinking || hasStreamingAssistantMessage`);
     // `isProcessing` is the coarse `activeConversationIsProcessing` OR-signal.
     const isStreaming =
-      shouldShowThinkingIndicator(turnState.phase, turnState.activeToolCallCount, uiContext) ||
-      uiContext.hasStreamingAssistantMessage;
+      shouldShowThinkingIndicator(
+        turnState.phase,
+        turnState.activeToolCallCount,
+        uiContext,
+      ) || uiContext.hasStreamingAssistantMessage;
     const isProcessing = uiContext.activeConversationIsProcessing === true;
     const litBy: string[] = [];
     if (isStreaming) {
@@ -673,12 +678,14 @@ export function createChatDebugApi(refs: ChatDebugRefs): ChatDebugApi {
 
   async function forceReconcile(): Promise<ReconcileActiveConversationResult> {
     recordDiagnostic("debug_force_reconcile_start", {
-      activeConversationId: useConversationStore.getState().activeConversationId,
+      activeConversationId:
+        useConversationStore.getState().activeConversationId,
       assistantId: refs.getAssistantId(),
     });
     const result = await refs.reconcileActiveConversation();
     recordDiagnostic("debug_force_reconcile_result", {
-      activeConversationId: useConversationStore.getState().activeConversationId,
+      activeConversationId:
+        useConversationStore.getState().activeConversationId,
       changed: result.changed,
       messagesAdded: result.messagesAdded,
       assistantProgress: result.assistantProgress,
@@ -924,7 +931,9 @@ export function installVellumDebugApi(
   flagsApi: VellumDebugFlagsApi,
 ): () => void {
   if (typeof window === "undefined") return () => {};
-  const win = window as Omit<Window, typeof ROOT_NS> & { [ROOT_NS]?: VellumDebugRoot };
+  const win = window as Omit<Window, typeof ROOT_NS> & {
+    [ROOT_NS]?: VellumDebugRoot;
+  };
   const existing: VellumDebugRoot = (win[ROOT_NS] ?? {}) as VellumDebugRoot;
   existing[EVENTS_NS] = eventsDebugApi;
   existing[CHAT_NS] = chatApi;
@@ -971,7 +980,9 @@ export function installVellumDebugApi(
  */
 export function useChatDebugApi(refs: ChatDebugRefs): void {
   const latestRefs = useRef(refs);
-  useLayoutEffect(() => { latestRefs.current = refs; });
+  useLayoutEffect(() => {
+    latestRefs.current = refs;
+  });
 
   useEffect(() => {
     const stableRefs: ChatDebugRefs = {

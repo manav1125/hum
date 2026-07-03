@@ -1,3 +1,4 @@
+import { useLiveStatusStore } from "@/domains/chat/live-status-store";
 import {
   applyToolResult,
   upsertToolCall,
@@ -22,11 +23,16 @@ export function handleToolUseStart(
     name: event.toolName,
     input: event.input,
     startedAt:
-      "startedAt" in event &&
-      typeof event.startedAt === "number"
+      "startedAt" in event && typeof event.startedAt === "number"
         ? event.startedAt
         : Date.now(),
   };
+  // Feed the live turn-status line ("Searching the web… · 12s").
+  useLiveStatusStore.getState().noteToolStart({
+    toolUseId: toolCallId,
+    toolName: event.toolName,
+    input: event.input,
+  });
   ctx.setMessages((prev) => {
     const next = upsertToolCall(prev, newToolCall, event.messageId);
     const tail = next[next.length - 1];
@@ -44,6 +50,7 @@ export function handleToolResult(
   ctx: StreamHandlerContext,
 ): void {
   ctx.turnActions.onToolResult();
+  useLiveStatusStore.getState().noteToolEnd(event.toolUseId);
   // Forward structured tool activity metadata (web_search / web_fetch) onto
   // the turn store so the web-search inline link can render during the
   // active turn. Metadata is live-only — the store clears it on idle
@@ -71,8 +78,7 @@ export function handleToolResult(
       riskDirectoryScopeOptions: event.riskDirectoryScopeOptions,
       activityMetadata: event.activityMetadata,
       completedAt:
-        "completedAt" in event &&
-        typeof event.completedAt === "number"
+        "completedAt" in event && typeof event.completedAt === "number"
           ? event.completedAt
           : undefined,
     }),

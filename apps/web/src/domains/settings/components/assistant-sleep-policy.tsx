@@ -3,9 +3,9 @@ import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
-    assistantsSleepPolicyDetailReadOptions,
-    assistantsSleepPolicyDetailReadQueryKey,
-    useAssistantsSleepPolicyDetailPartialUpdateMutation,
+  assistantsSleepPolicyDetailReadOptions,
+  assistantsSleepPolicyDetailReadQueryKey,
+  useAssistantsSleepPolicyDetailPartialUpdateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { useEnvironmentStore } from "@/stores/environment-store";
 import { Button } from "@vellumai/design-library/components/button";

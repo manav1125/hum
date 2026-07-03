@@ -1,4 +1,3 @@
-
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -133,9 +132,7 @@ export function PdfPreview({ url, className }: PdfPreviewProps) {
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          const pageNum = Number(
-            (entry.target as HTMLElement).dataset.page,
-          );
+          const pageNum = Number((entry.target as HTMLElement).dataset.page);
           if (pageNum) void renderPage(pageNum);
         }
       },

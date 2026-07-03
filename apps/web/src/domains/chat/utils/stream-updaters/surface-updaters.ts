@@ -168,7 +168,10 @@ export function completeSurface(
       surfaces: prev[i]!.surfaces?.map((s) =>
         s.surfaceId === surfaceId ? completedSurface : s,
       ),
-      contentBlocks: upsertSurfaceBlock(prev[i]!.contentBlocks, completedSurface),
+      contentBlocks: upsertSurfaceBlock(
+        prev[i]!.contentBlocks,
+        completedSurface,
+      ),
     };
     return updated;
   }

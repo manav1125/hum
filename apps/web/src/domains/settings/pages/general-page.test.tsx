@@ -10,14 +10,7 @@
  * `{ ui: { userTimezone: "" } }`, and that with no assistant id the device
  * setting is still written but no PATCH is attempted.
  */
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
@@ -201,7 +194,9 @@ describe("TimezoneCard", () => {
     // flight.
     fireEvent.click(getByText("pick-zone")); // America/Los_Angeles
     expect(patchMock).toHaveBeenCalledTimes(1);
-    expect(patchMock.mock.calls[0]![0].path).toEqual({ assistant_id: "asst-A" });
+    expect(patchMock.mock.calls[0]![0].path).toEqual({
+      assistant_id: "asst-A",
+    });
 
     // (b) Switch the active assistant to B and re-render so `assistantIdRef`
     // picks up the new id via its effect.
@@ -217,7 +212,9 @@ describe("TimezoneCard", () => {
     // CURRENT assistant (B), carrying the latest requested value.
     resolvers[0]!();
     await waitFor(() => expect(patchMock).toHaveBeenCalledTimes(2));
-    expect(patchMock.mock.calls[1]![0].path).toEqual({ assistant_id: "asst-B" });
+    expect(patchMock.mock.calls[1]![0].path).toEqual({
+      assistant_id: "asst-B",
+    });
     expect(patchMock.mock.calls[1]![0].body).toEqual({
       ui: { userTimezone: "Asia/Tokyo" },
     });

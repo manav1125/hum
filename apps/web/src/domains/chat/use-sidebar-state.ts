@@ -13,10 +13,22 @@
  * @see {@link https://react.dev/reference/react/useMemo}
  */
 
-import { useCallback, useEffect, useMemo, useState, startTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  startTransition,
+} from "react";
 
-import type { Conversation, ConversationGroup } from "@/types/conversation-types";
-import { groupConversations, type CustomGroup } from "@/domains/chat/utils/group-conversations";
+import type {
+  Conversation,
+  ConversationGroup,
+} from "@/types/conversation-types";
+import {
+  groupConversations,
+  type CustomGroup,
+} from "@/domains/chat/utils/group-conversations";
 import { groupBackgroundConversationsBySource } from "@/domains/chat/utils/background-sub-groups";
 import { groupScheduledConversationsByJobId } from "@/domains/chat/utils/scheduled-sub-groups";
 import type { SubGroup } from "@/domains/chat/utils/sub-group";
@@ -105,7 +117,8 @@ export function useSidebarState({
   conversationGroups,
   attentionConversationIds,
 }: UseSidebarStateParams): SidebarState {
-  const conversationGroupsUI = useAssistantFeatureFlagStore.use.conversationGroupsUI();
+  const conversationGroupsUI =
+    useAssistantFeatureFlagStore.use.conversationGroupsUI();
   const isAssistantActive = useAssistantLifecycleStore(
     (s) => s.assistantState.kind === "active",
   );
@@ -150,13 +163,11 @@ export function useSidebarState({
     isAssistantActive && backgroundReady,
   );
   const backgroundLoading = backgroundReady && backgroundPending;
-  const {
-    conversations: scheduledConversations,
-    isPending: scheduledPending,
-  } = useScheduledConversationListQuery(
-    assistantId,
-    isAssistantActive && scheduledReady,
-  );
+  const { conversations: scheduledConversations, isPending: scheduledPending } =
+    useScheduledConversationListQuery(
+      assistantId,
+      isAssistantActive && scheduledReady,
+    );
   const scheduledLoading = scheduledReady && scheduledPending;
 
   const allConversations = useMemo(
@@ -262,9 +273,7 @@ export function useSidebarState({
   const hasAttentionIn = useCallback(
     (convs: Conversation[]) =>
       attentionConversationIds
-        ? convs.some((c) =>
-            attentionConversationIds.has(c.conversationId),
-          )
+        ? convs.some((c) => attentionConversationIds.has(c.conversationId))
         : false,
     [attentionConversationIds],
   );

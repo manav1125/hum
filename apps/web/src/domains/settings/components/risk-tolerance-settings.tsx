@@ -4,13 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { getGlobalThresholds, setGlobalThresholds } from "@/lib/threshold-api";
 import {
-    getGlobalThresholds,
-    setGlobalThresholds,
-} from "@/lib/threshold-api";
-import {
-    THRESHOLD_PRESETS,
-    presetFromThreshold,
+  THRESHOLD_PRESETS,
+  presetFromThreshold,
 } from "@/utils/threshold-presets";
 import { Card } from "@vellumai/design-library/components/card";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
@@ -37,8 +34,10 @@ export function RiskToleranceSettings() {
     staleTime: 30_000,
   });
 
-  const [interactivePresetId, setInteractivePresetId] = useState<string>("relaxed");
-  const [autonomousPresetId, setAutonomousPresetId] = useState<string>("conservative");
+  const [interactivePresetId, setInteractivePresetId] =
+    useState<string>("relaxed");
+  const [autonomousPresetId, setAutonomousPresetId] =
+    useState<string>("conservative");
   const [headlessPresetId, setHeadlessPresetId] = useState<string>("strict");
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
@@ -69,13 +68,21 @@ export function RiskToleranceSettings() {
   const persistThresholds = useCallback(
     (interactiveId: string, autonomousId: string, headlessId: string) => {
       if (!assistantId || !hasLoadedInitial) return;
-      const interactive = THRESHOLD_PRESETS.find((p) => p.id === interactiveId)?.riskThreshold;
-      const autonomous = THRESHOLD_PRESETS.find((p) => p.id === autonomousId)?.riskThreshold;
-      const headless = THRESHOLD_PRESETS.find((p) => p.id === headlessId)?.riskThreshold;
+      const interactive = THRESHOLD_PRESETS.find(
+        (p) => p.id === interactiveId,
+      )?.riskThreshold;
+      const autonomous = THRESHOLD_PRESETS.find(
+        (p) => p.id === autonomousId,
+      )?.riskThreshold;
+      const headless = THRESHOLD_PRESETS.find(
+        (p) => p.id === headlessId,
+      )?.riskThreshold;
       if (!interactive || !autonomous || !headless) return;
       setGlobalThresholds(assistantId, { interactive, autonomous, headless })
         .then(() => {
-          queryClient.invalidateQueries({ queryKey: ["thresholds", assistantId] });
+          queryClient.invalidateQueries({
+            queryKey: ["thresholds", assistantId],
+          });
         })
         .catch(() => {
           // Silent — optimistic update stays; user can retry by changing again
@@ -127,9 +134,15 @@ export function RiskToleranceSettings() {
     [interactivePresetId, autonomousPresetId, scheduleSave],
   );
 
-  const interactivePreset = THRESHOLD_PRESETS.find((p) => p.id === interactivePresetId);
-  const autonomousPreset = THRESHOLD_PRESETS.find((p) => p.id === autonomousPresetId);
-  const headlessPreset = THRESHOLD_PRESETS.find((p) => p.id === headlessPresetId);
+  const interactivePreset = THRESHOLD_PRESETS.find(
+    (p) => p.id === interactivePresetId,
+  );
+  const autonomousPreset = THRESHOLD_PRESETS.find(
+    (p) => p.id === autonomousPresetId,
+  );
+  const headlessPreset = THRESHOLD_PRESETS.find(
+    (p) => p.id === headlessPresetId,
+  );
   const dropdownsDisabled = !assistantId || !hasLoadedInitial;
 
   return (

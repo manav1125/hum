@@ -4,7 +4,10 @@
  */
 
 import { useInteractionStore } from "@/domains/chat/interaction-store";
-import { handleContactPromptSubmit, handleContactPromptCancel } from "@/domains/chat/contact-actions";
+import {
+  handleContactPromptSubmit,
+  handleContactPromptCancel,
+} from "@/domains/chat/contact-actions";
 import { ContactPromptCard } from "@/domains/chat/components/contact-prompt-card";
 
 export function PendingContactRequestRow() {

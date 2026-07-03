@@ -135,8 +135,10 @@ describe("default tz resolution", () => {
     }));
 
     // Re-import after mocking so the builders pick up the mocked default.
-    const { buildBillingUsageSeriesQuery: buildSeries, buildBillingUsageTotalsQuery: buildTotals } =
-      await import("./use-billing-usage-data");
+    const {
+      buildBillingUsageSeriesQuery: buildSeries,
+      buildBillingUsageTotalsQuery: buildTotals,
+    } = await import("./use-billing-usage-data");
 
     expect(buildSeries(makeState()).tz).toBe("Europe/Berlin");
     expect(buildTotals(makeState()).tz).toBe("Europe/Berlin");

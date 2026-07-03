@@ -1,4 +1,3 @@
-
 import { type ReactNode } from "react";
 
 import { DEFAULT_EMPTY_STATE_GREETING } from "@/domains/chat/utils/empty-state-constants";
@@ -39,10 +38,16 @@ export function ChatEmptyState({
       <div className="mx-auto w-full max-w-[var(--chat-max-width)] px-3 sm:px-6">
         <div className="flex flex-col items-center justify-center gap-3 md:flex-row">
           {avatarSlot}
-          <Typography variant="title-medium" className="text-[var(--content-emphasized)] md:hidden">
+          <Typography
+            variant="title-medium"
+            className="text-[var(--content-emphasized)] md:hidden"
+          >
             {greeting}
           </Typography>
-          <Typography variant="title-large" className="hidden text-[var(--content-emphasized)] md:block">
+          <Typography
+            variant="title-large"
+            className="hidden text-[var(--content-emphasized)] md:block"
+          >
             {greeting}
           </Typography>
         </div>

@@ -2,15 +2,18 @@ import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Toggle } from "@vellumai/design-library/components/toggle";
 
 import {
-    getDefaultModelForProvider,
-    getModelsForProvider,
+  getDefaultModelForProvider,
+  getModelsForProvider,
 } from "@/assistant/llm-model-catalog";
 import type { CallSiteOverrideDraft } from "@/domains/settings/ai/ai-types";
 import {
-    INFERENCE_PROVIDERS,
-    INFERENCE_PROVIDER_DISPLAY_NAMES,
+  INFERENCE_PROVIDERS,
+  INFERENCE_PROVIDER_DISPLAY_NAMES,
 } from "@/domains/settings/ai/ai-types";
-import { CUSTOM_SENTINEL, isDraftActive } from "@/domains/settings/ai/call-site-helpers";
+import {
+  CUSTOM_SENTINEL,
+  isDraftActive,
+} from "@/domains/settings/ai/call-site-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,7 +58,9 @@ export function CallSiteOverrideRow({
   })();
 
   const isCustom = profileVal === CUSTOM_SENTINEL;
-  const currentProvider = INFERENCE_PROVIDERS.find((p) => p === draft?.provider) ?? INFERENCE_PROVIDERS[0];
+  const currentProvider =
+    INFERENCE_PROVIDERS.find((p) => p === draft?.provider) ??
+    INFERENCE_PROVIDERS[0];
   const availableModels = getModelsForProvider(currentProvider);
   const modelOptions = availableModels.map((m) => ({
     value: m.id,
@@ -67,7 +72,11 @@ export function CallSiteOverrideRow({
     if (val === CUSTOM_SENTINEL) {
       const defaultProvider = INFERENCE_PROVIDERS[0];
       const defaultModel = getDefaultModelForProvider(defaultProvider) ?? "";
-      onDraftChange(id, { profile: null, provider: defaultProvider, model: defaultModel });
+      onDraftChange(id, {
+        profile: null,
+        provider: defaultProvider,
+        model: defaultModel,
+      });
     } else if (val === "") {
       onDraftChange(id, null);
     } else {
@@ -75,9 +84,16 @@ export function CallSiteOverrideRow({
     }
   }
 
-  function handleProviderChange(provider: (typeof INFERENCE_PROVIDERS)[number]) {
+  function handleProviderChange(
+    provider: (typeof INFERENCE_PROVIDERS)[number],
+  ) {
     const defaultModel = getDefaultModelForProvider(provider) ?? "";
-    onDraftChange(id, { ...(draft ?? {}), profile: null, provider, model: defaultModel });
+    onDraftChange(id, {
+      ...(draft ?? {}),
+      profile: null,
+      provider,
+      model: defaultModel,
+    });
   }
 
   function handleModelChange(model: string) {

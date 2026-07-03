@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, type RefObject } from "react";
 
 import {
@@ -27,8 +26,7 @@ export interface PushToTalkTarget {
 }
 
 type PushToTalkTargetSource =
-  | RefObject<PushToTalkTarget | null>
-  | (() => PushToTalkTarget | null);
+  RefObject<PushToTalkTarget | null> | (() => PushToTalkTarget | null);
 
 function resolvePushToTalkTarget(
   source: PushToTalkTargetSource,
@@ -297,7 +295,10 @@ export function usePushToTalk(
       }
     };
 
-    const unsubscribeSetting = watchSetting(LS_PTT_ACTIVATION_KEY, readActivator);
+    const unsubscribeSetting = watchSetting(
+      LS_PTT_ACTIVATION_KEY,
+      readActivator,
+    );
     const unsubscribeNative = subscribeToHotkeyEvents(handleNativeHotkey);
 
     window.addEventListener("keydown", handleKeyDown);

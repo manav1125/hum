@@ -1,10 +1,12 @@
-
 import { Loader2, X } from "lucide-react";
 import type { FC } from "react";
 
 import { Button } from "@vellumai/design-library";
 
-import { formatAttachmentSize, middleTruncate } from "@/domains/chat/components/chat-attachments/utils";
+import {
+  formatAttachmentSize,
+  middleTruncate,
+} from "@/domains/chat/components/chat-attachments/utils";
 
 interface AttachmentLoadingChipProps {
   localId: string;

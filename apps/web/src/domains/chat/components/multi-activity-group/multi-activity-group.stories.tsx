@@ -3,7 +3,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
 import type { ToolCallCardItem } from "@/domains/chat/utils/tool-call-card-utils";
 
-import { MultiActivityGroup, type MultiActivityGroupProps } from "./multi-activity-group";
+import {
+  MultiActivityGroup,
+  type MultiActivityGroupProps,
+} from "./multi-activity-group";
 
 /**
  * Build a realistic {@link ChatMessageToolCall}. Defaults to a completed bash

@@ -16,7 +16,10 @@ import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { subagentsByIdAbortPost } from "@/generated/daemon/sdk.gen";
 import { useConversationStore } from "@/stores/conversation-store";
 import { createSelectors } from "@/utils/create-selectors";
-import type { SubagentStatus, SubagentInnerEvent } from "@vellumai/assistant-api";
+import type {
+  SubagentStatus,
+  SubagentInnerEvent,
+} from "@vellumai/assistant-api";
 import { isActiveStatus } from "@/utils/subagent-status";
 import { fetchSubagentDetail } from "./fetch-subagent-detail";
 import { mapDetailEvents } from "./map-detail-events";
@@ -183,7 +186,10 @@ export interface SubagentActions {
    * Dedup state lives in the store so it survives component lifecycle.
    * Clears the marker on failure or empty events so callers can retry.
    */
-  fetchDetailIfNeeded: (assistantId: string, subagentId: string) => Promise<void>;
+  fetchDetailIfNeeded: (
+    assistantId: string,
+    subagentId: string,
+  ) => Promise<void>;
 
   /**
    * Best-effort abort of a running subagent. Reads `assistantId` and
@@ -529,7 +535,10 @@ const useSubagentStoreBase = create<SubagentStore>()((set, get) => ({
         entry.parentMessageStableId === stableId &&
         entry.parentMessageId !== messageId
       ) {
-        updatedById.set(entry.subagentId, { ...entry, parentMessageId: messageId });
+        updatedById.set(entry.subagentId, {
+          ...entry,
+          parentMessageId: messageId,
+        });
       }
     }
     if (updatedById.size === 0) return;
@@ -583,7 +592,11 @@ const useSubagentStoreBase = create<SubagentStore>()((set, get) => ({
     nextFetchedAt.set(subagentId, entry.spawnedAt);
     set({ fetchedAt: nextFetchedAt });
 
-    const detail = await fetchSubagentDetail(assistantId, subagentId, entry.conversationId);
+    const detail = await fetchSubagentDetail(
+      assistantId,
+      subagentId,
+      entry.conversationId,
+    );
 
     const clearMarker = () => {
       const next = new Map(get().fetchedAt);
@@ -615,7 +628,8 @@ const useSubagentStoreBase = create<SubagentStore>()((set, get) => ({
 
   abortSubagent: async (subagentId) => {
     const assistantId = useResolvedAssistantsStore.getState().activeAssistantId;
-    const activeConversationId = useConversationStore.getState().activeConversationId;
+    const activeConversationId =
+      useConversationStore.getState().activeConversationId;
     if (!assistantId || !activeConversationId) return;
     try {
       await subagentsByIdAbortPost({

@@ -31,7 +31,10 @@ import {
 export type ChartMetric = "spend" | "events";
 
 const MOBILE_Y_AXIS_WIDTH = 40;
-const MOBILE_AXIS_TICK = { fontSize: 11, fill: "var(--content-tertiary)" } as const;
+const MOBILE_AXIS_TICK = {
+  fontSize: 11,
+  fill: "var(--content-tertiary)",
+} as const;
 
 const USAGE_SOURCE_COLORS: Record<string, string> = {
   runtime_proxy_api: "#3b82f6",
@@ -67,9 +70,7 @@ function transformSeries(buckets: UsageBucket[], metric: ChartMetric) {
     const entry: ChartDatum = { date: bucket.date };
     for (const group of bucket.groups) {
       entry[group.group_key] =
-        metric === "spend"
-          ? parseFloat(group.total_usd)
-          : group.event_count;
+        metric === "spend" ? parseFloat(group.total_usd) : group.event_count;
     }
     return entry;
   });
@@ -193,7 +194,11 @@ export function BillingUsageChart({
 
   const isIntegerMetric = metric === "events";
   const yMax = useMemo(
-    () => niceMax(stackTotals, { integerOnly: isIntegerMetric, tickCount: Y_TICK_COUNT }),
+    () =>
+      niceMax(stackTotals, {
+        integerOnly: isIntegerMetric,
+        tickCount: Y_TICK_COUNT,
+      }),
     [stackTotals, isIntegerMetric],
   );
   const yTicks = useMemo(() => generateTicks(yMax, Y_TICK_COUNT), [yMax]);
@@ -227,20 +232,30 @@ export function BillingUsageChart({
 
   const isEmpty = stackKeys.length === 0;
 
-  const bars = isEmpty ? [] : data.map((d, di) => {
-    const x = plotLeft + di * bandWidth + barPadding;
-    let cumY = 0;
-    const segments = stackKeys.map((key, ki) => {
-      const val = Number(d[key]) || 0;
-      const y0 = cumY;
-      cumY += val;
-      const sy = yScale(cumY);
-      const sh = yScale(y0) - sy;
-      const isLast = ki === stackKeys.length - 1;
-      return { key, val, x, y: sy, h: sh, color: getBarColor(key, ki), isLast };
-    });
-    return { di, x, segments };
-  });
+  const bars = isEmpty
+    ? []
+    : data.map((d, di) => {
+        const x = plotLeft + di * bandWidth + barPadding;
+        let cumY = 0;
+        const segments = stackKeys.map((key, ki) => {
+          const val = Number(d[key]) || 0;
+          const y0 = cumY;
+          cumY += val;
+          const sy = yScale(cumY);
+          const sh = yScale(y0) - sy;
+          const isLast = ki === stackKeys.length - 1;
+          return {
+            key,
+            val,
+            x,
+            y: sy,
+            h: sh,
+            color: getBarColor(key, ki),
+            isLast,
+          };
+        });
+        return { di, x, segments };
+      });
 
   const handleBarMouseMove = (
     e: MouseEvent<SVGElement>,
@@ -274,10 +289,10 @@ export function BillingUsageChart({
 
   // Clamp tooltip so it stays within the container on both edges
   const tooltipLeft = tooltip
-    ? Math.max(0, Math.min(
-        tooltip.x + TOOLTIP_OFFSET,
-        width - ESTIMATED_TOOLTIP_WIDTH,
-      ))
+    ? Math.max(
+        0,
+        Math.min(tooltip.x + TOOLTIP_OFFSET, width - ESTIMATED_TOOLTIP_WIDTH),
+      )
     : 0;
 
   const tooltipStyle: CSSProperties = {
@@ -288,18 +303,18 @@ export function BillingUsageChart({
 
   return (
     <div onMouseDown={(e) => e.preventDefault()}>
-      <div ref={containerRef} className="relative w-full" style={{ height: CHART_HEIGHT }}>
+      <div
+        ref={containerRef}
+        className="relative w-full"
+        style={{ height: CHART_HEIGHT }}
+      >
         {isEmpty ? (
           <div className="flex h-full items-center justify-center text-body-medium-lighter text-[var(--content-faint)]">
             No usage data for this period
           </div>
         ) : width > 0 ? (
           <>
-            <svg
-              width={width}
-              height={CHART_HEIGHT}
-              className="block"
-            >
+            <svg width={width} height={CHART_HEIGHT} className="block">
               {/* Grid lines */}
               {yTicks.map((t) => (
                 <line
@@ -381,13 +396,7 @@ export function BillingUsageChart({
                     return (
                       <path
                         {...shared}
-                        d={topRoundedRect(
-                          seg.x,
-                          seg.y,
-                          barWidth,
-                          seg.h,
-                          3,
-                        )}
+                        d={topRoundedRect(seg.x, seg.y, barWidth, seg.h, 3)}
                       />
                     );
                   }

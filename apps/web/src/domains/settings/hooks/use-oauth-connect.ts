@@ -155,7 +155,13 @@ export function useOAuthConnect({
 
       return false;
     },
-    [assistantId, connectionsQueryKey, managedAvailable, providerKey, queryClient],
+    [
+      assistantId,
+      connectionsQueryKey,
+      managedAvailable,
+      providerKey,
+      queryClient,
+    ],
   );
 
   // Web: listen for postMessage / storage completion from popup
@@ -407,7 +413,7 @@ export function useOAuthConnect({
           );
           toast.error(detail);
         },
-      }
+      },
     );
   };
 

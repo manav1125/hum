@@ -1,11 +1,4 @@
-
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
 
 interface UseChatAttachmentDropZoneOptions {
   /** Callback that receives files dropped on the zone. */

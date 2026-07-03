@@ -25,7 +25,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowUp, ChevronLeft, Square } from "lucide-react";
 
-import { Transcript, type TranscriptHandle, type TranscriptProps } from "@/domains/chat/transcript/transcript";
+import {
+  Transcript,
+  type TranscriptHandle,
+  type TranscriptProps,
+} from "@/domains/chat/transcript/transcript";
 import {
   VoiceInputButton,
   type VoiceInputButtonHandle,
@@ -259,7 +263,11 @@ export function MobileChatView({
         overflow: "hidden",
       }}
     >
-      <style dangerouslySetInnerHTML={{ __html: MCHAT_KEYFRAMES + MCHAT_TRANSCRIPT_THEME }} />
+      <style
+        dangerouslySetInnerHTML={{
+          __html: MCHAT_KEYFRAMES + MCHAT_TRANSCRIPT_THEME,
+        }}
+      />
 
       {/* HEADER — back ‹ + aperture + Cue / conversation subtitle. */}
       <div
@@ -315,7 +323,14 @@ export function MobileChatView({
 
       {/* THREAD — the reused live transcript (streamed output + tool/step chips
           + subagents + surfaces + confirmations all preserved). */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         <Transcript ref={transcriptRef} {...transcriptProps} />
       </div>
 
@@ -329,7 +344,9 @@ export function MobileChatView({
             : "calc(9px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
           background: "var(--mv1-composer-veil)",
           backdropFilter: "blur(8px)",
-          transform: composerLift ? `translateY(-${composerLift}px)` : undefined,
+          transform: composerLift
+            ? `translateY(-${composerLift}px)`
+            : undefined,
           transition: "transform .18s ease",
         }}
       >
@@ -392,7 +409,9 @@ export function MobileChatView({
               type="button"
               onClick={handleSend}
               disabled={!canStopGenerating && !canSend}
-              aria-label={canStopGenerating ? "Stop generating" : "Send message"}
+              aria-label={
+                canStopGenerating ? "Stop generating" : "Send message"
+              }
               style={{
                 width: 34,
                 height: 34,

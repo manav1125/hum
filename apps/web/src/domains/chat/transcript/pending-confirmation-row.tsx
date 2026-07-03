@@ -4,7 +4,10 @@
  */
 
 import { useInteractionStore } from "@/domains/chat/interaction-store";
-import { handleConfirmationSubmit, handleAllowAndCreateRule } from "@/domains/chat/confirmation-actions";
+import {
+  handleConfirmationSubmit,
+  handleAllowAndCreateRule,
+} from "@/domains/chat/confirmation-actions";
 import { ConfirmationPromptCard } from "@/domains/chat/components/confirmation-prompt-card";
 
 export function PendingConfirmationRow() {
@@ -22,7 +25,9 @@ export function PendingConfirmationRow() {
       confirmation={pendingConfirmation}
       isSubmitting={isSubmitting}
       onSubmit={handleConfirmationSubmit}
-      onAllowAndCreateRule={showAllowAndCreateRule ? handleAllowAndCreateRule : undefined}
+      onAllowAndCreateRule={
+        showAllowAndCreateRule ? handleAllowAndCreateRule : undefined
+      }
     />
   );
 }

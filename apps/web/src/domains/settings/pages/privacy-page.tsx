@@ -13,9 +13,9 @@ import { TrustRules } from "@/domains/settings/components/trust-rules/trust-rule
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { useHasPlatformSession } from "@/stores/auth-store";
 import {
-    getDeviceBool,
-    getDeviceSetting,
-    setDeviceSetting,
+  getDeviceBool,
+  getDeviceSetting,
+  setDeviceSetting,
 } from "@/utils/device-settings";
 import { savePreferenceToggle } from "@/utils/onboarding-cleanup";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
@@ -76,11 +76,11 @@ export function PrivacyPage() {
   // Settings routes are NOT mounted under `<ActiveAssistantGate>`, so read the
   // raw store (nullable) rather than `useActiveAssistantId()`, which throws.
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
-  const [shareAnalytics, setShareAnalytics] = useState(
-    () => getDeviceBool("shareAnalytics", true),
+  const [shareAnalytics, setShareAnalytics] = useState(() =>
+    getDeviceBool("shareAnalytics", true),
   );
-  const [shareDiagnostics, setShareDiagnostics] = useState(
-    () => getDeviceBool("shareDiagnostics", true),
+  const [shareDiagnostics, setShareDiagnostics] = useState(() =>
+    getDeviceBool("shareDiagnostics", true),
   );
   const [retentionId, setRetentionId] = useState(() =>
     getDeviceSetting("llmLogRetention", DEFAULT_RETENTION_ID),

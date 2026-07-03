@@ -1,12 +1,16 @@
-
-import { type Dispatch, type RefObject, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
-
 import {
-  type VoiceInputButtonHandle,
-} from "@/domains/chat/components/voice-input-button";
-import {
-  shouldShowMicPrimer,
-} from "@/domains/chat/components/mic-permission-primer";
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import { type VoiceInputButtonHandle } from "@/domains/chat/components/voice-input-button";
+import { shouldShowMicPrimer } from "@/domains/chat/components/mic-permission-primer";
 import { useIsNativePlatform } from "@/runtime/native-auth";
 import { postDictation } from "@/domains/chat/voice/dictation-api";
 import { registerPushToTalkTarget } from "@/domains/chat/voice/push-to-talk-target";

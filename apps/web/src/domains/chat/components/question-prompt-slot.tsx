@@ -4,7 +4,10 @@
  */
 
 import { useInteractionStore } from "@/domains/chat/interaction-store";
-import { handleQuestionResponse, handleDismissPendingQuestion } from "@/domains/chat/question-actions";
+import {
+  handleQuestionResponse,
+  handleDismissPendingQuestion,
+} from "@/domains/chat/question-actions";
 import { QuestionPromptCard } from "@/domains/chat/components/question-prompt-card";
 
 export function QuestionPromptSlot() {

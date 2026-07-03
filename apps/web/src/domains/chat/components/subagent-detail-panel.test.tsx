@@ -62,7 +62,12 @@ describe("SubagentDetailPanel — metric cards", () => {
   test("running with zero usage renders real zeros, not skeletons", () => {
     const { container } = render(
       <SubagentDetailPanel
-        entry={makeEntry({ status: "running", inputTokens: 0, outputTokens: 0, totalCost: 0 })}
+        entry={makeEntry({
+          status: "running",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalCost: 0,
+        })}
         onClose={noop}
       />,
     );
@@ -79,7 +84,12 @@ describe("SubagentDetailPanel — metric cards", () => {
   test("running with usage renders real values", () => {
     const { container } = render(
       <SubagentDetailPanel
-        entry={makeEntry({ status: "running", inputTokens: 1200, outputTokens: 340, totalCost: 0.68 })}
+        entry={makeEntry({
+          status: "running",
+          inputTokens: 1200,
+          outputTokens: 340,
+          totalCost: 0.68,
+        })}
         onClose={noop}
       />,
     );
@@ -93,7 +103,12 @@ describe("SubagentDetailPanel — metric cards", () => {
   test("terminal subagent renders real values including a legitimate zero", () => {
     const { container } = render(
       <SubagentDetailPanel
-        entry={makeEntry({ status: "completed", inputTokens: 0, outputTokens: 0, totalCost: 0 })}
+        entry={makeEntry({
+          status: "completed",
+          inputTokens: 0,
+          outputTokens: 0,
+          totalCost: 0,
+        })}
         onClose={noop}
       />,
     );

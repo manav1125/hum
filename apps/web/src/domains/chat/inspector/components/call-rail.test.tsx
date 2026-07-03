@@ -38,7 +38,9 @@ mock.module("react-router", () => ({
 // Imported AFTER the mock so the component picks up the stub.
 import { CallRail } from "./call-rail";
 
-function makeRealEntry(overrides: Partial<LLMRequestLogEntry> = {}): LLMRequestLogEntry {
+function makeRealEntry(
+  overrides: Partial<LLMRequestLogEntry> = {},
+): LLMRequestLogEntry {
   return {
     id: "call-real-1",
     createdAt: Date.parse("2026-05-26T13:30:00Z"),

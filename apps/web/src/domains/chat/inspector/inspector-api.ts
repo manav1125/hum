@@ -132,9 +132,7 @@ export function useConversationCallNumbering(
       "llm-context-call-numbering",
       conversationId,
     ] as const,
-    queryFn: async ({
-      signal,
-    }): Promise<LLMRequestLogEntry[] | null> => {
+    queryFn: async ({ signal }): Promise<LLMRequestLogEntry[] | null> => {
       if (!assistantId || !conversationId) return null;
       const { data, response } = await conversationsLlmcontextGet({
         path: { assistant_id: assistantId },
@@ -290,10 +288,7 @@ async function fetchConversationLlmContextFromPerMessage(
   conversationId: string,
   signal: AbortSignal | undefined,
 ): Promise<LlmContextResponse> {
-  const snapshot = await fetchConversationMessages(
-    assistantId,
-    conversationId,
-  );
+  const snapshot = await fetchConversationMessages(assistantId, conversationId);
   const messages = snapshot?.messages ?? [];
 
   const messageIds: string[] = [];

@@ -18,9 +18,8 @@ mock.module("@/hooks/conversation-queries", () => ({
   }),
 }));
 
-const { SIDEBAR_CONVERSATION_LIMIT, useSidebarState } = await import(
-  "@/domains/chat/use-sidebar-state"
-);
+const { SIDEBAR_CONVERSATION_LIMIT, useSidebarState } =
+  await import("@/domains/chat/use-sidebar-state");
 
 function makeConversation(
   index: number,
@@ -101,9 +100,7 @@ describe("useSidebarState pagination", () => {
       }),
     );
 
-    expect(result.current.slack.items).toHaveLength(
-      SIDEBAR_CONVERSATION_LIMIT,
-    );
+    expect(result.current.slack.items).toHaveLength(SIDEBAR_CONVERSATION_LIMIT);
     expect(result.current.slack.showMore).toBe(true);
     expect(result.current.slack.showLess).toBe(false);
 

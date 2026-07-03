@@ -19,15 +19,20 @@ import type { QuestionResponseEntry } from "@/domains/chat/api/event-types";
  * Guards against a new SSE-driven `question_request` arriving mid-flight
  * by comparing request IDs before clearing state.
  */
-export async function handleQuestionResponse(responses: QuestionResponseEntry[]): Promise<void> {
-  const { pendingQuestion: snapshot, isSubmittingQuestion } = useInteractionStore.getState();
+export async function handleQuestionResponse(
+  responses: QuestionResponseEntry[],
+): Promise<void> {
+  const { pendingQuestion: snapshot, isSubmittingQuestion } =
+    useInteractionStore.getState();
   if (!snapshot || isSubmittingQuestion) return;
   useInteractionStore.getState().submitQuestionStart();
   useChatSessionStore.getState().setError(null);
 
   const ctx = useStreamStore.getState().streamContext;
   if (!ctx) {
-    useChatSessionStore.getState().setError({ message: "No active session. Please try again." });
+    useChatSessionStore
+      .getState()
+      .setError({ message: "No active session. Please try again." });
     useInteractionStore.getState().submitQuestionEnd();
     return;
   }
@@ -43,14 +48,19 @@ export async function handleQuestionResponse(responses: QuestionResponseEntry[])
       useInteractionStore.getState().submitQuestionEnd();
       return;
     }
-    if (useInteractionStore.getState().pendingQuestion?.requestId === snapshot.requestId) {
+    if (
+      useInteractionStore.getState().pendingQuestion?.requestId ===
+      snapshot.requestId
+    ) {
       useInteractionStore.getState().dismissQuestion();
     } else {
       useInteractionStore.getState().submitQuestionEnd();
     }
   } catch (err) {
     captureError(err, { context: "submit_question_response" });
-    useChatSessionStore.getState().setError({ message: "Failed to submit response. Please try again." });
+    useChatSessionStore
+      .getState()
+      .setError({ message: "Failed to submit response. Please try again." });
     useInteractionStore.getState().submitQuestionEnd();
   }
 }

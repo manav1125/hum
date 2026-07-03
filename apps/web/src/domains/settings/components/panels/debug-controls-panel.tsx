@@ -135,7 +135,7 @@ export function DebugControlsPanel() {
         <div className="flex items-center justify-between rounded-lg border border-[var(--border-base)] px-4 py-3 dark:border-[var(--border-base)]">
           <div className="min-w-0">
             <p className="text-body-medium-default text-[var(--content-default)]">
-              Replay onboarding (Vellum-only)
+              Replay onboarding (Cue-only)
             </p>
             <p className="text-body-small-default text-[var(--content-tertiary)]">
               Clear local onboarding flags and re-walk the privacy → hatch

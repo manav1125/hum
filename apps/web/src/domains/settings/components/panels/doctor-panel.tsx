@@ -35,7 +35,10 @@ import {
   assistantsDoctorHistoryRetrieveOptions,
   useAssistantsDoctorSessionsMessagesCreateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
-import { type Options, assistantsDoctorSessionsCreate } from "@/generated/api/sdk.gen";
+import {
+  type Options,
+  assistantsDoctorSessionsCreate,
+} from "@/generated/api/sdk.gen";
 import type { AssistantsDoctorSessionsCreateData } from "@/generated/api/types.gen";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { captureError } from "@/lib/sentry/capture-error";
@@ -48,8 +51,7 @@ import { isPointerCoarse } from "@/utils/pointer";
 // ---------------------------------------------------------------------------
 
 export function DoctorPanel() {
-  const assistantId =
-    useResolvedAssistantsStore.use.activeAssistantId() ?? "";
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId() ?? "";
 
   // Store state — client-owned values only
   const storeEntries = useDoctorPanelStore.use.entries();
@@ -81,7 +83,10 @@ export function DoctorPanel() {
   // ---------------------------------------------------------------------------
 
   const historyListEnabled =
-    !!assistantId && sessionId === null && !historyDismissed && storeEntries.length === 0;
+    !!assistantId &&
+    sessionId === null &&
+    !historyDismissed &&
+    storeEntries.length === 0;
 
   const historyListQuery = useQuery({
     ...assistantsDoctorHistoryListOptions({
@@ -104,7 +109,11 @@ export function DoctorPanel() {
       },
     }),
     enabled:
-      !!assistantId && !!latestHistorySessionId && !historyDismissed && sessionId === null && storeEntries.length === 0,
+      !!assistantId &&
+      !!latestHistorySessionId &&
+      !historyDismissed &&
+      sessionId === null &&
+      storeEntries.length === 0,
   });
 
   // Derive history entries from query cache (no store copy for completed sessions).
@@ -132,14 +141,25 @@ export function DoctorPanel() {
     if (historyStatus !== "active") return;
 
     const store = useDoctorPanelStore.getState();
-    const resumedEntries = mapPersistedMessagesToEntries(historyDetail.messages ?? []);
+    const resumedEntries = mapPersistedMessagesToEntries(
+      historyDetail.messages ?? [],
+    );
     store.setEntries(resumedEntries);
     store.setPendingApproval(hasPendingApproval(resumedEntries));
     store.setPendingBackup(hasPendingBackup(resumedEntries));
     store.setSessionId(latestHistorySessionId);
     store.setSessionStatus("active");
     connectSSE(assistantId, latestHistorySessionId);
-  }, [historyDismissed, sessionId, storeEntries.length, historyDetail, historyStatus, latestHistorySessionId, assistantId, connectSSE]);
+  }, [
+    historyDismissed,
+    sessionId,
+    storeEntries.length,
+    historyDetail,
+    historyStatus,
+    latestHistorySessionId,
+    assistantId,
+    connectSSE,
+  ]);
 
   // Capture query errors for observability
   useEffect(() => {
@@ -150,7 +170,9 @@ export function DoctorPanel() {
 
   useEffect(() => {
     if (historyDetailQuery.error) {
-      captureError(historyDetailQuery.error, { context: "doctor_history_detail" });
+      captureError(historyDetailQuery.error, {
+        context: "doctor_history_detail",
+      });
     }
   }, [historyDetailQuery.error]);
 
@@ -183,7 +205,12 @@ export function DoctorPanel() {
       store.setSessionId(data.session_id);
       store.setSessionStatus("active");
       store.setEntries([
-        { kind: "assistant", content: DOCTOR_GREETING, id: "greeting", timestamp: Date.now() },
+        {
+          kind: "assistant",
+          content: DOCTOR_GREETING,
+          id: "greeting",
+          timestamp: Date.now(),
+        },
       ]);
       connectSSE(assistantId, data.session_id);
     },
@@ -195,9 +222,14 @@ export function DoctorPanel() {
       store.setSessionStatus("error");
       store.appendEntry({
         kind: "error",
-        content: error instanceof ApiError
-          ? error.message
-          : extractErrorMessage(error, undefined, "Failed to start doctor session"),
+        content:
+          error instanceof ApiError
+            ? error.message
+            : extractErrorMessage(
+                error,
+                undefined,
+                "Failed to start doctor session",
+              ),
       });
     },
   });
@@ -219,7 +251,11 @@ export function DoctorPanel() {
       captureError(error, { context: "send_doctor_message" });
       useDoctorPanelStore.getState().appendEntry({
         kind: "error",
-        content: extractErrorMessage(error, undefined, "Failed to send message"),
+        content: extractErrorMessage(
+          error,
+          undefined,
+          "Failed to send message",
+        ),
       });
     },
   });
@@ -265,7 +301,12 @@ export function DoctorPanel() {
   // Scroll when entries grow (new message) OR when the last entry's content
   // grows (streaming message_delta).
   const entries = useMemo(
-    () => (sessionId || storeEntries.length > 0 ? storeEntries : (!historyDismissed ? historyEntries : [])),
+    () =>
+      sessionId || storeEntries.length > 0
+        ? storeEntries
+        : !historyDismissed
+          ? historyEntries
+          : [],
     [sessionId, storeEntries, historyDismissed, historyEntries],
   );
 
@@ -335,15 +376,18 @@ export function DoctorPanel() {
   // ---------------------------------------------------------------------------
 
   const isSessionActive = sessionId !== null && storeSessionStatus === "active";
-  const isSessionEnded = !isSessionActive && storeEntries.length > 0 &&
+  const isSessionEnded =
+    !isSessionActive &&
+    storeEntries.length > 0 &&
     (storeSessionStatus === "completed" || storeSessionStatus === "error");
-  const sessionStatus = (isSessionActive || isSessionEnded)
-    ? storeSessionStatus
-    : (historyStatus ?? "idle");
-  const isLoadingHistory = historyListEnabled && (
-    historyListQuery.isLoading ||
-    (!!latestHistorySessionId && historyDetailQuery.isLoading)
-  );
+  const sessionStatus =
+    isSessionActive || isSessionEnded
+      ? storeSessionStatus
+      : (historyStatus ?? "idle");
+  const isLoadingHistory =
+    historyListEnabled &&
+    (historyListQuery.isLoading ||
+      (!!latestHistorySessionId && historyDetailQuery.isLoading));
 
   // ---------------------------------------------------------------------------
   // Render
@@ -465,7 +509,9 @@ export function DoctorPanel() {
                         <BackupPromptBlock
                           entry={entry}
                           onRespond={(response) => {
-                            useDoctorPanelStore.getState().setPendingBackup(false);
+                            useDoctorPanelStore
+                              .getState()
+                              .setPendingBackup(false);
                             handleSend(response);
                           }}
                           disabled={!pendingBackup || sending}
@@ -490,8 +536,7 @@ export function DoctorPanel() {
                         aria-hidden
                         className="typing-dot block h-2 w-2 rounded-full bg-[var(--content-tertiary)]"
                         style={{
-                          animation:
-                            "typing-dot-pulse 1s ease-in-out infinite",
+                          animation: "typing-dot-pulse 1s ease-in-out infinite",
                           animationDelay: `${delay}s`,
                         }}
                       />
@@ -556,9 +601,7 @@ export function DoctorPanel() {
               <div className="flex items-center justify-end px-3 pb-2">
                 <Button
                   variant="primary"
-                  iconOnly={
-                    <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
-                  }
+                  iconOnly={<ArrowUp className="h-4 w-4" strokeWidth={2.5} />}
                   type="submit"
                   disabled={!inputValue.trim() || sending}
                   aria-label="Send message"
@@ -568,7 +611,10 @@ export function DoctorPanel() {
           )}
 
           {/* Session ended — option to restart */}
-          {(isSessionEnded || (!isSessionActive && historyStatus && historyStatus !== "active")) && (
+          {(isSessionEnded ||
+            (!isSessionActive &&
+              historyStatus &&
+              historyStatus !== "active")) && (
             <div className="flex shrink-0 items-center justify-center gap-3 py-2">
               <button
                 type="button"

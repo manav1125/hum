@@ -1,6 +1,6 @@
 # Widget Component Library
 
-A CSS/JS widget library is auto-injected alongside the design system. Use these for standard UI patterns - skip them when custom HTML serves the user better.
+The built-in Cue widget library (CSS/JS) is auto-injected alongside the design system. Use these for standard UI patterns - skip them when custom HTML serves the user better. The JS entry point is the `window.vellum` global — that's a legacy identifier, keep it as-is in code; in prose to the user this is the "Cue widget library".
 
 ## Layout widgets
 

@@ -1,9 +1,4 @@
-import {
-  type Dispatch,
-  type SetStateAction,
-  useCallback,
-  useRef,
-} from "react";
+import { type Dispatch, type SetStateAction, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useConversationStore } from "@/stores/conversation-store";
@@ -228,7 +223,8 @@ export function useStreamEventHandler(
         setConfirmationToolCall: store.setConfirmationToolCall,
         setAssetsRefreshKey,
         addDismissedSurfaceId: store.addDismissedSurfaceId,
-        setContextWindowUsageForConversation: store.setContextWindowUsageForConversation,
+        setContextWindowUsageForConversation:
+          store.setContextWindowUsageForConversation,
         setContextWindowUsage: store.setContextWindowUsage,
         queryClient,
         setCompactionCircuitOpenUntil: store.setCompactionCircuitOpenUntil,

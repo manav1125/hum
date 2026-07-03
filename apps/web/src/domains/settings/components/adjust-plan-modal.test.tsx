@@ -10,7 +10,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import * as sdkGen from "@/generated/api/sdk.gen";
@@ -198,7 +204,11 @@ function renderModal(
   );
   const result = render(
     <QueryClientProvider client={client}>
-      <AdjustPlanModal open onClose={() => {}} onTierUpgraded={onTierUpgraded} />
+      <AdjustPlanModal
+        open
+        onClose={() => {}}
+        onTierUpgraded={onTierUpgraded}
+      />
     </QueryClientProvider>,
   );
   return { ...result, client };
@@ -426,7 +436,10 @@ describe("AdjustPlanModal credit bundle — unseeded sentinel", () => {
     const refetched = proPlansResponse(CREDIT_TIERS);
     refetched.plans[1]!.name = "Pro (refetched)";
     await act(async () => {
-      client.setQueryData(organizationsBillingPlansRetrieveQueryKey(), refetched);
+      client.setQueryData(
+        organizationsBillingPlansRetrieveQueryKey(),
+        refetched,
+      );
       await new Promise((r) => setTimeout(r, 0));
     });
 
@@ -617,7 +630,9 @@ describe("AdjustPlanModal Pro header total — no picker shown", () => {
 
     // No tier picker and no "Update Plan" button render in this flow.
     expect(
-      document.querySelector('button[role="combobox"][aria-label="Machine tier"]'),
+      document.querySelector(
+        'button[role="combobox"][aria-label="Machine tier"]',
+      ),
     ).toBeNull();
     expect(queryByTestId("modal-change-tier-button")).toBeNull();
     expect(queryByTestId("modal-upgrade-to-pro-button")).toBeNull();

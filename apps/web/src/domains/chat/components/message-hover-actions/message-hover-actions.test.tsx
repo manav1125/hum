@@ -13,7 +13,9 @@ describe("MessageHoverActions", () => {
       timestamp: Date.UTC(2026, 0, 2, 12, 34),
       ...textBody(""),
     };
-    const html = renderToStaticMarkup(<MessageHoverActions message={message} />);
+    const html = renderToStaticMarkup(
+      <MessageHoverActions message={message} />,
+    );
 
     expect(html).toContain("title=");
     expect(html).toContain("select-none");

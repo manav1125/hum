@@ -16,20 +16,27 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import { cn } from "@vellumai/design-library";
 import {
-    Bold,
-    Code,
-    Italic,
-    Link as LinkIcon,
-    MessageSquareText,
-    Strikethrough,
+  Bold,
+  Code,
+  Italic,
+  Link as LinkIcon,
+  MessageSquareText,
+  Strikethrough,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Markdown, type MarkdownStorage } from "tiptap-markdown";
 
 import type { CommentAnchor } from "@/domains/chat/utils/tiptap-position-map";
 import {
-    charOffsetToPmPos,
-    pmPosToCharOffset,
+  charOffsetToPmPos,
+  pmPosToCharOffset,
 } from "@/domains/chat/utils/tiptap-position-map";
 
 // ---------------------------------------------------------------------------
@@ -40,12 +47,14 @@ interface TiptapDocumentEditorProps {
   content: string;
   editable?: boolean;
   onContentChange?: (markdown: string) => void;
-  onTextSelect?: (selection: {
-    start: number;
-    end: number;
-    text: string;
-    rect: DOMRect;
-  } | null) => void;
+  onTextSelect?: (
+    selection: {
+      start: number;
+      end: number;
+      text: string;
+      rect: DOMRect;
+    } | null,
+  ) => void;
   commentAnchors?: CommentAnchor[];
   highlightRange?: { start: number; end: number } | null;
   onCommentSubmit?: (comment: string) => void;
@@ -204,7 +213,11 @@ interface BubbleToolbarProps {
   commentSubmitting?: boolean;
 }
 
-function BubbleToolbar({ editor, onCommentSubmit, commentSubmitting }: BubbleToolbarProps) {
+function BubbleToolbar({
+  editor,
+  onCommentSubmit,
+  commentSubmitting,
+}: BubbleToolbarProps) {
   const [commentOpen, setCommentOpen] = useState(false);
   const [draft, setDraft] = useState("");
 
@@ -223,7 +236,9 @@ function BubbleToolbar({ editor, onCommentSubmit, commentSubmitting }: BubbleToo
           editor.view.dispatch(tr);
         }
       } else if (editor) {
-        const tr = editor.state.tr.setMeta(activeHighlightPluginKey, { range: null });
+        const tr = editor.state.tr.setMeta(activeHighlightPluginKey, {
+          range: null,
+        });
         editor.view.dispatch(tr);
       }
       return opening;
@@ -294,7 +309,9 @@ function BubbleToolbar({ editor, onCommentSubmit, commentSubmitting }: BubbleToo
     setDraft("");
     setCommentOpen(false);
     if (editor) {
-      const tr = editor.state.tr.setMeta(activeHighlightPluginKey, { range: null });
+      const tr = editor.state.tr.setMeta(activeHighlightPluginKey, {
+        range: null,
+      });
       editor.view.dispatch(tr);
     }
   };
@@ -392,10 +409,14 @@ export function TiptapDocumentEditor({
   className,
 }: TiptapDocumentEditorProps) {
   const onContentChangeRef = useRef(onContentChange);
-  useLayoutEffect(() => { onContentChangeRef.current = onContentChange; });
+  useLayoutEffect(() => {
+    onContentChangeRef.current = onContentChange;
+  });
 
   const onTextSelectRef = useRef(onTextSelect);
-  useLayoutEffect(() => { onTextSelectRef.current = onTextSelect; });
+  useLayoutEffect(() => {
+    onTextSelectRef.current = onTextSelect;
+  });
 
   const editor = useEditor({
     extensions: [
@@ -415,7 +436,9 @@ export function TiptapDocumentEditor({
     onSelectionUpdate({ editor: ed }) {
       const { from, to } = ed.state.selection;
       if (from === to) {
-        const tr = ed.state.tr.setMeta(activeHighlightPluginKey, { range: null });
+        const tr = ed.state.tr.setMeta(activeHighlightPluginKey, {
+          range: null,
+        });
         ed.view.dispatch(tr);
         onTextSelectRef.current?.(null);
         return;

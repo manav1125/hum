@@ -12,9 +12,8 @@ import type { HistoryPaginationResult } from "@/domains/chat/transcript/use-hist
 // keeps the data-apply effect (and its downstream interaction/surface
 // fetches) dormant.
 // ---------------------------------------------------------------------------
-const realPaginationModule = await import(
-  "@/domains/chat/transcript/use-history-pagination"
-);
+const realPaginationModule =
+  await import("@/domains/chat/transcript/use-history-pagination");
 
 let invalidateSpy = mock(async () => {});
 
@@ -43,9 +42,8 @@ mock.module("@/domains/chat/transcript/use-history-pagination", () => ({
   useHistoryPagination: () => paginationStub(),
 }));
 
-const { useConversationHistory } = await import(
-  "@/domains/chat/hooks/use-conversation-history"
-);
+const { useConversationHistory } =
+  await import("@/domains/chat/hooks/use-conversation-history");
 
 function renderHistory(activeConversationId: string | null = "conv-A") {
   return renderHook(() =>

@@ -1,7 +1,5 @@
 import type { LlmCatalogModel } from "@/assistant/llm-model-catalog";
-import {
-  WEB_SEARCH_PROVIDER_KEY_STORAGE,
-} from "@/assistant/generated/web-search-provider-catalog.gen";
+import { WEB_SEARCH_PROVIDER_KEY_STORAGE } from "@/assistant/generated/web-search-provider-catalog.gen";
 
 import type {
   InferenceTokenBudgetState,
@@ -38,7 +36,9 @@ export function assertProvisionSuccess(result: unknown): void {
     "success" in result &&
     result.success === false
   ) {
-    throw new Error("Failed to provision API key: server returned success=false");
+    throw new Error(
+      "Failed to provision API key: server returned success=false",
+    );
   }
 }
 
@@ -84,10 +84,7 @@ export function resolveTokenBudgetStateForModel(
     : model.maxOutputTokens;
 
   return {
-    maxOutputTokens: clampTokenBudget(
-      maxOutputBudget,
-      model.maxOutputTokens,
-    ),
+    maxOutputTokens: clampTokenBudget(maxOutputBudget, model.maxOutputTokens),
     maxOutputTouched: state.maxOutputTouched,
     contextWindowTokens: clampTokenBudget(
       contextBudget,

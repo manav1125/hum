@@ -15,15 +15,16 @@ export type ChannelInfo = ChannelsAvailableGetResponse["channels"][number];
 
 type ReadinessSnapshot = ChannelsReadinessGetResponse["snapshots"][number];
 export type ChannelReadinessSnapshot = ReadinessSnapshot;
-export type ReadinessCheck = NonNullable<ReadinessSnapshot["localChecks"]>[number];
+export type ReadinessCheck = NonNullable<
+  ReadinessSnapshot["localChecks"]
+>[number];
 
 // ---------------------------------------------------------------------------
 // UI-only types (no daemon/gateway equivalent)
 // ---------------------------------------------------------------------------
 
 export type ContactSelection =
-  | { kind: "assistant" }
-  | { kind: "contact"; contactId: string };
+  { kind: "assistant" } | { kind: "contact"; contactId: string };
 
 export interface ContactSummary {
   id: string;

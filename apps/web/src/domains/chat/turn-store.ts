@@ -34,12 +34,7 @@ export type TurnPhase =
   | "errored";
 
 export type TerminalReason =
-  | "complete"
-  | "error"
-  | "cancelled"
-  | "timeout"
-  | "session_error"
-  | null;
+  "complete" | "error" | "cancelled" | "timeout" | "session_error" | null;
 
 export interface TurnState {
   phase: TurnPhase;
@@ -356,9 +351,7 @@ const useTurnStoreBase = create<TurnStore>()((set, get) => ({
     if (isStale(s)) return;
     set({
       phase:
-        s.phase === "idle" ||
-        s.phase === "errored" ||
-        s.phase === "queued"
+        s.phase === "idle" || s.phase === "errored" || s.phase === "queued"
           ? "thinking"
           : s.phase,
       activeToolCallCount: s.activeToolCallCount + 1,
@@ -415,10 +408,7 @@ const useTurnStoreBase = create<TurnStore>()((set, get) => ({
     // Surface dismissed — if awaiting user input with no outstanding
     // tool calls, transition back to thinking so subsequent events
     // (e.g. completeTurn) can land and the input is re-enabled.
-    if (
-      s.phase === "awaiting_user_input" &&
-      s.activeToolCallCount === 0
-    ) {
+    if (s.phase === "awaiting_user_input" && s.activeToolCallCount === 0) {
       set({ phase: "thinking" });
     }
   },
@@ -429,10 +419,7 @@ const useTurnStoreBase = create<TurnStore>()((set, get) => ({
     // no outstanding tool calls, transition back to thinking so we can
     // receive the next event (e.g. completeTurn). Without this, the
     // phase stays stuck at awaiting_user_input.
-    if (
-      s.phase === "awaiting_user_input" &&
-      s.activeToolCallCount === 0
-    ) {
+    if (s.phase === "awaiting_user_input" && s.activeToolCallCount === 0) {
       set({ phase: "thinking" });
     }
   },
@@ -674,7 +661,11 @@ export function turnReducer(state: TurnState, event: DomainEvent): TurnState {
     case "ACTIVITY_STATE_THINKING":
       if (isStale(state)) return state;
       if (state.phase === "awaiting_user_input") return state;
-      return { ...state, phase: "thinking", statusText: event.statusText ?? null };
+      return {
+        ...state,
+        phase: "thinking",
+        statusText: event.statusText ?? null,
+      };
 
     case "UI_SURFACE_SHOW":
       if (isStale(state)) return state;
@@ -833,7 +824,11 @@ export function turnReducer(state: TurnState, event: DomainEvent): TurnState {
 
     case "POLL_RECONCILED": {
       if (!isSending(state.phase)) return state;
-      if (event.turnId && state.activeTurnId && event.turnId !== state.activeTurnId) {
+      if (
+        event.turnId &&
+        state.activeTurnId &&
+        event.turnId !== state.activeTurnId
+      ) {
         return state;
       }
       if (state.pendingQueuedCount > 0) {

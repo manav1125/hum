@@ -115,11 +115,7 @@ export function useHistoryPagination({
       }
       void signal; // AbortController signal available for future use
       if (pageParam != null) {
-        return fetchOlderHistoryPage(
-          assistantId,
-          conversationId,
-          pageParam,
-        );
+        return fetchOlderHistoryPage(assistantId, conversationId, pageParam);
       }
       return fetchLatestHistoryPage(assistantId, conversationId);
     },

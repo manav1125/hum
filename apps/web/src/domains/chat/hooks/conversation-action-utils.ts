@@ -42,6 +42,7 @@ export function resolveUnpinGroupId(
   if (isSlackConversation(conversation)) return "system:all";
   if (shouldReturnToBackground(conversation)) return "system:background";
   if (conversation.conversationType === "scheduled") return "system:scheduled";
-  if (conversation.conversationType === "background") return "system:background";
+  if (conversation.conversationType === "background")
+    return "system:background";
   return "system:all";
 }

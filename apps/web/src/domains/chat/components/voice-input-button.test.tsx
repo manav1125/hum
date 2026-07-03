@@ -84,12 +84,12 @@ mock.module("@/utils/voice-input-device", () => ({
 // Capture the command handler map the component registers so tests can
 // deliver the escape monitor's `cancelDictation` relay directly (the real
 // hook is an Electron IPC subscription and no-ops in this environment).
-const commandHandlers: Record<string, ((command: unknown) => void) | undefined> =
-  {};
+const commandHandlers: Record<
+  string,
+  ((command: unknown) => void) | undefined
+> = {};
 mock.module("@/runtime/vellum-commands", () => ({
-  useVellumCommands: (
-    handlers: Record<string, (command: unknown) => void>,
-  ) => {
+  useVellumCommands: (handlers: Record<string, (command: unknown) => void>) => {
     Object.assign(commandHandlers, handlers);
   },
 }));
@@ -105,10 +105,7 @@ class FakeMediaRecorder {
   onstop: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
-  constructor(
-    _stream: unknown,
-    _options?: unknown,
-  ) {}
+  constructor(_stream: unknown, _options?: unknown) {}
 
   start(): void {
     this.state = "recording";
@@ -139,12 +136,10 @@ Object.defineProperty(navigator, "mediaDevices", {
 // Imported after the mocks so the component resolves against them. The
 // recording store is intentionally real — phase transitions are part of the
 // behavior under test.
-const { VoiceInputButton } = await import(
-  "@/domains/chat/components/voice-input-button"
-);
-const { useVoiceRecordingStore } = await import(
-  "@/domains/chat/voice/voice-recording-store"
-);
+const { VoiceInputButton } =
+  await import("@/domains/chat/components/voice-input-button");
+const { useVoiceRecordingStore } =
+  await import("@/domains/chat/voice/voice-recording-store");
 
 // ---------------------------------------------------------------------------
 // Helpers

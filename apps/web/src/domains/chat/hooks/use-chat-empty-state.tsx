@@ -15,7 +15,10 @@ import type { ChatEmptyStateProps } from "@/domains/chat/components/chat-empty-s
 import { ConversationStarterGrid } from "@/domains/chat/components/conversation-starter-grid";
 import { useConversationStarters } from "@/domains/chat/hooks/use-conversation-starters";
 import { useEmptyStateGreeting } from "@/domains/chat/hooks/use-empty-state-greeting";
-import { buildEditAppGreeting, buildEditAppStarters } from "@/domains/chat/utils/edit-app-empty-state";
+import {
+  buildEditAppGreeting,
+  buildEditAppStarters,
+} from "@/domains/chat/utils/edit-app-empty-state";
 import { pickRandomPlaceholder } from "@/domains/chat/utils/empty-state-constants";
 import type { ConversationStarter } from "@/domains/chat/utils/conversation-starters";
 import type { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
@@ -58,7 +61,11 @@ export function useChatEmptyState({
   activeConversationIsProcessing,
   onSelectStarter,
 }: UseChatEmptyStateParams): ChatEmptyStateResult {
-  const { components: avatarComponents, traits: avatarTraits, customImageUrl: avatarImageUrl } = avatar;
+  const {
+    components: avatarComponents,
+    traits: avatarTraits,
+    customImageUrl: avatarImageUrl,
+  } = avatar;
 
   const emptyStatePlaceholder = useMemo(() => pickRandomPlaceholder(), []);
   const emptyStateGreeting = useEmptyStateGreeting(assistantId);
@@ -86,7 +93,9 @@ export function useChatEmptyState({
           isProcessing={activeConversationIsProcessing}
         />
       ) : null,
-    greeting: editingApp ? buildEditAppGreeting(editingApp) : emptyStateGreeting,
+    greeting: editingApp
+      ? buildEditAppGreeting(editingApp)
+      : emptyStateGreeting,
   };
 
   const emptyStateStarters = editingApp

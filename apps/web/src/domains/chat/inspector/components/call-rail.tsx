@@ -77,9 +77,7 @@ export function CallRail({
         <CallRow
           key={entry.id}
           entry={entry}
-          callNumber={
-            callNumbers?.get(entry.id) ?? logs.length - displayIndex
-          }
+          callNumber={callNumbers?.get(entry.id) ?? logs.length - displayIndex}
           isSelected={entry.id === selectedLogId}
           isLatest={displayIndex === 0}
           href={buildCallHref(entry.id)}

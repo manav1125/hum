@@ -54,7 +54,11 @@ export function MobileToolDetailOverlay({
       onClick={handleBackdropClick}
     >
       <LazyBoundary>
-        <ToolDetailPanel detail={detail} onClose={onClose} onRiskBadgeClick={onRiskBadgeClick} />
+        <ToolDetailPanel
+          detail={detail}
+          onClose={onClose}
+          onRiskBadgeClick={onRiskBadgeClick}
+        />
       </LazyBoundary>
     </div>
   );

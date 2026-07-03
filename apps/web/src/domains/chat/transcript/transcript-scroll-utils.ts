@@ -53,12 +53,13 @@ export interface ScrollClassification {
  */
 export function classifyScrollPosition(
   metrics: ScrollMetrics,
-  flags: { hasMore: boolean; isLoadingOlder: boolean; hasConversation: boolean },
+  flags: {
+    hasMore: boolean;
+    isLoadingOlder: boolean;
+    hasConversation: boolean;
+  },
 ): ScrollClassification {
-  const maxScrollTop = Math.max(
-    0,
-    metrics.scrollHeight - metrics.clientHeight,
-  );
+  const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
   const distanceFromBottom = Math.max(0, maxScrollTop - metrics.scrollTop);
   const distanceFromTop = Math.max(0, metrics.scrollTop);
   const isPinned = distanceFromBottom <= PINNED_THRESHOLD_PX;

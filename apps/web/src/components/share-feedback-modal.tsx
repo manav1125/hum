@@ -1,28 +1,28 @@
 import { Capacitor } from "@capacitor/core";
 import { useMutation } from "@tanstack/react-query";
 import {
-    Bug,
-    Info,
-    Lightbulb,
-    Loader2,
-    type LucideIcon,
-    Mail,
-    MessageCircle,
-    Paperclip,
-    Send,
-    X,
+  Bug,
+  Info,
+  Lightbulb,
+  Loader2,
+  type LucideIcon,
+  Mail,
+  MessageCircle,
+  Paperclip,
+  Send,
+  X,
 } from "lucide-react";
 import {
-    type ChangeEvent,
-    type DragEvent,
-    type KeyboardEvent,
-    type MouseEvent,
-    useCallback,
-    useEffect,
-    useId,
-    useMemo,
-    useRef,
-    useState,
+  type ChangeEvent,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -39,8 +39,8 @@ import { useAuthStore } from "@/stores/auth-store";
 import { VELLUM_COMMUNITY_URL } from "@/utils/external-urls";
 import { Button } from "@vellumai/design-library/components/button";
 import {
-    Dropdown,
-    type DropdownOption,
+  Dropdown,
+  type DropdownOption,
 } from "@vellumai/design-library/components/dropdown";
 import { Input, Textarea } from "@vellumai/design-library/components/input";
 import { Notice } from "@vellumai/design-library/components/notice";
@@ -390,7 +390,9 @@ async function buildClientLogsFile(
         JSON.stringify(electronDiagnostics, null, 2),
       );
       tarParts.push(buildTarEntry("electron-diagnostics.json", diagBytes));
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
 
     try {
       const redactedLogs = await window.vellum.feedback.logs();
@@ -398,7 +400,9 @@ async function buildClientLogsFile(
         const logBytes = new TextEncoder().encode(redactedLogs);
         tarParts.push(buildTarEntry("electron-main-logs.txt", logBytes));
       }
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
   }
 
   if (assistantId) {
@@ -608,7 +612,11 @@ export function ShareFeedbackModal({
           ? await buildClientLogsFile(
               logTimeRange,
               assistantId ?? null,
-              isElectron() ? (includeConversation ? (activeConversationId ?? null) : null) : (activeConversationId ?? null),
+              isElectron()
+                ? includeConversation
+                  ? (activeConversationId ?? null)
+                  : null
+                : (activeConversationId ?? null),
               getDiagnosticsSnapshot,
             )
           : null;
@@ -821,18 +829,20 @@ export function ShareFeedbackModal({
             </div>
           )}
 
-          {isElectron() && activeConversationId && selectedReason !== "feature_request" && (
-            <label className="flex cursor-pointer items-center gap-2.5">
-              <Toggle
-                checked={includeConversation}
-                onChange={() => setIncludeConversation((v) => !v)}
-                aria-label="Include the most recent conversation"
-              />
-              <span className="text-body-medium-lighter leading-6 text-[var(--content-default)]">
-                Include the most recent conversation
-              </span>
-            </label>
-          )}
+          {isElectron() &&
+            activeConversationId &&
+            selectedReason !== "feature_request" && (
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <Toggle
+                  checked={includeConversation}
+                  onChange={() => setIncludeConversation((v) => !v)}
+                  aria-label="Include the most recent conversation"
+                />
+                <span className="text-body-medium-lighter leading-6 text-[var(--content-default)]">
+                  Include the most recent conversation
+                </span>
+              </label>
+            )}
 
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">

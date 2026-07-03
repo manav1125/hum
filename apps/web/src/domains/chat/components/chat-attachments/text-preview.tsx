@@ -1,4 +1,3 @@
-
 import type { Highlighter } from "shiki";
 
 import { Download, Loader2 } from "lucide-react";
@@ -28,7 +27,10 @@ const BUNDLED_LANGUAGES = [
 
 const FALLBACK_LANGUAGE = "text";
 
-const EXTENSION_TO_LANGUAGE: Record<string, (typeof BUNDLED_LANGUAGES)[number]> = {
+const EXTENSION_TO_LANGUAGE: Record<
+  string,
+  (typeof BUNDLED_LANGUAGES)[number]
+> = {
   ts: "typescript",
   tsx: "typescript",
   js: "javascript",
@@ -84,7 +86,11 @@ interface TextPreviewProps {
  * Files larger than `MAX_TEXT_PREVIEW_BYTES` short-circuit to a download
  * fallback to keep the UI thread responsive.
  */
-export const TextPreview: FC<TextPreviewProps> = ({ url, filename, mimeType: _mimeType }) => {
+export const TextPreview: FC<TextPreviewProps> = ({
+  url,
+  filename,
+  mimeType: _mimeType,
+}) => {
   const [html, setHtml] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -190,7 +196,7 @@ export const TextPreview: FC<TextPreviewProps> = ({ url, filename, mimeType: _mi
   return (
     <div
       // typography: off-scale — verbatim source code rendering
-       
+
       className="max-h-[80vh] max-w-[90vw] overflow-auto rounded bg-[var(--surface-base)] p-4 font-mono text-xs"
       dangerouslySetInnerHTML={html ? { __html: html } : undefined}
     />

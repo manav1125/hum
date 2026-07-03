@@ -9,11 +9,11 @@ import { fetchAssistantFlagValues } from "@/hooks/use-assistant-feature-flag-syn
 import { useIsOrgReady } from "@/hooks/use-is-org-ready";
 import { useFlagQueryFreshness } from "@/lib/backwards-compat/flag-query-freshness";
 import {
-    ALL_FLAGS,
-    flagKeyToStoreKey,
-    scopeIncludes,
-    type FlagScope,
-    type SingleScope,
+  ALL_FLAGS,
+  flagKeyToStoreKey,
+  scopeIncludes,
+  type FlagScope,
+  type SingleScope,
 } from "@/lib/feature-flags/feature-flag-catalog";
 import { assistantFlagValuesQueryKey } from "@/lib/sync/query-tags";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
@@ -288,7 +288,8 @@ function StringFlagRow({
   assistantId: string | null;
 }) {
   const clientSetStringFlag = useClientFeatureFlagStore.use.setStringFlag();
-  const assistantSetStringFlag = useAssistantFeatureFlagStore.use.setStringFlag();
+  const assistantSetStringFlag =
+    useAssistantFeatureFlagStore.use.setStringFlag();
   const [localValue, setLocalValue] = useState(flag.value);
 
   useEffect(() => {
@@ -306,8 +307,10 @@ function StringFlagRow({
   };
 
   const isDirty = localValue !== flag.value;
-  const knownValues = flag.values && flag.values.length > 0 ? flag.values : null;
-  const isInvalid = isDirty && knownValues != null && !knownValues.includes(localValue);
+  const knownValues =
+    flag.values && flag.values.length > 0 ? flag.values : null;
+  const isInvalid =
+    isDirty && knownValues != null && !knownValues.includes(localValue);
 
   const handleBlur = () => {
     if (!isInvalid) commitValue(localValue);

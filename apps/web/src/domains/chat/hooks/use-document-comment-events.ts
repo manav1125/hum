@@ -48,7 +48,9 @@ export function useDocumentCommentEvents({
   surfaceId,
   enabled,
   onCommentsChanged,
-}: UseDocumentCommentEventsOptions): (envelope: AssistantEventEnvelope) => void {
+}: UseDocumentCommentEventsOptions): (
+  envelope: AssistantEventEnvelope,
+) => void {
   const callbackRef = useRef(onCommentsChanged);
   useLayoutEffect(() => {
     callbackRef.current = onCommentsChanged;

@@ -1,24 +1,23 @@
-
 import {
-    Archive,
-    Code2,
-    FileAudio,
-    File as FileIcon,
-    FileImage,
-    FileSpreadsheet,
-    FileText,
-    FileType2,
-    FileVideo,
+  Archive,
+  Code2,
+  FileAudio,
+  File as FileIcon,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileType2,
+  FileVideo,
 } from "lucide-react";
 import type { FC, ReactNode } from "react";
 
 import { Typography } from "@vellumai/design-library";
 
 import {
-    classifyAttachment,
-    formatAttachmentSize,
-    middleTruncate,
-    type AttachmentIconKind,
+  classifyAttachment,
+  formatAttachmentSize,
+  middleTruncate,
+  type AttachmentIconKind,
 } from "@/domains/chat/components/chat-attachments/utils";
 
 interface MessageAttachmentSquareProps {

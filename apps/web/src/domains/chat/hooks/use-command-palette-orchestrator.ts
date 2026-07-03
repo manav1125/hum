@@ -24,7 +24,8 @@ export interface UseCommandPaletteOrchestratorOptions {
   switchConversation: (key: string) => void;
 }
 
-export type UseCommandPaletteOrchestratorReturn = UseCommandPaletteSectionsReturn;
+export type UseCommandPaletteOrchestratorReturn =
+  UseCommandPaletteSectionsReturn;
 
 export function useCommandPaletteOrchestrator({
   assistantId,

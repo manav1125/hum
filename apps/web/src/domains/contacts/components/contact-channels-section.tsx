@@ -104,7 +104,12 @@ export function buildVisibleChannels(
     }
     visibleChannels.push({
       id: ch.type,
-      label: ch.type.charAt(0).toUpperCase() + ch.type.slice(1),
+      // "vellum" is the internal channel id for the Cue app — never surface
+      // the raw id capitalized as a brand name.
+      label:
+        ch.type === "vellum"
+          ? "Cue"
+          : ch.type.charAt(0).toUpperCase() + ch.type.slice(1),
       subtitle: "",
       icon: "help-circle",
       supportsVerification: false,

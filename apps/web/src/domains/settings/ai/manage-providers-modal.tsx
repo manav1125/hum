@@ -8,14 +8,14 @@ import { Tag } from "@vellumai/design-library/components/tag";
 import { Typography } from "@vellumai/design-library/components/typography";
 
 import {
-    inferenceProviderconnectionsGetOptions,
-    inferenceProviderconnectionsGetQueryKey,
+  inferenceProviderconnectionsGetOptions,
+  inferenceProviderconnectionsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { inferenceProviderconnectionsByNameDelete } from "@/generated/daemon/sdk.gen";
 
 import {
-    PROVIDER_DISPLAY_NAMES,
-    type ProviderConnection,
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderConnection,
 } from "@/domains/settings/ai/provider-connections-client";
 import { ProviderEditorContent } from "@/domains/settings/ai/provider-editor-modal";
 // ---------------------------------------------------------------------------
@@ -53,21 +53,23 @@ export function ManageProvidersModal({
   onClose,
 }: ManageProvidersModalProps) {
   const [editorOpen, setEditorOpen] = useState(false);
-  const [editingConnection, setEditingConnection] = useState<ProviderConnection | null>(null);
+  const [editingConnection, setEditingConnection] =
+    useState<ProviderConnection | null>(null);
 
   const queryClient = useQueryClient();
   const queryOpts = inferenceProviderconnectionsGetOptions({
     path: { assistant_id: assistantId },
   });
-  const { data, isLoading: loading, isError } = useQuery({
+  const {
+    data,
+    isLoading: loading,
+    isError,
+  } = useQuery({
     ...queryOpts,
     enabled: isOpen,
   });
 
-  const connections = useMemo(
-    () => data?.connections ?? [],
-    [data],
-  );
+  const connections = useMemo(() => data?.connections ?? [], [data]);
 
   function handleEditorSave(_saved: ProviderConnection) {
     void queryClient.invalidateQueries({
@@ -224,8 +226,8 @@ function ManageProvidersModalInner({
       <Modal.Header>
         <Modal.Title>Provider Connections</Modal.Title>
         <Modal.Description>
-          Manage inference provider connections. Each connection binds a name to a
-          provider and auth configuration.
+          Manage inference provider connections. Each connection binds a name to
+          a provider and auth configuration.
         </Modal.Description>
       </Modal.Header>
 

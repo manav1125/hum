@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, renderHook } from "@testing-library/react";
 
-import {
-  __resetForTesting,
-  publish,
-} from "@/lib/event-bus";
+import { __resetForTesting, publish } from "@/lib/event-bus";
 
 import { useEventStream } from "@/domains/chat/hooks/use-event-stream";
 
@@ -19,7 +16,6 @@ function renderEventStream(params: {
   startReconciliationLoop?: (epoch: number) => void;
 }) {
   return renderHook(() => {
-
     useEventStream({
       assistantStateKind: "active",
       assistantId: "asst-1",
@@ -204,7 +200,11 @@ describe("useEventStream — sse.opened reconcile triggers", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     // The older (first) reconcile resolves second — its epoch is now
     // stale and the stale-epoch guard must skip startReconciliationLoop.
-    resolveFirst({ changed: false, messagesAdded: 0, assistantProgress: false });
+    resolveFirst({
+      changed: false,
+      messagesAdded: 0,
+      assistantProgress: false,
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // Loop is started exactly once — by the newer epoch only.

@@ -31,10 +31,16 @@ export function useMarkSeenOnOpen({
   const lastSeenOnOpenConversationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (assistantStateKind !== "active" || !assistantId || !activeConversationId) return;
+    if (
+      assistantStateKind !== "active" ||
+      !assistantId ||
+      !activeConversationId
+    )
+      return;
     if (!activeConversation) return;
     if (!activeConversation.hasUnseenLatestAssistantMessage) return;
-    if (lastSeenOnOpenConversationIdRef.current === activeConversationId) return;
+    if (lastSeenOnOpenConversationIdRef.current === activeConversationId)
+      return;
 
     lastSeenOnOpenConversationIdRef.current = activeConversationId;
 
@@ -47,7 +53,11 @@ export function useMarkSeenOnOpen({
     })
       .then(() => {
         if (cancelled) return;
-        markConversationSeenLocal(queryClient, assistantId, activeConversationId);
+        markConversationSeenLocal(
+          queryClient,
+          assistantId,
+          activeConversationId,
+        );
         lastSeenOnOpenConversationIdRef.current = null;
       })
       .catch((err) => {

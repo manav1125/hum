@@ -4,7 +4,10 @@
  */
 
 import { useInteractionStore } from "@/domains/chat/interaction-store";
-import { handleSecretSubmit, handleSecretCancel } from "@/domains/chat/secret-actions";
+import {
+  handleSecretSubmit,
+  handleSecretCancel,
+} from "@/domains/chat/secret-actions";
 import { SecretPromptCard } from "@/domains/chat/components/secret-prompt-card";
 
 export function PendingSecretRow() {

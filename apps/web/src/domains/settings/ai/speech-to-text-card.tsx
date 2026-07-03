@@ -12,17 +12,17 @@ import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Input } from "@vellumai/design-library/components/input";
 
 import {
-    ByoServiceCard,
-    CredentialsGuide,
-    ResetButton,
-    SaveButton,
+  ByoServiceCard,
+  CredentialsGuide,
+  ResetButton,
+  SaveButton,
 } from "@/domains/settings/ai/ai-shared-ui";
 import {
-    LS_STT_API_KEY_PREFIX,
-    LS_STT_PROVIDER,
-    MACOS_NATIVE_STT_PROVIDER_ID,
-    STT_PROVIDERS,
-    type STTProvider,
+  LS_STT_API_KEY_PREFIX,
+  LS_STT_PROVIDER,
+  MACOS_NATIVE_STT_PROVIDER_ID,
+  STT_PROVIDERS,
+  type STTProvider,
 } from "@/domains/settings/ai/ai-types";
 
 export function SpeechToTextCard() {
@@ -149,10 +149,7 @@ export function SpeechToTextCard() {
     : selectedProvider.apiKeyPlaceholder;
 
   return (
-    <ByoServiceCard
-      title="Speech-to-Text"
-      subtitle={selectedProvider.subtitle}
-    >
+    <ByoServiceCard title="Speech-to-Text" subtitle={selectedProvider.subtitle}>
       <div className="space-y-4">
         <div className="space-y-1">
           <label className="block text-body-small-default text-[var(--content-tertiary)]">

@@ -11,7 +11,9 @@ import {
 } from "@/domains/settings/components/panels/doctor-history";
 import type { ChatEntry } from "@/domains/settings/components/panels/doctor-history";
 
-function msg(overrides: Partial<DoctorMessage> & Pick<DoctorMessage, "kind">): DoctorMessage {
+function msg(
+  overrides: Partial<DoctorMessage> & Pick<DoctorMessage, "kind">,
+): DoctorMessage {
   return {
     id: "msg-1",
     content: "",
@@ -60,7 +62,11 @@ describe("mapPersistedMessagesToEntries", () => {
       msg({
         kind: "tool_call",
         content: "run_diagnostics",
-        metadata: { toolName: "run_diagnostics", input: { flag: true }, id: "tc-1" },
+        metadata: {
+          toolName: "run_diagnostics",
+          input: { flag: true },
+          id: "tc-1",
+        },
       }),
     ]);
     expect(entries).toHaveLength(1);
@@ -85,7 +91,12 @@ describe("mapPersistedMessagesToEntries", () => {
 
   test("tool_call falls back to message.id when metadata.id is missing", () => {
     const entries = mapPersistedMessagesToEntries([
-      msg({ id: "msg-tc", kind: "tool_call", content: "tool", metadata: { toolName: "tool" } }),
+      msg({
+        id: "msg-tc",
+        kind: "tool_call",
+        content: "tool",
+        metadata: { toolName: "tool" },
+      }),
     ]);
     const entry = entries[0]!;
     if (entry.kind !== "tool_call") throw new Error("unreachable");
@@ -170,7 +181,11 @@ describe("mapPersistedMessagesToEntries", () => {
 
   test("approval falls back to empty description when metadata lacks it", () => {
     const entries = mapPersistedMessagesToEntries([
-      msg({ kind: "approval", content: "exec", metadata: { toolName: "exec" } }),
+      msg({
+        kind: "approval",
+        content: "exec",
+        metadata: { toolName: "exec" },
+      }),
     ]);
     const entry = entries[0]!;
     if (entry.kind !== "approval") throw new Error("unreachable");
@@ -267,7 +282,12 @@ describe("mapPersistedMessagesToEntries", () => {
       msg({ id: "5", kind: "status", content: "completed" }),
     ]);
     expect(entries).toHaveLength(4);
-    expect(entries.map((e) => e.kind)).toEqual(["user", "assistant", "tool_call", "status"]);
+    expect(entries.map((e) => e.kind)).toEqual([
+      "user",
+      "assistant",
+      "tool_call",
+      "status",
+    ]);
     const toolEntry = entries[2]!;
     if (toolEntry.kind !== "tool_call") throw new Error("unreachable");
     expect(toolEntry.meta.status).toBe("completed");
@@ -307,7 +327,12 @@ describe("hasPendingApproval", () => {
         kind: "approval",
         content: "exec",
         timestamp: 0,
-        meta: { toolName: "exec", input: {}, toolCallId: "tc-1", description: "" },
+        meta: {
+          toolName: "exec",
+          input: {},
+          toolCallId: "tc-1",
+          description: "",
+        },
       },
       { id: "3", kind: "status", content: "active", timestamp: 0 },
     ];
@@ -321,7 +346,12 @@ describe("hasPendingApproval", () => {
         kind: "approval",
         content: "exec",
         timestamp: 0,
-        meta: { toolName: "exec", input: {}, toolCallId: "tc-1", description: "" },
+        meta: {
+          toolName: "exec",
+          input: {},
+          toolCallId: "tc-1",
+          description: "",
+        },
       },
       { id: "2", kind: "assistant", content: "done", timestamp: 0 },
     ];

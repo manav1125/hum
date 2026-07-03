@@ -54,7 +54,9 @@ mock.module("@/domains/chat/inspector/compaction-trail-api", () => ({
 // Imported AFTER the mock so the component picks up the stub.
 import { CompactionTab } from "./compaction-tab";
 
-function makeEntry(overrides: Partial<LLMRequestLogEntry> = {}): LLMRequestLogEntry {
+function makeEntry(
+  overrides: Partial<LLMRequestLogEntry> = {},
+): LLMRequestLogEntry {
   return {
     id: "call-test-1",
     createdAt: Date.parse("2026-05-26T13:30:00Z"),
@@ -326,7 +328,7 @@ describe("CompactionTab — null-safe aggregates (Codex P2)", () => {
             id: "e1",
             inputTokens: 60_000,
             outputTokens: 2_000,
-            estimatedCostUsd: 0.10,
+            estimatedCostUsd: 0.1,
             durationMs: 5_000,
           }),
           makeEvent({

@@ -6,15 +6,15 @@ import { Card } from "@vellumai/design-library";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useCanUseLlmInspector } from "@/domains/chat/inspector/access";
 import type {
-    MemoryRouterSimulateRequest,
-    MemoryRouterSimulateResponse,
-    RecentTurnPair,
+  MemoryRouterSimulateRequest,
+  MemoryRouterSimulateResponse,
+  RecentTurnPair,
 } from "@/domains/chat/inspector/memory-router-simulator-api";
 import {
-    useCurrentNowText,
-    useDefaultRouterPromptTemplate,
-    useLlmProfiles,
-    useSimulateMemoryRouter,
+  useCurrentNowText,
+  useDefaultRouterPromptTemplate,
+  useLlmProfiles,
+  useSimulateMemoryRouter,
 } from "@/domains/chat/inspector/memory-router-simulator-api";
 import { useIsSessionInitializing } from "@/stores/auth-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";

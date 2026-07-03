@@ -1,4 +1,7 @@
-import type { Conversation, ConversationGroup } from "@/types/conversation-types";
+import type {
+  Conversation,
+  ConversationGroup,
+} from "@/types/conversation-types";
 import { isScheduledConversation } from "@/utils/conversation-predicates";
 /**
  * Pure helper for splitting the sidebar's conversation list into system
@@ -68,8 +71,7 @@ export function isSlackConversation(c: Conversation): boolean {
 
 function shouldBucketInSlackSection(c: Conversation): boolean {
   return (
-    isSlackConversation(c) &&
-    (c.groupId == null || c.groupId === "system:all")
+    isSlackConversation(c) && (c.groupId == null || c.groupId === "system:all")
   );
 }
 

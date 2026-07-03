@@ -66,8 +66,8 @@ export function WelcomeState({
         className="relative mb-6 max-w-[320px] text-body-medium-lighter text-[var(--content-secondary)]"
         style={{ animation: "welcome-reveal 600ms ease-out 300ms both" }}
       >
-        More compute, more storage, and more features.
-        Let&apos;s set everything up.
+        More compute, more storage, and more features. Let&apos;s set everything
+        up.
       </p>
 
       <div style={{ animation: "welcome-reveal 600ms ease-out 450ms both" }}>

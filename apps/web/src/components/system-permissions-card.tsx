@@ -99,10 +99,7 @@ const LOCAL_PERMISSION_ROWS: LocalPermissionRowMeta[] = [
 function usePendingKind() {
   const [pendingKind, setPendingKind] = useState<PermissionRowId | null>(null);
 
-  const run = async (
-    kind: PermissionRowId,
-    action: () => Promise<unknown>,
-  ) => {
+  const run = async (kind: PermissionRowId, action: () => Promise<unknown>) => {
     setPendingKind(kind);
     try {
       await action();
@@ -275,9 +272,7 @@ export function SystemPermissionsCard({
   };
 
   return (
-    <section
-      className="w-full rounded-[20px] border border-[var(--border-hover)] bg-[var(--surface-lift)] px-4 pb-3 pt-5"
-    >
+    <section className="w-full rounded-[20px] border border-[var(--border-hover)] bg-[var(--surface-lift)] px-4 pb-3 pt-5">
       <h2 className="text-[18px] font-semibold leading-[22px] text-[var(--content-emphasised)]">
         System Permissions
       </h2>
@@ -289,11 +284,7 @@ export function SystemPermissionsCard({
       ) : (
         <div className="mt-3 space-y-2">
           {rows.map((row) => (
-            <PermissionRow
-              key={row.id}
-              row={row}
-              onToggle={handleToggle}
-            />
+            <PermissionRow key={row.id} row={row} onToggle={handleToggle} />
           ))}
         </div>
       )}

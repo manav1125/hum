@@ -152,10 +152,7 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
   // Derived usage stats
   // -------------------------------------------------------------------------
 
-  const systemStatsRange = useMemo(
-    () => resolveScheduleUsageWindow(tz),
-    [tz],
-  );
+  const systemStatsRange = useMemo(() => resolveScheduleUsageWindow(tz), [tz]);
 
   const heartbeatUsage: ScheduleRowUsage = useMemo(() => {
     if (isHeartbeatStatsLoading) return { status: "loading" };
@@ -246,12 +243,17 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
       // global to trigger, so no run-now exists for that kind.
       if (kind === "retrospective") return;
       const setRunning =
-        kind === "heartbeat" ? setIsHeartbeatRunning : setIsConsolidationRunning;
-      const runFn = kind === "heartbeat" ? runHeartbeatNow : runConsolidationNow;
+        kind === "heartbeat"
+          ? setIsHeartbeatRunning
+          : setIsConsolidationRunning;
+      const runFn =
+        kind === "heartbeat" ? runHeartbeatNow : runConsolidationNow;
       const refetchConfig =
         kind === "heartbeat" ? refetchHeartbeat : refetchConsolidation;
       const refetchStats =
-        kind === "heartbeat" ? refetchHeartbeatStats : refetchConsolidationStats;
+        kind === "heartbeat"
+          ? refetchHeartbeatStats
+          : refetchConsolidationStats;
       const successMsg =
         kind === "heartbeat" ? "Heartbeat started." : "Consolidation queued.";
       const skipMsg =
@@ -297,7 +299,9 @@ export function useSystemTasks(assistantId: string | undefined, tz: string) {
         const updated = await updateHeartbeatConfig(assistantId, { enabled });
         heartbeatConfigGetSetQueryData(
           queryClient,
-          { path: { assistant_id: assistantId } } as Options<HeartbeatConfigGetData>,
+          {
+            path: { assistant_id: assistantId },
+          } as Options<HeartbeatConfigGetData>,
           updated,
         );
         toast.success(enabled ? `${label} enabled.` : `${label} disabled.`);

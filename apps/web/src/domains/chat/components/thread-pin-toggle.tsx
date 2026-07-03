@@ -1,8 +1,4 @@
-import {
-    CircleAlert,
-    Pin,
-    PinOff,
-} from "lucide-react";
+import { CircleAlert, Pin, PinOff } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { isConversationPinned } from "@/domains/chat/utils/group-conversations";
@@ -66,7 +62,12 @@ function IdleAndHoverGlyphs({
  * Clicking fires `onPinToggle` with event propagation stopped so the
  * row's own `onSelect` doesn't also fire.
  */
-export function ThreadPinToggle({ conversation, onPinToggle, isProcessing, needsAttention }: ThreadPinToggleProps) {
+export function ThreadPinToggle({
+  conversation,
+  onPinToggle,
+  isProcessing,
+  needsAttention,
+}: ThreadPinToggleProps) {
   const isPinned = isConversationPinned(conversation);
   const showUnreadDot = conversation.hasUnseenLatestAssistantMessage === true;
 
@@ -80,7 +81,10 @@ export function ThreadPinToggle({ conversation, onPinToggle, isProcessing, needs
           <CircleAlert
             size={14}
             aria-hidden
-            className={cn("absolute inset-0 m-auto text-[var(--system-mid-strong)]", IDLE_FADE)}
+            className={cn(
+              "absolute inset-0 m-auto text-[var(--system-mid-strong)]",
+              IDLE_FADE,
+            )}
           />
         }
       />
@@ -119,13 +123,7 @@ export function ThreadPinToggle({ conversation, onPinToggle, isProcessing, needs
     glyphs = (
       <IdleAndHoverGlyphs
         isPinned
-        idle={
-          <Pin
-            size={14}
-            aria-hidden
-            className={IDLE_FADE}
-          />
-        }
+        idle={<Pin size={14} aria-hidden className={IDLE_FADE} />}
       />
     );
   } else {

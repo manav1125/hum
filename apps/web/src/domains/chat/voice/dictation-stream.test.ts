@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import type { LiveVoiceAudioCaptureOptions, LiveVoiceCaptureResult } from "@/domains/chat/voice/live-voice/pcm-capture";
+import type {
+  LiveVoiceAudioCaptureOptions,
+  LiveVoiceCaptureResult,
+} from "@/domains/chat/voice/live-voice/pcm-capture";
 
 let ingressUrl: string | null = "http://localhost:8500";
 let actorToken: string | null = "actor-jwt";
@@ -26,9 +29,8 @@ mock.module("@/domains/chat/voice/live-voice/pcm-capture", () => ({
   },
 }));
 
-const { buildSttStreamWsUrl, startDictationStream } = await import(
-  "./dictation-stream"
-);
+const { buildSttStreamWsUrl, startDictationStream } =
+  await import("./dictation-stream");
 
 // ---------------------------------------------------------------------------
 // Fakes

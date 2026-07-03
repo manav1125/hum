@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 
 import { getVoiceInputMediaStream } from "@/utils/voice-input-device";

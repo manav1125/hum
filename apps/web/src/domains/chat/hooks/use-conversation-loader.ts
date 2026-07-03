@@ -1,23 +1,22 @@
-
 import { captureError } from "@/lib/sentry/capture-error";
 import { useViewerStore } from "@/stores/viewer-store";
 
 import {
-    type MutableRefObject,
-    useCallback,
-    useEffect,
-    useLayoutEffect,
-    useMemo,
-    useRef,
+  type MutableRefObject,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
 } from "react";
 
 import {
-    createDraftConversationId,
-    resolveBootstrappedConversationId,
+  createDraftConversationId,
+  resolveBootstrappedConversationId,
 } from "@/domains/chat/utils/conversation-selection";
 import {
-    loadLastViewedConversationId,
-    saveLastViewedConversationId,
+  loadLastViewedConversationId,
+  saveLastViewedConversationId,
 } from "@/utils/last-viewed-conversation-storage";
 import { toast } from "@vellumai/design-library";
 
@@ -206,7 +205,10 @@ export function useConversationLoader({
   // because this toast already surfaces the right message.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (conversationListError instanceof ApiError && conversationListError.status === 401) {
+    if (
+      conversationListError instanceof ApiError &&
+      conversationListError.status === 401
+    ) {
       toast.error("Failed to authenticate user.");
     }
   }, [conversationListError]);
@@ -226,7 +228,8 @@ export function useConversationLoader({
   useEffect(() => {
     if (assistantStateKind !== "active") return;
     const isAuthFail =
-      conversationListError instanceof ApiError && conversationListError.status === 401;
+      conversationListError instanceof ApiError &&
+      conversationListError.status === 401;
     const hasUsableData = queryConversations.length > 0;
 
     if (conversationListIsError && !hasUsableData && !isAuthFail) {
@@ -237,7 +240,9 @@ export function useConversationLoader({
       useChatSessionStore.getState().setError((prev) => {
         if (shouldSuppressGenericChatErrorNotice(prev)) return prev;
         const status =
-          conversationListError instanceof ApiError ? conversationListError.status : 0;
+          conversationListError instanceof ApiError
+            ? conversationListError.status
+            : 0;
         return {
           code: CONVERSATION_LIST_LOAD_FAILED_CODE,
           message:
@@ -249,9 +254,11 @@ export function useConversationLoader({
       return;
     }
     if (hasUsableData) {
-      useChatSessionStore.getState().setError((prev) =>
-        prev?.code === CONVERSATION_LIST_LOAD_FAILED_CODE ? null : prev,
-      );
+      useChatSessionStore
+        .getState()
+        .setError((prev) =>
+          prev?.code === CONVERSATION_LIST_LOAD_FAILED_CODE ? null : prev,
+        );
     }
   }, [
     assistantStateKind,
@@ -330,7 +337,8 @@ export function useConversationLoader({
     const key = resolveBootstrappedConversationId({
       queryParamKey: explicitConversationId,
       onboardingDraftConversationId,
-      currentConversationId: useConversationStore.getState().activeConversationId,
+      currentConversationId:
+        useConversationStore.getState().activeConversationId,
       currentAssistantId: assistantIdRef.current,
       nextAssistantId: assistantId,
       storedConversationId: loadLastViewedConversationId(assistantId),
@@ -401,7 +409,9 @@ export function useConversationLoader({
       useSubagentStore.getState().reset();
       useViewerStore.getState().setMainView("chat");
       const draftConversationId = createDraftConversationId();
-      useConversationStore.getState().setActiveConversationId(draftConversationId);
+      useConversationStore
+        .getState()
+        .setActiveConversationId(draftConversationId);
       void navigate(routes.conversation(draftConversationId));
       requestComposerFocus();
     },

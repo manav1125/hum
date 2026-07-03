@@ -260,7 +260,12 @@ export function appendThinkingDelta(
   if (!tailIsAssistant(prev)) {
     return createStreamingThinkingBubble(prev, thinking, messageId);
   }
-  return appendThinkingSegmentIntoRow(prev, prev.length - 1, thinking, undefined);
+  return appendThinkingSegmentIntoRow(
+    prev,
+    prev.length - 1,
+    thinking,
+    undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------

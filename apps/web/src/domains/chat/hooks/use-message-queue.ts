@@ -9,17 +9,17 @@
  * @see useSendMessage — the orchestrator that composes this hook
  */
 
-import {
-  useCallback,
-  useMemo,
-} from "react";
+import { useCallback, useMemo } from "react";
 
 import type { DisplayMessage } from "@/domains/chat/types/types";
 import { messagePlainText } from "@/domains/chat/utils/message-plain-text";
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
 import { clearQueueStatus } from "@/domains/chat/utils/stream-updaters/shared";
 import { useTurnStore } from "@/domains/chat/turn-store";
-import { deleteQueuedMessage, steerToMessage } from "@/domains/chat/api/messages";
+import {
+  deleteQueuedMessage,
+  steerToMessage,
+} from "@/domains/chat/api/messages";
 import { useComposerStore } from "@/domains/chat/composer-store";
 
 // ---------------------------------------------------------------------------
@@ -43,15 +43,12 @@ export function useMessageQueue({
 }: UseMessageQueueParams) {
   const setMessages = useChatSessionStore.use.setMessages();
   /** Remove an optimistically-added queued message and its tracking state. */
-  const revertQueuedMessage = useCallback(
-    (messageId: string) => {
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-      const queueIds = useChatSessionStore.getState().pendingQueuedMessageIds;
-      const idx = queueIds.indexOf(messageId);
-      if (idx !== -1) queueIds.splice(idx, 1);
-    },
-    [],
-  );
+  const revertQueuedMessage = useCallback((messageId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    const queueIds = useChatSessionStore.getState().pendingQueuedMessageIds;
+    const idx = queueIds.indexOf(messageId);
+    if (idx !== -1) queueIds.splice(idx, 1);
+  }, []);
 
   const queuedMessages = useMemo(
     () =>
@@ -67,7 +64,9 @@ export function useMessageQueue({
         return;
       }
       let targetRequestId: string | undefined;
-      for (const [reqId, mId] of useChatSessionStore.getState().requestIdToMessageId.entries()) {
+      for (const [reqId, mId] of useChatSessionStore
+        .getState()
+        .requestIdToMessageId.entries()) {
         if (mId === messageId) {
           targetRequestId = reqId;
           break;
@@ -75,7 +74,11 @@ export function useMessageQueue({
       }
       setMessages((prev) => prev.filter((m) => m.id !== messageId));
       if (targetRequestId) {
-        void deleteQueuedMessage(assistantId, activeConversationId, targetRequestId);
+        void deleteQueuedMessage(
+          assistantId,
+          activeConversationId,
+          targetRequestId,
+        );
       } else {
         useChatSessionStore.getState().addPendingLocalDeletion(messageId);
         useTurnStore.getState().deleteQueuedMessage();
@@ -96,7 +99,9 @@ export function useMessageQueue({
         return;
       }
       let targetRequestId: string | undefined;
-      for (const [reqId, mId] of useChatSessionStore.getState().requestIdToMessageId.entries()) {
+      for (const [reqId, mId] of useChatSessionStore
+        .getState()
+        .requestIdToMessageId.entries()) {
         if (mId === messageId) {
           targetRequestId = reqId;
           break;

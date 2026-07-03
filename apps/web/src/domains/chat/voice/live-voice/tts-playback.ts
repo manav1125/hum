@@ -178,7 +178,8 @@ export class LiveVoiceAudioPlayer {
   private containerDecodeChain: Promise<void> = Promise.resolve();
 
   constructor(options?: { audioContextFactory?: AudioContextFactory }) {
-    this.createContext = options?.audioContextFactory ?? defaultAudioContextFactory;
+    this.createContext =
+      options?.audioContextFactory ?? defaultAudioContextFactory;
   }
 
   /** Whether any audio is scheduled, playing, or still decoding. */

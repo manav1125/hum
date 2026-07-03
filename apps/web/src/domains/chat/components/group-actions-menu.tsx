@@ -1,19 +1,19 @@
 import {
-    Archive,
-    CircleCheck,
-    MoreHorizontal,
-    Pencil,
-    Trash2,
+  Archive,
+  CircleCheck,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
-    BottomSheet,
-    ContextMenu,
-    Menu,
-    PanelItem,
-    Popover,
+  BottomSheet,
+  ContextMenu,
+  Menu,
+  PanelItem,
+  Popover,
 } from "@vellumai/design-library";
 
 // ---------------------------------------------------------------------------
@@ -92,7 +92,11 @@ interface GroupActionsMenuProps {
   onDelete?: (groupId: string) => void;
 }
 
-export function GroupActionsMenu({ groupId, onRename, onDelete }: GroupActionsMenuProps) {
+export function GroupActionsMenu({
+  groupId,
+  onRename,
+  onDelete,
+}: GroupActionsMenuProps) {
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const closeMenu = () => setOpen(false);

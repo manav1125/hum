@@ -78,9 +78,7 @@ export function displayProvider(value: string | null | undefined): string {
   return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
-export function formattedCreatedAt(
-  epochMs: number | null | undefined,
-): string {
+export function formattedCreatedAt(epochMs: number | null | undefined): string {
   if (epochMs == null || !Number.isFinite(epochMs)) return MISSING_VALUE;
   return dateTimeFormatter.format(new Date(epochMs));
 }
@@ -96,9 +94,7 @@ export function truncatedResponsePreview(
   return head ? `${head}…` : MISSING_VALUE;
 }
 
-export function compactToolNames(
-  names: string[] | null | undefined,
-): string {
+export function compactToolNames(names: string[] | null | undefined): string {
   if (!names) return MISSING_VALUE;
   const cleaned = names.map((n) => n.trim()).filter((n) => n.length > 0);
   if (!cleaned.length) return MISSING_VALUE;

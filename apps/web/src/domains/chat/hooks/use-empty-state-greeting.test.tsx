@@ -77,7 +77,7 @@ function runHook(assistantId: string | null | undefined): string {
       collect={(result) => {
         captured = result;
       }}
-    />
+    />,
   );
   if (captured === null) {
     throw new Error("HookHarness did not invoke the hook");
@@ -104,7 +104,7 @@ describe("useEmptyStateGreeting", () => {
     runHook("asst-1");
 
     expect(lastCapturedOptions?.queryKey).toEqual(
-      assistantIdentityIntroQueryKey("asst-1")
+      assistantIdentityIntroQueryKey("asst-1"),
     );
     expect(lastCapturedOptions?.enabled).toBe(true);
   });
@@ -136,7 +136,7 @@ describe("useEmptyStateGreeting", () => {
             refreshing: true,
           },
         },
-      })
+      }),
     ).toBe(1500);
     expect(
       lastCapturedOptions?.refetchInterval?.({
@@ -146,7 +146,7 @@ describe("useEmptyStateGreeting", () => {
             refreshing: false,
           },
         },
-      })
+      }),
     ).toBe(false);
   });
 

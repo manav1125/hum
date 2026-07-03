@@ -181,7 +181,9 @@ export function AnimatedRightDrawer({
           `flex flex-col` gives the chat body (`flex-1`) a bounded height so its
           transcript can scroll — a plain block parent would let the body grow
           to content height and kill the scroll. */}
-      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">{left}</div>
+      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        {left}
+      </div>
 
       {/* Drag handle (matches ResizablePanel's hidden-divider look). Only
           present while the drawer is mounted so a closed drawer leaves no

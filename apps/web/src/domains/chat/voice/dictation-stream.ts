@@ -96,7 +96,10 @@ export function buildSttStreamWsUrl({
   url.hash = "";
   url.searchParams.set("token", token);
   url.searchParams.set("mimeType", LIVE_VOICE_AUDIO_FORMAT.mimeType);
-  url.searchParams.set("sampleRate", String(LIVE_VOICE_AUDIO_FORMAT.sampleRate));
+  url.searchParams.set(
+    "sampleRate",
+    String(LIVE_VOICE_AUDIO_FORMAT.sampleRate),
+  );
   return url.toString();
 }
 

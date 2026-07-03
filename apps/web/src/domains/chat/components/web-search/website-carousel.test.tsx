@@ -44,10 +44,7 @@ beforeEach(() => {
   setTimeoutCallCount = 0;
   originalSetTimeout = globalThis.setTimeout;
   originalClearTimeout = globalThis.clearTimeout;
-  globalThis.setTimeout = ((
-    fn: (...args: unknown[]) => void,
-    ms?: number,
-  ) => {
+  globalThis.setTimeout = ((fn: (...args: unknown[]) => void, ms?: number) => {
     setTimeoutCallCount += 1;
     const handle: TimeoutHandle = {
       id: nextTimeoutId++,
@@ -97,9 +94,21 @@ function pendingTimeouts() {
 // ---------------------------------------------------------------------------
 
 const ITEMS = [
-  { faviconUrl: "https://a.test/favicon.ico", title: "Alpha", domain: "a.test" },
-  { faviconUrl: "https://b.test/favicon.ico", title: "Bravo", domain: "b.test" },
-  { faviconUrl: "https://c.test/favicon.ico", title: "Charlie", domain: "c.test" },
+  {
+    faviconUrl: "https://a.test/favicon.ico",
+    title: "Alpha",
+    domain: "a.test",
+  },
+  {
+    faviconUrl: "https://b.test/favicon.ico",
+    title: "Bravo",
+    domain: "b.test",
+  },
+  {
+    faviconUrl: "https://c.test/favicon.ico",
+    title: "Charlie",
+    domain: "c.test",
+  },
 ];
 
 describe("WebsiteCarousel — walk to latest", () => {
@@ -256,9 +265,8 @@ describe("WebsiteCarousel — reduced motion", () => {
       };
     });
 
-    const { WebsiteCarousel: PatchedCarousel } = await import(
-      "./website-carousel"
-    );
+    const { WebsiteCarousel: PatchedCarousel } =
+      await import("./website-carousel");
     render(<PatchedCarousel items={ITEMS} minDwellMs={500} />);
 
     // At least one motion.div should have been rendered.

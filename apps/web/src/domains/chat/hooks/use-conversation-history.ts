@@ -76,14 +76,18 @@ export function useConversationHistory({
   const pagination = useHistoryPagination({
     assistantId,
     conversationId: activeConversationId,
-    enabled: assistantStateKind === "active" && !!assistantId && !!activeConversationId,
+    enabled:
+      assistantStateKind === "active" &&
+      !!assistantId &&
+      !!activeConversationId,
   });
 
   // -------------------------------------------------------------------------
   // Store actions (stable references — safe in dependency arrays)
   // -------------------------------------------------------------------------
   const setMessages = useChatSessionStore.use.setMessages();
-  const setTranscriptPagination = useChatSessionStore.use.setTranscriptPagination();
+  const setTranscriptPagination =
+    useChatSessionStore.use.setTranscriptPagination();
   const setIsLoadingHistory = useChatSessionStore.use.setIsLoadingHistory();
   const setError = useChatSessionStore.use.setError();
 
@@ -92,7 +96,11 @@ export function useConversationHistory({
   // conversation changes.
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (assistantStateKind !== "active" || !assistantId || !activeConversationId) {
+    if (
+      assistantStateKind !== "active" ||
+      !assistantId ||
+      !activeConversationId
+    ) {
       return;
     }
     useChatSessionStore.getState().switchToConversation({
@@ -106,12 +114,17 @@ export function useConversationHistory({
   // -------------------------------------------------------------------------
   useEffect(() => {
     const store = useChatSessionStore.getState();
-    if (!pagination.isSuccess || pagination.dataUpdatedAt === store.lastAppliedDataTimestamp) {
+    if (
+      !pagination.isSuccess ||
+      pagination.dataUpdatedAt === store.lastAppliedDataTimestamp
+    ) {
       return;
     }
     if (!assistantId || !activeConversationId) return;
 
-    useChatSessionStore.getState().setLastAppliedDataTimestamp(pagination.dataUpdatedAt);
+    useChatSessionStore
+      .getState()
+      .setLastAppliedDataTimestamp(pagination.dataUpdatedAt);
 
     // Record the accepted snapshot's seq as the conversation baseline. This
     // is the point where TanStack Query's committed latest page is applied to
@@ -144,7 +157,8 @@ export function useConversationHistory({
     });
 
     if (pagination.messages.length > 0) {
-      const dismissedSurfaceIds = useChatSessionStore.getState().dismissedSurfaceIds;
+      const dismissedSurfaceIds =
+        useChatSessionStore.getState().dismissedSurfaceIds;
       const filteredMessages = filterDismissedSurfaces(
         pagination.messages,
         dismissedSurfaceIds,
@@ -184,35 +198,41 @@ export function useConversationHistory({
       for (const msg of filteredMessages) {
         if (!msg.surfaces) continue;
         for (const surface of msg.surfaces) {
-          fetchSurfaceContent(assistantId, surface.surfaceId, activeConversationId).then(
-            (fresh) => {
-              if (!fresh) return;
-              if (useChatSessionStore.getState().previousConversationId !== requestedConversationForSurfaces) return;
-              setMessages((prev) => {
-                for (let i = prev.length - 1; i >= 0; i--) {
-                  if (
-                    !prev[i]!.surfaces?.some(
-                      (s) => s.surfaceId === fresh.surfaceId,
-                    )
-                  ) {
-                    continue;
-                  }
-                  const updated = [...prev];
-                  updated[i] = mapMessageSurfaces(prev[i]!, (s) =>
-                    s.surfaceId === fresh.surfaceId
-                      ? {
-                          ...s,
-                          data: fresh.data,
-                          title: fresh.title ?? s.title,
-                        }
-                      : s,
-                  );
-                  return updated;
+          fetchSurfaceContent(
+            assistantId,
+            surface.surfaceId,
+            activeConversationId,
+          ).then((fresh) => {
+            if (!fresh) return;
+            if (
+              useChatSessionStore.getState().previousConversationId !==
+              requestedConversationForSurfaces
+            )
+              return;
+            setMessages((prev) => {
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (
+                  !prev[i]!.surfaces?.some(
+                    (s) => s.surfaceId === fresh.surfaceId,
+                  )
+                ) {
+                  continue;
                 }
-                return prev;
-              });
-            },
-          );
+                const updated = [...prev];
+                updated[i] = mapMessageSurfaces(prev[i]!, (s) =>
+                  s.surfaceId === fresh.surfaceId
+                    ? {
+                        ...s,
+                        data: fresh.data,
+                        title: fresh.title ?? s.title,
+                      }
+                    : s,
+                );
+                return updated;
+              }
+              return prev;
+            });
+          });
         }
       }
       // Restore an in-flight confirmation the snapshot carries on a tool call
@@ -246,10 +266,7 @@ export function useConversationHistory({
     // Reconstruct subagent state from history notifications.
     const notifications = pagination.latestPage?.subagentNotifications;
     if (notifications && notifications.length > 0) {
-      const deduped = new Map<
-        string,
-        (typeof notifications)[number]
-      >();
+      const deduped = new Map<string, (typeof notifications)[number]>();
       for (const n of notifications) {
         const existing = deduped.get(n.subagentId);
         if (existing) {
@@ -286,7 +303,10 @@ export function useConversationHistory({
           assistantId,
           requestedConversationId,
         );
-        if (useConversationStore.getState().activeConversationId !== requestedConversationId) {
+        if (
+          useConversationStore.getState().activeConversationId !==
+          requestedConversationId
+        ) {
           return;
         }
         const parsed_secret = interactions.pendingSecret
@@ -352,18 +372,21 @@ export function useConversationHistory({
   // `refetchOnMount` already loaded the snapshot, and the anchor bounce
   // fires immediately after that load with the ring still warm.
   // -------------------------------------------------------------------------
-  useBusSubscription("sse.opened", ({ assistantId: openedAssistantId, cause }) => {
-    if (cause === "fresh" || cause === "anchor") return;
-    if (
-      assistantStateKind !== "active" ||
-      !assistantId ||
-      !activeConversationId ||
-      openedAssistantId !== assistantId
-    ) {
-      return;
-    }
-    void pagination.invalidate();
-  });
+  useBusSubscription(
+    "sse.opened",
+    ({ assistantId: openedAssistantId, cause }) => {
+      if (cause === "fresh" || cause === "anchor") return;
+      if (
+        assistantStateKind !== "active" ||
+        !assistantId ||
+        !activeConversationId ||
+        openedAssistantId !== assistantId
+      ) {
+        return;
+      }
+      void pagination.invalidate();
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Sync older-page loading state (both true → false transitions)
@@ -394,7 +417,13 @@ export function useConversationHistory({
         message: "Failed to load conversation history. Please try again.",
       });
     }
-  }, [pagination.isError, pagination.isSuccess, pagination.error, setIsLoadingHistory, setError]);
+  }, [
+    pagination.isError,
+    pagination.isSuccess,
+    pagination.error,
+    setIsLoadingHistory,
+    setError,
+  ]);
 
   return { pagination };
 }

@@ -55,7 +55,8 @@ function ContactDetailViewInner({
   const originalNotes = contact.notes ?? "";
   const dirty = trimmedName !== originalName || trimmedNotes !== originalNotes;
 
-  const canSave = trimmedName.length > 0 && dirty && !savePending && !deletePending;
+  const canSave =
+    trimmedName.length > 0 && dirty && !savePending && !deletePending;
   const isEmptyDraft =
     isNewContactDraft &&
     contact.channels.length === 0 &&

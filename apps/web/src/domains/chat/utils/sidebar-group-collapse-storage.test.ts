@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 
 import {
   loadOpenCategories,
@@ -9,7 +17,12 @@ import { installMemoryStorage } from "@/utils/memory-storage.test-helper";
 const ASSISTANT_ID = "asst_123";
 const STORAGE_KEY = `vellum:sidebar-open-categories:${ASSISTANT_ID}`;
 
-const memoryStorage = installMemoryStorage({ beforeAll, afterAll, beforeEach, afterEach });
+const memoryStorage = installMemoryStorage({
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+});
 
 describe("loadOpenCategories", () => {
   test("returns default [] when no value is stored", () => {
@@ -21,7 +34,10 @@ describe("loadOpenCategories", () => {
       STORAGE_KEY,
       JSON.stringify(["scheduled", "background"]),
     );
-    expect(loadOpenCategories(ASSISTANT_ID)).toEqual(["scheduled", "background"]);
+    expect(loadOpenCategories(ASSISTANT_ID)).toEqual([
+      "scheduled",
+      "background",
+    ]);
   });
 
   test("filters stale flattened category values", () => {

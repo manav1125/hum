@@ -124,7 +124,9 @@ export function ArchivePage() {
         // sidebar list, so invalidate all conversation caches.
         void invalidateConversationQueries(queryClient, assistantId);
       } catch (error) {
-        captureError(error, { context: "archive_settings_unarchive_conversation" });
+        captureError(error, {
+          context: "archive_settings_unarchive_conversation",
+        });
         toast.error("Failed to unarchive conversation.");
       } finally {
         setPendingUnarchiveId(null);
@@ -159,11 +161,7 @@ export function ArchivePage() {
             <p className="mt-1 text-body-medium-lighter text-[var(--content-tertiary)]">
               Something went wrong. Please try again.
             </p>
-            <Button
-              variant="outlined"
-              onClick={refetch}
-              className="mt-4"
-            >
+            <Button variant="outlined" onClick={refetch} className="mt-4">
               <RotateCcw className="h-4 w-4" />
               Retry
             </Button>

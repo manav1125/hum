@@ -1,4 +1,9 @@
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Button, Card } from "@vellumai/design-library";
@@ -6,12 +11,12 @@ import { Button, Card } from "@vellumai/design-library";
 import { useCompactionTrail } from "@/domains/chat/inspector/compaction-trail-api";
 import type { CompactionTrailEvent } from "@/domains/chat/inspector/compaction-trail-fetch";
 import {
-    displayProvider,
-    displayText,
-    formatCost,
-    formatCount,
-    formattedCreatedAt,
-    MISSING_VALUE,
+  displayProvider,
+  displayText,
+  formatCost,
+  formatCount,
+  formattedCreatedAt,
+  MISSING_VALUE,
 } from "@/domains/chat/inspector/inspector-formatters";
 import type { LLMRequestLogEntry } from "@vellumai/assistant-api";
 
@@ -129,10 +134,9 @@ export function CompactionTab({
             className="mt-1 text-body-medium-lighter"
             style={{ color: "var(--content-secondary)" }}
           >
-            The compactor only runs when the conversation crosses its
-            context budget. If you expect events here, check that the
-            conversation actually crossed the auto-compaction threshold
-            prior to this call.
+            The compactor only runs when the conversation crosses its context
+            budget. If you expect events here, check that the conversation
+            actually crossed the auto-compaction threshold prior to this call.
           </p>
         </Card>
       </div>
@@ -196,15 +200,25 @@ function SummaryCard({
         <div className="flex flex-col gap-2">
           <MetadataRow
             label="Total tokens compacted"
-            value={inputTokenSum != null ? formatCount(inputTokenSum) : MISSING_VALUE}
+            value={
+              inputTokenSum != null ? formatCount(inputTokenSum) : MISSING_VALUE
+            }
           />
           <MetadataRow
             label="Total summary tokens"
-            value={outputTokenSum != null ? formatCount(outputTokenSum) : MISSING_VALUE}
+            value={
+              outputTokenSum != null
+                ? formatCount(outputTokenSum)
+                : MISSING_VALUE
+            }
           />
           <MetadataRow
             label="Avg compaction latency"
-            value={avgDuration != null ? `${formatCount(avgDuration)} ms` : MISSING_VALUE}
+            value={
+              avgDuration != null
+                ? `${formatCount(avgDuration)} ms`
+                : MISSING_VALUE
+            }
           />
           <MetadataRow
             label="Total compaction cost"
@@ -274,7 +288,8 @@ function EventCard({
             >
               Compaction {index}
               <span style={{ color: "var(--content-tertiary)" }}>
-                {" "}/ {totalCount}
+                {" "}
+                / {totalCount}
               </span>
             </span>
           </div>
@@ -320,7 +335,10 @@ function EventCard({
         </div>
 
         {event.responsePreview ? (
-          <div className="flex flex-col gap-2 border-t pt-3" style={{ borderColor: "var(--border-base)" }}>
+          <div
+            className="flex flex-col gap-2 border-t pt-3"
+            style={{ borderColor: "var(--border-base)" }}
+          >
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}

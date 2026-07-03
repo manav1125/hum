@@ -1,9 +1,8 @@
-
 import {
-    CircleCheck,
-    MessageSquare,
-    TriangleAlert,
-    Wrench,
+  CircleCheck,
+  MessageSquare,
+  TriangleAlert,
+  Wrench,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -34,7 +33,9 @@ function truncateContent(content: string): string {
 // Filter: remove empty text events
 // ---------------------------------------------------------------------------
 
-function filterEvents(events: SubagentTimelineEvent[]): SubagentTimelineEvent[] {
+function filterEvents(
+  events: SubagentTimelineEvent[],
+): SubagentTimelineEvent[] {
   return events.filter((event) => {
     if (event.type === "text" && !event.content) return false;
     return true;
@@ -93,7 +94,10 @@ function TimelineIcon({ event }: { event: SubagentTimelineEvent }) {
 }
 
 function iconBgColor(event: SubagentTimelineEvent): string {
-  if (event.type === "error" || (event.type === "tool_result" && event.isError)) {
+  if (
+    event.type === "error" ||
+    (event.type === "tool_result" && event.isError)
+  ) {
     return "color-mix(in srgb, var(--system-negative-strong) 12%, transparent)";
   }
   return "var(--system-positive-weak)";
@@ -125,9 +129,8 @@ function eventTitle(event: SubagentTimelineEvent): string {
 function CollapsibleContent({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false);
   const hasLongContent = isContentLong(content);
-  const displayContent = hasLongContent && !expanded
-    ? truncateContent(content)
-    : content;
+  const displayContent =
+    hasLongContent && !expanded ? truncateContent(content) : content;
 
   return (
     <>
@@ -144,7 +147,10 @@ function CollapsibleContent({ content }: { content: string }) {
           onClick={() => setExpanded((prev) => !prev)}
           className="mt-1 cursor-pointer hover:underline"
         >
-          <Typography variant="body-small-default" className="text-[var(--content-default)]">
+          <Typography
+            variant="body-small-default"
+            className="text-[var(--content-default)]"
+          >
             {expanded ? "Show less" : "Show more"}
           </Typography>
         </button>
@@ -217,21 +223,22 @@ function TimelineEventRow({
         )}
 
         {/* Response / Tool Result: show text content */}
-        {(event.type === "text" || event.type === "tool_result") && event.content && (
-          <div className="mt-1">
-            {event.isError ? (
-              <Typography
-                variant="body-medium-lighter"
-                as="p"
-                className="whitespace-pre-wrap break-words text-[var(--system-negative-strong)]"
-              >
-                {event.content}
-              </Typography>
-            ) : (
-              <CollapsibleContent content={event.content} />
-            )}
-          </div>
-        )}
+        {(event.type === "text" || event.type === "tool_result") &&
+          event.content && (
+            <div className="mt-1">
+              {event.isError ? (
+                <Typography
+                  variant="body-medium-lighter"
+                  as="p"
+                  className="whitespace-pre-wrap break-words text-[var(--system-negative-strong)]"
+                >
+                  {event.content}
+                </Typography>
+              ) : (
+                <CollapsibleContent content={event.content} />
+              )}
+            </div>
+          )}
 
         {/* Error: show error text */}
         {event.type === "error" && event.content && (

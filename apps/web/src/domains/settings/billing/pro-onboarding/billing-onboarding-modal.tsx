@@ -3,11 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-    assistantsActiveRetrieveOptions,
-    organizationsBillingSubscriptionOnboardingRetrieveOptions,
-    organizationsBillingSubscriptionOnboardingRetrieveQueryKey,
-    organizationsBillingSubscriptionRetrieveOptions,
-    organizationsBillingSubscriptionRetrieveQueryKey,
+  assistantsActiveRetrieveOptions,
+  organizationsBillingSubscriptionOnboardingRetrieveOptions,
+  organizationsBillingSubscriptionOnboardingRetrieveQueryKey,
+  organizationsBillingSubscriptionRetrieveOptions,
+  organizationsBillingSubscriptionRetrieveQueryKey,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { MachineTierEnum } from "@/generated/api/types.gen";
 import { Modal } from "@vellumai/design-library/components/modal";
@@ -120,7 +120,12 @@ export function BillingOnboardingModal({
   const isFirstCard = step === "welcome";
 
   return (
-    <Modal.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Modal.Root
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
       <Modal.Content
         size="md"
         hideCloseButton={!isFirstCard}
@@ -169,7 +174,9 @@ export function BillingOnboardingModal({
       return (
         <WelcomeState
           onContinue={advanceFromWelcome}
-          continueDisabled={onboardingQuery.isPending || onboardingQuery.isFetching}
+          continueDisabled={
+            onboardingQuery.isPending || onboardingQuery.isFetching
+          }
         />
       );
     }

@@ -140,24 +140,18 @@ const {
   SYSTEM_TASK_URL_IDS,
   systemTaskKindFromUrlId,
 } = await import("@/domains/settings/utils/schedule-formatters");
-const { RecentRunsCard } = await import(
-  "@/domains/settings/components/recent-runs-card"
-);
-const { CreateScheduleModal } = await import(
-  "@/domains/settings/components/create-schedule-modal"
-);
-const { ScheduleDetailView } = await import(
-  "@/domains/settings/components/schedule-detail-view"
-);
-const { ScheduleRow } = await import(
-  "@/domains/settings/components/schedule-row"
-);
-const { SystemTaskRow, SystemTasksSection } = await import(
-  "@/domains/settings/components/system-tasks-section"
-);
-const { SystemTaskDetailView } = await import(
-  "@/domains/settings/components/system-task-detail-view"
-);
+const { RecentRunsCard } =
+  await import("@/domains/settings/components/recent-runs-card");
+const { CreateScheduleModal } =
+  await import("@/domains/settings/components/create-schedule-modal");
+const { ScheduleDetailView } =
+  await import("@/domains/settings/components/schedule-detail-view");
+const { ScheduleRow } =
+  await import("@/domains/settings/components/schedule-row");
+const { SystemTaskRow, SystemTasksSection } =
+  await import("@/domains/settings/components/system-tasks-section");
+const { SystemTaskDetailView } =
+  await import("@/domains/settings/components/system-task-detail-view");
 
 afterEach(() => {
   cleanup();
@@ -184,9 +178,7 @@ function renderWithQueryClient(element: ReactElement) {
   );
 }
 
-function schedule(
-  overrides: Partial<Schedule> = {},
-): Schedule {
+function schedule(overrides: Partial<Schedule> = {}): Schedule {
   return {
     createdFromConversationId: "conv-source",
     createdFromConversationExists: true,
@@ -474,9 +466,7 @@ describe("SystemTaskDetailView", () => {
       ]),
     );
 
-    await waitFor(() =>
-      expect(document.body.textContent).toContain("$0.12"),
-    );
+    await waitFor(() => expect(document.body.textContent).toContain("$0.12"));
     expect(screen.getByRole("button", { name: /Run now/i })).toBeTruthy();
     expect(document.body.textContent).toContain("On · Managed by Memory");
     expect(document.body.textContent).not.toContain(
@@ -531,9 +521,7 @@ describe("SystemTaskDetailView", () => {
       screen.queryByRole("button", { name: /Memory settings/i }),
     ).toBeNull();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Turn on Memory/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Turn on Memory/i }));
 
     expect(memorySettingsClicks).toBe(1);
   });

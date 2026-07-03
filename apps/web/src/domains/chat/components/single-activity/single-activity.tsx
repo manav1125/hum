@@ -81,7 +81,10 @@ export type SingleActivityProps =
       /** Card-level state: drives the leading indicator (loading -> dots). */
       state: "loading" | "complete" | "error";
       /** The single web step to render when expanded (favicon chips / error). Null during the brief loading window before metadata arrives. */
-      step: Extract<ToolCallCardStep, { kind: "web_search" | "web_search_error" }> | null;
+      step: Extract<
+        ToolCallCardStep,
+        { kind: "web_search" | "web_search_error" }
+      > | null;
       /** Controlled expand state + change handler (owned by the caller). */
       expanded: boolean;
       onExpandChange: (next: boolean) => void;
@@ -172,8 +175,7 @@ export function SingleActivity(props: SingleActivityProps) {
             <span className="inline-flex w-[220px] min-w-0 items-center">
               {carouselNode}
             </span>
-          ) : latest &&
-            (latest.faviconUrl || latest.domain || latest.title) ? (
+          ) : latest && (latest.faviconUrl || latest.domain || latest.title) ? (
             <span className="inline-flex min-w-0 items-center gap-1.5">
               <SiteFavicon
                 faviconUrl={latest.faviconUrl}

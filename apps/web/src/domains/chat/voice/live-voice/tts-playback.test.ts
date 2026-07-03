@@ -132,7 +132,10 @@ function makePlayer(): {
   return { player, ctx };
 }
 
-function chunk(samples: number[], sampleRate = 24000): {
+function chunk(
+  samples: number[],
+  sampleRate = 24000,
+): {
   dataBase64: string;
   sampleRate: number;
   mimeType: string;

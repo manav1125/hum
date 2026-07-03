@@ -1,5 +1,14 @@
-
-import { AlertTriangle, CheckCircle, EyeOff, Globe, Info, KeyRound, Loader2, Shield, Wrench } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle,
+  EyeOff,
+  Globe,
+  Info,
+  KeyRound,
+  Loader2,
+  Shield,
+  Wrench,
+} from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import { Card, Input } from "@vellumai/design-library";
@@ -66,19 +75,26 @@ export function SecretPromptCard({
       )}
 
       {/* Usage context */}
-      {!!(secret.purpose || secret.allowedTools?.length || secret.allowedDomains?.length) && (
+      {!!(
+        secret.purpose ||
+        secret.allowedTools?.length ||
+        secret.allowedDomains?.length
+      ) && (
         <div className="mb-4 rounded-lg bg-[var(--surface-base)] p-3 flex flex-col gap-2">
           {secret.purpose && (
             <div className="flex items-start gap-2">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--content-tertiary)]" />
-              <span className="text-body-small-default text-[var(--content-tertiary)]">{secret.purpose}</span>
+              <span className="text-body-small-default text-[var(--content-tertiary)]">
+                {secret.purpose}
+              </span>
             </div>
           )}
           {secret.allowedTools?.length ? (
             <div className="flex items-start gap-2">
               <Wrench className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--content-tertiary)]" />
               <span className="text-body-small-default text-[var(--content-tertiary)]">
-                <span className="text-[var(--content-secondary)]">Tools:</span> {secret.allowedTools.join(", ")}
+                <span className="text-[var(--content-secondary)]">Tools:</span>{" "}
+                {secret.allowedTools.join(", ")}
               </span>
             </div>
           ) : null}
@@ -86,7 +102,10 @@ export function SecretPromptCard({
             <div className="flex items-start gap-2">
               <Globe className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--content-tertiary)]" />
               <span className="text-body-small-default text-[var(--content-tertiary)]">
-                <span className="text-[var(--content-secondary)]">Domains:</span> {secret.allowedDomains.join(", ")}
+                <span className="text-[var(--content-secondary)]">
+                  Domains:
+                </span>{" "}
+                {secret.allowedDomains.join(", ")}
               </span>
             </div>
           ) : null}

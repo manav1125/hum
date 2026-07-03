@@ -64,11 +64,7 @@ async function listOAuthConnections(
   });
   if (error || !data) {
     throw new Error(
-      extractErrorMessage(
-        error,
-        response,
-        "Failed to load OAuth connections.",
-      ),
+      extractErrorMessage(error, response, "Failed to load OAuth connections."),
     );
   }
   return data;
@@ -117,8 +113,7 @@ export async function fetchManagedOAuthProvider(
   return (
     data.providers.find(
       (provider) =>
-        provider.provider_key === providerKey &&
-        provider.supports_managed_mode,
+        provider.provider_key === providerKey && provider.supports_managed_mode,
     ) ?? null
   );
 }

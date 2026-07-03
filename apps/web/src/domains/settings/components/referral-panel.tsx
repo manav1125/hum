@@ -80,7 +80,10 @@ export function ReferralPanel() {
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex min-w-[200px] flex-1 items-center gap-1.5 rounded-lg bg-[var(--surface-base)] px-2 py-1.5">
-              <span aria-hidden className="flex h-6 w-6 shrink-0 items-center justify-center text-[var(--content-emphasised)]">
+              <span
+                aria-hidden
+                className="flex h-6 w-6 shrink-0 items-center justify-center text-[var(--content-emphasised)]"
+              >
                 <Coins className="h-3.5 w-3.5" />
               </span>
               <span className="flex items-baseline gap-1 text-body-medium-default">
@@ -91,7 +94,10 @@ export function ReferralPanel() {
               </span>
             </div>
             <div className="flex min-w-[200px] flex-1 items-center gap-1.5 rounded-lg bg-[var(--surface-base)] px-2 py-1.5">
-              <span aria-hidden className="flex h-6 w-6 shrink-0 items-center justify-center text-[var(--content-emphasised)]">
+              <span
+                aria-hidden
+                className="flex h-6 w-6 shrink-0 items-center justify-center text-[var(--content-emphasised)]"
+              >
                 <Users className="h-3.5 w-3.5" />
               </span>
               <span className="flex items-baseline gap-1 text-body-medium-default">

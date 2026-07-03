@@ -68,7 +68,9 @@ class PcmDownsampleProcessor extends AudioWorkletProcessor {
     // How many output samples this block can produce: the count of read
     // positions `readOffset, readOffset + ratio, ...` that land within
     // `[0, channel.length)`.
-    const outLength = Math.ceil((channel.length - this.readOffset) / this.ratio);
+    const outLength = Math.ceil(
+      (channel.length - this.readOffset) / this.ratio,
+    );
     if (outLength <= 0) {
       // The next read position is past the end of this block; carry the
       // offset forward (it will still be >= 0 since outLength <= 0 implies

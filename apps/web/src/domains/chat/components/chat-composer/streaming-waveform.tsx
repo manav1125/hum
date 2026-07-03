@@ -1,15 +1,14 @@
-
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 // ---------------------------------------------------------------------------
 // Visual constants — mirror macOS VStreamingWaveform (.scrolling style).
 // ---------------------------------------------------------------------------
-const BAR_W = 2;          // px width of each bar
-const BAR_GAP = 2;        // px gap between bars
+const BAR_W = 2; // px width of each bar
+const BAR_GAP = 2; // px gap between bars
 const STEP = BAR_W + BAR_GAP;
-const MIN_H_PX = 2;       // minimum bar height (baseline dot), matches lineWidth on macOS
+const MIN_H_PX = 2; // minimum bar height (baseline dot), matches lineWidth on macOS
 const MAX_H_RATIO = 0.85; // max bar is 85% of container height (macOS: maxBarHeight = 0.85 * frame)
-const SAMPLE_MS = 33;     // ~30 Hz — matches macOS amplitudeSubject cadence
+const SAMPLE_MS = 33; // ~30 Hz — matches macOS amplitudeSubject cadence
 
 // ---------------------------------------------------------------------------
 // Component
@@ -83,7 +82,10 @@ export function StreamingWaveform({
       const dpr = window.devicePixelRatio ?? 1;
       const w = canvas.offsetWidth;
       const h = canvas.offsetHeight;
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      if (
+        canvas.width !== Math.round(w * dpr) ||
+        canvas.height !== Math.round(h * dpr)
+      ) {
         canvas.width = Math.round(w * dpr);
         canvas.height = Math.round(h * dpr);
       }

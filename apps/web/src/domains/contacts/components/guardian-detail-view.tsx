@@ -56,9 +56,7 @@ function GuardianDetailViewInner({
     trimmedNotes !== (contact.notes ?? "").trim();
   const canSave = dirty && !savePending;
 
-  const headerName = principalId
-    ? "You"
-    : `${contact.displayName} (You)`;
+  const headerName = principalId ? "You" : `${contact.displayName} (You)`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -139,7 +137,9 @@ function GuardianDetailViewInner({
         />
       </DetailCard>
 
-      {onGenerateInviteLink ? <ShareConnectionLinkButton onClick={onGenerateInviteLink} /> : null}
+      {onGenerateInviteLink ? (
+        <ShareConnectionLinkButton onClick={onGenerateInviteLink} />
+      ) : null}
     </div>
   );
 }

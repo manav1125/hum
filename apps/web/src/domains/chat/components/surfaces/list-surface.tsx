@@ -24,7 +24,11 @@ interface ListSurfaceData {
 
 interface ListSurfaceProps {
   surface: Surface;
-  onAction: (surfaceId: string, actionId: string, data?: Record<string, unknown>) => void;
+  onAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,11 +63,7 @@ export function ListSurface({ surface, onAction }: ListSurfaceProps) {
                   isSelectable
                     ? "cursor-pointer hover:bg-[var(--surface-hover)]"
                     : "cursor-default"
-                } ${
-                  isSelected
-                    ? "bg-[var(--system-positive-weak)]"
-                    : ""
-                }`}
+                } ${isSelected ? "bg-[var(--system-positive-weak)]" : ""}`}
               >
                 {/* Selection indicator */}
                 {isSelectable && (
@@ -79,14 +79,20 @@ export function ListSurface({ surface, onAction }: ListSurfaceProps) {
                 )}
 
                 {/* Icon */}
-                {item.icon && (() => {
-                  const LucideIcon = sfSymbolToLucideIcon(item.icon);
-                  return LucideIcon ? (
-                    <LucideIcon className="h-5 w-5 shrink-0 text-[var(--content-quiet)]" aria-hidden />
-                  ) : (
-                    <span className="text-body-large-lighter leading-none">{item.icon}</span>
-                  );
-                })()}
+                {item.icon &&
+                  (() => {
+                    const LucideIcon = sfSymbolToLucideIcon(item.icon);
+                    return LucideIcon ? (
+                      <LucideIcon
+                        className="h-5 w-5 shrink-0 text-[var(--content-quiet)]"
+                        aria-hidden
+                      />
+                    ) : (
+                      <span className="text-body-large-lighter leading-none">
+                        {item.icon}
+                      </span>
+                    );
+                  })()}
 
                 {/* Content */}
                 <div className="min-w-0 flex-1">

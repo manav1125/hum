@@ -49,7 +49,9 @@ export interface TranscriptMessageBodyProps {
     toolCall: ChatMessageToolCall,
   ) => void | Promise<void>;
   /** Callback when the user picks "Allow & Create Rule" from the split button. */
-  onAllowAndCreateRule?: (toolCall: ChatMessageToolCall) => void | Promise<void>;
+  onAllowAndCreateRule?: (
+    toolCall: ChatMessageToolCall,
+  ) => void | Promise<void>;
   onOpenApp?: (appId: string) => void;
   onOpenDocument?: (documentSurfaceId: string) => void;
   /** Forwarded to inline app surfaces so they can render live preview iframes. */
@@ -84,7 +86,9 @@ function extractSubagentIdFromResult(
   if (typeof toolCall.result !== "string" || !toolCall.result) return undefined;
   try {
     const parsed = JSON.parse(toolCall.result) as { subagentId?: unknown };
-    return typeof parsed.subagentId === "string" ? parsed.subagentId : undefined;
+    return typeof parsed.subagentId === "string"
+      ? parsed.subagentId
+      : undefined;
   } catch {
     return undefined;
   }
@@ -197,12 +201,14 @@ function getSlackSenderLabel(
 ): string | null {
   if (!message.slackMessage) return null;
   const sender = message.slackMessage.sender;
-  return firstPresentLabel(
-    sender?.displayName,
-    sender?.name,
-    sender?.username,
-    sender?.externalUserId,
-  ) ?? fallbackRoleLabel(message.role, assistantDisplayName);
+  return (
+    firstPresentLabel(
+      sender?.displayName,
+      sender?.name,
+      sender?.username,
+      sender?.externalUserId,
+    ) ?? fallbackRoleLabel(message.role, assistantDisplayName)
+  );
 }
 
 export function isInteractiveClickTarget(target: Element | null): boolean {
@@ -224,10 +230,7 @@ export function SlackMessageAttribution({
   const className =
     "inline-flex items-center gap-1.5 text-body-small-default text-[var(--content-tertiary)]";
   return (
-    <div
-      data-testid="slack-message-attribution"
-      className={className}
-    >
+    <div data-testid="slack-message-attribution" className={className}>
       <span>{label}</span>
     </div>
   );

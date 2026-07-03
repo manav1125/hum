@@ -48,12 +48,20 @@ describe("groupContentBlocks", () => {
       {
         type: "activity",
         items: [
-          { type: "thinking", thinking: "plan", startedAt: undefined, completedAt: undefined },
+          {
+            type: "thinking",
+            thinking: "plan",
+            startedAt: undefined,
+            completedAt: undefined,
+          },
           { type: "tool_use", toolCall: toolCall({ id: "call-a" }) },
         ],
       },
       { type: "text", text: "answer" },
-      { type: "activity", items: [{ type: "tool_use", toolCall: toolCall({ id: "call-b" }) }] },
+      {
+        type: "activity",
+        items: [{ type: "tool_use", toolCall: toolCall({ id: "call-b" }) }],
+      },
       { type: "surface", surface: surface({}) },
     ]);
   });
@@ -68,7 +76,12 @@ describe("groupContentBlocks", () => {
     // GIVEN two consecutive thinking blocks with out-of-order timing
     const blocks: ConversationContentBlock[] = [
       { type: "thinking", thinking: "first", startedAt: 300, completedAt: 500 },
-      { type: "thinking", thinking: "second", startedAt: 100, completedAt: 900 },
+      {
+        type: "thinking",
+        thinking: "second",
+        startedAt: 100,
+        completedAt: 900,
+      },
     ];
 
     // WHEN the blocks are grouped
@@ -114,7 +127,9 @@ describe("groupContentBlocks", () => {
 
     // WHEN the blocks are grouped
     // THEN the id-less tool and the attachment are both absent, leaving the text
-    expect(groupContentBlocks(blocks)).toEqual([{ type: "text", text: "done" }]);
+    expect(groupContentBlocks(blocks)).toEqual([
+      { type: "text", text: "done" },
+    ]);
   });
 
   test("empty blocks yield no groups", () => {
@@ -171,9 +186,9 @@ describe("groupContentBlocks", () => {
 
 describe("isSubagentSpawnCall", () => {
   test("matches bare subagent_spawn", () => {
-    expect(isSubagentSpawnCall(toolCall({ id: "x", name: "subagent_spawn" }))).toBe(
-      true,
-    );
+    expect(
+      isSubagentSpawnCall(toolCall({ id: "x", name: "subagent_spawn" })),
+    ).toBe(true);
   });
 
   test("matches skill_execute with input.tool === subagent_spawn", () => {
@@ -189,7 +204,9 @@ describe("isSubagentSpawnCall", () => {
   });
 
   test("does not match other tools or other skill_execute inputs", () => {
-    expect(isSubagentSpawnCall(toolCall({ id: "x", name: "bash" }))).toBe(false);
+    expect(isSubagentSpawnCall(toolCall({ id: "x", name: "bash" }))).toBe(
+      false,
+    );
     expect(
       isSubagentSpawnCall(
         toolCall({ id: "x", name: "skill_execute", input: { tool: "other" } }),
@@ -200,9 +217,15 @@ describe("isSubagentSpawnCall", () => {
 
 describe("isSuppressedUiTool", () => {
   test("suppresses ui_* tools without pending confirmation", () => {
-    expect(isSuppressedUiTool(toolCall({ id: "x", name: "ui_show" }))).toBe(true);
-    expect(isSuppressedUiTool(toolCall({ id: "x", name: "ui_update" }))).toBe(true);
-    expect(isSuppressedUiTool(toolCall({ id: "x", name: "ui_dismiss" }))).toBe(true);
+    expect(isSuppressedUiTool(toolCall({ id: "x", name: "ui_show" }))).toBe(
+      true,
+    );
+    expect(isSuppressedUiTool(toolCall({ id: "x", name: "ui_update" }))).toBe(
+      true,
+    );
+    expect(isSuppressedUiTool(toolCall({ id: "x", name: "ui_dismiss" }))).toBe(
+      true,
+    );
   });
 
   test("does not suppress ui_* with a pending confirmation, or non-ui tools", () => {
@@ -223,7 +246,10 @@ describe("isTaskProgressSurface", () => {
   test("true for task_progress with a non-empty steps array", () => {
     expect(
       isTaskProgressSurface(
-        surface({ template: "task_progress", templateData: { steps: [{ id: "1" }] } }),
+        surface({
+          template: "task_progress",
+          templateData: { steps: [{ id: "1" }] },
+        }),
       ),
     ).toBe(true);
   });
@@ -235,8 +261,12 @@ describe("isTaskProgressSurface", () => {
       ),
     ).toBe(false);
     expect(
-      isTaskProgressSurface(surface({ template: "task_progress", templateData: {} })),
+      isTaskProgressSurface(
+        surface({ template: "task_progress", templateData: {} }),
+      ),
     ).toBe(false);
-    expect(isTaskProgressSurface(surface({ template: "weather_forecast" }))).toBe(false);
+    expect(
+      isTaskProgressSurface(surface({ template: "weather_forecast" })),
+    ).toBe(false);
   });
 });

@@ -52,10 +52,7 @@ export interface StepLabel {
 const INFO_MAX_LENGTH = 80;
 
 /** Read a string property from a tool input bag, returning `""` when absent. */
-function readString(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): string {
+function readString(input: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
     const value = input[key];
     if (typeof value === "string" && value.trim().length > 0) {
@@ -105,7 +102,9 @@ export function deriveStepLabelFromName(
   input?: unknown,
 ): StepLabel {
   const inputBag: Record<string, unknown> =
-    input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+    input && typeof input === "object"
+      ? (input as Record<string, unknown>)
+      : {};
   const name = toolName.toLowerCase();
 
   // Rich activity sentence the daemon attaches to the input. Computed once and
@@ -208,7 +207,9 @@ export function deriveStepLabelFromName(
 
     default:
       return {
-        title: toolName ? `Running ${titleCaseToolName(toolName)}` : "Running tool",
+        title: toolName
+          ? `Running ${titleCaseToolName(toolName)}`
+          : "Running tool",
         info: "",
         activity,
         iconName: "bolt",

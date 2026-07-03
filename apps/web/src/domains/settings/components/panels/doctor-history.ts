@@ -112,9 +112,7 @@ export function mapPersistedMessagesToEntries(
         const toolCallId = meta.toolCallId;
         const isError = meta.isError === true;
         const idx = entries.findIndex(
-          (e) =>
-            e.kind === "tool_call" &&
-            e.meta.toolCallId === toolCallId,
+          (e) => e.kind === "tool_call" && e.meta.toolCallId === toolCallId,
         );
         if (idx === -1) break;
         const existing = entries[idx]!;
@@ -142,7 +140,8 @@ export function mapPersistedMessagesToEntries(
             toolName,
             input: (meta.input as Record<string, unknown>) ?? {},
             toolCallId: typeof meta.id === "string" ? meta.id : message.id,
-            description: typeof meta.description === "string" ? meta.description : "",
+            description:
+              typeof meta.description === "string" ? meta.description : "",
           },
         });
         break;

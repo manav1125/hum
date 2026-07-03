@@ -2,7 +2,10 @@ import { motion, useReducedMotion } from "motion/react";
 import { memo, useCallback, useState, type CSSProperties } from "react";
 
 import type { CharacterComponents, CharacterTraits } from "@/types/avatar";
-import { ApertureAvatar, type ApertureAvatarState } from "@vellumai/design-library";
+import {
+  ApertureAvatar,
+  type ApertureAvatarState,
+} from "@vellumai/design-library";
 
 export interface ChatAvatarProps {
   /** Legacy Vellum character data — accepted for API compatibility, no longer rendered. */
@@ -93,7 +96,9 @@ function ChatAvatarComponent({
   const transition = reduce
     ? { duration: 0 }
     : { type: "spring" as const, visualDuration: 0.3, bounce: 0.5 };
-  const initial = reduce ? { scale: 1, opacity: 1 } : { scale: 0.6, opacity: 0 };
+  const initial = reduce
+    ? { scale: 1, opacity: 1 }
+    : { scale: 0.6, opacity: 0 };
   const animate = { scale: isPoking ? 1.15 : 1, opacity: 1 };
 
   if (customImageUrl) {

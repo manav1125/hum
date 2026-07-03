@@ -108,7 +108,8 @@ export function AppViewerContainer({
             className="absolute z-10"
             style={{
               top: "max(0.75rem, var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))",
-              right: "max(0.75rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)))",
+              right:
+                "max(0.75rem, var(--safe-area-inset-right, env(safe-area-inset-right, 0px)))",
             }}
           >
             <Button

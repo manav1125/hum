@@ -45,8 +45,15 @@ export function TimezoneSync(): null {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
 
   const { mutateAsync: patchTimezone } = useMutation({
-    mutationFn: async (vars: { assistantId: string; detectedTimezone: string }) => {
-      const { data } = await client.patch<Record<string, unknown>, unknown, true>({
+    mutationFn: async (vars: {
+      assistantId: string;
+      detectedTimezone: string;
+    }) => {
+      const { data } = await client.patch<
+        Record<string, unknown>,
+        unknown,
+        true
+      >({
         url: `/v1/assistants/{assistant_id}/config`,
         path: { assistant_id: vars.assistantId },
         body: { ui: { detectedTimezone: vars.detectedTimezone } },

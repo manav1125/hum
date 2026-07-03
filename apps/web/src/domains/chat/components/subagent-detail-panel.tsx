@@ -1,10 +1,9 @@
-
 import {
-    ArrowDownToLine,
-    ArrowUpFromLine,
-    DollarSign,
-    Square,
-    X,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  DollarSign,
+  Square,
+  X,
 } from "lucide-react";
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -107,17 +106,19 @@ function MetricCard({
   );
 }
 
-function AnimatedMetricCard({ icon, label, target, format }: {
-  icon: ReactNode; label: string; target: number; format: (n: number) => string;
+function AnimatedMetricCard({
+  icon,
+  label,
+  target,
+  format,
+}: {
+  icon: ReactNode;
+  label: string;
+  target: number;
+  format: (n: number) => string;
 }) {
   const animated = useAnimatedNumber(target);
-  return (
-    <MetricCard
-      icon={icon}
-      label={label}
-      value={format(animated)}
-    />
-  );
+  return <MetricCard icon={icon} label={label} value={format(animated)} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +149,12 @@ export function SubagentDetailPanel({
     if (onRequestDetail && entry.conversationId && entry.events.length === 0) {
       onRequestDetail(entry.subagentId);
     }
-  }, [entry.subagentId, entry.conversationId, entry.events.length, onRequestDetail]);
+  }, [
+    entry.subagentId,
+    entry.conversationId,
+    entry.events.length,
+    onRequestDetail,
+  ]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl bg-[var(--surface-lift)]">
@@ -201,19 +207,34 @@ export function SubagentDetailPanel({
         {/* Metrics row */}
         <div className="mb-5 grid grid-cols-3 gap-3">
           <AnimatedMetricCard
-            icon={<ArrowDownToLine className="h-4 w-4 shrink-0" style={{ color: "var(--content-secondary)" }} />}
+            icon={
+              <ArrowDownToLine
+                className="h-4 w-4 shrink-0"
+                style={{ color: "var(--content-secondary)" }}
+              />
+            }
             target={entry.inputTokens}
             format={(n) => formatNumber(Math.round(n))}
             label="Input"
           />
           <AnimatedMetricCard
-            icon={<ArrowUpFromLine className="h-4 w-4 shrink-0" style={{ color: "var(--content-secondary)" }} />}
+            icon={
+              <ArrowUpFromLine
+                className="h-4 w-4 shrink-0"
+                style={{ color: "var(--content-secondary)" }}
+              />
+            }
             target={entry.outputTokens}
             format={(n) => formatNumber(Math.round(n))}
             label="Output"
           />
           <AnimatedMetricCard
-            icon={<DollarSign className="h-4 w-4 shrink-0" style={{ color: "var(--content-secondary)" }} />}
+            icon={
+              <DollarSign
+                className="h-4 w-4 shrink-0"
+                style={{ color: "var(--content-secondary)" }}
+              />
+            }
             target={entry.totalCost}
             format={formatCost}
             label="Cost"

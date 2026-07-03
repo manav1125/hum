@@ -4,7 +4,11 @@ import * as Sentry from "@sentry/react";
 
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
 import { useStreamStore } from "@/domains/chat/stream-store";
-import { bucketMessagesAdded, recordDiagnostic, resolvePlatformTag } from "@/lib/diagnostics";
+import {
+  bucketMessagesAdded,
+  recordDiagnostic,
+  resolvePlatformTag,
+} from "@/lib/diagnostics";
 import {
   summarizeDisplayMessages,
   summarizeRuntimeMessages,
@@ -112,8 +116,7 @@ function serverHasAssistantProgress(
     if (localById) {
       claimedLocal.add(localById);
       if (localById.id === liveRowId) return true;
-      if (messagePlainText(localById) !== serverMessageText)
-        return true;
+      if (messagePlainText(localById) !== serverMessageText) return true;
       continue;
     }
 
@@ -137,7 +140,9 @@ function serverHasAssistantProgress(
 export function useMessageReconciliation({
   latestPageOldestTimestamp,
 }: UseMessageReconciliationArgs): UseMessageReconciliationReturn {
-  const initialPageOldestTsRef = useRef<number | null>(latestPageOldestTimestamp);
+  const initialPageOldestTsRef = useRef<number | null>(
+    latestPageOldestTimestamp,
+  );
   useLayoutEffect(() => {
     initialPageOldestTsRef.current = latestPageOldestTimestamp;
   }, [latestPageOldestTimestamp]);
@@ -431,14 +436,11 @@ export function useMessageReconciliation({
 
       reconcileTimerRef.current = setTimeout(tick, RECONCILE_DELAY_MS);
     },
-    [
-      cancelReconciliation,
-      reconcileFetchedMessages,
-    ],
+    [cancelReconciliation, reconcileFetchedMessages],
   );
 
-  const reconcileActiveConversation = useCallback(
-    async (): Promise<ReconcileActiveConversationResult> => {
+  const reconcileActiveConversation =
+    useCallback(async (): Promise<ReconcileActiveConversationResult> => {
       const empty: ReconcileActiveConversationResult = {
         changed: false,
         messagesAdded: 0,
@@ -462,10 +464,15 @@ export function useMessageReconciliation({
         );
         const serverMessages = snapshot?.messages ?? [];
         const serverSeq = snapshot?.seq ?? null;
-        if (useConversationStore.getState().activeConversationId !== ctx.conversationId) return empty;
+        if (
+          useConversationStore.getState().activeConversationId !==
+          ctx.conversationId
+        )
+          return empty;
         // If the epoch changed during the fetch (e.g. page went hidden
         // and back), this reconciliation is stale — bail out.
-        if (useStreamStore.getState().streamEpoch !== snapshotEpoch) return empty;
+        if (useStreamStore.getState().streamEpoch !== snapshotEpoch)
+          return empty;
         recordDiagnostic("reconciliation_active_fetch", {
           assistantId: ctx.assistantId,
           conversationId: ctx.conversationId,
@@ -490,10 +497,7 @@ export function useMessageReconciliation({
         });
         throw err;
       }
-    },
-    [
-    reconcileFetchedMessages,
-  ]);
+    }, [reconcileFetchedMessages]);
 
   return {
     reconcileFromServer,

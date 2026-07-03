@@ -68,9 +68,7 @@ function clampInt(value: number, min: number, max: number): number {
 export function normalizeWeekdays(weekdays: readonly number[]): number[] {
   const unique = Array.from(
     new Set(
-      weekdays
-        .map((d) => clampInt(d, 0, 6))
-        .filter((d) => Number.isInteger(d)),
+      weekdays.map((d) => clampInt(d, 0, 6)).filter((d) => Number.isInteger(d)),
     ),
   ).sort((a, b) => a - b);
   return unique.length > 0 ? unique : [1];

@@ -7,6 +7,10 @@ function normalizeAppId(rawAppId: unknown): string | null {
   return appId.length > 0 ? appId : null;
 }
 
-export function getDynamicPageAppId(surface: Pick<Surface, "data">): string | null {
-  return normalizeAppId(surface.data.appId) ?? normalizeAppId(surface.data.app_id);
+export function getDynamicPageAppId(
+  surface: Pick<Surface, "data">,
+): string | null {
+  return (
+    normalizeAppId(surface.data.appId) ?? normalizeAppId(surface.data.app_id)
+  );
 }

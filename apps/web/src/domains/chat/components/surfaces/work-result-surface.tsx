@@ -13,16 +13,16 @@ import {
 import type { Surface } from "@/domains/chat/types/types";
 
 import { SurfaceContainer } from "@/domains/chat/components/surfaces/surface-container";
-import { filterRecords, rec, strOrNum } from "@/domains/chat/components/surfaces/surface-parse-helpers";
+import {
+  filterRecords,
+  rec,
+  strOrNum,
+} from "@/domains/chat/components/surfaces/surface-parse-helpers";
 
 type WorkResultStatus = "completed" | "partial" | "failed" | "in_progress";
 type WorkResultTone = "neutral" | "positive" | "warning" | "negative";
 type WorkResultSectionType =
-  | "items"
-  | "timeline"
-  | "diff"
-  | "artifacts"
-  | "warnings";
+  "items" | "timeline" | "diff" | "artifacts" | "warnings";
 
 interface WorkResultMetric {
   label: string;
@@ -318,36 +318,36 @@ function ItemList({ items }: { items: WorkResultItem[] }) {
       {items.map((item) => {
         const tone = toneClasses(item.tone);
         return (
-        <div
-          key={item.id ?? item.title}
-          className="flex gap-3 py-2.5 first:pt-0 last:pb-0"
-        >
-          <span
-            aria-hidden
-            className={`w-[3px] shrink-0 self-stretch rounded-full ${tone.rail}`}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-start gap-2">
-              <span className="min-w-0 flex-1 text-body-medium-default text-[var(--content-strong)]">
-                {item.title}
-              </span>
-              {item.status && (
-                <span className="shrink-0 rounded-full bg-[var(--surface-active)] px-2 py-0.5 text-label-small-default text-[var(--content-secondary)]">
-                  {item.status}
+          <div
+            key={item.id ?? item.title}
+            className="flex gap-3 py-2.5 first:pt-0 last:pb-0"
+          >
+            <span
+              aria-hidden
+              className={`w-[3px] shrink-0 self-stretch rounded-full ${tone.rail}`}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-start gap-2">
+                <span className="min-w-0 flex-1 text-body-medium-default text-[var(--content-strong)]">
+                  {item.title}
                 </span>
+                {item.status && (
+                  <span className="shrink-0 rounded-full bg-[var(--surface-active)] px-2 py-0.5 text-label-small-default text-[var(--content-secondary)]">
+                    {item.status}
+                  </span>
+                )}
+                {item.href && (
+                  <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--content-tertiary)]" />
+                )}
+              </div>
+              {item.description && (
+                <p className="mt-0.5 text-body-small-default text-[var(--content-quiet)]">
+                  {item.description}
+                </p>
               )}
-              {item.href && (
-                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--content-tertiary)]" />
-              )}
+              <MetadataRow metadata={item.metadata ?? []} />
             </div>
-            {item.description && (
-              <p className="mt-0.5 text-body-small-default text-[var(--content-quiet)]">
-                {item.description}
-              </p>
-            )}
-            <MetadataRow metadata={item.metadata ?? []} />
           </div>
-        </div>
         );
       })}
     </div>

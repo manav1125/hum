@@ -99,8 +99,9 @@ function installAudioGlobals(): void {
     return node;
   } as unknown;
   // `start()` calls `isSupported()`, which probes AudioContext.prototype.
-  (FakeAudioContext.prototype as unknown as Record<string, unknown>).audioWorklet =
-    {};
+  (
+    FakeAudioContext.prototype as unknown as Record<string, unknown>
+  ).audioWorklet = {};
 }
 
 beforeEach(() => {
@@ -282,7 +283,9 @@ describe("lifecycle", () => {
         resolveGum = resolve;
       });
 
-    const capture = new LiveVoiceAudioCapture({ onChunk: (b) => chunks.push(b) });
+    const capture = new LiveVoiceAudioCapture({
+      onChunk: (b) => chunks.push(b),
+    });
 
     // Kick off start(); it parks on the pending getUserMedia.
     const startPromise = capture.start();
@@ -305,7 +308,9 @@ describe("lifecycle", () => {
 
   test("emitted PCM chunks reach onChunk", async () => {
     const chunks: ArrayBuffer[] = [];
-    const capture = new LiveVoiceAudioCapture({ onChunk: (b) => chunks.push(b) });
+    const capture = new LiveVoiceAudioCapture({
+      onChunk: (b) => chunks.push(b),
+    });
     await capture.start();
 
     const buf = new Int16Array([1, 2, 3]).buffer;

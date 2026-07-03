@@ -40,7 +40,9 @@ function surface(data: Record<string, unknown>): Surface {
 }
 
 function isOpenAppEnabled(html: string): boolean {
-  const openAppMatch = html.match(/<button[^>]*>(?:<[^>]*>)*Open App<\/button>/);
+  const openAppMatch = html.match(
+    /<button[^>]*>(?:<[^>]*>)*Open App<\/button>/,
+  );
   if (!openAppMatch) return false;
   return !openAppMatch[0].includes('disabled=""');
 }
@@ -106,9 +108,7 @@ describe("DynamicPageSurface", () => {
         }}
         onAction={() => undefined}
         onOpenApp={() => undefined}
-        toolCalls={[
-          { id: "tc-app", name: "app_create", input: {} },
-        ]}
+        toolCalls={[{ id: "tc-app", name: "app_create", input: {} }]}
       />,
     );
 
@@ -126,9 +126,7 @@ describe("DynamicPageSurface", () => {
         })}
         onAction={() => undefined}
         onOpenApp={() => undefined}
-        toolCalls={[
-          { id: "tc-app", name: "app_create", input: {} },
-        ]}
+        toolCalls={[{ id: "tc-app", name: "app_create", input: {} }]}
       />,
     );
 

@@ -2,9 +2,9 @@ import { Copy, FileCode } from "lucide-react";
 import { type ReactNode } from "react";
 
 import type {
-    LLMCallSummary,
-    LLMContextSection,
-    LLMRequestLogEntry,
+  LLMCallSummary,
+  LLMContextSection,
+  LLMRequestLogEntry,
 } from "@vellumai/assistant-api";
 import { Button, Card } from "@vellumai/design-library";
 
@@ -41,7 +41,9 @@ export function ResponseTab({ entry }: ResponseTabProps): ReactNode {
             Response metadata
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            {stopReason && <MetadataChip label={`Stop reason: ${stopReason}`} />}
+            {stopReason && (
+              <MetadataChip label={`Stop reason: ${stopReason}`} />
+            )}
             {modeLabel && <MetadataChip label={modeLabel} />}
           </div>
         </Card>
@@ -189,9 +191,7 @@ function SectionHeader({
         iconOnly
         leftIcon={<Copy size={14} aria-hidden />}
         aria-label="Copy section content"
-        onClick={() =>
-          void navigator.clipboard.writeText(section.copyText)
-        }
+        onClick={() => void navigator.clipboard.writeText(section.copyText)}
       />
     </div>
   );
@@ -211,7 +211,8 @@ function MetadataChip({ label }: { label: string }): ReactNode {
   );
 }
 
-type PresentationKind = "assistantText" | "reasoning" | "toolCall" | "result" | "other";
+type PresentationKind =
+  "assistantText" | "reasoning" | "toolCall" | "result" | "other";
 
 interface ResponseSectionModel {
   id: number;
@@ -247,7 +248,10 @@ function toPresentationKind(kind: string): PresentationKind {
   return "other";
 }
 
-function kindDisplayLabel(kind: string, presentationKind: PresentationKind): string {
+function kindDisplayLabel(
+  kind: string,
+  presentationKind: PresentationKind,
+): string {
   switch (presentationKind) {
     case "toolCall":
       return "Tool call";
@@ -276,7 +280,9 @@ function sectionBodyText(section: LLMContextSection): string | null {
   return null;
 }
 
-function buildSectionModels(sections: LLMContextSection[]): ResponseSectionModel[] {
+function buildSectionModels(
+  sections: LLMContextSection[],
+): ResponseSectionModel[] {
   return sections.map((section, index) => {
     const pKind = toPresentationKind(section.kind);
     const rawTitle = section.label?.trim() ?? "";
@@ -317,7 +323,8 @@ function deriveModeLabel(
     return "Tool-calling response";
   }
   if (!sections.length) return null;
-  if (sections.some((s) => s.kind === "toolCall")) return "Tool-calling response";
+  if (sections.some((s) => s.kind === "toolCall"))
+    return "Tool-calling response";
   const hasText = sections.some((s) => s.kind === "assistantText");
   const hasResult = sections.some((s) => s.kind === "result");
   if (hasText && !hasResult) return "Text-only response";

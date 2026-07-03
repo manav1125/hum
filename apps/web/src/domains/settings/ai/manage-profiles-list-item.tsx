@@ -78,9 +78,7 @@ export function ProfileListItem({
         />
 
         {/* Label — dimmed when disabled */}
-        <div
-          className={`min-w-0 flex-1${isActive ? "" : " opacity-55"}`}
-        >
+        <div className={`min-w-0 flex-1${isActive ? "" : " opacity-55"}`}>
           <div className="flex items-center gap-2">
             <Typography
               variant="body-medium-default"
@@ -138,11 +136,7 @@ export function ProfileListItem({
           <div
             className={`flex w-[92px] items-center justify-end gap-2${isAutoProfile ? " invisible" : ""}`}
           >
-            <Button
-              variant="ghost"
-              size="compact"
-              onClick={onEditClick}
-            >
+            <Button variant="ghost" size="compact" onClick={onEditClick}>
               {isManaged ? "View" : "Edit"}
             </Button>
             <Button

@@ -50,7 +50,9 @@ describe("AutoTopUpCard repeated-decline cutoff notice", () => {
       disabled_due_to_repeated_failures: true,
     });
     expect(html).toContain("auto-top-up-declined-cutoff");
-    expect(html).toContain("We paused automatic reloads after several declined");
+    expect(html).toContain(
+      "We paused automatic reloads after several declined",
+    );
   });
 
   test("does not render the cutoff notice for a normally-disabled config", () => {

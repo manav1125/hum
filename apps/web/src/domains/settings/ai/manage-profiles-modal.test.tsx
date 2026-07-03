@@ -97,10 +97,10 @@ mock.module("@/generated/daemon/@tanstack/react-query.gen", () => ({
   ],
 }));
 
-const { configGetQueryKey } = await import("@/generated/daemon/@tanstack/react-query.gen");
-const { ManageProfilesModal } = await import(
-  "@/domains/settings/ai/manage-profiles-modal"
-);
+const { configGetQueryKey } =
+  await import("@/generated/daemon/@tanstack/react-query.gen");
+const { ManageProfilesModal } =
+  await import("@/domains/settings/ai/manage-profiles-modal");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -112,10 +112,9 @@ function Wrapper({ children }: { children: ReactNode }) {
   });
   // Seed the connections cache so the provider-first picker has options on
   // first render (the modal reads from this query).
-  client.setQueryData(
-    [{ _id: "inferenceProviderconnectionsGet" }],
-    { connections: [connection] },
-  );
+  client.setQueryData([{ _id: "inferenceProviderconnectionsGet" }], {
+    connections: [connection],
+  });
   // Seed the config cache
   const queryKey = configGetQueryKey({ path: { assistant_id: "asst-1" } });
   client.setQueryData(queryKey, {

@@ -14,18 +14,21 @@ import { useNavigate, useParams } from "react-router";
 
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import {
-    documentsByIdConversationsPost,
-    documentsByIdGet,
-    documentsByIdPdfGet,
+  documentsByIdConversationsPost,
+  documentsByIdGet,
+  documentsByIdPdfGet,
 } from "@/generated/daemon/sdk.gen";
 import { useBusSubscription } from "@/hooks/use-bus-subscription";
 import { useViewerStore } from "@/stores/viewer-store";
 import type { DocumentContent } from "@/types/document-types";
-import { getEditChatConversationId, setEditChatConversationId } from "@/utils/edit-chat-session";
+import {
+  getEditChatConversationId,
+  setEditChatConversationId,
+} from "@/utils/edit-chat-session";
 import { routes } from "@/utils/routes";
 import {
-    DocumentViewerContainer,
-    type DocumentViewerContainerHandle,
+  DocumentViewerContainer,
+  type DocumentViewerContainerHandle,
 } from "./components/document-viewer-container";
 import { useDocumentCommentEvents } from "./hooks/use-document-comment-events";
 
@@ -109,9 +112,9 @@ export function DocumentViewerPage() {
     // linked there, so the injector will surface the comments automatically.
     // Fall back to session-cached conversation id for repeated feedback.
     const conversationId =
-      doc.conversationId
-      || getEditChatConversationId(assistantId, surfaceId)
-      || (typeof globalThis.crypto?.randomUUID === "function"
+      doc.conversationId ||
+      getEditChatConversationId(assistantId, surfaceId) ||
+      (typeof globalThis.crypto?.randomUUID === "function"
         ? globalThis.crypto.randomUUID()
         : `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
@@ -138,7 +141,9 @@ export function DocumentViewerPage() {
     });
 
     const prompt = `Please review and address my comments on "${doc.title}".`;
-    navigate(`${routes.conversation(conversationId)}?prompt=${encodeURIComponent(prompt)}`);
+    navigate(
+      `${routes.conversation(conversationId)}?prompt=${encodeURIComponent(prompt)}`,
+    );
   }, [doc, assistantId, surfaceId, navigate]);
 
   const handleExport = useCallback(async () => {

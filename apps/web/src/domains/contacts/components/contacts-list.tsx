@@ -5,8 +5,8 @@ import { Card } from "@vellumai/design-library/components/card";
 import { Input } from "@vellumai/design-library/components/input";
 
 import type {
-    ContactSelection,
-    ContactSummary,
+  ContactSelection,
+  ContactSummary,
 } from "@/domains/contacts/types";
 
 interface ContactsListProps {
@@ -58,14 +58,19 @@ export function ContactsList({
         <div className="flex min-h-0 flex-1 flex-col gap-[5px] overflow-auto">
           {guardian ? (
             <ContactRow
-              name={guardian.displayName ? `${guardian.displayName} (You)` : "You"}
+              name={
+                guardian.displayName ? `${guardian.displayName} (You)` : "You"
+              }
               subtitle="guardian"
               role={guardian.role}
               contactType={guardian.contactType}
               selected={
-                selection?.kind === "contact" && selection.contactId === guardian.id
+                selection?.kind === "contact" &&
+                selection.contactId === guardian.id
               }
-              onClick={() => onSelect({ kind: "contact", contactId: guardian.id })}
+              onClick={() =>
+                onSelect({ kind: "contact", contactId: guardian.id })
+              }
             />
           ) : null}
 
@@ -77,7 +82,8 @@ export function ContactsList({
               role={contact.role}
               contactType={contact.contactType}
               selected={
-                selection?.kind === "contact" && selection.contactId === contact.id
+                selection?.kind === "contact" &&
+                selection.contactId === contact.id
               }
               onClick={() =>
                 onSelect({ kind: "contact", contactId: contact.id })
@@ -138,9 +144,7 @@ function contactSubtitle(contact: ContactSummary): string | undefined {
   }
   if (contact.channelTypes && contact.channelTypes.length > 0) {
     parts.push(
-      contact.channelTypes
-        .map((t) => (t === "vellum" ? "Cue" : t))
-        .join(" · "),
+      contact.channelTypes.map((t) => (t === "vellum" ? "Cue" : t)).join(" · "),
     );
   }
   return parts.length > 0 ? parts.join(" · ") : undefined;
@@ -166,7 +170,11 @@ function paletteFor(
 }
 
 function rowInitials(name: string): string {
-  const parts = name.replace(/\s*\(You\)\s*$/i, "").trim().split(/\s+/).filter(Boolean);
+  const parts = name
+    .replace(/\s*\(You\)\s*$/i, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
@@ -223,7 +231,10 @@ function ContactRow({
           {name}
         </span>
         {subtitle ? (
-          <span className="truncate" style={{ fontSize: 11.5, color: "#8D99A5" }}>
+          <span
+            className="truncate"
+            style={{ fontSize: 11.5, color: "#8D99A5" }}
+          >
             {subtitle}
           </span>
         ) : null}

@@ -1,6 +1,12 @@
 import type { LucideIcon } from "lucide-react";
 
-export function StepDots({ current, total = 2 }: { current: number; total?: number }) {
+export function StepDots({
+  current,
+  total = 2,
+}: {
+  current: number;
+  total?: number;
+}) {
   return (
     <div className="flex items-center justify-center gap-1.5">
       {Array.from({ length: total }, (_, i) => (
@@ -10,9 +16,7 @@ export function StepDots({ current, total = 2 }: { current: number; total?: numb
           style={{
             width: i === current ? 20 : 6,
             backgroundColor:
-              i <= current
-                ? "var(--content-default)"
-                : "var(--border-element)",
+              i <= current ? "var(--content-default)" : "var(--border-element)",
           }}
         />
       ))}

@@ -106,16 +106,25 @@ export interface ChatSessionState {
 
 export interface ChatSessionActions {
   // --- Setters ---
-  setMessages: (updater: DisplayMessage[] | ((prev: DisplayMessage[]) => DisplayMessage[])) => void;
-  setError: (updater: ChatError | null | ((prev: ChatError | null) => ChatError | null)) => void;
+  setMessages: (
+    updater: DisplayMessage[] | ((prev: DisplayMessage[]) => DisplayMessage[]),
+  ) => void;
+  setError: (
+    updater: ChatError | null | ((prev: ChatError | null) => ChatError | null),
+  ) => void;
   setIsLoadingHistory: (value: boolean) => void;
   setTranscriptPagination: (
     updater:
       | Omit<TranscriptPaginationState, "items">
-      | ((prev: Omit<TranscriptPaginationState, "items">) => Omit<TranscriptPaginationState, "items">),
+      | ((
+          prev: Omit<TranscriptPaginationState, "items">,
+        ) => Omit<TranscriptPaginationState, "items">),
   ) => void;
   setContextWindowUsage: (
-    updater: ContextWindowUsage | null | ((prev: ContextWindowUsage | null) => ContextWindowUsage | null),
+    updater:
+      | ContextWindowUsage
+      | null
+      | ((prev: ContextWindowUsage | null) => ContextWindowUsage | null),
   ) => void;
   setCompactionCircuitOpenUntil: (
     updater: Date | null | ((prev: Date | null) => Date | null),
@@ -162,7 +171,10 @@ export interface ChatSessionActions {
   setExpandedCardId: (cardId: string, expanded: boolean) => void;
 
   // --- Context window cache ---
-  setContextWindowUsageForConversation: (conversationId: string, usage: ContextWindowUsage) => void;
+  setContextWindowUsageForConversation: (
+    conversationId: string,
+    usage: ContextWindowUsage,
+  ) => void;
 
   // --- Data-apply coordination ---
   consumeSwitchReset: () => void;
@@ -235,8 +247,7 @@ const useChatSessionStoreBase = create<ChatSessionStore>()((set, get) => ({
   setError: (updater) =>
     set((s) => ({ error: applyUpdater(s.error, updater) })),
 
-  setIsLoadingHistory: (value) =>
-    set({ isLoadingHistory: value }),
+  setIsLoadingHistory: (value) => set({ isLoadingHistory: value }),
 
   setTranscriptPagination: (updater) =>
     set((s) => ({
@@ -273,17 +284,24 @@ const useChatSessionStoreBase = create<ChatSessionStore>()((set, get) => ({
     );
     if (isConversationSwitch && outgoingConversationId) {
       const interactionSnapshot = useInteractionStore.getState();
-      if (interactionSnapshot.pendingSecret || interactionSnapshot.pendingConfirmation) {
-        useConversationStore.getState().addAttentionConversationId(outgoingConversationId);
+      if (
+        interactionSnapshot.pendingSecret ||
+        interactionSnapshot.pendingConfirmation
+      ) {
+        useConversationStore
+          .getState()
+          .addAttentionConversationId(outgoingConversationId);
       }
     }
 
     // Re-hydrate from localStorage when the assistant changes (or on first
     // load) so persisted context-window data survives page reloads and
     // assistant switches.
-    const isAssistantSwitch = state.previousAssistantId !== null
-      && state.previousAssistantId !== assistantId;
-    const needsHydration = isAssistantSwitch || state.previousAssistantId === null;
+    const isAssistantSwitch =
+      state.previousAssistantId !== null &&
+      state.previousAssistantId !== assistantId;
+    const needsHydration =
+      isAssistantSwitch || state.previousAssistantId === null;
 
     recordDiagnostic("conversation_switch_reset", {
       assistantId,
@@ -314,13 +332,17 @@ const useChatSessionStoreBase = create<ChatSessionStore>()((set, get) => ({
 
     set({
       messages: [],
-      error: shouldSuppressGenericChatErrorNotice(state.error) ? state.error : null,
+      error: shouldSuppressGenericChatErrorNotice(state.error)
+        ? state.error
+        : null,
       isLoadingHistory: true,
       transcriptPagination: { ...INITIAL_PAGINATION },
-      contextWindowUsage:
-        usageByConversation.get(activeConversationId) ?? null,
+      contextWindowUsage: usageByConversation.get(activeConversationId) ?? null,
       compactionCircuitOpenUntil: null,
-      dismissedSurfaceIds: loadDismissedSurfaceIds(assistantId, activeConversationId),
+      dismissedSurfaceIds: loadDismissedSurfaceIds(
+        assistantId,
+        activeConversationId,
+      ),
       streamingMessageIds: new Set(),
       pendingQueuedMessageIds: [],
       requestIdToMessageId: new Map(),
@@ -337,8 +359,7 @@ const useChatSessionStoreBase = create<ChatSessionStore>()((set, get) => ({
     });
   },
 
-  markDraftResolution: () =>
-    set({ draftConversationIdResolution: true }),
+  markDraftResolution: () => set({ draftConversationIdResolution: true }),
 
   // --- Confirmation tool-call mapping ---
   setConfirmationToolCall: (requestId, toolCallId) =>
@@ -455,11 +476,9 @@ const useChatSessionStoreBase = create<ChatSessionStore>()((set, get) => ({
     }),
 
   // --- Data-apply coordination ---
-  consumeSwitchReset: () =>
-    set({ switchResetPending: false }),
+  consumeSwitchReset: () => set({ switchResetPending: false }),
 
-  setLastAppliedDataTimestamp: (ts) =>
-    set({ lastAppliedDataTimestamp: ts }),
+  setLastAppliedDataTimestamp: (ts) => set({ lastAppliedDataTimestamp: ts }),
 }));
 
 export const useChatSessionStore = createSelectors(useChatSessionStoreBase);

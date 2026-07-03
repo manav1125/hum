@@ -31,7 +31,10 @@
 // https://vite.dev/guide/worker#import-with-query-suffixes
 import WORKLET_MODULE_URL from "./pcm-downsample-worklet.ts?worker&url";
 
-import { createAudioContext, getAudioContextCtor } from "@/domains/chat/voice/audio-context";
+import {
+  createAudioContext,
+  getAudioContextCtor,
+} from "@/domains/chat/voice/audio-context";
 import { LIVE_VOICE_AUDIO_FORMAT } from "@/domains/chat/voice/live-voice/protocol";
 import { getVoiceInputMediaStream } from "@/utils/voice-input-device";
 
@@ -56,8 +59,7 @@ export type LiveVoiceCaptureError =
   | "unknown";
 
 export type LiveVoiceCaptureResult =
-  | { ok: true }
-  | { ok: false; error: LiveVoiceCaptureError; cause?: unknown };
+  { ok: true } | { ok: false; error: LiveVoiceCaptureError; cause?: unknown };
 
 export interface LiveVoiceAudioCaptureOptions {
   /** Receives each 16 kHz mono Int16 LE PCM chunk as a transferred buffer. */

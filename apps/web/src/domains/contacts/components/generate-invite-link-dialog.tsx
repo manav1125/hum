@@ -1,6 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { Check, Copy, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Button } from "@vellumai/design-library/components/button";
 import { Input } from "@vellumai/design-library/components/input";
@@ -41,9 +47,13 @@ export function GenerateInviteLinkDialog({
   });
 
   const mutateRef = useRef(mutation.mutate);
-  useLayoutEffect(() => { mutateRef.current = mutation.mutate; });
+  useLayoutEffect(() => {
+    mutateRef.current = mutation.mutate;
+  });
   const resetRef = useRef(mutation.reset);
-  useLayoutEffect(() => { resetRef.current = mutation.reset; });
+  useLayoutEffect(() => {
+    resetRef.current = mutation.reset;
+  });
 
   useEffect(() => {
     if (open && !prevOpenRef.current) {

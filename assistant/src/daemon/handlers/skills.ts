@@ -465,7 +465,9 @@ interface SkillListFilter {
 function originDisplayLabel(origin: string): string {
   switch (origin) {
     case "vellum":
-      return "Vellum";
+      // Display rebrand: the "vellum" origin id stays, but users see/search
+      // "Cue" (matches the web client's skill-origin-tag label).
+      return "Cue";
     case "clawhub":
       return "Clawhub";
     case "skillssh":

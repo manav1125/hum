@@ -4,14 +4,14 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
-    clearPortalReturnSnapshot,
-    formatGraceDate,
-    type PortalReturnSnapshot,
-    readPortalReturnSnapshot,
+  clearPortalReturnSnapshot,
+  formatGraceDate,
+  type PortalReturnSnapshot,
+  readPortalReturnSnapshot,
 } from "@/domains/settings/hooks/use-billing-portal-session";
 import {
-    organizationsBillingSubscriptionRetrieveOptions,
-    organizationsBillingSubscriptionRetrieveQueryKey,
+  organizationsBillingSubscriptionRetrieveOptions,
+  organizationsBillingSubscriptionRetrieveQueryKey,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { routes } from "@/utils/routes";
 import { toast } from "@vellumai/design-library/components/toast";
@@ -136,9 +136,7 @@ export function BillingPortalReturnHandler() {
             clearInterval(intervalRef.current);
           }
           intervalRef.current = setInterval(() => {
-            if (
-              Date.now() - backgroundStart >= BACKGROUND_POLL_TIMEOUT_MS
-            ) {
+            if (Date.now() - backgroundStart >= BACKGROUND_POLL_TIMEOUT_MS) {
               if (intervalRef.current !== null) {
                 clearInterval(intervalRef.current);
                 intervalRef.current = null;

@@ -13,17 +13,29 @@ import { ChevronRight } from "lucide-react";
 import { getModelsForProvider } from "@/assistant/llm-model-catalog";
 import { inferenceProviderconnectionsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 
-import type { ProfileEntry, ProfilePatchEntry, ProfileStatus, ProfileWithName } from "@/domains/settings/ai/ai-types";
+import type {
+  ProfileEntry,
+  ProfilePatchEntry,
+  ProfileStatus,
+  ProfileWithName,
+} from "@/domains/settings/ai/ai-types";
 import { INFERENCE_PROVIDER_DISPLAY_NAMES } from "@/domains/settings/ai/ai-types";
 import {
-    ProfileAdvancedParams,
-    THINKING_LEVEL_INHERIT,
+  ProfileAdvancedParams,
+  THINKING_LEVEL_INHERIT,
 } from "@/domains/settings/ai/profile-advanced-params";
 import { ProfileEditorProviderSection } from "@/domains/settings/ai/profile-editor-provider-section";
-import { type GeminiThinkingLevel, isGeminiThinkingLevel, resolveProfileParamVisibility } from "@/domains/settings/ai/profile-param-visibility";
+import {
+  type GeminiThinkingLevel,
+  isGeminiThinkingLevel,
+  resolveProfileParamVisibility,
+} from "@/domains/settings/ai/profile-param-visibility";
 import { AUTO_PROFILE_NAME } from "@/assistant/profile-pickers";
 import { deriveProfileDefaults } from "@/domains/settings/ai/profile-prefill";
-import type { ConnectionProvider, ProviderConnection } from "@/domains/settings/ai/provider-connections-client";
+import type {
+  ConnectionProvider,
+  ProviderConnection,
+} from "@/domains/settings/ai/provider-connections-client";
 import { ProviderCreateForm } from "@/domains/settings/ai/provider-create-form";
 import { useLabelKeySync } from "@/domains/settings/ai/use-label-key-sync";
 
@@ -146,7 +158,9 @@ function ProfileEditorModalInner({
   onSave,
   onCancel,
 }: ProfileEditorModalInnerProps) {
-  const [effectiveMode, setEffectiveMode] = useState<"create" | "edit" | "view">(mode);
+  const [effectiveMode, setEffectiveMode] = useState<
+    "create" | "edit" | "view"
+  >(mode);
   const isReadOnly = effectiveMode === "view";
   const isAutoProfile = profileName === AUTO_PROFILE_NAME;
 
@@ -164,10 +178,10 @@ function ProfileEditorModalInner({
   const [description, setDescription] = useState(
     initialValues?.description ?? "",
   );
-  const [key, setKey] = useState(
-    mode === "create" ? "" : (profileName ?? ""),
-  );
-  const [provider, setProvider] = useState<NonNullable<ProfileEntry["provider"]> | "">(initialValues?.provider ?? "");
+  const [key, setKey] = useState(mode === "create" ? "" : (profileName ?? ""));
+  const [provider, setProvider] = useState<
+    NonNullable<ProfileEntry["provider"]> | ""
+  >(initialValues?.provider ?? "");
   const [model, setModel] = useState(initialValues?.model ?? "");
   // Per-profile provider-connection binding. Empty string means no explicit
   // binding — daemon falls back to its first-connection dispatch. Snake_case
@@ -175,7 +189,9 @@ function ProfileEditorModalInner({
   const [providerConnection, setProviderConnection] = useState(
     initialValues?.provider_connection ?? "",
   );
-  const [status, setStatus] = useState<ProfileStatus>(initialValues?.status ?? "active");
+  const [status, setStatus] = useState<ProfileStatus>(
+    initialValues?.status ?? "active",
+  );
   // Connections created inline this session, before the parent's `connections`
   // prop has refetched. Unioned into the available-connections set so a
   // just-created binding is treated as valid immediately — otherwise
@@ -197,24 +213,33 @@ function ProfileEditorModalInner({
   const [maxTokens, setMaxTokens] = useState<number | null>(
     initialValues?.maxTokens ?? null,
   );
-  const [contextWindowMaxInputTokens, setContextWindowMaxInputTokens] = useState<number | null>(
-    initialValues?.contextWindow?.maxInputTokens ?? null,
-  );
+  const [contextWindowMaxInputTokens, setContextWindowMaxInputTokens] =
+    useState<number | null>(
+      initialValues?.contextWindow?.maxInputTokens ?? null,
+    );
 
   // Advanced params — segment controls
   // effort: "none" is the sentinel for "not overridden"
-  const [effort, setEffort] = useState<NonNullable<ProfileEntry["effort"]>>(initialValues?.effort ?? "none");
+  const [effort, setEffort] = useState<NonNullable<ProfileEntry["effort"]>>(
+    initialValues?.effort ?? "none",
+  );
   // speed: "standard" is the sentinel for "not overridden"
-  const [speed, setSpeed] = useState<NonNullable<ProfileEntry["speed"]>>(initialValues?.speed ?? "standard");
+  const [speed, setSpeed] = useState<NonNullable<ProfileEntry["speed"]>>(
+    initialValues?.speed ?? "standard",
+  );
   // verbosity: defaults to "medium"; always included when visible
-  const [verbosity, setVerbosity] = useState<NonNullable<ProfileEntry["verbosity"]>>(initialValues?.verbosity ?? "medium");
+  const [verbosity, setVerbosity] = useState<
+    NonNullable<ProfileEntry["verbosity"]>
+  >(initialValues?.verbosity ?? "medium");
 
   // Advanced params — temperature
   const [temperatureEnabled, setTemperatureEnabled] = useState<boolean>(
     typeof initialValues?.temperature === "number",
   );
   const [temperature, setTemperature] = useState<number>(
-    typeof initialValues?.temperature === "number" ? initialValues.temperature : 0.7,
+    typeof initialValues?.temperature === "number"
+      ? initialValues.temperature
+      : 0.7,
   );
 
   // Advanced params — thinking
@@ -225,13 +250,20 @@ function ProfileEditorModalInner({
     initialValues?.thinking?.streamThinking ?? false,
   );
   // Gemini reasoning-depth knob. "default" = inherit the model default.
-  const [thinkingLevel, setThinkingLevel] = useState<GeminiThinkingLevel | typeof THINKING_LEVEL_INHERIT>(
-    isGeminiThinkingLevel(initialValues?.thinking?.level) ? initialValues.thinking.level : THINKING_LEVEL_INHERIT,
+  const [thinkingLevel, setThinkingLevel] = useState<
+    GeminiThinkingLevel | typeof THINKING_LEVEL_INHERIT
+  >(
+    isGeminiThinkingLevel(initialValues?.thinking?.level)
+      ? initialValues.thinking.level
+      : THINKING_LEVEL_INHERIT,
   );
 
   // Derived: selected model from catalog
   const selectedModel = useMemo(
-    () => (provider ? getModelsForProvider(provider).find((m) => m.id === model) ?? null : null),
+    () =>
+      provider
+        ? (getModelsForProvider(provider).find((m) => m.id === model) ?? null)
+        : null,
     [provider, model],
   );
 
@@ -303,9 +335,7 @@ function ProfileEditorModalInner({
       (c) => c.provider === newProvider,
     );
     setProviderConnection(
-      connectionsForProvider.length === 1
-        ? connectionsForProvider[0].name
-        : "",
+      connectionsForProvider.length === 1 ? connectionsForProvider[0].name : "",
     );
     // Reset all advanced params when provider changes
     setMaxTokens(null);
@@ -329,11 +359,15 @@ function ProfileEditorModalInner({
         // "Any connection" — merge models from all connections and keep the
         // model if it exists in the merged set.
         const allModelIds = new Set(
-          availableConnectionsForProvider.flatMap((c) => (c.models ?? []).map((m) => m.id)),
+          availableConnectionsForProvider.flatMap((c) =>
+            (c.models ?? []).map((m) => m.id),
+          ),
         );
         if (!allModelIds.has(model)) setModel("");
       } else {
-        const conn = availableConnectionsForProvider.find((c) => c.name === newConnection);
+        const conn = availableConnectionsForProvider.find(
+          (c) => c.name === newConnection,
+        );
         const connModelIds = new Set((conn?.models ?? []).map((m) => m.id));
         if (!connModelIds.has(model)) setModel("");
       }
@@ -344,7 +378,9 @@ function ProfileEditorModalInner({
   // covers first-party providers; openai-compatible models live on the
   // connection, so fall back to those and finally to the id itself.
   function resolveModelDisplayName(modelId: string): string {
-    const catalogMatch = getModelsForProvider(provider).find((m) => m.id === modelId);
+    const catalogMatch = getModelsForProvider(provider).find(
+      (m) => m.id === modelId,
+    );
     if (catalogMatch) return catalogMatch.displayName;
     for (const conn of availableConnectionsForProvider) {
       const match = (conn.models ?? []).find((m) => m.id === modelId);
@@ -464,7 +500,8 @@ function ProfileEditorModalInner({
       // that connection's name so profiles always persist with an
       // explicit binding.
       const resolvedBinding =
-        providerConnection === "" && availableConnectionsForProvider.length === 1
+        providerConnection === "" &&
+        availableConnectionsForProvider.length === 1
           ? availableConnectionsForProvider[0].name
           : providerConnection;
       const effectiveBinding = connectionNotFound ? "" : resolvedBinding;
@@ -511,12 +548,17 @@ function ProfileEditorModalInner({
       if (visibility.thinking) {
         entry.thinking = {
           enabled: thinkingEnabled,
-          ...(thinkingEnabled ? { streamThinking: thinkingStreamThinking } : {}),
+          ...(thinkingEnabled
+            ? { streamThinking: thinkingStreamThinking }
+            : {}),
         };
       }
       // Gemini: a chosen level implies thinking is on; "default" omits the
       // field so the daemon applies the model default.
-      if (visibility.thinkingLevel && thinkingLevel !== THINKING_LEVEL_INHERIT) {
+      if (
+        visibility.thinkingLevel &&
+        thinkingLevel !== THINKING_LEVEL_INHERIT
+      ) {
         entry.thinking = { enabled: true, level: thinkingLevel };
       }
       // Status — always include in edit mode; omit in create when active (default)
@@ -659,7 +701,10 @@ function ProfileEditorModalInner({
   // new provider" sentinel. First-run empty state shows ONLY the sentinel.
   const createModeProviderOptions = useMemo(() => {
     const seen = new Set<ConnectionProvider>();
-    const opts: { value: ConnectionProvider | typeof CREATE_NEW_PROVIDER_SENTINEL; label: string }[] = [];
+    const opts: {
+      value: ConnectionProvider | typeof CREATE_NEW_PROVIDER_SENTINEL;
+      label: string;
+    }[] = [];
     for (const c of effectiveConnections) {
       if (!seen.has(c.provider)) {
         seen.add(c.provider);
@@ -842,7 +887,9 @@ function ProfileEditorModalInner({
                 onConnectionChange={handleConnectionChange}
                 connections={connections}
                 isReadOnly={isReadOnly}
-                availableConnectionsForProvider={availableConnectionsForProvider}
+                availableConnectionsForProvider={
+                  availableConnectionsForProvider
+                }
                 connectionNotFound={connectionNotFound}
               />
             )}
@@ -858,21 +905,26 @@ function ProfileEditorModalInner({
       <Modal.Footer>
         {effectiveMode === "view" ? (
           <>
-            <Button variant="outlined" onClick={onCancel} disabled={saving} data-testid="modal-cancel-btn">
+            <Button
+              variant="outlined"
+              onClick={onCancel}
+              disabled={saving}
+              data-testid="modal-cancel-btn"
+            >
               Close
             </Button>
             {!isAutoProfile && (
-            <Button
-              variant="outlined"
-              onClick={() => {
-                setEffectiveMode("create");
-                setKey("");
-                resetDirty();
-              }}
-              disabled={saving}
-            >
-              Save As New
-            </Button>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  setEffectiveMode("create");
+                  setKey("");
+                  resetDirty();
+                }}
+                disabled={saving}
+              >
+                Save As New
+              </Button>
             )}
             {/* Save in view mode persists ONLY label and status changes
                 (managed profile policy fields). The button is gated by
@@ -889,7 +941,12 @@ function ProfileEditorModalInner({
           </>
         ) : (
           <>
-            <Button variant="outlined" onClick={onCancel} disabled={saving} data-testid="modal-cancel-btn">
+            <Button
+              variant="outlined"
+              onClick={onCancel}
+              disabled={saving}
+              data-testid="modal-cancel-btn"
+            >
               Cancel
             </Button>
             <Button

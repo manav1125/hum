@@ -93,10 +93,7 @@ export function insertTextAtSelection({
     0,
     Math.min(selectionStart ?? value.length, value.length),
   );
-  const end = Math.max(
-    start,
-    Math.min(selectionEnd ?? start, value.length),
-  );
+  const end = Math.max(start, Math.min(selectionEnd ?? start, value.length));
   const nextValue = value.slice(0, start) + text + value.slice(end);
   return { value: nextValue, cursor: start + text.length };
 }

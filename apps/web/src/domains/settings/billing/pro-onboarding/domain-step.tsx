@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-    assistantsActiveRetrieveOptions,
-    assistantsDomainsListOptions,
-    assistantsListQueryKey,
-    organizationsBillingSubscriptionOnboardingDomainCreateMutation,
+  assistantsActiveRetrieveOptions,
+  assistantsDomainsListOptions,
+  assistantsListQueryKey,
+  organizationsBillingSubscriptionOnboardingDomainCreateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import { useEnvironmentStore } from "@/stores/environment-store";
 import { Button } from "@vellumai/design-library/components/button";
@@ -19,7 +19,13 @@ import { DomainField } from "@/domains/settings/components/domain-field";
 import { IconBadge, StepDots } from "./primitives";
 import { DOMAIN_EXIT_DELAY_MS, extractOnboardingErrorMessage } from "./utils";
 
-export function DomainStep({ onBack, onExit }: { onBack: () => void; onExit: () => void }) {
+export function DomainStep({
+  onBack,
+  onExit,
+}: {
+  onBack: () => void;
+  onExit: () => void;
+}) {
   const queryClient = useQueryClient();
   const emailRootDomain = useEnvironmentStore.use.emailRootDomain();
   const { data: activeAssistant } = useQuery(assistantsActiveRetrieveOptions());
@@ -77,7 +83,9 @@ export function DomainStep({ onBack, onExit }: { onBack: () => void; onExit: () 
         onSuccess: () => {
           setErrorMsg(null);
           setConfirmed(true);
-          void queryClient.invalidateQueries({ queryKey: assistantsListQueryKey() });
+          void queryClient.invalidateQueries({
+            queryKey: assistantsListQueryKey(),
+          });
         },
         onError: (err) => {
           setErrorMsg(
@@ -145,16 +153,22 @@ export function DomainStep({ onBack, onExit }: { onBack: () => void; onExit: () 
               <>
                 <input
                   value={emailUsername}
-                  onChange={(e) => setEmailUsername(e.target.value.toLowerCase().trim())}
+                  onChange={(e) =>
+                    setEmailUsername(e.target.value.toLowerCase().trim())
+                  }
                   disabled={busy || isLocked}
                   readOnly={isLocked}
                   placeholder="hi"
                   aria-label="Email username"
                   size={Math.max(emailUsername.length, 2)}
                   className="h-full w-0 min-w-[2ch] flex-none bg-transparent pl-3 pr-1.5 text-[var(--content-default)] placeholder:text-[var(--content-tertiary)] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  style={{ width: `${Math.max(emailUsername.length, 2) + 1.5}ch` }}
+                  style={{
+                    width: `${Math.max(emailUsername.length, 2) + 1.5}ch`,
+                  }}
                 />
-                <span className="shrink-0 font-mono text-[var(--content-secondary)]">@</span>
+                <span className="shrink-0 font-mono text-[var(--content-secondary)]">
+                  @
+                </span>
               </>
             }
           />
@@ -162,8 +176,9 @@ export function DomainStep({ onBack, onExit }: { onBack: () => void; onExit: () 
 
         {!isLocked && (
           <Notice tone="info">
-            <span className="font-mono">{subdomain || "<subdomain>"}</span> will also become your assistant&apos;s public handle.
-            You won&apos;t be able to change it once set.
+            <span className="font-mono">{subdomain || "<subdomain>"}</span> will
+            also become your assistant&apos;s public handle. You won&apos;t be
+            able to change it once set.
           </Notice>
         )}
         {confirmed ? (

@@ -21,7 +21,14 @@ mock.module("@/hooks/use-is-mobile", () => ({
 
 const authRef = {
   isAuthenticated: true,
-  user: { id: "u1", email: "user@example.com", isStaff: false, username: null, firstName: "", lastName: "" },
+  user: {
+    id: "u1",
+    email: "user@example.com",
+    isStaff: false,
+    username: null,
+    firstName: "",
+    lastName: "",
+  },
   logout: async () => {},
 };
 
@@ -54,7 +61,9 @@ mock.module("@/stores/assistant-feature-flag-store", () => {
   return { useAssistantFeatureFlagStore: store };
 });
 
-const billingRef = { data: undefined as { effective_balance: string } | undefined };
+const billingRef = {
+  data: undefined as { effective_balance: string } | undefined,
+};
 
 mock.module("@tanstack/react-query", () => ({
   useQuery: () => ({ data: billingRef.data, isLoading: false, isError: false }),
@@ -82,11 +91,13 @@ mock.module("@/components/earn-credits-modal", () => ({
 }));
 
 mock.module("@/components/theme-toggle", () => ({
-  ThemeToggle: () => createElement("div", { "data-testid": "theme-toggle" }, "Theme"),
+  ThemeToggle: () =>
+    createElement("div", { "data-testid": "theme-toggle" }, "Theme"),
 }));
 
 mock.module("@/domains/chat/components/credits-card", () => ({
-  CreditsCard: () => createElement("div", { "data-testid": "credits-card" }, "Credits"),
+  CreditsCard: () =>
+    createElement("div", { "data-testid": "credits-card" }, "Credits"),
 }));
 
 import { PreferencesMenu } from "@/domains/chat/components/preferences-menu";
@@ -94,7 +105,14 @@ import { PreferencesMenu } from "@/domains/chat/components/preferences-menu";
 beforeEach(() => {
   isMobileRef.value = false;
   authRef.isAuthenticated = true;
-  authRef.user = { id: "u1", email: "user@example.com", isStaff: false, username: null, firstName: "", lastName: "" };
+  authRef.user = {
+    id: "u1",
+    email: "user@example.com",
+    isStaff: false,
+    username: null,
+    firstName: "",
+    lastName: "",
+  };
   billingRef.data = undefined;
 });
 

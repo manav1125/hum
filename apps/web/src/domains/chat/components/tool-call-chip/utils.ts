@@ -392,7 +392,11 @@ export function friendlyRunningLabel(
   // buildingStatus override for app tools — mirrors macOS ChatBubbleToolHelpers.swift
   if (buildingStatus) {
     const name = toolName.toLowerCase();
-    if (name === "app_create" || name === "app_refresh" || name === "app_update") {
+    if (
+      name === "app_create" ||
+      name === "app_refresh" ||
+      name === "app_update"
+    ) {
       return buildingStatus;
     }
   }

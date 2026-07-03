@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import {
-    configGetOptions,
-    conversationsByIdGetOptions,
+  configGetOptions,
+  conversationsByIdGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConfigGetResponse } from "@/generated/daemon/types.gen";
 
@@ -58,8 +58,7 @@ export function useActiveProfileModel(
     const profiles = llm?.profiles ?? {};
     const globalActive = llm?.activeProfile ?? null;
 
-    const convOverride =
-      convData?.conversation.inferenceProfile ?? null;
+    const convOverride = convData?.conversation.inferenceProfile ?? null;
     const effective = convOverride ?? globalActive;
 
     if (!effective) return null;

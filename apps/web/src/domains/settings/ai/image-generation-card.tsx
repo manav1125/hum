@@ -6,25 +6,30 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { captureError } from "@/lib/sentry/capture-error";
 import { assistantDaemonConfigQueryKey } from "@/lib/sync/query-tags";
-import {
-    getLocalSetting,
-    setLocalSetting,
-} from "@/utils/local-settings";
+import { getLocalSetting, setLocalSetting } from "@/utils/local-settings";
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { Input } from "@vellumai/design-library/components/input";
 import { toast } from "@vellumai/design-library/components/toast";
 
 import type { ServiceMode } from "@/domains/settings/ai/ai-types";
 import {
-    AVAILABLE_IMAGE_GEN_MODELS,
-    IMAGE_GEN_MODEL_DISPLAY_NAMES,
-    LS_IMAGE_GEN_MODE,
-    LS_IMAGE_GEN_MODEL,
+  AVAILABLE_IMAGE_GEN_MODELS,
+  IMAGE_GEN_MODEL_DISPLAY_NAMES,
+  LS_IMAGE_GEN_MODE,
+  LS_IMAGE_GEN_MODEL,
 } from "@/domains/settings/ai/ai-types";
 
-import { ResetButton, SaveButton, ServiceCard } from "@/domains/settings/ai/ai-shared-ui";
+import {
+  ResetButton,
+  SaveButton,
+  ServiceCard,
+} from "@/domains/settings/ai/ai-shared-ui";
 import { useProvisionProviderKey } from "@/domains/settings/ai/use-daemon-config";
-import { configGetOptions, configGetSetQueryData, useConfigPatchMutation } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  configGetOptions,
+  configGetSetQueryData,
+  useConfigPatchMutation,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { useQuery } from "@tanstack/react-query";
 import { useDraftOverride } from "@/domains/settings/ai/use-draft-override";
 import { modelImagegenPut } from "@/generated/daemon/sdk.gen";
@@ -40,19 +45,29 @@ export function ImageGenerationCard() {
 
   const configMutation = useConfigPatchMutation({
     onSuccess: (data) => {
-      configGetSetQueryData(queryClient, { path: { assistant_id: assistantId } }, data);
+      configGetSetQueryData(
+        queryClient,
+        { path: { assistant_id: assistantId } },
+        data,
+      );
     },
   });
   const provisionProviderKey = useProvisionProviderKey();
   // Server value derived from daemon config, falling back to localStorage.
   // Updates automatically when the cache refreshes.
   const serverImageGenMode = useMemo<ServiceMode>(() => {
-    if (!daemonConfig) return getLocalSetting(LS_IMAGE_GEN_MODE, "your-own") as ServiceMode;
+    if (!daemonConfig)
+      return getLocalSetting(LS_IMAGE_GEN_MODE, "your-own") as ServiceMode;
     const mode = daemonConfig.services?.["image-generation"]?.mode;
-    return (mode === "managed" || mode === "your-own" ? mode : getLocalSetting(LS_IMAGE_GEN_MODE, "your-own")) as ServiceMode;
+    return (
+      mode === "managed" || mode === "your-own"
+        ? mode
+        : getLocalSetting(LS_IMAGE_GEN_MODE, "your-own")
+    ) as ServiceMode;
   }, [daemonConfig]);
 
-  const [imageGenMode, setDraftImageGenMode] = useDraftOverride(serverImageGenMode);
+  const [imageGenMode, setDraftImageGenMode] =
+    useDraftOverride(serverImageGenMode);
 
   const [imageGenModel, setImageGenModel] = useState(() =>
     getLocalSetting(LS_IMAGE_GEN_MODEL, "gemini-3.1-flash-image-preview"),
@@ -68,14 +83,18 @@ export function ImageGenerationCard() {
       if (hasUserKey) {
         await provisionProviderKey("gemini", trimmed);
       }
-      await configMutation.mutateAsync({
-        path: { assistant_id: assistantId },
-        body: { services: { "image-generation": { mode: imageGenMode } } },
-      }).catch((error) => {
-        toast.error("Failed to update assistant configuration. Please try again.");
-        captureError(error, { context: "patch_daemon_config" });
-        throw error;
-      });
+      await configMutation
+        .mutateAsync({
+          path: { assistant_id: assistantId },
+          body: { services: { "image-generation": { mode: imageGenMode } } },
+        })
+        .catch((error) => {
+          toast.error(
+            "Failed to update assistant configuration. Please try again.",
+          );
+          captureError(error, { context: "patch_daemon_config" });
+          throw error;
+        });
       try {
         await modelImagegenPut({
           path: { assistant_id: assistantId },
@@ -83,7 +102,9 @@ export function ImageGenerationCard() {
           throwOnError: true,
         });
       } catch (error) {
-        toast.error("Failed to update image generation model. Please try again.");
+        toast.error(
+          "Failed to update image generation model. Please try again.",
+        );
         captureError(error, { context: "set_image_gen_model" });
         throw error;
       } finally {
@@ -178,7 +199,9 @@ export function ImageGenerationCard() {
 
           <div className="flex items-center gap-2">
             <SaveButton onClick={handleSave} disabled={saving} />
-            {saving && <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />}
+            {saving && (
+              <Loader2 className="h-4 w-4 animate-spin text-[var(--content-disabled)]" />
+            )}
             <ResetButton onClick={handleReset} />
           </div>
         </div>

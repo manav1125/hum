@@ -91,7 +91,14 @@ export async function redeemA2AInvite(
   errorCode?: string;
 }> {
   const { data, error, response } = await client.post<
-    { 200: { success?: boolean; already_connected?: boolean; error?: string; error_code?: string } },
+    {
+      200: {
+        success?: boolean;
+        already_connected?: boolean;
+        error?: string;
+        error_code?: string;
+      };
+    },
     unknown
   >({
     url: "/v1/assistants/{assistant_id}/a2a/invites/redeem/",

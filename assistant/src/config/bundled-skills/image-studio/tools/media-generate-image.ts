@@ -110,16 +110,16 @@ async function generateViaReplicateFallback(opts: {
 /**
  * Actionable error for the managed-proxy-unavailable case when no Replicate
  * token resolves either. Tailored by deployment shape: containerized daemons
- * without managed-proxy prereqs are self-hosted, where "log in to Vellum"
+ * without managed-proxy prereqs are self-hosted, where "log in to Cue"
  * is a dead end — the fix is a direct provider key.
  */
 function managedUnavailableHint(): string {
   const keyOptions =
     "To enable image generation, either set a Replicate API token (direct api.replicate.com integration — NOT Composio, no OAuth 'connection') via `assistant keys set replicate <token>` or the REPLICATE_API_TOKEN environment variable, or configure a Gemini/OpenAI API key in Settings → Models & Services and switch image generation to Your Own mode.";
   if (getDaemonRuntimeMode() === "docker") {
-    return `Image generation is not configured on this self-hosted deployment: the Vellum managed proxy is not available here, and logging in to Vellum will not fix it. ${keyOptions}`;
+    return `Image generation is not configured on this self-hosted deployment: the Cue managed proxy is not available here, and logging in to Cue will not fix it. ${keyOptions}`;
   }
-  return `Managed proxy is not available. Please log in to Vellum or switch to Your Own mode. ${keyOptions}`;
+  return `Managed proxy is not available. Please log in to Cue or switch to Your Own mode. ${keyOptions}`;
 }
 
 export async function run(
@@ -158,7 +158,7 @@ export async function run(
   if (!credentials) {
     // Managed mode with no managed proxy (typical self-host deployment):
     // fall back to the direct Replicate integration when a token resolves,
-    // instead of dead-ending on "log in to Vellum".
+    // instead of dead-ending on "log in to Cue".
     if (svc.mode === "managed") {
       const replicateToken = await resolveToolingProviderToken("replicate");
       if (replicateToken) {

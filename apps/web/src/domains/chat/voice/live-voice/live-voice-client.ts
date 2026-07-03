@@ -43,9 +43,7 @@ const CONNECT_TIMEOUT_MS = 10_000;
 
 /** Reason a live-voice session failed, surfaced via the `error` event. */
 export type LiveVoiceClientErrorReason =
-  | "connection-failed"
-  | "protocol-error"
-  | "timeout";
+  "connection-failed" | "protocol-error" | "timeout";
 
 export interface LiveVoiceClientError {
   readonly reason: LiveVoiceClientErrorReason;
@@ -188,7 +186,10 @@ export class LiveVoiceChannelClient {
     try {
       ws = this.webSocketFactory(url);
     } catch (err) {
-      this.fail("connection-failed", messageOf(err, "Failed to open live-voice WebSocket"));
+      this.fail(
+        "connection-failed",
+        messageOf(err, "Failed to open live-voice WebSocket"),
+      );
       return;
     }
     this.ws = ws;
@@ -202,7 +203,10 @@ export class LiveVoiceChannelClient {
 
     this.connectTimeout = setTimeout(() => {
       if (this.state === "connecting") {
-        this.fail("timeout", `Live-voice connection timed out after ${this.connectTimeoutMs}ms`);
+        this.fail(
+          "timeout",
+          `Live-voice connection timed out after ${this.connectTimeoutMs}ms`,
+        );
       }
     }, this.connectTimeoutMs);
   }
@@ -308,7 +312,10 @@ export class LiveVoiceChannelClient {
     // An unexpected transport close before `ready` is a connection failure;
     // otherwise it's a clean teardown.
     if (this.state === "connecting") {
-      this.fail("connection-failed", "Live-voice WebSocket closed before ready");
+      this.fail(
+        "connection-failed",
+        "Live-voice WebSocket closed before ready",
+      );
       return;
     }
     this.teardown();

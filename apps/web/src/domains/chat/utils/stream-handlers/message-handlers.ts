@@ -1,4 +1,5 @@
 import { recordDiagnostic } from "@/lib/diagnostics";
+import { useLiveStatusStore } from "@/domains/chat/live-status-store";
 import {
   appendTextDelta,
   appendThinkingDelta,
@@ -76,7 +77,10 @@ function markConversationProcessingFromStream(
   }
   useConversationStore
     .getState()
-    .markConversationProcessing(conversationId, cached?.latestAssistantMessageAt);
+    .markConversationProcessing(
+      conversationId,
+      cached?.latestAssistantMessageAt,
+    );
 }
 
 /**
@@ -150,6 +154,9 @@ export function handleAssistantThinkingDelta(
   ctx: StreamHandlerContext,
 ): void {
   ctx.cancelReconciliation();
+
+  // Feed the live turn-status line's rolling thinking preview.
+  useLiveStatusStore.getState().noteThinkingDelta(event.thinking);
 
   ctx.setMessages((prev) => {
     const next = appendThinkingDelta(prev, event.thinking, event.messageId);
@@ -289,6 +296,10 @@ export function handleGenerationHandoff(
 ): void {
   ctx.cancelReconciliation();
   ctx.turnActions.handoffGeneration();
+  // New LLM call within the same turn — the live status line's thinking
+  // preview should start fresh with the next block instead of echoing the
+  // finalized chunk's reasoning.
+  useLiveStatusStore.getState().clearThinking();
 }
 
 export function handleGenerationCancelled(

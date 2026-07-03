@@ -118,8 +118,7 @@ export interface LiveVoiceThinkingServerFrame extends LiveVoiceServerFrameBase {
   readonly turnId: string;
 }
 
-export interface LiveVoiceAssistantTextDeltaServerFrame
-  extends LiveVoiceServerFrameBase {
+export interface LiveVoiceAssistantTextDeltaServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "assistant_text_delta";
   readonly text: string;
 }

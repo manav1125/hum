@@ -39,8 +39,7 @@ export interface VoiceIntakeResponse {
 }
 
 export type VoiceIntakeResult =
-  | { ok: true; data: VoiceIntakeResponse }
-  | { ok: false; error: string };
+  { ok: true; data: VoiceIntakeResponse } | { ok: false; error: string };
 
 /**
  * Turn a dictated transcript into a working thread. Resolves to the conversation

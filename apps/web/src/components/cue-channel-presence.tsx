@@ -24,6 +24,9 @@ const CHANNEL_LABELS: Record<string, string> = {
   voice: "Voice",
   a2a: "Agents",
   sms: "SMS",
+  // "vellum" is the internal channel id for the Cue app itself — display it
+  // as "Cue", never as a capitalized raw id.
+  vellum: "Cue",
 };
 
 function labelFor(channel: string): string {
@@ -68,7 +71,8 @@ export function CueChannelPresence() {
   // Only surface channels that are actually configured (have a setupStatus or
   // are ready) — a bare "not configured" channel is noise in the rail.
   const configured = snapshots.filter(
-    (s) => s.ready || (s.setupStatus != null && s.setupStatus !== "not_configured"),
+    (s) =>
+      s.ready || (s.setupStatus != null && s.setupStatus !== "not_configured"),
   );
   if (configured.length === 0) return null;
 
@@ -125,12 +129,20 @@ export function CueChannelPresence() {
                 borderRadius: "50%",
                 flexShrink: 0,
                 background: dotColor(s),
-                boxShadow: s.ready && !s.stale
-                  ? "0 0 0 3px color-mix(in srgb, var(--system-positive-strong, #277E41) 18%, transparent)"
-                  : undefined,
+                boxShadow:
+                  s.ready && !s.stale
+                    ? "0 0 0 3px color-mix(in srgb, var(--system-positive-strong, #277E41) 18%, transparent)"
+                    : undefined,
               }}
             />
-            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {labelFor(s.channel)}
             </span>
           </button>

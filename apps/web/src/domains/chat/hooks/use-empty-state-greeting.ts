@@ -36,7 +36,7 @@ interface EmptyStateGreetingQueryResult {
 }
 
 async function fetchIdentityIntro(
-  assistantId: string
+  assistantId: string,
 ): Promise<EmptyStateGreetingQueryResult | null> {
   try {
     const { data, error, response } = await identityIntroGet({
@@ -75,7 +75,7 @@ function buildLocalTimeQuery(date: Date = new Date()): {
 }
 
 function normalizeIdentityIntroCandidates(
-  data: IdentityIntroResponse
+  data: IdentityIntroResponse,
 ): readonly string[] | null {
   if (Array.isArray(data.greetings)) {
     const greetings = data.greetings
@@ -92,18 +92,18 @@ function normalizeIdentityIntroCandidates(
 }
 
 function pickGreetingCandidate(
-  candidates: readonly string[] | null | undefined
+  candidates: readonly string[] | null | undefined,
 ): string | null {
   if (!candidates || candidates.length === 0) return null;
   const index = Math.min(
     candidates.length - 1,
-    Math.floor(Math.random() * candidates.length)
+    Math.floor(Math.random() * candidates.length),
   );
   return candidates[index] ?? null;
 }
 
 export function useEmptyStateGreeting(
-  assistantId: string | null | undefined
+  assistantId: string | null | undefined,
 ): string {
   const enabled = Boolean(assistantId);
 
@@ -118,7 +118,7 @@ export function useEmptyStateGreeting(
 
   const greeting = useMemo(
     () => pickGreetingCandidate(query.data?.candidates),
-    [query.data]
+    [query.data],
   );
 
   return greeting ?? DEFAULT_EMPTY_STATE_GREETING;

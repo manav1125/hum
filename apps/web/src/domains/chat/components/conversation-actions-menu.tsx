@@ -1,30 +1,30 @@
 import {
-    Archive,
-    ArchiveRestore,
-    Circle,
-    CircleCheck,
-    Copy,
-    ExternalLink,
-    GitBranch,
-    MessageCircle,
-    Microscope,
-    MoreHorizontal,
-    Pencil,
-    Pin,
-    PinOff,
-    RefreshCw,
-    Sparkles,
-    type LucideIcon,
+  Archive,
+  ArchiveRestore,
+  Circle,
+  CircleCheck,
+  Copy,
+  ExternalLink,
+  GitBranch,
+  MessageCircle,
+  Microscope,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useIsNativePlatform } from "@/runtime/native-auth";
 import {
-    BottomSheet,
-    ContextMenu,
-    Menu,
-    PanelItem,
+  BottomSheet,
+  ContextMenu,
+  Menu,
+  PanelItem,
 } from "@vellumai/design-library";
 
 /**
@@ -211,15 +211,14 @@ export function renderConversationMenuItems({
       </Primitive.Item>
     ) : null;
 
-  const openInNewWindowItem =
-    onOpenInNewWindow ? (
-      <Primitive.Item
-        leftIcon={<ExternalLink size={14} />}
-        onSelect={onOpenInNewWindow}
-      >
-        {variant === "header" ? "Open in new window" : "Open in New Window"}
-      </Primitive.Item>
-    ) : null;
+  const openInNewWindowItem = onOpenInNewWindow ? (
+    <Primitive.Item
+      leftIcon={<ExternalLink size={14} />}
+      onSelect={onOpenInNewWindow}
+    >
+      {variant === "header" ? "Open in new window" : "Open in New Window"}
+    </Primitive.Item>
+  ) : null;
 
   const inspectItem = onInspect ? (
     <Primitive.Item leftIcon={<Microscope size={14} />} onSelect={onInspect}>
@@ -306,10 +305,7 @@ export function renderConversationMenuItems({
  */
 function MobileMenuDivider() {
   return (
-    <div
-      aria-hidden="true"
-      className="my-1 h-px bg-[var(--border-overlay)]"
-    />
+    <div aria-hidden="true" className="my-1 h-px bg-[var(--border-overlay)]" />
   );
 }
 

@@ -257,7 +257,11 @@ export async function fetchConsolidationRuns(
   if (!response.ok) {
     throw new ApiError(
       response.status,
-      extractErrorMessage(error, response, "Failed to load consolidation runs."),
+      extractErrorMessage(
+        error,
+        response,
+        "Failed to load consolidation runs.",
+      ),
     );
   }
   return {
@@ -294,7 +298,11 @@ export async function fetchRetrospectiveRuns(
   if (!response.ok) {
     throw new ApiError(
       response.status,
-      extractErrorMessage(error, response, "Failed to load retrospective runs."),
+      extractErrorMessage(
+        error,
+        response,
+        "Failed to load retrospective runs.",
+      ),
     );
   }
   return {

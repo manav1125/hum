@@ -1,12 +1,11 @@
-
 import { Loader2, Mic, StopCircle } from "lucide-react";
 import {
-    forwardRef,
-    useCallback,
-    useEffect,
-    useImperativeHandle,
-    useRef,
-    useSyncExternalStore,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useSyncExternalStore,
 } from "react";
 import * as Sentry from "@sentry/react";
 
@@ -20,9 +19,9 @@ import {
   type StopNativeDictationPartials,
 } from "@/runtime/native-dictation-partials";
 import {
-    postSttTranscribe,
-    prefersMacosNativeStt,
-    type SttFailureReason,
+  postSttTranscribe,
+  prefersMacosNativeStt,
+  type SttFailureReason,
 } from "@/domains/chat/voice/stt-api";
 import { useVoiceRecordingStore } from "@/domains/chat/voice/voice-recording-store";
 import { useIsNativePlatform } from "@/runtime/native-auth";
@@ -190,11 +189,7 @@ export function errorCodeForReason(reason: SttFailureReason): string {
 // ---------------------------------------------------------------------------
 
 type DictationSessionOutcome =
-  | "completed"
-  | "empty"
-  | "error"
-  | "cancelled"
-  | "aborted";
+  "completed" | "empty" | "error" | "cancelled" | "aborted";
 
 /**
  * One breadcrumb per dictation session, emitted when the session reaches a
@@ -475,12 +470,7 @@ export const VoiceInputButton = forwardRef<
       }
     }
     vsReset();
-  }, [
-    stopSpeechRecognition,
-    stopDictationStream,
-    stopNativePartials,
-    vsReset,
-  ]);
+  }, [stopSpeechRecognition, stopDictationStream, stopNativePartials, vsReset]);
 
   // Esc during recording discards the partial result. Capture phase so it
   // wins over composer/modal Escape handlers while a recording is live. Two
@@ -738,7 +728,8 @@ export const VoiceInputButton = forwardRef<
         return;
       }
 
-      const audioBlob = chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null;
+      const audioBlob =
+        chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null;
       const abortCtrl = new AbortController();
       transcribeAbortRef.current = abortCtrl;
 
@@ -755,7 +746,10 @@ export const VoiceInputButton = forwardRef<
         let daemonFailure: SttFailureReason | null = null;
         try {
           if (audioBlob && assistantId && !nativeSttForced) {
-            if (typeof navigator !== "undefined" && navigator.onLine === false) {
+            if (
+              typeof navigator !== "undefined" &&
+              navigator.onLine === false
+            ) {
               // Provably offline — don't burn the provider timeout to learn
               // what we already know.
               console.info("dictation: skipping batch STT (offline)");

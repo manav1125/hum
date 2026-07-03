@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { sortByTimestamp, sortedByTimestamp } from "@/domains/chat/utils/message-sorting";
+import {
+  sortByTimestamp,
+  sortedByTimestamp,
+} from "@/domains/chat/utils/message-sorting";
 import type { DisplayMessage } from "@/domains/chat/types/types";
-function make(overrides: Partial<DisplayMessage> & { timestamp?: number }): DisplayMessage {
+function make(
+  overrides: Partial<DisplayMessage> & { timestamp?: number },
+): DisplayMessage {
   return {
     id: crypto.randomUUID(),
     role: "assistant",
@@ -214,9 +219,7 @@ describe("sortByTimestamp · tool-call tiebreaker", () => {
       make({
         id: "with-tool",
         timestamp: sharedTs,
-        toolCalls: [
-          { id: "t", name: "x", input: {}, completedAt: 5000 },
-        ],
+        toolCalls: [{ id: "t", name: "x", input: {}, completedAt: 5000 }],
       }),
       make({ id: "plain", timestamp: sharedTs }),
     ];
