@@ -734,6 +734,25 @@ export const routeTree = [
                         },
                       },
                       {
+                        // HQ — the missions deck (rings hero + needs-you +
+                        // agents-at-work). Additive this phase: Home remains
+                        // the default landing.
+                        path: "hq",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/hq/hq-page").then((m) => m.HqPage),
+                        },
+                      },
+                      {
+                        path: "hq/:id",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/hq/mission-detail-page").then(
+                              (m) => m.MissionDetailPage,
+                            ),
+                        },
+                      },
+                      {
                         path: "projects",
                         lazy: {
                           Component: () =>

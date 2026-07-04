@@ -108,16 +108,21 @@ function TallyBits({ p }: { p: ProjectView }) {
   );
 }
 
-function ProjectCard({
+/**
+ * Exported for reuse by the HQ mission-detail page, where linked projects
+ * render as a mission's initiatives with the exact same card language.
+ * `onTogglePin` is optional there — the pin affordance hides when absent.
+ */
+export function ProjectCard({
   project,
   onOpen,
   onTogglePin,
-  pinBusy,
+  pinBusy = false,
 }: {
   project: ProjectView;
   onOpen: () => void;
-  onTogglePin: () => void;
-  pinBusy: boolean;
+  onTogglePin?: () => void;
+  pinBusy?: boolean;
 }) {
   const next = project.stats?.nextTask ?? null;
   const counts = project.stats?.counts;
@@ -179,33 +184,35 @@ function ProjectCard({
             <TallyBits p={project} />
           </div>
         </div>
-        <button
-          type="button"
-          aria-label={project.pinned ? "Unpin project" : "Pin project"}
-          aria-pressed={project.pinned}
-          disabled={pinBusy}
-          onClick={(e) => {
-            e.stopPropagation();
-            onTogglePin();
-          }}
-          style={{
-            flexShrink: 0,
-            width: 28,
-            height: 28,
-            borderRadius: 8,
-            display: "grid",
-            placeItems: "center",
-            border: `1px solid ${project.pinned ? C.violet : C.line}`,
-            background: project.pinned
-              ? `color-mix(in srgb, ${C.violet} 14%, transparent)`
-              : "transparent",
-            color: project.pinned ? C.violet : C.t3,
-            cursor: pinBusy ? "default" : "pointer",
-            opacity: pinBusy ? 0.5 : 1,
-          }}
-        >
-          <Pin size={14} fill={project.pinned ? "currentColor" : "none"} />
-        </button>
+        {onTogglePin ? (
+          <button
+            type="button"
+            aria-label={project.pinned ? "Unpin project" : "Pin project"}
+            aria-pressed={project.pinned}
+            disabled={pinBusy}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            style={{
+              flexShrink: 0,
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              display: "grid",
+              placeItems: "center",
+              border: `1px solid ${project.pinned ? C.violet : C.line}`,
+              background: project.pinned
+                ? `color-mix(in srgb, ${C.violet} 14%, transparent)`
+                : "transparent",
+              color: project.pinned ? C.violet : C.t3,
+              cursor: pinBusy ? "default" : "pointer",
+              opacity: pinBusy ? 0.5 : 1,
+            }}
+          >
+            <Pin size={14} fill={project.pinned ? "currentColor" : "none"} />
+          </button>
+        ) : null}
       </div>
 
       {next ? (

@@ -1,0 +1,1305 @@
+/**
+ * HQ — the company map in motion (phase 1 of the Cue HQ design).
+ *
+ * One glance answers: are we moving, what moved today, what needs me?
+ *  · Rings hero — one STATUS-ONLY ring per mission (✓ on track / ! needs you /
+ *    ◼ blocked, derived from live rollups; % is phase 2, only with a metric)
+ *    with the "N/M ON TRACK" stack and a one-line daily-brief headline.
+ *  · Capture bar — the same thread-seeding mechanic Create/Home use.
+ *  · Came-in strip — the newest captured work items with source badges.
+ *  · Needs-you — the awaiting_review lane, tagged by mission via the
+ *    project→mission link.
+ *  · Missions list — every ring as a row (the map is a delight layer;
+ *    everything on it also lives in a list).
+ *  · Right rail — agents at work (running items w/ live progress notes) and
+ *    the honest spend chips.
+ *
+ * Zero missions renders the PULSE: calm brief + needs-you + came-in +
+ * suggested missions + the New-mission CTA. Freshness: `useActivitySync`
+ * (SSE) + 60s safety-net polls, matching the Command Center.
+ */
+
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { LiveDot } from "@/components/live-dot";
+import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
+import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import { useActivitySync } from "@/hooks/use-activity-sync";
+import { getBudgetConfig } from "@/lib/budget-api";
+import { relativeTime } from "@/domains/activity/theme";
+import { routes } from "@/utils/routes";
+import { usageRangeNow } from "@/utils/usage-window";
+
+import { CaptureBar } from "./capture-bar";
+import { CompanyPanel } from "./company-panel";
+import {
+  C,
+  HERO_GRADIENT,
+  HqStyle,
+  LiveBars,
+  MicroLabel,
+  MODE_META,
+  RING_META,
+  RingsHero,
+  StatusRing,
+  fmtCents,
+  horizonLabel,
+  missionHue,
+  mono,
+  serif,
+  sourceBadge,
+} from "./hq-kit";
+import { NewMissionModal } from "./new-mission-modal";
+import {
+  missionByProject,
+  ringStatusFor,
+  useCompanyProfile,
+  useHqWorkItems,
+  useMissions,
+  type HqWorkItem,
+  type Mission,
+} from "./use-missions";
+
+/** Current calendar-month window [start, now] in epoch ms (stable `to`). */
+function monthWindow(): { from: number; to: number } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  return { from: start.getTime(), to: usageRangeNow() };
+}
+
+/** The one-line brief headline — derived, never fabricated. */
+function briefHeadline(
+  onTrack: number,
+  needsYou: number,
+  blocked: number,
+  total: number,
+): string {
+  if (total === 0) return "";
+  if (blocked > 0 && needsYou > 0)
+    return "Several rings are waiting on you to keep moving.";
+  if (blocked === 1)
+    return `${onTrack > 0 ? `${onTrack} moving — ` : ""}one ring is blocked on your call.`;
+  if (blocked > 1) return `${blocked} rings are blocked on your call.`;
+  if (needsYou === 1)
+    return `${onTrack > 0 ? `${onTrack} moving. ` : ""}One needs your call to keep closing.`;
+  if (needsYou > 1) return `${needsYou} missions need your call.`;
+  return total === 1
+    ? "Your mission is on track."
+    : `All ${total} missions on track.`;
+}
+
+function StatusLabel({ mission }: { mission: Mission }) {
+  const status = ringStatusFor(mission);
+  const meta = RING_META[status];
+  return (
+    <span
+      style={{
+        fontFamily: mono,
+        fontSize: 10,
+        color: meta.color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {status === "on_track" ? meta.label : `${meta.label} ›`}
+    </span>
+  );
+}
+
+/** Dark hero card: concentric rings + headline + per-mission status lines. */
+function RingsHeroCard({
+  missions,
+  doneToday,
+  dayLabel,
+}: {
+  missions: Mission[];
+  doneToday: number;
+  dayLabel: string;
+}) {
+  const navigate = useNavigate();
+  const rings = missions.map((m, i) => ({
+    status: ringStatusFor(m),
+    hue: missionHue(i),
+  }));
+  const onTrack = rings.filter((r) => r.status === "on_track").length;
+  const needsYou = rings.filter((r) => r.status === "needs_you").length;
+  const blocked = rings.filter((r) => r.status === "blocked").length;
+
+  return (
+    <div
+      data-slot="hq-hero-card"
+      style={{
+        display: "flex",
+        gap: 22,
+        alignItems: "center",
+        background: HERO_GRADIENT,
+        borderRadius: 16,
+        padding: "22px 24px",
+        color: "#fff",
+        marginTop: 16,
+      }}
+    >
+      <RingsHero
+        rings={rings}
+        onTrack={onTrack}
+        total={missions.length}
+        size={176}
+      />
+      <div data-slot="hq-hero-lines" style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 10,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "rgba(255,255,255,.55)",
+          }}
+        >
+          {dayLabel}
+          {doneToday > 0 ? ` · ${doneToday} handled today` : ""}
+        </div>
+        <div
+          style={{
+            fontFamily: serif,
+            fontSize: 24,
+            lineHeight: 1.15,
+            marginTop: 6,
+          }}
+        >
+          {briefHeadline(onTrack, needsYou, blocked, missions.length)}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            marginTop: 13,
+          }}
+        >
+          {missions.slice(0, 6).map((m, i) => {
+            const status = ringStatusFor(m);
+            return (
+              <div
+                key={m.id}
+                role="link"
+                tabIndex={0}
+                onClick={() => navigate(routes.hqMission(m.id))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") navigate(routes.hqMission(m.id));
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: "50%",
+                    background:
+                      status === "on_track"
+                        ? missionHue(i)
+                        : RING_META[status].color,
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.title}
+                </span>
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    fontFamily: mono,
+                    fontSize: 10.5,
+                    color:
+                      status === "on_track"
+                        ? "rgba(255,255,255,.6)"
+                        : RING_META[status].color,
+                    whiteSpace: "nowrap",
+                    ...(status !== "on_track"
+                      ? {
+                          borderBottom: `1px dotted ${RING_META[status].color}`,
+                        }
+                      : {}),
+                  }}
+                >
+                  {status === "on_track"
+                    ? "on track"
+                    : status === "needs_you"
+                      ? "needs you · open ›"
+                      : "blocked · decide ›"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** "Came in · N" — the newest captured items, with source badges. */
+function CameInStrip({ items }: { items: HqWorkItem[] }) {
+  const recent = useMemo(
+    () => [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3),
+    [items],
+  );
+  if (recent.length === 0) return null;
+  return (
+    <Link
+      to={routes.home}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+        background: C.sunken,
+        borderRadius: 12,
+        padding: "11px 15px",
+        marginTop: 16,
+        textDecoration: "none",
+        color: C.t2,
+      }}
+    >
+      <MicroLabel style={{ whiteSpace: "nowrap" }}>
+        Came in · {items.length}
+      </MicroLabel>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          fontSize: 12,
+          flex: 1,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {recent.map((item, i) => {
+          const badge = sourceBadge(item.sourceType);
+          return (
+            <span
+              key={item.id}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                overflow: "hidden",
+              }}
+            >
+              {i > 0 ? (
+                <span aria-hidden style={{ color: C.line2, marginRight: 5 }}>
+                  ·
+                </span>
+              ) : null}
+              <span
+                aria-hidden
+                style={{
+                  width: 16,
+                  height: 16,
+                  borderRadius: 4,
+                  background: badge.tint,
+                  color: "#fff",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 8,
+                  flexShrink: 0,
+                }}
+              >
+                {badge.glyph}
+              </span>
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: 180,
+                }}
+              >
+                {item.title}
+              </span>
+            </span>
+          );
+        })}
+      </span>
+      <span
+        style={{
+          fontSize: 12,
+          color: C.blueS,
+          fontWeight: 500,
+          whiteSpace: "nowrap",
+        }}
+      >
+        See what arrived ›
+      </span>
+    </Link>
+  );
+}
+
+/** One "Needs you" card — the awaiting_review item, tagged by mission. */
+function NeedsYouCard({
+  item,
+  mission,
+}: {
+  item: HqWorkItem;
+  mission: Mission | null;
+}) {
+  const navigate = useNavigate();
+  const openReview = () => {
+    if (item.lastRunConversationId) {
+      navigate(routes.conversation(item.lastRunConversationId));
+    } else {
+      navigate(`${routes.home}?focus=${encodeURIComponent(item.id)}`);
+    }
+  };
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        border: `1px solid ${C.line}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        background: C.surface,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 500,
+            color: C.ink,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {item.title}
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 9.5,
+              color: C.green,
+              marginLeft: 6,
+            }}
+          >
+            READY
+          </span>
+        </div>
+        <div style={{ fontSize: 12, color: C.t2, marginTop: 2 }}>
+          {mission ? (
+            <b style={{ fontWeight: 600 }}>{mission.title}</b>
+          ) : (
+            <span>Unfiled</span>
+          )}
+          {" · "}Cue finished this — it waits for your yes
+          {item.updatedAt ? ` · ${relativeTime(item.updatedAt)}` : ""}.
+        </div>
+      </div>
+      <button type="button" onClick={openReview} style={reviewBtn}>
+        Review
+      </button>
+      {mission ? (
+        <button
+          type="button"
+          onClick={() => navigate(routes.hqMission(mission.id))}
+          style={openMissionBtn}
+        >
+          Open mission ›
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+const reviewBtn: React.CSSProperties = {
+  fontSize: 11.5,
+  background: C.blue,
+  color: "#fff",
+  border: "none",
+  borderRadius: 8,
+  padding: "7px 13px",
+  cursor: "pointer",
+  flexShrink: 0,
+};
+
+const openMissionBtn: React.CSSProperties = {
+  fontSize: 11.5,
+  background: C.sunken,
+  color: C.t2,
+  border: "none",
+  borderRadius: 8,
+  padding: "7px 13px",
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+  flexShrink: 0,
+};
+
+/** Mission list rows — every ring, as a list (the map is a delight layer). */
+function MissionList({ missions }: { missions: Mission[] }) {
+  const navigate = useNavigate();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {missions.map((m) => {
+        const status = ringStatusFor(m);
+        const horizon = horizonLabel(m.horizon);
+        const meta = [
+          horizon,
+          m.rollup.projects.length > 0
+            ? `${m.rollup.projects.length} initiative${m.rollup.projects.length === 1 ? "" : "s"}`
+            : null,
+          m.rollup.counts.running > 0
+            ? `${m.rollup.counts.running} running`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return (
+          <div
+            key={m.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate(routes.hqMission(m.id))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                navigate(routes.hqMission(m.id));
+              }
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              background:
+                status === "needs_you" || status === "blocked"
+                  ? `color-mix(in srgb, ${RING_META[status].color} 7%, ${C.surface})`
+                  : C.surface,
+              border: `1px solid ${
+                status === "on_track"
+                  ? C.line
+                  : `color-mix(in srgb, ${RING_META[status].color} 38%, ${C.line})`
+              }`,
+              borderRadius: 12,
+              padding: "10px 13px",
+              cursor: "pointer",
+            }}
+          >
+            <StatusRing status={status} size={34} stroke={4} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 500,
+                  color: C.ink,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {m.title}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: status === "on_track" ? C.t3 : RING_META[status].color,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {status === "blocked"
+                  ? `blocked · ${meta || "open to unblock"}`
+                  : meta || m.outcome}
+              </div>
+            </div>
+            <StatusLabel mission={m} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Right rail: agents at work (running items, live progress) + spend chips. */
+function WorkRail({
+  running,
+  missions,
+  monthUsd,
+  capUsd,
+}: {
+  running: HqWorkItem[];
+  missions: Mission[];
+  monthUsd: number;
+  capUsd: number | null;
+}) {
+  const byProject = useMemo(() => missionByProject(missions), [missions]);
+  const missionSpend = missions.reduce(
+    (sum, m) => sum + m.rollup.spentCents,
+    0,
+  );
+  const missionBudget = missions.reduce(
+    (sum, m) => sum + (m.rollup.budgetCents ?? 0),
+    0,
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <MicroLabel>Agents at work</MicroLabel>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontFamily: mono,
+            fontSize: 10,
+            color: running.length > 0 ? C.green : C.t3,
+          }}
+        >
+          {running.length > 0 ? (
+            <span
+              aria-hidden
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: C.green,
+                animation: "hqBlink 1.6s ease infinite",
+              }}
+            />
+          ) : null}
+          {running.length} live
+        </span>
+      </div>
+
+      {running.length === 0 ? (
+        <div
+          style={{
+            border: `1px solid ${C.line}`,
+            borderRadius: 12,
+            padding: 13,
+            marginTop: 12,
+            fontSize: 12,
+            color: C.t3,
+            background: C.surface,
+          }}
+        >
+          Nothing running this second — Cue is standing by.
+        </div>
+      ) : (
+        running.slice(0, 4).map((item) => {
+          const mission = item.projectId
+            ? (byProject.get(item.projectId) ?? null)
+            : null;
+          return (
+            <div
+              key={item.id}
+              style={{
+                background: C.surface,
+                border: `1px solid ${C.line}`,
+                borderRadius: 12,
+                padding: 13,
+                marginTop: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: C.ink,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {item.title}
+                  </div>
+                  {mission ? (
+                    <div
+                      style={{
+                        fontFamily: mono,
+                        fontSize: 9.5,
+                        color: C.blueS,
+                        marginTop: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {mission.title.toUpperCase()}
+                    </div>
+                  ) : null}
+                </div>
+                <LiveBars color={C.blue} />
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: C.t2,
+                  marginTop: 9,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.lastProgressNote ?? "Working…"}
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      <div
+        style={{ marginTop: "auto", paddingTop: 16, display: "flex", gap: 8 }}
+      >
+        <div
+          style={{
+            flex: 1,
+            background: C.surface,
+            border: `1px solid ${C.line}`,
+            borderRadius: 10,
+            padding: 11,
+          }}
+        >
+          <MicroLabel style={{ fontSize: 9.5 }}>Spend · month</MicroLabel>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: C.ink,
+              marginTop: 2,
+            }}
+          >
+            ${monthUsd.toFixed(monthUsd >= 100 ? 0 : 2)}
+            {capUsd != null ? (
+              <span style={{ fontSize: 11, color: C.t3, fontWeight: 400 }}>
+                {" "}
+                / ${capUsd}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        {missionBudget > 0 ? (
+          <div
+            style={{
+              flex: 1,
+              background: C.surface,
+              border: `1px solid ${C.line}`,
+              borderRadius: 10,
+              padding: 11,
+            }}
+          >
+            <MicroLabel style={{ fontSize: 9.5 }}>Mission budgets</MicroLabel>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color:
+                  missionSpend >= missionBudget && missionBudget > 0
+                    ? C.danger
+                    : C.ink,
+                marginTop: 2,
+              }}
+            >
+              {fmtCents(missionSpend)}
+              <span style={{ fontSize: 11, color: C.t3, fontWeight: 400 }}>
+                {" "}
+                / {fmtCents(missionBudget)}
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Static phase-1 mission suggestions for the pulse (zero-mission) state. */
+const SUGGESTED_MISSIONS: Array<{
+  glyph: string;
+  title: string;
+  blurb: string;
+}> = [
+  {
+    glyph: "💰",
+    title: "Raise the next round",
+    blurb:
+      "Deck, target list, warm intros, data room — Cue runs the ring, you approve anything that sends.",
+  },
+  {
+    glyph: "🚀",
+    title: "Ship the next release",
+    blurb:
+      "Cue plans the sprint work, drafts the launch copy, and keeps the ring moving between check-ins.",
+  },
+  {
+    glyph: "📈",
+    title: "Grow revenue",
+    blurb:
+      "Pipeline research, outreach drafts, and follow-ups — publishing always waits for your yes.",
+  },
+];
+
+/** The pulse — HQ with zero missions. Never a blank canvas. */
+function PulseLayout({
+  assistantId,
+  needsYou,
+  cameIn,
+  missionsByProjectId,
+  userName,
+  dayLabel,
+  onNewMission,
+  onSuggest,
+}: {
+  assistantId: string;
+  needsYou: HqWorkItem[];
+  cameIn: HqWorkItem[];
+  missionsByProjectId: Map<string, Mission>;
+  userName: string | null;
+  dayLabel: string;
+  onNewMission: () => void;
+  onSuggest: (title: string) => void;
+}) {
+  void assistantId;
+  const glanceCount = needsYou.length;
+  return (
+    <div data-slot="hq-stream">
+      <MicroLabel
+        color={C.t3}
+        style={{ fontSize: 11, letterSpacing: "0.14em" }}
+      >
+        {dayLabel}
+      </MicroLabel>
+      <div
+        data-slot="hq-title"
+        style={{
+          fontFamily: serif,
+          fontSize: 34,
+          lineHeight: 1.08,
+          color: C.ink,
+          marginTop: 8,
+        }}
+      >
+        {userName ? `Good ${dayPart()}, ${userName}.` : `Good ${dayPart()}.`}
+        <br />
+        {glanceCount > 0
+          ? `A calm one — ${glanceCount === 1 ? "one thing" : `${glanceCount} things`} I'd glance at.`
+          : "A calm one — nothing needs you right now."}
+      </div>
+
+      <div style={{ marginTop: 22, maxWidth: 640 }}>
+        <CaptureBar
+          placeholder="Ask Cue anything, or give it a mission…"
+          autoFilesChip={false}
+        />
+      </div>
+
+      <div
+        data-slot="hq-columns"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 30,
+          marginTop: 32,
+        }}
+      >
+        <div>
+          {needsYou.length > 0 ? (
+            <>
+              <MicroLabel color={C.danger}>
+                Needs you · {needsYou.length}
+              </MicroLabel>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 9,
+                  marginTop: 12,
+                }}
+              >
+                {needsYou.slice(0, 4).map((item) => (
+                  <NeedsYouCard
+                    key={item.id}
+                    item={item}
+                    mission={
+                      item.projectId
+                        ? (missionsByProjectId.get(item.projectId) ?? null)
+                        : null
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {cameIn.length > 0 ? (
+            <>
+              <MicroLabel
+                style={{
+                  margin: needsYou.length > 0 ? "24px 0 12px" : "0 0 12px",
+                }}
+              >
+                Came in · {cameIn.length}
+              </MicroLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {[...cameIn]
+                  .sort((a, b) => b.createdAt - a.createdAt)
+                  .slice(0, 4)
+                  .map((item) => {
+                    const badge = sourceBadge(item.sourceType);
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          fontSize: 12.5,
+                          color: C.t2,
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: 5,
+                            background: badge.tint,
+                            color: "#fff",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 9,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {badge.glyph}
+                        </span>
+                        <span
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {item.title}
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <div>
+          <MicroLabel color={C.blueS}>Cue could take these on</MicroLabel>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 11,
+              marginTop: 12,
+            }}
+          >
+            {SUGGESTED_MISSIONS.map((s) => (
+              <div
+                key={s.title}
+                style={{
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 14,
+                  padding: 16,
+                  background: `linear-gradient(160deg, ${C.surface}, color-mix(in srgb, ${C.blue} 4%, ${C.surface}))`,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span aria-hidden style={{ fontSize: 18 }}>
+                    {s.glyph}
+                  </span>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>
+                    {s.title}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: C.t2,
+                    marginTop: 7,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {s.blurb}
+                </div>
+                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => onSuggest(s.title)}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: C.blue,
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 9,
+                      padding: "8px 14px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Start mission
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div
+            style={{
+              marginTop: 14,
+              fontSize: 12,
+              color: C.t3,
+              lineHeight: 1.5,
+            }}
+          >
+            No open missions yet — and that&rsquo;s fine. Cue keeps catching
+            what comes in;{" "}
+            <button
+              type="button"
+              onClick={onNewMission}
+              style={{
+                border: "none",
+                background: "none",
+                padding: 0,
+                fontSize: 12,
+                color: C.blueS,
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              give it a mission
+            </button>{" "}
+            when you&rsquo;re ready.
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 36,
+          textAlign: "center",
+          fontFamily: mono,
+          fontSize: 10,
+          letterSpacing: "0.08em",
+          color: C.t3,
+        }}
+      >
+        NO MISSIONS YET
+        {needsYou.length === 0 ? " · NOTHING TO REVIEW" : ""}
+      </div>
+    </div>
+  );
+}
+
+function dayPart(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
+
+export function HqPage() {
+  const assistantId = useActiveAssistantId();
+  // SSE keeps every lane current; polls below are 60s safety-nets.
+  useActivitySync(assistantId, true);
+
+  const { missions, isLoading } = useMissions(assistantId);
+  const review = useHqWorkItems(assistantId, "awaiting_review");
+  const running = useHqWorkItems(assistantId, "running");
+  const queued = useHqWorkItems(assistantId, "pending");
+  const done = useHqWorkItems(assistantId, "done");
+  const stateQuery = useHomeStateQuery(assistantId);
+  const { profile } = useCompanyProfile(assistantId);
+
+  const month = monthWindow();
+  const usage = useQuery({
+    ...usageTotalsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { from: month.from, to: month.to },
+    }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const budget = useQuery({
+    queryKey: ["budget", "config", assistantId],
+    queryFn: () => getBudgetConfig(assistantId),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const [showNewMission, setShowNewMission] = useState<
+    { open: false } | { open: true; presetTitle?: string }
+  >({ open: false });
+  const [showCompany, setShowCompany] = useState(false);
+  const navigate = useNavigate();
+
+  // Stamped once per mount — keeps timestamps out of the render path.
+  const [dayLabel] = useState(() =>
+    new Date()
+      .toLocaleDateString(undefined, {
+        weekday: "long",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+      .toUpperCase(),
+  );
+
+  const byProject = useMemo(() => missionByProject(missions), [missions]);
+  const cameIn = queued.items;
+  const workspaceMode = profile?.workspaceMode ?? "assist";
+
+  const hasMissions = missions.length > 0;
+
+  return (
+    <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
+      <HqStyle />
+      <div
+        data-slot="hq-page-pad"
+        style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px 60px" }}
+      >
+        {/* Header: kicker + live dot + Company & New mission actions. */}
+        <header style={{ marginBottom: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 6,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 11.5,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: C.blueS,
+              }}
+            >
+              HQ
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowCompany(true)}
+                title={`Workspace runs ${MODE_META[workspaceMode].label}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontFamily: mono,
+                  fontSize: 11,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: C.t2,
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: `1px solid ${C.line2}`,
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+              >
+                ☰ Company &amp; never-lines
+              </button>
+              {hasMissions ? (
+                <button
+                  type="button"
+                  onClick={() => setShowNewMission({ open: true })}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: mono,
+                    fontSize: 11,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: C.blueS,
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: `1px solid color-mix(in srgb, ${C.blue} 32%, transparent)`,
+                    background: `color-mix(in srgb, ${C.blue} 10%, transparent)`,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Plus size={12} /> New mission
+                </button>
+              ) : null}
+              <LiveDot />
+            </div>
+          </div>
+        </header>
+
+        {isLoading ? (
+          <div style={{ fontSize: 13, color: C.t2, marginTop: 24 }}>
+            Opening HQ…
+          </div>
+        ) : !hasMissions ? (
+          <PulseLayout
+            assistantId={assistantId}
+            needsYou={review.items}
+            cameIn={cameIn}
+            missionsByProjectId={byProject}
+            userName={stateQuery.data?.userName?.trim() || null}
+            dayLabel={dayLabel}
+            onNewMission={() => setShowNewMission({ open: true })}
+            onSuggest={(title) =>
+              setShowNewMission({ open: true, presetTitle: title })
+            }
+          />
+        ) : (
+          <div
+            data-slot="hq-columns"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 300px",
+              gap: 26,
+              alignItems: "stretch",
+            }}
+          >
+            {/* MAIN COLUMN */}
+            <div data-slot="hq-stream" style={{ minWidth: 0 }}>
+              <CaptureBar />
+              <RingsHeroCard
+                missions={missions}
+                doneToday={done.items.length}
+                dayLabel={dayLabel}
+              />
+              <CameInStrip items={cameIn} />
+
+              {review.items.length > 0 ? (
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                      margin: "18px 0 4px",
+                    }}
+                  >
+                    <MicroLabel color={C.danger}>
+                      Needs you · {review.items.length}
+                    </MicroLabel>
+                    <Link
+                      to={routes.home}
+                      style={{
+                        fontSize: 11.5,
+                        color: C.blueS,
+                        fontWeight: 500,
+                        textDecoration: "none",
+                      }}
+                    >
+                      See all in the queue ›
+                    </Link>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 9,
+                      marginTop: 8,
+                    }}
+                  >
+                    {review.items.slice(0, 4).map((item) => (
+                      <NeedsYouCard
+                        key={item.id}
+                        item={item}
+                        mission={
+                          item.projectId
+                            ? (byProject.get(item.projectId) ?? null)
+                            : null
+                        }
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    marginTop: 18,
+                    padding: "11px 14px",
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 10,
+                    background: C.surface,
+                    fontFamily: mono,
+                    fontSize: 12.5,
+                    color: C.t3,
+                  }}
+                >
+                  <span aria-hidden style={{ color: C.green }}>
+                    ✓
+                  </span>
+                  Nothing needs you
+                </div>
+              )}
+
+              <MicroLabel style={{ margin: "20px 0 10px" }}>
+                Missions · {missions.length}
+              </MicroLabel>
+              <MissionList missions={missions} />
+            </div>
+
+            {/* RIGHT RAIL */}
+            <WorkRail
+              running={running.items}
+              missions={missions}
+              monthUsd={usage.data?.totalEstimatedCostUsd ?? 0}
+              capUsd={budget.data?.monthlyCapUsd ?? null}
+            />
+          </div>
+        )}
+      </div>
+
+      {showNewMission.open ? (
+        <NewMissionModal
+          assistantId={assistantId}
+          presetTitle={showNewMission.presetTitle}
+          workspaceMode={workspaceMode}
+          onClose={() => setShowNewMission({ open: false })}
+          onCreated={(id) => {
+            setShowNewMission({ open: false });
+            navigate(routes.hqMission(id));
+          }}
+        />
+      ) : null}
+      {showCompany ? (
+        <CompanyPanel
+          assistantId={assistantId}
+          onClose={() => setShowCompany(false)}
+        />
+      ) : null}
+    </div>
+  );
+}

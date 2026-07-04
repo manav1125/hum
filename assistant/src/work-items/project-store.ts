@@ -35,6 +35,8 @@ export interface Project {
   sortIndex: number | null;
   /** 1 = pinned (floats to the top of the list), 0 = normal. */
   pinned: number;
+  /** Mission this project serves as an initiative of (reference-by-convention). */
+  missionId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -84,6 +86,7 @@ export function createProject(opts: {
     category: opts.category ?? null,
     context: opts.context ?? null,
     sortIndex: opts.sortIndex ?? null,
+    missionId: null,
     pinned: opts.pinned ? 1 : 0,
     createdAt: now,
     updatedAt: now,
@@ -135,6 +138,7 @@ export function updateProject(
       | "context"
       | "sortIndex"
       | "pinned"
+      | "missionId"
     >
   >,
 ): Project | undefined {

@@ -23928,6 +23928,11 @@ paths:
                           minimum: -9007199254740991
                           maximum: 9007199254740991
                           description: 0/1 — pinned projects float to the top
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Mission this project serves as an initiative of
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -24017,6 +24022,7 @@ paths:
                         - context
                         - sortIndex
                         - pinned
+                        - missionId
                         - createdAt
                         - updatedAt
                         - stats
@@ -24087,6 +24093,11 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                         description: 0/1 — pinned projects float to the top
+                      missionId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Mission this project serves as an initiative of
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -24105,6 +24116,7 @@ paths:
                       - context
                       - sortIndex
                       - pinned
+                      - missionId
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -24220,6 +24232,11 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                         description: 0/1 — pinned projects float to the top
+                      missionId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Mission this project serves as an initiative of
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -24238,6 +24255,7 @@ paths:
                       - context
                       - sortIndex
                       - pinned
+                      - missionId
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -24304,6 +24322,11 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                         description: 0/1 — pinned projects float to the top
+                      missionId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Mission this project serves as an initiative of
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -24322,6 +24345,7 @@ paths:
                       - context
                       - sortIndex
                       - pinned
+                      - missionId
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -24372,6 +24396,11 @@ paths:
                     - type: "null"
                 pinned:
                   type: boolean
+                missionId:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                  description: Link/unlink this project as a mission initiative
               additionalProperties: false
   /v1/projects/{id}/knowledge:
     get:

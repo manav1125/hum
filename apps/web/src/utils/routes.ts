@@ -91,6 +91,9 @@ export const routes = {
   },
 
   home: r("/assistant/home"),
+  // HQ — the missions deck (phase 1 additive; Home stays the default landing).
+  hq: r("/assistant/hq"),
+  hqMission: (id: string) => dyn(r("/assistant/hq"), id),
   projects: r("/assistant/projects"),
   project: (id: string) => dyn(r("/assistant/projects"), id),
   allWork: r("/assistant/work"),

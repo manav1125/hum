@@ -47,6 +47,10 @@ const projectSchema = z.object({
     .describe("Project brief the agent reads for every task in this project"),
   sortIndex: z.number().int().nullable(),
   pinned: z.number().int().describe("0/1 — pinned projects float to the top"),
+  missionId: z
+    .string()
+    .nullable()
+    .describe("Mission this project serves as an initiative of"),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -191,6 +195,10 @@ export const ROUTES: RouteDefinition[] = [
         context: z.string().nullable(),
         sortIndex: z.number().int().nullable(),
         pinned: z.boolean(),
+        missionId: z
+          .string()
+          .nullable()
+          .describe("Link/unlink this project as a mission initiative"),
       })
       .partial(),
     responseBody: z.object({ project: projectSchema }),
@@ -206,12 +214,14 @@ export const ROUTES: RouteDefinition[] = [
         context?: string | null;
         sortIndex?: number | null;
         pinned?: boolean;
+        missionId?: string | null;
       };
       const updates: Parameters<typeof updateProject>[1] = {};
       if (raw.title !== undefined) updates.title = raw.title;
       if (raw.emoji !== undefined) updates.emoji = raw.emoji;
       if (raw.color !== undefined) updates.color = raw.color;
       if (raw.status !== undefined) updates.status = raw.status;
+      if (raw.missionId !== undefined) updates.missionId = raw.missionId;
       if (raw.category !== undefined) updates.category = raw.category;
       if (raw.context !== undefined) updates.context = raw.context;
       if (raw.sortIndex !== undefined) updates.sortIndex = raw.sortIndex;

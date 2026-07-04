@@ -10,6 +10,7 @@ import {
   Search,
   Sparkles,
   SquarePen,
+  Target,
   Users,
   Wand2,
   X,
@@ -539,6 +540,14 @@ export function AssistantSideMenu({
             location.pathname.endsWith("/agents")
           }
           onSelect={() => cueNav("/assistant/home")}
+        />
+        {/* HQ — the missions deck (rings). Additive this phase: Home stays. */}
+        <SideMenu.Item
+          icon={Target}
+          label="HQ"
+          showCollapsedTooltip
+          active={location.pathname.includes("/hq")}
+          onSelect={() => cueNav("/assistant/hq")}
         />
         <SideMenu.Item
           icon={FolderKanban}
