@@ -1590,10 +1590,6 @@ export async function runAgentLoopImpl(
         {
           totalMs,
           contextAssemblyMs,
-          // Named sub-stage durations recorded by the user-prompt-submit
-          // hooks (e.g. memoryRetrievalMs / runtimeInjectionMs), so a
-          // contextAssembly regression points at the responsible sub-stage.
-          contextAssemblyStages: takeTurnStageTimings(reqId) ?? null,
           agentLoopMs,
           postLoopMs,
           llmCallCount: state.exchangeLlmCallCount,

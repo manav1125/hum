@@ -206,7 +206,6 @@ export function clearEmbeddingBackendCache(): void {
   vectorCache.clear();
   vectorCacheBytes = 0;
   localBackendBroken = false;
-  lastLoggedSelection = undefined;
 }
 
 /** Reset the sticky local-backend failure flag without evicting live backends. */
@@ -322,38 +321,7 @@ export interface EmbeddingBackendSelection {
   reason: string | null;
 }
 
-/**
- * Last logged "provider:model" (or "none:<reason>") selection. Guards the
- * per-selection info log below so the resolved embedding path is announced
- * once at first use (and again only when it changes), not on every embed
- * call. Ops can grep `embedding_backend_selected` to see which provider a
- * deployment actually resolved.
- */
-let lastLoggedSelection: string | undefined;
-
 export async function selectEmbeddingBackend(
-  config: AssistantConfig,
-): Promise<EmbeddingBackendSelection> {
-  const selection = await selectEmbeddingBackendInner(config);
-  const signature = selection.backend
-    ? `${selection.backend.provider}:${selection.backend.model}`
-    : `none:${selection.reason ?? "unknown"}`;
-  if (signature !== lastLoggedSelection) {
-    lastLoggedSelection = signature;
-    log.info(
-      {
-        provider: selection.backend?.provider ?? null,
-        model: selection.backend?.model ?? null,
-        reason: selection.reason,
-        requested: config.memory.embeddings.provider,
-      },
-      "embedding_backend_selected",
-    );
-  }
-  return selection;
-}
-
-async function selectEmbeddingBackendInner(
   config: AssistantConfig,
 ): Promise<EmbeddingBackendSelection> {
   const requested = config.memory.embeddings.provider;
@@ -541,46 +509,30 @@ export async function embedWithBackend(
   const expectedDim = config.memory.qdrant.vectorSize;
   const { provider: primaryProvider, model: primaryModel } = selection.backend;
 
-  // ── Lazy fallback backend list ──────────────────────────────────
-  // Resolved only when the primary backend fails or can't handle the input
-  // (multimodal on a text-only primary). Building the chain requires
-  // credential-store reads (`getProviderKeyAsync` per provider); doing that
-  // eagerly put several credential round-trips on EVERY embed call even when
-  // the primary succeeded — on deployments with a degraded credential
-  // backend those reads dominated per-turn latency.
-  //
-  // In auto mode the chain covers all configured backends (excluding the
-  // primary) so multimodal inputs can fall through to Gemini even when the
-  // primary is local or openai.
-  //
+  // ── Build fallback backends list (needed for embed fallback) ──
+  // In auto mode, build a fallback chain from all configured backends
+  // (excluding the primary). This lets multimodal inputs fall through
+  // to Gemini even when the primary is local or openai.
+  const fallbacks: EmbeddingBackend[] =
+    config.memory.embeddings.provider === "auto" &&
+    selection.backend.provider !== "gemini"
+      ? await selectFallbackBackends(config, selection.backend.provider)
+      : [];
+
   // A managed-proxy Gemini primary can fail at the proxy (e.g. a stale or
   // revoked platform credential) while a valid direct Gemini key sits in the
-  // credential store. The provider-level chain never includes Gemini when
-  // Gemini IS the primary, so the direct-key backend is appended explicitly
-  // for that case.
-  let fallbacksPromise: Promise<EmbeddingBackend[]> | undefined;
-  const getFallbacks = (): Promise<EmbeddingBackend[]> => {
-    if (!fallbacksPromise) {
-      fallbacksPromise = (async () => {
-        const list: EmbeddingBackend[] =
-          config.memory.embeddings.provider === "auto" &&
-          selection.backend!.provider !== "gemini"
-            ? await selectFallbackBackends(config, selection.backend!.provider)
-            : [];
-        if (
-          selection.backend instanceof GeminiEmbeddingBackend &&
-          selection.backend.managed
-        ) {
-          const geminiKey = await getProviderKeyAsync("gemini");
-          if (geminiKey) {
-            list.push(getDirectGeminiBackend(config, geminiKey));
-          }
-        }
-        return list;
-      })();
+  // credential store. The provider-level chain above never includes Gemini
+  // when Gemini IS the primary, so without this the direct key would never
+  // be tried and the provider would stay down for the whole process.
+  if (
+    selection.backend instanceof GeminiEmbeddingBackend &&
+    selection.backend.managed
+  ) {
+    const geminiKey = await getProviderKeyAsync("gemini");
+    if (geminiKey) {
+      fallbacks.push(getDirectGeminiBackend(config, geminiKey));
     }
-    return fallbacksPromise;
-  };
+  }
 
   // ── Compute provider-specific vector cache extras ───────────────
   const vectorExtras =
@@ -610,19 +562,12 @@ export async function embedWithBackend(
   }
 
   // ── Embed uncached inputs ───────────────────────────────────────
-  // The primary is tried first; the fallback chain is resolved lazily and
-  // only walked when the primary fails or can't handle the input.
+  const backends: EmbeddingBackend[] = [selection.backend, ...fallbacks];
+
   let lastErr: unknown;
   let anyBackendAttempted = false;
-
-  const tryBackend = async (
-    backend: EmbeddingBackend,
-    isPrimary: boolean,
-  ): Promise<{
-    provider: EmbeddingProviderName;
-    model: string;
-    vectors: number[][];
-  } | null> => {
+  for (const backend of backends) {
+    const isPrimary = backend === selection.backend;
     // For the primary backend, only embed uncached inputs and merge with cached.
     // For fallback backends, embed ALL inputs since the cache was keyed to the primary.
     const inputsToEmbed = isPrimary
@@ -635,7 +580,7 @@ export async function embedWithBackend(
         typeof i !== "string" && normalizeEmbeddingInput(i).type !== "text",
     );
     if (backend.provider !== "gemini" && hasNonText) {
-      return null;
+      continue;
     }
 
     try {
@@ -681,22 +626,14 @@ export async function embedWithBackend(
       return { provider: backend.provider, model: backend.model, vectors };
     } catch (err) {
       lastErr = err;
-      log.warn(
-        { err, provider: backend.provider },
-        "Embedding backend failed, trying next",
-      );
-      return null;
+      if (backends.length > 1) {
+        log.warn(
+          { err, provider: backend.provider },
+          "Embedding backend failed, trying next",
+        );
+      }
     }
-  };
-
-  const primaryResult = await tryBackend(selection.backend, true);
-  if (primaryResult) return primaryResult;
-
-  for (const backend of await getFallbacks()) {
-    const result = await tryBackend(backend, false);
-    if (result) return result;
   }
-
   if (!anyBackendAttempted) {
     const hasMultimodal = inputs.some(
       (i) =>
