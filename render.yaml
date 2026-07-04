@@ -119,6 +119,11 @@ services:
       - fromGroup: cue-secrets
       - key: IS_CONTAINERIZED
         value: "true"
+      # No CES sidecar in this container (see NOTE above) — opt out explicitly
+      # so the daemon uses the encrypted file store from boot instead of
+      # retrying CES discovery/reconnection forever.
+      - key: VELLUM_DISABLE_CES
+        value: "1"
       - key: VELLUM_ENVIRONMENT
         value: production
       - key: VELLUM_WORKSPACE_DIR

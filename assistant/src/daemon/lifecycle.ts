@@ -17,6 +17,7 @@ import {
   setIngressPublicBaseUrl,
   validateEnv,
 } from "../config/env.js";
+import { getCesDisabled } from "../config/env-registry.js";
 import { loadConfig, mergeDefaultWorkspaceConfig } from "../config/loader.js";
 import type { AssistantConfig } from "../config/schema.js";
 import { seedInferenceProfiles } from "../config/seed-inference-profiles.js";
@@ -205,6 +206,23 @@ export interface CesStartupResult {
 async function startCesProcess(
   config: AssistantConfig,
 ): Promise<CesStartupResult> {
+  // Explicit opt-out for deployments that ship no CES sidecar (e.g. the
+  // single-container Render cue-app). Returning no processManager also means
+  // no CES reconnect callback gets registered, so the credential layer never
+  // attempts the periodic "upgrade to CES" reconnection that would otherwise
+  // warn every cooldown window forever.
+  if (getCesDisabled()) {
+    log.info(
+      "CES disabled via VELLUM_DISABLE_CES — credential backend: encrypted file store (env-var fallback); CES tools unavailable, no reconnection attempts",
+    );
+    return {
+      client: undefined,
+      processManager: undefined,
+      clientPromise: undefined,
+      abortController: undefined,
+    };
+  }
+
   const pm = createCesProcessManager({ assistantConfig: config });
   const abortController = new AbortController();
   let clientRef: CesClient | undefined;

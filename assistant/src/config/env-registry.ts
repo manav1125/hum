@@ -162,6 +162,22 @@ export function getDiskPressureDisabled(): boolean {
 }
 
 /**
+ * VELLUM_DISABLE_CES — boolean, default: false
+ * When set, the daemon does not start, discover, or reconnect to the CES
+ * (Credential Execution Service) sidecar at all — credentials come from the
+ * encrypted file store with env-var fallback. Intended for containerized
+ * deployments that ship no CES sidecar (e.g. the single-container Render
+ * cue-app): without the flag, startup discovery fails and the credential
+ * layer keeps attempting a CES "upgrade" reconnection every cooldown window
+ * forever. Do NOT set this on platform-managed pods, where the CES sidecar
+ * is the primary credential source and reconnection is how the daemon
+ * recovers from sidecar restarts.
+ */
+export function getCesDisabled(): boolean {
+  return flag("VELLUM_DISABLE_CES");
+}
+
+/**
  * CUE_DISABLE_MEMORY_ROUTER — boolean, default: false
  * When set, the memory-v2 "Sonnet router" (a blocking per-turn LLM call that
  * selects concept pages to inject) is suppressed even when
@@ -399,6 +415,7 @@ const KNOWN_VELLUM_VARS = new Set([
   "VELLUM_MEMORY_LIMIT",
   "VELLUM_MINIKUBE_STORAGE_SIZE",
   "VELLUM_DISABLE_DISK_PRESSURE",
+  "VELLUM_DISABLE_CES",
 ]);
 
 /**
