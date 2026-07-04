@@ -1,135 +1,131 @@
 /**
- * Project detail — the cowork board for one project.
+ * Project detail — the cowork board for one project, in HQ's language.
  *
- * Structure:
- *   - a header carrying the emoji / title / category, colored by the project,
- *   - an INLINE-EDITABLE "Context brief" — the field that gives Cue its context
- *     for every task in this project (PATCH /projects/:id context),
- *   - a quick-add row that files a new task straight into this project,
- *   - the work board: four status lanes (Queued → Running → Review → Done),
- *     rendered as columns on desktop and stacked groups on mobile,
- *   - a task drawer that opens on row click.
+ * Restyled to the locked Cue-HQ-Build Round 5 · B2 frames while keeping every
+ * function: serif hero (emoji tile · serif title · mono category chip) with a
+ * tappable ⟡ mission tag (→ the owning mission on HQ), the quick-add row, the
+ * ring-tone status board (four lanes, one-card-language rows with source
+ * badges + live progress notes), then the CONTEXT BRIEF and KNOWLEDGE
+ * accent-rail panels side by side. Lanes stack on mobile; a task drawer opens
+ * on row click.
  */
 
-import { ArrowLeft, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { DueChip } from "@/domains/activity/due-chip";
-import { C, mono, relativeTime, serif } from "@/domains/activity/theme";
+import { C, mono, serif } from "@/domains/activity/theme";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { HqStyle } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
 import type { BoardItem } from "./board-item";
+import { ItemCard, MissionTag, statusChip, type ItemChip } from "./item-card";
 import { BOARD_LANES, categoryLabel, laneForStatus } from "./project-kit";
 import { ProjectBrief } from "./project-brief";
 import { ProjectKnowledge } from "./project-knowledge";
 import { TaskDrawer } from "./task-drawer";
 import { useQuickAddTask } from "./use-quick-add";
-import { useProject, useProjects, useProjectWorkItems } from "./use-projects";
+import {
+  useMissionTitles,
+  useProject,
+  useProjects,
+  useProjectWorkItems,
+} from "./use-projects";
 
-function TaskCard({
+const DAY_MS = 24 * 3_600_000;
+const LIVE_STATUSES = new Set([
+  "queued",
+  "pending",
+  "running",
+  "awaiting_review",
+]);
+
+/** One board row in the one-card language (badge · title · chip · note). */
+function BoardRow({
   item,
-  accent,
+  now,
   onOpen,
 }: {
   item: BoardItem;
-  accent: string;
+  now: number;
   onOpen: () => void;
 }) {
-  const assignee =
-    item.assignee && item.assignee !== "cue" ? item.assignee : null;
-  const source = item.sourceType;
+  const running = item.status === "running";
+  const done = item.status === "done";
+  const review = item.status === "awaiting_review";
+  const dueSoon =
+    item.dueAt != null &&
+    item.dueAt <= now + DAY_MS &&
+    LIVE_STATUSES.has(item.status);
+
+  // Slot ④ — the most informative single chip for this row (the lane already
+  // names the status): due pressure wins, then REVIEW.
+  let chip: ItemChip | null = null;
+  if (dueSoon) {
+    chip = {
+      label: item.dueAt! < now ? "OVERDUE" : "DUE TODAY",
+      color: C.danger,
+      bg: `color-mix(in srgb, ${C.danger} 10%, transparent)`,
+    };
+  } else if (review) {
+    chip = statusChip(item.status);
+  }
+
+  // Progress/evidence line: the runner's live note while running; the
+  // non-default assignee otherwise.
+  const note = running
+    ? {
+        text: item.lastProgressNote ?? "Cue is working on this…",
+        color: C.blueS,
+      }
+    : review
+      ? { text: "ready — waits on you", color: C.amber }
+      : item.assignee && item.assignee !== "cue"
+        ? { text: `@${item.assignee}` }
+        : null;
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      style={{
-        padding: "11px 12px",
-        borderRadius: 10,
-        border: `1px solid ${C.line}`,
-        borderLeft: `3px solid ${accent}`,
-        background: C.surface,
-        cursor: "pointer",
-        display: "grid",
-        gap: 8,
-      }}
-    >
-      <div
-        style={{ fontSize: 13, fontWeight: 500, color: C.t1, lineHeight: 1.3 }}
-      >
-        {item.title}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          flexWrap: "wrap",
-        }}
-      >
-        <DueChip dueAt={item.dueAt} status={item.status} />
-        {source ? (
-          <span
-            style={{
-              fontFamily: mono,
-              fontSize: 10,
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-              color: C.t3,
-              border: `1px solid ${C.line}`,
-              borderRadius: 5,
-              padding: "1px 6px",
-            }}
-          >
-            {source}
-          </span>
-        ) : null}
-        {assignee ? (
-          <span style={{ fontFamily: mono, fontSize: 10.5, color: C.t3 }}>
-            @{assignee}
-          </span>
-        ) : null}
-        {item.lastActivityAt ? (
-          <span
-            style={{
-              marginLeft: "auto",
-              fontFamily: mono,
-              fontSize: 10,
-              color: C.t3,
-            }}
-          >
-            {relativeTime(item.lastActivityAt)}
-          </span>
-        ) : null}
-      </div>
-    </div>
+    <ItemCard
+      sourceType={done ? null : item.sourceType}
+      title={item.title}
+      chip={done ? null : chip}
+      note={done ? null : note}
+      live={running}
+      emphasis={
+        done
+          ? "done"
+          : running
+            ? "next"
+            : review || dueSoon
+              ? "blocked"
+              : "none"
+      }
+      onOpen={onOpen}
+    />
   );
 }
 
 export function ProjectDetailPage() {
   const assistantId = useActiveAssistantId();
   const { projectId = "" } = useParams();
+  const navigate = useNavigate();
   useActivitySync(assistantId, true);
   const isNarrow = useIsMobile();
 
   const { project } = useProject(assistantId, projectId);
   const { projects } = useProjects(assistantId);
+  const missionTitles = useMissionTitles(assistantId);
   const { items, isLoading } = useProjectWorkItems(assistantId, projectId);
   const quickAdd = useQuickAddTask(assistantId, projectId);
 
   const [draft, setDraft] = useState("");
   const [adding, setAdding] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  // Stable reference time for due-pressure emphasis (no Date.now() in render).
+  const [now] = useState(() => Date.now());
 
   const byLane = useMemo(() => {
     const map: Record<string, BoardItem[]> = {
@@ -168,12 +164,19 @@ export function ProjectDetailPage() {
     quickAdd.reset();
   };
 
-  const accentColor = project?.color ?? C.violet;
+  const missionTitle = project?.missionId
+    ? (missionTitles.get(project.missionId) ?? "Mission")
+    : null;
 
   return (
     <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
+      <HqStyle />
       <div
-        style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 22px 60px" }}
+        style={{
+          maxWidth: 1080,
+          margin: "0 auto",
+          padding: isNarrow ? "18px 16px 60px" : "24px 26px 60px",
+        }}
       >
         <Link
           to={routes.projects}
@@ -181,36 +184,30 @@ export function ProjectDetailPage() {
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            fontFamily: mono,
-            fontSize: 11.5,
-            color: C.t3,
+            fontSize: 12,
+            color: C.blueS,
             textDecoration: "none",
-            marginBottom: 16,
+            marginBottom: 14,
           }}
         >
-          <ArrowLeft size={12} /> All projects
+          ‹ Projects
         </Link>
 
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+        {/* Serif hero — emoji tile · serif title · mono category · ⟡ tag */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span
             aria-hidden
             style={{
-              width: 46,
-              height: 46,
-              borderRadius: 12,
+              width: isNarrow ? 40 : 48,
+              height: isNarrow ? 40 : 48,
+              borderRadius: isNarrow ? 11 : 13,
               display: "grid",
               placeItems: "center",
-              fontSize: 24,
+              fontSize: isNarrow ? 19 : 23,
               flexShrink: 0,
               background: project?.color
-                ? `color-mix(in srgb, ${project.color} 18%, ${C.sunken})`
+                ? `color-mix(in srgb, ${project.color} 16%, ${C.sunken})`
                 : C.sunken,
-              border: `1px solid ${
-                project?.color
-                  ? `color-mix(in srgb, ${project.color} 44%, ${C.line})`
-                  : C.line
-              }`,
             }}
           >
             {project?.emoji ?? "📁"}
@@ -218,73 +215,65 @@ export function ProjectDetailPage() {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{
-                fontFamily: serif,
-                fontSize: 30,
-                letterSpacing: "-0.5px",
-                color: C.ink,
-                lineHeight: 1.05,
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                flexWrap: "wrap",
               }}
             >
-              {project?.title ?? "…"}
-            </div>
-            {project ? (
-              <div
+              <span
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginTop: 6,
+                  fontFamily: serif,
+                  fontSize: isNarrow ? 21 : 27,
+                  lineHeight: 1.05,
+                  color: C.ink,
                 }}
               >
+                {project?.title ?? "…"}
+              </span>
+              {project?.category ? (
                 <span
                   style={{
                     fontFamily: mono,
-                    fontSize: 11,
+                    fontSize: 9,
+                    letterSpacing: "0.1em",
                     textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    color: C.t2,
-                    padding: "2px 8px",
+                    color: C.t3,
+                    background: C.sunken,
                     borderRadius: 6,
-                    background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
-                    border: `1px solid color-mix(in srgb, ${accentColor} 30%, transparent)`,
+                    padding: "3px 8px",
                   }}
                 >
                   {categoryLabel(project.category)}
                 </span>
-                {project.stats ? (
-                  <span
-                    style={{ fontFamily: mono, fontSize: 11.5, color: C.t3 }}
-                  >
-                    {project.stats.counts.open} open ·{" "}
-                    {project.stats.counts.done} done
-                  </span>
-                ) : null}
+              ) : null}
+              {project?.stats ? (
+                <span style={{ fontFamily: mono, fontSize: 10.5, color: C.t3 }}>
+                  {project.stats.counts.open} open · {project.stats.counts.done}{" "}
+                  done
+                </span>
+              ) : null}
+            </div>
+            {project ? (
+              <div style={{ marginTop: 7 }}>
+                {project.missionId ? (
+                  <MissionTag
+                    label={`${missionTitle} — open mission ›`}
+                    onClick={() =>
+                      navigate(routes.hqMission(project.missionId!))
+                    }
+                    style={{ fontSize: 11.5, padding: "4px 10px" }}
+                  />
+                ) : (
+                  <MissionTag label="Standalone" linked={false} />
+                )}
               </div>
             ) : null}
           </div>
         </div>
 
-        {/* Inline-editable context brief — the crux of the cowork model */}
-        {project ? (
-          <ProjectBrief
-            assistantId={assistantId}
-            projectId={projectId}
-            initial={project.context}
-            accent={accentColor}
-          />
-        ) : null}
-
-        {/* Project knowledge — files/links Cue reads when working any task here */}
-        {project ? (
-          <ProjectKnowledge
-            assistantId={assistantId}
-            projectId={projectId}
-            accent={accentColor}
-          />
-        ) : null}
-
         {/* Quick add */}
-        <div style={{ margin: "20px 0 6px" }}>
+        <div style={{ margin: "18px 0 6px" }}>
           {adding ? (
             <>
               <div
@@ -320,8 +309,8 @@ export function ProjectDetailPage() {
                   onClick={submitAdd}
                   disabled={quickAdd.isPending || !draft.trim()}
                   style={{
-                    fontFamily: mono,
                     fontSize: 11.5,
+                    fontWeight: 500,
                     padding: "5px 12px",
                     borderRadius: 8,
                     border: "none",
@@ -371,7 +360,7 @@ export function ProjectDetailPage() {
           )}
         </div>
 
-        {/* Board */}
+        {/* The ring-tone status board — columns on desktop, stacked on 390 */}
         {isLoading ? (
           <div style={{ fontSize: 13, color: C.t2, marginTop: 20 }}>
             Loading the project’s work…
@@ -394,47 +383,53 @@ export function ProjectDetailPage() {
         ) : (
           <div
             style={{
-              marginTop: 18,
+              marginTop: 16,
               display: "grid",
-              gap: 14,
+              gap: isNarrow ? 4 : 12,
               gridTemplateColumns: isNarrow ? "1fr" : "repeat(4, 1fr)",
               alignItems: "start",
             }}
           >
             {BOARD_LANES.map((lane) => {
               const laneItems = byLane[lane.key];
+              if (isNarrow && laneItems.length === 0) return null;
               return (
-                <div key={lane.key} style={{ display: "grid", gap: 10 }}>
+                <div key={lane.key} style={{ display: "grid", gap: 8 }}>
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 7,
-                      fontFamily: mono,
-                      fontSize: 11,
-                      letterSpacing: "0.1em",
-                      textTransform: "uppercase",
-                      color: lane.accent,
+                      margin: isNarrow ? "10px 0 0" : "0 0 1px",
                     }}
                   >
                     <span
                       aria-hidden
                       style={{
-                        width: 7,
-                        height: 7,
+                        width: 8,
+                        height: 8,
                         borderRadius: 999,
                         background: lane.accent,
                       }}
                     />
-                    {lane.label}
-                    <span style={{ color: C.t3 }}>{laneItems.length}</span>
+                    <span
+                      style={{
+                        fontFamily: mono,
+                        fontSize: 9.5,
+                        letterSpacing: "0.1em",
+                        textTransform: "uppercase",
+                        color: C.t3,
+                      }}
+                    >
+                      {lane.label} · {laneItems.length}
+                    </span>
                   </div>
                   {laneItems.length === 0 ? (
                     <div
                       style={{
                         fontSize: 11.5,
                         color: C.t3,
-                        padding: "8px 2px",
+                        padding: "6px 2px",
                         opacity: 0.7,
                       }}
                     >
@@ -442,10 +437,10 @@ export function ProjectDetailPage() {
                     </div>
                   ) : (
                     laneItems.map((it) => (
-                      <TaskCard
+                      <BoardRow
                         key={it.id}
                         item={it}
-                        accent={lane.accent}
+                        now={now}
                         onOpen={() => setOpenTaskId(it.id)}
                       />
                     ))
@@ -455,6 +450,31 @@ export function ProjectDetailPage() {
             })}
           </div>
         )}
+
+        {/* CONTEXT BRIEF + KNOWLEDGE — accent-rail panels, side by side */}
+        {project ? (
+          <div
+            style={{
+              marginTop: 18,
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+              alignItems: "start",
+            }}
+          >
+            <ProjectBrief
+              assistantId={assistantId}
+              projectId={projectId}
+              initial={project.context}
+              accent={C.blue}
+            />
+            <ProjectKnowledge
+              assistantId={assistantId}
+              projectId={projectId}
+              accent={C.violet}
+            />
+          </div>
+        ) : null}
       </div>
 
       {openTask ? (

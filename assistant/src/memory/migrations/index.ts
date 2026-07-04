@@ -286,6 +286,7 @@ export { migrateProjectsCoworkColumns } from "./288-projects-cowork-columns.js";
 export { migrateWorkItemProgressNote } from "./289-work-item-progress-note.js";
 export { migrateCreateProjectKnowledge } from "./290-project-knowledge.js";
 export { migrateCreateMissions } from "./291-missions.js";
+export { migrateCreateWorkOutputs } from "./292-work-outputs.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

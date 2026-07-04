@@ -717,26 +717,21 @@ export const routeTree = [
                     Component: ActiveAssistantGate,
                     children: [
                       {
-                        // Home IS the Command Center — the one real-time operating-
-                        // system landing that consolidates the four old surfaces
-                        // (Home feed · Mission Control · Activity · Agents-at-work)
-                        // into a single calm, prioritized vertical stream. The legacy
-                        // elevated Home (`@/home-elevated-route`) and the standalone
-                        // surfaces below redirect here; their page components stay
-                        // importable (Command Center composes the Activity sections +
-                        // Mission Control's InboundLane) but are no longer routed.
+                        // Home retired into HQ ("Home grew up. There's one
+                        // landing surface now." — Cue-HQ-Build §1). Every
+                        // old-Home module has a home on the HQ deck (Your Next
+                        // Move · Queued & scheduled · Watching · Done today),
+                        // so /home redirects like the other legacy landing
+                        // surfaces. The Command Center page component stays
+                        // importable (HQ reuses its next-move hook) but is no
+                        // longer routed.
                         path: "home",
-                        lazy: {
-                          Component: () =>
-                            import("@/pages/command-center/command-center-page").then(
-                              (m) => m.CommandCenterPage,
-                            ),
-                        },
+                        element: <Navigate to={routes.hq} replace />,
                       },
                       {
-                        // HQ — the missions deck (rings hero + needs-you +
-                        // agents-at-work). Additive this phase: Home remains
-                        // the default landing.
+                        // HQ — THE landing surface: rings hero + the folded
+                        // Home modules (next move · queued & scheduled ·
+                        // watching · done today) + agents-at-work.
                         path: "hq",
                         lazy: {
                           Component: () =>
@@ -790,37 +785,38 @@ export const routeTree = [
                             ),
                         },
                       },
-                      // ── Consolidated surfaces → Command Center (Home) ───────────────
+                      // ── Consolidated surfaces → HQ ──────────────────────────────────
                       // The founder found Home / Mission Control / Activity / Agents
-                      // redundant ("the same thing in different displays"). They now
-                      // all redirect to the one Command Center at /home. Handlers are
-                      // not deleted — every legacy URL still resolves.
+                      // redundant ("the same thing in different displays"). They — and
+                      // now Home itself — all redirect to the one landing surface at
+                      // /hq (single hop, not a chain through /home). Handlers are not
+                      // deleted — every legacy URL still resolves.
                       {
-                        // Mission Control folded into the Command Center stream.
+                        // Mission Control folded into the HQ deck.
                         path: "mission-control",
-                        element: <Navigate to={routes.home} replace />,
+                        element: <Navigate to={routes.hq} replace />,
                       },
                       {
-                        // Next-moves was a duplicate render of the Home feed.
+                        // Next-moves lives as "◆ Your next move" atop Needs-you.
                         path: "next-moves",
-                        element: <Navigate to={routes.home} replace />,
+                        element: <Navigate to={routes.hq} replace />,
                       },
                       {
-                        // The Dashboard folded into Home.
+                        // The Dashboard folded into HQ.
                         path: "dashboard",
-                        element: <Navigate to={routes.home} replace />,
+                        element: <Navigate to={routes.hq} replace />,
                       },
                       {
                         // Activity (background-work command center) folded into the
-                        // Command Center's "In motion" + "Up next" + "Done" groups.
+                        // deck's queued/needs-you/done modules.
                         path: "activity",
-                        element: <Navigate to={routes.home} replace />,
+                        element: <Navigate to={routes.hq} replace />,
                       },
                       {
-                        // Agents-at-work (live subagent fleet) folded into the Command
-                        // Center's "In motion" group.
+                        // Agents-at-work (live subagent fleet) folded into HQ's
+                        // "Agents at work" rail.
                         path: "agents",
-                        element: <Navigate to={routes.home} replace />,
+                        element: <Navigate to={routes.hq} replace />,
                       },
                       {
                         path: "meeting",

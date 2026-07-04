@@ -223,7 +223,6 @@ export function ProjectKnowledge({
   return (
     <div
       style={{
-        marginTop: 14,
         borderRadius: 12,
         border: `1px solid ${C.line}`,
         borderLeft: `3px solid ${accent}`,
@@ -243,13 +242,13 @@ export function ProjectKnowledge({
         <span
           style={{
             fontFamily: mono,
-            fontSize: 10.5,
+            fontSize: 9.5,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            color: accent,
+            color: C.t3,
           }}
         >
-          Project knowledge
+          Knowledge — Cue reads these
         </span>
         <div
           style={{

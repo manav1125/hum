@@ -27,12 +27,14 @@ import {
   missionsPostMutation,
   projectsByIdPatchMutation,
   projectsGetQueryKey,
+  schedulesGetOptions,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type {
   MissionsGetResponses,
   MissionsByIdEventsGetResponses,
   ProjectsByIdPatchData,
+  SchedulesGetResponses,
   WorkitemsGetResponses,
 } from "@/generated/daemon/types.gen";
 
@@ -43,6 +45,7 @@ export type MissionRollup = Mission["rollup"];
 export type MissionEvent =
   MissionsByIdEventsGetResponses[200]["events"][number];
 export type HqWorkItem = WorkitemsGetResponses[200]["items"][number];
+export type HqSchedule = SchedulesGetResponses[200]["schedules"][number];
 export type WorkspaceMode = "observe" | "assist" | "autonomous";
 
 const SAFETY_NET_MS = 60_000;
@@ -234,6 +237,28 @@ export function useHqWorkItems(
   });
   return {
     items: query.data?.items ?? [],
+    isLoading: query.isLoading,
+    isError: query.isError,
+    refetch: query.refetch,
+  };
+}
+
+/**
+ * Standing schedules for the "Queued & scheduled" module — enabled, live
+ * (not cancelled), soonest-firing first. Same safety-net cadence as the rest
+ * of the deck.
+ */
+export function useHqSchedules(assistantId: string) {
+  const query = useQuery({
+    ...schedulesGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 20_000,
+  });
+  const schedules = (query.data?.schedules ?? [])
+    .filter((s) => s.enabled && s.status !== "cancelled")
+    .sort((a, b) => a.nextRunAt - b.nextRunAt);
+  return {
+    schedules,
     isLoading: query.isLoading,
     isError: query.isError,
   };

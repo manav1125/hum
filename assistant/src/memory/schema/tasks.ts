@@ -95,6 +95,30 @@ export const projectKnowledge = sqliteTable("project_knowledge", {
   addedAt: integer("added_at").notNull(),
 });
 
+/**
+ * Sprint outputs — the first-class registry of deliverables produced by
+ * work-item runs (docs, decks, sheets, images, videos…). One row per
+ * deliverable, either file-backed (attachment_id) or an external pointer
+ * (external_url). mission_id/project_id are denormalized at write time from
+ * the owning work item so mission rollups are a single indexed read.
+ * References are by convention (store-enforced, no FKs), matching
+ * work_items.project_id.
+ */
+export const workOutputs = sqliteTable("work_outputs", {
+  id: text("id").primaryKey(),
+  workItemId: text("work_item_id").notNull(), // reference-by-convention to work_items.id
+  missionId: text("mission_id"), // denormalized from the work item's project at write time
+  projectId: text("project_id"), // denormalized from the work item at write time
+  attachmentId: text("attachment_id"), // set for file-backed outputs; reference-by-convention to attachments.id
+  externalUrl: text("external_url"), // set for link-backed outputs (deployed site, shared doc…)
+  kind: text("kind").notNull(), // 'document' | 'deck' | 'spreadsheet' | 'pdf' | 'image' | 'video' | 'other'
+  title: text("title").notNull(),
+  why: text("why"), // one-line "why it exists" purpose shown on the card
+  agent: text("agent"), // the assignee that produced it (null reads as "cue")
+  reviewState: text("review_state").notNull().default("pending"), // 'pending' | 'approved'
+  createdAt: integer("created_at").notNull(),
+});
+
 export const workItemEvents = sqliteTable("work_item_events", {
   id: text("id").primaryKey(),
   workItemId: text("work_item_id")

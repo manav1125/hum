@@ -1,12 +1,14 @@
 /**
- * Task detail drawer — the per-task cowork panel.
+ * Task detail drawer — the per-task cowork panel, in HQ's language.
  *
- * Slides in from the right (bottom sheet on mobile) over a project's board. It
- * carries: title + status, due + assignee, the owning project with a MOVE
- * control (PATCH projectId → another project), an editable per-task Context
- * field ("notes Cue reads before running this"), a Source section derived from
- * the task's sourceContext snapshot, a link to the run thread, the valid
- * Run / Approve / Redo actions, and the status/cycle-time event trail.
+ * Slides in from the right (bottom sheet on mobile) over a project's board.
+ * Restyled to the Cue-HQ-Build Round 5 · B2 drawer frame: a mono TASK label,
+ * the one-card-language header (source badge · title · status chip), a LIVE
+ * progress panel while the runner is working, and a "FILED TO" move control
+ * that speaks the §4 reassign-menu language (current project highlighted,
+ * sibling projects one tap away, "moving teaches Cue"). Every existing flow
+ * stays: Run / Approve / Redo, open thread, per-task context, source snapshot,
+ * and the status/cycle-time trail.
  *
  * Because the daemon's work-item PATCH requires the FULL record even for a
  * one-field change, every mutation assembles a complete body from the item
@@ -14,21 +16,21 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, ExternalLink, X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
-import { StatusPill } from "@/domains/activity/activity-row";
 import { DueChip } from "@/domains/activity/due-chip";
-import { C, mono, relativeTime, serif } from "@/domains/activity/theme";
+import { C, mono, relativeTime } from "@/domains/activity/theme";
 import {
   workitemsByIdCompletePostMutation,
   workitemsByIdEventsGetOptions,
   workitemsByIdRunPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
+import { MicroLabel } from "@/pages/hq/hq-kit";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { statusTone } from "./project-kit";
+import { ItemCard, statusChip } from "./item-card";
 import { usePatchWorkItem, type ProjectView } from "./use-projects";
 import type { BoardItem } from "./board-item";
 
@@ -86,6 +88,9 @@ function fullBody(
   };
 }
 
+/** How many sibling projects show before the "Move to another…" expander. */
+const FILED_TO_PREVIEW = 3;
+
 export function TaskDrawer({
   assistantId,
   item,
@@ -105,7 +110,7 @@ export function TaskDrawer({
 
   const [context, setContext] = useState(item.context ?? "");
   const [contextDirty, setContextDirty] = useState(false);
-  const [showMove, setShowMove] = useState(false);
+  const [showAllProjects, setShowAllProjects] = useState(false);
 
   useEffect(() => {
     setContext(item.context ?? "");
@@ -145,6 +150,7 @@ export function TaskDrawer({
   const source = parseSource(item.sourceContext);
   const cycleTime = events.data?.cycleTimeMs ?? null;
   const trail = events.data?.events ?? [];
+  const running = item.status === "running";
 
   const saveContext = () => {
     if (!contextDirty) return;
@@ -158,13 +164,19 @@ export function TaskDrawer({
   const moveTo = (projectId: string | null) => {
     patch.mutate(
       { ...pathOpts, body: fullBody(item, { projectId }) },
-      { onSuccess: () => setShowMove(false) },
+      { onSuccess: () => setShowAllProjects(false) },
     );
   };
 
+  const currentProject =
+    projects.find((p) => p.id === currentProjectId) ?? null;
   const otherProjects = projects.filter(
     (p) => p.id !== currentProjectId && p.status === "active",
   );
+  const visibleOthers = showAllProjects
+    ? otherProjects
+    : otherProjects.slice(0, FILED_TO_PREVIEW);
+  const hiddenCount = otherProjects.length - visibleOthers.length;
 
   return (
     <div
@@ -201,13 +213,10 @@ export function TaskDrawer({
             alignItems: "center",
             justifyContent: "space-between",
             gap: 10,
-            marginBottom: 14,
+            marginBottom: 12,
           }}
         >
-          <StatusPill
-            label={item.status.replace(/_/g, " ")}
-            tone={statusTone(item.status)}
-          />
+          <MicroLabel>Task</MicroLabel>
           <button
             type="button"
             aria-label="Close"
@@ -221,48 +230,70 @@ export function TaskDrawer({
               borderRadius: 6,
             }}
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
-        <div
-          style={{
-            fontFamily: serif,
-            fontSize: 24,
-            lineHeight: 1.15,
-            letterSpacing: "-0.3px",
-            color: C.ink,
-          }}
-        >
-          {item.title}
-        </div>
+        {/* The one-card-language header: badge · title · status chip. */}
+        <ItemCard
+          flat
+          sourceType={item.sourceType}
+          title={item.title}
+          titleSize={15.5}
+          chip={statusChip(item.status)}
+          live={running}
+        />
 
-        {/* Meta row: due + assignee */}
+        {/* Meta row: due + assignee + last activity */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 10,
-            marginTop: 12,
+            marginTop: 10,
             flexWrap: "wrap",
           }}
         >
           <DueChip dueAt={item.dueAt} status={item.status} />
-          <span style={{ fontFamily: mono, fontSize: 11.5, color: C.t3 }}>
+          <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
             {item.assignee && item.assignee !== "cue"
               ? `assignee · ${item.assignee}`
               : "assignee · Cue"}
           </span>
           {item.lastActivityAt ? (
-            <span style={{ fontFamily: mono, fontSize: 11.5, color: C.t3 }}>
+            <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
               active {relativeTime(item.lastActivityAt)}
             </span>
           ) : null}
         </div>
 
+        {/* LIVE — the runner's progress note, agents-at-work style */}
+        {running ? (
+          <div
+            style={{
+              background: C.sunken,
+              borderRadius: 10,
+              padding: "11px 12px",
+              marginTop: 12,
+            }}
+          >
+            <MicroLabel style={{ fontSize: 9 }}>Live</MicroLabel>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: C.blueS,
+                marginTop: 6,
+                lineHeight: 1.5,
+              }}
+            >
+              {item.lastProgressNote ?? "Cue is working on this…"}
+            </div>
+          </div>
+        ) : null}
+
         {/* Actions */}
         <div
-          style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}
+          style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}
         >
           {(item.status === "queued" || item.status === "pending") && (
             <ActionBtn
@@ -307,77 +338,135 @@ export function TaskDrawer({
           ) : null}
         </div>
 
-        {/* Project + move */}
-        <Section label="Project">
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 13, color: C.t1 }}>
-              {projects.find((p) => p.id === currentProjectId)
-                ? `${projects.find((p) => p.id === currentProjectId)!.emoji ?? "📁"} ${projects.find((p) => p.id === currentProjectId)!.title}`
-                : "This project"}
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowMove((v) => !v)}
-              disabled={patch.isPending}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                marginLeft: "auto",
-                fontFamily: mono,
-                fontSize: 11,
-                padding: "4px 9px",
-                borderRadius: 7,
-                border: `1px solid ${C.line2}`,
-                background: "transparent",
-                color: C.t2,
-                cursor: "pointer",
-              }}
-            >
-              <ArrowRightLeft size={11} /> Move
-            </button>
-          </div>
-          {showMove ? (
+        {/* FILED TO — the §4 reassign-menu language: tap a row to re-file */}
+        <Section label="Filed to">
+          <div
+            style={{
+              border: `1px solid ${C.line}`,
+              borderRadius: 11,
+              overflow: "hidden",
+              opacity: patch.isPending ? 0.6 : 1,
+            }}
+          >
             <div
               style={{
-                marginTop: 8,
-                display: "grid",
-                gap: 4,
-                maxHeight: 200,
-                overflowY: "auto",
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "10px 12px",
+                background: `color-mix(in srgb, ${C.blue} 13%, transparent)`,
               }}
             >
-              {otherProjects.length === 0 ? (
-                <div style={{ fontSize: 12, color: C.t3 }}>
-                  No other projects to move to.
-                </div>
-              ) : (
-                otherProjects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => moveTo(p.id)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "7px 10px",
-                      borderRadius: 8,
-                      border: `1px solid ${C.line}`,
-                      background: C.bg,
-                      color: C.t1,
-                      fontSize: 13,
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <span>{p.emoji ?? "📁"}</span>
-                    {p.title}
-                  </button>
-                ))
-              )}
+              <span aria-hidden style={{ fontSize: 14 }}>
+                {currentProject?.emoji ?? "📁"}
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: C.t1,
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {currentProject?.title ?? "This project"}
+              </span>
+              <span aria-hidden style={{ fontSize: 11, color: C.blueS }}>
+                ✓
+              </span>
             </div>
-          ) : null}
+            {visibleOthers.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                disabled={patch.isPending}
+                onClick={() => moveTo(p.id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderTop: `1px solid ${C.line}`,
+                  borderLeft: "none",
+                  borderRight: "none",
+                  borderBottom: "none",
+                  background: "transparent",
+                  color: C.t2,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span aria-hidden style={{ fontSize: 14 }}>
+                  {p.emoji ?? "📁"}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {p.title}
+                </span>
+              </button>
+            ))}
+            {otherProjects.length === 0 ? (
+              <div
+                style={{
+                  padding: "9px 12px",
+                  borderTop: `1px solid ${C.line}`,
+                  background: C.sunken,
+                  fontSize: 11,
+                  color: C.t3,
+                }}
+              >
+                No other projects to move to.
+              </div>
+            ) : hiddenCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllProjects(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  width: "100%",
+                  padding: "9px 12px",
+                  borderTop: `1px solid ${C.line}`,
+                  borderLeft: "none",
+                  borderRight: "none",
+                  borderBottom: "none",
+                  background: C.sunken,
+                  color: C.t3,
+                  fontSize: 11,
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  Move to another project… ({hiddenCount} more)
+                </span>
+                <span aria-hidden>›</span>
+              </button>
+            ) : null}
+          </div>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: C.t3,
+              marginTop: 8,
+              lineHeight: 1.5,
+            }}
+          >
+            Moving teaches Cue — same rule as re-filing inbound on HQ.
+          </div>
         </Section>
 
         {/* Per-task context */}
@@ -415,7 +504,7 @@ export function TaskDrawer({
               color: C.t3,
             }}
           >
-            <span style={{ color: C.violet }}>▸</span>
+            <span style={{ color: C.blue }}>▸</span>
             {contextDirty
               ? "Unsaved — click away or press save."
               : patch.isPending
@@ -517,7 +606,7 @@ export function TaskDrawer({
                       width: 6,
                       height: 6,
                       borderRadius: 999,
-                      background: C.violet,
+                      background: C.blue,
                       flexShrink: 0,
                     }}
                   />
@@ -569,11 +658,11 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginTop: 22 }}>
+    <div style={{ marginTop: 20 }}>
       <div
         style={{
           fontFamily: mono,
-          fontSize: 10.5,
+          fontSize: 9.5,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
           color: C.t3,
@@ -615,9 +704,9 @@ function ActionBtn({
         borderRadius: 9,
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.55 : 1,
-        border: primary ? `1px solid ${C.blue}` : `1px solid ${C.line2}`,
-        background: primary ? C.blue : C.surface,
-        color: primary ? "#fff" : C.t1,
+        border: primary ? "none" : `1px solid ${C.line2}`,
+        background: primary ? C.ink : C.sunken,
+        color: primary ? C.bg : C.t2,
       }}
     >
       {icon}

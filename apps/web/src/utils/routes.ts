@@ -90,8 +90,10 @@ export const routes = {
     hatching: r("/assistant/onboarding/hatching"),
   },
 
+  // Legacy landing — redirects to HQ ("Home grew up. There's one landing
+  // surface now."). Kept so captured URLs and old links still resolve.
   home: r("/assistant/home"),
-  // HQ — the missions deck (phase 1 additive; Home stays the default landing).
+  // HQ — THE landing surface: the rings deck with the folded Home modules.
   hq: r("/assistant/hq"),
   hqMission: (id: string) => dyn(r("/assistant/hq"), id),
   projects: r("/assistant/projects"),

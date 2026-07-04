@@ -2,7 +2,6 @@ import {
   Clock,
   Hash,
   FolderKanban,
-  Home,
   LayoutGrid,
   Mic,
   Pin,
@@ -133,9 +132,10 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  * (see design/surfaces/Memory.dc.html + CueLive.dc.html):
  *
  *   Header · primary rail
- *     • Home        → the command center (feed + query bar + glanceable
- *                       template widgets; the dashboard folded in here)
- *     • Activity    → background-work command center
+ *     • HQ          → the one landing surface (rings deck; the old Home's
+ *                       modules — next move, queued & scheduled, watching,
+ *                       done today — folded in here)
+ *     • Projects / Create / Voice
  *     • Intelligence → Identity hub (holds its own tab bar: Connectors,
  *                       Channels, Agents, Cue Live, Skills, Memory, Workspace)
  *     • Library
@@ -515,38 +515,34 @@ export function AssistantSideMenu({
           </div>
         ) : null}
         {/*
-          The clean rail: Home · Create · Intelligence · Library · People.
-          "Chat" is the conversation-thread list below (labeled in the body).
-          People opens the relationship dossier (/people).
+          The clean rail: HQ · Projects · Create · Voice · Intelligence ·
+          Library · People. "Chat" is the conversation-thread list below
+          (labeled in the body). People opens the relationship dossier
+          (/people).
 
-          Home IS the Command Center — the one real-time operating-system
-          landing. The four old surfaces (Home feed · Mission Control · Activity
-          · Agents-at-work) collapsed into this single primary item; all four
-          legacy routes now redirect to /home, so the rail carries one entry, not
-          four "same thing in different displays" duplicates.
+          HQ IS the one landing surface ("Home grew up. There's one landing
+          surface now." — Cue-HQ-Build §1). The old Home row retired into it:
+          every old-Home module has a home on the HQ deck (Your Next Move ·
+          Queued & scheduled · Watching · Done today). /home and the four
+          legacy surfaces (Mission Control · Activity · Agents · Next-moves)
+          all redirect to /hq, so the rail carries one entry — never a
+          duplicate landing row.
 
-          The Dashboard folded into Home; Workspace, Connections (channel setup),
-          Memory, Connectors live as Intelligence tabs; Meeting = a Home action;
+          The Dashboard folded into HQ; Workspace, Connections (channel setup),
+          Memory, Connectors live as Intelligence tabs; Meeting stays routable;
           Trust = a link on People. (See docblock.)
         */}
         <SideMenu.Item
-          icon={Home}
-          label="Home"
+          icon={Target}
+          label="HQ"
           showCollapsedTooltip
           active={
+            location.pathname.includes("/hq") ||
             location.pathname.endsWith("/home") ||
             location.pathname.endsWith("/mission-control") ||
             location.pathname.endsWith("/activity") ||
             location.pathname.endsWith("/agents")
           }
-          onSelect={() => cueNav("/assistant/home")}
-        />
-        {/* HQ — the missions deck (rings). Additive this phase: Home stays. */}
-        <SideMenu.Item
-          icon={Target}
-          label="HQ"
-          showCollapsedTooltip
-          active={location.pathname.includes("/hq")}
           onSelect={() => cueNav("/assistant/hq")}
         />
         <SideMenu.Item

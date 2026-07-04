@@ -21466,6 +21466,134 @@ paths:
           schema:
             type: integer
           description: Max events to return (default 200, cap 1000)
+  /v1/missions/{id}/outputs:
+    get:
+      operationId: missions_by_id_outputs_get
+      summary: List a mission's sprint outputs
+      description:
+        Deliverables produced by work-item runs across the mission's initiative projects, newest first — the
+        Mission-detail artifact cards.
+      tags:
+        - outputs
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  outputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        workItemId:
+                          type: string
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Denormalized at capture from the work item's project
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        attachmentId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for file-backed outputs; bytes via the attachment routes
+                        externalUrl:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for link-backed outputs (deployed site, shared doc…)
+                        kind:
+                          type: string
+                          enum:
+                            - document
+                            - deck
+                            - spreadsheet
+                            - pdf
+                            - image
+                            - video
+                            - other
+                        title:
+                          type: string
+                        why:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: One-line "why it exists" purpose shown on the card
+                        agent:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The assignee that produced it; null reads as "cue"
+                        reviewState:
+                          type: string
+                          enum:
+                            - pending
+                            - approved
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        attachment:
+                          anyOf:
+                            - type: object
+                              properties:
+                                id:
+                                  type: string
+                                filename:
+                                  type: string
+                                mimeType:
+                                  type: string
+                                sizeBytes:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                hasThumbnail:
+                                  type: boolean
+                                  description: True when a stored thumbnail exists (videos)
+                              required:
+                                - id
+                                - filename
+                                - mimeType
+                                - sizeBytes
+                                - hasThumbnail
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            "Render metadata for file-backed outputs: images/PDFs render client-side from the attachment content route;
+                            other kinds get kind icons"
+                      required:
+                        - id
+                        - workItemId
+                        - missionId
+                        - projectId
+                        - attachmentId
+                        - externalUrl
+                        - kind
+                        - title
+                        - why
+                        - agent
+                        - reviewState
+                        - createdAt
+                        - attachment
+                      additionalProperties: false
+                required:
+                  - outputs
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/missions/{id}/run-cycle:
     post:
       operationId: missions_by_id_runcycle_post
@@ -22641,6 +22769,272 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/outputs:
+    get:
+      operationId: outputs_get
+      summary: List recent outputs across all work
+      description: Newest-first deliverables across every mission and project — the daily brief's "Cue made these" rail.
+      tags:
+        - outputs
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  outputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        workItemId:
+                          type: string
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Denormalized at capture from the work item's project
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        attachmentId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for file-backed outputs; bytes via the attachment routes
+                        externalUrl:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for link-backed outputs (deployed site, shared doc…)
+                        kind:
+                          type: string
+                          enum:
+                            - document
+                            - deck
+                            - spreadsheet
+                            - pdf
+                            - image
+                            - video
+                            - other
+                        title:
+                          type: string
+                        why:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: One-line "why it exists" purpose shown on the card
+                        agent:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The assignee that produced it; null reads as "cue"
+                        reviewState:
+                          type: string
+                          enum:
+                            - pending
+                            - approved
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        attachment:
+                          anyOf:
+                            - type: object
+                              properties:
+                                id:
+                                  type: string
+                                filename:
+                                  type: string
+                                mimeType:
+                                  type: string
+                                sizeBytes:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                hasThumbnail:
+                                  type: boolean
+                                  description: True when a stored thumbnail exists (videos)
+                              required:
+                                - id
+                                - filename
+                                - mimeType
+                                - sizeBytes
+                                - hasThumbnail
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            "Render metadata for file-backed outputs: images/PDFs render client-side from the attachment content route;
+                            other kinds get kind icons"
+                      required:
+                        - id
+                        - workItemId
+                        - missionId
+                        - projectId
+                        - attachmentId
+                        - externalUrl
+                        - kind
+                        - title
+                        - why
+                        - agent
+                        - reviewState
+                        - createdAt
+                        - attachment
+                      additionalProperties: false
+                required:
+                  - outputs
+                additionalProperties: false
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max outputs to return (default 50, cap 200)
+  /v1/outputs/{id}:
+    patch:
+      operationId: outputs_by_id_patch
+      summary: Update an output's review state
+      description: "The artifact card's Approve action: flip reviewState to approved (or back to pending)."
+      tags:
+        - outputs
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  output:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      workItemId:
+                        type: string
+                      missionId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Denormalized at capture from the work item's project
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      attachmentId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Set for file-backed outputs; bytes via the attachment routes
+                      externalUrl:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Set for link-backed outputs (deployed site, shared doc…)
+                      kind:
+                        type: string
+                        enum:
+                          - document
+                          - deck
+                          - spreadsheet
+                          - pdf
+                          - image
+                          - video
+                          - other
+                      title:
+                        type: string
+                      why:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: One-line "why it exists" purpose shown on the card
+                      agent:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The assignee that produced it; null reads as "cue"
+                      reviewState:
+                        type: string
+                        enum:
+                          - pending
+                          - approved
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      attachment:
+                        anyOf:
+                          - type: object
+                            properties:
+                              id:
+                                type: string
+                              filename:
+                                type: string
+                              mimeType:
+                                type: string
+                              sizeBytes:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              hasThumbnail:
+                                type: boolean
+                                description: True when a stored thumbnail exists (videos)
+                            required:
+                              - id
+                              - filename
+                              - mimeType
+                              - sizeBytes
+                              - hasThumbnail
+                            additionalProperties: false
+                          - type: "null"
+                        description:
+                          "Render metadata for file-backed outputs: images/PDFs render client-side from the attachment content route;
+                          other kinds get kind icons"
+                    required:
+                      - id
+                      - workItemId
+                      - missionId
+                      - projectId
+                      - attachmentId
+                      - externalUrl
+                      - kind
+                      - title
+                      - why
+                      - agent
+                      - reviewState
+                      - createdAt
+                      - attachment
+                    additionalProperties: false
+                required:
+                  - output
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewState:
+                  type: string
+                  enum:
+                    - pending
+                    - approved
+              required:
+                - reviewState
+              additionalProperties: false
   /v1/pages/{appId}:
     get:
       operationId: pages_by_appId_get
@@ -32713,6 +33107,132 @@ paths:
                   - id
                   - success
                   - output
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/work-items/{id}/outputs:
+    get:
+      operationId: workitems_by_id_outputs_get
+      summary: List a work item's outputs
+      description: Deliverables registered from the work item's completed runs, newest first.
+      tags:
+        - outputs
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  outputs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        workItemId:
+                          type: string
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Denormalized at capture from the work item's project
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        attachmentId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for file-backed outputs; bytes via the attachment routes
+                        externalUrl:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for link-backed outputs (deployed site, shared doc…)
+                        kind:
+                          type: string
+                          enum:
+                            - document
+                            - deck
+                            - spreadsheet
+                            - pdf
+                            - image
+                            - video
+                            - other
+                        title:
+                          type: string
+                        why:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: One-line "why it exists" purpose shown on the card
+                        agent:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The assignee that produced it; null reads as "cue"
+                        reviewState:
+                          type: string
+                          enum:
+                            - pending
+                            - approved
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        attachment:
+                          anyOf:
+                            - type: object
+                              properties:
+                                id:
+                                  type: string
+                                filename:
+                                  type: string
+                                mimeType:
+                                  type: string
+                                sizeBytes:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                hasThumbnail:
+                                  type: boolean
+                                  description: True when a stored thumbnail exists (videos)
+                              required:
+                                - id
+                                - filename
+                                - mimeType
+                                - sizeBytes
+                                - hasThumbnail
+                              additionalProperties: false
+                            - type: "null"
+                          description:
+                            "Render metadata for file-backed outputs: images/PDFs render client-side from the attachment content route;
+                            other kinds get kind icons"
+                      required:
+                        - id
+                        - workItemId
+                        - missionId
+                        - projectId
+                        - attachmentId
+                        - externalUrl
+                        - kind
+                        - title
+                        - why
+                        - agent
+                        - reviewState
+                        - createdAt
+                        - attachment
+                      additionalProperties: false
+                required:
+                  - outputs
                 additionalProperties: false
       parameters:
         - name: id

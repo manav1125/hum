@@ -1,131 +1,162 @@
 /**
- * Projects home — the cowork surface's front door.
+ * Projects home — the cowork surface's front door, in HQ's language.
  *
- * Projects are shown as cards grouped by category (Personal / Professional /
- * Other / Uncategorized), with pinned projects floating into a "Pinned" band at
- * the very top. Each card carries the project's per-status task tally (straight
- * off the daemon's stats endpoint), the single most-urgent next task, a subtle
- * progress bar, and a pin toggle. Clicking a card opens the project board.
+ * Restyled to the locked Cue-HQ-Build Round 5 · B1 frames: a serif hero under
+ * an "INITIATIVES & AREAS · N ACTIVE" microlabel, HQ card DNA on the project
+ * cards (emoji tile · sans title · mono category microlabel), a ⟡ mission tag
+ * on every mission-linked project ("Standalone" otherwise), mono status-tally
+ * chips, a "Next:" footer with an urgency dot, a 📌 PINNED band, and the
+ * editorial empty state. Same grid, same grouping, same functionality —
+ * a restyle, not a redesign.
  */
 
-import { FolderKanban, Pin, Plus } from "lucide-react";
+import { Pin, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { GroupHeader } from "@/domains/activity/group-header";
 import { C, mono, relativeTime, serif } from "@/domains/activity/theme";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { HqStyle, MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
+import { MissionTag } from "./item-card";
 import { NewProjectModal } from "./new-project-modal";
 import {
   CATEGORY_LABEL,
   CATEGORY_ORDER,
   categoryBucket,
+  categoryLabel,
   type CategoryKey,
 } from "./project-kit";
-import { useProjects, usePatchProject, type ProjectView } from "./use-projects";
+import {
+  useMissionTitles,
+  usePatchProject,
+  useProjects,
+  type ProjectView,
+} from "./use-projects";
 
-function ProgressBar({
-  done,
-  total,
-  accent,
+/** Mono tally chip ("4 IN PROGRESS") in ring-tone hues. */
+function TallyChip({
+  label,
+  color,
+  wash = false,
 }: {
-  done: number;
-  total: number;
-  accent: string;
+  label: string;
+  color: string;
+  wash?: boolean;
 }) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
-    <div
-      aria-label={`${pct}% done`}
+    <span
       style={{
-        height: 4,
-        borderRadius: 999,
-        background: C.sunken,
-        overflow: "hidden",
-        marginTop: 12,
+        fontFamily: mono,
+        fontSize: 9,
+        letterSpacing: "0.04em",
+        color,
+        background: wash
+          ? `color-mix(in srgb, ${color} 12%, transparent)`
+          : C.sunken,
+        borderRadius: 6,
+        padding: "3px 7px",
+        whiteSpace: "nowrap",
       }}
     >
-      <div
-        style={{
-          width: `${pct}%`,
-          height: "100%",
-          background: accent,
-          borderRadius: 999,
-          transition: "width 240ms",
-        }}
-      />
-    </div>
+      {label}
+    </span>
   );
 }
 
-function TallyBits({ p }: { p: ProjectView }) {
+function tallyChips(p: ProjectView): Array<{
+  label: string;
+  color: string;
+  wash: boolean;
+}> {
   const c = p.stats?.counts;
-  const bits: Array<{ label: string; tone: string }> = [];
-  if (c) {
-    if (c.queued > 0) bits.push({ label: `${c.queued} queued`, tone: C.amber });
-    if (c.running > 0)
-      bits.push({ label: `${c.running} running`, tone: C.blue });
-    if (c.awaiting_review > 0)
-      bits.push({ label: `${c.awaiting_review} review`, tone: C.violet });
-    if (c.done > 0) bits.push({ label: `${c.done} done`, tone: C.green });
-  }
-  if (bits.length === 0) {
-    return (
-      <span style={{ fontFamily: mono, fontSize: 11.5, color: C.t3 }}>
-        nothing filed yet
-      </span>
-    );
-  }
-  return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      {bits.map((b) => (
-        <span
-          key={b.label}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 5,
-            fontFamily: mono,
-            fontSize: 11.5,
-            color: C.t2,
-          }}
-        >
-          <span
-            aria-hidden
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 999,
-              background: b.tone,
-            }}
-          />
-          {b.label}
-        </span>
-      ))}
-    </div>
-  );
+  if (!c) return [];
+  const chips: Array<{ label: string; color: string; wash: boolean }> = [];
+  if (c.queued > 0)
+    chips.push({ label: `${c.queued} QUEUED`, color: C.amber, wash: false });
+  if (c.running > 0)
+    chips.push({
+      label: `${c.running} IN PROGRESS`,
+      color: C.blueS,
+      wash: false,
+    });
+  if (c.awaiting_review > 0)
+    chips.push({
+      label: `${c.awaiting_review} REVIEW`,
+      color: C.amber,
+      wash: true,
+    });
+  if (c.done > 0)
+    chips.push({ label: `${c.done} DONE`, color: C.green, wash: true });
+  return chips;
+}
+
+/** The footer line's honest urgency: what the dot + emphasis mean. */
+function nextTone(p: ProjectView, now: number): string {
+  const c = p.stats?.counts;
+  const next = p.stats?.nextTask ?? null;
+  if (next?.dueAt != null && next.dueAt <= now + 24 * 3_600_000)
+    return C.danger;
+  if ((c?.awaiting_review ?? 0) > 0) return C.amber;
+  if ((c?.running ?? 0) > 0) return C.blue;
+  if (next) return C.t3;
+  if ((c?.done ?? 0) > 0) return C.green;
+  return C.t3;
 }
 
 /**
  * Exported for reuse by the HQ mission-detail page, where linked projects
  * render as a mission's initiatives with the exact same card language.
  * `onTogglePin` is optional there — the pin affordance hides when absent.
+ * `missionTitle`/`onOpenMission` drive the ⟡ tag; when the tag is implied by
+ * the surface (mission detail) simply omit `missionTitle`.
  */
 export function ProjectCard({
   project,
   onOpen,
   onTogglePin,
   pinBusy = false,
+  missionTitle,
+  onOpenMission,
+  now,
 }: {
   project: ProjectView;
   onOpen: () => void;
   onTogglePin?: () => void;
   pinBusy?: boolean;
+  missionTitle?: string | null;
+  onOpenMission?: () => void;
+  /** Stable reference time (no Date.now() in render); defaults to createdAt. */
+  now?: number;
 }) {
+  const compact = useIsMobile();
+  const refNow = now ?? project.updatedAt;
   const next = project.stats?.nextTask ?? null;
   const counts = project.stats?.counts;
+  const tone = nextTone(project, refNow);
+  const urgent = tone === C.danger;
+  const chips = tallyChips(project);
+  const category = project.category
+    ? categoryLabel(project.category).toUpperCase()
+    : null;
+
+  const tagRow =
+    project.missionId && missionTitle ? (
+      <MissionTag
+        label={missionTitle}
+        onClick={onOpenMission}
+        style={{ marginTop: compact ? 0 : 11 }}
+      />
+    ) : project.missionId ? null : (
+      <MissionTag
+        label="Standalone"
+        linked={false}
+        style={{ marginTop: compact ? 0 : 11 }}
+      />
+    );
+
   return (
     <div
       role="button"
@@ -139,10 +170,13 @@ export function ProjectCard({
       }}
       style={{
         position: "relative",
-        padding: "16px 18px",
-        border: `1px solid ${C.line}`,
-        borderRadius: 14,
+        padding: compact ? "13px 14px" : "16px 17px",
+        border: urgent ? `1.5px solid ${C.blue}` : `1px solid ${C.line}`,
+        borderRadius: compact ? 14 : 15,
         background: C.surface,
+        boxShadow: urgent
+          ? `0 20px 44px -28px color-mix(in srgb, ${C.blue} 50%, transparent)`
+          : "none",
         cursor: "pointer",
         color: C.ink,
         textAlign: "left",
@@ -152,16 +186,15 @@ export function ProjectCard({
         <span
           aria-hidden
           style={{
-            width: 38,
-            height: 38,
-            borderRadius: 10,
+            width: compact ? 36 : 40,
+            height: compact ? 36 : 40,
+            borderRadius: compact ? 10 : 11,
             display: "grid",
             placeItems: "center",
-            fontSize: 19,
+            fontSize: compact ? 17 : 19,
             background: project.color
               ? `color-mix(in srgb, ${project.color} 16%, ${C.sunken})`
               : C.sunken,
-            border: `1px solid ${project.color ? `color-mix(in srgb, ${project.color} 40%, ${C.line})` : C.line}`,
             flexShrink: 0,
           }}
         >
@@ -170,9 +203,10 @@ export function ProjectCard({
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
-              fontFamily: serif,
-              fontSize: 19,
-              letterSpacing: "-0.2px",
+              fontSize: compact ? 13.5 : 14.5,
+              fontWeight: 600,
+              lineHeight: 1.2,
+              color: C.t1,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -180,9 +214,22 @@ export function ProjectCard({
           >
             {project.title}
           </div>
-          <div style={{ marginTop: 6 }}>
-            <TallyBits p={project} />
-          </div>
+          {compact ? (
+            <div style={{ marginTop: 3 }}>{tagRow}</div>
+          ) : category ? (
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 9,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: C.t3,
+                marginTop: 3,
+              }}
+            >
+              {category}
+            </div>
+          ) : null}
         </div>
         {onTogglePin ? (
           <button
@@ -196,68 +243,104 @@ export function ProjectCard({
             }}
             style={{
               flexShrink: 0,
-              width: 28,
-              height: 28,
-              borderRadius: 8,
+              width: 26,
+              height: 26,
+              borderRadius: 7,
               display: "grid",
               placeItems: "center",
-              border: `1px solid ${project.pinned ? C.violet : C.line}`,
-              background: project.pinned
-                ? `color-mix(in srgb, ${C.violet} 14%, transparent)`
-                : "transparent",
-              color: project.pinned ? C.violet : C.t3,
+              border: "none",
+              background: "transparent",
+              color: project.pinned ? C.amber : C.t3,
+              opacity: project.pinned ? 1 : 0.4,
               cursor: pinBusy ? "default" : "pointer",
-              opacity: pinBusy ? 0.5 : 1,
             }}
           >
-            <Pin size={14} fill={project.pinned ? "currentColor" : "none"} />
+            <Pin size={13} fill={project.pinned ? "currentColor" : "none"} />
           </button>
         ) : null}
       </div>
 
-      {next ? (
+      {!compact ? tagRow : null}
+
+      {!compact && chips.length > 0 ? (
         <div
-          style={{
-            marginTop: 12,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 12.5,
-            color: C.t2,
-          }}
+          style={{ display: "flex", gap: 6, marginTop: 11, flexWrap: "wrap" }}
         >
-          <span style={{ color: C.violet, flexShrink: 0 }}>▸</span>
-          <span
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Next: {next.title}
-          </span>
-          {next.dueAt ? (
-            <span
-              style={{
-                fontFamily: mono,
-                fontSize: 10.5,
-                color: C.t3,
-                flexShrink: 0,
-              }}
-            >
-              {relativeTime(next.dueAt)}
-            </span>
-          ) : null}
+          {chips.map((chip) => (
+            <TallyChip key={chip.label} {...chip} />
+          ))}
         </div>
       ) : null}
 
-      {counts && counts.total > 0 ? (
-        <ProgressBar
-          done={counts.done}
-          total={counts.total}
-          accent={project.color ?? C.green}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          fontSize: compact ? 11.5 : 12,
+          color: C.t2,
+          marginTop: compact ? 10 : 11,
+          paddingTop: compact ? 10 : 11,
+          borderTop: `1px solid ${C.line}`,
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: compact ? 5 : 6,
+            height: compact ? 5 : 6,
+            borderRadius: 999,
+            background: tone,
+            flexShrink: 0,
+          }}
         />
-      ) : null}
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {next ? (
+            <>
+              Next: {next.title}
+              {next.dueAt != null ? (
+                <b style={{ fontWeight: 600, color: urgent ? C.danger : C.t2 }}>
+                  {" "}
+                  ·{" "}
+                  {next.dueAt < refNow
+                    ? "overdue"
+                    : (relativeTime(next.dueAt)?.replace(/^in /, "due in ") ??
+                      "due")}
+                </b>
+              ) : null}
+            </>
+          ) : (counts?.done ?? 0) > 0 ? (
+            "Quiet · nothing due"
+          ) : (
+            "Nothing filed yet"
+          )}
+        </span>
+        {compact && counts ? (
+          <span style={{ fontFamily: mono, fontSize: 8.5, color: C.t3 }}>
+            {counts.queued + counts.running}·{counts.awaiting_review}·
+            {counts.done}
+          </span>
+        ) : (
+          <span
+            style={{
+              color: C.blueS,
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+              fontSize: 12,
+            }}
+          >
+            Open ›
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -265,10 +348,15 @@ export function ProjectCard({
 export function ProjectsPage() {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
+  const isNarrow = useIsMobile();
   const { projects, isLoading, isError } = useProjects(assistantId);
+  const missionTitles = useMissionTitles(assistantId);
   const patch = usePatchProject(assistantId);
   const [showNew, setShowNew] = useState(false);
   const [pinBusyId, setPinBusyId] = useState<string | null>(null);
+  // Stable reference time for due-urgency (react purity: no Date.now() in
+  // render) — lazily initialized once per mount.
+  const [now] = useState(() => Date.now());
 
   const active = useMemo(
     () => projects.filter((p) => p.status === "active"),
@@ -277,9 +365,8 @@ export function ProjectsPage() {
 
   const pinned = useMemo(() => active.filter((p) => p.pinned), [active]);
 
-  // Group non-pinned actives by category bucket. Pinned projects still appear
-  // in their category group too? No — they float to the top band only, to keep
-  // the "pinned" affordance meaningful.
+  // Group non-pinned actives by category bucket. Pinned projects float to the
+  // top band only, to keep the "pinned" affordance meaningful.
   const grouped = useMemo(() => {
     const map = new Map<CategoryKey, ProjectView[]>();
     for (const p of active) {
@@ -310,8 +397,10 @@ export function ProjectsPage() {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-        gap: 12,
+        gridTemplateColumns: isNarrow
+          ? "1fr"
+          : "repeat(auto-fill, minmax(280px, 1fr))",
+        gap: isNarrow ? 9 : 14,
       }}
     >
       {items.map((p) => (
@@ -319,6 +408,15 @@ export function ProjectsPage() {
           key={p.id}
           project={p}
           pinBusy={pinBusyId === p.id}
+          now={now}
+          missionTitle={
+            p.missionId ? (missionTitles.get(p.missionId) ?? null) : null
+          }
+          onOpenMission={
+            p.missionId
+              ? () => navigate(routes.hqMission(p.missionId!))
+              : undefined
+          }
           onOpen={() => navigate(routes.project(p.id))}
           onTogglePin={() => togglePin(p)}
         />
@@ -328,43 +426,75 @@ export function ProjectsPage() {
 
   return (
     <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
+      <HqStyle />
       <div
-        style={{ maxWidth: 1000, margin: "0 auto", padding: "34px 22px 60px" }}
+        style={{
+          maxWidth: 1000,
+          margin: "0 auto",
+          padding: isNarrow ? "20px 16px 60px" : "30px 26px 60px",
+        }}
       >
+        {/* Serif hero under the mono microlabel — the B1 frame. */}
         <div
           style={{
             display: "flex",
-            alignItems: "flex-start",
+            alignItems: "flex-end",
             justifyContent: "space-between",
             gap: 12,
-            marginBottom: 4,
           }}
         >
-          <GroupHeader
-            kicker="Projects"
-            title="Where Cue keeps your work."
-            accent={C.violet}
-            hint="Each project carries a brief Cue reads before working any task inside it."
-          />
+          <div>
+            <MicroLabel>
+              Initiatives &amp; areas · {active.length} active
+            </MicroLabel>
+            <div
+              style={{
+                fontFamily: serif,
+                fontSize: isNarrow ? 27 : 34,
+                lineHeight: 1.05,
+                color: C.ink,
+                marginTop: 6,
+              }}
+            >
+              Projects
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => setShowNew(true)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              flexShrink: 0,
-              fontFamily: mono,
-              fontSize: 12,
-              padding: "9px 15px",
-              borderRadius: 10,
-              border: "none",
-              background: C.ink,
-              color: C.bg,
-              cursor: "pointer",
-            }}
+            aria-label="New project"
+            style={
+              isNarrow
+                ? {
+                    width: 32,
+                    height: 32,
+                    borderRadius: 999,
+                    display: "grid",
+                    placeItems: "center",
+                    border: `1px solid ${C.line}`,
+                    background: C.surface,
+                    color: C.t1,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }
+                : {
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    flexShrink: 0,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    padding: "8px 14px",
+                    borderRadius: 9,
+                    border: "none",
+                    background: C.ink,
+                    color: C.bg,
+                    cursor: "pointer",
+                  }
+            }
           >
-            <Plus size={14} /> New project
+            <Plus size={14} />
+            {isNarrow ? null : "New project"}
           </button>
         </div>
 
@@ -379,16 +509,16 @@ export function ProjectsPage() {
         ) : active.length === 0 ? (
           <EmptyState onCreate={() => setShowNew(true)} />
         ) : (
-          <div style={{ marginTop: 22, display: "grid", gap: 30 }}>
+          <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
             {pinned.length > 0 ? (
               <section>
-                <BandHeader label="Pinned" icon />
+                <BandHeader label="📌 PINNED" accent={C.amber} />
                 {cardGrid(pinned)}
               </section>
             ) : null}
             {grouped.map((g) => (
               <section key={g.key}>
-                <BandHeader label={g.label} />
+                <BandHeader label={g.label.toUpperCase()} />
                 {cardGrid(g.items)}
               </section>
             ))}
@@ -410,97 +540,113 @@ export function ProjectsPage() {
   );
 }
 
+/** Band label + hairline rule ("📌 PINNED ————", "PEOPLE & OPS ————"). */
 function BandHeader({
   label,
-  icon = false,
+  accent = C.t3,
 }: {
   label: string;
-  icon?: boolean;
+  accent?: string;
 }) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 7,
-        fontFamily: mono,
-        fontSize: 11,
-        letterSpacing: "0.14em",
-        textTransform: "uppercase",
-        color: icon ? C.violet : C.t3,
-        marginBottom: 12,
+        gap: 10,
+        margin: "22px 0 10px",
       }}
     >
-      {icon ? <Pin size={12} fill="currentColor" /> : null}
-      {label}
+      <span
+        style={{
+          fontFamily: mono,
+          fontSize: 10,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: accent,
+          flexShrink: 0,
+        }}
+      >
+        {label}
+      </span>
+      <span aria-hidden style={{ height: 1, flex: 1, background: C.line }} />
     </div>
   );
 }
 
+/** The editorial empty state — "Missions create them as they work…". */
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div
       style={{
         marginTop: 30,
-        padding: "44px 26px",
-        border: `1px dashed ${C.line2}`,
+        maxWidth: 380,
+        marginLeft: "auto",
+        marginRight: "auto",
+        padding: "44px 32px",
+        border: `1px solid ${C.line2}`,
         borderRadius: 16,
+        background: C.surface,
         textAlign: "center",
-        display: "grid",
-        placeItems: "center",
-        gap: 12,
+        boxShadow: "0 30px 60px -40px rgba(20,28,44,.4)",
       }}
     >
       <span
         aria-hidden
         style={{
+          display: "inline-flex",
           width: 52,
           height: 52,
-          borderRadius: 14,
-          display: "grid",
-          placeItems: "center",
+          borderRadius: 15,
           background: C.sunken,
-          border: `1px solid ${C.line}`,
-          color: C.violet,
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 24,
+          color: C.t2,
         }}
       >
-        <FolderKanban size={24} />
+        ◳
       </span>
       <div
         style={{
           fontFamily: serif,
-          fontSize: 24,
-          letterSpacing: "-0.3px",
+          fontSize: 21,
+          lineHeight: 1.2,
+          marginTop: 16,
           color: C.ink,
         }}
       >
-        Create your first project
+        No projects yet.
       </div>
       <div
-        style={{ fontSize: 13.5, color: C.t2, maxWidth: 380, lineHeight: 1.5 }}
+        style={{
+          fontSize: 13,
+          color: C.t2,
+          marginTop: 8,
+          lineHeight: 1.55,
+        }}
       >
-        A project groups related tasks under a shared brief — so Cue works every
-        task inside it with the same context, without you re-explaining.
+        Missions create them as they work — or start one yourself.
       </div>
       <button
         type="button"
         onClick={onCreate}
         style={{
-          marginTop: 4,
           display: "inline-flex",
           alignItems: "center",
-          gap: 7,
-          fontFamily: mono,
+          gap: 6,
           fontSize: 12,
-          padding: "10px 18px",
-          borderRadius: 10,
-          border: "none",
+          fontWeight: 500,
           background: C.ink,
           color: C.bg,
+          borderRadius: 9,
+          padding: "9px 16px",
+          border: "none",
           cursor: "pointer",
+          marginTop: 18,
         }}
       >
-        <Plus size={14} /> New project
+        <Plus size={13} /> New project
       </button>
     </div>
   );

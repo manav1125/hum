@@ -33,6 +33,7 @@ import {
   mono,
   serif,
 } from "./hq-kit";
+import { MissionDetailSkeleton } from "./hq-modules";
 import {
   humanizeEvent,
   ringStatusFor,
@@ -77,9 +78,10 @@ export function MissionDetailPage() {
   );
 
   if (isLoading && !mission) {
+    // R5·A5 frame 3 — structure first, shimmer where the data goes.
     return (
       <Shell>
-        <div style={{ fontSize: 13, color: C.t2 }}>Opening the mission…</div>
+        <MissionDetailSkeleton />
       </Shell>
     );
   }

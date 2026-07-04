@@ -95,6 +95,7 @@ import {
   migrateCreateThreadStartersTable,
   migrateCreateTraceEventsTable,
   migrateCreateWorkItemEvents,
+  migrateCreateWorkOutputs,
   migrateDeletePrivateConversations,
   migrateDropAccountsTable,
   migrateDropAssistantIdColumns,
@@ -520,6 +521,7 @@ export function initializeDb(): void {
     migrateWorkItemProgressNote,
     migrateCreateProjectKnowledge,
     migrateCreateMissions,
+    migrateCreateWorkOutputs,
   ];
 
   // Run each migration step, catching and logging individual failures so one

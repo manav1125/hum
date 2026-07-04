@@ -91,7 +91,8 @@ export const BOARD_LANES: ReadonlyArray<{
     key: "review",
     statuses: ["awaiting_review"],
     label: "Review",
-    accent: C.violet,
+    // Ring-tone hue: review = "needs you" = amber, matching the HQ rings.
+    accent: C.amber,
   },
   { key: "done", statuses: ["done"], label: "Done", accent: C.green },
 ];
@@ -110,7 +111,8 @@ export function statusTone(
 ): "green" | "blue" | "amber" | "violet" | "danger" | "neutral" {
   if (status === "done") return "green";
   if (status === "running") return "blue";
-  if (status === "awaiting_review") return "violet";
+  // Ring-tone: awaiting review = "needs you" = amber (HQ ring language).
+  if (status === "awaiting_review") return "amber";
   if (status === "failed" || status === "cancelled") return "danger";
   if (status === "queued" || status === "pending") return "amber";
   return "neutral";

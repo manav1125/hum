@@ -34,6 +34,7 @@ import {
   type WorkItem,
   type WorkItemStatus,
 } from "./work-item-store.js";
+import { registerOutputsForCompletedRun } from "./work-output-store.js";
 
 const log = getLogger("work-item-runner");
 
@@ -461,6 +462,26 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
           toStatus: finalStatus,
           actor: "runner",
         });
+
+        // Sprint-outputs capture: a completed run's tool-produced attachments
+        // are already linked to the run conversation's assistant messages, so
+        // register them as first-class work outputs here — the one place that
+        // knows the work item ↔ run conversation binding AND the terminal
+        // status. Failed runs are skipped (half-baked artifacts aren't
+        // deliverables). registerOutputsForCompletedRun never throws and is
+        // idempotent per (work item, attachment).
+        if (finalStatus !== "failed" && result.conversationId) {
+          const outputs = registerOutputsForCompletedRun(
+            current ?? workItem,
+            result.conversationId,
+          );
+          if (outputs.length > 0) {
+            log.info(
+              { workItemId, outputCount: outputs.length },
+              "registered work outputs for completed run",
+            );
+          }
+        }
       }
 
       broadcastWorkItemStatus(workItemId);

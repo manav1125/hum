@@ -1,22 +1,31 @@
 /**
- * HQ — the company map in motion (phase 1 of the Cue HQ design).
+ * HQ — the one landing surface ("Home grew up. There's one landing surface
+ * now." — Cue-HQ-Build §1). The old Home retired into this deck; the rail
+ * and the mobile Today tab both land here.
  *
  * One glance answers: are we moving, what moved today, what needs me?
  *  · Rings hero — one STATUS-ONLY ring per mission (✓ on track / ! needs you /
  *    ◼ blocked, derived from live rollups; % is phase 2, only with a metric)
  *    with the "N/M ON TRACK" stack and a one-line daily-brief headline.
  *  · Capture bar — the same thread-seeding mechanic Create/Home use.
- *  · Came-in strip — the newest captured work items with source badges.
- *  · Needs-you — the awaiting_review lane, tagged by mission via the
- *    project→mission link.
- *  · Missions list — every ring as a row (the map is a delight layer;
- *    everything on it also lives in a list).
- *  · Right rail — agents at work (running items w/ live progress notes) and
- *    the honest spend chips.
+ *  · Watching line + came-in strip — the connected sources Cue watches and
+ *    the newest captured work items with source badges (inline Retry on a
+ *    refresh failure — the error stays inside its strip).
+ *  · Needs-you — "◆ YOUR NEXT MOVE" (the daemon's chief-of-staff pick) atop
+ *    the awaiting_review lane, tagged by mission via the project→mission link.
+ *  · Queued & scheduled — pending work items + standing schedules with their
+ *    next-fire times.
+ *  · Done today — compact chips with OPEN into the run conversation.
+ *  · Right rail — agents at work (running items w/ live progress notes),
+ *    the honest spend chip, and TIME BACK ("measuring…" until the act
+ *    ledger is real — no number until it's true).
  *
- * Zero missions renders the PULSE: calm brief + needs-you + came-in +
- * suggested missions + the New-mission CTA. Freshness: `useActivitySync`
- * (SSE) + 60s safety-net polls, matching the Command Center.
+ * Zero missions renders the PULSE: calm brief + next move + needs-you +
+ * came-in + suggested missions + the New-mission CTA. Freshness:
+ * `useActivitySync` (SSE) + 60s safety-net polls; on SSE loss the deck keeps
+ * the last state under a quiet "Reconnecting to Cue…" line. Loading is the
+ * headers-first shimmer skeleton. One-time switch-over orientation
+ * ("Your Home is now HQ") is localStorage-gated in `hq-orientation`.
  */
 
 import { useMemo, useState } from "react";
@@ -36,6 +45,21 @@ import { usageRangeNow } from "@/utils/usage-window";
 
 import { CaptureBar } from "./capture-bar";
 import { CompanyPanel } from "./company-panel";
+import {
+  CameInErrorStrip,
+  DoneTodayChips,
+  HqDeckSkeleton,
+  NextMoveCard,
+  QueuedScheduledSection,
+  ReconnectBanner,
+  TimeBackChip,
+  useDegradedState,
+  useNextMove,
+  useTodayStart,
+  WatchingLine,
+  type NextMove,
+} from "./hq-modules";
+import { HqOrientationPanel, useHqOrientation } from "./hq-orientation";
 import {
   C,
   HERO_GRADIENT,
@@ -58,6 +82,7 @@ import {
   missionByProject,
   ringStatusFor,
   useCompanyProfile,
+  useHqSchedules,
   useHqWorkItems,
   useMissions,
   type HqWorkItem,
@@ -261,7 +286,7 @@ function CameInStrip({ items }: { items: HqWorkItem[] }) {
   if (recent.length === 0) return null;
   return (
     <Link
-      to={routes.home}
+      to={routes.allWork}
       style={{
         display: "flex",
         alignItems: "center",
@@ -269,7 +294,6 @@ function CameInStrip({ items }: { items: HqWorkItem[] }) {
         background: C.sunken,
         borderRadius: 12,
         padding: "11px 15px",
-        marginTop: 16,
         textDecoration: "none",
         color: C.t2,
       }}
@@ -362,7 +386,7 @@ function NeedsYouCard({
     if (item.lastRunConversationId) {
       navigate(routes.conversation(item.lastRunConversationId));
     } else {
-      navigate(`${routes.home}?focus=${encodeURIComponent(item.id)}`);
+      navigate(routes.allWork);
     }
   };
   return (
@@ -672,11 +696,18 @@ function WorkRail({
       )}
 
       <div
-        style={{ marginTop: "auto", paddingTop: 16, display: "flex", gap: 8 }}
+        style={{
+          marginTop: "auto",
+          paddingTop: 16,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
       >
         <div
           style={{
             flex: 1,
+            minWidth: 110,
             background: C.surface,
             border: `1px solid ${C.line}`,
             borderRadius: 10,
@@ -701,6 +732,9 @@ function WorkRail({
             ) : null}
           </div>
         </div>
+        {/* TIME BACK — pre-ledger "measuring…" until the act ledger is real
+            (R5·A3 option b: no number until it's true). */}
+        <TimeBackChip ledger={null} />
         {missionBudget > 0 ? (
           <div
             style={{
@@ -765,6 +799,7 @@ const SUGGESTED_MISSIONS: Array<{
 /** The pulse — HQ with zero missions. Never a blank canvas. */
 function PulseLayout({
   assistantId,
+  move,
   needsYou,
   cameIn,
   missionsByProjectId,
@@ -774,6 +809,7 @@ function PulseLayout({
   onSuggest,
 }: {
   assistantId: string;
+  move: NextMove;
   needsYou: HqWorkItem[];
   cameIn: HqWorkItem[];
   missionsByProjectId: Map<string, Mission>;
@@ -782,8 +818,7 @@ function PulseLayout({
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
-  void assistantId;
-  const glanceCount = needsYou.length;
+  const glanceCount = needsYou.length + (move.hasMove ? 1 : 0);
   return (
     <div data-slot="hq-stream">
       <MicroLabel
@@ -826,10 +861,10 @@ function PulseLayout({
         }}
       >
         <div>
-          {needsYou.length > 0 ? (
+          {glanceCount > 0 ? (
             <>
               <MicroLabel color={C.danger}>
-                Needs you · {needsYou.length}
+                Needs you · {glanceCount}
               </MicroLabel>
               <div
                 style={{
@@ -839,6 +874,8 @@ function PulseLayout({
                   marginTop: 12,
                 }}
               >
+                {/* ◆ YOUR NEXT MOVE — always the first card in the lane. */}
+                <NextMoveCard assistantId={assistantId} move={move} />
                 {needsYou.slice(0, 4).map((item) => (
                   <NeedsYouCard
                     key={item.id}
@@ -858,7 +895,7 @@ function PulseLayout({
             <>
               <MicroLabel
                 style={{
-                  margin: needsYou.length > 0 ? "24px 0 12px" : "0 0 12px",
+                  margin: glanceCount > 0 ? "24px 0 12px" : "0 0 12px",
                 }}
               >
                 Came in · {cameIn.length}
@@ -1014,7 +1051,7 @@ function PulseLayout({
         }}
       >
         NO MISSIONS YET
-        {needsYou.length === 0 ? " · NOTHING TO REVIEW" : ""}
+        {glanceCount === 0 ? " · NOTHING TO REVIEW" : ""}
       </div>
     </div>
   );
@@ -1037,8 +1074,13 @@ export function HqPage() {
   const running = useHqWorkItems(assistantId, "running");
   const queued = useHqWorkItems(assistantId, "pending");
   const done = useHqWorkItems(assistantId, "done");
+  const { schedules } = useHqSchedules(assistantId);
   const stateQuery = useHomeStateQuery(assistantId);
   const { profile } = useCompanyProfile(assistantId);
+  const { move } = useNextMove(assistantId);
+  const { degraded, syncedLabel } = useDegradedState();
+  const orientation = useHqOrientation();
+  const todayStart = useTodayStart();
 
   const month = monthWindow();
   const usage = useQuery({
@@ -1078,13 +1120,27 @@ export function HqPage() {
   const workspaceMode = profile?.workspaceMode ?? "assist";
 
   const hasMissions = missions.length > 0;
+  // The next-move card and the Needs-you lane read the same stores — when the
+  // move IS one of the review items, the emphasized card replaces its row.
+  const reviewItems = review.items.filter((item) => item.id !== move.itemId);
+  const doneToday = done.items.filter(
+    (item) => (item.updatedAt ?? item.createdAt) >= todayStart,
+  );
 
   return (
     <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
       <HqStyle />
+      {/* Degraded: cached deck stays readable under a quiet reconnect line. */}
+      {degraded ? <ReconnectBanner syncedLabel={syncedLabel} /> : null}
       <div
         data-slot="hq-page-pad"
-        style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 24px 60px" }}
+        style={{
+          maxWidth: 1100,
+          margin: "0 auto",
+          padding: "28px 24px 60px",
+          opacity: degraded ? 0.72 : 1,
+          transition: "opacity .3s ease",
+        }}
       >
         {/* Header: kicker + live dot + Company & New mission actions. */}
         <header style={{ marginBottom: 4 }}>
@@ -1160,13 +1216,12 @@ export function HqPage() {
         </header>
 
         {isLoading ? (
-          <div style={{ fontSize: 13, color: C.t2, marginTop: 24 }}>
-            Opening HQ…
-          </div>
+          <HqDeckSkeleton />
         ) : !hasMissions ? (
           <PulseLayout
             assistantId={assistantId}
-            needsYou={review.items}
+            move={move}
+            needsYou={reviewItems}
             cameIn={cameIn}
             missionsByProjectId={byProject}
             userName={stateQuery.data?.userName?.trim() || null}
@@ -1191,12 +1246,19 @@ export function HqPage() {
               <CaptureBar />
               <RingsHeroCard
                 missions={missions}
-                doneToday={done.items.length}
+                doneToday={doneToday.length}
                 dayLabel={dayLabel}
               />
-              <CameInStrip items={cameIn} />
 
-              {review.items.length > 0 ? (
+              {/* Watching line + came-in strip (error stays inside it). */}
+              <WatchingLine assistantId={assistantId} />
+              {queued.isError ? (
+                <CameInErrorStrip onRetry={() => void queued.refetch()} />
+              ) : (
+                <CameInStrip items={cameIn} />
+              )}
+
+              {reviewItems.length > 0 || move.hasMove ? (
                 <>
                   <div
                     style={{
@@ -1207,10 +1269,10 @@ export function HqPage() {
                     }}
                   >
                     <MicroLabel color={C.danger}>
-                      Needs you · {review.items.length}
+                      Needs you · {reviewItems.length + (move.hasMove ? 1 : 0)}
                     </MicroLabel>
                     <Link
-                      to={routes.home}
+                      to={routes.allWork}
                       style={{
                         fontSize: 11.5,
                         color: C.blueS,
@@ -1229,7 +1291,9 @@ export function HqPage() {
                       marginTop: 8,
                     }}
                   >
-                    {review.items.slice(0, 4).map((item) => (
+                    {/* ◆ YOUR NEXT MOVE — the emphasized card, always first. */}
+                    <NextMoveCard assistantId={assistantId} move={move} />
+                    {reviewItems.slice(0, 4).map((item) => (
                       <NeedsYouCard
                         key={item.id}
                         item={item}
@@ -1265,6 +1329,16 @@ export function HqPage() {
                 </div>
               )}
 
+              {/* Queued & scheduled — what runs next and what fires on its own. */}
+              <QueuedScheduledSection
+                queued={cameIn}
+                schedules={schedules}
+                missionsByProjectId={byProject}
+              />
+
+              {/* Done today — the receipts, as chips. */}
+              <DoneTodayChips items={done.items} todayStart={todayStart} />
+
               <MicroLabel style={{ margin: "20px 0 10px" }}>
                 Missions · {missions.length}
               </MicroLabel>
@@ -1299,6 +1373,10 @@ export function HqPage() {
           assistantId={assistantId}
           onClose={() => setShowCompany(false)}
         />
+      ) : null}
+      {/* One-time switch-over orientation — "Your Home is now HQ". */}
+      {orientation.show ? (
+        <HqOrientationPanel onDismiss={orientation.dismiss} />
       ) : null}
     </div>
   );

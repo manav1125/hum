@@ -13,6 +13,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  missionsGetOptions,
   projectsByIdDeleteMutation,
   projectsByIdGetOptions,
   projectsByIdGetQueryKey,
@@ -56,6 +57,8 @@ export interface ProjectView {
   context: string | null;
   sortIndex: number | null;
   pinned: boolean;
+  /** Mission this project serves as an initiative of (⟡ tag), or null. */
+  missionId: string | null;
   createdAt: number;
   updatedAt: number;
   stats: ProjectStats | null;
@@ -78,6 +81,7 @@ function toView(p: RawProject): ProjectView {
     context: p.context ?? null,
     sortIndex: p.sortIndex ?? null,
     pinned: (p.pinned ?? 0) > 0,
+    missionId: p.missionId ?? null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     stats: p.stats
@@ -211,6 +215,21 @@ export function usePatchWorkItem(assistantId: string) {
       });
     },
   });
+}
+
+/**
+ * missionId → mission title lookup for the ⟡ tags on project cards. Reads the
+ * missions list straight off the generated SDK (the HQ page's `use-missions`
+ * lives in another surface's folder, so this stays a local, read-only lookup).
+ */
+export function useMissionTitles(assistantId: string): Map<string, string> {
+  const query = useQuery({
+    ...missionsGetOptions({ path: { assistant_id: assistantId } }),
+    staleTime: 30_000,
+  });
+  const map = new Map<string, string>();
+  for (const m of query.data?.missions ?? []) map.set(m.id, m.title);
+  return map;
 }
 
 /** A project's board rows (full work-item records; all statuses). */

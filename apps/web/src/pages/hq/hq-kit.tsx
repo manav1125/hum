@@ -59,6 +59,9 @@ export function HqStyle() {
           "@keyframes hqBar{0%,100%{height:5px}50%{height:13px}}",
           "@keyframes hqBlink{0%,100%{opacity:1}50%{opacity:.35}}",
           "@keyframes hqReveal{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}",
+          // Loading shimmer (design doc R5·A5 "headers first, shimmer where
+          // data goes"). Rides theme vars so it reads in light and dark.
+          "@keyframes hqShimmer{0%{background-position:-360px 0}100%{background-position:360px 0}}",
           '[data-slot="hq-stream"]>*{animation:hqReveal .45s cubic-bezier(.22,.61,.36,1) both}',
           '[data-slot="hq-stream"]>*:nth-child(2){animation-delay:.05s}',
           '[data-slot="hq-stream"]>*:nth-child(3){animation-delay:.1s}',
@@ -70,6 +73,44 @@ export function HqStyle() {
           '@media (max-width:640px){[data-slot="hq-hero-card"]{flex-direction:column !important;text-align:center;}[data-slot="hq-hero-lines"]{width:100%}[data-slot="hq-page-pad"]{padding:16px 14px 60px !important}[data-slot="hq-title"]{font-size:28px !important}}',
           '@media (max-width:640px){[data-slot="hq-detail-hero"]{flex-direction:column !important;align-items:flex-start !important}}',
         ].join("\n"),
+      }}
+    />
+  );
+}
+
+/**
+ * One shimmering skeleton block (R5·A5). Structure lands first — headers are
+ * real text; only the data slots shimmer. Never a spinner-in-space.
+ */
+export function Shimmer({
+  height,
+  width = "100%",
+  radius = 10,
+  circle = false,
+  opacity = 1,
+  style,
+}: {
+  height: number;
+  width?: number | string;
+  radius?: number;
+  circle?: boolean;
+  opacity?: number;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: "block",
+        height,
+        width,
+        flexShrink: 0,
+        borderRadius: circle ? "50%" : radius,
+        background: `linear-gradient(90deg, ${C.sunken} 25%, ${C.surface} 37%, ${C.sunken} 63%)`,
+        backgroundSize: "360px 100%",
+        animation: "hqShimmer 1.4s linear infinite",
+        opacity,
+        ...style,
       }}
     />
   );
