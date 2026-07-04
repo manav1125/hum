@@ -269,6 +269,19 @@ export function getDisableWorkItemAutoRun(): boolean {
 }
 
 /**
+ * CUE_DISABLE_MISSION_ORCHESTRATOR — boolean, default: false
+ * Kill-switch for scheduled per-mission orchestrator cycles
+ * (missions/mission-orchestrator.ts). When set, cadenced cycles are skipped
+ * entirely; an explicit manual trigger (POST missions/:id/run-cycle) still
+ * runs, mirroring the heartbeat's force semantics. A pure env flag so it can
+ * be cut without a per-workspace config migration, matching
+ * {@link getDisableWorkItemAutoRun}.
+ */
+export function getDisableMissionOrchestrator(): boolean {
+  return flag("CUE_DISABLE_MISSION_ORCHESTRATOR");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.

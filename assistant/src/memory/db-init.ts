@@ -87,6 +87,7 @@ import {
   migrateCreateMemoryGraphNodeEdits,
   migrateCreateMemoryGraphTables,
   migrateCreateMemoryRecallLogs,
+  migrateCreateMissions,
   migrateCreateProjectKnowledge,
   migrateCreateProjectsTable,
   migrateCreateProviderConnections,
@@ -518,6 +519,7 @@ export function initializeDb(): void {
     migrateProjectsCoworkColumns,
     migrateWorkItemProgressNote,
     migrateCreateProjectKnowledge,
+    migrateCreateMissions,
   ];
 
   // Run each migration step, catching and logging individual failures so one

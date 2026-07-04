@@ -9,6 +9,7 @@ export * from "./inference.js";
 export * from "./infrastructure.js";
 export * from "./memory-core.js";
 export * from "./memory-graph.js";
+export * from "./missions.js";
 export * from "./notifications.js";
 export * from "./oauth.js";
 export * from "./tasks.js";

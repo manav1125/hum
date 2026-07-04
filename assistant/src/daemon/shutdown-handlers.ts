@@ -5,6 +5,7 @@ import type { HeartbeatService } from "../heartbeat/heartbeat-service.js";
 import type { McpServerManager } from "../mcp/manager.js";
 import { getSqlite, resetDb } from "../memory/db-connection.js";
 import type { QdrantManager } from "../memory/qdrant-manager.js";
+import type { MissionOrchestrator } from "../missions/mission-orchestrator.js";
 import type { RuntimeHttpServer } from "../runtime/http-server.js";
 import { browserManager } from "../tools/browser/browser-manager.js";
 import { cleanupShellOutputTempFiles } from "../tools/shared/shell-output.js";
@@ -20,6 +21,7 @@ export interface ShutdownDeps {
   server: DaemonServer;
   workspaceHeartbeat: WorkspaceHeartbeatService;
   heartbeat: HeartbeatService;
+  missionOrchestrator: MissionOrchestrator | null;
   filing: FilingService | null;
   runtimeHttp: RuntimeHttpServer | null;
   scheduler: { stop(): void };
@@ -57,6 +59,7 @@ export function installShutdownHandlers(deps: ShutdownDeps): void {
 
     await deps.workspaceHeartbeat.stop();
     await deps.heartbeat.stop();
+    deps.missionOrchestrator?.stop();
     if (deps.filing) await deps.filing.stop();
 
     // Run registered skill shutdown hooks (e.g. meet-join session teardown)

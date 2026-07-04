@@ -4212,6 +4212,139 @@ paths:
               required:
                 - clientId
               additionalProperties: false
+  /v1/company-profile:
+    get:
+      operationId: companyprofile_get
+      summary: Get the company profile
+      description:
+        The single-row who-we-are record (identity, direction, never-lines, workspace autonomy mode) injected into
+        every mission planning cycle.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: object
+                    properties:
+                      identity:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      direction:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      neverLines:
+                        type: array
+                        items:
+                          type: string
+                        description: Hard boundaries the AI may never cross
+                      workspaceMode:
+                        type: string
+                        enum:
+                          - observe
+                          - assist
+                          - autonomous
+                      updatedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                    required:
+                      - identity
+                      - direction
+                      - neverLines
+                      - workspaceMode
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - profile
+                additionalProperties: false
+    put:
+      operationId: companyprofile_put
+      summary: Update the company profile
+      description: Partial upsert of the single-row company profile. Omitted fields keep their current value.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: object
+                    properties:
+                      identity:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      direction:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      neverLines:
+                        type: array
+                        items:
+                          type: string
+                        description: Hard boundaries the AI may never cross
+                      workspaceMode:
+                        type: string
+                        enum:
+                          - observe
+                          - assist
+                          - autonomous
+                      updatedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                    required:
+                      - identity
+                      - direction
+                      - neverLines
+                      - workspaceMode
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - profile
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                identity:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                direction:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                neverLines:
+                  type: array
+                  items:
+                    type: string
+                workspaceMode:
+                  type: string
+                  enum:
+                    - observe
+                    - assist
+                    - autonomous
+              additionalProperties: false
   /v1/config:
     get:
       operationId: config_get
@@ -20446,6 +20579,931 @@ paths:
                   - errors
                   - manifest
                 additionalProperties: false
+  /v1/missions:
+    get:
+      operationId: missions_get
+      summary: List missions
+      description:
+        "Return missions (pinned-first, then sortIndex, then newest; abandoned excluded unless filtered) with
+        per-mission rollups: linked initiative projects, work-item counts by status, and spend vs budget."
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  missions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        outcome:
+                          type: string
+                          description: The measurable outcome the mission drives toward
+                        metric:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        horizon:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Target date, epoch ms
+                        status:
+                          type: string
+                          enum:
+                            - active
+                            - paused
+                            - achieved
+                            - abandoned
+                        mode:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - observe
+                                - assist
+                                - autonomous
+                            - type: "null"
+                          description: Per-mission autonomy override; null = workspace default
+                        brief:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The mission "why"
+                        cadence:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                        budgetCents:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        spentCents:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        continuationSummary:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Bounded per-cycle regenerated state doc
+                        pinned:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — pinned missions float to the top
+                        sortIndex:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        lastCycleAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        rollup:
+                          type: object
+                          properties:
+                            projects:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                                  title:
+                                    type: string
+                                  emoji:
+                                    anyOf:
+                                      - type: string
+                                      - type: "null"
+                                  status:
+                                    type: string
+                                required:
+                                  - id
+                                  - title
+                                  - emoji
+                                  - status
+                                additionalProperties: false
+                            counts:
+                              type: object
+                              properties:
+                                queued:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                running:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                awaiting_review:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                done:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                failed:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                open:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                total:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                              required:
+                                - queued
+                                - running
+                                - awaiting_review
+                                - done
+                                - failed
+                                - open
+                                - total
+                              additionalProperties: false
+                            spentCents:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            budgetCents:
+                              anyOf:
+                                - type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                - type: "null"
+                          required:
+                            - projects
+                            - counts
+                            - spentCents
+                            - budgetCents
+                          additionalProperties: false
+                      required:
+                        - id
+                        - title
+                        - outcome
+                        - metric
+                        - horizon
+                        - status
+                        - mode
+                        - brief
+                        - cadence
+                        - budgetCents
+                        - spentCents
+                        - continuationSummary
+                        - pinned
+                        - sortIndex
+                        - lastCycleAt
+                        - createdAt
+                        - updatedAt
+                        - rollup
+                      additionalProperties: false
+                required:
+                  - missions
+                additionalProperties: false
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - active
+              - paused
+              - achieved
+              - abandoned
+          description: Mission status filter
+    post:
+      operationId: missions_post
+      summary: Create a mission
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mission:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      outcome:
+                        type: string
+                        description: The measurable outcome the mission drives toward
+                      metric:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      horizon:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Target date, epoch ms
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - paused
+                          - achieved
+                          - abandoned
+                      mode:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - observe
+                              - assist
+                              - autonomous
+                          - type: "null"
+                        description: Per-mission autonomy override; null = workspace default
+                      brief:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The mission "why"
+                      cadence:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                      budgetCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      spentCents:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      continuationSummary:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Bounded per-cycle regenerated state doc
+                      pinned:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — pinned missions float to the top
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      lastCycleAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - outcome
+                      - metric
+                      - horizon
+                      - status
+                      - mode
+                      - brief
+                      - cadence
+                      - budgetCents
+                      - spentCents
+                      - continuationSummary
+                      - pinned
+                      - sortIndex
+                      - lastCycleAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - mission
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                outcome:
+                  type: string
+                  minLength: 1
+                metric:
+                  type: string
+                horizon:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                mode:
+                  type: string
+                  enum:
+                    - observe
+                    - assist
+                    - autonomous
+                brief:
+                  type: string
+                cadence:
+                  type: string
+                  enum:
+                    - hourly
+                    - daily
+                    - weekly
+                budgetCents:
+                  type: integer
+                  minimum: 0
+                  maximum: 9007199254740991
+                pinned:
+                  type: boolean
+                sortIndex:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+              required:
+                - title
+                - outcome
+              additionalProperties: false
+  /v1/missions/{id}:
+    delete:
+      operationId: missions_by_id_delete
+      summary: Delete a mission
+      description:
+        Hard-delete a mission. Linked projects keep living with mission_id cleared; the mission's events and plan
+        fingerprints are removed with it.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    get:
+      operationId: missions_by_id_get
+      summary: Get a mission
+      description: Return a single mission with its rollup.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mission:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      outcome:
+                        type: string
+                        description: The measurable outcome the mission drives toward
+                      metric:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      horizon:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Target date, epoch ms
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - paused
+                          - achieved
+                          - abandoned
+                      mode:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - observe
+                              - assist
+                              - autonomous
+                          - type: "null"
+                        description: Per-mission autonomy override; null = workspace default
+                      brief:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The mission "why"
+                      cadence:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                      budgetCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      spentCents:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      continuationSummary:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Bounded per-cycle regenerated state doc
+                      pinned:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — pinned missions float to the top
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      lastCycleAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      rollup:
+                        type: object
+                        properties:
+                          projects:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                title:
+                                  type: string
+                                emoji:
+                                  anyOf:
+                                    - type: string
+                                    - type: "null"
+                                status:
+                                  type: string
+                              required:
+                                - id
+                                - title
+                                - emoji
+                                - status
+                              additionalProperties: false
+                          counts:
+                            type: object
+                            properties:
+                              queued:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              running:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              awaiting_review:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              done:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              failed:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              open:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              total:
+                                type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                            required:
+                              - queued
+                              - running
+                              - awaiting_review
+                              - done
+                              - failed
+                              - open
+                              - total
+                            additionalProperties: false
+                          spentCents:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          budgetCents:
+                            anyOf:
+                              - type: integer
+                                minimum: -9007199254740991
+                                maximum: 9007199254740991
+                              - type: "null"
+                        required:
+                          - projects
+                          - counts
+                          - spentCents
+                          - budgetCents
+                        additionalProperties: false
+                    required:
+                      - id
+                      - title
+                      - outcome
+                      - metric
+                      - horizon
+                      - status
+                      - mode
+                      - brief
+                      - cadence
+                      - budgetCents
+                      - spentCents
+                      - continuationSummary
+                      - pinned
+                      - sortIndex
+                      - lastCycleAt
+                      - createdAt
+                      - updatedAt
+                      - rollup
+                    additionalProperties: false
+                required:
+                  - mission
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: missions_by_id_patch
+      summary: Update a mission
+      description: Edit mission fields, pause/resume, mark achieved/abandoned, adjust mode, cadence, or budget.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mission:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      outcome:
+                        type: string
+                        description: The measurable outcome the mission drives toward
+                      metric:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      horizon:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Target date, epoch ms
+                      status:
+                        type: string
+                        enum:
+                          - active
+                          - paused
+                          - achieved
+                          - abandoned
+                      mode:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - observe
+                              - assist
+                              - autonomous
+                          - type: "null"
+                        description: Per-mission autonomy override; null = workspace default
+                      brief:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The mission "why"
+                      cadence:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                      budgetCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      spentCents:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      continuationSummary:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Bounded per-cycle regenerated state doc
+                      pinned:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — pinned missions float to the top
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      lastCycleAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - title
+                      - outcome
+                      - metric
+                      - horizon
+                      - status
+                      - mode
+                      - brief
+                      - cadence
+                      - budgetCents
+                      - spentCents
+                      - continuationSummary
+                      - pinned
+                      - sortIndex
+                      - lastCycleAt
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - mission
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                outcome:
+                  type: string
+                metric:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                horizon:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                status:
+                  type: string
+                  enum:
+                    - active
+                    - paused
+                    - achieved
+                    - abandoned
+                mode:
+                  anyOf:
+                    - type: string
+                      enum:
+                        - observe
+                        - assist
+                        - autonomous
+                    - type: "null"
+                brief:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                cadence:
+                  anyOf:
+                    - type: string
+                      enum:
+                        - hourly
+                        - daily
+                        - weekly
+                    - type: "null"
+                budgetCents:
+                  anyOf:
+                    - type: integer
+                      minimum: 0
+                      maximum: 9007199254740991
+                    - type: "null"
+                pinned:
+                  type: boolean
+                sortIndex:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+              additionalProperties: false
+  /v1/missions/{id}/events:
+    get:
+      operationId: missions_by_id_events_get
+      summary: List a mission's audit-trail events
+      description:
+        Chronological orchestrator events (cycle_started, planned, item_enqueued, checkpoint, budget_stop,
+        reported…) over the most recent window.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        missionId:
+                          type: string
+                        kind:
+                          type: string
+                        cycleId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        payload:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: JSON payload, event-kind-specific
+                        at:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - missionId
+                        - kind
+                        - cycleId
+                        - payload
+                        - at
+                      additionalProperties: false
+                required:
+                  - events
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max events to return (default 200, cap 1000)
+  /v1/missions/{id}/run-cycle:
+    post:
+      operationId: missions_by_id_runcycle_post
+      summary: Run a mission orchestrator cycle now
+      description:
+        Manually trigger one assess→plan→execute→report cycle. Bypasses the scheduler and the kill switch (explicit
+        operator action) but never the status or budget guards.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ran:
+                    type: boolean
+                  reason:
+                    type: string
+                  enqueued:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  cycleId:
+                    type: string
+                required:
+                  - ran
+                  - reason
+                  - enqueued
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/model:
     get:
       operationId: model_get

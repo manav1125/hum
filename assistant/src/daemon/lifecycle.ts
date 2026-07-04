@@ -60,6 +60,7 @@ import { initQdrantClient, resolveQdrantUrl } from "../memory/qdrant-client.js";
 import { QdrantManager } from "../memory/qdrant-manager.js";
 import { rotateToolInvocations } from "../memory/tool-usage-store.js";
 import { sweepConceptPageFrontmatter } from "../memory/v2/frontmatter-sweep.js";
+import { MissionOrchestrator } from "../missions/mission-orchestrator.js";
 import { emitNotificationSignal } from "../notifications/emit-signal.js";
 import { backfillManualTokenConnections } from "../oauth/manual-token-connection.js";
 import { seedOAuthProviders } from "../oauth/seed-providers.js";
@@ -1399,6 +1400,13 @@ export async function runDaemon(): Promise<void> {
       "Heartbeat service configured",
     );
 
+    // Mission orchestrator — per-mission cadenced planning cycles (HQ).
+    // The sweep timer always starts; the CUE_DISABLE_MISSION_ORCHESTRATOR
+    // kill switch is evaluated per sweep so it takes effect without a
+    // restart. Cycles only run for ACTIVE missions that are due.
+    const missionOrchestrator = new MissionOrchestrator();
+    missionOrchestrator.start();
+
     // Filing yields to the memory v2 consolidation job when v2 is enabled —
     // both serve the same role (periodic background memory processing) and
     // running both is redundant. The consolidation job runs through the
@@ -1433,6 +1441,7 @@ export async function runDaemon(): Promise<void> {
       server,
       workspaceHeartbeat,
       heartbeat,
+      missionOrchestrator,
       filing,
       runtimeHttp,
       scheduler,

@@ -80,6 +80,7 @@ export const projects = sqliteTable("projects", {
   context: text("context"), // nullable project brief/instructions the agent reads for every task in the project
   sortIndex: integer("sort_index"), // nullable manual ordering key (smaller sorts first)
   pinned: integer("pinned").notNull().default(0), // 0/1 — pinned projects float to the top
+  missionId: text("mission_id"), // nullable reference-by-convention to missions.id (store-enforced) — initiatives link
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
