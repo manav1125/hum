@@ -29,6 +29,7 @@ import {
 import { parseInlineSurfaces } from "@/domains/chat/utils/parse-inline-surfaces";
 import { getSlackLinkUrl } from "@/domains/chat/types/types";
 import { wireSurfaceToDisplay } from "@/domains/chat/utils/map-runtime-message";
+import { InterruptedTurnNotice } from "@/domains/chat/transcript/interrupted-turn-notice";
 import { isPointerCoarse } from "@/utils/pointer";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
@@ -68,6 +69,7 @@ export function TranscriptMessageBody({
   assistantId,
   onSubagentClick,
   onStopSubagent,
+  onRetryInterrupted,
   isStreaming = false,
 }: TranscriptMessageBodyProps) {
   const isSlackMessage = Boolean(message.slackMessage);
@@ -432,6 +434,13 @@ export function TranscriptMessageBody({
           <MessageAttachments
             attachments={message.attachments ?? []}
             assistantId={assistantId}
+          />
+        )}
+        {message.interrupted && (
+          <InterruptedTurnNotice
+            messageId={message.id}
+            hasPartialContent={groups.length > 0}
+            onRetry={onRetryInterrupted}
           />
         )}
         {trailer}

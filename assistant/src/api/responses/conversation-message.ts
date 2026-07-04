@@ -485,5 +485,15 @@ export const ConversationMessageSchema = z.object({
   contentBlocks: z.array(ConversationContentBlockSchema).optional(),
   subagentNotification: ConversationSubagentNotificationSchema.optional(),
   slackMessage: ConversationSlackMessageSchema.optional(),
+  /**
+   * True when this assistant turn died without finishing (the daemon was
+   * restarted or crashed mid-generation) and boot recovery marked it. Any
+   * partially-streamed content the row holds is still shipped; clients
+   * render an inline "response was interrupted" affordance with a retry
+   * action. Absent on rows that completed normally.
+   */
+  interrupted: z.boolean().optional(),
+  /** Epoch ms when the interruption was detected. Present iff `interrupted`. */
+  interruptedAt: z.number().optional(),
 });
 export type ConversationMessage = z.infer<typeof ConversationMessageSchema>;

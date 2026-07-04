@@ -61,6 +61,11 @@ export interface TranscriptMessageBodyProps {
   onSubagentClick?: (subagentId: string) => void;
   /** Callback to abort/stop a running subagent from an inline card. */
   onStopSubagent?: (subagentId: string) => void;
+  /** Retry handler for a `message.interrupted` assistant row (a turn killed
+   *  by a daemon restart). Receives the assistant row's id; the owner
+   *  resolves the original user message and re-sends it. When omitted the
+   *  interrupted notice renders without a Retry button. */
+  onRetryInterrupted?: (assistantMessageId: string) => void;
   /**
    * True when this message belongs to the turn that is actively streaming.
    * Set by `LatestTurnRow` for the in-progress response cluster; history

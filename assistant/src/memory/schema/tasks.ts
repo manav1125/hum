@@ -65,6 +65,7 @@ export const workItems = sqliteTable("work_items", {
   context: text("context"), // nullable per-task notes/context the user adds; injected into the agent before a run
   sourceContext: text("source_context"), // nullable JSON: {origin, snippet} of where the task came from (triage-stamped)
   lastActivityAt: integer("last_activity_at"), // nullable epoch ms; bumped on any event/update so ranking de-prioritizes stale items
+  lastProgressNote: text("last_progress_note"), // nullable one-line live-activity note ("Searching the web…") the runner stamps while status='running'
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

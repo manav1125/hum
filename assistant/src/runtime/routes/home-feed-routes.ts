@@ -520,7 +520,7 @@ function createFeedActionWorkItem(
   // Rank the fresh item so the queue is urgency-ordered. Auto-run is skipped:
   // the caller's execution-mode logic (thread/background/needs_you) owns the
   // run decision for feed actions — needs_you items must wait for approval.
-  triageAndMaybeAutoRunWorkItem(workItem.id, { skipAutoRun: true });
+  void triageAndMaybeAutoRunWorkItem(workItem.id, { skipAutoRun: true });
   return workItem;
 }
 

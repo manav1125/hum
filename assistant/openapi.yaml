@@ -19360,6 +19360,10 @@ paths:
                             - channelId
                             - channelTs
                           additionalProperties: false
+                        interrupted:
+                          type: boolean
+                        interruptedAt:
+                          type: number
                       required:
                         - id
                         - role
@@ -23402,6 +23406,11 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        lastProgressNote:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Live activity line ("Searching the web…") stamped by the runner while status is "running"; null otherwise
                         sourceType:
                           anyOf:
                             - type: string
@@ -23440,6 +23449,7 @@ paths:
                         - lastRunId
                         - lastRunConversationId
                         - lastRunStatus
+                        - lastProgressNote
                         - sourceType
                         - sourceId
                         - approvalStatus
@@ -30880,6 +30890,11 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        lastProgressNote:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Live activity line ("Searching the web…") stamped by the runner while status is "running"; null otherwise
                         sourceType:
                           anyOf:
                             - type: string
@@ -30918,6 +30933,7 @@ paths:
                         - lastRunId
                         - lastRunConversationId
                         - lastRunStatus
+                        - lastProgressNote
                         - sourceType
                         - sourceId
                         - approvalStatus

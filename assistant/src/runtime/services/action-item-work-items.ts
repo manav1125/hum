@@ -104,7 +104,7 @@ export function actionItemsToWorkItems(
       });
       // Rank the fresh capture and, when the autonomy policy allows, hand it
       // straight to the background runner instead of parking it in the queue.
-      triageAndMaybeAutoRunWorkItem(workItem.id);
+      void triageAndMaybeAutoRunWorkItem(workItem.id);
       refs.push({ id: workItem.id, title: workItem.title, created: true });
     } catch (err) {
       log.warn(

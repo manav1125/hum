@@ -14,6 +14,7 @@ import {
 import { v4 as uuid } from "uuid";
 
 import { CALL_SITE_SYNTHETIC_AGENT_ERROR_MESSAGE } from "../api/constants/call-sites.js";
+import { getLogFullLlmPayloads } from "../config/env-registry.js";
 import type { LLMCallSite } from "../config/schemas/llm.js";
 import { AssistantError, ProviderError } from "../util/errors.js";
 import {
@@ -99,6 +100,49 @@ export function buildProviderErrorResponsePayload(err: Error): {
     payload.code = err.code;
   }
   return { error: payload };
+}
+
+/**
+ * Per-string cap applied when serializing raw LLM request/response payloads
+ * for the `llm_request_logs` table. Chosen to keep every realistic text
+ * block (system prompt sections, tool results, assistant prose) intact while
+ * cutting multi-hundred-KB base64 blobs (inline images / documents / audio)
+ * down to a marker.
+ *
+ * Why: `recordRequestLog` runs synchronously on the daemon's single event
+ * loop once per LLM call, and its input is the FULL provider request —
+ * including every base64 image attached anywhere in the history. On
+ * image-heavy conversations that made each per-call log write a multi-MB
+ * `JSON.stringify` + sqlite insert (a measurable event-loop stall and the
+ * primary driver of assistant.db bloat). The logs feed the inspector's Raw
+ * tab and ClickHouse export only — nothing reconstructs conversation state
+ * from them — so replacing a 2MB base64 string with its head + a truncation
+ * marker is lossless for every functional consumer.
+ *
+ * Escape hatch: set CUE_LOG_FULL_LLM_PAYLOADS=true to restore full payloads
+ * while debugging a payload-shape issue.
+ */
+const LOG_PAYLOAD_STRING_CAP = 65_536;
+const LOG_PAYLOAD_KEEP_PREFIX = 1_024;
+
+/**
+ * JSON-serialize a raw LLM payload for logging, truncating any individual
+ * string longer than {@link LOG_PAYLOAD_STRING_CAP} (in practice: base64
+ * media). Use this instead of bare `JSON.stringify` at every
+ * `recordRequestLog` call site.
+ */
+export function serializeLlmLogPayload(value: unknown): string {
+  if (getLogFullLlmPayloads()) {
+    return JSON.stringify(value);
+  }
+  return JSON.stringify(value, (_key, v: unknown) => {
+    if (typeof v === "string" && v.length > LOG_PAYLOAD_STRING_CAP) {
+      return `${v.slice(0, LOG_PAYLOAD_KEEP_PREFIX)}…[truncated ${
+        v.length - LOG_PAYLOAD_KEEP_PREFIX
+      } chars for llm_request_logs]`;
+    }
+    return v;
+  });
 }
 
 export function recordRequestLog(

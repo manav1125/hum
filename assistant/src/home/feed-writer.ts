@@ -60,6 +60,24 @@ export const HOME_FEED_FILENAME = "home-feed.json";
 export const HOME_FEED_VERSION = 2;
 
 /**
+ * Age-based auto-expiry: a card the user never interacted with auto-dismisses
+ * after this long. Keeps months-old mirror/notification cards from dominating
+ * Home forever. Dismissal (not deletion) preserves history for
+ * `home/feed/query` with `includeDismissed: true`.
+ */
+export const FEED_ITEM_STALE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Statuses eligible for age-based auto-dismissal. `acted_on` cards represent
+ * a completed interaction and `dismissed` cards are already gone, so only
+ * never-actioned cards ("new", and passively "seen") expire.
+ */
+const AUTO_EXPIRABLE_STATUSES: ReadonlySet<FeedItemStatus> = new Set([
+  "new",
+  "seen",
+]);
+
+/**
  * Canonical path to the home-feed snapshot
  * (`<workspace>/data/home-feed.json`).
  */
@@ -108,7 +126,16 @@ export function readHomeFeed(): HomeFeedFile {
   }
 
   const now = Date.now();
-  const items = parsed.items.filter((item) => !isExpired(item, now));
+  // Stateless read-time hygiene, mirroring the TTL filter: hard-expired items
+  // (explicit `expiresAt` in the past) are dropped from the view; items past
+  // the no-interaction staleness window are surfaced as `"dismissed"` instead
+  // of deleted, preserving history. Neither rewrites the file here — the next
+  // write cycle persists this view naturally (runWrite reads through us).
+  const items = parsed.items
+    .filter((item) => !isExpired(item, now))
+    .map((item) =>
+      isStale(item, now) ? { ...item, status: "dismissed" as const } : item,
+    );
   return {
     version: parsed.version,
     items,
@@ -547,6 +574,19 @@ function isExpired(item: FeedItem, nowMs: number): boolean {
   const expiresMs = Date.parse(item.expiresAt);
   if (Number.isNaN(expiresMs)) return false;
   return expiresMs <= nowMs;
+}
+
+/**
+ * Return `true` when the item has sat in a no-interaction status
+ * (see {@link AUTO_EXPIRABLE_STATUSES}) for longer than
+ * {@link FEED_ITEM_STALE_AFTER_MS}. Unparseable `createdAt` values are
+ * treated as not stale (fail-open, matching `isExpired`).
+ */
+function isStale(item: FeedItem, nowMs: number): boolean {
+  if (!AUTO_EXPIRABLE_STATUSES.has(item.status)) return false;
+  const createdMs = Date.parse(item.createdAt);
+  if (Number.isNaN(createdMs)) return false;
+  return nowMs - createdMs > FEED_ITEM_STALE_AFTER_MS;
 }
 
 /**

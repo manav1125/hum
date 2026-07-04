@@ -35,7 +35,10 @@ describe("MemoryV2ConfigSchema", () => {
         dtype: "q8",
       },
       router: {
-        enabled: true,
+        // Disabled by default: the router is a blocking per-turn LLM call
+        // (~2x turn latency) and unreliable through OpenRouter. See the
+        // schema description on `router.enabled`.
+        enabled: false,
         max_page_ids: 25,
         router_prompt_path: null,
         batch_size: null,
@@ -168,9 +171,9 @@ describe("MemoryV2ConfigSchema", () => {
     expect(() => MemoryV2ConfigSchema.parse({ epsilon: 1.5 })).toThrow();
   });
 
-  test("router defaults to enabled with max_page_ids=25", () => {
+  test("router defaults to disabled with max_page_ids=25", () => {
     const parsed = MemoryV2ConfigSchema.parse({});
-    expect(parsed.router.enabled).toBe(true);
+    expect(parsed.router.enabled).toBe(false);
     expect(parsed.router.max_page_ids).toBe(25);
   });
 

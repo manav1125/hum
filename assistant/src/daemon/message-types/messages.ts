@@ -21,6 +21,7 @@ import type {
   TraceEvent,
   TraceEventKind,
 } from "../../api/events/trace-event.js";
+import type { TurnInterruptedEvent } from "../../api/events/turn-interrupted.js";
 import type { TurnProfileAutoRoutedEvent } from "../../api/events/turn-profile-auto-routed.js";
 import type { UserMessageEchoEvent } from "../../api/events/user-message-echo.js";
 import type { ChannelId, InterfaceId } from "../../channels/types.js";
@@ -130,7 +131,7 @@ export interface ConfirmationStateChanged {
   toolUseId?: string;
 }
 
-export type { TurnProfileAutoRoutedEvent };
+export type { TurnInterruptedEvent, TurnProfileAutoRoutedEvent };
 
 /**
  * Broadcast to clients when a conversation's inference-profile override
@@ -180,6 +181,7 @@ export type _MessagesServerMessages =
   | TraceEvent
   | ConfirmationStateChanged
   | AssistantActivityStateEvent
+  | TurnInterruptedEvent
   | TurnProfileAutoRoutedEvent
   | ConversationInferenceProfileUpdated
   | InteractionResolvedEvent;

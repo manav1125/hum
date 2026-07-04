@@ -69,6 +69,7 @@ import { useChatHeaderRegistration } from "@/domains/chat/hooks/use-chat-header-
 import { useConversationChangeEffects } from "@/domains/chat/hooks/use-conversation-change-effects";
 import { useComposerKeyboard } from "@/domains/chat/hooks/use-composer-keyboard";
 import { useAutoSendEffects } from "@/domains/chat/hooks/use-auto-send-effects";
+import { useInterruptedTurnRecovery } from "@/domains/chat/hooks/use-interrupted-turn-recovery";
 
 import { ChatContentLayout } from "@/domains/chat/components/chat-content-layout";
 import type { ChatMainPanelProps } from "@/domains/chat/components/chat-route-content";
@@ -329,6 +330,11 @@ export function ActiveChatView() {
   // Conversation-change side effects (dismiss prompts, reset subagent state,
   // auto-fetch subagent details for entries reconstructed from history)
   useConversationChangeEffects(assistantId, activeConversationId);
+
+  // Daemon-restart recovery: when a refetched transcript reveals the latest
+  // assistant turn died mid-flight (`interrupted` rows from the daemon's
+  // boot sweep), re-enqueue any messages stranded in the local queue UI.
+  useInterruptedTurnRecovery({ assistantId, activeConversationId, messages });
 
   // Debug API — dev-facing surface for in-the-moment chat inspection.
   // Unconditionally attached; negligible production overhead.

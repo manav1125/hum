@@ -336,19 +336,45 @@ function isAutoRunDisabled(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Fire-and-forget: triage the item, then auto-run it when policy allows.
- * Never throws — all failures degrade to "item stays queued as-is".
+ * Outcome of the triage + auto-run pass, for callers that want to report an
+ * honest status back to the model/user (e.g. the `task_list_add` tool result
+ * should say "running in the background" when the auto-runner actually
+ * started the item, not "queued").
+ */
+export interface TriageAutoRunOutcome {
+  /** True when the policy gate passed and the background run was started. */
+  autoRunStarted: boolean;
+  /**
+   * Why the item did (or didn't) auto-run — one of the {@link AutoRunDecision}
+   * reasons, or "skipped" when the caller opted out / triage crashed before
+   * the decision was evaluated.
+   */
+  reason: AutoRunDecision["reason"] | "skipped";
+}
+
+/**
+ * Triage the item, then auto-run it when policy allows. Never rejects — all
+ * failures degrade to "item stays queued as-is" with `autoRunStarted: false`.
+ *
+ * Callable fire-and-forget (`void triageAndMaybeAutoRunWorkItem(id)`) from
+ * capture paths that don't care about the outcome, or awaited by callers that
+ * fold the auto-run decision into their own result (the enqueue tool).
  */
 export function triageAndMaybeAutoRunWorkItem(
   workItemId: string,
   opts: TriageOptions = {},
-): void {
-  void (async () => {
+): Promise<TriageAutoRunOutcome> {
+  return (async (): Promise<TriageAutoRunOutcome> => {
     try {
       await triageWorkItem(workItemId, opts);
-      if (!opts.skipAutoRun) await maybeAutoRunWorkItem(workItemId);
+      if (!opts.skipAutoRun) {
+        const decision = await maybeAutoRunWorkItem(workItemId);
+        return { autoRunStarted: decision.started, reason: decision.reason };
+      }
+      return { autoRunStarted: false, reason: "skipped" };
     } catch (err) {
       log.warn({ workItemId, err: String(err) }, "work-item triage failed");
+      return { autoRunStarted: false, reason: "skipped" };
     }
   })();
 }
@@ -415,12 +441,32 @@ export async function triageWorkItem(
   broadcastWorkItemStatus(workItemId);
 }
 
+/**
+ * The auto-run gate's verdict: whether the background run was started, and
+ * the deterministic reason when it wasn't.
+ */
+export interface AutoRunDecision {
+  started: boolean;
+  reason:
+    | "started"
+    | "disabled"
+    | "not_queued"
+    | "hard_denied"
+    | "policy_ask"
+    | "concurrency_cap"
+    | "run_failed";
+}
+
 /** Exported for tests; production callers go through {@link triageAndMaybeAutoRunWorkItem}. */
-export async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
-  if (isAutoRunDisabled()) return;
+export async function maybeAutoRunWorkItem(
+  workItemId: string,
+): Promise<AutoRunDecision> {
+  if (isAutoRunDisabled()) return { started: false, reason: "disabled" };
 
   const item = getWorkItem(workItemId);
-  if (!item || item.status !== "queued") return;
+  if (!item || item.status !== "queued") {
+    return { started: false, reason: "not_queued" };
+  }
 
   // Safety floor, evaluated BEFORE the policy: items whose tool snapshot
   // includes host control, browser/computer-use automation, purchase/order
@@ -433,7 +479,7 @@ export async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
       { workItemId, hardDenied },
       "auto-run hard-denied: required tools need a human in the loop (item stays queued)",
     );
-    return;
+    return { started: false, reason: "hard_denied" };
   }
 
   const policy = await getAutonomyPolicy();
@@ -444,7 +490,7 @@ export async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
       { workItemId, classes, blocked },
       "auto-run deferred: policy asks for these categories",
     );
-    return;
+    return { started: false, reason: "policy_ask" };
   }
 
   const running = countRunningItems();
@@ -453,7 +499,7 @@ export async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
       { workItemId, running },
       "auto-run deferred: concurrency cap reached (item stays queued)",
     );
-    return;
+    return { started: false, reason: "concurrency_cap" };
   }
 
   const result = runWorkItemInBackground(workItemId);
@@ -461,4 +507,7 @@ export async function maybeAutoRunWorkItem(workItemId: string): Promise<void> {
     { workItemId, classes, success: result.success, error: result.error },
     "work item auto-run per autonomy policy",
   );
+  return result.success
+    ? { started: true, reason: "started" }
+    : { started: false, reason: "run_failed" };
 }

@@ -84,6 +84,12 @@ export const workItemSchema = z.object({
   lastRunId: z.string().nullable(),
   lastRunConversationId: z.string().nullable(),
   lastRunStatus: z.string().nullable(),
+  lastProgressNote: z
+    .string()
+    .nullable()
+    .describe(
+      'Live activity line ("Searching the web…") stamped by the runner while status is "running"; null otherwise',
+    ),
   sourceType: z.string().nullable(),
   sourceId: z.string().nullable(),
   approvalStatus: z.string().nullable(),
@@ -104,6 +110,7 @@ function broadcastWorkItemStatus(id: string): void {
         lastRunId: item.lastRunId,
         lastRunConversationId: item.lastRunConversationId,
         lastRunStatus: item.lastRunStatus,
+        lastProgressNote: item.lastProgressNote,
         updatedAt: item.updatedAt,
       },
     });

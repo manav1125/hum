@@ -60,6 +60,9 @@ export interface LatestTurnRowProps {
   onSubagentClick?: (subagentId: string) => void;
   /** Callback to abort/stop a running subagent from an inline card. */
   onStopSubagent?: (subagentId: string) => void;
+  /** Retry handler for an interrupted assistant row (turn killed by a
+   *  daemon restart). Forwarded to each `TranscriptRow`. */
+  onRetryInterrupted?: (assistantMessageId: string) => void;
 }
 
 export const LatestTurnRow = memo(function LatestTurnRow({
@@ -80,6 +83,7 @@ export const LatestTurnRow = memo(function LatestTurnRow({
   assistantId,
   onSubagentClick,
   onStopSubagent,
+  onRetryInterrupted,
 }: LatestTurnRowProps) {
   // The response cluster is "streaming" whenever the turn is in flight. This
   // keeps each response message's last tool-call group expanded for the whole
@@ -106,6 +110,7 @@ export const LatestTurnRow = memo(function LatestTurnRow({
         assistantId={assistantId}
         onSubagentClick={onSubagentClick}
         onStopSubagent={onStopSubagent}
+        onRetryInterrupted={onRetryInterrupted}
       />
       {responseItems.map((response) => (
         <Fragment key={response.key}>
@@ -126,6 +131,7 @@ export const LatestTurnRow = memo(function LatestTurnRow({
             assistantId={assistantId}
             onSubagentClick={onSubagentClick}
             onStopSubagent={onStopSubagent}
+            onRetryInterrupted={onRetryInterrupted}
             isStreaming={isStreaming}
           />
         </Fragment>

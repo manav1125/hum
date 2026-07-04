@@ -55,6 +55,7 @@ import {
   resolveOverrideProfile,
   updateConversationContextWindow,
   updateConversationSlackContextWatermark,
+  updateMessageMetadata,
 } from "../memory/conversation-crud.js";
 import { getResolvedConversationDirPath } from "../memory/conversation-directories.js";
 import { syncMessageToDisk } from "../memory/conversation-disk-view.js";
@@ -119,6 +120,7 @@ import type {
   UsageStats,
 } from "./message-protocol.js";
 import type { TrustContext } from "./trust-context.js";
+import { TURN_IN_FLIGHT_METADATA_KEY } from "./turn-recovery-markers.js";
 
 const log = getLogger("conversation-agent-loop");
 
@@ -282,6 +284,16 @@ export async function runAgentLoopImpl(
     conversationId: ctx.conversationId,
     requestId: reqId,
   });
+  // ── Turn-stage timing ────────────────────────────────────────────
+  // Wall-clock breakdown of the turn, logged once from the finally block as
+  // `turn_timing`. Separates daemon overhead (context assembly / memory
+  // injection via the user-prompt-submit hook chain, post-loop persistence)
+  // from provider latency (the agent-loop run; per-call latency is already
+  // on `llm_call_finished` trace events). Cost: a few performance.now()
+  // reads per turn.
+  const turnStartedAtMs = performance.now();
+  let contextAssemblyMs: number | null = null;
+  let agentLoopMs: number | null = null;
   let yieldedForHandoff = false;
   // The messages the most recent agent-loop run appended on top of its base —
   // the loop's own new-output boundary, persisted as this turn's new messages.
@@ -873,9 +885,13 @@ export async function runAgentLoopImpl(
       modelProfileKey,
       isNonInteractive,
     };
+    const contextAssemblyStartedAtMs = performance.now();
     const finalUserPromptCtx = await runHook(
       HOOKS.USER_PROMPT_SUBMIT,
       userPromptCtx,
+    );
+    contextAssemblyMs = Math.round(
+      performance.now() - contextAssemblyStartedAtMs,
     );
     const runMessages = finalUserPromptCtx.latestMessages;
 
@@ -981,7 +997,9 @@ export async function runAgentLoopImpl(
       return history;
     };
 
+    const agentLoopStartedAtMs = performance.now();
     const updatedHistory = await runAgentLoop(runMessages, true);
+    agentLoopMs = Math.round(performance.now() - agentLoopStartedAtMs);
 
     rlog.info(
       { resultMessageCount: updatedHistory.length },
@@ -1503,6 +1521,25 @@ export async function runAgentLoopImpl(
       publishLoopMessagesChanged();
     }
   } finally {
+    // Terminal-path cleanup for the in-flight marker stamped at reserve time
+    // (`handleLlmCallStarted`). The happy path clears it in
+    // `handleMessageComplete`; error/cancellation exits leave the last
+    // reserved row un-finalized, and without this clear the next daemon boot
+    // would re-classify an already-surfaced failure as a fresh interruption.
+    // Best-effort — never lets a metadata write reject the turn teardown.
+    if (state.lastAssistantMessageId) {
+      try {
+        updateMessageMetadata(state.lastAssistantMessageId, {
+          [TURN_IN_FLIGHT_METADATA_KEY]: undefined,
+        });
+      } catch (err) {
+        rlog.warn(
+          { err, messageId: state.lastAssistantMessageId },
+          "Failed to clear in-flight marker at turn teardown (non-fatal)",
+        );
+      }
+    }
+
     if (turnStarted) {
       ctx.turnCount++;
       const config = getConfig();
@@ -1539,6 +1576,31 @@ export async function runAgentLoopImpl(
     }
 
     ctx.profiler.emitSummary(ctx.traceEmitter, reqId);
+
+    // Single structured line per turn breaking wall-clock into stages.
+    // `postLoopMs` is everything after the primary agent-loop run returned:
+    // tool-result flush, attachment resolution, disk sync, turn commit.
+    {
+      const totalMs = Math.round(performance.now() - turnStartedAtMs);
+      const postLoopMs =
+        agentLoopMs !== null && contextAssemblyMs !== null
+          ? totalMs - agentLoopMs - contextAssemblyMs
+          : null;
+      rlog.info(
+        {
+          totalMs,
+          contextAssemblyMs,
+          agentLoopMs,
+          postLoopMs,
+          llmCallCount: state.exchangeLlmCallCount,
+          inputTokens: state.exchangeInputTokens,
+          outputTokens: state.exchangeOutputTokens,
+          callSite: turnCallSite,
+          aborted: abortController.signal.aborted,
+        },
+        "turn_timing",
+      );
+    }
 
     ctx.abortController = null;
     ctx.setProcessing(false);

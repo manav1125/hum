@@ -123,6 +123,14 @@ export interface DisplayMessage {
   /** True for daemon-injected subagent lifecycle notifications that should
    *  not render as user bubbles. Matches macOS `isSubagentNotification`. */
   isSubagentNotification?: boolean;
+  /**
+   * True when this assistant turn died without finishing — the daemon was
+   * restarted or crashed mid-generation and its boot-recovery sweep marked
+   * the row (wire `ConversationMessage.interrupted`), or a live
+   * `turn_interrupted` SSE event flagged it. The transcript renders an
+   * inline "response was interrupted" notice with a retry affordance.
+   */
+  interrupted?: boolean;
 }
 
 /**

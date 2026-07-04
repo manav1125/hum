@@ -297,7 +297,11 @@ function appendContentBlocks(target: unknown[], donorContent: string): void {
 
 /**
  * Promote metadata fields from a donor message to the surviving message
- * when the survivor lacks them. Currently promotes `subagentNotification`.
+ * when the survivor lacks them. Currently promotes `subagentNotification`
+ * and the boot-recovery `interrupted` marker (+ `interruptedAt`) — an
+ * interrupted tail row folded into its turn's surviving row must keep the
+ * flag, or the client's "response was interrupted" affordance disappears
+ * exactly when the merge kicks in (multi-LLM-call turns).
  * Returns a new MessageRow if promotion occurred, otherwise the original.
  */
 function promoteMetadata(survivor: MessageRow, donor: MessageRow): MessageRow {
@@ -305,11 +309,22 @@ function promoteMetadata(survivor: MessageRow, donor: MessageRow): MessageRow {
     try {
       const survivorMeta = JSON.parse(survivor.metadata);
       const donorMeta = JSON.parse(donor.metadata);
+      let promoted = false;
       if (
         !survivorMeta.subagentNotification &&
         donorMeta.subagentNotification
       ) {
         survivorMeta.subagentNotification = donorMeta.subagentNotification;
+        promoted = true;
+      }
+      if (survivorMeta.interrupted !== true && donorMeta.interrupted === true) {
+        survivorMeta.interrupted = true;
+        if (typeof donorMeta.interruptedAt === "number") {
+          survivorMeta.interruptedAt = donorMeta.interruptedAt;
+        }
+        promoted = true;
+      }
+      if (promoted) {
         return { ...survivor, metadata: JSON.stringify(survivorMeta) };
       }
     } catch (err) {

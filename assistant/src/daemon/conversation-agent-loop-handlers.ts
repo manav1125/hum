@@ -33,6 +33,7 @@ import {
   setConversationHistoryStrippedAt,
   setLastNotifiedInferenceProfile,
   updateMessageContent,
+  updateMessageMetadata,
 } from "../memory/conversation-crud.js";
 import { syncMessageToDisk } from "../memory/conversation-disk-view.js";
 import { indexMessageNow } from "../memory/indexer.js";
@@ -40,6 +41,7 @@ import {
   backfillMessageIdOnLogs,
   buildProviderErrorResponsePayload,
   recordRequestLog,
+  serializeLlmLogPayload,
   setAgentLoopExitReasonOnLatestLog,
 } from "../memory/llm-request-log-store.js";
 import { backfillMemoryRecallLogMessageId } from "../memory/memory-recall-log-store.js";
@@ -73,6 +75,7 @@ import {
   resolveStructuredPricing,
 } from "../usage/pricing.js";
 import { ProviderError } from "../util/errors.js";
+import { clearPerfStage, markPerfStage } from "../util/event-loop-lag.js";
 import { faviconUrlForDomain } from "../util/favicon.js";
 import { getLogger } from "../util/logger.js";
 import type { DirectiveRequest } from "./assistant-attachments.js";
@@ -100,6 +103,7 @@ import type {
   WebSearchMetadata,
   WebSearchResultItem,
 } from "./message-types/web-activity.js";
+import { TURN_IN_FLIGHT_METADATA_KEY } from "./turn-recovery-markers.js";
 
 const log = getLogger("agent-loop-handlers");
 
@@ -785,10 +789,17 @@ export async function handleLlmCallStarted(
   }
 
   const metadata = buildAssistantChannelMetadata(state, deps);
+  // Stamp the in-flight marker so a daemon death mid-call leaves a durable
+  // trace: boot recovery (`turn-recovery.ts`) finds rows still carrying it
+  // and marks them interrupted. Cleared on finalize (`handleMessageComplete`)
+  // and on the loop's terminal paths (`conversation-agent-loop.ts` finally).
   const reservedRow = await reserveMessage(
     deps.ctx.conversationId,
     "assistant",
-    metadata,
+    {
+      ...(metadata ?? {}),
+      [TURN_IN_FLIGHT_METADATA_KEY]: true,
+    },
   );
   state.lastAssistantMessageId = reservedRow.id;
   state.assistantRowAwaitingFinalization = true;
@@ -1830,6 +1841,20 @@ export async function handleMessageComplete(
   const contentJson = JSON.stringify(contentForPersistence);
   updateMessageContent(assistantMessageId, contentJson);
   state.assistantRowAwaitingFinalization = false;
+  // The row is finalized — drop the in-flight marker so boot recovery never
+  // mistakes a completed call for an interrupted one. Best-effort: a marker
+  // that survives a transient write failure only risks a spurious
+  // "interrupted" tag after a restart, never data loss.
+  try {
+    updateMessageMetadata(assistantMessageId, {
+      [TURN_IN_FLIGHT_METADATA_KEY]: undefined,
+    });
+  } catch (err) {
+    deps.rlog.warn(
+      { err, messageId: assistantMessageId },
+      "Failed to clear in-flight marker on finalized assistant row (non-fatal)",
+    );
+  }
   // The assistant row now holds the authoritative content (text + thinking +
   // tool_use blocks from `event.message`), and any drained tool-result rows
   // are durable. `lastPersistedContentSeq` is the last streamed text/thinking
@@ -2038,17 +2063,32 @@ function handleUsage(
   }
 
   if (event.rawRequest && event.rawResponse) {
+    // This block runs synchronously on the event loop once per LLM call and
+    // serializes the FULL provider request (whole history). Stage-mark it and
+    // time it so prod stalls attribute here instead of reading as a generic
+    // freeze. `serializeLlmLogPayload` truncates base64 media to bound cost.
+    const persistStartedAt = performance.now();
+    markPerfStage("persist_llm_request_log");
     try {
       recordRequestLog(
         deps.ctx.conversationId,
-        JSON.stringify(event.rawRequest),
-        JSON.stringify(event.rawResponse),
+        serializeLlmLogPayload(event.rawRequest),
+        serializeLlmLogPayload(event.rawResponse),
         undefined,
         providerName,
         "mainAgent",
       );
     } catch (err) {
       deps.rlog.warn({ err }, "Failed to persist LLM request log (non-fatal)");
+    } finally {
+      clearPerfStage();
+      const persistMs = Math.round(performance.now() - persistStartedAt);
+      if (persistMs > 250) {
+        deps.rlog.warn(
+          { persistMs },
+          "llm_request_log_persist_slow — synchronous request-log write stalled the event loop",
+        );
+      }
     }
   }
 
@@ -2137,7 +2177,7 @@ function handleProviderError(
   try {
     recordRequestLog(
       deps.ctx.conversationId,
-      JSON.stringify(event.rawRequest),
+      serializeLlmLogPayload(event.rawRequest),
       JSON.stringify(buildProviderErrorResponsePayload(event.error)),
       undefined,
       event.actualProvider,

@@ -113,12 +113,73 @@ export function broadcastWorkItemStatus(id: string): void {
         lastRunId: item.lastRunId,
         lastRunConversationId: item.lastRunConversationId,
         lastRunStatus: item.lastRunStatus,
+        lastProgressNote: item.lastProgressNote,
         updatedAt: item.updatedAt,
       },
     } as ServerMessage);
     // Couple the feed lifecycle: a terminal work-item dismisses its matching
     // "Run it" card so it stops lingering in the Inbound lane.
     reconcileFeedForWorkItemStatus(item);
+  }
+}
+
+// ── Mid-run progress notes ───────────────────────────────────────────
+
+/**
+ * Human-readable one-liner for a tool that just started, mirroring the chat
+ * client's live-status vocabulary ("Searching …", "Reading example.com") so
+ * the Activity board's running rows read like the thread would.
+ */
+export function progressNoteForToolStart(
+  toolName: string,
+  input: Record<string, unknown>,
+): string {
+  if (toolName === "web_search") {
+    const query = typeof input.query === "string" ? input.query.trim() : "";
+    if (!query) return "Searching the web";
+    const truncated = query.length > 60 ? `${query.slice(0, 57)}...` : query;
+    return `Searching "${truncated}"`;
+  }
+  if (toolName === "web_fetch") {
+    if (typeof input.url === "string") {
+      try {
+        return `Reading ${new URL(input.url).hostname}`;
+      } catch {
+        // fall through to the generic label
+      }
+    }
+    return "Reading a page";
+  }
+  if (
+    toolName === "skill_execute" &&
+    typeof input.activity === "string" &&
+    input.activity.trim().length > 0
+  ) {
+    return input.activity.trim();
+  }
+  return `Running ${toolName.replace(/_/g, " ")}`;
+}
+
+/**
+ * Stamp the latest activity line onto a running work item, deduplicated so a
+ * burst of identical tool starts doesn't spam DB writes. Best-effort — a
+ * failed stamp never breaks the run.
+ */
+function stampProgressNote(
+  workItemId: string,
+  note: string,
+  lastNoteRef: { current: string | null },
+): void {
+  if (note === lastNoteRef.current) return;
+  lastNoteRef.current = note;
+  try {
+    updateWorkItem(workItemId, { lastProgressNote: note });
+    broadcastWorkItemStatus(workItemId);
+  } catch (err) {
+    log.debug(
+      { err: String(err), workItemId },
+      "failed to stamp work-item progress note (ignored)",
+    );
   }
 }
 
@@ -242,6 +303,9 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // Execute asynchronously
   let conversation: Awaited<ReturnType<typeof getOrCreateConversation>> | null =
     null;
+  // Latest stamped progress note, so identical consecutive tool starts don't
+  // trigger redundant DB writes/broadcasts.
+  const lastProgressNote: { current: string | null } = { current: null };
   void (async () => {
     try {
       const result = await runTask(
@@ -279,6 +343,24 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             attachments: [],
             onEvent: (event) => {
               broadcastMessage(event);
+              // Surface mid-run progress: each tool start becomes the item's
+              // live activity line ("Searching the web…") so the Activity/
+              // Projects boards show what a running task is actually doing.
+              const e = event as {
+                type?: string;
+                toolName?: string;
+                input?: Record<string, unknown>;
+              };
+              if (
+                e.type === "tool_use_start" &&
+                typeof e.toolName === "string"
+              ) {
+                stampProgressNote(
+                  workItemId,
+                  progressNoteForToolStart(e.toolName, e.input ?? {}),
+                  lastProgressNote,
+                );
+              }
             },
             isInteractive: false,
           });
@@ -304,6 +386,9 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             lastRunId: result.taskRunId,
             lastRunConversationId: result.conversationId,
             lastRunStatus: result.status,
+            // The run is over — a stale "Searching the web…" line must not
+            // linger on a finished item.
+            lastProgressNote: null,
           },
           { actor: "runner" },
         );
@@ -338,6 +423,7 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
         {
           status: "failed",
           lastRunStatus: "failed",
+          lastProgressNote: null,
         },
         { actor: "runner" },
       );

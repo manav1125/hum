@@ -5,7 +5,7 @@
  * item falls back to the task-level required tools instead of silently
  * skipping permission checks.
  */
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../../util/logger.js", () => ({
   getLogger: () =>
@@ -30,6 +30,7 @@ mock.module("../../tasks/task-runner.js", () => ({
   }),
 }));
 
+import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
 import {
@@ -39,6 +40,16 @@ import {
 import { preflightWorkItem, ROUTES } from "./work-items-routes.js";
 
 initializeDb();
+
+// This suite assumes a clean work_items table. Clear DB-backed state before
+// each test so it doesn't depend on rows left behind by an earlier test file
+// running in the same `bun test` process (mirrors work-item-triage.test.ts and
+// project-store.test.ts).
+beforeEach(() => {
+  getDb().run("DELETE FROM work_items");
+  getDb().run("DELETE FROM tasks");
+  getDb().run("DELETE FROM projects");
+});
 
 describe("empty required_tools snapshot bypass", () => {
   test("falls back to task required tools when snapshot requiredTools is empty", async () => {

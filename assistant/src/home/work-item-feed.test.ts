@@ -44,6 +44,7 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
     context: null,
     sourceContext: null,
     lastActivityAt: null,
+    lastProgressNote: null,
     createdAt: Date.parse("2026-06-20T09:00:00Z"),
     updatedAt: Date.parse("2026-06-20T09:00:00Z"),
     ...overrides,

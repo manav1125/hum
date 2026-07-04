@@ -222,6 +222,7 @@ import {
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
   migrateWorkItemPmColumns,
+  migrateWorkItemProgressNote,
   recoverCrashedMigrations,
   runComplexMigrations,
   runLateMigrations,
@@ -514,6 +515,7 @@ export function initializeDb(): void {
     migrateCreateWorkItemEvents,
     migrateCreatePushDevices,
     migrateProjectsCoworkColumns,
+    migrateWorkItemProgressNote,
   ];
 
   // Run each migration step, catching and logging individual failures so one

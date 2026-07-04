@@ -286,9 +286,9 @@ export const MemoryV2ConfigSchema = z
       .object({
         enabled: z
           .boolean()
-          .default(true)
+          .default(false)
           .describe(
-            "Whether to use the LLM router as the per-turn page-selection mechanism in place of spreading activation. Enabled by default.",
+            "Whether to use the LLM router as the per-turn page-selection mechanism in place of spreading activation. Disabled by default: the router adds a blocking LLM call before every main-agent call (roughly doubling per-turn latency) and its forced tool call is unreliable through OpenRouter (frequent schema-validation failures pay the latency and inject nothing). The default path is the fast activation pipeline (ANN + BM25 spreading activation, no extra LLM call); page selection may be less precise than the router's. Set to true to opt back in.",
           ),
         max_page_ids: z
           .number()
@@ -354,7 +354,7 @@ export const MemoryV2ConfigSchema = z
           ),
       })
       .default({
-        enabled: true,
+        enabled: false,
         max_page_ids: 25,
         router_prompt_path: null,
         batch_size: null,
@@ -364,7 +364,7 @@ export const MemoryV2ConfigSchema = z
         historical_pairs_max_chars: null,
       })
       .describe(
-        "LLM router configuration. When enabled, a single router LLM call replaces spreading activation for per-turn page selection.",
+        "LLM router configuration. When enabled, a single router LLM call replaces spreading activation for per-turn page selection. Disabled by default for latency (see `enabled`).",
       ),
   })
   .describe(

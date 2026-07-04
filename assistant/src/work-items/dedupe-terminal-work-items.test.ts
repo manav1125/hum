@@ -34,6 +34,7 @@ function wi(overrides: Partial<WorkItem> & { id: string }): WorkItem {
     context: null,
     sourceContext: null,
     lastActivityAt: null,
+    lastProgressNote: null,
     createdAt: 1_000,
     updatedAt: 1_000,
     ...overrides,

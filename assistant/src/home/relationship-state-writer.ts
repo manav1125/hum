@@ -21,6 +21,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { isTemplatePlaceholder } from "../daemon/handlers/identity.js";
 import { countConversations as countConversationsDb } from "../memory/conversation-queries.js";
 import { listConnections } from "../oauth/oauth-store.js";
 import { resolveGuardianPersonaPath } from "../prompts/persona-resolver.js";
@@ -709,11 +710,15 @@ function parseIdentity(identityPath: string): {
     // bullet still takes precedence over later aliases.
     if (
       assistantName === DEFAULT_ASSISTANT_NAME &&
+      !isTemplatePlaceholder(parsed.value) &&
       (lower === "name" ||
         lower === "assistant name" ||
         lower === "preferred name" ||
         lower.startsWith("name"))
     ) {
+      // Template placeholders like `_(not yet chosen)_` are unset values, not
+      // names — skipping them keeps the API returning a clean default ("Cue"
+      // or the onboarding-sidecar name) instead of raw markdown scaffolding.
       assistantName = parsed.value;
     }
     if (
@@ -753,7 +758,8 @@ function parseUserName(content: string): string | undefined {
         lower === "user name" ||
         lower.startsWith("preferred name") ||
         lower.startsWith("name")) &&
-      parsed.value
+      parsed.value &&
+      !isTemplatePlaceholder(parsed.value)
     ) {
       return parsed.value;
     }

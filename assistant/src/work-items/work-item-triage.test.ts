@@ -1,17 +1,49 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "bun:test";
 
 // The auto-run tests exercise `maybeAutoRunWorkItem` against a real DB; mock
 // the runner + policy modules so no background conversation actually spawns
 // and the policy is deterministic ("auto" for everything — the hard-deny
 // guard must hold even under the most permissive policy).
+//
+// `mock.module` mutates the *process-global* module registry, so a top-level
+// mock here would leak into any other test file sharing the same `bun test`
+// process (bun loads every test file up front, before running any test). That
+// silently broke `work-items-routes.test.ts`, whose "Run now" route tests
+// exercise the REAL `runWorkItemInBackground`. So we capture the real exports
+// by value, install the mock only for this file's tests (beforeAll), and
+// restore the real module afterward (afterAll) — targeted, so it leaves other
+// files' unrelated mocks intact.
+import * as workItemRunner from "./work-item-runner.js";
+
+const realRunWorkItemInBackground = workItemRunner.runWorkItemInBackground;
+const realBroadcastWorkItemStatus = workItemRunner.broadcastWorkItemStatus;
+
 let runnerCalls: string[] = [];
-mock.module("./work-item-runner.js", () => ({
-  runWorkItemInBackground: (id: string) => {
-    runnerCalls.push(id);
-    return { success: true };
-  },
-  broadcastWorkItemStatus: () => {},
-}));
+
+beforeAll(() => {
+  mock.module("./work-item-runner.js", () => ({
+    runWorkItemInBackground: (id: string) => {
+      runnerCalls.push(id);
+      return { success: true };
+    },
+    broadcastWorkItemStatus: () => {},
+  }));
+});
+
+afterAll(() => {
+  mock.module("./work-item-runner.js", () => ({
+    runWorkItemInBackground: realRunWorkItemInBackground,
+    broadcastWorkItemStatus: realBroadcastWorkItemStatus,
+  }));
+});
 
 let mockPolicy: Record<string, string> = {};
 mock.module("../permissions/autonomy-policy-reader.js", () => ({
@@ -186,6 +218,12 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
     };
   });
 
+  // Don't leak rows to a later test file sharing this `bun test` process.
+  afterAll(() => {
+    getDb().run("DELETE FROM work_items");
+    getDb().run("DELETE FROM tasks");
+  });
+
   test("hard-denies auto-run when the snapshot includes browser/host/purchase tools, even under an all-auto policy", async () => {
     for (const tools of [
       ["browser_navigate", "web_search"],
@@ -198,7 +236,8 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
         title: `Buy stroopwafels via ${tools[0]}`,
         requiredTools: JSON.stringify(tools),
       });
-      await maybeAutoRunWorkItem(item.id);
+      const decision = await maybeAutoRunWorkItem(item.id);
+      expect(decision).toEqual({ started: false, reason: "hard_denied" });
       expect(runnerCalls).toEqual([]);
       expect(getWorkItem(item.id)!.status).toBe("queued");
     }
@@ -210,7 +249,8 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
       title: "Summarize the news",
       requiredTools: JSON.stringify(["web_search", "read"]),
     });
-    await maybeAutoRunWorkItem(item.id);
+    const decision = await maybeAutoRunWorkItem(item.id);
+    expect(decision).toEqual({ started: true, reason: "started" });
     expect(runnerCalls).toEqual([item.id]);
   });
 
@@ -221,7 +261,8 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
       title: "Research something",
       requiredTools: JSON.stringify(["web_search"]),
     });
-    await maybeAutoRunWorkItem(item.id);
+    const decision = await maybeAutoRunWorkItem(item.id);
+    expect(decision).toEqual({ started: false, reason: "policy_ask" });
     expect(runnerCalls).toEqual([]);
   });
 });
@@ -233,6 +274,12 @@ describe("triageWorkItem stamping (DB-backed)", () => {
     getDb().run("DELETE FROM work_items");
     getDb().run("DELETE FROM tasks");
     taskId = createTask({ title: "Test task", template: "do it" }).id;
+  });
+
+  // Don't leak rows to a later test file sharing this `bun test` process.
+  afterAll(() => {
+    getDb().run("DELETE FROM work_items");
+    getDb().run("DELETE FROM tasks");
   });
 
   test("stamps priorityTier and sortIndex on a queued item (heuristic path)", async () => {

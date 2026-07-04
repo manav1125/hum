@@ -320,11 +320,10 @@ describe("writeHomeFeedItemForSignal", () => {
     expect(appendCalls).toHaveLength(0);
   });
 
-  test("writes a feed item with undefined title when only the body is available", async () => {
-    // Regression: when `notifications send` is called without `--title`, the
-    // notification pipeline must not manufacture a title (the LLM's rendered
-    // copy echoes the body into `renderedCopy.title`). Leave `title`
-    // undefined so renderers fall back to `summary` instead of stuttering.
+  test("derives an event-name title when only the body is available", async () => {
+    // When `notifications send` is called without `--title`, the card must
+    // not ship title-less (empty titles rendered ragged next to sibling
+    // cards) — a deterministic label is derived from the event name instead.
     conversationRow = { conversationType: "background" };
     const signal = makeSignal({
       sourceEventName: "example.event",
@@ -335,14 +334,15 @@ describe("writeHomeFeedItemForSignal", () => {
 
     expect(item).not.toBeNull();
     expect(appendCalls).toHaveLength(1);
-    expect(appendCalls[0]!.title).toBeUndefined();
+    expect(appendCalls[0]!.title).toBe("Example event");
     expect(appendCalls[0]!.summary).toBe("Real body");
   });
 
-  test("ignores LLM-rendered title when no payload title was supplied", async () => {
+  test("ignores an LLM-rendered title that echoes the body (falls back to event title)", async () => {
     // The LLM often echoes the body verbatim into `renderedCopy.title` when
     // the source didn't pass one. The home-feed writer must NOT promote that
-    // echo into the feed item — only an explicit source title is honored.
+    // echo (it stutters against `summary`); the deterministic event-name
+    // title is used instead.
     conversationRow = { conversationType: "background" };
     const signal = makeSignal({
       sourceEventName: "example.event",
@@ -361,8 +361,42 @@ describe("writeHomeFeedItemForSignal", () => {
 
     expect(item).not.toBeNull();
     expect(appendCalls).toHaveLength(1);
-    expect(appendCalls[0]!.title).toBeUndefined();
+    expect(appendCalls[0]!.title).toBe("Example event");
     expect(appendCalls[0]!.summary).toBe("Real body");
+  });
+
+  test("known event names map to friendly fallback titles", async () => {
+    conversationRow = { conversationType: "background" };
+    const signal = makeSignal({
+      sourceEventName: "watcher.notification",
+      contextPayload: { body: "Something changed on the page." },
+    });
+
+    const item = await writeHomeFeedItemForSignal(signal, makeDecision());
+
+    expect(item).not.toBeNull();
+    expect(appendCalls[0]!.title).toBe("Watcher update");
+  });
+
+  test("uses a distinct LLM-rendered title when no payload title was supplied", async () => {
+    conversationRow = { conversationType: "background" };
+    const signal = makeSignal({
+      sourceEventName: "example.event",
+      contextPayload: {},
+    });
+    const decision = makeDecision({
+      renderedCopy: {
+        vellum: {
+          title: "Deploy finished cleanly",
+          body: "The 14:00 deploy completed with no errors across services.",
+        },
+      },
+    });
+
+    const item = await writeHomeFeedItemForSignal(signal, decision);
+
+    expect(item).not.toBeNull();
+    expect(appendCalls[0]!.title).toBe("Deploy finished cleanly");
   });
 
   test("treats whitespace-only rendered copy and payload values as missing and returns null", async () => {

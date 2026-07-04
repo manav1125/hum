@@ -62,6 +62,9 @@ export interface TranscriptRowProps {
   onSubagentClick?: (subagentId: string) => void;
   /** Callback to abort/stop a running subagent from an inline card. */
   onStopSubagent?: (subagentId: string) => void;
+  /** Retry handler for an interrupted assistant row (turn killed by a
+   *  daemon restart). Forwarded to `TranscriptMessageBody`. */
+  onRetryInterrupted?: (assistantMessageId: string) => void;
   /** True when this row belongs to the actively-streaming turn. Forwarded to
    *  `TranscriptMessageBody` so the streaming message's last tool-call group
    *  defaults open. History rows leave it `false`. */
@@ -85,6 +88,7 @@ export const TranscriptRow = memo(function TranscriptRow({
   assistantId,
   onSubagentClick,
   onStopSubagent,
+  onRetryInterrupted,
   isStreaming,
 }: TranscriptRowProps) {
   switch (item.kind) {
@@ -106,6 +110,7 @@ export const TranscriptRow = memo(function TranscriptRow({
           assistantId={assistantId}
           onSubagentClick={onSubagentClick}
           onStopSubagent={onStopSubagent}
+          onRetryInterrupted={onRetryInterrupted}
           isStreaming={isStreaming}
         />
       );

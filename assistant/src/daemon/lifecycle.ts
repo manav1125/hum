@@ -88,6 +88,7 @@ import {
 } from "../telemetry/usage-telemetry-reporter.js";
 import { registerBuiltinTtsProviders } from "../tts/providers/register-builtins.js";
 import { getDeviceId } from "../util/device-id.js";
+import { startEventLoopLagMonitor } from "../util/event-loop-lag.js";
 import { getLogger, initLogger } from "../util/logger.js";
 import {
   ensureDataDir,
@@ -131,6 +132,7 @@ import {
 import { DaemonServer } from "./server.js";
 import { installShutdownHandlers } from "./shutdown-handlers.js";
 import { refreshSkillCapabilityMemories } from "./skill-memory-refresh.js";
+import { recoverInterruptedTurns } from "./turn-recovery.js";
 
 const log = getLogger("lifecycle");
 let diskPressureStartupSampleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -288,6 +290,11 @@ export async function runDaemon(): Promise<void> {
     // captured. After config loads we check the opt-out flag and call
     // closeSentry() if the user has disabled it.
     initSentry();
+
+    // Start the event-loop lag monitor before anything heavy runs so
+    // synchronous stalls anywhere in the daemon (turn path, migrations,
+    // request handlers) are observable in prod logs with stage attribution.
+    startEventLoopLagMonitor();
 
     ensureDataDir();
 
@@ -570,6 +577,26 @@ export async function runDaemon(): Promise<void> {
           { count: orphanedRunning.length },
           "Recovered orphaned running work items",
         );
+      }
+
+      // Recover assistant turns that were in flight when the previous daemon
+      // process died (deploy restart / crash): mark their reserved assistant
+      // rows interrupted, broadcast `turn_interrupted`, and unstick any
+      // "Generating title..." placeholder. Without this, the conversation is
+      // stranded forever with an empty assistant bubble and no error.
+      try {
+        const turnRecovery = recoverInterruptedTurns();
+        if (turnRecovery.recoveredMessages > 0) {
+          log.info(
+            {
+              recoveredMessages: turnRecovery.recoveredMessages,
+              conversationIds: turnRecovery.conversationIds,
+            },
+            "Recovered interrupted in-flight turns from previous process",
+          );
+        }
+      } catch (err) {
+        log.warn({ err }, "Hung-turn recovery failed — continuing startup");
       }
 
       try {

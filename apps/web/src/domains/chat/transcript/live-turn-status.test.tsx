@@ -176,4 +176,43 @@ describe("deriveLiveStatus", () => {
       deriveLiveStatus(input({ phase: "queued", pendingQueuedCount: 0 }))?.text,
     ).toBe("Finishing up…");
   });
+
+  // --- SSE disconnect ---------------------------------------------------------
+
+  test("stream down while active → Reconnecting…, beating every other rung", () => {
+    // The dropped stream wins over long-elapsed fallback copy ("Still
+    // working…" must never claim progress the client cannot observe)…
+    const stale = deriveLiveStatus(
+      input({ now: T0 + 70_000, sseConnected: false }),
+    );
+    expect(stale?.text).toBe("Reconnecting…");
+    // …over running tools and daemon statusText…
+    const tool = deriveLiveStatus(
+      input({
+        runningTools: [
+          { toolUseId: "t1", toolName: "web_search", startedAt: T0 },
+        ],
+        statusText: "Processing bash results",
+        sseConnected: false,
+      }),
+    );
+    expect(tool?.text).toBe("Reconnecting…");
+    // …and shows for fallback-active (external/restored) turns too.
+    const fallback = deriveLiveStatus(
+      input({ phase: "idle", fallbackActive: true, sseConnected: false }),
+    );
+    expect(fallback?.text).toBe("Reconnecting…");
+  });
+
+  test("stream down while idle → still hidden", () => {
+    expect(
+      deriveLiveStatus(input({ phase: "idle", sseConnected: false })),
+    ).toBeNull();
+  });
+
+  test("sseConnected omitted defaults to connected behaviour", () => {
+    expect(deriveLiveStatus(input({ now: T0 + 2_000 }))?.text).toBe(
+      "Cue is reading your message…",
+    );
+  });
 });

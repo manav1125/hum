@@ -5,10 +5,15 @@ import {
   buildWorkItemMismatchError,
   createWorkItemWithPermissions,
   findActiveWorkItemBySource,
+  getWorkItem,
   identifyEntityById,
   updateWorkItem,
+  type WorkItem,
 } from "../../work-items/work-item-store.js";
-import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
+import {
+  triageAndMaybeAutoRunWorkItem,
+  type TriageAutoRunOutcome,
+} from "../../work-items/work-item-triage.js";
 import type { ToolContext, ToolExecutionResult } from "../types.js";
 
 const log = getLogger("task-list-add");
@@ -18,6 +23,69 @@ const PRIORITY_LABELS: Record<number, string> = {
   1: "medium",
   2: "low",
 };
+
+/**
+ * Safety ceiling on how long the tool result waits for the triage + auto-run
+ * decision. The decision itself is bounded (the flash triage sidechain has an
+ * 8s timeout, then the policy check is milliseconds), so this only fires if
+ * something hangs — in which case the result falls back to an honest hedge.
+ */
+const AUTO_RUN_DECISION_WAIT_MS = 12_000;
+
+/**
+ * Await the triage + auto-run outcome, bounded by
+ * {@link AUTO_RUN_DECISION_WAIT_MS}. Returns `null` when the decision didn't
+ * land in time (the triage keeps going in the background; only the report is
+ * hedged).
+ */
+async function awaitAutoRunOutcome(
+  outcomePromise: Promise<TriageAutoRunOutcome>,
+): Promise<TriageAutoRunOutcome | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), AUTO_RUN_DECISION_WAIT_MS);
+  });
+  try {
+    return await Promise.race([outcomePromise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Status + guidance lines for the enqueue result, reflecting what actually
+ * happened after triage: if the auto-runner STARTED the item, the tool result
+ * must say so (so the model tells the user it's running, not "waiting for you
+ * to say run") — the historical bug was composing the reply from the
+ * pre-triage snapshot.
+ */
+function buildStatusLines(
+  workItem: WorkItem,
+  outcome: TriageAutoRunOutcome | null,
+): { statusLine: string; note: string } {
+  // Re-read so the reported status reflects post-triage reality.
+  const fresh = getWorkItem(workItem.id) ?? workItem;
+
+  if (outcome?.autoRunStarted || fresh.status === "running") {
+    return {
+      statusLine: `  Status: running (auto-started)`,
+      note: "Cue auto-started this task in the background per the user's autonomy settings. Tell the user it is ALREADY RUNNING and the result will land in the Review lane — do NOT say it is queued or waiting for approval.",
+    };
+  }
+
+  if (outcome === null) {
+    // Decision didn't land in time — hedge rather than promise it will wait.
+    return {
+      statusLine: `  Status: ${fresh.status}`,
+      note: "Cue may still start this task automatically in the background, depending on the user's autonomy settings. Don't promise it will wait for an explicit go-ahead.",
+    };
+  }
+
+  return {
+    statusLine: `  Status: ${fresh.status}`,
+    note: "The task is queued and will wait for the user (or an explicit task_queue_run) to start it.",
+  };
+}
 
 /**
  * Execution channels that are NOT external messaging channels and therefore
@@ -230,9 +298,13 @@ export async function executeTaskListAdd(
         requiredTools: adHocRequiredTools,
         ...source,
       });
-      triageAndMaybeAutoRunWorkItem(workItem.id, {
-        callerSetPriority: priorityTier != null,
-      });
+      // Await the triage + auto-run DECISION (bounded; not the run itself) so
+      // the tool result reports what actually happened to the item.
+      const outcome = await awaitAutoRunOutcome(
+        triageAndMaybeAutoRunWorkItem(workItem.id, {
+          callerSetPriority: priorityTier != null,
+        }),
+      );
 
       log.info(
         {
@@ -241,6 +313,7 @@ export async function executeTaskListAdd(
           title: workItem.title,
           sourceType: source.sourceType,
           sourceId: source.sourceId,
+          autoRunStarted: outcome?.autoRunStarted ?? "unknown",
         },
         "ad-hoc work item created",
       );
@@ -248,12 +321,13 @@ export async function executeTaskListAdd(
       const priority =
         PRIORITY_LABELS[workItem.priorityTier] ??
         `tier ${workItem.priorityTier}`;
+      const { statusLine, note } = buildStatusLines(workItem, outcome);
       const lines = [
         `Enqueued work item:`,
         `  Title: ${workItem.title}`,
         `  ID: ${workItem.id}`,
         `  Priority: ${priority}`,
-        `  Status: ${workItem.status}`,
+        statusLine,
       ];
       if (workItem.notes) {
         lines.push(`  Notes: ${workItem.notes}`);
@@ -261,6 +335,7 @@ export async function executeTaskListAdd(
       if (workItem.sortIndex !== undefined) {
         lines.push(`  Sort index: ${workItem.sortIndex}`);
       }
+      lines.push("", note);
 
       return { content: lines.join("\n"), isError: false };
     }
@@ -358,9 +433,13 @@ export async function executeTaskListAdd(
       requiredTools: resolvedRequiredTools,
       ...source,
     });
-    triageAndMaybeAutoRunWorkItem(workItem.id, {
-      callerSetPriority: priorityTier != null,
-    });
+    // Await the triage + auto-run DECISION (bounded; not the run itself) so
+    // the tool result reports what actually happened to the item.
+    const outcome = await awaitAutoRunOutcome(
+      triageAndMaybeAutoRunWorkItem(workItem.id, {
+        callerSetPriority: priorityTier != null,
+      }),
+    );
 
     log.info(
       {
@@ -370,19 +449,21 @@ export async function executeTaskListAdd(
         title: workItem.title,
         sourceType: source.sourceType,
         sourceId: source.sourceId,
+        autoRunStarted: outcome?.autoRunStarted ?? "unknown",
       },
       "work item created from task definition",
     );
 
     const priority =
       PRIORITY_LABELS[workItem.priorityTier] ?? `tier ${workItem.priorityTier}`;
+    const { statusLine, note } = buildStatusLines(workItem, outcome);
     const lines = [
       `Enqueued work item:`,
       `  Title: ${workItem.title}`,
       `  ID: ${workItem.id}`,
       `  Task definition: ${resolvedTask.title} (${resolvedTask.id})`,
       `  Priority: ${priority}`,
-      `  Status: ${workItem.status}`,
+      statusLine,
     ];
     if (workItem.notes) {
       lines.push(`  Notes: ${workItem.notes}`);
@@ -390,6 +471,7 @@ export async function executeTaskListAdd(
     if (workItem.sortIndex !== undefined) {
       lines.push(`  Sort index: ${workItem.sortIndex}`);
     }
+    lines.push("", note);
 
     return { content: lines.join("\n"), isError: false };
   } catch (err) {

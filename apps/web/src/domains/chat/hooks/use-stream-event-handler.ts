@@ -24,6 +24,7 @@ import {
   handleUserMessageEcho,
   handleGenerationHandoff,
   handleGenerationCancelled,
+  handleTurnInterrupted,
 } from "@/domains/chat/utils/stream-handlers/message-handlers";
 import {
   handleStreamError,
@@ -273,6 +274,9 @@ export function useStreamEventHandler(
           break;
         case "generation_cancelled":
           handleGenerationCancelled(event, ctx);
+          break;
+        case "turn_interrupted":
+          handleTurnInterrupted(event, ctx);
           break;
         case "secret_request":
           handleSecretRequest(event, ctx);

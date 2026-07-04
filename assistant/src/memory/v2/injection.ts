@@ -607,6 +607,9 @@ async function injectViaRouter(args: {
     });
   }
 
+  // The router is a blocking LLM call on the turn's critical path — time it
+  // so prod `turn_timing` breakdowns can attribute pre-model latency to it.
+  const routerStartedAtMs = performance.now();
   const routerResult = await runRouter({
     workspaceDir,
     recentTurnPairs,
@@ -616,6 +619,15 @@ async function injectViaRouter(args: {
     database,
     ...(signal ? { signal } : {}),
   });
+  log.info(
+    {
+      conversationId,
+      routerMs: Math.round(performance.now() - routerStartedAtMs),
+      failureReason: routerResult.failureReason,
+      selectedCount: routerResult.selectedSlugs.length,
+    },
+    "memory_v2_router_timing",
+  );
 
   // Record router selections to the EMA event log. The router decided these
   // slugs are relevant THIS turn (regardless of whether they're newly

@@ -283,6 +283,7 @@ export { migrateWorkItemPmColumns } from "./285-work-item-pm-columns.js";
 export { migrateCreateWorkItemEvents } from "./286-work-item-events.js";
 export { migrateCreatePushDevices } from "./287-push-devices.js";
 export { migrateProjectsCoworkColumns } from "./288-projects-cowork-columns.js";
+export { migrateWorkItemProgressNote } from "./289-work-item-progress-note.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

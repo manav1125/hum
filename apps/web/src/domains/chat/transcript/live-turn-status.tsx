@@ -40,6 +40,7 @@ import {
   type TurnPhase,
 } from "@/domains/chat/turn-store";
 import { truncate } from "@/domains/chat/utils/truncate";
+import { useSSEConnectedStore } from "@/stores/sse-connected-store";
 
 // ---------------------------------------------------------------------------
 // Pure derivation (exported for tests)
@@ -104,6 +105,12 @@ export interface DeriveLiveStatusInput {
   /** External activity hint (restored/external-channel turns where the local
    *  turn reducer never activated). */
   fallbackActive: boolean;
+  /** Whether the SSE event stream is currently connected
+   *  (`useSSEConnectedStore`). While it's down no progress signal can
+   *  arrive, so the ladder shows "Reconnecting…" instead of letting a stale
+   *  "Still working…" claim progress that cannot be observed. Defaults to
+   *  `true` when omitted (callers without connection awareness). */
+  sseConnected?: boolean;
 }
 
 export function deriveLiveStatus(
@@ -119,10 +126,17 @@ export function deriveLiveStatus(
     turnStartedAt,
     now,
     fallbackActive,
+    sseConnected = true,
   } = input;
 
   const active = isSending(phase) || fallbackActive;
   if (!active) return null;
+
+  // Stream gone while the turn looks active: every rung below reports
+  // progress we can no longer observe, so say what is actually happening.
+  if (!sseConnected) {
+    return { text: "Reconnecting…" };
+  }
 
   if (phase === "awaiting_user_input") {
     return { text: "Waiting for your input" };
@@ -208,6 +222,7 @@ export function LiveTurnStatus({
   const thinkingTail = useLiveStatusStore.use.thinkingTail();
   const thinkingAt = useLiveStatusStore.use.thinkingAt();
   const runningTools = useLiveStatusStore.use.runningTools();
+  const sseConnected = useSSEConnectedStore.use.isConnected();
 
   const active = isSending(phase) || fallbackActive;
 
@@ -240,6 +255,7 @@ export function LiveTurnStatus({
     turnStartedAt,
     now,
     fallbackActive,
+    sseConnected,
   });
   if (!view) return null;
 

@@ -21,9 +21,14 @@ import type {
   GenerationCancelledEvent,
   GenerationHandoffEvent,
   MessageCompleteEvent,
+  TurnInterruptedEvent,
   UserMessageEchoEvent,
 } from "@vellumai/assistant-api";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
+import {
+  markMessageInterrupted,
+  resendStaleQueuedMessages,
+} from "@/domains/chat/interrupted-turn-recovery";
 
 /**
  * Resolve the conversation id for SSE handlers — events that carry it on
@@ -315,4 +320,29 @@ export function handleGenerationCancelled(
     });
   }
   ctx.endTurn({ conversationId: convId, reason: "cancelled" });
+}
+
+/**
+ * `turn_interrupted` — the daemon (typically its boot-recovery sweep after a
+ * restart) reports that an in-flight turn died. Settle any local turn UI,
+ * flag the assistant row so the transcript renders the inline
+ * "response was interrupted" notice, and re-enqueue messages that were
+ * queued behind the dead turn — the daemon's in-memory queue did not
+ * survive the restart (see `interrupted-turn-recovery.ts`).
+ */
+export function handleTurnInterrupted(
+  event: TurnInterruptedEvent,
+  ctx: StreamHandlerContext,
+): void {
+  const convId = resolveConversationId(event, ctx);
+  if (convId) {
+    patchConversation(ctx.queryClient, ctx.assistantId, convId, {
+      isProcessing: false,
+    });
+  }
+  ctx.setMessages((prev) => markMessageInterrupted(prev, event.messageId));
+  ctx.endTurn({ conversationId: convId, reason: "error" });
+  if (ctx.assistantId && convId) {
+    void resendStaleQueuedMessages(ctx.assistantId, convId);
+  }
 }

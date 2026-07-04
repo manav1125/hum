@@ -83,6 +83,7 @@ import { getConversationOverrideProfile } from "../memory/conversation-crud.js";
 import {
   buildProviderErrorResponsePayload,
   recordRequestLog,
+  serializeLlmLogPayload,
   setAgentLoopExitReasonOnLatestLog,
 } from "../memory/llm-request-log-store.js";
 import type { SystemPromptPersonaOverride } from "../prompts/system-prompt.js";
@@ -741,8 +742,8 @@ export async function wakeAgentForOpportunity(
       try {
         recordRequestLog(
           conversationId,
-          JSON.stringify(record.rawRequest),
-          JSON.stringify(record.rawResponse),
+          serializeLlmLogPayload(record.rawRequest),
+          serializeLlmLogPayload(record.rawResponse),
           undefined,
           record.provider,
           callSite,

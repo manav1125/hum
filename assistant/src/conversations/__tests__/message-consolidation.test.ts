@@ -331,4 +331,30 @@ describe("mergeConsecutiveAssistantMessages", () => {
     const { messages: result } = mergeConsecutiveAssistantMessages(messages);
     expect(result).toHaveLength(3);
   });
+
+  test("promotes the boot-recovery interrupted marker from a merged tail row", () => {
+    // A multi-LLM-call turn whose final call died in a daemon restart: the
+    // finalized first row survives the merge, and the tail row's
+    // `interrupted` marker (stamped by turn-recovery) must survive with it
+    // or the client's interrupted affordance disappears.
+    const anchor = makeMsg(
+      "assistant",
+      JSON.stringify([{ type: "text", text: "part 1" }]),
+      { id: "anchor", metadata: JSON.stringify({ sentAt: 111 }) },
+    );
+    const tail = makeMsg("assistant", "[]", {
+      id: "tail",
+      metadata: JSON.stringify({ interrupted: true, interruptedAt: 222 }),
+    });
+    const { messages: result } = mergeConsecutiveAssistantMessages([
+      makeMsg("user", "hi"),
+      anchor,
+      tail,
+    ]);
+    expect(result).toHaveLength(2);
+    const meta = JSON.parse(result[1].metadata!) as Record<string, unknown>;
+    expect(meta.interrupted).toBe(true);
+    expect(meta.interruptedAt).toBe(222);
+    expect(meta.sentAt).toBe(111);
+  });
 });

@@ -1,5 +1,6 @@
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 
+import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { getDb } from "../memory/db-connection.js";
 import { workItems } from "../memory/schema.js";
 import { getTask } from "../tasks/task-store.js";
@@ -42,6 +43,12 @@ export interface WorkItem {
   sourceContext: string | null;
   /** Epoch ms; bumped on any event/update so ranking de-prioritizes stale items. */
   lastActivityAt: number | null;
+  /**
+   * One-line live-activity note ("Searching the web…") the runner stamps while
+   * the item is `running`; cleared on terminal statuses. Lets Activity/Projects
+   * boards show mid-run progress instead of a bare "running" badge.
+   */
+  lastProgressNote: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -98,6 +105,7 @@ export function createWorkItem(opts: {
     // A freshly-created item is maximally fresh — seed last_activity_at so
     // ranking treats new captures as active from the moment they land.
     lastActivityAt: now,
+    lastProgressNote: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -184,6 +192,7 @@ export function updateWorkItem(
       | "assignee"
       | "context"
       | "sourceContext"
+      | "lastProgressNote"
     >
   >,
   opts?: { actor?: string },
@@ -211,6 +220,18 @@ export function updateWorkItem(
       fromStatus: existing.status,
       toStatus: updates.status,
       actor: opts?.actor ?? "system",
+    });
+    // Keep the Home feed in lockstep with the queue from the status chokepoint
+    // itself: any transition into a terminal state (done/cancelled/archived/
+    // failed) dismisses the item's mirror card, no matter which code path
+    // performed the update (routes, runner, tools, daemon handlers).
+    // Fire-and-forget + idempotent — a no-op for non-terminal statuses.
+    reconcileFeedForWorkItemStatus({
+      id,
+      title: updates.title ?? existing.title,
+      sourceType: existing.sourceType,
+      sourceId: existing.sourceId,
+      status: updates.status,
     });
   }
   return getWorkItem(id);
@@ -244,6 +265,9 @@ export function removeWorkItemFromQueue(id: string): RemoveWorkItemResult {
     };
   }
   deleteWorkItem(item.id);
+  // A deleted work-item must not leave its mirror "Run it" card behind on
+  // Home — treat deletion as a cancellation for feed-coupling purposes.
+  reconcileFeedForWorkItemStatus({ ...item, status: "cancelled" });
   return {
     success: true,
     title: item.title,

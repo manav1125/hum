@@ -42,6 +42,7 @@ mock.module("../../runtime/assistant-event-hub.js", () => ({
 // place. Bun's `mock.module` needs to run before the real import is
 // evaluated for the mock to take effect.
 const {
+  FEED_ITEM_STALE_AFTER_MS,
   HOME_FEED_FILENAME,
   HOME_FEED_VERSION,
   appendFeedItem,
@@ -53,7 +54,17 @@ const {
   stripConversationIds,
 } = await import("../feed-writer.js");
 
-type FeedItemStatus = "new" | "seen" | "acted_on";
+type FeedItemStatus = "new" | "seen" | "acted_on" | "dismissed";
+
+// Fixture timestamps anchored ~1h before "now" so the age-based auto-expiry
+// (`FEED_ITEM_STALE_AFTER_MS`) never bites fixtures that aren't explicitly
+// testing staleness. Offsets preserve the relative ordering the sort/dedup
+// tests depend on.
+const T0 = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+const T_MINUS_2H = new Date(Date.parse(T0) - 2 * 3600_000).toISOString();
+const T_MINUS_1H = new Date(Date.parse(T0) - 3600_000).toISOString();
+const T_PLUS_1S = new Date(Date.parse(T0) + 1000).toISOString();
+const T_PLUS_2S = new Date(Date.parse(T0) + 2000).toISOString();
 
 interface TestFeedItem {
   id: string;
@@ -76,9 +87,9 @@ function makeItem(
     priority: 50,
     title: "Test",
     summary: "Test summary",
-    timestamp: "2026-04-14T12:00:00.000Z",
+    timestamp: T0,
     status: "new",
-    createdAt: "2026-04-14T12:00:00.000Z",
+    createdAt: T0,
     ...overrides,
   };
 }
@@ -138,7 +149,7 @@ describe("feed-writer", () => {
       const future = new Date(Date.now() + 60_000).toISOString();
       const file = {
         version: 2,
-        updatedAt: "2026-04-14T12:00:00.000Z",
+        updatedAt: T0,
         items: [
           makeItem({
             id: "expired",
@@ -157,6 +168,63 @@ describe("feed-writer", () => {
       expect(feed.items[0]!.id).toBe("live");
     });
 
+    test("auto-dismisses no-interaction cards older than FEED_ITEM_STALE_AFTER_MS", () => {
+      mkdirSync(join(workspaceDir, "data"), { recursive: true });
+      const staleCreated = new Date(
+        Date.now() - FEED_ITEM_STALE_AFTER_MS - 60_000,
+      ).toISOString();
+      const file = {
+        version: 2,
+        updatedAt: T0,
+        items: [
+          makeItem({ id: "stale-new", createdAt: staleCreated }),
+          makeItem({
+            id: "stale-seen",
+            status: "seen",
+            createdAt: staleCreated,
+          }),
+          makeItem({
+            id: "stale-acted",
+            status: "acted_on",
+            createdAt: staleCreated,
+          }),
+          makeItem({ id: "fresh-new" }),
+        ],
+      };
+      writeFileSync(getHomeFeedPath(), JSON.stringify(file, null, 2), "utf-8");
+
+      const feed = readHomeFeed();
+      const byId = new Map(feed.items.map((i) => [i.id, i.status]));
+      // Never-actioned old cards are dismissed (not deleted — still listed).
+      expect(byId.get("stale-new")).toBe("dismissed");
+      expect(byId.get("stale-seen")).toBe("dismissed");
+      // Acted-on cards were interacted with — age alone never dismisses them.
+      expect(byId.get("stale-acted")).toBe("acted_on");
+      // Recent cards are untouched.
+      expect(byId.get("fresh-new")).toBe("new");
+    });
+
+    test("staleness dismissal is persisted on the next write cycle", async () => {
+      mkdirSync(join(workspaceDir, "data"), { recursive: true });
+      const staleCreated = new Date(
+        Date.now() - FEED_ITEM_STALE_AFTER_MS - 60_000,
+      ).toISOString();
+      const file = {
+        version: 2,
+        updatedAt: T0,
+        items: [makeItem({ id: "stale-new", createdAt: staleCreated })],
+      };
+      writeFileSync(getHomeFeedPath(), JSON.stringify(file, null, 2), "utf-8");
+
+      // Any write cycle reads through readHomeFeed, so the dismissed view
+      // lands on disk without a dedicated sweep job.
+      await appendFeedItem(makeItem({ id: "unrelated" }) as never);
+
+      const onDisk = readFileJson();
+      const stale = onDisk.items.find((i) => i.id === "stale-new")!;
+      expect(stale.status).toBe("dismissed");
+    });
+
     test("corrupt JSON returns an empty feed", () => {
       mkdirSync(join(workspaceDir, "data"), { recursive: true });
       writeFileSync(getHomeFeedPath(), "{not valid", "utf-8");
@@ -172,7 +240,7 @@ describe("feed-writer", () => {
       mkdirSync(join(workspaceDir, "data"), { recursive: true });
       const v1File = {
         version: 1,
-        updatedAt: "2026-04-14T12:00:00.000Z",
+        updatedAt: T0,
         items: [
           {
             id: "legacy",
@@ -182,9 +250,9 @@ describe("feed-writer", () => {
             summary: "Legacy summary",
             source: "gmail",
             author: "platform",
-            timestamp: "2026-04-14T12:00:00.000Z",
+            timestamp: T0,
             status: "new",
-            createdAt: "2026-04-14T12:00:00.000Z",
+            createdAt: T0,
           },
         ],
       };
@@ -224,21 +292,21 @@ describe("feed-writer", () => {
         makeItem({
           id: "dup",
           title: "Original title",
-          createdAt: "2026-04-14T10:00:00.000Z",
+          createdAt: T_MINUS_2H,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "other",
           title: "Other entry",
-          createdAt: "2026-04-14T11:00:00.000Z",
+          createdAt: T_MINUS_1H,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "dup",
           title: "Refreshed title",
-          createdAt: "2026-04-14T12:00:00.000Z",
+          createdAt: T0,
         }),
       );
 
@@ -254,21 +322,21 @@ describe("feed-writer", () => {
         makeItem({
           id: "a",
           title: "First",
-          createdAt: "2026-04-14T10:00:00.000Z",
+          createdAt: T_MINUS_2H,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "b",
           title: "Second",
-          createdAt: "2026-04-14T11:00:00.000Z",
+          createdAt: T_MINUS_1H,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "c",
           title: "Third",
-          createdAt: "2026-04-14T12:00:00.000Z",
+          createdAt: T0,
         }),
       );
 
@@ -282,7 +350,7 @@ describe("feed-writer", () => {
       await appendFeedItem(
         makeItem({
           id: "no-expiry",
-          createdAt: "2026-04-14T12:00:00.000Z",
+          createdAt: T0,
         }),
       );
       const decoded = readFileJson();
@@ -296,7 +364,7 @@ describe("feed-writer", () => {
         makeItem({
           id: "with-expiry",
           expiresAt: explicit,
-          createdAt: "2026-04-14T12:00:00.000Z",
+          createdAt: T0,
         }),
       );
       const decoded = readFileJson();
@@ -308,21 +376,21 @@ describe("feed-writer", () => {
         makeItem({
           id: "low",
           priority: 10,
-          createdAt: "2026-04-14T12:00:00.000Z",
+          createdAt: T0,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "high-old",
           priority: 90,
-          createdAt: "2026-04-14T10:00:00.000Z",
+          createdAt: T_MINUS_2H,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "high-new",
           priority: 90,
-          createdAt: "2026-04-14T11:00:00.000Z",
+          createdAt: T_MINUS_1H,
         }),
       );
 
@@ -410,9 +478,7 @@ describe("feed-writer", () => {
         makeItem({
           id: `distinct-${i}`,
           title: `Item ${i}`,
-          createdAt: new Date(
-            Date.parse("2026-04-14T12:00:00.000Z") + i * 1000,
-          ).toISOString(),
+          createdAt: new Date(Date.parse(T0) + i * 1000).toISOString(),
         }),
       );
 
@@ -441,14 +507,14 @@ describe("feed-writer", () => {
           id: "item-b",
           title: "Other conv",
           conversationId: "conv-456",
-          createdAt: "2026-04-14T12:00:01.000Z",
+          createdAt: T_PLUS_1S,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "item-c",
           title: "No conv",
-          createdAt: "2026-04-14T12:00:02.000Z",
+          createdAt: T_PLUS_2S,
         }),
       );
 
@@ -475,14 +541,14 @@ describe("feed-writer", () => {
         makeItem({
           id: "m2",
           conversationId: "conv-abc",
-          createdAt: "2026-04-14T12:00:01.000Z",
+          createdAt: T_PLUS_1S,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "m3",
           conversationId: "conv-other",
-          createdAt: "2026-04-14T12:00:02.000Z",
+          createdAt: T_PLUS_2S,
         }),
       );
 
@@ -561,14 +627,14 @@ describe("feed-writer", () => {
         makeItem({
           id: "all-2",
           conversationId: "conv-bbb",
-          createdAt: "2026-04-14T12:00:01.000Z",
+          createdAt: T_PLUS_1S,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "all-3",
           title: "No conv link",
-          createdAt: "2026-04-14T12:00:02.000Z",
+          createdAt: T_PLUS_2S,
         }),
       );
 
@@ -596,14 +662,14 @@ describe("feed-writer", () => {
         makeItem({
           id: "new-2",
           status: "new",
-          createdAt: "2026-04-14T12:00:01.000Z",
+          createdAt: T_PLUS_1S,
         }),
       );
       await appendFeedItem(
         makeItem({
           id: "seen-1",
           status: "seen",
-          createdAt: "2026-04-14T12:00:02.000Z",
+          createdAt: T_PLUS_2S,
         }),
       );
 

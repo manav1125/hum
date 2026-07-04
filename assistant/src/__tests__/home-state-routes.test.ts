@@ -12,7 +12,16 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 // Stub the OAuth connection store before importing anything that
 // transitively pulls in the writer — otherwise importing the route
 // module would try to open the real OAuth DB.
+//
+// Both mocks spread the real module: `mock.module` mutates the
+// process-global registry, so a single-export stub would break any
+// later-loading test file that imports OTHER exports from the same
+// module ("Export named X not found" link errors between tests).
+import * as realConversationQueries from "../memory/conversation-queries.js";
+import * as realOauthStore from "../oauth/oauth-store.js";
+
 mock.module("../oauth/oauth-store.js", () => ({
+  ...realOauthStore,
   listConnections: () => [],
 }));
 
@@ -20,6 +29,7 @@ mock.module("../oauth/oauth-store.js", () => ({
 // (invoked by the read-through fallback) does not lazy-open a real
 // sqlite handle against a stale or deleted per-test tmpdir.
 mock.module("../memory/conversation-queries.js", () => ({
+  ...realConversationQueries,
   countConversations: () => 0,
 }));
 
@@ -116,6 +126,34 @@ describe("home-state-routes", () => {
       const body = (await handleGetHomeState({})) as RelationshipStateWire;
       expect(body.version).toBe(1);
       expect(body.capabilities).toHaveLength(6);
+    });
+
+    test("IDENTITY.md template placeholder never leaks as assistantName", async () => {
+      // Regression: a fresh workspace's IDENTITY.md carries the scaffold
+      // `- **Name:** _(not yet chosen)_`, which `home/state` used to return
+      // verbatim as the assistantName API value. Placeholders read as unset,
+      // so the clean default ("Cue") is served instead.
+      mkdirSync(workspaceDir, { recursive: true });
+      writeFileSync(
+        join(workspaceDir, "IDENTITY.md"),
+        "# Identity\n\n- **Name:** _(not yet chosen)_\n- **Role:** _(not yet established)_\n",
+        "utf-8",
+      );
+
+      const body = (await handleGetHomeState({})) as RelationshipStateWire;
+      expect(body.assistantName).toBe("Cue");
+    });
+
+    test("a real IDENTITY.md name is still honored", async () => {
+      mkdirSync(workspaceDir, { recursive: true });
+      writeFileSync(
+        join(workspaceDir, "IDENTITY.md"),
+        "# Identity\n\n- **Name:** Pax\n",
+        "utf-8",
+      );
+
+      const body = (await handleGetHomeState({})) as RelationshipStateWire;
+      expect(body.assistantName).toBe("Pax");
     });
 
     test("GET returns fresh state even when the persisted file is stale", async () => {

@@ -74,11 +74,6 @@ export async function writeHomeFeedItemForSignal(
     readPayloadString(signal.contextPayload, "body") ??
     readPayloadString(signal.contextPayload, "requestedMessage");
 
-  // Source the title from the payload only. The LLM's `renderedCopy.title`
-  // often echoes the body when no explicit title was passed, which stutters
-  // against `summary` in the row. Leave undefined when absent; renderers
-  // fall back to `summary`.
-  const resolvedTitle = payloadTitle?.trim() || undefined;
   // Prefer conversationSeedMessage over body for the home feed: the seed
   // message is richer and may contain structured markdown (lists, headers,
   // bold) that the detail panel renders. The popup-oriented `body` is
@@ -99,6 +94,16 @@ export async function writeHomeFeedItemForSignal(
     return null;
   }
 
+  // Title precedence: explicit payload title → LLM rendered title (only when
+  // it isn't just echoing the summary, which stutters in the row) → a
+  // deterministic label derived from the event name. Every card gets a title
+  // so heartbeat/watcher cards render like their siblings instead of showing
+  // a bare summary.
+  const resolvedTitle =
+    payloadTitle?.trim() ||
+    nonStutteringRenderedTitle(renderedCopy?.title, resolvedSummary) ||
+    deriveFallbackTitle(signal);
+
   const urgency = FEED_ITEM_URGENCIES.has(signal.attentionHints.urgency)
     ? (signal.attentionHints.urgency as FeedItemUrgency)
     : undefined;
@@ -117,7 +122,7 @@ export async function writeHomeFeedItemForSignal(
     id: `notif:${signal.signalId}`,
     type: "notification",
     priority: 50,
-    ...(resolvedTitle ? { title: resolvedTitle } : {}),
+    title: resolvedTitle,
     summary: resolvedSummary,
     timestamp: now,
     createdAt: now,
@@ -143,6 +148,58 @@ export async function writeHomeFeedItemForSignal(
 
   await appendFeedItem(item);
   return item;
+}
+
+// ── Title derivation ──────────────────────────────────────────────────
+
+/**
+ * Accept the LLM `renderedCopy.title` only when it adds signal beyond the
+ * summary: it must be non-empty, reasonably short (a title, not a paragraph),
+ * and not simply the opening of the summary (the LLM often echoes the body
+ * when no explicit title was passed, which stutters in the row).
+ */
+function nonStutteringRenderedTitle(
+  title: string | undefined,
+  summary: string,
+): string | undefined {
+  const trimmed = title?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > 90) return undefined;
+  const normTitle = trimmed.toLowerCase().replace(/\s+/g, " ");
+  const normSummary = summary.toLowerCase().replace(/\s+/g, " ");
+  if (normSummary.startsWith(normTitle)) return undefined;
+  return trimmed;
+}
+
+/**
+ * Deterministic, human-readable title for a signal that carried no usable
+ * title of its own — keyed on the event name so heartbeat/watcher/scheduler
+ * cards get a stable label instead of an empty title.
+ */
+const EVENT_TITLE_MAP: Record<string, string> = {
+  "credential.health_alert": "Connection needs attention",
+  "activity.failed": "Background task failed",
+  "activity.complete": "Background task finished",
+  "watcher.notification": "Watcher update",
+  "schedule.notify": "Scheduled task update",
+  "guardian.question": "Cue needs your input",
+  "guardian.channel_activation": "Channel activation",
+  "ingress.access_request": "Access request",
+  "ingress.escalation": "Escalated request",
+  "budget.alert": "Budget alert",
+};
+
+export function deriveFallbackTitle(signal: NotificationSignal): string {
+  const mapped = EVENT_TITLE_MAP[signal.sourceEventName];
+  if (mapped) return mapped;
+  // Humanize "heartbeat.startup" → "Heartbeat startup".
+  const words = signal.sourceEventName
+    .split(/[._]+/)
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (!words) return "Update from Cue";
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 // ── Category & detail-panel derivation ────────────────────────────────

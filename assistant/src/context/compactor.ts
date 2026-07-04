@@ -28,7 +28,10 @@ import {
   getAttachmentMetadataForMessage,
 } from "../memory/attachments-store.js";
 import { getMessages } from "../memory/conversation-crud.js";
-import { recordRequestLog } from "../memory/llm-request-log-store.js";
+import {
+  recordRequestLog,
+  serializeLlmLogPayload,
+} from "../memory/llm-request-log-store.js";
 import type {
   ContentBlock,
   ImageContent,
@@ -89,8 +92,8 @@ function recordCompactionRequestLog(
   try {
     recordRequestLog(
       conversationId,
-      JSON.stringify(response.rawRequest),
-      JSON.stringify(response.rawResponse),
+      serializeLlmLogPayload(response.rawRequest),
+      serializeLlmLogPayload(response.rawResponse),
       undefined,
       response.actualProvider ?? provider.name,
       COMPACTION_LOG_CALL_SITE,

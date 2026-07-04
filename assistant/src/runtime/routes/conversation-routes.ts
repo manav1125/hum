@@ -737,6 +737,8 @@ export function handleListMessages({
     // was queued or its persistence was delayed (long assistant generation),
     // sentAt captures the actual event time. Falls back to createdAt.
     let sentAt: number | undefined;
+    let interrupted: boolean | undefined;
+    let interruptedAt: number | undefined;
     let subagentNotification:
       | {
           subagentId: string;
@@ -750,6 +752,14 @@ export function handleListMessages({
       try {
         const meta = JSON.parse(msg.metadata);
         if (typeof meta.sentAt === "number") sentAt = meta.sentAt;
+        // Boot-recovery marker for turns killed by a daemon restart — see
+        // `daemon/turn-recovery.ts`. Only assistant rows ever carry it.
+        if (meta.interrupted === true && msg.role === "assistant") {
+          interrupted = true;
+          if (typeof meta.interruptedAt === "number") {
+            interruptedAt = meta.interruptedAt;
+          }
+        }
         if (meta.subagentNotification) {
           const n = meta.subagentNotification;
           if (typeof n.subagentId === "string" && typeof n.label === "string") {
@@ -791,6 +801,8 @@ export function handleListMessages({
       content,
       createdAt: msg.createdAt,
       sentAt,
+      interrupted,
+      interruptedAt,
       subagentNotification,
       slackMessage,
       clientMessageId: msg.clientMessageId ?? undefined,
@@ -951,6 +963,14 @@ export function handleListMessages({
         ? { subagentNotification: m.subagentNotification }
         : {}),
       ...(m.slackMessage ? { slackMessage: m.slackMessage } : {}),
+      ...(m.interrupted
+        ? {
+            interrupted: true,
+            ...(m.interruptedAt != null
+              ? { interruptedAt: m.interruptedAt }
+              : {}),
+          }
+        : {}),
     };
   });
 
@@ -1081,12 +1101,56 @@ export function persistOnboardingArtifacts(onboarding: {
   });
 }
 
+/**
+ * Stage marks recorded while a POST /v1/messages request is being accepted.
+ * `startedAtMs` is set by the wrapper; the impl fills in per-stage durations
+ * as it passes each potentially-slow await. Logged once per request as
+ * `send_message_accept_timing` (info when slow, debug otherwise) so prod can
+ * attribute slow 202s (observed 7–10s on new conversations) to a concrete
+ * stage instead of "the daemon was slow".
+ */
+interface AcceptTimingMarks {
+  startedAtMs: number;
+  conversationResolveMs?: number;
+  riskThresholdMs?: number;
+  guardianReplyMs?: number;
+  actorHistoryMs?: number;
+  slashMs?: number;
+  persistMs?: number;
+  outcome?: string;
+}
+
+const ACCEPT_TIMING_SLOW_MS = 500;
+
 export async function handleSendMessage(
+  args: RouteHandlerArgs,
+  deps: {
+    sendMessageDeps?: SendMessageDeps;
+    approvalConversationGenerator?: ApprovalConversationGenerator;
+  },
+): Promise<unknown> {
+  const marks: AcceptTimingMarks = { startedAtMs: performance.now() };
+  try {
+    return await handleSendMessageImpl(args, deps, marks);
+  } finally {
+    const totalMs = Math.round(performance.now() - marks.startedAtMs);
+    const { startedAtMs: _startedAtMs, ...stages } = marks;
+    const payload = { totalMs, ...stages };
+    if (totalMs > ACCEPT_TIMING_SLOW_MS) {
+      log.info(payload, "send_message_accept_timing");
+    } else {
+      log.debug(payload, "send_message_accept_timing");
+    }
+  }
+}
+
+async function handleSendMessageImpl(
   { body: rawBody, headers }: RouteHandlerArgs,
   deps: {
     sendMessageDeps?: SendMessageDeps;
     approvalConversationGenerator?: ApprovalConversationGenerator;
   },
+  marks: AcceptTimingMarks,
 ): Promise<unknown> {
   const body = (rawBody ?? {}) as {
     conversationKey?: string;
@@ -1303,10 +1367,14 @@ export async function handleSendMessage(
   }
 
   if (requestedRiskThreshold !== undefined) {
+    const riskThresholdStartedAtMs = performance.now();
     const result = await ipcCall("set_conversation_threshold", {
       conversationId: mapping.conversationId,
       threshold: requestedRiskThreshold,
     });
+    marks.riskThresholdMs = Math.round(
+      performance.now() - riskThresholdStartedAtMs,
+    );
     if (result === undefined) {
       log.error(
         {
@@ -1359,9 +1427,13 @@ export async function handleSendMessage(
         ...(clientTimezone ? { clientTimezone } : {}),
       } satisfies NonHostProxyTransportMetadata);
 
+  const conversationResolveStartedAtMs = performance.now();
   const conversation = await smDeps.getOrCreateConversation(
     mapping.conversationId,
     { transport },
+  );
+  marks.conversationResolveMs = Math.round(
+    performance.now() - conversationResolveStartedAtMs,
   );
 
   if (requestedInferenceProfile !== undefined) {
@@ -1689,6 +1761,7 @@ export async function handleSendMessage(
   // Try to consume the message as a canonical guardian approval/rejection reply.
   // On failure, degrade to the existing queue/auto-deny path rather than
   // surfacing a 500 — mirrors the handler's catch-and-fallback.
+  const guardianReplyStartedAtMs = performance.now();
   try {
     const inlineReplyResult = await tryConsumeCanonicalGuardianReply({
       conversationId: mapping.conversationId,
@@ -1710,6 +1783,7 @@ export async function handleSendMessage(
       originClientId,
     });
     if (inlineReplyResult.consumed) {
+      marks.outcome = "guardian_reply_consumed";
       return {
         accepted: true,
         conversationId: mapping.conversationId,
@@ -1723,9 +1797,14 @@ export async function handleSendMessage(
       { err, conversationId: mapping.conversationId },
       "Inline approval consumption failed, falling through to normal send path",
     );
+  } finally {
+    marks.guardianReplyMs = Math.round(
+      performance.now() - guardianReplyStartedAtMs,
+    );
   }
 
   if (conversation.isProcessing()) {
+    marks.outcome = "queued";
     // Queue the message so it's processed when the current turn completes
     const requestId = crypto.randomUUID();
     const enqueueResult = conversation.enqueueMessage({
@@ -1845,7 +1924,11 @@ export async function handleSendMessage(
   });
   conversation.currentTurnSourceActorPrincipalId = sourceActorPrincipalId;
 
+  const actorHistoryStartedAtMs = performance.now();
   await conversation.ensureActorScopedHistory();
+  marks.actorHistoryMs = Math.round(
+    performance.now() - actorHistoryStartedAtMs,
+  );
 
   // Resolve slash commands before persisting or running the agent loop.
   // `contentAfterScan` already carries the scan-rewritten content when
@@ -1859,7 +1942,9 @@ export async function handleSendMessage(
     estimatedCost: conversation.usageStats.estimatedCost,
     userMessageInterface: sourceInterface,
   });
+  const slashStartedAtMs = performance.now();
   const slashResult = await resolveSlash(rawContent, slashContext);
+  marks.slashMs = Math.round(performance.now() - slashStartedAtMs);
 
   if (slashResult.kind === "unknown") {
     conversation.setProcessing(true);
@@ -2161,6 +2246,7 @@ export async function handleSendMessage(
   const resolvedContent = slashResult.content;
 
   const requestId = crypto.randomUUID();
+  const persistStartedAtMs = performance.now();
   const persistResult = await conversation.persistUserMessage({
     content: resolvedContent,
     attachments,
@@ -2168,6 +2254,8 @@ export async function handleSendMessage(
     metadata: body.automated === true ? { automated: true } : undefined,
     clientMessageId,
   });
+  marks.persistMs = Math.round(performance.now() - persistStartedAtMs);
+  marks.outcome = "dispatched";
 
   const messageId = persistResult.id;
 

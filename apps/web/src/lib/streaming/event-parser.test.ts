@@ -1593,6 +1593,35 @@ describe("parseAssistantEvent", () => {
     });
   });
 
+  describe("turn_interrupted", () => {
+    test("parses a daemon-restart interruption broadcast", () => {
+      const event = parseEvent({
+        type: "turn_interrupted",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        interruptedAt: 1_770_000_000_000,
+        reason: "daemon_restart",
+      });
+      expect(event).toEqual({
+        type: "turn_interrupted",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        interruptedAt: 1_770_000_000_000,
+        reason: "daemon_restart",
+      });
+    });
+
+    test("falls through to unknown when messageId is missing", () => {
+      const event = parseEvent({
+        type: "turn_interrupted",
+        conversationId: "conv-1",
+        interruptedAt: 1,
+        reason: "daemon_restart",
+      });
+      expect(event.type).toBe("unknown");
+    });
+  });
+
   describe("tool_result", () => {
     test("keeps daemon risk* option names (canonical schema does not rename)", () => {
       const event = parseEvent({

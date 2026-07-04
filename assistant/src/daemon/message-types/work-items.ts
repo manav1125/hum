@@ -202,6 +202,11 @@ export interface WorkItemStatusChanged {
     lastRunId: string | null;
     lastRunConversationId: string | null;
     lastRunStatus: string | null;
+    /**
+     * Live activity line ("Searching the web…") the runner stamps while the
+     * item is running; null otherwise. Optional — older daemons omit it.
+     */
+    lastProgressNote?: string | null;
     updatedAt: number;
   };
 }

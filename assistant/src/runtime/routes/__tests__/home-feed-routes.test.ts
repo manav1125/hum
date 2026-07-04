@@ -10,7 +10,15 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "bun:test";
 
 // ─── Module mocks ──────────────────────────────────────────────────────────
 // Stub the assistantEventHub so the feed writer's SSE publish does not
@@ -72,6 +80,27 @@ const revalidateSpy = mock<() => void>(() => {});
 mock.module("../../../home/home-content-refresh.js", () => ({
   revalidateHomeContentInBackground: revalidateSpy,
 }));
+
+// The GET handler unions queued work-items read from the process-shared test
+// DB, so rows leaked by earlier test files in the same `bun test` process
+// would bleed into these route assertions. Pin the queue read to empty —
+// these tests exercise the on-disk feed file only. Spread the real module so
+// later-loading files that import other exports keep working, and load it
+// dynamically so it evaluates AFTER the hub/crud mocks above.
+const realWorkItemStore =
+  await import("../../../work-items/work-item-store.js");
+mock.module("../../../work-items/work-item-store.js", () => ({
+  ...realWorkItemStore,
+  listWorkItems: () => [],
+}));
+
+// `mock.module` mutates the process-global registry — restore the real
+// store when this file finishes so later test files see real queue reads.
+afterAll(() => {
+  mock.module("../../../work-items/work-item-store.js", () => ({
+    ...realWorkItemStore,
+  }));
+});
 
 // Dynamic imports so module mocks are wired before evaluation.
 const {
@@ -176,17 +205,24 @@ type FeedItemFixture = {
   createdAt: string;
 };
 
+// Fixture timestamp anchored ~1h before "now" so the feed writer's age-based
+// auto-expiry (FEED_ITEM_STALE_AFTER_MS) never dismisses fixtures that aren't
+// explicitly testing staleness.
+const FIXTURE_CREATED_AT = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
 function makeItem(
   overrides: Partial<FeedItemFixture> & { id: string },
 ): FeedItemFixture {
   return {
     type: "notification",
     priority: 50,
-    title: "Test",
+    // Unique per id: the GET handler dedupes same-title/same-channel cards
+    // (`dedupeFeedItems`), so a shared default title would collapse fixtures.
+    title: `Test ${overrides.id}`,
     summary: "Test summary",
-    timestamp: "2026-04-14T12:00:00.000Z",
+    timestamp: FIXTURE_CREATED_AT,
     status: "new",
-    createdAt: "2026-04-14T12:00:00.000Z",
+    createdAt: FIXTURE_CREATED_AT,
     ...overrides,
   };
 }
@@ -727,28 +763,34 @@ describe("handleListHomeFeed", () => {
     expect(result.items.map((i) => i.id)).toEqual(["a"]);
   });
 
+  // Recent, ordered timestamps (old < edge < new), all within the feed
+  // writer's staleness window so auto-expiry doesn't dismiss them.
+  const RANGE_OLD = new Date(Date.now() - 3 * 3600_000).toISOString();
+  const RANGE_EDGE = new Date(Date.now() - 2 * 3600_000).toISOString();
+  const RANGE_NEW = new Date(Date.now() - 1 * 3600_000).toISOString();
+
   test("before filter is strict (createdAt < before)", () => {
     writeFeedFile([
-      makeItem({ id: "old", createdAt: "2026-05-01T00:00:00.000Z" }),
-      makeItem({ id: "edge", createdAt: "2026-05-15T00:00:00.000Z" }),
-      makeItem({ id: "new", createdAt: "2026-05-20T00:00:00.000Z" }),
+      makeItem({ id: "old", createdAt: RANGE_OLD }),
+      makeItem({ id: "edge", createdAt: RANGE_EDGE }),
+      makeItem({ id: "new", createdAt: RANGE_NEW }),
     ]);
 
     const result = handleListHomeFeed({
-      body: { before: "2026-05-15T00:00:00.000Z" },
+      body: { before: RANGE_EDGE },
     }) as ListResult;
     expect(result.items.map((i) => i.id)).toEqual(["old"]);
   });
 
   test("after filter is strict (createdAt > after)", () => {
     writeFeedFile([
-      makeItem({ id: "old", createdAt: "2026-05-01T00:00:00.000Z" }),
-      makeItem({ id: "edge", createdAt: "2026-05-15T00:00:00.000Z" }),
-      makeItem({ id: "new", createdAt: "2026-05-20T00:00:00.000Z" }),
+      makeItem({ id: "old", createdAt: RANGE_OLD }),
+      makeItem({ id: "edge", createdAt: RANGE_EDGE }),
+      makeItem({ id: "new", createdAt: RANGE_NEW }),
     ]);
 
     const result = handleListHomeFeed({
-      body: { after: "2026-05-15T00:00:00.000Z" },
+      body: { after: RANGE_EDGE },
     }) as ListResult;
     expect(result.items.map((i) => i.id)).toEqual(["new"]);
   });

@@ -39,6 +39,8 @@ import { useRuleEditorBridge } from "@/domains/chat/hooks/use-rule-editor-bridge
 import { useChatBannerSlots } from "@/domains/chat/hooks/use-chat-banner-slots";
 
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
+import { isSending, useTurnStore } from "@/domains/chat/turn-store";
+import { messagePlainText } from "@/domains/chat/utils/message-plain-text";
 import { useChatAttachmentDropZone } from "@/domains/chat/components/chat-attachments/use-chat-attachment-drop-zone";
 import {
   useComposerStore,
@@ -366,6 +368,39 @@ export function ChatMainPanel({
       void handleForkConversation(messageId);
     },
     [handleForkConversation],
+  );
+
+  // Retry for an interrupted assistant row (turn killed by a daemon
+  // restart — see `DisplayMessage.interrupted`): re-send the user message
+  // that triggered the dead turn through the normal send pipeline. Message
+  // state is read from the session store at click time so the callback
+  // stays referentially stable across streaming re-renders.
+  const handleRetryInterrupted = useCallback(
+    (assistantMessageId: string) => {
+      if (isSending(useTurnStore.getState().phase)) return;
+      const storeMessages = useChatSessionStore.getState().messages;
+      const anchorIdx = storeMessages.findIndex(
+        (m) =>
+          m.id === assistantMessageId ||
+          m.mergedMessageIds?.includes(assistantMessageId),
+      );
+      if (anchorIdx === -1) return;
+      for (let i = anchorIdx - 1; i >= 0; i--) {
+        const candidate = storeMessages[i];
+        if (
+          candidate.role !== "user" ||
+          candidate.isSubagentNotification ||
+          candidate.queueStatus
+        ) {
+          continue;
+        }
+        const text = messagePlainText(candidate);
+        if (!text.trim()) return;
+        void sendMessage(text);
+        return;
+      }
+    },
+    [sendMessage],
   );
 
   const handleDismissApiKeyError = useCallback(
@@ -796,6 +831,7 @@ export function ChatMainPanel({
     onAllowAndCreateRule: handleAllowAndCreateRule,
     onForkConversation: handleForkConversationCallback,
     onInspectMessage: handleInspectMessage,
+    onRetryInterrupted: handleRetryInterrupted,
     renderAvatar,
     onPullRefresh: handlePullRefresh,
     pullRefreshEnabled: chatPullToRefreshEnabled && touchSupported,

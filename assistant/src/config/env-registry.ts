@@ -172,9 +172,47 @@ export function getDiskPressureDisabled(): boolean {
  * fails schema validation, so it pays the latency and injects nothing). A pure
  * env flag so the latency-critical path can be cut without a per-workspace
  * config migration.
+ *
+ * Note: `memory.v2.router.enabled` now defaults to FALSE in the config schema
+ * for exactly the reasons above, so this flag only matters for workspaces
+ * that explicitly opted the router back on in config.json — it remains as
+ * the emergency off switch for those.
  */
 export function getMemoryV2RouterDisabled(): boolean {
   return flag("CUE_DISABLE_MEMORY_ROUTER");
+}
+
+/**
+ * CUE_DISABLE_LOOP_LAG_MONITOR — boolean, default: false
+ * Kill switch for the event-loop lag monitor (`util/event-loop-lag.ts`),
+ * which logs `event_loop_blocked` warnings whenever synchronous work stalls
+ * the daemon's single event loop. The monitor costs one timer tick per 250ms;
+ * disable only if the probe itself is suspected of noise in a benchmark.
+ */
+export function getLoopLagMonitorDisabled(): boolean {
+  return flag("CUE_DISABLE_LOOP_LAG_MONITOR");
+}
+
+/**
+ * CUE_LOOP_LAG_WARN_MS — integer (ms), default: 500
+ * Warn threshold for the event-loop lag monitor. Blocks shorter than this
+ * are not logged.
+ */
+export function getLoopLagWarnMs(): number | undefined {
+  return int("CUE_LOOP_LAG_WARN_MS");
+}
+
+/**
+ * CUE_LOG_FULL_LLM_PAYLOADS — boolean, default: false
+ * When set, `llm_request_logs` rows store raw LLM request/response payloads
+ * verbatim instead of truncating individual strings over 64KB (in practice:
+ * inline base64 media). Full payloads restore pre-truncation inspector
+ * fidelity at the cost of multi-MB synchronous serialization + sqlite writes
+ * on the turn path and unbounded assistant.db growth on image-heavy
+ * conversations. Debugging aid only.
+ */
+export function getLogFullLlmPayloads(): boolean {
+  return flag("CUE_LOG_FULL_LLM_PAYLOADS");
 }
 
 /**

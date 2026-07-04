@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { getWorkspacePromptPath } from "../util/platform.js";
+import { isTemplatePlaceholder } from "./handlers/identity.js";
 
 /** Read the assistant's name from IDENTITY.md for personalized responses. */
 export function getAssistantName(): string | null {
@@ -10,7 +11,11 @@ export function getAssistantName(): string | null {
     if (!existsSync(path)) return null;
     const content = readFileSync(path, "utf-8");
     const match = content.match(/\*\*Name:\*\*\s*(.+)/);
-    return match?.[1]?.trim() || null;
+    const value = match?.[1]?.trim();
+    // Template scaffolding like `_(not yet chosen)_` is "no name yet", not a
+    // name — callers substitute their own default instead of leaking markdown.
+    if (!value || isTemplatePlaceholder(value)) return null;
+    return value;
   } catch {
     return null;
   }

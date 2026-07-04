@@ -23,6 +23,7 @@ import { RateLimitProvider } from "../providers/ratelimit.js";
 import { listProviders } from "../providers/registry.js";
 import { getSubagentManager } from "../subagent/index.js";
 import { ProviderNotConfiguredError } from "../util/errors.js";
+import { getLogger } from "../util/logger.js";
 import { getSandboxWorkingDir } from "../util/platform.js";
 import { Conversation } from "./conversation.js";
 import type { ConversationEvictor } from "./conversation-evictor.js";
@@ -37,6 +38,8 @@ import {
 } from "./conversation-registry.js";
 import type { ConversationCreateOptions } from "./handlers/shared.js";
 import { buildTransportHints } from "./transport-hints.js";
+
+const log = getLogger("conversation-store");
 
 // ── Per-conversation persistent options ────────────────────────────
 
@@ -130,6 +133,13 @@ export async function getOrCreateConversation(
     const storedOptions = conversationOptions.get(conversationId);
 
     const createPromise = (async () => {
+      // Stage timing: conversation creation is the dominant cost difference
+      // between "first message of a new conversation" (slow 202) and "message
+      // to a warm conversation" (fast 202) on POST /v1/messages. Logged as
+      // `conversation_create_timing` when creation exceeds the threshold so
+      // prod logs attribute the latency to provider/credential resolution vs
+      // system-prompt build vs DB hydration.
+      const createStartedAtMs = performance.now();
       const config = getConfig();
       // Connection-aware default-provider resolution. Throws
       // `ConnectionResolutionError` when the default profile's
@@ -137,6 +147,9 @@ export async function getOrCreateConversation(
       // bugs). Returns null on soft credential failures (missing
       // credential, platform auth unavailable).
       const baseProvider = await resolveDefaultProvider(config);
+      const providerResolveMs = Math.round(
+        performance.now() - createStartedAtMs,
+      );
       if (!baseProvider) {
         const resolved = resolveCallSiteConfig("mainAgent", config.llm);
         throw new ProviderNotConfiguredError(
@@ -160,6 +173,7 @@ export async function getOrCreateConversation(
       }
       const workingDir = getSandboxWorkingDir();
 
+      const promptStartedAtMs = performance.now();
       const systemPrompt =
         storedOptions?.systemPromptOverride ?? buildSystemPrompt();
       const maxTokens = storedOptions?.maxResponseTokens;
@@ -176,8 +190,26 @@ export async function getOrCreateConversation(
           modelOverride: storedOptions?.modelOverride,
         },
       );
+      // Includes the Conversation constructor (tool wiring + a second
+      // system-prompt build for the override comparison).
+      const constructMs = Math.round(performance.now() - promptStartedAtMs);
       newConversation.updateClient(sendToClient, true);
+      const loadStartedAtMs = performance.now();
       await newConversation.loadFromDb();
+      const loadFromDbMs = Math.round(performance.now() - loadStartedAtMs);
+      const createTotalMs = Math.round(performance.now() - createStartedAtMs);
+      if (createTotalMs > 250) {
+        log.info(
+          {
+            conversationId,
+            createTotalMs,
+            providerResolveMs,
+            constructMs,
+            loadFromDbMs,
+          },
+          "conversation_create_timing",
+        );
+      }
       if (storedOptions?.assistantId) {
         newConversation.setAssistantId(storedOptions.assistantId);
       }
