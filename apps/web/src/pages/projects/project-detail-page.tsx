@@ -21,6 +21,7 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import { HqStyle } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
+import { AddExistingPanel } from "./add-existing-panel";
 import type { BoardItem } from "./board-item";
 import { ItemCard, MissionTag, statusChip, type ItemChip } from "./item-card";
 import { BOARD_LANES, categoryLabel, laneForStatus } from "./project-kit";
@@ -123,6 +124,7 @@ export function ProjectDetailPage() {
 
   const [draft, setDraft] = useState("");
   const [adding, setAdding] = useState(false);
+  const [pickingExisting, setPickingExisting] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   // Stable reference time for due-pressure emphasis (no Date.now() in render).
   const [now] = useState(() => Date.now());
@@ -272,6 +274,32 @@ export function ProjectDetailPage() {
           </div>
         </div>
 
+        {/* CONTEXT BRIEF + KNOWLEDGE — kept above the board so a long task
+            list never buries the context the agent reads before every run. */}
+        {project ? (
+          <div
+            style={{
+              marginTop: 16,
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+              alignItems: "start",
+            }}
+          >
+            <ProjectBrief
+              assistantId={assistantId}
+              projectId={projectId}
+              initial={project.context}
+              accent={C.blue}
+            />
+            <ProjectKnowledge
+              assistantId={assistantId}
+              projectId={projectId}
+              accent={C.violet}
+            />
+          </div>
+        ) : null}
+
         {/* Quick add */}
         <div style={{ margin: "18px 0 6px" }}>
           {adding ? (
@@ -338,25 +366,46 @@ export function ProjectDetailPage() {
               ) : null}
             </>
           ) : (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                fontFamily: mono,
-                fontSize: 12,
-                padding: "8px 14px",
-                borderRadius: 10,
-                border: `1px solid ${C.line2}`,
-                background: "transparent",
-                color: C.t2,
-                cursor: "pointer",
-              }}
-            >
-              <Plus size={13} /> Add task
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontFamily: mono,
+                  fontSize: 12,
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.line2}`,
+                  background: "transparent",
+                  color: C.t2,
+                  cursor: "pointer",
+                }}
+              >
+                <Plus size={13} /> Add task
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickingExisting(true)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontFamily: mono,
+                  fontSize: 12,
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${C.line2}`,
+                  background: "transparent",
+                  color: C.t2,
+                  cursor: "pointer",
+                }}
+              >
+                Add existing ›
+              </button>
+            </div>
           )}
         </div>
 
@@ -450,31 +499,6 @@ export function ProjectDetailPage() {
             })}
           </div>
         )}
-
-        {/* CONTEXT BRIEF + KNOWLEDGE — accent-rail panels, side by side */}
-        {project ? (
-          <div
-            style={{
-              marginTop: 18,
-              display: "grid",
-              gap: 12,
-              gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
-              alignItems: "start",
-            }}
-          >
-            <ProjectBrief
-              assistantId={assistantId}
-              projectId={projectId}
-              initial={project.context}
-              accent={C.blue}
-            />
-            <ProjectKnowledge
-              assistantId={assistantId}
-              projectId={projectId}
-              accent={C.violet}
-            />
-          </div>
-        ) : null}
       </div>
 
       {openTask ? (
@@ -484,6 +508,14 @@ export function ProjectDetailPage() {
           projects={projects}
           currentProjectId={projectId}
           onClose={() => setOpenTaskId(null)}
+        />
+      ) : null}
+
+      {pickingExisting ? (
+        <AddExistingPanel
+          assistantId={assistantId}
+          projectId={projectId}
+          onClose={() => setPickingExisting(false)}
         />
       ) : null}
     </div>

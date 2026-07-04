@@ -25,6 +25,7 @@ import {
   projectsPostMutation,
   projectsReorderPostMutation,
   workitemsByIdPatchMutation,
+  workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ProjectsGetResponses } from "@/generated/daemon/types.gen";
 
@@ -230,6 +231,23 @@ export function useMissionTitles(assistantId: string): Map<string, string> {
   const map = new Map<string, string>();
   for (const m of query.data?.missions ?? []) map.set(m.id, m.title);
   return map;
+}
+
+/**
+ * Every work item (all statuses, full records) — used by the "Add existing"
+ * picker to file already-captured items into a project. Same row shape the
+ * board renders, so a full-record PATCH can move it cleanly.
+ */
+export function useAllWorkItems(assistantId: string) {
+  const query = useQuery({
+    ...workitemsGetOptions({ path: { assistant_id: assistantId }, query: {} }),
+    refetchInterval: 60_000,
+    staleTime: 15_000,
+  });
+  return {
+    items: query.data?.items ?? [],
+    isLoading: query.isLoading,
+  };
 }
 
 /** A project's board rows (full work-item records; all statuses). */
