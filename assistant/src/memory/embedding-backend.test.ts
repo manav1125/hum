@@ -28,6 +28,13 @@ mock.module("../providers/platform-proxy/context.js", () => ({
   managedFallbackEnabledFor: mock(async () => false),
 }));
 
+// `isOllamaConfigured` consults the resolved main-agent LLM config; pin it to
+// a non-ollama provider so the fallback chain never constructs a live Ollama
+// backend in tests.
+mock.module("../config/llm-resolver.js", () => ({
+  resolveCallSiteConfig: () => ({ provider: "openai" }),
+}));
+
 const LOCAL_CONFIG = {
   memory: {
     embeddings: {
@@ -200,5 +207,77 @@ describe("managed-proxy Gemini fallback to direct key", () => {
     const [directUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(directUrl).toContain("generativelanguage.googleapis.com");
     expect(directUrl).toContain("key=direct-key");
+  });
+});
+
+const AUTO_CONFIG = {
+  memory: {
+    embeddings: {
+      provider: "auto",
+      localModel: "BAAI/bge-small-en-v1.5",
+      openaiModel: "text-embedding-3-small",
+      geminiModel: "test-model",
+      ollamaModel: "nomic-embed-text",
+    },
+    qdrant: {
+      vectorSize: 3,
+    },
+  },
+} as unknown as AssistantConfig;
+
+describe("lazy fallback chain (auto mode)", () => {
+  const savedOllamaBaseUrl = process.env.OLLAMA_BASE_URL;
+
+  beforeEach(() => {
+    clearEmbeddingBackendCache();
+    delete process.env.OLLAMA_BASE_URL;
+    getProviderKeyAsyncMock.mockClear();
+  });
+
+  afterEach(() => {
+    clearEmbeddingBackendCache();
+    if (savedOllamaBaseUrl === undefined) {
+      delete process.env.OLLAMA_BASE_URL;
+    } else {
+      process.env.OLLAMA_BASE_URL = savedOllamaBaseUrl;
+    }
+    getProviderKeyAsyncMock.mockReset();
+    getProviderKeyAsyncMock.mockImplementation(async () => undefined);
+  });
+
+  test("does not touch the credential store when the primary succeeds", async () => {
+    const selection = await selectEmbeddingBackend(AUTO_CONFIG);
+    expect(selection.backend?.provider).toBe("local");
+    (selection.backend as { embed: unknown }).embed = mock(
+      async (inputs: unknown[]) => inputs.map(() => [0.1, 0.2, 0.3]),
+    );
+    getProviderKeyAsyncMock.mockClear();
+
+    const result = await embedWithBackend(AUTO_CONFIG, ["hello"]);
+
+    expect(result.provider).toBe("local");
+    expect(result.vectors).toEqual([[0.1, 0.2, 0.3]]);
+    // The fallback chain requires credential reads; a successful primary
+    // must not pay for them.
+    expect(getProviderKeyAsyncMock).not.toHaveBeenCalled();
+  });
+
+  test("resolves the fallback chain only after the primary fails", async () => {
+    const selection = await selectEmbeddingBackend(AUTO_CONFIG);
+    (selection.backend as { embed: unknown }).embed = mock(async () => {
+      throw new Error("primary down");
+    });
+    getProviderKeyAsyncMock.mockClear();
+
+    // No fallback provider has a key, so the primary error surfaces.
+    await expect(embedWithBackend(AUTO_CONFIG, ["hello"])).rejects.toThrow(
+      "primary down",
+    );
+    // ...but the chain WAS resolved (credential lookups happened).
+    const providersQueried = getProviderKeyAsyncMock.mock.calls.map(
+      (c) => c[0],
+    );
+    expect(providersQueried).toContain("openai");
+    expect(providersQueried).toContain("gemini");
   });
 });

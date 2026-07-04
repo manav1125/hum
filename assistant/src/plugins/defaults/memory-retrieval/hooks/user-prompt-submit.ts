@@ -42,11 +42,16 @@ import {
 } from "../../../../daemon/conversation-runtime-assembly.js";
 import type { MemoryRecalled } from "../../../../daemon/message-types/memory.js";
 import { resolveTrustClass } from "../../../../daemon/trust-context.js";
+import { recordTurnStageTiming } from "../../../../daemon/turn-stage-timings.js";
 import { updateMessageMetadata } from "../../../../memory/conversation-crud.js";
 import { recordMemoryRecallLog } from "../../../../memory/memory-recall-log-store.js";
 import { broadcastMessage } from "../../../../runtime/assistant-event-hub.js";
 import type { GraphMemoryResult } from "../../../types.js";
 import { MEMORY_V3_INJECTED_BLOCK_METADATA_KEY } from "../../memory-v3-shadow/ever-injected-store.js";
+import {
+  getRetrievalBreakerState,
+  runWithRetrievalBudget,
+} from "../retrieval-budget.js";
 
 /**
  * Persist and broadcast the retrieval's side effects: the injected block on
@@ -228,10 +233,14 @@ function persistInjectionBlocks(
  * runs for every actor, writing the fully injected result back onto
  * `latestMessages` and persisting the assembled blocks.
  *
- * Memory retrieval blocks the turn — there is no soft timeout here. Memory is
- * critical context, and silently dropping it produces a worse outcome than a
- * slower turn. Cancellation still works via `ctx.signal`, which is threaded
- * into `prepareMemory`.
+ * Memory retrieval runs under a hard time budget with a failure circuit
+ * breaker (see `retrieval-budget.ts`): a pass that exceeds the budget (or
+ * errors) is dropped for the turn — the turn proceeds without injected
+ * memory rather than stalling behind a degraded dependency (embedding
+ * backend, Qdrant, credential store). Repeated failures skip retrieval
+ * entirely for a cooldown window. Conversation cancellation propagates via
+ * the conversation abort signal, which is combined with the budget signal
+ * and threaded into `prepareMemory`.
  */
 const userPromptSubmitMemoryRetrieval: PluginHookFn<
   UserPromptSubmitContext
@@ -256,41 +265,74 @@ const userPromptSubmitMemoryRetrieval: PluginHookFn<
     // publish to the shared `broadcastMessage` hub — the sink every turn
     // publisher converges to — rather than a threaded event callback. This
     // keeps any raw client-emit capability off the hook contract.
-    const graphResult = await conversation.graphMemory.prepareMemory(
-      ctx.latestMessages,
-      config,
-      abortSignal,
-      broadcastMessage,
+    //
+    // The pass runs under the retrieval budget + circuit breaker: on
+    // timeout/error/open-circuit the turn proceeds with the seeded
+    // `latestMessages` (no injection) and one warn line. Only a
+    // conversation cancel re-throws.
+    const retrievalStartedAtMs = performance.now();
+    const budgeted = await runWithRetrievalBudget(
+      (signal) =>
+        conversation.graphMemory.prepareMemory(
+          ctx.latestMessages,
+          config,
+          signal,
+          broadcastMessage,
+        ),
+      { signal: abortSignal },
+    );
+    recordTurnStageTiming(
+      ctx.requestId,
+      "memoryRetrievalMs",
+      performance.now() - retrievalStartedAtMs,
     );
 
-    recordRecallSideEffects(graphResult, ctx);
-    // The v2 block is persisted inside `recordRecallSideEffects`. If
-    // memory-v3 supersedes it later this turn, `persistInjectionBlocks`
-    // removes the key in its combined post-assembly update.
-    v2BlockPersisted = Boolean(graphResult.injectedBlockText);
+    if (budgeted.outcome === "ok") {
+      const graphResult = budgeted.value;
+      recordRecallSideEffects(graphResult, ctx);
+      // The v2 block is persisted inside `recordRecallSideEffects`. If
+      // memory-v3 supersedes it later this turn, `persistInjectionBlocks`
+      // removes the key in its combined post-assembly update.
+      v2BlockPersisted = Boolean(graphResult.injectedBlockText);
 
-    ctx.latestMessages = graphResult.runMessages;
-    // Select dense+sparse as a matched pair so RRF fusion combines two signals
-    // aligned to the same query text:
-    //   1. Context-load with a user query: user-query dense + user-query sparse
-    //      — the cleanest pairing.
-    //   2. Otherwise (context-load without a user query, or per-turn): whatever
-    //      `queryVector` / `sparseVector` the retriever produced, which are
-    //      themselves co-aligned (both summary-derived in context-load, both
-    //      user-last-message-derived in per-turn).
-    // Never pair a user-query dense with a summary-aligned sparse.
-    // The PKB-reminder injector reads this pair back off the same graph handle
-    // (looked up by conversation id) rather than receiving it threaded through
-    // the agent loop.
-    if (graphResult.userQueryVector) {
-      conversation.graphMemory.recordPkbQueryVectors(
-        graphResult.userQueryVector,
-        graphResult.userQuerySparseVector,
+      ctx.latestMessages = graphResult.runMessages;
+      // Select dense+sparse as a matched pair so RRF fusion combines two signals
+      // aligned to the same query text:
+      //   1. Context-load with a user query: user-query dense + user-query sparse
+      //      — the cleanest pairing.
+      //   2. Otherwise (context-load without a user query, or per-turn): whatever
+      //      `queryVector` / `sparseVector` the retriever produced, which are
+      //      themselves co-aligned (both summary-derived in context-load, both
+      //      user-last-message-derived in per-turn).
+      // Never pair a user-query dense with a summary-aligned sparse.
+      // The PKB-reminder injector reads this pair back off the same graph handle
+      // (looked up by conversation id) rather than receiving it threaded through
+      // the agent loop.
+      if (graphResult.userQueryVector) {
+        conversation.graphMemory.recordPkbQueryVectors(
+          graphResult.userQueryVector,
+          graphResult.userQuerySparseVector,
+        );
+      } else {
+        conversation.graphMemory.recordPkbQueryVectors(
+          graphResult.queryVector,
+          graphResult.sparseVector,
+        );
+      }
+    } else if (budgeted.outcome === "timeout") {
+      ctx.logger.warn(
+        { budgetMs: budgeted.budgetMs, breaker: getRetrievalBreakerState() },
+        "Memory retrieval exceeded its budget — proceeding without injection this turn",
+      );
+    } else if (budgeted.outcome === "circuit_open") {
+      ctx.logger.warn(
+        { retryAtMs: budgeted.retryAtMs },
+        "Memory retrieval circuit open — skipping retrieval this turn",
       );
     } else {
-      conversation.graphMemory.recordPkbQueryVectors(
-        graphResult.queryVector,
-        graphResult.sparseVector,
+      ctx.logger.warn(
+        { err: budgeted.error, breaker: getRetrievalBreakerState() },
+        "Memory retrieval failed — proceeding without injection this turn",
       );
     }
   }
@@ -314,6 +356,7 @@ const userPromptSubmitMemoryRetrieval: PluginHookFn<
     config.llm,
     ctx.conversationId,
   );
+  const runtimeInjectionStartedAtMs = performance.now();
   const injection = await applyRuntimeInjections(ctx.latestMessages, {
     isNonInteractive: ctx.isNonInteractive,
     modelProfile,
@@ -322,6 +365,11 @@ const userPromptSubmitMemoryRetrieval: PluginHookFn<
     requestId: ctx.requestId,
     conversationId: ctx.conversationId,
   });
+  recordTurnStageTiming(
+    ctx.requestId,
+    "runtimeInjectionMs",
+    performance.now() - runtimeInjectionStartedAtMs,
+  );
   ctx.latestMessages = injection.messages;
   persistInjectionBlocks(injection.blocks, ctx, v2BlockPersisted);
 };

@@ -75,11 +75,24 @@ let _cesReconnect: (() => Promise<CesClient | undefined>) | undefined;
 /** Optional listener invoked whenever setCesClient() updates the client. */
 let _cesClientListener: ((client: CesClient | undefined) => void) | undefined;
 
-/** Epoch ms of the last reconnection attempt. Used for cooldown. */
+/** Epoch ms of the last reconnection attempt *completion*. Used for cooldown. */
 let _lastReconnectAttempt = 0;
 
 /** In-flight reconnection promise — concurrent callers share the same attempt. */
 let _reconnectInFlight: Promise<boolean> | undefined;
+
+/**
+ * Consecutive failed reconnection attempts. Drives the failure circuit
+ * breaker: once it reaches `RECONNECT_FAILURE_THRESHOLD`, the cooldown
+ * between attempts stretches to `RECONNECT_FAILURE_COOLDOWN_MS` so a
+ * deployment where CES can never come up (e.g. a container image without
+ * the sidecar) doesn't pay a multi-second discovery poll every few seconds
+ * forever. Reset to 0 on any successful reconnection.
+ */
+let _consecutiveReconnectFailures = 0;
+
+/** Whether the extended-cooldown transition has been logged (log once per open). */
+let _reconnectCircuitOpenLogged = false;
 
 /**
  * Per-async-context flag set while we are running the user-registered
@@ -103,6 +116,35 @@ let _cesHttpUnreachable = false;
 
 /** Minimum interval between CES reconnection attempts. */
 const RECONNECT_COOLDOWN_MS = 3_000;
+
+/** Consecutive failures after which the reconnect circuit opens. */
+const RECONNECT_FAILURE_THRESHOLD = 3;
+
+/**
+ * Extended cooldown applied while the reconnect circuit is open (after
+ * `RECONNECT_FAILURE_THRESHOLD` consecutive failures). A single attempt
+ * still runs after each window so a CES sidecar that appears later is
+ * eventually picked up.
+ */
+const RECONNECT_FAILURE_COOLDOWN_MS = 5 * 60_000;
+
+/** Effective (test-overridable) reconnect tuning. */
+let _reconnectCooldownMs = RECONNECT_COOLDOWN_MS;
+let _reconnectFailureThreshold = RECONNECT_FAILURE_THRESHOLD;
+let _reconnectFailureCooldownMs = RECONNECT_FAILURE_COOLDOWN_MS;
+
+/** @internal Test-only: override reconnect cooldown/threshold timings. */
+export function _setReconnectTuningForTesting(tuning?: {
+  cooldownMs?: number;
+  failureThreshold?: number;
+  failureCooldownMs?: number;
+}): void {
+  _reconnectCooldownMs = tuning?.cooldownMs ?? RECONNECT_COOLDOWN_MS;
+  _reconnectFailureThreshold =
+    tuning?.failureThreshold ?? RECONNECT_FAILURE_THRESHOLD;
+  _reconnectFailureCooldownMs =
+    tuning?.failureCooldownMs ?? RECONNECT_FAILURE_COOLDOWN_MS;
+}
 
 /**
  * Hard timeout for each public credential operation (resolve + backend call).
@@ -215,13 +257,18 @@ async function resolveBackendAsync(): Promise<CredentialBackend> {
       // - We're on ces-http but an operation returned unreachable (HTTP
       //   endpoint is actually down even though isAvailable() returned true,
       //   since it only checks env vars, not actual connectivity).
-      const reconnected = await attemptCesReconnection();
-      if (reconnected) {
-        // setCesClient() cleared the cache — fall through to re-resolve.
-      } else {
-        // Reconnection failed or on cooldown — continue with current backend.
-        return _resolvedBackend;
-      }
+      //
+      // The current backend is *usable* (encrypted store reads work; ces-http
+      // may recover), so this is an opportunistic upgrade — it must never
+      // block the caller's credential read. Each reconnection attempt polls
+      // the managed bootstrap socket for seconds before failing; awaiting it
+      // here serialized a multi-second stall into every credential read on
+      // deployments without a CES sidecar (measured: ~35 back-to-back
+      // attempts stretched one turn's context assembly to 106 s in prod).
+      // Fire the attempt in the background instead: when it succeeds,
+      // setCesClient() clears the cache and the *next* read resolves CES.
+      void attemptCesReconnection().catch(() => {});
+      return _resolvedBackend;
     } else {
       return _resolvedBackend;
     }
@@ -275,8 +322,17 @@ async function attemptCesReconnection(): Promise<boolean> {
   // If a reconnection is already in flight, share it.
   if (_reconnectInFlight) return _reconnectInFlight;
 
-  // Cooldown — don't retry immediately after a completed attempt.
-  if (Date.now() - _lastReconnectAttempt < RECONNECT_COOLDOWN_MS) return false;
+  // Cooldown — don't retry immediately after a completed attempt. While the
+  // failure circuit is open (RECONNECT_FAILURE_THRESHOLD consecutive
+  // failures) the window stretches so hopeless deployments stop paying the
+  // discovery poll every few seconds. Measured from attempt *completion* —
+  // attempts themselves take about as long as the base cooldown, so a
+  // start-anchored timestamp never actually gated back-to-back attempts.
+  const cooldownMs =
+    _consecutiveReconnectFailures >= _reconnectFailureThreshold
+      ? _reconnectFailureCooldownMs
+      : _reconnectCooldownMs;
+  if (Date.now() - _lastReconnectAttempt < cooldownMs) return false;
 
   _lastReconnectAttempt = Date.now();
   log.warn("Credential backend unavailable — attempting CES reconnection");
@@ -286,6 +342,8 @@ async function attemptCesReconnection(): Promise<boolean> {
       const newClient = await _cesReconnect!();
       if (newClient) {
         setCesClient(newClient);
+        _consecutiveReconnectFailures = 0;
+        _reconnectCircuitOpenLogged = false;
         log.info("CES reconnection successful — credential backend restored");
         return true;
       }
@@ -293,12 +351,29 @@ async function attemptCesReconnection(): Promise<boolean> {
     } catch (err) {
       log.warn({ err }, "CES reconnection failed");
     }
+    _consecutiveReconnectFailures++;
+    if (
+      _consecutiveReconnectFailures >= _reconnectFailureThreshold &&
+      !_reconnectCircuitOpenLogged
+    ) {
+      _reconnectCircuitOpenLogged = true;
+      log.warn(
+        {
+          consecutiveFailures: _consecutiveReconnectFailures,
+          cooldownMs: _reconnectFailureCooldownMs,
+        },
+        "CES reconnection circuit open — backing off between attempts",
+      );
+    }
     return false;
   });
 
   try {
     return await _reconnectInFlight;
   } finally {
+    // Anchor the cooldown at completion so the window measures idle time
+    // between attempts, not time since the previous attempt started.
+    _lastReconnectAttempt = Date.now();
     _reconnectInFlight = undefined;
   }
 }
@@ -657,5 +732,8 @@ export function _resetBackend(): void {
   _cesClientListener = undefined;
   _lastReconnectAttempt = 0;
   _reconnectInFlight = undefined;
+  _consecutiveReconnectFailures = 0;
+  _reconnectCircuitOpenLogged = false;
+  _setReconnectTuningForTesting();
   _cesHttpUnreachable = false;
 }

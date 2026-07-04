@@ -73,6 +73,10 @@ import type { ServerMessage } from "../daemon/message-protocol.js";
 import type { ConversationGraphMemory } from "../memory/graph/conversation-graph-memory.js";
 import type { QdrantSparseVector } from "../memory/qdrant-client.js";
 import userPromptSubmitMemoryRetrieval from "../plugins/defaults/memory-retrieval/hooks/user-prompt-submit.js";
+import {
+  _resetRetrievalBreaker,
+  getRetrievalBreakerState,
+} from "../plugins/defaults/memory-retrieval/retrieval-budget.js";
 import type { Message } from "../providers/types.js";
 
 /** Canonical metrics payload the graph retriever attaches to a real hit. */
@@ -191,6 +195,7 @@ beforeEach(() => {
   broadcastMessageMock.mockReset();
   currentConversation = undefined;
   currentTrustClass = "guardian";
+  _resetRetrievalBreaker();
 });
 
 describe("user-prompt-submit hook (memory retrieval)", () => {
@@ -441,9 +446,10 @@ describe("user-prompt-submit hook (memory retrieval)", () => {
     expect(recordMemoryRecallLogMock).toHaveBeenCalledTimes(1);
   });
 
-  test("propagates errors from prepareMemory rather than swallowing them", async () => {
-    // Memory is critical — failures must surface to the caller (the agent
-    // loop) rather than silently degrading to an empty graph result.
+  test("degrades gracefully when prepareMemory fails — turn proceeds without injection", async () => {
+    // Retrieval failures must not stall or abort the turn: the hook logs,
+    // counts the failure against the retrieval circuit breaker, and proceeds
+    // with the seeded messages (no memory injection) instead of re-throwing.
     const failingPrepare = mock(
       (
         _msgs: Message[],
@@ -457,15 +463,55 @@ describe("user-prompt-submit hook (memory retrieval)", () => {
     } as unknown as ConversationGraphMemory;
     installConversation(graphMemory, { trusted: true });
     const ctx = makeHookCtx();
+    const seededMessages = ctx.latestMessages;
 
-    await expect(userPromptSubmitMemoryRetrieval(ctx)).rejects.toThrow(
-      "retrieval failed",
+    await userPromptSubmitMemoryRetrieval(ctx);
+
+    expect(failingPrepare).toHaveBeenCalledTimes(1);
+    // No memory metadata persisted for the failed pass.
+    expect(updateMessageMetadataMock).not.toHaveBeenCalledWith(
+      ctx.userMessageId,
+      expect.objectContaining({ memoryInjectedBlock: expect.anything() }),
     );
+    expect(getRetrievalBreakerState().consecutiveFailures).toBe(1);
+    // Runtime injection still ran on the seeded (un-injected) history.
+    expect(applyRuntimeInjectionsMock).toHaveBeenCalledTimes(1);
+    expect(applyRuntimeInjectionsMock.mock.calls[0]?.[0]).toBe(seededMessages);
   });
 
-  test("forwards the conversation abort signal into prepareMemory", async () => {
-    // The hook hands the live conversation's abort signal straight to
-    // `prepareMemory` so an external cancel aborts the underlying retrieval.
+  test("hangs in prepareMemory are capped by the retrieval budget", async () => {
+    // A retrieval pass that ignores its abort signal entirely (e.g. a
+    // blackholed embedding provider) must not stall the turn past the budget.
+    const blackholePrepare = mock(
+      (
+        _msgs: Message[],
+        _cfg: AssistantConfig,
+        _signal: AbortSignal,
+        _onEvent: (msg: ServerMessage) => void,
+      ) => new Promise<never>(() => {}),
+    );
+    const graphMemory = {
+      prepareMemory: blackholePrepare,
+    } as unknown as ConversationGraphMemory;
+    installConversation(graphMemory, { trusted: true });
+    const ctx = makeHookCtx();
+
+    process.env.VELLUM_MEMORY_RETRIEVAL_BUDGET_MS = "50";
+    const startedAt = performance.now();
+    try {
+      await userPromptSubmitMemoryRetrieval(ctx);
+    } finally {
+      delete process.env.VELLUM_MEMORY_RETRIEVAL_BUDGET_MS;
+    }
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(2_000);
+    expect(getRetrievalBreakerState().consecutiveFailures).toBe(1);
+  });
+
+  test("forwards the conversation abort into prepareMemory's signal", async () => {
+    // The hook combines the live conversation's abort signal with the budget
+    // signal, so an external cancel still aborts the underlying retrieval.
     let capturedSignal: AbortSignal | undefined;
     const prepareMemoryMock = mock(
       async (
@@ -498,6 +544,9 @@ describe("user-prompt-submit hook (memory retrieval)", () => {
 
     await userPromptSubmitMemoryRetrieval(ctx);
 
-    expect(capturedSignal).toBe(controller.signal);
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(false);
+    controller.abort();
+    expect(capturedSignal!.aborted).toBe(true);
   });
 });

@@ -121,6 +121,7 @@ import type {
 } from "./message-protocol.js";
 import type { TrustContext } from "./trust-context.js";
 import { TURN_IN_FLIGHT_METADATA_KEY } from "./turn-recovery-markers.js";
+import { takeTurnStageTimings } from "./turn-stage-timings.js";
 
 const log = getLogger("conversation-agent-loop");
 
@@ -1590,6 +1591,10 @@ export async function runAgentLoopImpl(
         {
           totalMs,
           contextAssemblyMs,
+          // Named sub-stage durations recorded by the user-prompt-submit
+          // hooks (e.g. memoryRetrievalMs / runtimeInjectionMs), so a
+          // contextAssembly regression points at the responsible sub-stage.
+          contextAssemblyStages: takeTurnStageTimings(reqId) ?? null,
           agentLoopMs,
           postLoopMs,
           llmCallCount: state.exchangeLlmCallCount,
