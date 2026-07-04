@@ -1,6 +1,7 @@
 import {
   Clock,
   Hash,
+  FolderKanban,
   Home,
   LayoutGrid,
   Mic,
@@ -538,6 +539,16 @@ export function AssistantSideMenu({
             location.pathname.endsWith("/agents")
           }
           onSelect={() => cueNav("/assistant/home")}
+        />
+        <SideMenu.Item
+          icon={FolderKanban}
+          label="Projects"
+          showCollapsedTooltip
+          active={
+            location.pathname.includes("/projects") ||
+            location.pathname.endsWith("/work")
+          }
+          onSelect={() => cueNav("/assistant/projects")}
         />
         <SideMenu.Item
           icon={Wand2}
