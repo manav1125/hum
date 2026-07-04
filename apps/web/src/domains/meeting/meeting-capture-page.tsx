@@ -3,7 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { meetingsRecapPost, sttTranscribePost } from "@/generated/daemon/sdk.gen";
+import {
+  meetingsRecapPost,
+  sttTranscribePost,
+} from "@/generated/daemon/sdk.gen";
 import type { MeetingsRecapPostResponses } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
@@ -96,7 +99,6 @@ const ANIM_CSS = `
 }
 `;
 
-
 /** Format a duration in whole seconds as MM:SS. */
 function formatDuration(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds));
@@ -109,7 +111,8 @@ function formatDuration(totalSeconds: number): string {
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read audio"));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Failed to read audio"));
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== "string") {
@@ -134,11 +137,7 @@ function recordingSupported(): boolean {
 }
 
 type CaptureStatus =
-  | "idle"
-  | "recording"
-  | "transcribing"
-  | "transcribed"
-  | "creating-recap";
+  "idle" | "recording" | "transcribing" | "transcribed" | "creating-recap";
 
 const PREFERRED_MIME = "audio/webm";
 
@@ -222,7 +221,13 @@ function CaptureFrame({
  * larger danger-tinted chip with the danger-red (`#E5634B`) dot and a DM-Mono
  * timer, per README-MOBILE §3.6.
  */
-function RecPill({ elapsed, mobile = false }: { elapsed: number; mobile?: boolean }) {
+function RecPill({
+  elapsed,
+  mobile = false,
+}: {
+  elapsed: number;
+  mobile?: boolean;
+}) {
   if (mobile) {
     return (
       <span
@@ -242,7 +247,12 @@ function RecPill({ elapsed, mobile = false }: { elapsed: number; mobile?: boolea
       >
         <span
           className="mc-dot"
-          style={{ width: 9, height: 9, borderRadius: "50%", background: D.danger }}
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            background: D.danger,
+          }}
         />
         REC {formatDuration(elapsed)}
       </span>
@@ -306,9 +316,15 @@ function pillButton(primary: boolean): React.CSSProperties {
  * Full-width, ≥44pt touch target for the mobile bottom-third controls.
  * `tone`: primary (blue) · neutral (glass) · danger (stop).
  */
-function mobileButton(tone: "primary" | "neutral" | "danger"): React.CSSProperties {
+function mobileButton(
+  tone: "primary" | "neutral" | "danger",
+): React.CSSProperties {
   const bg =
-    tone === "primary" ? D.blue : tone === "danger" ? "rgba(229,99,75,.16)" : "rgba(255,255,255,.06)";
+    tone === "primary"
+      ? D.blue
+      : tone === "danger"
+        ? "rgba(229,99,75,.16)"
+        : "rgba(255,255,255,.06)";
   const border =
     tone === "primary"
       ? `1px solid ${D.blue}`
@@ -407,7 +423,13 @@ function MobileShell({
   );
 }
 
-function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void; mobile: boolean }) {
+function LiveCapture({
+  onRecap,
+  mobile,
+}: {
+  onRecap: (recap: RecapJson) => void;
+  mobile: boolean;
+}) {
   const assistantId = useActiveAssistantId();
 
   const [supported] = useState<boolean>(() => recordingSupported());
@@ -494,7 +516,9 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setError("Couldn't start the mic — check microphone permissions and try again.");
+      setError(
+        "Couldn't start the mic — check microphone permissions and try again.",
+      );
       return;
     }
     streamRef.current = stream;
@@ -592,7 +616,14 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
     const topBar = (
       <>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: ".12em", color: D.t2 }}>
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 11,
+              letterSpacing: ".12em",
+              color: D.t2,
+            }}
+          >
             CUE · MEETING
           </span>
         </div>
@@ -633,14 +664,29 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
               }}
             >
               <ApertureAvatar size={96} />
-              <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5, maxWidth: 280 }}>
-                Recording isn&apos;t supported here. Open Meeting capture on your phone to record the
-                room.
+              <div
+                style={{
+                  fontSize: 14,
+                  color: D.t2,
+                  lineHeight: 1.5,
+                  maxWidth: 280,
+                }}
+              >
+                Recording isn&apos;t supported here. Open Meeting capture on
+                your phone to record the room.
               </div>
             </div>
           }
           controls={
-            <button type="button" disabled style={{ ...mobileButton("neutral"), opacity: 0.55, cursor: "default" }}>
+            <button
+              type="button"
+              disabled
+              style={{
+                ...mobileButton("neutral"),
+                opacity: 0.55,
+                cursor: "default",
+              }}
+            >
               Recording unavailable
             </button>
           }
@@ -666,9 +712,20 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
               }}
             >
               <ApertureAvatar state="listening" size={132} />
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 30 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 6,
+                  height: 30,
+                }}
+              >
                 {[0, 1, 2, 3, 4].map((i) => (
-                  <span key={i} className="mc-bar" style={{ width: 5, borderRadius: 3, background: "#fff" }} />
+                  <span
+                    key={i}
+                    className="mc-bar"
+                    style={{ width: 5, borderRadius: 3, background: "#fff" }}
+                  />
                 ))}
               </div>
               <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5 }}>
@@ -677,8 +734,19 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
             </div>
           }
           controls={
-            <button type="button" onClick={handleStop} style={mobileButton("danger")}>
-              <span style={{ width: 11, height: 11, borderRadius: 3, background: D.danger }} />
+            <button
+              type="button"
+              onClick={handleStop}
+              style={mobileButton("danger")}
+            >
+              <span
+                style={{
+                  width: 11,
+                  height: 11,
+                  borderRadius: 3,
+                  background: D.danger,
+                }}
+              />
               Stop &amp; transcribe
             </button>
           }
@@ -704,11 +772,21 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
               }}
             >
               <Spinner size={34} />
-              <div style={{ fontSize: 14, color: D.t2 }}>Transcribing your capture…</div>
+              <div style={{ fontSize: 14, color: D.t2 }}>
+                Transcribing your capture…
+              </div>
             </div>
           }
           controls={
-            <button type="button" disabled style={{ ...mobileButton("neutral"), opacity: 0.6, cursor: "default" }}>
+            <button
+              type="button"
+              disabled
+              style={{
+                ...mobileButton("neutral"),
+                opacity: 0.6,
+                cursor: "default",
+              }}
+            >
               Transcribing…
             </button>
           }
@@ -722,8 +800,22 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
         <MobileShell
           topBar={topBar}
           content={
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 4 }}>
-              <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: ".06em", color: D.t3 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                paddingTop: 4,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: mono,
+                  fontSize: 11,
+                  letterSpacing: ".06em",
+                  color: D.t3,
+                }}
+              >
                 TRANSCRIPT
               </div>
               <div
@@ -750,13 +842,21 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
                 type="button"
                 onClick={handleCreateRecap}
                 disabled={creating}
-                style={{ ...mobileButton("primary"), opacity: creating ? 0.75 : 1, cursor: creating ? "default" : "pointer" }}
+                style={{
+                  ...mobileButton("primary"),
+                  opacity: creating ? 0.75 : 1,
+                  cursor: creating ? "default" : "pointer",
+                }}
               >
                 {creating ? <Spinner size={18} /> : null}
                 {creating ? "Saving recap to memory…" : "Save recap to memory"}
               </button>
               {!creating ? (
-                <button type="button" onClick={handleReset} style={mobileButton("neutral")}>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  style={mobileButton("neutral")}
+                >
                   Discard
                 </button>
               ) : null}
@@ -784,19 +884,44 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
             }}
           >
             <ApertureAvatar size={132} />
-            <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: "-.3px", lineHeight: 1.25 }}>
+            <div
+              style={{
+                fontSize: 21,
+                fontWeight: 600,
+                letterSpacing: "-.3px",
+                lineHeight: 1.25,
+              }}
+            >
               Capture the room
             </div>
-            <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5, maxWidth: 290 }}>
-              Cue records, transcribes live, then writes a recap — summary, action items, decisions —
-              into memory.
+            <div
+              style={{
+                fontSize: 14,
+                color: D.t2,
+                lineHeight: 1.5,
+                maxWidth: 290,
+              }}
+            >
+              Cue records, transcribes live, then writes a recap — summary,
+              action items, decisions — into memory.
             </div>
             {errorNote}
           </div>
         }
         controls={
-          <button type="button" onClick={handleStart} style={mobileButton("primary")}>
-            <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#fff" }} />
+          <button
+            type="button"
+            onClick={handleStart}
+            style={mobileButton("primary")}
+          >
+            <span
+              style={{
+                width: 11,
+                height: 11,
+                borderRadius: "50%",
+                background: "#fff",
+              }}
+            />
             Start recording
           </button>
         }
@@ -807,9 +932,19 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
   // ---- Unsupported environment -------------------------------------------
   if (!supported) {
     return (
-      <CaptureFrame topLeft="Cue" caption="Live · take it into the meeting (phone now, wearable later)">
+      <CaptureFrame
+        topLeft="Cue"
+        caption="Live · take it into the meeting (phone now, wearable later)"
+      >
         <ApertureAvatar size={104} />
-        <div style={{ fontSize: 12.5, color: "#9DB4E6", textAlign: "center", lineHeight: 1.45 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "#9DB4E6",
+            textAlign: "center",
+            lineHeight: 1.45,
+          }}
+        >
           Recording isn&apos;t supported here.
         </div>
       </CaptureFrame>
@@ -825,12 +960,25 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
         caption="Live · take it into the meeting (phone now, wearable later)"
       >
         <ApertureAvatar state="listening" size={104} />
-        <div style={{ display: "flex", alignItems: "center", gap: 5, height: 26 }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 5, height: 26 }}
+        >
           {[0, 1, 2, 3, 4].map((i) => (
-            <span key={i} className="mc-bar" style={{ width: 4, borderRadius: 3, background: "#fff" }} />
+            <span
+              key={i}
+              className="mc-bar"
+              style={{ width: 4, borderRadius: 3, background: "#fff" }}
+            />
           ))}
         </div>
-        <div style={{ fontSize: 12, color: "#9DB4E6", textAlign: "center", lineHeight: 1.45 }}>
+        <div
+          style={{
+            fontSize: 12,
+            color: "#9DB4E6",
+            textAlign: "center",
+            lineHeight: 1.45,
+          }}
+        >
           listening &amp; transcribing
         </div>
         <button type="button" onClick={handleStop} style={pillButton(false)}>
@@ -845,7 +993,14 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
     return (
       <CaptureFrame topLeft="Cue" caption="Transcribing your capture">
         <Spinner size={28} />
-        <div style={{ fontSize: 12.5, color: "#9DB4E6", textAlign: "center", lineHeight: 1.45 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "#9DB4E6",
+            textAlign: "center",
+            lineHeight: 1.45,
+          }}
+        >
           Transcribing…
         </div>
       </CaptureFrame>
@@ -860,7 +1015,14 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
         topLeft="Cue"
         caption="Transcript ready · turn it into a recap"
       >
-        <div style={{ fontFamily: mono, fontSize: 11, color: "#7E8BA3", alignSelf: "flex-start" }}>
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 11,
+            color: "#7E8BA3",
+            alignSelf: "flex-start",
+          }}
+        >
           Transcript →
         </div>
         <div
@@ -881,7 +1043,14 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
           {transcript}
         </div>
         {error ? (
-          <div style={{ fontSize: 11.5, color: "#F0B7B6", textAlign: "center", lineHeight: 1.4 }}>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "#F0B7B6",
+              textAlign: "center",
+              lineHeight: 1.4,
+            }}
+          >
             {error}
           </div>
         ) : null}
@@ -890,12 +1059,20 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
             type="button"
             onClick={handleCreateRecap}
             disabled={creating}
-            style={{ ...pillButton(true), opacity: creating ? 0.7 : 1, cursor: creating ? "default" : "pointer" }}
+            style={{
+              ...pillButton(true),
+              opacity: creating ? 0.7 : 1,
+              cursor: creating ? "default" : "pointer",
+            }}
           >
             {creating ? "Creating recap…" : "Create recap"}
           </button>
           {!creating ? (
-            <button type="button" onClick={handleReset} style={pillButton(false)}>
+            <button
+              type="button"
+              onClick={handleReset}
+              style={pillButton(false)}
+            >
               Discard
             </button>
           ) : null}
@@ -906,16 +1083,33 @@ function LiveCapture({ onRecap, mobile }: { onRecap: (recap: RecapJson) => void;
 
   // ---- Idle ---------------------------------------------------------------
   return (
-    <CaptureFrame topLeft="Cue" caption="Live · take it into the meeting (phone now, wearable later)">
+    <CaptureFrame
+      topLeft="Cue"
+      caption="Live · take it into the meeting (phone now, wearable later)"
+    >
       <ApertureAvatar size={104} />
-      <div style={{ fontSize: 12.5, color: "#9DB4E6", textAlign: "center", lineHeight: 1.45 }}>
+      <div
+        style={{
+          fontSize: 12.5,
+          color: "#9DB4E6",
+          textAlign: "center",
+          lineHeight: 1.45,
+        }}
+      >
         Cue records the room, transcribes it, and writes a recap to memory.
       </div>
       <button type="button" onClick={handleStart} style={pillButton(true)}>
         Start capture
       </button>
       {error ? (
-        <div style={{ fontSize: 11.5, color: "#F0B7B6", textAlign: "center", lineHeight: 1.4 }}>
+        <div
+          style={{
+            fontSize: 11.5,
+            color: "#F0B7B6",
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
           {error}
         </div>
       ) : null}
@@ -942,21 +1136,33 @@ function RecapPlaceholder() {
       }}
     >
       <ApertureAvatar size={40} />
-      <div style={{ fontWeight: 500, fontSize: 15 }}>Your recap appears here</div>
-      <div style={{ fontSize: 12.5, color: C.t2, lineHeight: 1.5, maxWidth: 280 }}>
-        Record the room, then choose <b>Create recap</b>. Cue writes a summary, action items,
-        decisions, and people &amp; tone — and saves them into the 8-type memory tagged to this
-        meeting.
+      <div style={{ fontWeight: 500, fontSize: 15 }}>
+        Your recap appears here
+      </div>
+      <div
+        style={{ fontSize: 12.5, color: C.t2, lineHeight: 1.5, maxWidth: 280 }}
+      >
+        Record the room, then choose <b>Create recap</b>. Cue writes a summary,
+        action items, decisions, and people &amp; tone — and saves them into the
+        8-type memory tagged to this meeting.
       </div>
     </div>
   );
 }
 
 /** The data-driven recap card, rendered from a real RecapJson. */
-function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }) {
+function Recap({
+  recap,
+  mobile = false,
+}: {
+  recap: RecapJson;
+  mobile?: boolean;
+}) {
   const peopleCount = recap.people.length;
   const subtitleParts = [
-    peopleCount > 0 ? `${peopleCount} ${peopleCount === 1 ? "person" : "people"}` : null,
+    peopleCount > 0
+      ? `${peopleCount} ${peopleCount === 1 ? "person" : "people"}`
+      : null,
     recap.tone ? `tone: ${recap.tone}` : null,
   ].filter(Boolean);
 
@@ -1000,8 +1206,16 @@ function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }
     borderRadius: 13,
     padding: "13px 15px",
   };
-  const titleStyle: React.CSSProperties = { fontSize: 13.5, fontWeight: 500, color: tk.t1 };
-  const bodyStyle: React.CSSProperties = { fontSize: 12, color: tk.t2, marginTop: 3 };
+  const titleStyle: React.CSSProperties = {
+    fontSize: 13.5,
+    fontWeight: 500,
+    color: tk.t1,
+  };
+  const bodyStyle: React.CSSProperties = {
+    fontSize: 12,
+    color: tk.t2,
+    marginTop: 3,
+  };
   const countChip: React.CSSProperties = {
     fontFamily: mono,
     fontSize: 10,
@@ -1040,14 +1254,23 @@ function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }
       {/* summary */}
       <div style={cardStyle}>
         <div style={titleStyle}>Summary</div>
-        <div style={bodyStyle}>{recap.summary || "No summary was produced."}</div>
+        <div style={bodyStyle}>
+          {recap.summary || "No summary was produced."}
+        </div>
       </div>
 
       {/* two-up — stacks on mobile */}
-      <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: mobile ? "1fr" : "1fr 1fr",
+          gap: 12,
+        }}
+      >
         <div style={cardStyle}>
           <div style={titleStyle}>
-            Action items <span style={countChip}>{recap.actionItems.length}</span>
+            Action items{" "}
+            <span style={countChip}>{recap.actionItems.length}</span>
           </div>
           <div style={{ ...bodyStyle, marginTop: 6 }}>
             {recap.actionItems.length === 0 ? (
@@ -1156,8 +1379,8 @@ function Recap({ recap, mobile = false }: { recap: RecapJson; mobile?: boolean }
           color: tk.t2,
         }}
       >
-        These items were written into the 8-type memory with source = this meeting, so they surface
-        before your next related touchpoint.
+        These items were written into the 8-type memory with source = this
+        meeting, so they surface before your next related touchpoint.
       </div>
     </div>
   );
@@ -1178,7 +1401,14 @@ export function MeetingCapturePage() {
     return (
       <MobileShell
         topBar={
-          <span style={{ fontFamily: mono, fontSize: 11, letterSpacing: ".12em", color: D.t2 }}>
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 11,
+              letterSpacing: ".12em",
+              color: D.t2,
+            }}
+          >
             CUE · RECAP
           </span>
         }
@@ -1188,7 +1418,11 @@ export function MeetingCapturePage() {
           </div>
         }
         controls={
-          <button type="button" onClick={() => setRecap(null)} style={mobileButton("neutral")}>
+          <button
+            type="button"
+            onClick={() => setRecap(null)}
+            style={mobileButton("neutral")}
+          >
             Capture another meeting
           </button>
         }
@@ -1222,12 +1456,19 @@ export function MeetingCapturePage() {
         >
           Meeting capture
         </div>
-        <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.4px", marginTop: 6 }}>
+        <div
+          style={{
+            fontSize: 24,
+            fontWeight: 600,
+            letterSpacing: "-.4px",
+            marginTop: 6,
+          }}
+        >
           Capture → action items → memory
         </div>
         <div style={{ fontSize: 13.5, color: C.t2, marginTop: 6 }}>
-          Cue listens in the room, extracts the decisions and to-dos live, then hands you a recap
-          that writes itself into memory.
+          Cue listens in the room, extracts the decisions and to-dos live, then
+          hands you a recap that writes itself into memory.
         </div>
       </div>
 

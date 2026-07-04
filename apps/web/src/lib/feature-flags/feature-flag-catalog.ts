@@ -3,10 +3,7 @@ import registry from "./feature-flag-registry.json" with { type: "json" };
 export type FlagScope = "client" | "assistant" | "both";
 export type SingleScope = Exclude<FlagScope, "both">;
 
-export function scopeIncludes(
-  scope: FlagScope,
-  target: SingleScope,
-): boolean {
+export function scopeIncludes(scope: FlagScope, target: SingleScope): boolean {
   return scope === target || scope === "both";
 }
 
@@ -62,7 +59,8 @@ function buildStringScopeDefaults(scope: SingleScope): Record<string, string> {
 export const CLIENT_FLAG_DEFAULTS = buildScopeDefaults("client");
 export const ASSISTANT_FLAG_DEFAULTS = buildScopeDefaults("assistant");
 export const CLIENT_STRING_FLAG_DEFAULTS = buildStringScopeDefaults("client");
-export const ASSISTANT_STRING_FLAG_DEFAULTS = buildStringScopeDefaults("assistant");
+export const ASSISTANT_STRING_FLAG_DEFAULTS =
+  buildStringScopeDefaults("assistant");
 
 export type ClientFeatureFlags = Record<string, boolean>;
 export type AssistantFeatureFlags = Record<string, boolean>;
@@ -85,7 +83,9 @@ export function storeKeyToFlagKey(storeKey: string): string | undefined {
   return STORE_KEY_TO_FLAG_KEY.get(storeKey);
 }
 
-export function getFlagDefinition(storeKey: string): FlagDefinition | undefined {
+export function getFlagDefinition(
+  storeKey: string,
+): FlagDefinition | undefined {
   return STORE_KEY_TO_FLAG.get(storeKey);
 }
 
@@ -149,9 +149,10 @@ for (const flag of flags) {
   FLAG_KEY_TO_DEF.set(flag.key, flag);
 }
 
-export function getEnvFlagOverridesForScope(
-  scope: SingleScope,
-): { bool: Record<string, boolean>; str: Record<string, string> } {
+export function getEnvFlagOverridesForScope(scope: SingleScope): {
+  bool: Record<string, boolean>;
+  str: Record<string, string>;
+} {
   const overrides = readEnvFlagOverrides();
   const bool: Record<string, boolean> = {};
   const str: Record<string, string> = {};

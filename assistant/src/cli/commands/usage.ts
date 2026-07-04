@@ -232,10 +232,7 @@ Examples:
         "--from <epoch_ms>",
         "Start of range (epoch ms)",
       ] as const;
-      const toOption = [
-        "--to <epoch_ms>",
-        "End of range (epoch ms)",
-      ] as const;
+      const toOption = ["--to <epoch_ms>", "End of range (epoch ms)"] as const;
       const jsonOption = ["--json", "Output raw JSON"] as const;
 
       usage

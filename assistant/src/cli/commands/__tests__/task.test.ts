@@ -19,7 +19,7 @@ import { Command } from "commander";
 // ---------------------------------------------------------------------------
 
 /** The last `cliIpcCall` invocation captured for assertions. */
- 
+
 let lastIpcCall: {
   method: string;
   params?: any;

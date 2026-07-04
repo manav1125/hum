@@ -292,7 +292,9 @@ function ModeCards({
           // "Active" = the mode reflecting current real state. Companion is the
           // baseline; Take control is active when the capability is on.
           const active =
-            m.id === "companion" ? !takeControlOn : m.id === "takeControl" && takeControlOn;
+            m.id === "companion"
+              ? !takeControlOn
+              : m.id === "takeControl" && takeControlOn;
           const selectable = m.supported && !busy;
           const onClick = () => {
             if (m.id === "takeControl") onSelectTakeControl(true);
@@ -412,9 +414,7 @@ function HotkeyRow({
   const Tag = interactive ? "button" : "div";
   return (
     <Tag
-      {...(interactive
-        ? { type: "button" as const, onClick }
-        : {})}
+      {...(interactive ? { type: "button" as const, onClick } : {})}
       style={{
         width: "100%",
         textAlign: "left",
@@ -430,7 +430,14 @@ function HotkeyRow({
         opacity: disabled ? 0.55 : 1,
       }}
     >
-      <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+      <span
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+          minWidth: 0,
+        }}
+      >
         <span
           style={{
             fontSize: 13,
@@ -440,9 +447,7 @@ function HotkeyRow({
         >
           {label}
         </span>
-        {hint && (
-          <span style={{ fontSize: 10.5, color: C.t3 }}>{hint}</span>
-        )}
+        {hint && <span style={{ fontSize: 10.5, color: C.t3 }}>{hint}</span>}
       </span>
       {cap}
     </Tag>
@@ -847,8 +852,7 @@ function AutoRunGoals() {
                     busy || !label.trim() || !goalText.trim()
                       ? "default"
                       : "pointer",
-                  opacity:
-                    busy || !label.trim() || !goalText.trim() ? 0.5 : 1,
+                  opacity: busy || !label.trim() || !goalText.trim() ? 0.5 : 1,
                 }}
               >
                 Save goal
@@ -1521,7 +1525,14 @@ function PermissionRow({
               {granted ? "granted" : "needed"}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: C.t2, marginTop: 2, lineHeight: 1.45 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: C.t2,
+              marginTop: 2,
+              lineHeight: 1.45,
+            }}
+          >
             {detail}
           </div>
         </div>
@@ -1549,7 +1560,11 @@ function PermissionRow({
   );
 }
 
-function PermissionsBanner({ permissions }: { permissions: CueLivePermissions }) {
+function PermissionsBanner({
+  permissions,
+}: {
+  permissions: CueLivePermissions;
+}) {
   const allGranted =
     permissions.accessibilityTrusted && permissions.screenRecordingGranted;
   if (allGranted) return null;
@@ -1568,9 +1583,12 @@ function PermissionsBanner({ permissions }: { permissions: CueLivePermissions })
           Cue Live can't see or act yet
         </div>
       </div>
-      <div style={{ fontSize: 12.5, color: C.t2, marginTop: 6, lineHeight: 1.5 }}>
-        Grant the macOS permissions below to <strong>Cue</strong>, then come back
-        — this updates on its own. Until then, summon and "Do it" do nothing.
+      <div
+        style={{ fontSize: 12.5, color: C.t2, marginTop: 6, lineHeight: 1.5 }}
+      >
+        Grant the macOS permissions below to <strong>Cue</strong>, then come
+        back — this updates on its own. Until then, summon and "Do it" do
+        nothing.
       </div>
       <div style={{ marginTop: 8, borderTop: `1px solid ${C.dangerLine}` }}>
         <PermissionRow

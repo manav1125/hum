@@ -131,9 +131,7 @@ async function startAudioPump(
       push(merged.buffer);
     };
     source.connect(worklet);
-    console.info(
-      `dictation: audio pump started (context=${context.state})`,
-    );
+    console.info(`dictation: audio pump started (context=${context.state})`);
 
     return () => {
       worklet.port.onmessage = null;

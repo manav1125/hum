@@ -42,7 +42,11 @@ interface AssistantFeatureFlagActions {
   /** Called on assistant switch: resets to defaults + clears hasHydrated. */
   resetForAssistantSwitch: () => void;
   setStringFlags: (flags: Record<string, string>) => void;
-  setStringFlag: (key: string, value: string, assistantId: string | null) => void;
+  setStringFlag: (
+    key: string,
+    value: string,
+    assistantId: string | null,
+  ) => void;
 }
 
 type AssistantFeatureFlagStore = Record<string, boolean> &
@@ -66,7 +70,10 @@ function resetConfirmedFlags(flags: Record<string, boolean> = {}) {
 }
 
 function resetConfirmedStringFlags(flags: Record<string, string> = {}) {
-  confirmedAssistantStringFlagValues = { ...ASSISTANT_STRING_FLAG_DEFAULTS, ...flags };
+  confirmedAssistantStringFlagValues = {
+    ...ASSISTANT_STRING_FLAG_DEFAULTS,
+    ...flags,
+  };
 }
 
 function resetAllConfirmed() {
@@ -77,150 +84,168 @@ function resetAllConfirmed() {
 const envOverrides = getEnvFlagOverridesForScope("assistant");
 
 function latestConfirmedValue(key: string): boolean {
-  return confirmedAssistantFlagValues[key] ?? ASSISTANT_FLAG_DEFAULTS[key] ?? false;
+  return (
+    confirmedAssistantFlagValues[key] ?? ASSISTANT_FLAG_DEFAULTS[key] ?? false
+  );
 }
 
 function latestConfirmedStringValue(key: string): string {
-  return confirmedAssistantStringFlagValues[key] ?? ASSISTANT_STRING_FLAG_DEFAULTS[key] ?? "";
+  return (
+    confirmedAssistantStringFlagValues[key] ??
+    ASSISTANT_STRING_FLAG_DEFAULTS[key] ??
+    ""
+  );
 }
 
 // The store type intersects Record<string, boolean> with meta/action
 // interfaces. Zustand's set() expects Partial<Store>, but the index
 // signature makes { stringFlags: Record<string, string> } incompatible.
 // setStr() bypasses this for string-flag-only partials.
-const useAssistantFeatureFlagStoreBase = create<AssistantFeatureFlagStore>()(
-  (set) => {
-    const setStr = set as unknown as (
-      partial:
-        | { stringFlags: Record<string, string> }
-        | ((state: AssistantFeatureFlagStore) => { stringFlags: Record<string, string> } | AssistantFeatureFlagStore),
-    ) => void;
+const useAssistantFeatureFlagStoreBase = create<AssistantFeatureFlagStore>()((
+  set,
+) => {
+  const setStr = set as unknown as (
+    partial:
+      | { stringFlags: Record<string, string> }
+      | ((
+          state: AssistantFeatureFlagStore,
+        ) =>
+          { stringFlags: Record<string, string> } | AssistantFeatureFlagStore),
+  ) => void;
 
-    return ({
-      ...ASSISTANT_FLAG_DEFAULTS,
-      ...envOverrides.bool,
-      hasHydrated: false,
-      stringFlags: { ...ASSISTANT_STRING_FLAG_DEFAULTS, ...envOverrides.str },
+  return {
+    ...ASSISTANT_FLAG_DEFAULTS,
+    ...envOverrides.bool,
+    hasHydrated: false,
+    stringFlags: { ...ASSISTANT_STRING_FLAG_DEFAULTS, ...envOverrides.str },
 
-      setFlags: (flags: Record<string, boolean>) =>
+    setFlags: (flags: Record<string, boolean>) =>
+      set((prev) => {
+        resetConfirmedFlags(flags);
+        const merged = { ...flags, ...envOverrides.bool };
+        const changed = Object.keys(merged).some((k) => merged[k] !== prev[k]);
+        return changed ? merged : prev;
+      }),
+
+    setFlag: (key: string, value: boolean, assistantId: string | null) => {
+      const requestId = ++nextFlagRequestId;
+      const revertIfLatestRejectedRequest = () => {
+        if (pendingFlagRequestIds[key] !== requestId) {
+          return;
+        }
+        delete pendingFlagRequestIds[key];
+        const confirmedValue = latestConfirmedValue(key);
         set((prev) => {
-          resetConfirmedFlags(flags);
-          const merged = { ...flags, ...envOverrides.bool };
-          const changed = Object.keys(merged).some(
-            (k) => merged[k] !== prev[k],
-          );
-          return changed ? merged : prev;
-        }),
-
-      setFlag: (key: string, value: boolean, assistantId: string | null) => {
-        const requestId = ++nextFlagRequestId;
-        const revertIfLatestRejectedRequest = () => {
-          if (pendingFlagRequestIds[key] !== requestId) {
-            return;
+          if (prev[key] !== value) {
+            return prev;
           }
-          delete pendingFlagRequestIds[key];
-          const confirmedValue = latestConfirmedValue(key);
-          set((prev) => {
-            if (prev[key] !== value) {
-              return prev;
-            }
-            return { [key]: confirmedValue };
-          });
-        };
-        const flagKey = storeKeyToFlagKey(key);
-        if (assistantId && flagKey) {
-          pendingFlagRequestIds[key] = requestId;
-          void client
-            .patch({
-              url: `/v1/assistants/${assistantId}/feature-flags/${flagKey}`,
-              body: { enabled: value },
-              throwOnError: false,
-            } as Parameters<typeof client.patch>[0])
-            .then((result) => {
-              const response = (result as { response?: Response }).response;
-              if (response?.ok) {
-                confirmedAssistantFlagValues[key] = value;
-                if (pendingFlagRequestIds[key] === requestId) {
-                  delete pendingFlagRequestIds[key];
-                }
-              } else {
-                revertIfLatestRejectedRequest();
+          return { [key]: confirmedValue };
+        });
+      };
+      const flagKey = storeKeyToFlagKey(key);
+      if (assistantId && flagKey) {
+        pendingFlagRequestIds[key] = requestId;
+        void client
+          .patch({
+            url: `/v1/assistants/${assistantId}/feature-flags/${flagKey}`,
+            body: { enabled: value },
+            throwOnError: false,
+          } as Parameters<typeof client.patch>[0])
+          .then((result) => {
+            const response = (result as { response?: Response }).response;
+            if (response?.ok) {
+              confirmedAssistantFlagValues[key] = value;
+              if (pendingFlagRequestIds[key] === requestId) {
+                delete pendingFlagRequestIds[key];
               }
-            })
-            .catch(revertIfLatestRejectedRequest);
-        } else {
-          confirmedAssistantFlagValues[key] = value;
+            } else {
+              revertIfLatestRejectedRequest();
+            }
+          })
+          .catch(revertIfLatestRejectedRequest);
+      } else {
+        confirmedAssistantFlagValues[key] = value;
+      }
+
+      set({ [key]: envOverrides.bool[key] ?? value });
+    },
+
+    markHydrated: () => set({ hasHydrated: true }),
+
+    resetForAssistantSwitch: () => {
+      resetAllConfirmed();
+      set({
+        ...ASSISTANT_FLAG_DEFAULTS,
+        ...envOverrides.bool,
+        hasHydrated: false,
+      });
+      setStr({
+        stringFlags: { ...ASSISTANT_STRING_FLAG_DEFAULTS, ...envOverrides.str },
+      });
+    },
+
+    setStringFlags: (flags: Record<string, string>) =>
+      setStr((prev) => {
+        resetConfirmedStringFlags(flags);
+        const merged = { ...flags, ...envOverrides.str };
+        const prevStr = prev.stringFlags;
+        const changed = Object.keys(merged).some(
+          (k) => merged[k] !== prevStr[k],
+        );
+        return changed ? { stringFlags: merged } : prev;
+      }),
+
+    setStringFlag: (key: string, value: string, assistantId: string | null) => {
+      const requestId = ++nextFlagRequestId;
+      const revertIfLatestRejectedRequest = () => {
+        if (pendingFlagRequestIds[key] !== requestId) {
+          return;
         }
-
-        set({ [key]: envOverrides.bool[key] ?? value });
-      },
-
-      markHydrated: () => set({ hasHydrated: true }),
-
-      resetForAssistantSwitch: () => {
-        resetAllConfirmed();
-        set({ ...ASSISTANT_FLAG_DEFAULTS, ...envOverrides.bool, hasHydrated: false });
-        setStr({ stringFlags: { ...ASSISTANT_STRING_FLAG_DEFAULTS, ...envOverrides.str } });
-      },
-
-      setStringFlags: (flags: Record<string, string>) =>
+        delete pendingFlagRequestIds[key];
+        const confirmedValue = latestConfirmedStringValue(key);
         setStr((prev) => {
-          resetConfirmedStringFlags(flags);
-          const merged = { ...flags, ...envOverrides.str };
-          const prevStr = prev.stringFlags;
-          const changed = Object.keys(merged).some(
-            (k) => merged[k] !== prevStr[k],
-          );
-          return changed ? { stringFlags: merged } : prev;
-        }),
-
-      setStringFlag: (key: string, value: string, assistantId: string | null) => {
-        const requestId = ++nextFlagRequestId;
-        const revertIfLatestRejectedRequest = () => {
-          if (pendingFlagRequestIds[key] !== requestId) {
-            return;
+          if (prev.stringFlags[key] !== value) {
+            return prev;
           }
-          delete pendingFlagRequestIds[key];
-          const confirmedValue = latestConfirmedStringValue(key);
-          setStr((prev) => {
-            if (prev.stringFlags[key] !== value) {
-              return prev;
-            }
-            return { stringFlags: { ...prev.stringFlags, [key]: confirmedValue } };
-          });
-        };
-        const flagKey = storeKeyToFlagKey(key);
-        if (assistantId && flagKey) {
-          pendingFlagRequestIds[key] = requestId;
-          void client
-            .patch({
-              url: `/v1/assistants/${assistantId}/feature-flags/${flagKey}`,
-              body: { enabled: value },
-              throwOnError: false,
-            } as Parameters<typeof client.patch>[0])
-            .then((result) => {
-              const response = (result as { response?: Response }).response;
-              if (response?.ok) {
-                confirmedAssistantStringFlagValues[key] = value;
-                if (pendingFlagRequestIds[key] === requestId) {
-                  delete pendingFlagRequestIds[key];
-                }
-              } else {
-                revertIfLatestRejectedRequest();
+          return {
+            stringFlags: { ...prev.stringFlags, [key]: confirmedValue },
+          };
+        });
+      };
+      const flagKey = storeKeyToFlagKey(key);
+      if (assistantId && flagKey) {
+        pendingFlagRequestIds[key] = requestId;
+        void client
+          .patch({
+            url: `/v1/assistants/${assistantId}/feature-flags/${flagKey}`,
+            body: { enabled: value },
+            throwOnError: false,
+          } as Parameters<typeof client.patch>[0])
+          .then((result) => {
+            const response = (result as { response?: Response }).response;
+            if (response?.ok) {
+              confirmedAssistantStringFlagValues[key] = value;
+              if (pendingFlagRequestIds[key] === requestId) {
+                delete pendingFlagRequestIds[key];
               }
-            })
-            .catch(revertIfLatestRejectedRequest);
-        } else {
-          confirmedAssistantStringFlagValues[key] = value;
-        }
+            } else {
+              revertIfLatestRejectedRequest();
+            }
+          })
+          .catch(revertIfLatestRejectedRequest);
+      } else {
+        confirmedAssistantStringFlagValues[key] = value;
+      }
 
-        setStr((prev) => ({
-          stringFlags: { ...prev.stringFlags, [key]: envOverrides.str[key] ?? value },
-        }));
-      },
-    }) as AssistantFeatureFlagStore;
-  },
-);
+      setStr((prev) => ({
+        stringFlags: {
+          ...prev.stringFlags,
+          [key]: envOverrides.str[key] ?? value,
+        },
+      }));
+    },
+  } as AssistantFeatureFlagStore;
+});
 
 export const useAssistantFeatureFlagStore = createSelectors(
   useAssistantFeatureFlagStoreBase,

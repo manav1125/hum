@@ -82,9 +82,8 @@ mock.module("../../logger.js", () => ({
 // Import module under test (after mocks)
 // ---------------------------------------------------------------------------
 
-const { registerConversationsImportCommand } = await import(
-  "../conversations-import.js"
-);
+const { registerConversationsImportCommand } =
+  await import("../conversations-import.js");
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -181,7 +180,12 @@ describe("conversations import — valid input", () => {
     expect(lastIpcCall).not.toBeNull();
     expect(lastIpcCall!.method).toBe("conversations_import");
     expect(
-      ((lastIpcCall!.params as Record<string, unknown>).body as Record<string, unknown>).conversations,
+      (
+        (lastIpcCall!.params as Record<string, unknown>).body as Record<
+          string,
+          unknown
+        >
+      ).conversations,
     ).toHaveLength(1);
   });
 
@@ -201,8 +205,12 @@ describe("conversations import — valid input", () => {
     await runCommand(["conversations", "import", "--file", filePath]);
 
     expect(lastIpcCall).not.toBeNull();
-    const convs = ((lastIpcCall!.params as Record<string, unknown>)
-      .body as Record<string, unknown>).conversations as Array<Record<string, unknown>>;
+    const convs = (
+      (lastIpcCall!.params as Record<string, unknown>).body as Record<
+        string,
+        unknown
+      >
+    ).conversations as Array<Record<string, unknown>>;
     expect(convs[0]!.sourceKey).toBe("chatgpt:abc123");
     expect(convs[0]!.title).toBe("Exported Chat");
   });
@@ -226,20 +234,16 @@ describe("conversations import — empty array", () => {
 
     expect(exitCode).toBe(0);
     expect(lastIpcCall).toBeNull();
-    expect(mockLogInfo.some((m) => m.includes("No conversations to import"))).toBe(true);
+    expect(
+      mockLogInfo.some((m) => m.includes("No conversations to import")),
+    ).toBe(true);
   });
 
   test("--json outputs JSON for empty array without calling IPC", async () => {
     const payload = { conversations: [] };
     const filePath = makeTmpFile(JSON.stringify(payload));
 
-    await runCommand([
-      "conversations",
-      "import",
-      "--file",
-      filePath,
-      "--json",
-    ]);
+    await runCommand(["conversations", "import", "--file", filePath, "--json"]);
 
     expect(lastIpcCall).toBeNull();
     const jsonOut = mockLogInfo.find((m) => m.startsWith("{"));
@@ -273,13 +277,7 @@ describe("conversations import — invalid JSON", () => {
   test("--json outputs error JSON for invalid JSON", async () => {
     const filePath = makeTmpFile("{bad json}");
 
-    await runCommand([
-      "conversations",
-      "import",
-      "--file",
-      filePath,
-      "--json",
-    ]);
+    await runCommand(["conversations", "import", "--file", filePath, "--json"]);
 
     expect(lastIpcCall).toBeNull();
     const jsonOut = mockLogInfo.find((m) => m.startsWith("{"));
@@ -385,9 +383,7 @@ describe("conversations import — file errors", () => {
 
     expect(exitCode).toBe(1);
     expect(lastIpcCall).toBeNull();
-    expect(
-      mockLogError.some((m) => m.includes("File not found")),
-    ).toBe(true);
+    expect(mockLogError.some((m) => m.includes("File not found"))).toBe(true);
   });
 });
 

@@ -2,10 +2,21 @@ import { useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { NativeSplash } from "@/components/native-splash";
-import { DarkLoginShell, LoginCard, LoginErrorText } from "@/domains/account/components/login-shell";
+import {
+  DarkLoginShell,
+  LoginCard,
+  LoginErrorText,
+} from "@/domains/account/components/login-shell";
 import { PlatformLoginButtons } from "@/domains/account/components/platform-login-buttons";
-import { PROVIDER_ID, buildProviderCallbackUrl } from "@/domains/account/login-flow";
-import { startAuthFlow, startNativeLogin, useIsNativePlatform } from "@/runtime/native-auth";
+import {
+  PROVIDER_ID,
+  buildProviderCallbackUrl,
+} from "@/domains/account/login-flow";
+import {
+  startAuthFlow,
+  startNativeLogin,
+  useIsNativePlatform,
+} from "@/runtime/native-auth";
 import { Button } from "@vellumai/design-library";
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -46,7 +57,8 @@ function NativeLoginForm({ returnTo }: { returnTo: string | null }) {
             ? err.data.authError
             : undefined;
         setErrorMessage(
-          (errorKey && AUTH_ERROR_MESSAGES[errorKey]) ?? "Something went wrong. Please try again.",
+          (errorKey && AUTH_ERROR_MESSAGES[errorKey]) ??
+            "Something went wrong. Please try again.",
         );
       } else {
         console.error("[native-auth] auth flow failed:", err);
@@ -64,7 +76,9 @@ function NativeLoginForm({ returnTo }: { returnTo: string | null }) {
     <NativeSplash>
       <div className="z-10 mt-8 flex w-full max-w-[320px] flex-col items-center gap-3">
         {errorMessage && (
-          <LoginErrorText className="max-w-[280px]">{errorMessage}</LoginErrorText>
+          <LoginErrorText className="max-w-[280px]">
+            {errorMessage}
+          </LoginErrorText>
         )}
         <Button
           type="button"

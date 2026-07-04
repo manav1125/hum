@@ -38,7 +38,9 @@ describe("resolveNavigation", () => {
     });
 
     test("allows gateway auth regardless of auth status", () => {
-      expect(guard(s({ isGatewayAuth: true, isAuthenticated: false }))).toEqual(ALLOW);
+      expect(guard(s({ isGatewayAuth: true, isAuthenticated: false }))).toEqual(
+        ALLOW,
+      );
     });
 
     // -- unauthenticated --------------------------------------------------
@@ -51,7 +53,10 @@ describe("resolveNavigation", () => {
     });
 
     test("preserves query string in returnTo", () => {
-      const result = guard(s({ isAuthenticated: false }), "/assistant/home?tab=1");
+      const result = guard(
+        s({ isAuthenticated: false }),
+        "/assistant/home?tab=1",
+      );
       expect(result).toEqual({
         action: "redirect",
         to: "/account/login?returnTo=%2Fassistant%2Fhome%3Ftab%3D1",
@@ -61,7 +66,11 @@ describe("resolveNavigation", () => {
     test("allows unauthenticated local-mode user on onboarding route", () => {
       expect(
         guard(
-          s({ isAuthenticated: false, isLocalMode: true, hasAssistants: false }),
+          s({
+            isAuthenticated: false,
+            isLocalMode: true,
+            hasAssistants: false,
+          }),
           "/assistant/welcome",
         ),
       ).toEqual(ALLOW);
@@ -79,7 +88,11 @@ describe("resolveNavigation", () => {
     test("redirects unauthenticated local-mode user from select-assistant to hosting when no assistants", () => {
       expect(
         guard(
-          s({ isAuthenticated: false, isLocalMode: true, hasAssistants: false }),
+          s({
+            isAuthenticated: false,
+            isLocalMode: true,
+            hasAssistants: false,
+          }),
           "/assistant/select-assistant",
         ),
       ).toEqual({ action: "redirect", to: "/assistant/onboarding/hosting" });
@@ -87,36 +100,43 @@ describe("resolveNavigation", () => {
 
     test("redirects unauthenticated local-mode fresh user to welcome", () => {
       expect(
-        guard(s({ isAuthenticated: false, isLocalMode: true, hasAssistants: false })),
+        guard(
+          s({
+            isAuthenticated: false,
+            isLocalMode: true,
+            hasAssistants: false,
+          }),
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/welcome" });
     });
 
     test("redirects unauthenticated local-mode returning user (has assistants) to select-assistant", () => {
       expect(
-        guard(s({ isAuthenticated: false, isLocalMode: true, hasAssistants: true })),
+        guard(
+          s({ isAuthenticated: false, isLocalMode: true, hasAssistants: true }),
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/select-assistant" });
     });
 
     // -- authenticated, onboarding routes ---------------------------------
 
     test("allows authenticated user on onboarding route regardless of assistant count", () => {
-      expect(
-        guard(s({}), "/assistant/onboarding/privacy"),
-      ).toEqual(ALLOW);
+      expect(guard(s({}), "/assistant/onboarding/privacy")).toEqual(ALLOW);
       expect(
         guard(s({ hasAssistants: false }), "/assistant/onboarding/privacy"),
       ).toEqual(ALLOW);
     });
 
     test("allows authenticated user on review-terms route", () => {
-      expect(
-        guard(s({}), "/assistant/review-terms"),
-      ).toEqual(ALLOW);
+      expect(guard(s({}), "/assistant/review-terms")).toEqual(ALLOW);
     });
 
     test("query strings do not break onboarding path matching", () => {
       expect(
-        guard(s({ hasAssistants: false }), "/assistant/onboarding/privacy?replay=1"),
+        guard(
+          s({ hasAssistants: false }),
+          "/assistant/onboarding/privacy?replay=1",
+        ),
       ).toEqual(ALLOW);
       expect(
         guard(
@@ -136,9 +156,10 @@ describe("resolveNavigation", () => {
     });
 
     test("redirects non-local user from local-only onboarding screen", () => {
-      expect(
-        guard(s({ isLocalMode: false }), "/assistant/welcome"),
-      ).toEqual({ action: "redirect", to: "/assistant" });
+      expect(guard(s({ isLocalMode: false }), "/assistant/welcome")).toEqual({
+        action: "redirect",
+        to: "/assistant",
+      });
       expect(
         guard(s({ isLocalMode: false }), "/assistant/select-assistant"),
       ).toEqual({ action: "redirect", to: "/assistant" });
@@ -161,10 +182,16 @@ describe("resolveNavigation", () => {
         guard(s({ isLocalMode: false }), "/assistant/onboarding/prechat"),
       ).toEqual(ALLOW);
       expect(
-        guard(s({ isLocalMode: false, hasAssistants: false }), "/assistant/onboarding/privacy"),
+        guard(
+          s({ isLocalMode: false, hasAssistants: false }),
+          "/assistant/onboarding/privacy",
+        ),
       ).toEqual(ALLOW);
       expect(
-        guard(s({ isLocalMode: false, hasAssistants: false }), "/assistant/onboarding/prechat"),
+        guard(
+          s({ isLocalMode: false, hasAssistants: false }),
+          "/assistant/onboarding/prechat",
+        ),
       ).toEqual(ALLOW);
     });
 
@@ -226,49 +253,93 @@ describe("resolveNavigation", () => {
 
     test("waits for platform probe in local mode with no assistants", () => {
       expect(
-        guard(s({ isLocalMode: true, hasAssistants: false, platformSession: "unknown" })),
+        guard(
+          s({
+            isLocalMode: true,
+            hasAssistants: false,
+            platformSession: "unknown",
+          }),
+        ),
       ).toEqual(WAIT);
     });
 
     test("redirects to hosting when local mode + platform session present", () => {
       expect(
-        guard(s({ isLocalMode: true, hasAssistants: false, platformSession: "present" })),
+        guard(
+          s({
+            isLocalMode: true,
+            hasAssistants: false,
+            platformSession: "present",
+          }),
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/onboarding/hosting" });
     });
 
     test("redirects to welcome when local mode + no platform session", () => {
       expect(
-        guard(s({ isLocalMode: true, hasAssistants: false, platformSession: "absent" })),
+        guard(
+          s({
+            isLocalMode: true,
+            hasAssistants: false,
+            platformSession: "absent",
+          }),
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/welcome" });
     });
 
     test("allows local mode with assistants", () => {
-      expect(guard(s({ isLocalMode: true, hasAssistants: true }))).toEqual(ALLOW);
+      expect(guard(s({ isLocalMode: true, hasAssistants: true }))).toEqual(
+        ALLOW,
+      );
     });
 
     // -- authenticated, platform mode, not onboarded ----------------------
 
     test("redirects platform-mode user without consent to review-terms with returnTo", () => {
       expect(
-        guard(s({ isLocalMode: false, tosAccepted: false, aiDataConsent: false })),
-      ).toEqual({ action: "redirect", to: "/assistant/review-terms?returnTo=%2Fassistant" });
+        guard(
+          s({ isLocalMode: false, tosAccepted: false, aiDataConsent: false }),
+        ),
+      ).toEqual({
+        action: "redirect",
+        to: "/assistant/review-terms?returnTo=%2Fassistant",
+      });
     });
 
     test("redirects platform-mode user with partial consent to review-terms with returnTo", () => {
       expect(
-        guard(s({ isLocalMode: false, tosAccepted: true, aiDataConsent: false })),
-      ).toEqual({ action: "redirect", to: "/assistant/review-terms?returnTo=%2Fassistant" });
+        guard(
+          s({ isLocalMode: false, tosAccepted: true, aiDataConsent: false }),
+        ),
+      ).toEqual({
+        action: "redirect",
+        to: "/assistant/review-terms?returnTo=%2Fassistant",
+      });
     });
 
     test("redirects platform-mode user without consent and no assistants to privacy, not hatching", () => {
       expect(
-        guard(s({ isLocalMode: false, tosAccepted: false, aiDataConsent: false, hasAssistants: false })),
+        guard(
+          s({
+            isLocalMode: false,
+            tosAccepted: false,
+            aiDataConsent: false,
+            hasAssistants: false,
+          }),
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/onboarding/privacy" });
     });
 
     test("does not redirect local-mode user without consent (handled by step 5)", () => {
       expect(
-        guard(s({ isLocalMode: true, hasAssistants: true, tosAccepted: false, aiDataConsent: false })),
+        guard(
+          s({
+            isLocalMode: true,
+            hasAssistants: true,
+            tosAccepted: false,
+            aiDataConsent: false,
+          }),
+        ),
       ).toEqual(ALLOW);
     });
 
@@ -286,9 +357,7 @@ describe("resolveNavigation", () => {
     });
 
     test("redirects platform user with consent but no assistants to hatching from deep path", () => {
-      expect(
-        guard(s({ hasAssistants: false }), "/assistant/home"),
-      ).toEqual({
+      expect(guard(s({ hasAssistants: false }), "/assistant/home")).toEqual({
         action: "redirect",
         to: "/assistant/onboarding/hatching",
       });
@@ -300,34 +369,62 @@ describe("resolveNavigation", () => {
   // -----------------------------------------------------------------------
   describe("onboarding-intercept", () => {
     const intercept = (state: NavigationState, dest: string) =>
-      resolveNavigation(state, { kind: "onboarding-intercept", intendedDestination: dest });
+      resolveNavigation(state, {
+        kind: "onboarding-intercept",
+        intendedDestination: dest,
+      });
 
     test("allows local mode with assistants", () => {
-      expect(intercept(s({ isLocalMode: true, hasAssistants: true }), "/assistant")).toEqual(ALLOW);
+      expect(
+        intercept(s({ isLocalMode: true, hasAssistants: true }), "/assistant"),
+      ).toEqual(ALLOW);
     });
 
     test("allows when tos and consent accepted", () => {
-      expect(intercept(s({ tosAccepted: true, aiDataConsent: true }), "/assistant")).toEqual(ALLOW);
+      expect(
+        intercept(s({ tosAccepted: true, aiDataConsent: true }), "/assistant"),
+      ).toEqual(ALLOW);
     });
 
     test("allows destination outside /assistant", () => {
-      expect(intercept(s({ tosAccepted: false, aiDataConsent: false }), "/account/login")).toEqual(ALLOW);
+      expect(
+        intercept(
+          s({ tosAccepted: false, aiDataConsent: false }),
+          "/account/login",
+        ),
+      ).toEqual(ALLOW);
     });
 
     test("allows destination in /assistant/onboarding", () => {
       expect(
-        intercept(s({ tosAccepted: false, aiDataConsent: false }), "/assistant/onboarding/privacy"),
+        intercept(
+          s({ tosAccepted: false, aiDataConsent: false }),
+          "/assistant/onboarding/privacy",
+        ),
       ).toEqual(ALLOW);
     });
 
     test("redirects to welcome in local mode", () => {
       expect(
-        intercept(s({ isLocalMode: true, hasAssistants: false, tosAccepted: false, aiDataConsent: false }), "/assistant"),
+        intercept(
+          s({
+            isLocalMode: true,
+            hasAssistants: false,
+            tosAccepted: false,
+            aiDataConsent: false,
+          }),
+          "/assistant",
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/welcome" });
     });
 
     test("redirects to privacy in platform mode", () => {
-      expect(intercept(s({ tosAccepted: false, aiDataConsent: false }), "/assistant")).toEqual({
+      expect(
+        intercept(
+          s({ tosAccepted: false, aiDataConsent: false }),
+          "/assistant",
+        ),
+      ).toEqual({
         action: "redirect",
         to: "/assistant/onboarding/privacy",
       });
@@ -335,19 +432,28 @@ describe("resolveNavigation", () => {
 
     test("handles absolute URL destinations", () => {
       expect(
-        intercept(s({ tosAccepted: false, aiDataConsent: false }), "https://assistant.vellum.ai/assistant"),
+        intercept(
+          s({ tosAccepted: false, aiDataConsent: false }),
+          "https://assistant.vellum.ai/assistant",
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/onboarding/privacy" });
     });
 
     test("handles protocol-relative URL destinations", () => {
       expect(
-        intercept(s({ tosAccepted: false, aiDataConsent: false }), "//assistant.vellum.ai/assistant"),
+        intercept(
+          s({ tosAccepted: false, aiDataConsent: false }),
+          "//assistant.vellum.ai/assistant",
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/onboarding/privacy" });
     });
 
     test("allows absolute URL outside /assistant", () => {
       expect(
-        intercept(s({ tosAccepted: false, aiDataConsent: false }), "https://vellum.ai/account"),
+        intercept(
+          s({ tosAccepted: false, aiDataConsent: false }),
+          "https://vellum.ai/account",
+        ),
       ).toEqual(ALLOW);
     });
   });
@@ -371,7 +477,16 @@ describe("resolveNavigation", () => {
     });
 
     test("redirects unauthenticated local-mode user without consent to welcome", () => {
-      expect(hatch(s({ isAuthenticated: false, isLocalMode: true, tosAccepted: false, aiDataConsent: false }))).toEqual({
+      expect(
+        hatch(
+          s({
+            isAuthenticated: false,
+            isLocalMode: true,
+            tosAccepted: false,
+            aiDataConsent: false,
+          }),
+        ),
+      ).toEqual({
         action: "redirect",
         to: "/assistant/welcome",
       });
@@ -393,12 +508,16 @@ describe("resolveNavigation", () => {
 
     test("redirects to welcome in local mode when missing consent", () => {
       expect(
-        hatch(s({ isLocalMode: true, tosAccepted: false, aiDataConsent: false })),
+        hatch(
+          s({ isLocalMode: true, tosAccepted: false, aiDataConsent: false }),
+        ),
       ).toEqual({ action: "redirect", to: "/assistant/welcome" });
     });
 
     test("allows with full consent", () => {
-      expect(hatch(s({ tosAccepted: true, aiDataConsent: true }))).toEqual(ALLOW);
+      expect(hatch(s({ tosAccepted: true, aiDataConsent: true }))).toEqual(
+        ALLOW,
+      );
     });
   });
 
@@ -410,21 +529,27 @@ describe("resolveNavigation", () => {
       resolveNavigation(state, { kind: "post-retire" });
 
     test("redirects to select-assistant in local mode when other assistants remain", () => {
-      expect(postRetire(s({ hasAssistants: true, isLocalMode: true }))).toEqual({
-        action: "redirect",
-        to: "/assistant/select-assistant",
-      });
+      expect(postRetire(s({ hasAssistants: true, isLocalMode: true }))).toEqual(
+        {
+          action: "redirect",
+          to: "/assistant/select-assistant",
+        },
+      );
     });
 
     test("redirects to /assistant in platform mode when other assistants remain", () => {
-      expect(postRetire(s({ hasAssistants: true, isLocalMode: false }))).toEqual({
+      expect(
+        postRetire(s({ hasAssistants: true, isLocalMode: false })),
+      ).toEqual({
         action: "redirect",
         to: "/assistant",
       });
     });
 
     test("redirects to privacy in platform mode when no assistants remain", () => {
-      expect(postRetire(s({ hasAssistants: false, isLocalMode: false }))).toEqual({
+      expect(
+        postRetire(s({ hasAssistants: false, isLocalMode: false })),
+      ).toEqual({
         action: "redirect",
         to: "/assistant/onboarding/privacy",
       });
@@ -432,7 +557,13 @@ describe("resolveNavigation", () => {
 
     test("redirects to hosting in local mode when platform session present", () => {
       expect(
-        postRetire(s({ hasAssistants: false, isLocalMode: true, platformSession: "present" })),
+        postRetire(
+          s({
+            hasAssistants: false,
+            isLocalMode: true,
+            platformSession: "present",
+          }),
+        ),
       ).toEqual({
         action: "redirect",
         to: "/assistant/onboarding/hosting",
@@ -441,7 +572,13 @@ describe("resolveNavigation", () => {
 
     test("redirects to welcome in local mode when no platform session", () => {
       expect(
-        postRetire(s({ hasAssistants: false, isLocalMode: true, platformSession: "absent" })),
+        postRetire(
+          s({
+            hasAssistants: false,
+            isLocalMode: true,
+            platformSession: "absent",
+          }),
+        ),
       ).toEqual({
         action: "redirect",
         to: "/assistant/welcome",
@@ -453,8 +590,17 @@ describe("resolveNavigation", () => {
   // post-auth
   // -----------------------------------------------------------------------
   describe("post-auth", () => {
-    const postAuth = (authIntent: "login" | "signup", returnTo: string | null, fallback = "/assistant") =>
-      resolveNavigation(base, { kind: "post-auth", authIntent, returnTo, fallback });
+    const postAuth = (
+      authIntent: "login" | "signup",
+      returnTo: string | null,
+      fallback = "/assistant",
+    ) =>
+      resolveNavigation(base, {
+        kind: "post-auth",
+        authIntent,
+        returnTo,
+        fallback,
+      });
 
     test("signup always goes to privacy", () => {
       expect(postAuth("signup", "/some-return")).toEqual({
@@ -504,20 +650,23 @@ describe("resolveNavigation", () => {
 
     test("returns hosting from welcome when no assistants", () => {
       expect(
-        resolveLoginReturnTo(s({ hasAssistants: false }), "/assistant/onboarding/hosting"),
+        resolveLoginReturnTo(
+          s({ hasAssistants: false }),
+          "/assistant/onboarding/hosting",
+        ),
       ).toBe("/assistant/onboarding/hosting");
     });
 
     test("appends fromLogin param when logging in from select-assistant", () => {
-      expect(
-        resolveLoginReturnTo(s({}), "/assistant/select-assistant"),
-      ).toBe("/assistant/select-assistant?fromLogin=1");
+      expect(resolveLoginReturnTo(s({}), "/assistant/select-assistant")).toBe(
+        "/assistant/select-assistant?fromLogin=1",
+      );
     });
 
     test("returns the same path for other non-welcome pages", () => {
-      expect(
-        resolveLoginReturnTo(s({}), "/assistant/onboarding/hosting"),
-      ).toBe("/assistant/onboarding/hosting");
+      expect(resolveLoginReturnTo(s({}), "/assistant/onboarding/hosting")).toBe(
+        "/assistant/onboarding/hosting",
+      );
     });
   });
 });

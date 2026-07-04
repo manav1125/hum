@@ -17,7 +17,12 @@ export type AssistantState =
   | { kind: "initializing" }
   | { kind: "cleaning_up" }
   | { kind: "self_hosted" }
-  | { kind: "active"; isLocal: boolean; maintenanceMode?: MaintenanceModeInfo; reachable?: boolean }
+  | {
+      kind: "active";
+      isLocal: boolean;
+      maintenanceMode?: MaintenanceModeInfo;
+      reachable?: boolean;
+    }
   /**
    * `transient: true` marks a transport-shaped failure (device offline,
    * network flapping after sleep/wake) rather than a server-reported

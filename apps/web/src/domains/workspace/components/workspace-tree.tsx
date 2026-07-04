@@ -8,51 +8,51 @@
  */
 
 import {
-    queryOptions,
-    useMutation,
-    useQuery,
-    useQueryClient,
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import {
-    ArrowDownAZ,
-    ArrowDownWideNarrow,
-    ChevronDown,
-    ChevronRight,
-    Eye,
-    EyeOff,
-    FilePlus,
-    FileText,
-    Folder,
-    FolderPlus,
-    Image as ImageIcon,
-    Pencil,
-    Plus,
-    Search,
-    Trash2,
-    Video,
-    X,
+  ArrowDownAZ,
+  ArrowDownWideNarrow,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  FilePlus,
+  FileText,
+  Folder,
+  FolderPlus,
+  Image as ImageIcon,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  Video,
+  X,
 } from "lucide-react";
 import {
-    type FormEvent,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 
 import { formatFileSize } from "@/domains/workspace/utils/format-file-size";
 import { isHiddenPath } from "@/domains/workspace/utils/is-hidden-path";
 import {
-    sortEntries,
-    type WorkspaceSortMode,
+  sortEntries,
+  type WorkspaceSortMode,
 } from "@/domains/workspace/utils/sort-entries";
 import {
-    workspaceDeletePost,
-    workspaceMkdirPost,
-    workspaceRenamePost,
-    workspaceTreeGet,
-    workspaceWritePost,
+  workspaceDeletePost,
+  workspaceMkdirPost,
+  workspaceRenamePost,
+  workspaceTreeGet,
+  workspaceWritePost,
 } from "@/generated/daemon/sdk.gen";
 import type { WorkspaceTreeGetResponse } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
@@ -155,32 +155,15 @@ async function assertNameAvailable(
 
 function FileIconForEntry({ entry }: { entry: WorkspaceTreeEntry }) {
   if (entry.type === "directory") {
-    return (
-      <Folder
-        className="h-4 w-4 shrink-0"
-        style={{ color: C.t3 }}
-      />
-    );
+    return <Folder className="h-4 w-4 shrink-0" style={{ color: C.t3 }} />;
   }
   if (entry.mimeType?.startsWith("image/")) {
-    return (
-      <ImageIcon
-        className="h-4 w-4 shrink-0"
-        style={{ color: C.t3 }}
-      />
-    );
+    return <ImageIcon className="h-4 w-4 shrink-0" style={{ color: C.t3 }} />;
   }
   if (entry.mimeType?.startsWith("video/")) {
-    return (
-      <Video
-        className="h-4 w-4 shrink-0"
-        style={{ color: C.t3 }}
-      />
-    );
+    return <Video className="h-4 w-4 shrink-0" style={{ color: C.t3 }} />;
   }
-  return (
-    <FileText className="h-4 w-4 shrink-0" style={{ color: C.t3 }} />
-  );
+  return <FileText className="h-4 w-4 shrink-0" style={{ color: C.t3 }} />;
 }
 
 function TreeNode({
@@ -336,7 +319,11 @@ function TreeNode({
             <ContextMenu.Item
               leftIcon={<Trash2 className="h-3.5 w-3.5" />}
               onSelect={() =>
-                onRequestDelete({ path: entryPath, name: entryName, isDirectory })
+                onRequestDelete({
+                  path: entryPath,
+                  name: entryName,
+                  isDirectory,
+                })
               }
             >
               Delete
@@ -344,7 +331,11 @@ function TreeNode({
             <ContextMenu.Item
               leftIcon={<Pencil className="h-3.5 w-3.5" />}
               onSelect={() =>
-                onRequestRename({ path: entryPath, name: entryName, isDirectory })
+                onRequestRename({
+                  path: entryPath,
+                  name: entryName,
+                  isDirectory,
+                })
               }
             >
               Rename
@@ -627,7 +618,12 @@ export function WorkspaceTree({
       const newPath = parentPath
         ? `${parentPath}/${input.newName}`
         : input.newName;
-      await assertNameAvailable(assistantId, parentPath, input.newName, oldName);
+      await assertNameAvailable(
+        assistantId,
+        parentPath,
+        input.newName,
+        oldName,
+      );
       const { error, response } = await workspaceRenamePost({
         path: { assistant_id: assistantId },
         body: { oldPath: input.oldPath, newPath },
@@ -708,9 +704,7 @@ export function WorkspaceTree({
 
   return (
     <>
-      <div
-        className="flex items-center justify-between px-[14px] pb-[11px] pt-[14px]"
-      >
+      <div className="flex items-center justify-between px-[14px] pb-[11px] pt-[14px]">
         <span style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>
           Files
         </span>

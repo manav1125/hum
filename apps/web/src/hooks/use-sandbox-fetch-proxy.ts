@@ -102,7 +102,8 @@ export function useSandboxFetchProxy(
         const fetchOptions = {
           url: proxyUrl,
           throwOnError: false as const,
-          headers: headers && Object.keys(headers).length > 0 ? headers : undefined,
+          headers:
+            headers && Object.keys(headers).length > 0 ? headers : undefined,
           body: body ? JSON.parse(body) : undefined,
         };
 

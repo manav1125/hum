@@ -4,7 +4,7 @@
  * empty "all caught up" state, and the stale-while-revalidate cache keyed on
  * the top item id.
  */
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("../../util/logger.js", () => ({
   getLogger: () =>
@@ -19,8 +19,10 @@ mock.module("../../providers/provider-send-message.js", () => ({
   getConfiguredProvider: async () => null,
 }));
 
+import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
+import { createProject } from "../../work-items/project-store.js";
 import {
   createWorkItem,
   listWorkItems,
@@ -56,6 +58,15 @@ function callNextMove(): NextMoveResponse {
 function clearWorkItems(): void {
   for (const i of listWorkItems()) removeWorkItemFromQueue(i.id);
 }
+
+// Clean both before and after so state leaked from an earlier test file in the
+// same `bun test` process (this file's initializeDb is shared) can't make the
+// "all caught up" case see stray candidates.
+beforeEach(() => {
+  clearWorkItems();
+  clearInteractions();
+  __resetNextMoveCacheForTest();
+});
 
 afterEach(() => {
   clearWorkItems();
@@ -127,6 +138,95 @@ describe("next-move endpoint", () => {
     const res = callNextMove();
     expect(res.itemId).toBe(`wi:${review.id}`);
     expect(res.itemId).not.toBe(`wi:${queued.id}`);
+  });
+
+  /** Force an item's last_activity_at to a fixed epoch (bypasses the auto-bump). */
+  function setLastActivity(id: string, at: number): void {
+    // `at` is a caller-controlled number and `id` a store-minted uuid — safe to
+    // inline. drizzle's raw .run() takes a single SQL string (no param array).
+    getDb().run(
+      `UPDATE work_items SET last_activity_at = ${Math.floor(at)} WHERE id = '${id}'`,
+    );
+  }
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  test("a fresh due-soon item outranks an old no-activity drifter (the stale-item fix)", () => {
+    const task = createTask({ title: "t", template: "..." });
+
+    // Old zombie: created 3 weeks ago, no activity in 20 days, no deadline.
+    // Under the OLD oldest-first ranking this dominated forever.
+    const drifter = createWorkItem({
+      taskId: task.id,
+      title: "3-week drifter",
+    });
+    setLastActivity(drifter.id, Date.now() - 20 * DAY);
+
+    // Fresh, due within the hour.
+    const dueSoon = createWorkItem({
+      taskId: task.id,
+      title: "Due within the hour",
+      dueAt: Date.now() + 60 * 60 * 1000,
+    });
+    setLastActivity(dueSoon.id, Date.now());
+
+    __resetNextMoveCacheForTest();
+    const res = callNextMove();
+    expect(res.itemId).toBe(`wi:${dueSoon.id}`);
+    expect(res.itemId).not.toBe(`wi:${drifter.id}`);
+  });
+
+  test("with no deadlines, the freshest item wins (not the oldest)", () => {
+    const task = createTask({ title: "t", template: "..." });
+    const older = createWorkItem({
+      taskId: task.id,
+      title: "Older, still active",
+    });
+    setLastActivity(older.id, Date.now() - 2 * DAY);
+    const fresher = createWorkItem({ taskId: task.id, title: "Touched today" });
+    setLastActivity(fresher.id, Date.now());
+
+    __resetNextMoveCacheForTest();
+    expect(callNextMove().itemId).toBe(`wi:${fresher.id}`);
+  });
+
+  test("a due drifter is NOT deprioritized as stale — a deadline keeps it live", () => {
+    const task = createTask({ title: "t", template: "..." });
+    // Stale by activity (25 days) but carries an overdue deadline.
+    const staleButDue = createWorkItem({
+      taskId: task.id,
+      title: "Overdue and untouched",
+      dueAt: Date.now() - DAY,
+    });
+    setLastActivity(staleButDue.id, Date.now() - 25 * DAY);
+    // A fresh item with no deadline.
+    const freshNoDue = createWorkItem({
+      taskId: task.id,
+      title: "Fresh, no due",
+    });
+    setLastActivity(freshNoDue.id, Date.now());
+
+    __resetNextMoveCacheForTest();
+    // Due-soon/overdue beats a fresh-but-undated item.
+    expect(callNextMove().itemId).toBe(`wi:${staleButDue.id}`);
+  });
+
+  test("a pinned-project item outranks an unpinned one of equal freshness", () => {
+    const task = createTask({ title: "t", template: "..." });
+    const pinnedProject = createProject({ title: "Pinned", pinned: true });
+    const now = Date.now();
+
+    const unpinned = createWorkItem({ taskId: task.id, title: "Unpinned" });
+    setLastActivity(unpinned.id, now);
+    const pinned = createWorkItem({
+      taskId: task.id,
+      title: "In pinned project",
+      projectId: pinnedProject.id,
+    });
+    setLastActivity(pinned.id, now);
+
+    __resetNextMoveCacheForTest();
+    expect(callNextMove().itemId).toBe(`wi:${pinned.id}`);
   });
 
   test("caches by top item id and serves the same itemId on repeat calls", () => {

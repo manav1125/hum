@@ -18,7 +18,9 @@ export function ContactsPageRoute() {
       onStartSetupConversation={(prompt) => {
         useViewerStore.getState().setMainView("chat");
         const draftConversationId = createDraftConversationId();
-        useConversationStore.getState().setActiveConversationId(draftConversationId);
+        useConversationStore
+          .getState()
+          .setActiveConversationId(draftConversationId);
         void navigate(
           `${routes.conversation(draftConversationId)}?prompt=${encodeURIComponent(prompt)}`,
         );

@@ -114,58 +114,114 @@ body {
  * collapsible-slide-*) live in the library's tokens.css. */
 
 @keyframes indeterminate {
-  0% { width: 0%; margin-left: 0%; }
-  50% { width: 60%; margin-left: 20%; }
-  100% { width: 0%; margin-left: 100%; }
+  0% {
+    width: 0%;
+    margin-left: 0%;
+  }
+  50% {
+    width: 60%;
+    margin-left: 20%;
+  }
+  100% {
+    width: 0%;
+    margin-left: 100%;
+  }
 }
 
 /* Memory surface (surfaces/Memory.dc.html) loading shimmer — the skeleton
    cards slide a light gradient across themselves while real memories load. */
 @keyframes cueShimmer {
-  0% { background-position: -340px 0; }
-  100% { background-position: 340px 0; }
+  0% {
+    background-position: -340px 0;
+  }
+  100% {
+    background-position: 340px 0;
+  }
 }
 
 @keyframes fadeInUp {
-  0% { transform: translateY(16px); opacity: 0; }
+  0% {
+    transform: translateY(16px);
+    opacity: 0;
+  }
   /* End at `none` (not translateY(0)) so the filled-forwards transform does
      not create a containing block — otherwise position:fixed descendants like
      the Dropdown menu anchor to this element instead of the viewport. */
-  100% { transform: none; opacity: 1; }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
 }
 
 @keyframes typing-dot-pulse {
-  0%, 100% { opacity: 0.45; transform: scale(0.6); }
-  50% { opacity: 1; transform: scale(1); }
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* Avatar breathing — gentle scale pulse matching macOS
    AnimatedAvatarView.swift startBreathing() (2s in, 2s out). */
 @keyframes avatar-breathe-kf {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.03); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
 }
 
 @keyframes avatar-morph-scale {
-  0%, 100% { transform: scale(1, 1); }
-  25% { transform: scale(1.02, 0.99); }
-  50% { transform: scale(0.99, 1.02); }
-  75% { transform: scale(1.01, 0.99); }
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  25% {
+    transform: scale(1.02, 0.99);
+  }
+  50% {
+    transform: scale(0.99, 1.02);
+  }
+  75% {
+    transform: scale(1.01, 0.99);
+  }
 }
 
 @keyframes avatar-morph-rotate {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(0.86deg); }
-  50% { transform: rotate(0deg); }
-  75% { transform: rotate(-0.86deg); }
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(0.86deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  75% {
+    transform: rotate(-0.86deg);
+  }
 }
 
 /* BusyIndicator — mirrors macOS VBusyIndicator. A filled circle pulsing in
  * opacity (1→0.3) and scale (1→0.85) over 1s easeInOut. Used in
  * ActivityRunCard for active/thinking phases. */
 @keyframes busy-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.3; transform: scale(0.85); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
 }
 
 .busy-indicator {
@@ -181,7 +237,9 @@ body {
    and the whole ring rotates. Border thickness/inset are set inline so the
    ring scales with avatar size. `prefers-reduced-motion` holds it static. */
 @keyframes avatar-ring-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .avatar-streaming-ring {
@@ -205,8 +263,12 @@ body {
  * as "asleep" during hatching. When the assistant becomes active, swap
  * the class for `.onboarding-avatar-awake`. */
 @keyframes morphPulse {
-  0% { transform: scale(0.9); }
-  100% { transform: scale(1.0); }
+  0% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .onboarding-avatar-pulse {
@@ -234,26 +296,52 @@ body {
 
 /* Billing onboarding modal — pulsing glow behind the loading spinner */
 @keyframes onboarding-glow {
-  0%, 100% { opacity: 0.12; transform: scale(1); }
-  50% { opacity: 0.24; transform: scale(1.15); }
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.24;
+    transform: scale(1.15);
+  }
 }
 
 /* Billing onboarding modal — welcome screen staggered reveal */
 @keyframes welcome-reveal {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Billing onboarding modal — crown glow pulse */
 @keyframes welcome-crown-glow {
-  0%, 100% { opacity: 0.18; transform: scale(1); }
-  50% { opacity: 0.32; transform: scale(1.08); }
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.32;
+    transform: scale(1.08);
+  }
 }
 
 /* Billing onboarding modal — step content entrance */
 @keyframes onboarding-step-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* App shell sizing guards: keep routed pages from collapsing inside flex

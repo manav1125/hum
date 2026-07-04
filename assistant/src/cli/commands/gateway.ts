@@ -62,10 +62,9 @@ export function registerGatewayCommand(program: Command): void {
     transport: "ipc",
     description: "Gateway management",
     build: (gateway) => {
-
-  gateway.addHelpText(
-    "after",
-    `
+      gateway.addHelpText(
+        "after",
+        `
 The gateway is the channel ingress layer — it handles inbound HTTP requests,
 manages trust rules, routes traffic to the assistant, and records
 structured logs for all inbound activity.
@@ -75,13 +74,15 @@ Examples:
   $ assistant gateway logs tail -n 50
   $ assistant gateway logs tail --level warn
   $ assistant gateway logs tail --module cors`,
-  );
+      );
 
-  const logs = gateway.command("logs").description("Gateway log operations");
+      const logs = gateway
+        .command("logs")
+        .description("Gateway log operations");
 
-  logs.addHelpText(
-    "after",
-    `
+      logs.addHelpText(
+        "after",
+        `
 Gateway logs are structured JSON (ndjson) entries emitted by the gateway
 process. Each entry carries a timestamp, numeric pino log level, optional
 module tag, and a message. Use 'tail' to inspect recent entries.
@@ -89,23 +90,23 @@ module tag, and a message. Use 'tail' to inspect recent entries.
 Examples:
   $ assistant gateway logs tail
   $ assistant gateway logs tail --level error --module cors`,
-  );
+      );
 
-  logs
-    .command("tail")
-    .description("Show last N gateway log entries")
-    .option("-n <number>", "Number of lines (default: 10)")
-    .option("-q, --quiet", "Suppress column headers")
-    .option(
-      "--level <level>",
-      "Minimum log level (trace|debug|info|warn|error|fatal)",
-      "info",
-    )
-    .option("--module <name>", "Filter to exact module name")
-    .option("--raw", "Output raw ndjson (one JSON object per line)")
-    .addHelpText(
-      "after",
-      `
+      logs
+        .command("tail")
+        .description("Show last N gateway log entries")
+        .option("-n <number>", "Number of lines (default: 10)")
+        .option("-q, --quiet", "Suppress column headers")
+        .option(
+          "--level <level>",
+          "Minimum log level (trace|debug|info|warn|error|fatal)",
+          "info",
+        )
+        .option("--module <name>", "Filter to exact module name")
+        .option("--raw", "Output raw ndjson (one JSON object per line)")
+        .addHelpText(
+          "after",
+          `
 Arguments:
   -n <number>        Number of entries to return, clamped to 1–1000 (default: 10).
   --level <level>    Minimum log level to include. One of:
@@ -128,63 +129,71 @@ Examples:
   $ assistant gateway logs tail
   $ assistant gateway logs tail -n 50 --level warn
   $ assistant gateway logs tail --module cors --raw | jq .msg`,
-    )
-    .action(async (opts) => {
-      const n = Math.max(1, Math.min(1000, parseInt(opts.n ?? "10", 10) || 10));
-      const params: Record<string, unknown> = { n };
-      if (opts.level && opts.level !== "info") params.level = opts.level;
-      if (opts.module) params.module = opts.module;
+        )
+        .action(async (opts) => {
+          const n = Math.max(
+            1,
+            Math.min(1000, parseInt(opts.n ?? "10", 10) || 10),
+          );
+          const params: Record<string, unknown> = { n };
+          if (opts.level && opts.level !== "info") params.level = opts.level;
+          if (opts.module) params.module = opts.module;
 
-      const result = await cliIpcCall<{ lines: PinoEntry[]; truncated: boolean }>(
-        "gateway_logs_tail",
-        { body: params },
-      );
+          const result = await cliIpcCall<{
+            lines: PinoEntry[];
+            truncated: boolean;
+          }>("gateway_logs_tail", { body: params });
 
-      if (!result.ok) {
-        log.error(result.error ?? "Failed to fetch gateway logs");
-        process.exitCode = 1;
-        return;
-      }
+          if (!result.ok) {
+            log.error(result.error ?? "Failed to fetch gateway logs");
+            process.exitCode = 1;
+            return;
+          }
 
-      const { lines, truncated } = result.result!;
+          const { lines, truncated } = result.result!;
 
-      if (opts.raw) {
-        for (const entry of lines) process.stdout.write(JSON.stringify(entry) + "\n");
-        return;
-      }
+          if (opts.raw) {
+            for (const entry of lines)
+              process.stdout.write(JSON.stringify(entry) + "\n");
+            return;
+          }
 
-      if (lines.length === 0) {
-        if (!opts.quiet) process.stdout.write("No log entries found.\n");
-        return;
-      }
+          if (lines.length === 0) {
+            if (!opts.quiet) process.stdout.write("No log entries found.\n");
+            return;
+          }
 
-      const moduleWidth = Math.min(
-        12,
-        Math.max(6, ...lines.map((l) => l.module?.length ?? 0)),
-      );
+          const moduleWidth = Math.min(
+            12,
+            Math.max(6, ...lines.map((l) => l.module?.length ?? 0)),
+          );
 
-      if (!opts.quiet) {
-        process.stdout.write(
-          `${"TIME".padEnd(24)}  ${"LEVEL".padEnd(5)}  ${"MODULE".padEnd(moduleWidth)}  MESSAGE\n`,
-        );
-      }
+          if (!opts.quiet) {
+            process.stdout.write(
+              `${"TIME".padEnd(24)}  ${"LEVEL".padEnd(5)}  ${"MODULE".padEnd(moduleWidth)}  MESSAGE\n`,
+            );
+          }
 
-      for (const entry of lines) {
-        const time = formatTime(entry.time).padEnd(24);
-        const lvlName = levelName(entry.level).padEnd(5);
-        const lvlColored = colorLevel(lvlName, entry.level);
-        const mod = (entry.module ?? "").padEnd(moduleWidth);
-        const msg = entry.msg ?? "";
-        const msgTrunc = msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
-        process.stdout.write(`${time}  ${lvlColored}  ${mod}  ${msgTrunc}\n`);
-      }
+          for (const entry of lines) {
+            const time = formatTime(entry.time).padEnd(24);
+            const lvlName = levelName(entry.level).padEnd(5);
+            const lvlColored = colorLevel(lvlName, entry.level);
+            const mod = (entry.module ?? "").padEnd(moduleWidth);
+            const msg = entry.msg ?? "";
+            const msgTrunc = msg.length > 120 ? msg.slice(0, 120) + "…" : msg;
+            process.stdout.write(
+              `${time}  ${lvlColored}  ${mod}  ${msgTrunc}\n`,
+            );
+          }
 
-      if (truncated) {
-        const footer = `(showing last ${n} matching entries — earlier entries exist)`;
-        const dim = process.stdout.isTTY ? `\x1b[2m${footer}\x1b[0m` : footer;
-        process.stdout.write(dim + "\n");
-      }
-    });
+          if (truncated) {
+            const footer = `(showing last ${n} matching entries — earlier entries exist)`;
+            const dim = process.stdout.isTTY
+              ? `\x1b[2m${footer}\x1b[0m`
+              : footer;
+            process.stdout.write(dim + "\n");
+          }
+        });
     },
   });
 }

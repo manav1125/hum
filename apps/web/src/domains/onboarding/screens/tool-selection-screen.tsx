@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import {
-    PRECHAT_TOOLS,
-    type PreChatToolItem,
+  PRECHAT_TOOLS,
+  type PreChatToolItem,
 } from "@/domains/onboarding/prechat-tools";
 import { isElectron } from "@/runtime/is-electron";
 import { Button } from "@vellumai/design-library/components/button";
@@ -35,7 +35,9 @@ export function ToolSelectionScreen({
     () => otherText.length > 0,
   );
 
-  const lastEmittedOtherSet = useRef<string>(setKeyForOtherEntries(selectedTools));
+  const lastEmittedOtherSet = useRef<string>(
+    setKeyForOtherEntries(selectedTools),
+  );
   useEffect(() => {
     const externalKey = setKeyForOtherEntries(selectedTools);
     if (externalKey === lastEmittedOtherSet.current) return;
@@ -94,7 +96,9 @@ export function ToolSelectionScreen({
 
   return (
     <OnboardingLayout showCreatureFooter={false}>
-      <div className={`mx-auto flex w-full max-w-2xl flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}>
+      <div
+        className={`mx-auto flex w-full max-w-2xl flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}
+      >
         <div
           className={`grid w-full items-center ${onBack ? "grid-cols-[auto_1fr_auto]" : ""}`}
           style={{ animation: "fadeInUp 0.3s ease-out 0.1s both" }}
@@ -109,7 +113,9 @@ export function ToolSelectionScreen({
               <ChevronLeft className="h-4 w-4" />
             </button>
           ) : null}
-          <h1 className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}>
+          <h1
+            className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}
+          >
             What do you use?
           </h1>
           {onBack ? <div aria-hidden="true" className="h-8 w-8" /> : null}
@@ -118,8 +124,8 @@ export function ToolSelectionScreen({
           className={`${electron ? "mt-3" : "mt-4"} text-center text-body-medium-lighter text-[var(--content-${electron ? "secondary" : "tertiary"})]`}
           style={{ animation: "fadeInUp 0.3s ease-out 0.15s both" }}
         >
-          This helps me tailor how I assist you. No connections needed — you
-          can set those up later.
+          This helps me tailor how I assist you. No connections needed — you can
+          set those up later.
         </p>
 
         <div
@@ -316,18 +322,16 @@ function OtherTile({
   );
 }
 
-function ToolGlyph({
-  tool,
-  size,
-}: {
-  tool: PreChatToolItem;
-  size: number;
-}) {
+function ToolGlyph({ tool, size }: { tool: PreChatToolItem; size: number }) {
   if (tool.logoSrc) {
     if (tool.logoSrcDark) {
       return (
         <>
-          <span className="flex items-center justify-center dark:hidden" style={{ width: size, height: size }} aria-hidden="true">
+          <span
+            className="flex items-center justify-center dark:hidden"
+            style={{ width: size, height: size }}
+            aria-hidden="true"
+          >
             <img
               src={tool.logoSrc}
               alt=""
@@ -337,7 +341,11 @@ function ToolGlyph({
               loading="eager"
             />
           </span>
-          <span className="hidden items-center justify-center dark:flex" style={{ width: size, height: size }} aria-hidden="true">
+          <span
+            className="hidden items-center justify-center dark:flex"
+            style={{ width: size, height: size }}
+            aria-hidden="true"
+          >
             <img
               src={tool.logoSrcDark}
               alt=""
@@ -351,7 +359,10 @@ function ToolGlyph({
       );
     }
     return (
-      <span className="flex items-center justify-center" style={{ width: size, height: size }}>
+      <span
+        className="flex items-center justify-center"
+        style={{ width: size, height: size }}
+      >
         <img
           src={tool.logoSrc}
           alt=""

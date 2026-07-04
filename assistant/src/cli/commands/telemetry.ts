@@ -12,27 +12,26 @@ export function registerTelemetryCommand(program: Command): void {
     build: (telemetry) => {
       telemetry
         .command("flush")
-        .description(
-          "Force-flush all pending telemetry events to the platform",
-        )
+        .description("Force-flush all pending telemetry events to the platform")
         .action(async (_opts: Record<string, unknown>, cmd: Command) => {
           const r = await cliIpcCall<
             { flushed: true } | { flushed: false; reason: string }
           >("telemetry_flush", {});
           if (!r.ok)
-            return exitFromIpcResult({
-              ok: false,
-              error: r.error,
-              statusCode: r.statusCode,
-            }, cmd);
+            return exitFromIpcResult(
+              {
+                ok: false,
+                error: r.error,
+                statusCode: r.statusCode,
+              },
+              cmd,
+            );
 
           const result = r.result!;
           if (result.flushed) {
             log.info("Telemetry flushed successfully.");
           } else {
-            log.info(
-              `Telemetry flush skipped: ${result.reason}`,
-            );
+            log.info(`Telemetry flush skipped: ${result.reason}`);
           }
         });
     },

@@ -84,7 +84,8 @@ export function isAppNotFoundError(err: unknown): boolean {
 
 function resolveViewBefore(
   state: ViewerState,
-  field: "viewBeforeDocument" | "viewBeforeSubagentDetail" | "viewBeforeToolDetail",
+  field:
+    "viewBeforeDocument" | "viewBeforeSubagentDetail" | "viewBeforeToolDetail",
 ): Exclude<MainView, OverlayView> {
   const mv = state.mainView;
   if (mv === "document" || mv === "subagent-detail" || mv === "tool-detail") {
@@ -155,11 +156,20 @@ export interface ViewerState {
   isAppMinimized: boolean;
   intelligenceTab: IntelligenceTab;
   assetsRefreshKey: number;
-  viewBeforeDocument: Exclude<MainView, "document" | "subagent-detail" | "tool-detail">;
+  viewBeforeDocument: Exclude<
+    MainView,
+    "document" | "subagent-detail" | "tool-detail"
+  >;
   activeSubagentId: string | null;
-  viewBeforeSubagentDetail: Exclude<MainView, "document" | "subagent-detail" | "tool-detail">;
+  viewBeforeSubagentDetail: Exclude<
+    MainView,
+    "document" | "subagent-detail" | "tool-detail"
+  >;
   activeToolDetail: ToolDetailPayload | null;
-  viewBeforeToolDetail: Exclude<MainView, "document" | "subagent-detail" | "tool-detail">;
+  viewBeforeToolDetail: Exclude<
+    MainView,
+    "document" | "subagent-detail" | "tool-detail"
+  >;
   /**
    * Monotonic counter bumped when a viewer (e.g. the mobile tool-detail
    * overlay, which lives in a separate portal subtree) asks to open the trust
@@ -203,9 +213,16 @@ export interface ViewerActions {
 
   // --- Document viewer ---
   openDocument: () => void;
-  loadDocument: (assistantId: string, documentSurfaceId: string) => Promise<void>;
+  loadDocument: (
+    assistantId: string,
+    documentSurfaceId: string,
+  ) => Promise<void>;
   setLoadedDocument: (document: OpenedDocumentState) => void;
-  updateDocumentContent: (surfaceId: string, content: string, mode: string) => void;
+  updateDocumentContent: (
+    surfaceId: string,
+    content: string,
+    mode: string,
+  ) => void;
   handleDocumentLoadFailed: () => void;
   closeDocument: () => void;
 
@@ -282,7 +299,12 @@ const useViewerStoreBase = create<ViewerStore>()((set, get) => ({
         throwOnError: true,
       });
       if (get().activeAppId !== appId) return;
-      const app = { appId: result.appId, dirName: result.dirName, name: result.name, html: result.html };
+      const app = {
+        appId: result.appId,
+        dirName: result.dirName,
+        name: result.name,
+        html: result.html,
+      };
       set({ openedAppState: app });
       primeAppHtmlCache(assistantId, result.appId, result.html);
     } catch (err) {
@@ -350,7 +372,10 @@ const useViewerStoreBase = create<ViewerStore>()((set, get) => ({
     set({
       mainView: "subagent-detail",
       activeSubagentId: subagentId,
-      viewBeforeSubagentDetail: resolveViewBefore(get(), "viewBeforeSubagentDetail"),
+      viewBeforeSubagentDetail: resolveViewBefore(
+        get(),
+        "viewBeforeSubagentDetail",
+      ),
     });
   },
 
@@ -426,7 +451,11 @@ const useViewerStoreBase = create<ViewerStore>()((set, get) => ({
       });
       if (get().activeDocumentSurfaceId !== documentSurfaceId) return;
       if (!result) {
-        set({ mainView: viewBeforeDocument, activeDocumentSurfaceId: null, openedDocumentState: null });
+        set({
+          mainView: viewBeforeDocument,
+          activeDocumentSurfaceId: null,
+          openedDocumentState: null,
+        });
         return;
       }
       set({
@@ -439,7 +468,11 @@ const useViewerStoreBase = create<ViewerStore>()((set, get) => ({
       });
     } catch {
       if (get().activeDocumentSurfaceId !== documentSurfaceId) return;
-      set({ mainView: viewBeforeDocument, activeDocumentSurfaceId: null, openedDocumentState: null });
+      set({
+        mainView: viewBeforeDocument,
+        activeDocumentSurfaceId: null,
+        openedDocumentState: null,
+      });
     }
   },
 
@@ -449,7 +482,11 @@ const useViewerStoreBase = create<ViewerStore>()((set, get) => ({
 
   updateDocumentContent: (surfaceId, content, mode) => {
     const state = get();
-    if (!state.openedDocumentState || state.openedDocumentState.surfaceId !== surfaceId) return;
+    if (
+      !state.openedDocumentState ||
+      state.openedDocumentState.surfaceId !== surfaceId
+    )
+      return;
     const prev = state.openedDocumentState;
     const newContent = mode === "append" ? prev.content + content : content;
     set({ openedDocumentState: { ...prev, content: newContent } });

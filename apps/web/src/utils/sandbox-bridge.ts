@@ -42,7 +42,9 @@ export const FETCH_PROXY_PATH_RE = /^\/v1\/x\//;
  * @see https://html.spec.whatwg.org/multipage/scripting.html#restrictions-for-contents-of-script-elements
  */
 export function jsonForScript(value: unknown): string {
-  return JSON.stringify(value).replace(/<\//g, "<\\/").replace(/<!--/g, "<\\!--");
+  return JSON.stringify(value)
+    .replace(/<\//g, "<\\/")
+    .replace(/<!--/g, "<\\!--");
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +101,10 @@ export interface BridgeOptions {
  * storage polyfill is prepended separately via `prependScript` so that it
  * runs before any app code that accesses `localStorage` during parsing.
  */
-function buildBridgeLogicScript(frameId: string, options?: BridgeOptions): string {
+function buildBridgeLogicScript(
+  frameId: string,
+  options?: BridgeOptions,
+): string {
   const enableFetch = options?.fetch ?? false;
   const route = options?.route ?? null;
 
@@ -180,7 +185,10 @@ function buildBridgeLogicScript(frameId: string, options?: BridgeOptions): strin
  * `injectBridge` is preferred because it places the polyfill and bridge
  * logic at separate positions in the HTML.
  */
-export function buildBridgeScript(frameId: string, options?: BridgeOptions): string {
+export function buildBridgeScript(
+  frameId: string,
+  options?: BridgeOptions,
+): string {
   return buildStoragePolyfill() + buildBridgeLogicScript(frameId, options);
 }
 
@@ -244,7 +252,11 @@ export function prependScript(html: string, script: string): string {
  * the bridge logic is appended before `</body>` (app code calls
  * `window.vellum` APIs asynchronously after mount, not during parsing).
  */
-export function injectBridge(html: string, frameId: string, options?: BridgeOptions): string {
+export function injectBridge(
+  html: string,
+  frameId: string,
+  options?: BridgeOptions,
+): string {
   return prependScript(
     injectScript(html, buildBridgeLogicScript(frameId, options)),
     buildStoragePolyfill(),

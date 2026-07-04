@@ -40,6 +40,9 @@ describe("pending provider key", () => {
 
   test("keyless providers store an empty key", () => {
     setPendingProviderKey({ provider: "ollama", key: "" });
-    expect(consumePendingProviderKey()).toEqual({ provider: "ollama", key: "" });
+    expect(consumePendingProviderKey()).toEqual({
+      provider: "ollama",
+      key: "",
+    });
   });
 });

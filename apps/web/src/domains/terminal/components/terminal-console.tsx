@@ -1,4 +1,9 @@
-import { type MutableRefObject, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  type MutableRefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import type { Terminal as TerminalType, IDisposable } from "xterm";
 import "xterm/css/xterm.css";
 

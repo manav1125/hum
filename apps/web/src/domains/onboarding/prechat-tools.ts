@@ -23,10 +23,18 @@ export interface PreChatToolItem {
   logoSrcDark?: string;
 }
 
-export const GOOGLE_TOOL_IDS = new Set(["gmail", "google-calendar", "google-drive"]);
+export const GOOGLE_TOOL_IDS = new Set([
+  "gmail",
+  "google-calendar",
+  "google-drive",
+]);
 
 export const PRECHAT_TOOLS: PreChatToolItem[] = [
-  { id: "gmail", label: "Gmail", logoSrc: publicAsset("/images/integrations/gmail.svg") },
+  {
+    id: "gmail",
+    label: "Gmail",
+    logoSrc: publicAsset("/images/integrations/gmail.svg"),
+  },
   {
     id: "outlook",
     label: "Outlook",
@@ -37,8 +45,16 @@ export const PRECHAT_TOOLS: PreChatToolItem[] = [
     label: "Google Calendar",
     logoSrc: publicAsset("/images/integrations/google-calendar.svg"),
   },
-  { id: "slack", label: "Slack", logoSrc: publicAsset("/images/integrations/slack.svg") },
-  { id: "notion", label: "Notion", logoSrc: publicAsset("/images/integrations/notion.svg") },
+  {
+    id: "slack",
+    label: "Slack",
+    logoSrc: publicAsset("/images/integrations/slack.svg"),
+  },
+  {
+    id: "notion",
+    label: "Notion",
+    logoSrc: publicAsset("/images/integrations/notion.svg"),
+  },
   {
     id: "linear",
     label: "Linear",
@@ -55,13 +71,21 @@ export const PRECHAT_TOOLS: PreChatToolItem[] = [
     logoSrc: publicAsset("/images/integrations/github.svg"),
     logoSrcDark: publicAsset("/images/integrations/github-dark.svg"),
   },
-  { id: "figma", label: "Figma", logoSrc: publicAsset("/images/integrations/figma.svg") },
+  {
+    id: "figma",
+    label: "Figma",
+    logoSrc: publicAsset("/images/integrations/figma.svg"),
+  },
   {
     id: "google-drive",
     label: "Google Drive",
     logoSrc: publicAsset("/images/integrations/google-drive.svg"),
   },
-  { id: "excel", label: "Excel", logoSrc: publicAsset("/images/integrations/excel.svg") },
+  {
+    id: "excel",
+    label: "Excel",
+    logoSrc: publicAsset("/images/integrations/excel.svg"),
+  },
   {
     id: "apple-notes",
     label: "Apple Notes",

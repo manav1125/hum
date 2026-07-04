@@ -622,11 +622,11 @@ async function processJob(
       await embedGraphTriggerJob(job, config);
       return;
     case "graph_extract":
-      // Stale rows enqueued before v2 was enabled (or by any unguarded v1
-      // path) must not consume embedding/extraction budget when v2 is on.
-      if (config.memory.v2.enabled) {
-        return;
-      }
+      // Runs under BOTH v1 and v2. The graph store this job writes is the
+      // source the Memory page reads for its episodic / semantic / etc.
+      // counts; v2's concept-page store never classifies into those typed
+      // buckets, so suppressing extraction under v2 leaves the Memory page
+      // frozen. The indexer enqueues this under both modes to match.
       await graphExtractJob(job, config);
       return;
     case "conversation_analyze":

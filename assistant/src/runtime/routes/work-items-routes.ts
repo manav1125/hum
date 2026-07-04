@@ -68,6 +68,19 @@ export const workItemSchema = z.object({
     .string()
     .nullable()
     .describe('"cue" | "you" | contact name; null reads as "cue"'),
+  context: z
+    .string()
+    .nullable()
+    .describe("Per-task context the user adds; read by the agent before a run"),
+  sourceContext: z
+    .string()
+    .nullable()
+    .describe("JSON snapshot of where the task came from (triage-stamped)"),
+  lastActivityAt: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Epoch ms of last activity; drives stale-item ranking"),
   lastRunId: z.string().nullable(),
   lastRunConversationId: z.string().nullable(),
   lastRunStatus: z.string().nullable(),
@@ -576,10 +589,17 @@ export const ROUTES: RouteDefinition[] = [
       status: z.string(),
       priorityTier: z.number().int(),
       sortIndex: z.number().int(),
-      projectId: z.string().nullable().describe("null clears the project"),
+      projectId: z
+        .string()
+        .nullable()
+        .describe("null clears the project; a value moves the task"),
       dueAt: z.number().int().nullable().describe("null clears the deadline"),
       labels: z.array(z.string()).describe("Freeform labels"),
       assignee: z.string().describe('"cue" | "you" | contact name'),
+      context: z
+        .string()
+        .nullable()
+        .describe("Per-task context the agent reads before a run"),
     }),
     handler: ({ pathParams, body }) => {
       const id = pathParams!.id;
@@ -601,11 +621,12 @@ export const ROUTES: RouteDefinition[] = [
         priorityTier?: number;
         sortIndex?: number;
       };
-      const { projectId, dueAt, labels, assignee } = (body ?? {}) as {
+      const { projectId, dueAt, labels, assignee, context } = (body ?? {}) as {
         projectId?: string | null;
         dueAt?: number | null;
         labels?: string[];
         assignee?: string;
+        context?: string | null;
       };
 
       if (
@@ -626,6 +647,7 @@ export const ROUTES: RouteDefinition[] = [
       if (dueAt !== undefined) updates.dueAt = dueAt;
       if (labels !== undefined) updates.labels = JSON.stringify(labels);
       if (assignee !== undefined) updates.assignee = assignee;
+      if (context !== undefined) updates.context = context;
 
       const item = updateWorkItem(
         id,

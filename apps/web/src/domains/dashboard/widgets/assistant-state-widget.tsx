@@ -85,9 +85,7 @@ export function AssistantStateWidget({ assistantId }: { assistantId: string }) {
                 >
                   <span style={{ marginTop: 5 }}>
                     <Dot
-                      color={
-                        fact.confidence === "strong" ? C.green : C.line2
-                      }
+                      color={fact.confidence === "strong" ? C.green : C.line2}
                     />
                   </span>
                   <span>{fact.text}</span>

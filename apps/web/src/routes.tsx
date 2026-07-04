@@ -52,362 +52,972 @@ function OAuthDesktopCompleteRedirect() {
 // (e.g. "the OAuth popup pages are NOT under AccountLayout") must run against
 // these raw definitions.
 export const routeTree = [
-    // Account routes — standalone auth pages, no app chrome.
-    // Lazy-loaded: only needed for unauthenticated flows.
-    {
-      path: "/account",
-      ErrorBoundary: RouteErrorBoundary,
-      HydrateFallback: RootHydrateFallback,
-      children: [
-        // Pathless wrapper so lazy-chunk failures render the chunk-fail
-        // variant of `RouteErrorBoundary` (inline copy + Reload button)
-        // rather than the full-page variant inherited from the top.
-        {
-          ErrorBoundary: RouteErrorBoundary,
-          children: [
-            // Auth screens that render in the MAIN window. AccountLayout sizes
-            // it compact (440×630) for these, matching onboarding.
-            {
-              Component: AccountLayout,
-              children: [
-                { index: true, lazy: { Component: () => import("@/domains/account/pages/account-page").then((m) => m.AccountPage) } },
-                { path: "login", lazy: { Component: () => import("@/domains/account/pages/login-page").then((m) => m.LoginPage) } },
-                { path: "signup", lazy: { Component: () => import("@/domains/account/pages/signup-page").then((m) => m.SignupPage) } },
-                { path: "provider/callback", lazy: { Component: () => import("@/domains/account/pages/provider-callback-page").then((m) => m.ProviderCallbackPage) } },
-                { path: "provider/signup", lazy: { Component: () => import("@/domains/account/pages/provider-signup-page").then((m) => m.ProviderSignupPage) } },
-                { path: "password/reset", lazy: { Component: () => import("@/domains/account/pages/password-reset-page").then((m) => m.PasswordResetPage) } },
-                { path: "password/reset/key/:key", lazy: { Component: () => import("@/domains/account/pages/password-reset-page").then((m) => m.PasswordResetPage) } },
-              ],
+  // Account routes — standalone auth pages, no app chrome.
+  // Lazy-loaded: only needed for unauthenticated flows.
+  {
+    path: "/account",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    children: [
+      // Pathless wrapper so lazy-chunk failures render the chunk-fail
+      // variant of `RouteErrorBoundary` (inline copy + Reload button)
+      // rather than the full-page variant inherited from the top.
+      {
+        ErrorBoundary: RouteErrorBoundary,
+        children: [
+          // Auth screens that render in the MAIN window. AccountLayout sizes
+          // it compact (440×630) for these, matching onboarding.
+          {
+            Component: AccountLayout,
+            children: [
+              {
+                index: true,
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/account-page").then(
+                      (m) => m.AccountPage,
+                    ),
+                },
+              },
+              {
+                path: "login",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/login-page").then(
+                      (m) => m.LoginPage,
+                    ),
+                },
+              },
+              {
+                path: "signup",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/signup-page").then(
+                      (m) => m.SignupPage,
+                    ),
+                },
+              },
+              {
+                path: "provider/callback",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/provider-callback-page").then(
+                      (m) => m.ProviderCallbackPage,
+                    ),
+                },
+              },
+              {
+                path: "provider/signup",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/provider-signup-page").then(
+                      (m) => m.ProviderSignupPage,
+                    ),
+                },
+              },
+              {
+                path: "password/reset",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/password-reset-page").then(
+                      (m) => m.PasswordResetPage,
+                    ),
+                },
+              },
+              {
+                path: "password/reset/key/:key",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/account/pages/password-reset-page").then(
+                      (m) => m.PasswordResetPage,
+                    ),
+                },
+              },
+            ],
+          },
+          // OAuth completion / loopback machinery. These render inside the
+          // OAuth popup child window (or are transient redirects), NOT the
+          // main window — so they're deliberately OUTSIDE AccountLayout and
+          // never mount the sizing hook. The resize IPC targets the
+          // module-scoped main window, so sizing from a popup would shrink
+          // the wrong window. See `use-onboarding-window-size`.
+          {
+            path: "oauth/popup-complete",
+            lazy: {
+              Component: () =>
+                import("@/domains/account/pages/oauth-popup-complete-page").then(
+                  (m) => m.OAuthPopupCompletePage,
+                ),
             },
-            // OAuth completion / loopback machinery. These render inside the
-            // OAuth popup child window (or are transient redirects), NOT the
-            // main window — so they're deliberately OUTSIDE AccountLayout and
-            // never mount the sizing hook. The resize IPC targets the
-            // module-scoped main window, so sizing from a popup would shrink
-            // the wrong window. See `use-onboarding-window-size`.
-            { path: "oauth/popup-complete", lazy: { Component: () => import("@/domains/account/pages/oauth-popup-complete-page").then((m) => m.OAuthPopupCompletePage) } },
-            { path: "oauth/complete", lazy: { Component: () => import("@/domains/account/pages/oauth-complete-page").then((m) => m.OAuthCompletePage) } },
-            { path: "oauth/desktop-complete", Component: OAuthDesktopCompleteRedirect },
-            { path: "platform-callback", lazy: { Component: () => import("@/domains/account/pages/platform-loopback-page").then((m) => m.PlatformLoopbackPage) } },
-          ],
-        },
-      ],
+          },
+          {
+            path: "oauth/complete",
+            lazy: {
+              Component: () =>
+                import("@/domains/account/pages/oauth-complete-page").then(
+                  (m) => m.OAuthCompletePage,
+                ),
+            },
+          },
+          {
+            path: "oauth/desktop-complete",
+            Component: OAuthDesktopCompleteRedirect,
+          },
+          {
+            path: "platform-callback",
+            lazy: {
+              Component: () =>
+                import("@/domains/account/pages/platform-loopback-page").then(
+                  (m) => m.PlatformLoopbackPage,
+                ),
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  // Logout — standalone page, no app chrome
+  {
+    path: "/logout",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/domains/account/pages/logout-page").then((m) => m.LogoutPage),
     },
+  },
 
-    // Logout — standalone page, no app chrome
-    { path: "/logout", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/domains/account/pages/logout-page").then((m) => m.LogoutPage) } },
-
-    // About — standalone metadata page rendered inside the Electron
-    // About BrowserWindow. Declared as a sibling of `/assistant` (not
-    // a child) so React Router's most-specific matcher picks it for
-    // `/assistant/about` BEFORE falling into the auth-protected app
-    // tree below. URL sits under `/assistant/*` so it's served by
-    // Vite's SPA fallback in dev (which is scoped to the `base`).
-    { path: "/assistant/about", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/components/about-page").then((m) => m.AboutPage) } },
-
-    // Bundle confirmation — standalone page rendered inside the Electron
-    // bundle-confirmation BrowserWindow. No auth required so bundles can
-    // be opened before the user logs in. Same sibling pattern as About.
-    { path: "/assistant/bundle/confirm", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/pages/BundleConfirmPage").then((m) => m.BundleConfirmPage) } },
-
-    // Quick Input — lightweight input panel rendered inside the Electron
-    // quick input BrowserWindow (a frameless, always-on-top panel invoked
-    // via Cmd+Shift+/). Same pattern as About: sibling of `/assistant`,
-    // outside auth middleware and RootLayout for fast load.
-    { path: "/assistant/quick-input", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/components/quick-input-page").then((m) => m.QuickInputPage) } },
-
-    // Command palette — focused floating Electron BrowserWindow opened by
-    // the app menu's Cmd/Ctrl+K accelerator. Standalone and unauthenticated
-    // so it does not depend on ChatLayout being mounted in the main window.
-    { path: "/assistant/floating/command-palette", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/components/command-palette/command-palette-window-page").then((m) => m.CommandPaletteWindowPage) } },
-
-    // Dictation overlay — live transcription pill rendered inside the
-    // Electron dictation overlay BrowserWindow (a click-through floating
-    // panel pinned top-center of the screen while push-to-talk dictation
-    // is active). Same pattern as Quick Input: sibling of `/assistant`,
-    // outside auth middleware and RootLayout for fast load.
-    { path: "/assistant/floating/dictation-overlay", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/components/dictation-overlay-page").then((m) => m.DictationOverlayPage) } },
-    // Legacy direct path retained so old dev windows do not blank during
-    // rolling Electron/web updates.
-    { path: "/assistant/dictation-overlay", ErrorBoundary: RouteErrorBoundary, HydrateFallback: RootHydrateFallback, lazy: { Component: () => import("@/components/dictation-overlay-page").then((m) => m.DictationOverlayPage) } },
-
-    // Assistant routes — auth-protected app with layout
-    {
-      path: "/assistant",
-      middleware: [authMiddleware],
-      ErrorBoundary: RouteErrorBoundary,
-      HydrateFallback: RootHydrateFallback,
-      Component: RootLayout,
-      children: [
-        // Pathless wrapper attaching `RouteErrorBoundary` at the layer
-        // *inside* RootLayout. Any error from a child route (chunk-fetch
-        // failure or genuine render bug) is caught here — React Router
-        // doesn't support selective bubbling. The boundary picks a UI
-        // variant based on the error shape:
-        //   - chunk fail  → inline "section couldn't load" within
-        //                   RootLayout's chrome (sidebar stays visible)
-        //   - other error → full-page "Something went wrong" treatment
-        //                   (full-viewport `min-h-svh` so it reads as a
-        //                   takeover even when mounted inside chrome)
-        // The outer boundary on `/assistant` only fires for errors that
-        // happen *during* the resolution of `/assistant` itself (loader,
-        // middleware, RootLayout render) — not for child-route errors.
-        {
-          ErrorBoundary: RouteErrorBoundary,
-          children: [
-        // Standalone pre-app routes (not part of the new-user onboarding funnel).
-        {
-          path: "welcome",
-          lazy: { Component: () => import("@/domains/onboarding/pages/welcome-screen").then((m) => m.WelcomeScreen) },
-        },
-        {
-          path: "select-assistant",
-          lazy: { Component: () => import("@/domains/onboarding/pages/select-assistant-screen").then((m) => m.SelectAssistantScreen) },
-        },
-        {
-          path: "review-terms",
-          lazy: { Component: () => import("@/domains/onboarding/pages/review-terms-screen").then((m) => m.ReviewTermsScreen) },
-        },
-
-        // Onboarding funnel — new-user setup flow (privacy → prechat → hatching).
-        {
-          middleware: [onboardingCompletedMiddleware],
-          children: [
-            {
-              middleware: [localModeOnlyMiddleware],
-              children: [
-                {
-                  path: "onboarding/hosting",
-                  lazy: { Component: () => import("@/domains/onboarding/pages/hosting-screen").then((m) => m.HostingScreen) },
-                },
-                {
-                  path: "onboarding/api-key",
-                  lazy: { Component: () => import("@/domains/onboarding/pages/api-key-screen").then((m) => m.ApiKeyScreen) },
-                },
-              ],
-            },
-            {
-              path: "onboarding/privacy",
-              lazy: { Component: () => import("@/domains/onboarding/pages/privacy-screen").then((m) => m.PrivacyScreen) },
-            },
-            {
-              path: "onboarding/prechat",
-              lazy: { Component: () => import("@/domains/onboarding/pages/pre-chat-flow").then((m) => m.PreChatFlow) },
-            },
-            {
-              path: "onboarding/hatching",
-              lazy: { Component: () => import("@/domains/onboarding/pages/hatching-screen").then((m) => m.HatchingScreen) },
-            },
-          ],
-        },
-
-        // Settings and logs require a resolved assistant. The gate
-        // defers child rendering until the lifecycle reaches active/
-        // self_hosted, so route components can use useActiveAssistantId().
-        {
-          Component: ActiveAssistantGate,
-          children: [
-            // Settings routes — full-screen overlay panel (no ChatLayout sidebar).
-            // SidebarShell provides its own layout with back-arrow, sidebar nav,
-            // and content area — the main app sidebar is intentionally hidden.
-            // Lazy-loaded: visited occasionally, heavy deps (Stripe, schedules, voice).
-            {
-              path: "settings",
-              lazy: { Component: () => import("@/domains/settings/settings-layout").then((m) => m.SettingsLayout) },
-              children: [
-                { index: true, lazy: { Component: () => import("@/domains/settings/pages/general-page").then((m) => m.GeneralPage) } },
-                { path: "general", lazy: { Component: () => import("@/domains/settings/pages/general-page").then((m) => m.GeneralPage) } },
-                { path: "ai", lazy: { Component: () => import("@/domains/settings/ai/ai-page").then((m) => m.AiPage) } },
-                { path: "integrations", lazy: { Component: () => import("@/domains/settings/pages/integrations-page").then((m) => m.IntegrationsPage) } },
-                { path: "schedules", lazy: { Component: () => import("@/domains/settings/pages/schedules-page").then((m) => m.SchedulesPage) } },
-                { path: "schedules/:scheduleId", lazy: { Component: () => import("@/domains/settings/pages/schedules-page").then((m) => m.SchedulesPage) } },
-                { path: "notifications", lazy: { Component: () => import("@/domains/settings/pages/notifications-page").then((m) => m.NotificationsPage) } },
-                { path: "keyboard-shortcuts", lazy: { Component: () => import("@/domains/settings/keyboard-shortcuts/keyboard-shortcuts-page").then((m) => m.KeyboardShortcutsPage) } },
-                { path: "sounds", lazy: { Component: () => import("@/domains/settings/pages/sounds-page").then((m) => m.SoundsPage) } },
-                { path: "voice", lazy: { Component: () => import("@/domains/settings/pages/voice-page").then((m) => m.VoicePage) } },
-                { path: "devices", lazy: { Component: () => import("@/domains/settings/pages/devices-page").then((m) => m.DevicesPage) } },
-                { path: "privacy", lazy: { Component: () => import("@/domains/settings/pages/privacy-page").then((m) => m.PrivacyPage) } },
-                { path: "budget", lazy: { Component: () => import("@/domains/settings/pages/budget-page").then((m) => m.BudgetPage) } },
-                { path: "archive", lazy: { Component: () => import("@/domains/settings/pages/archive-page").then((m) => m.ArchivePage) } },
-                { path: "billing", lazy: { Component: () => import("@/domains/settings/billing/billing-page").then((m) => m.BillingPage) } },
-                { path: "billing/upgrade/cancel", lazy: { Component: () => import("@/domains/settings/billing/upgrade-cancel-page").then((m) => m.UpgradeCancelPage) } },
-                { path: "billing/upgrade/success", lazy: { Component: () => import("@/domains/settings/billing/upgrade-success-page").then((m) => m.UpgradeSuccessPage) } },
-                { path: "community", lazy: { Component: () => import("@/domains/settings/pages/community-page").then((m) => m.CommunityPage) } },
-                { path: "debug", lazy: { Component: () => import("@/domains/settings/pages/debug-page").then((m) => m.DebugPage) } },
-                { path: "developer", lazy: { Component: () => import("@/domains/settings/pages/developer-page").then((m) => m.DeveloperPage) } },
-                { path: "advanced", lazy: { Component: () => import("@/domains/settings/pages/advanced-page").then((m) => m.AdvancedPage) } },
-                { path: "danger-zone", lazy: { Component: () => import("@/domains/settings/pages/danger-zone-redirect-page").then((m) => m.DangerZoneRedirectPage) } },
-                { path: "system-events", lazy: { Component: () => import("@/domains/settings/pages/system-events-redirect-page").then((m) => m.SystemEventsRedirectPage) } },
-              ],
-            },
-
-            // Logs routes — full-screen overlay panel (like SettingsLayout).
-            // LogsLayout reuses SidebarShell for visual consistency.
-            // Lazy-loaded: analytics-only.
-            {
-              path: "logs",
-              lazy: { Component: () => import("@/domains/logs/logs-layout").then((m) => m.LogsLayout) },
-              children: [
-                { index: true, lazy: { Component: () => import("@/domains/logs/pages/usage-page").then((m) => m.UsagePage) } },
-                { path: "trace", lazy: { Component: () => import("@/domains/logs/pages/trace-page").then((m) => m.TracePage) } },
-                { path: "usage", lazy: { Component: () => import("@/domains/logs/pages/usage-page").then((m) => m.UsagePage) } },
-                { path: "system-events", lazy: { Component: () => import("@/domains/logs/pages/system-events-page").then((m) => m.SystemEventsPage) } },
-                { path: "emails", lazy: { Component: () => import("@/domains/logs/pages/emails-page").then((m) => m.EmailsPage) } },
-              ],
-            },
-          ],
-        },
-
-        {
-          Component: ChatLayout,
-          children: [
-            // Inner pathless wrapper: catches every error from chat-side
-            // routes (home, library, identity, inspector, etc.) one layer
-            // deeper than the `/assistant` boundary so the chunk-fail UI
-            // variant renders *inside* ChatLayout's chrome (sidebar stays
-            // visible). Non-chunk render errors are caught here too —
-            // `RouteErrorBoundary` shows the full-page variant in that
-            // case (`min-h-svh`), which visually takes over the route
-            // content area.
-            {
-              ErrorBoundary: RouteErrorBoundary,
-              children: [
-            // ChatPage / DocumentViewerPage own their own lifecycle UI
-            // (loading screens, hatching, version-selection, errors) and
-            // must render in every assistant state — they are NOT placed
-            // under <ActiveAssistantGate>.
-            { index: true, Component: ConversationRedirect },
-            { path: "conversations/:conversationId", Component: ChatPage },
-            { path: "documents/:surfaceId", lazy: { Component: () => import("@/domains/chat/document-viewer-page").then((m) => m.DocumentViewerPage) } },
-            // Everything below requires a resolved assistantId AND an
-            // active daemon. The gate defers child rendering until the
-            // lifecycle resolves so route components can rely on a
-            // non-null assistantId via useActiveAssistantId().
-            {
-              Component: ActiveAssistantGate,
-              children: [
-                {
-                  // Home IS the Command Center — the one real-time operating-
-                  // system landing that consolidates the four old surfaces
-                  // (Home feed · Mission Control · Activity · Agents-at-work)
-                  // into a single calm, prioritized vertical stream. The legacy
-                  // elevated Home (`@/home-elevated-route`) and the standalone
-                  // surfaces below redirect here; their page components stay
-                  // importable (Command Center composes the Activity sections +
-                  // Mission Control's InboundLane) but are no longer routed.
-                  path: "home",
-                  lazy: { Component: () => import("@/pages/command-center/command-center-page").then((m) => m.CommandCenterPage) },
-                },
-                {
-                  path: "projects",
-                  lazy: { Component: () => import("@/pages/projects/projects-page").then((m) => m.ProjectsPage) },
-                },
-                {
-                  path: "projects/:projectId",
-                  lazy: { Component: () => import("@/pages/projects/project-detail-page").then((m) => m.ProjectDetailPage) },
-                },
-                {
-                  path: "work",
-                  lazy: { Component: () => import("@/pages/projects/all-work-page").then((m) => m.AllWorkPage) },
-                },
-                {
-                  // Full-bleed Core surface (reached from the impact rail), not an
-                  // "About Assistant" tab.
-                  path: "impact",
-                  lazy: { Component: () => import("@/domains/intelligence/impact-page").then((m) => m.ImpactPage) },
-                },
-                // ── Consolidated surfaces → Command Center (Home) ───────────────
-                // The founder found Home / Mission Control / Activity / Agents
-                // redundant ("the same thing in different displays"). They now
-                // all redirect to the one Command Center at /home. Handlers are
-                // not deleted — every legacy URL still resolves.
-                {
-                  // Mission Control folded into the Command Center stream.
-                  path: "mission-control",
-                  element: <Navigate to={routes.home} replace />,
-                },
-                {
-                  // Next-moves was a duplicate render of the Home feed.
-                  path: "next-moves",
-                  element: <Navigate to={routes.home} replace />,
-                },
-                {
-                  // The Dashboard folded into Home.
-                  path: "dashboard",
-                  element: <Navigate to={routes.home} replace />,
-                },
-                {
-                  // Activity (background-work command center) folded into the
-                  // Command Center's "In motion" + "Up next" + "Done" groups.
-                  path: "activity",
-                  element: <Navigate to={routes.home} replace />,
-                },
-                {
-                  // Agents-at-work (live subagent fleet) folded into the Command
-                  // Center's "In motion" group.
-                  path: "agents",
-                  element: <Navigate to={routes.home} replace />,
-                },
-                {
-                  path: "meeting",
-                  lazy: { Component: () => import("@/domains/meeting/meeting-capture-page").then((m) => m.MeetingCapturePage) },
-                },
-                {
-                  path: "trust",
-                  lazy: { Component: () => import("@/domains/trust/trust-console-page").then((m) => m.TrustConsolePage) },
-                },
-                {
-                  path: "people",
-                  lazy: { Component: () => import("@/domains/people/people-page").then((m) => m.PeoplePage) },
-                },
-                {
-                  path: "voice",
-                  lazy: { Component: () => import("@/domains/chat/voice/voice-mode-page").then((m) => m.VoiceModePage) },
-                },
-                {
-                  lazy: { Component: () => import("@/domains/intelligence/intelligence-layout").then((m) => m.IntelligenceLayout) },
-                  children: [
-                    { path: "identity", lazy: { Component: () => import("@/identity-page-route").then((m) => m.IdentityPageRoute) } },
-                    { path: "cue-live", lazy: { Component: () => import("@/domains/intelligence/cue-live-page").then((m) => m.CueLivePage) } },
-                    { path: "connectors", lazy: { Component: () => import("@/domains/intelligence/connectors-page").then((m) => m.ConnectorsPage) } },
-                    { path: "connectors/:slug", lazy: { Component: () => import("@/domains/intelligence/connector-detail-page").then((m) => m.ConnectorDetailPage) } },
-                    { path: "channels", lazy: { Component: () => import("@/domains/intelligence/channels-agents-page").then((m) => m.ChannelsAgentsPage) } },
-                    { path: "plugins", lazy: { Component: () => import("@/domains/intelligence/plugins-page").then((m) => m.PluginsPage) } },
-                    { path: "plugins/:name", lazy: { Component: () => import("@/domains/intelligence/plugin-detail-page").then((m) => m.PluginDetailPage) } },
-                    { path: "skills", lazy: { Component: () => import("@/domains/intelligence/skills-page").then((m) => m.SkillsPage) } },
-                    { path: "memory", lazy: { Component: () => import("@/domains/intelligence/memories-page").then((m) => m.MemoriesPage) } },
-                    { path: "workspace", lazy: { Component: () => import("@/domains/workspace/workspace-page").then((m) => m.WorkspacePage) } },
-                    { path: "contacts", lazy: { Component: () => import("@/contacts-page-route").then((m) => m.ContactsPageRoute) } },
-                  ],
-                },
-                { path: "create", lazy: { Component: () => import("@/domains/create/create-page").then((m) => m.CreatePage) } },
-                { path: "library", lazy: { Component: () => import("@/domains/library/library-page").then((m) => m.LibraryPage) } },
-                { path: "library/:appId", lazy: { Component: () => import("@/domains/library/library-detail-page").then((m) => m.LibraryDetailPage) } },
-                { path: "connect", lazy: { Component: () => import("@/domains/contacts/connect-page").then((m) => m.ConnectPage) } },
-                {
-                  path: "conversations/:conversationId/inspect",
-                  lazy: { Component: () => import("@/domains/chat/inspector/inspect-page").then((m) => m.InspectPage) },
-                },
-                {
-                  path: "memory-router-playground",
-                  lazy: { Component: () => import("@/domains/chat/inspector/memory-router-playground-page").then((m) => m.MemoryRouterPlaygroundPage) },
-                },
-              ],
-            },
-              ], // end inner chunk-fail boundary (chat-side)
-            },
-          ],
-        },
-
-        // Catch-all within /assistant/*
-        { path: "*", Component: NotFound },
-          ], // end outer chunk-fail boundary (/assistant)
-        },
-      ],
+  // About — standalone metadata page rendered inside the Electron
+  // About BrowserWindow. Declared as a sibling of `/assistant` (not
+  // a child) so React Router's most-specific matcher picks it for
+  // `/assistant/about` BEFORE falling into the auth-protected app
+  // tree below. URL sits under `/assistant/*` so it's served by
+  // Vite's SPA fallback in dev (which is scoped to the `base`).
+  {
+    path: "/assistant/about",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/components/about-page").then((m) => m.AboutPage),
     },
+  },
 
-    // Top-level catch-all
-    { path: "*", ErrorBoundary: RouteErrorBoundary, Component: NotFound },
+  // Bundle confirmation — standalone page rendered inside the Electron
+  // bundle-confirmation BrowserWindow. No auth required so bundles can
+  // be opened before the user logs in. Same sibling pattern as About.
+  {
+    path: "/assistant/bundle/confirm",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/pages/BundleConfirmPage").then((m) => m.BundleConfirmPage),
+    },
+  },
+
+  // Quick Input — lightweight input panel rendered inside the Electron
+  // quick input BrowserWindow (a frameless, always-on-top panel invoked
+  // via Cmd+Shift+/). Same pattern as About: sibling of `/assistant`,
+  // outside auth middleware and RootLayout for fast load.
+  {
+    path: "/assistant/quick-input",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/components/quick-input-page").then((m) => m.QuickInputPage),
+    },
+  },
+
+  // Command palette — focused floating Electron BrowserWindow opened by
+  // the app menu's Cmd/Ctrl+K accelerator. Standalone and unauthenticated
+  // so it does not depend on ChatLayout being mounted in the main window.
+  {
+    path: "/assistant/floating/command-palette",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/components/command-palette/command-palette-window-page").then(
+          (m) => m.CommandPaletteWindowPage,
+        ),
+    },
+  },
+
+  // Dictation overlay — live transcription pill rendered inside the
+  // Electron dictation overlay BrowserWindow (a click-through floating
+  // panel pinned top-center of the screen while push-to-talk dictation
+  // is active). Same pattern as Quick Input: sibling of `/assistant`,
+  // outside auth middleware and RootLayout for fast load.
+  {
+    path: "/assistant/floating/dictation-overlay",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/components/dictation-overlay-page").then(
+          (m) => m.DictationOverlayPage,
+        ),
+    },
+  },
+  // Legacy direct path retained so old dev windows do not blank during
+  // rolling Electron/web updates.
+  {
+    path: "/assistant/dictation-overlay",
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    lazy: {
+      Component: () =>
+        import("@/components/dictation-overlay-page").then(
+          (m) => m.DictationOverlayPage,
+        ),
+    },
+  },
+
+  // Assistant routes — auth-protected app with layout
+  {
+    path: "/assistant",
+    middleware: [authMiddleware],
+    ErrorBoundary: RouteErrorBoundary,
+    HydrateFallback: RootHydrateFallback,
+    Component: RootLayout,
+    children: [
+      // Pathless wrapper attaching `RouteErrorBoundary` at the layer
+      // *inside* RootLayout. Any error from a child route (chunk-fetch
+      // failure or genuine render bug) is caught here — React Router
+      // doesn't support selective bubbling. The boundary picks a UI
+      // variant based on the error shape:
+      //   - chunk fail  → inline "section couldn't load" within
+      //                   RootLayout's chrome (sidebar stays visible)
+      //   - other error → full-page "Something went wrong" treatment
+      //                   (full-viewport `min-h-svh` so it reads as a
+      //                   takeover even when mounted inside chrome)
+      // The outer boundary on `/assistant` only fires for errors that
+      // happen *during* the resolution of `/assistant` itself (loader,
+      // middleware, RootLayout render) — not for child-route errors.
+      {
+        ErrorBoundary: RouteErrorBoundary,
+        children: [
+          // Standalone pre-app routes (not part of the new-user onboarding funnel).
+          {
+            path: "welcome",
+            lazy: {
+              Component: () =>
+                import("@/domains/onboarding/pages/welcome-screen").then(
+                  (m) => m.WelcomeScreen,
+                ),
+            },
+          },
+          {
+            path: "select-assistant",
+            lazy: {
+              Component: () =>
+                import("@/domains/onboarding/pages/select-assistant-screen").then(
+                  (m) => m.SelectAssistantScreen,
+                ),
+            },
+          },
+          {
+            path: "review-terms",
+            lazy: {
+              Component: () =>
+                import("@/domains/onboarding/pages/review-terms-screen").then(
+                  (m) => m.ReviewTermsScreen,
+                ),
+            },
+          },
+
+          // Onboarding funnel — new-user setup flow (privacy → prechat → hatching).
+          {
+            middleware: [onboardingCompletedMiddleware],
+            children: [
+              {
+                middleware: [localModeOnlyMiddleware],
+                children: [
+                  {
+                    path: "onboarding/hosting",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/onboarding/pages/hosting-screen").then(
+                          (m) => m.HostingScreen,
+                        ),
+                    },
+                  },
+                  {
+                    path: "onboarding/api-key",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/onboarding/pages/api-key-screen").then(
+                          (m) => m.ApiKeyScreen,
+                        ),
+                    },
+                  },
+                ],
+              },
+              {
+                path: "onboarding/privacy",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/onboarding/pages/privacy-screen").then(
+                      (m) => m.PrivacyScreen,
+                    ),
+                },
+              },
+              {
+                path: "onboarding/prechat",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/onboarding/pages/pre-chat-flow").then(
+                      (m) => m.PreChatFlow,
+                    ),
+                },
+              },
+              {
+                path: "onboarding/hatching",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/onboarding/pages/hatching-screen").then(
+                      (m) => m.HatchingScreen,
+                    ),
+                },
+              },
+            ],
+          },
+
+          // Settings and logs require a resolved assistant. The gate
+          // defers child rendering until the lifecycle reaches active/
+          // self_hosted, so route components can use useActiveAssistantId().
+          {
+            Component: ActiveAssistantGate,
+            children: [
+              // Settings routes — full-screen overlay panel (no ChatLayout sidebar).
+              // SidebarShell provides its own layout with back-arrow, sidebar nav,
+              // and content area — the main app sidebar is intentionally hidden.
+              // Lazy-loaded: visited occasionally, heavy deps (Stripe, schedules, voice).
+              {
+                path: "settings",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/settings/settings-layout").then(
+                      (m) => m.SettingsLayout,
+                    ),
+                },
+                children: [
+                  {
+                    index: true,
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/general-page").then(
+                          (m) => m.GeneralPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "general",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/general-page").then(
+                          (m) => m.GeneralPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "ai",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/ai/ai-page").then(
+                          (m) => m.AiPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "integrations",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/integrations-page").then(
+                          (m) => m.IntegrationsPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "schedules",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/schedules-page").then(
+                          (m) => m.SchedulesPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "schedules/:scheduleId",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/schedules-page").then(
+                          (m) => m.SchedulesPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "notifications",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/notifications-page").then(
+                          (m) => m.NotificationsPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "keyboard-shortcuts",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/keyboard-shortcuts/keyboard-shortcuts-page").then(
+                          (m) => m.KeyboardShortcutsPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "sounds",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/sounds-page").then(
+                          (m) => m.SoundsPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "voice",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/voice-page").then(
+                          (m) => m.VoicePage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "devices",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/devices-page").then(
+                          (m) => m.DevicesPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "privacy",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/privacy-page").then(
+                          (m) => m.PrivacyPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "budget",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/budget-page").then(
+                          (m) => m.BudgetPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "archive",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/archive-page").then(
+                          (m) => m.ArchivePage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "billing",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/billing/billing-page").then(
+                          (m) => m.BillingPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "billing/upgrade/cancel",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/billing/upgrade-cancel-page").then(
+                          (m) => m.UpgradeCancelPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "billing/upgrade/success",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/billing/upgrade-success-page").then(
+                          (m) => m.UpgradeSuccessPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "community",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/community-page").then(
+                          (m) => m.CommunityPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "debug",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/debug-page").then(
+                          (m) => m.DebugPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "developer",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/developer-page").then(
+                          (m) => m.DeveloperPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "advanced",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/advanced-page").then(
+                          (m) => m.AdvancedPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "danger-zone",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/danger-zone-redirect-page").then(
+                          (m) => m.DangerZoneRedirectPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "system-events",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/settings/pages/system-events-redirect-page").then(
+                          (m) => m.SystemEventsRedirectPage,
+                        ),
+                    },
+                  },
+                ],
+              },
+
+              // Logs routes — full-screen overlay panel (like SettingsLayout).
+              // LogsLayout reuses SidebarShell for visual consistency.
+              // Lazy-loaded: analytics-only.
+              {
+                path: "logs",
+                lazy: {
+                  Component: () =>
+                    import("@/domains/logs/logs-layout").then(
+                      (m) => m.LogsLayout,
+                    ),
+                },
+                children: [
+                  {
+                    index: true,
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/logs/pages/usage-page").then(
+                          (m) => m.UsagePage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "trace",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/logs/pages/trace-page").then(
+                          (m) => m.TracePage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "usage",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/logs/pages/usage-page").then(
+                          (m) => m.UsagePage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "system-events",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/logs/pages/system-events-page").then(
+                          (m) => m.SystemEventsPage,
+                        ),
+                    },
+                  },
+                  {
+                    path: "emails",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/logs/pages/emails-page").then(
+                          (m) => m.EmailsPage,
+                        ),
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+
+          {
+            Component: ChatLayout,
+            children: [
+              // Inner pathless wrapper: catches every error from chat-side
+              // routes (home, library, identity, inspector, etc.) one layer
+              // deeper than the `/assistant` boundary so the chunk-fail UI
+              // variant renders *inside* ChatLayout's chrome (sidebar stays
+              // visible). Non-chunk render errors are caught here too —
+              // `RouteErrorBoundary` shows the full-page variant in that
+              // case (`min-h-svh`), which visually takes over the route
+              // content area.
+              {
+                ErrorBoundary: RouteErrorBoundary,
+                children: [
+                  // ChatPage / DocumentViewerPage own their own lifecycle UI
+                  // (loading screens, hatching, version-selection, errors) and
+                  // must render in every assistant state — they are NOT placed
+                  // under <ActiveAssistantGate>.
+                  { index: true, Component: ConversationRedirect },
+                  {
+                    path: "conversations/:conversationId",
+                    Component: ChatPage,
+                  },
+                  {
+                    path: "documents/:surfaceId",
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/chat/document-viewer-page").then(
+                          (m) => m.DocumentViewerPage,
+                        ),
+                    },
+                  },
+                  // Everything below requires a resolved assistantId AND an
+                  // active daemon. The gate defers child rendering until the
+                  // lifecycle resolves so route components can rely on a
+                  // non-null assistantId via useActiveAssistantId().
+                  {
+                    Component: ActiveAssistantGate,
+                    children: [
+                      {
+                        // Home IS the Command Center — the one real-time operating-
+                        // system landing that consolidates the four old surfaces
+                        // (Home feed · Mission Control · Activity · Agents-at-work)
+                        // into a single calm, prioritized vertical stream. The legacy
+                        // elevated Home (`@/home-elevated-route`) and the standalone
+                        // surfaces below redirect here; their page components stay
+                        // importable (Command Center composes the Activity sections +
+                        // Mission Control's InboundLane) but are no longer routed.
+                        path: "home",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/command-center/command-center-page").then(
+                              (m) => m.CommandCenterPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "projects",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/projects/projects-page").then(
+                              (m) => m.ProjectsPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "projects/:projectId",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/projects/project-detail-page").then(
+                              (m) => m.ProjectDetailPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "work",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/projects/all-work-page").then(
+                              (m) => m.AllWorkPage,
+                            ),
+                        },
+                      },
+                      {
+                        // Full-bleed Core surface (reached from the impact rail), not an
+                        // "About Assistant" tab.
+                        path: "impact",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/intelligence/impact-page").then(
+                              (m) => m.ImpactPage,
+                            ),
+                        },
+                      },
+                      // ── Consolidated surfaces → Command Center (Home) ───────────────
+                      // The founder found Home / Mission Control / Activity / Agents
+                      // redundant ("the same thing in different displays"). They now
+                      // all redirect to the one Command Center at /home. Handlers are
+                      // not deleted — every legacy URL still resolves.
+                      {
+                        // Mission Control folded into the Command Center stream.
+                        path: "mission-control",
+                        element: <Navigate to={routes.home} replace />,
+                      },
+                      {
+                        // Next-moves was a duplicate render of the Home feed.
+                        path: "next-moves",
+                        element: <Navigate to={routes.home} replace />,
+                      },
+                      {
+                        // The Dashboard folded into Home.
+                        path: "dashboard",
+                        element: <Navigate to={routes.home} replace />,
+                      },
+                      {
+                        // Activity (background-work command center) folded into the
+                        // Command Center's "In motion" + "Up next" + "Done" groups.
+                        path: "activity",
+                        element: <Navigate to={routes.home} replace />,
+                      },
+                      {
+                        // Agents-at-work (live subagent fleet) folded into the Command
+                        // Center's "In motion" group.
+                        path: "agents",
+                        element: <Navigate to={routes.home} replace />,
+                      },
+                      {
+                        path: "meeting",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/meeting/meeting-capture-page").then(
+                              (m) => m.MeetingCapturePage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "trust",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/trust/trust-console-page").then(
+                              (m) => m.TrustConsolePage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "people",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/people/people-page").then(
+                              (m) => m.PeoplePage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "voice",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/chat/voice/voice-mode-page").then(
+                              (m) => m.VoiceModePage,
+                            ),
+                        },
+                      },
+                      {
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/intelligence/intelligence-layout").then(
+                              (m) => m.IntelligenceLayout,
+                            ),
+                        },
+                        children: [
+                          {
+                            path: "identity",
+                            lazy: {
+                              Component: () =>
+                                import("@/identity-page-route").then(
+                                  (m) => m.IdentityPageRoute,
+                                ),
+                            },
+                          },
+                          {
+                            path: "cue-live",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/cue-live-page").then(
+                                  (m) => m.CueLivePage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "connectors",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/connectors-page").then(
+                                  (m) => m.ConnectorsPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "connectors/:slug",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/connector-detail-page").then(
+                                  (m) => m.ConnectorDetailPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "channels",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/channels-agents-page").then(
+                                  (m) => m.ChannelsAgentsPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "plugins",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/plugins-page").then(
+                                  (m) => m.PluginsPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "plugins/:name",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/plugin-detail-page").then(
+                                  (m) => m.PluginDetailPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "skills",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/skills-page").then(
+                                  (m) => m.SkillsPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "memory",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/memories-page").then(
+                                  (m) => m.MemoriesPage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "workspace",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/workspace/workspace-page").then(
+                                  (m) => m.WorkspacePage,
+                                ),
+                            },
+                          },
+                          {
+                            path: "contacts",
+                            lazy: {
+                              Component: () =>
+                                import("@/contacts-page-route").then(
+                                  (m) => m.ContactsPageRoute,
+                                ),
+                            },
+                          },
+                        ],
+                      },
+                      {
+                        path: "create",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/create/create-page").then(
+                              (m) => m.CreatePage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "library",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/library/library-page").then(
+                              (m) => m.LibraryPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "library/:appId",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/library/library-detail-page").then(
+                              (m) => m.LibraryDetailPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "connect",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/contacts/connect-page").then(
+                              (m) => m.ConnectPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "conversations/:conversationId/inspect",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/chat/inspector/inspect-page").then(
+                              (m) => m.InspectPage,
+                            ),
+                        },
+                      },
+                      {
+                        path: "memory-router-playground",
+                        lazy: {
+                          Component: () =>
+                            import("@/domains/chat/inspector/memory-router-playground-page").then(
+                              (m) => m.MemoryRouterPlaygroundPage,
+                            ),
+                        },
+                      },
+                    ],
+                  },
+                ], // end inner chunk-fail boundary (chat-side)
+              },
+            ],
+          },
+
+          // Catch-all within /assistant/*
+          { path: "*", Component: NotFound },
+        ], // end outer chunk-fail boundary (/assistant)
+      },
+    ],
+  },
+
+  // Top-level catch-all
+  { path: "*", ErrorBoundary: RouteErrorBoundary, Component: NotFound },
 ];
 
 export const router = createBrowserRouter(routeTree as never, {

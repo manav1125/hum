@@ -3,9 +3,9 @@ import { useCallback, useMemo, useState } from "react";
 import { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import type {
-    FeedItem,
-    FeedItemStatus,
-    SuggestedPrompt,
+  FeedItem,
+  FeedItemStatus,
+  SuggestedPrompt,
 } from "@vellumai/assistant-api";
 import { ResizablePanel } from "@vellumai/design-library";
 import { useActivitySync } from "@/hooks/use-activity-sync";

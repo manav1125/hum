@@ -578,8 +578,7 @@ export const MODELS_BY_PROVIDER = {
       supportsThinking: true,
     },
   ],
-  "openai-compatible": [
-  ],
+  "openai-compatible": [],
 } as const satisfies Record<string, readonly LlmCatalogModel[]>;
 
 export type LlmProviderId = keyof typeof MODELS_BY_PROVIDER;

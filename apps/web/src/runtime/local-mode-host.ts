@@ -189,7 +189,11 @@ export async function replacePlatformAssistantsHost(
   const res = await fetch("/assistant/__local/lockfile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ syncPlatform: true, platformAssistants, organizationId }),
+    body: JSON.stringify({
+      syncPlatform: true,
+      platformAssistants,
+      organizationId,
+    }),
   });
   return res.json() as Promise<LockfileWriteResult>;
 }

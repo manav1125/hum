@@ -4,17 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import {
-    assistantsOauthConnectionsListOptions,
-    useAssistantsOauthStartCreateMutation,
+  assistantsOauthConnectionsListOptions,
+  useAssistantsOauthStartCreateMutation,
 } from "@/generated/api/@tanstack/react-query.gen";
 import type { OAuthConnection } from "@/generated/api/types.gen";
 import { useOAuthCompleteDeepLinkListener } from "@/hooks/use-oauth-complete-deep-link-listener";
 import {
-    getOAuthCompleteMessagePayload,
-    getOAuthCompleteStoragePayload,
-    isOAuthCompletePayloadForRequest,
-    oauthCompletionStorageKey,
-    type OAuthCompletePayload,
+  getOAuthCompleteMessagePayload,
+  getOAuthCompleteStoragePayload,
+  isOAuthCompletePayloadForRequest,
+  oauthCompletionStorageKey,
+  type OAuthCompletePayload,
 } from "@/lib/auth/oauth-popup";
 import { openUrl, openUrlFinishedListener } from "@/runtime/browser";
 import { isElectron } from "@/runtime/is-electron";
@@ -64,10 +64,18 @@ export function GoogleConnectScreen({
 
   const popupRef = useRef<Window | null>(null);
   const pendingRequestRef = useRef<{ requestId: string } | null>(null);
-  const popupCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const popupClosedGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const messageListenerRef = useRef<((event: MessageEvent) => void) | null>(null);
-  const storageListenerRef = useRef<((event: StorageEvent) => void) | null>(null);
+  const popupCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const popupClosedGraceTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+  const messageListenerRef = useRef<((event: MessageEvent) => void) | null>(
+    null,
+  );
+  const storageListenerRef = useRef<((event: StorageEvent) => void) | null>(
+    null,
+  );
   const nativeFinishUnsubRef = useRef<(() => void) | null>(null);
   const [oauthInProgress, setOAuthInProgress] = useState(false);
 
@@ -106,9 +114,12 @@ export function GoogleConnectScreen({
 
   useEffect(() => {
     return () => {
-      if (popupCheckIntervalRef.current) clearInterval(popupCheckIntervalRef.current);
-      if (popupClosedGraceTimeoutRef.current) clearTimeout(popupClosedGraceTimeoutRef.current);
-      if (popupRef.current && !popupRef.current.closed) popupRef.current.close();
+      if (popupCheckIntervalRef.current)
+        clearInterval(popupCheckIntervalRef.current);
+      if (popupClosedGraceTimeoutRef.current)
+        clearTimeout(popupClosedGraceTimeoutRef.current);
+      if (popupRef.current && !popupRef.current.closed)
+        popupRef.current.close();
       if (messageListenerRef.current) {
         window.removeEventListener("message", messageListenerRef.current);
       }
@@ -122,30 +133,36 @@ export function GoogleConnectScreen({
     };
   }, []);
 
-  const fetchActiveGoogleConnection = useCallback(async (): Promise<OAuthConnection | null> => {
-    try {
-      const connections = await queryClient.fetchQuery({
-        ...assistantsOauthConnectionsListOptions({
-          path: { assistant_id: assistantId },
-        }),
-        staleTime: 0,
-      });
-      return (
-        (connections as OAuthConnection[]).find(
-          (c) => c.provider === GOOGLE_PROVIDER_KEY && c.connected,
-        ) ?? null
-      );
-    } catch {
-      return null;
-    }
-  }, [assistantId, queryClient]);
+  const fetchActiveGoogleConnection =
+    useCallback(async (): Promise<OAuthConnection | null> => {
+      try {
+        const connections = await queryClient.fetchQuery({
+          ...assistantsOauthConnectionsListOptions({
+            path: { assistant_id: assistantId },
+          }),
+          staleTime: 0,
+        });
+        return (
+          (connections as OAuthConnection[]).find(
+            (c) => c.provider === GOOGLE_PROVIDER_KEY && c.connected,
+          ) ?? null
+        );
+      } catch {
+        return null;
+      }
+    }, [assistantId, queryClient]);
 
   const handleOAuthSuccess = useCallback(async () => {
     closePopupWindow();
     clearPendingRequest();
     const connection = await fetchActiveGoogleConnection();
     onConnect(connection?.scopes_granted ?? []);
-  }, [clearPendingRequest, closePopupWindow, fetchActiveGoogleConnection, onConnect]);
+  }, [
+    clearPendingRequest,
+    closePopupWindow,
+    fetchActiveGoogleConnection,
+    onConnect,
+  ]);
 
   const handleOAuthCompletePayload = useCallback(
     (payload: OAuthCompletePayload) => {
@@ -302,7 +319,12 @@ export function GoogleConnectScreen({
           if (storedCompletion) {
             try {
               const parsed: unknown = JSON.parse(storedCompletion);
-              if (isOAuthCompletePayloadForRequest(parsed, pendingRequest.requestId)) {
+              if (
+                isOAuthCompletePayloadForRequest(
+                  parsed,
+                  pendingRequest.requestId,
+                )
+              ) {
                 handleOAuthCompletePayload(parsed);
                 window.localStorage.removeItem(
                   oauthCompletionStorageKey(pendingRequest.requestId),
@@ -373,7 +395,9 @@ export function GoogleConnectScreen({
 
   return (
     <OnboardingLayout showCreatureFooter={false}>
-      <div className={`mx-auto flex w-full max-w-md flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}>
+      <div
+        className={`mx-auto flex w-full max-w-md flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}
+      >
         <div
           className="grid w-full grid-cols-[auto_1fr_auto] items-center"
           style={{ animation: "fadeInUp 0.3s ease-out 0.1s both" }}
@@ -386,7 +410,9 @@ export function GoogleConnectScreen({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}>
+          <h1
+            className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}
+          >
             Connect Google
           </h1>
           <div aria-hidden="true" className="h-8 w-8" />

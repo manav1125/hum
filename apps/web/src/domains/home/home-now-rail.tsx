@@ -45,8 +45,8 @@ export function HomeNowRail({ nextMove, noticed, onSelect }: HomeNowRailProps) {
           <HomeNextMoveCard item={nextMove} onSelect={onSelect} />
         ) : (
           <FocusCard eyebrow="Next move" title="Nothing due">
-            You&apos;re all caught up — I&apos;ll surface the next move the moment
-            something comes in.
+            You&apos;re all caught up — I&apos;ll surface the next move the
+            moment something comes in.
           </FocusCard>
         )}
       </RailSection>

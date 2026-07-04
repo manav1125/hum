@@ -73,7 +73,10 @@ function connectToGateway(): void {
     currentBackoffMs = INITIAL_BACKOFF_MS;
     socket = conn;
     refreshOverridesFromGateway().catch((err) => {
-      log.warn({ err }, "Failed to refresh feature flag overrides on reconnect");
+      log.warn(
+        { err },
+        "Failed to refresh feature flag overrides on reconnect",
+      );
     });
   });
 

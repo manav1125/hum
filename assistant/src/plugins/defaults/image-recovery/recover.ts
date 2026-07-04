@@ -195,7 +195,9 @@ export function recoverOversizedImages(
             {
               ...b,
               contentBlocks: b.contentBlocks.map((cb) =>
-                cb.type === "image" ? (oversizedImageReplacement(cb) ?? cb) : cb,
+                cb.type === "image"
+                  ? (oversizedImageReplacement(cb) ?? cb)
+                  : cb,
               ),
             },
           ];

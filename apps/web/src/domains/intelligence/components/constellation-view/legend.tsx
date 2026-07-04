@@ -1,7 +1,9 @@
-
 import { cn } from "@/utils/misc";
 
-import { LEGEND_SHAPE_CLASSES, type LegendShape } from "@/domains/intelligence/components/constellation-view/constants";
+import {
+  LEGEND_SHAPE_CLASSES,
+  type LegendShape,
+} from "@/domains/intelligence/components/constellation-view/constants";
 
 function LegendRow({ shape, label }: { shape: LegendShape; label: string }) {
   return (
@@ -29,8 +31,10 @@ export function Legend({ visible }: LegendProps) {
       data-constellation-control
       className="pointer-events-none absolute bottom-4 left-4 rounded-md px-3 py-2 text-body-small-default"
       style={{
-        backgroundColor: "color-mix(in srgb, var(--surface-overlay) 80%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--content-tertiary) 20%, transparent)",
+        backgroundColor:
+          "color-mix(in srgb, var(--surface-overlay) 80%, transparent)",
+        border:
+          "1px solid color-mix(in srgb, var(--content-tertiary) 20%, transparent)",
         color: "var(--content-secondary)",
         opacity: visible ? 1 : 0,
         transition: "opacity 0.35s ease",

@@ -1,4 +1,10 @@
-import { Lock, Shield, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
+import {
+  Lock,
+  Shield,
+  ShieldCheck,
+  ShieldOff,
+  type LucideIcon,
+} from "lucide-react";
 
 export type RiskThreshold = "none" | "low" | "medium" | "high";
 
@@ -22,7 +28,8 @@ export const THRESHOLD_PRESETS: ThresholdPreset[] = [
     id: "conservative",
     label: "Conservative",
     riskThreshold: "low",
-    description: "Auto-approve low-risk actions like reading files and web searches.",
+    description:
+      "Auto-approve low-risk actions like reading files and web searches.",
     icon: ShieldCheck,
   },
   {

@@ -12,7 +12,10 @@ import { ActivityRow } from "@/domains/activity/activity-row";
 import { DueChip } from "@/domains/activity/due-chip";
 import { GroupBlock, GroupHeader } from "@/domains/activity/group-header";
 import { C, mono } from "@/domains/activity/theme";
-import { useWorkItems, type WorkItemView } from "@/domains/activity/use-work-items";
+import {
+  useWorkItems,
+  type WorkItemView,
+} from "@/domains/activity/use-work-items";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 
 import { useProjects } from "./use-projects";
@@ -57,7 +60,10 @@ export function AllWorkPage() {
   }, [projects]);
 
   const items = useMemo(
-    () => all.items.filter((i) => i.status !== "archived" && i.status !== "cancelled"),
+    () =>
+      all.items.filter(
+        (i) => i.status !== "archived" && i.status !== "cancelled",
+      ),
     [all.items],
   );
 
@@ -68,7 +74,8 @@ export function AllWorkPage() {
         grouping === "status"
           ? (STATUS_LABEL[item.status] ?? item.status)
           : grouping === "project"
-            ? (item.projectId && projectTitle.get(item.projectId)) || "No project"
+            ? (item.projectId && projectTitle.get(item.projectId)) ||
+              "No project"
             : dueBucket(item, now);
       const bucket = map.get(key) ?? [];
       bucket.push(item);
@@ -80,7 +87,11 @@ export function AllWorkPage() {
         : grouping === "due"
           ? DUE_ORDER
           : [...map.keys()].sort((a, b) =>
-              a === "No project" ? 1 : b === "No project" ? -1 : a.localeCompare(b),
+              a === "No project"
+                ? 1
+                : b === "No project"
+                  ? -1
+                  : a.localeCompare(b),
             );
     return order
       .filter((k) => map.has(k))
@@ -90,7 +101,9 @@ export function AllWorkPage() {
 
   return (
     <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
-      <div style={{ maxWidth: 880, margin: "0 auto", padding: "34px 22px 60px" }}>
+      <div
+        style={{ maxWidth: 880, margin: "0 auto", padding: "34px 22px 60px" }}
+      >
         <div
           style={{
             display: "flex",
@@ -154,7 +167,11 @@ export function AllWorkPage() {
         ) : (
           groups.map((group) => (
             <GroupBlock key={group.key}>
-              <GroupHeader kicker={group.key} title={`${group.items.length}`} accent={C.t2} />
+              <GroupHeader
+                kicker={group.key}
+                title={`${group.items.length}`}
+                accent={C.t2}
+              />
               {group.items.slice(0, 20).map((item, i) => (
                 <ActivityRow
                   key={item.id}

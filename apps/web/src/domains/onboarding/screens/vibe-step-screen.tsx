@@ -75,9 +75,7 @@ export function VibeStepScreen({
                 <button
                   key={group.id}
                   type="button"
-                  onClick={() =>
-                    onGroupChange(isActive ? null : group.id)
-                  }
+                  onClick={() => onGroupChange(isActive ? null : group.id)}
                   aria-pressed={isActive}
                   className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-4 text-left transition-colors ${
                     isActive

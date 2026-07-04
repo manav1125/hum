@@ -30,9 +30,7 @@ export async function disconnectConnector(
 
 /** Whether per-tool toggles are available (newer preloads only). */
 export function toolTogglesSupported(): boolean {
-  return (
-    isElectron() && typeof window.vellum?.connectors?.tools === "function"
-  );
+  return isElectron() && typeof window.vellum?.connectors?.tools === "function";
 }
 
 /** List a connector's tools with enabled state. */

@@ -62,6 +62,9 @@ export const workItems = sqliteTable("work_items", {
   dueAt: integer("due_at"), // nullable deadline, epoch ms (triage-extracted or user-set)
   labels: text("labels"), // nullable JSON array string of freeform labels
   assignee: text("assignee"), // nullable; null reads as "cue" (the AI runs it)
+  context: text("context"), // nullable per-task notes/context the user adds; injected into the agent before a run
+  sourceContext: text("source_context"), // nullable JSON: {origin, snippet} of where the task came from (triage-stamped)
+  lastActivityAt: integer("last_activity_at"), // nullable epoch ms; bumped on any event/update so ranking de-prioritizes stale items
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
@@ -72,6 +75,10 @@ export const projects = sqliteTable("projects", {
   emoji: text("emoji"),
   color: text("color"),
   status: text("status").notNull().default("active"), // 'active' | 'archived'
+  category: text("category"), // nullable freeform bucket ("personal" | "professional" | "other" | …)
+  context: text("context"), // nullable project brief/instructions the agent reads for every task in the project
+  sortIndex: integer("sort_index"), // nullable manual ordering key (smaller sorts first)
+  pinned: integer("pinned").notNull().default(0), // 0/1 — pinned projects float to the top
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

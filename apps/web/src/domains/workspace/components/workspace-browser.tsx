@@ -196,7 +196,9 @@ function StatCards({ stats }: { stats: WorkspaceStats | undefined }) {
       : String(stats.files);
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
+    <div
+      style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 18 }}
+    >
       <StatCard
         icon={<Layers className="h-4 w-4" aria-hidden />}
         iconBg={C.blueWash}
@@ -219,7 +221,9 @@ function StatCards({ stats }: { stats: WorkspaceStats | undefined }) {
         icon={<CueMark />}
         iconBg={C.ink}
         iconColor="#fff"
-        value={stats && stats.lastEdit ? formatRelativeDate(stats.lastEdit) : "—"}
+        value={
+          stats && stats.lastEdit ? formatRelativeDate(stats.lastEdit) : "—"
+        }
         label="last edit"
       />
     </div>
@@ -410,7 +414,9 @@ export function WorkspaceBrowser({ assistantId }: { assistantId: string }) {
             onBrowse={() => setDrawerOpen(true)}
             pathRename={lastRename}
             pathDelete={lastDelete}
-            hasFiles={stats == null ? undefined : stats.files + stats.folders > 0}
+            hasFiles={
+              stats == null ? undefined : stats.files + stats.folders > 0
+            }
             onCreateFile={handleCreateFile}
           />
         </div>

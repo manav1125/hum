@@ -54,7 +54,10 @@ export function runProviderConnectionsBackfill(db: DrizzleDb): void {
     seedCanonicalConnections(db);
     backfillConfigProfiles(db);
   } catch (err) {
-    log.error({ err }, "provider_connections backfill failed — will retry on next boot");
+    log.error(
+      { err },
+      "provider_connections backfill failed — will retry on next boot",
+    );
   }
 }
 
@@ -72,7 +75,9 @@ function backfillConfigProfiles(db: DrizzleDb): void {
   // 1. The default profile — every dispatch path's terminal fallback.
   const defaultProfile = llm.default as Record<string, unknown> | undefined;
   if (defaultProfile && typeof defaultProfile === "object") {
-    if (ensureProviderConnection(defaultProfile, "<llm.default>", db, globalMode)) {
+    if (
+      ensureProviderConnection(defaultProfile, "<llm.default>", db, globalMode)
+    ) {
       llm.default = defaultProfile;
       changed = true;
     }
@@ -147,8 +152,7 @@ function ensureProviderConnection(
   // `provider_connection: ""` would otherwise skip backfill and then hard-throw
   // at runtime. Self-heal those alongside null/undefined.
   const existing = entry.provider_connection;
-  const hasValid =
-    typeof existing === "string" && existing.trim() !== "";
+  const hasValid = typeof existing === "string" && existing.trim() !== "";
   if (hasValid) return false;
 
   const provider = entry.provider as string | undefined;

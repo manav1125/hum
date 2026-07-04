@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  spyOn,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import * as eventBus from "@/lib/event-bus";
 import { publishWindowOnlineSource } from "@/runtime/event-sources/window-online";

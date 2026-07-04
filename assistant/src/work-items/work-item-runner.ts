@@ -21,6 +21,7 @@ import {
   sanitizeToolList,
 } from "../tasks/tool-sanitizer.js";
 import { getLogger } from "../util/logger.js";
+import { getProject } from "./project-store.js";
 import { resolveRequiredTools } from "./resolve-required-tools.js";
 import { recordWorkItemEvent } from "./work-item-events.js";
 import {
@@ -128,6 +129,42 @@ export interface RunWorkItemResult {
 }
 
 /**
+ * Build the cowork context preamble prepended to a work item's run message.
+ * This is how cowork "extends context per project/task": before the agent
+ * sees the task template, it reads (a) the parent project's brief/instructions
+ * that apply to every task in the project, and (b) the task's own user-added
+ * context. Returns "" when the item carries neither, so plain items run exactly
+ * as before.
+ */
+export function buildWorkItemContextPreamble(item: WorkItem): string {
+  const sections: string[] = [];
+
+  if (item.projectId) {
+    const project = getProject(item.projectId);
+    if (project) {
+      const header = `## Project: ${project.title}`;
+      const brief = project.context?.trim();
+      sections.push(brief ? `${header}\n${brief}` : header);
+    }
+  }
+
+  const taskContext = item.context?.trim();
+  if (taskContext) {
+    sections.push(`## Task context\n${taskContext}`);
+  }
+
+  if (sections.length === 0) return "";
+  return [
+    "You are working a task inside a project. Use the following context to inform how you carry it out.",
+    "",
+    sections.join("\n\n"),
+    "",
+    "---",
+    "",
+  ].join("\n");
+}
+
+/**
  * Run a work item in the background. Returns immediately after validation.
  * The actual execution happens asynchronously.
  *
@@ -184,6 +221,11 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // The user explicitly asked to run the task, so we treat that as consent.
   const approvedTools = requiredTools;
 
+  // Cowork context: the parent project's brief + the task's own context,
+  // computed once up front and prepended to the run message so the agent reads
+  // per-project/per-task instructions before executing.
+  const contextPreamble = buildWorkItemContextPreamble(workItem);
+
   // Set status to running
   updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
   recordWorkItemEvent({
@@ -233,7 +275,7 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             });
           }
           await conversation.processMessage({
-            content: message,
+            content: contextPreamble ? `${contextPreamble}${message}` : message,
             attachments: [],
             onEvent: (event) => {
               broadcastMessage(event);

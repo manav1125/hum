@@ -48,9 +48,8 @@ import * as eventBus from "@/lib/event-bus";
 
 const publishSpy = spyOn(eventBus, "publish");
 
-const { publishElectronDeepLinksSource } = await import(
-  "@/runtime/event-sources/electron-deep-links"
-);
+const { publishElectronDeepLinksSource } =
+  await import("@/runtime/event-sources/electron-deep-links");
 
 beforeEach(() => {
   activeCallback = null;

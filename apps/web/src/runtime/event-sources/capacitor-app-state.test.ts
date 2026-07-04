@@ -11,20 +11,22 @@ mock.module("@/runtime/native-auth", () => ({
 
 let activeHandler: AppStateHandler | null = null;
 const handleRemoveMock = mock(async () => {});
-let addListenerResolver: ((value: { remove: typeof handleRemoveMock }) => void) | null = null;
+let addListenerResolver:
+  ((value: { remove: typeof handleRemoveMock }) => void) | null = null;
 let addListenerRejecter: ((err: Error) => void) | null = null;
-let pendingAddListenerPromise: Promise<{ remove: typeof handleRemoveMock }> | null =
-  null;
+let pendingAddListenerPromise: Promise<{
+  remove: typeof handleRemoveMock;
+}> | null = null;
 
 const addListenerMock = mock(
   (_event: "appStateChange", handler: AppStateHandler) => {
     activeHandler = handler;
-    pendingAddListenerPromise = new Promise<{ remove: typeof handleRemoveMock }>(
-      (resolve, reject) => {
-        addListenerResolver = resolve;
-        addListenerRejecter = reject;
-      },
-    );
+    pendingAddListenerPromise = new Promise<{
+      remove: typeof handleRemoveMock;
+    }>((resolve, reject) => {
+      addListenerResolver = resolve;
+      addListenerRejecter = reject;
+    });
     return pendingAddListenerPromise;
   },
 );
@@ -56,9 +58,8 @@ import * as eventBus from "@/lib/event-bus";
 
 const publishSpy = spyOn(eventBus, "publish");
 
-const { publishCapacitorAppStateSource } = await import(
-  "@/runtime/event-sources/capacitor-app-state"
-);
+const { publishCapacitorAppStateSource } =
+  await import("@/runtime/event-sources/capacitor-app-state");
 
 const flushMicrotasks = async (rounds = 4) => {
   for (let i = 0; i < rounds; i++) await Promise.resolve();

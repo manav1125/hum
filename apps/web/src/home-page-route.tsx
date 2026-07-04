@@ -7,9 +7,9 @@ import { requestComposerFocus } from "@/domains/chat/composer-focus";
 import { createDraftConversationId } from "@/domains/chat/utils/conversation-selection";
 import { HomePage } from "@/domains/home/home-page";
 import {
-    useBackgroundConversationListQuery,
-    useConversationListQuery,
-    useScheduledConversationListQuery,
+  useBackgroundConversationListQuery,
+  useConversationListQuery,
+  useScheduledConversationListQuery,
 } from "@/hooks/conversation-queries";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { useConversationStore } from "@/stores/conversation-store";
@@ -57,7 +57,9 @@ export function HomePageRoute() {
     } else {
       setTopBarCenter(null);
     }
-    return () => { setTopBarCenter(null); };
+    return () => {
+      setTopBarCenter(null);
+    };
   }, [isMobile, setTopBarCenter]);
 
   return (
@@ -67,7 +69,9 @@ export function HomePageRoute() {
       onStartNewChat={() => {
         useViewerStore.getState().setMainView("chat");
         const draftConversationId = createDraftConversationId();
-        useConversationStore.getState().setActiveConversationId(draftConversationId);
+        useConversationStore
+          .getState()
+          .setActiveConversationId(draftConversationId);
         navigate(routes.conversation(draftConversationId));
         requestComposerFocus();
       }}
@@ -77,7 +81,9 @@ export function HomePageRoute() {
       onSuggestionSelected={(prompt) => {
         useViewerStore.getState().setMainView("chat");
         const draftConversationId = createDraftConversationId();
-        useConversationStore.getState().setActiveConversationId(draftConversationId);
+        useConversationStore
+          .getState()
+          .setActiveConversationId(draftConversationId);
         navigate(
           `${routes.conversation(draftConversationId)}?prompt=${encodeURIComponent(prompt)}`,
         );

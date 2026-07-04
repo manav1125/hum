@@ -30,7 +30,9 @@ export function registerStatusCommand(program: Command): void {
         if (!result.ok) {
           // Only ENOENT/ECONNREFUSED/connect-timeout produce this prefix; other
           // failures (daemon-side error, framing error, abort) are real failures.
-          if (result.error?.startsWith("Could not connect to the assistant at ")) {
+          if (
+            result.error?.startsWith("Could not connect to the assistant at ")
+          ) {
             const socketPath = getAssistantSocketPath();
             const socketExists = existsSync(socketPath);
             const workspace = getWorkspaceDirDisplay();

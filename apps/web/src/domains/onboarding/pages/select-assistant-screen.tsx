@@ -185,7 +185,7 @@ export function SelectAssistantScreen() {
       setAutoSkipping(true);
       void handleConnect(accessibleAssistants[0]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assistants.length, accessibleAssistants.length]);
 
   const onContinue = () => {
@@ -215,9 +215,15 @@ export function SelectAssistantScreen() {
 
   return (
     <OnboardingLayout>
-      <div className={`mx-auto flex w-full max-w-xl flex-col items-center ${electron ? "min-h-full px-8 pt-21 pb-4 electron-prechat-type" : "min-h-screen px-6 pb-40 pt-16"} text-[var(--content-default)]`}>
+      <div
+        className={`mx-auto flex w-full max-w-xl flex-col items-center ${electron ? "min-h-full px-8 pt-21 pb-4 electron-prechat-type" : "min-h-screen px-6 pb-40 pt-16"} text-[var(--content-default)]`}
+      >
         <h1
-          className={electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}
+          className={
+            electron
+              ? "text-title-large"
+              : "text-3xl font-semibold tracking-tight"
+          }
           style={{ animation: "fadeInUp 0.5s ease-out 0.1s both" }}
         >
           Choose an Assistant
@@ -247,7 +253,11 @@ export function SelectAssistantScreen() {
                 assistant={assistant}
                 selected={selected === assistant.id}
                 disabled={!accessible}
-                badge={!accessible && assistant.isPlatformHosted ? "Requires Account" : undefined}
+                badge={
+                  !accessible && assistant.isPlatformHosted
+                    ? "Requires Account"
+                    : undefined
+                }
                 onSelect={() => {
                   if (accessible) setSelected(assistant.id);
                 }}
@@ -312,7 +322,9 @@ export function SelectAssistantScreen() {
       </div>
       <ConnectRecoveryDialog
         open={recoveryAssistant != null}
-        assistantName={recoveryAssistant ? assistantLabel(recoveryAssistant) : ""}
+        assistantName={
+          recoveryAssistant ? assistantLabel(recoveryAssistant) : ""
+        }
         isPending={recoveryPending}
         errorMessage={recoveryError ?? undefined}
         onCancel={clearRecoveryState}
@@ -381,13 +393,17 @@ function AssistantCard({
             {assistantLabel(assistant)}
           </span>
           {badge && (
-            <span className={`rounded-full bg-[var(--surface-tertiary)] px-2 py-0.5 text-[var(--content-tertiary)] ${electron ? "text-label-medium-default" : "text-body-small-default"}`}>
+            <span
+              className={`rounded-full bg-[var(--surface-tertiary)] px-2 py-0.5 text-[var(--content-tertiary)] ${electron ? "text-label-medium-default" : "text-body-small-default"}`}
+            >
               {badge}
             </span>
           )}
         </div>
         {subtitle && (
-          <span className={`mt-0.5 block text-[var(--content-tertiary)] ${electron ? "text-label-medium-default" : "text-body-small-default"}`}>
+          <span
+            className={`mt-0.5 block text-[var(--content-tertiary)] ${electron ? "text-label-medium-default" : "text-body-small-default"}`}
+          >
             {subtitle}
           </span>
         )}

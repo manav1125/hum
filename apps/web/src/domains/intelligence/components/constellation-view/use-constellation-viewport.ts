@@ -1,4 +1,3 @@
-
 import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
@@ -10,9 +9,17 @@ import {
   useState,
 } from "react";
 
-import { computeFit, type TreeNode } from "@/domains/intelligence/components/constellation-layout";
+import {
+  computeFit,
+  type TreeNode,
+} from "@/domains/intelligence/components/constellation-layout";
 
-import { MAX_ZOOM, MIN_ZOOM, VIRTUAL_CENTER, ZOOM_STEP } from "@/domains/intelligence/components/constellation-view/constants";
+import {
+  MAX_ZOOM,
+  MIN_ZOOM,
+  VIRTUAL_CENTER,
+  ZOOM_STEP,
+} from "@/domains/intelligence/components/constellation-view/constants";
 
 interface ViewportState {
   zoom: number;
@@ -196,32 +203,40 @@ export function useConstellationViewport(
     [onBackgroundPointerDown, pan.x, pan.y],
   );
 
-  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    if (!drag.moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-      drag.moved = true;
-      setZoomedNodeId(null);
-    }
-    setUserPan({
-      x: drag.panStartX + dx,
-      y: drag.panStartY + dy,
-    });
-  }, []);
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (!drag.moved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        drag.moved = true;
+        setZoomedNodeId(null);
+      }
+      setUserPan({
+        x: drag.panStartX + dx,
+        y: drag.panStartY + dy,
+      });
+    },
+    [],
+  );
 
-  const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    setIsDragging(false);
-    try {
-      (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
-    } catch {
-      // Ignore if capture was already released.
-    }
-  }, []);
+  const handlePointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      dragRef.current = null;
+      setIsDragging(false);
+      try {
+        (event.currentTarget as HTMLElement).releasePointerCapture(
+          event.pointerId,
+        );
+      } catch {
+        // Ignore if capture was already released.
+      }
+    },
+    [],
+  );
 
   return {
     zoom,

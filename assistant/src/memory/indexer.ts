@@ -199,46 +199,47 @@ export async function indexMessageNow(
     // so extracting from its reflective musings would double-count and
     // analyzing its own output would loop indefinitely.
     if (!isAutoAnalysisSource) {
-      // ── Graph extraction (v1) ───────────────────────────────────────
-      // Suppressed when v2 is active — v2 reads memory from buffer.md
-      // and concept pages, so the v1 graph would be stale data nobody
-      // consumes. Pending-count tracking is suppressed too; otherwise a
-      // flag flip back to v1 would fire an immediate batch from counts
-      // accumulated during the v2 window.
-      let extractRunAfter: number;
-      if (v2Config == null) {
-        const graphPendingKey = `graph_extract:${input.conversationId}:pending_count`;
-        const graphCurrentVal = getMemoryCheckpoint(graphPendingKey);
-        const graphPendingCount =
-          (graphCurrentVal ? parseInt(graphCurrentVal, 10) : 0) + 1;
-        setMemoryCheckpoint(graphPendingKey, String(graphPendingCount));
+      // ── Graph extraction ────────────────────────────────────────────
+      // Runs under BOTH v1 and v2. The graph store (`memory_graph_nodes`)
+      // is what the Memory page's episodic / semantic / emotional /
+      // behavioral / narrative / prospective counts read (see
+      // `runtime/routes/memory-item-routes.ts`). v2's own capture path
+      // (buffer.md → concept pages) is a *separate* store that never
+      // classifies facts into those typed buckets, so without this the
+      // graph froze the day v2 was enabled and no episodic/semantic
+      // memory-items were ever created again. The two stores are
+      // independent — concept pages drive per-turn injection, graph nodes
+      // drive the Memory page — so writing both is complementary, not a
+      // double-write.
+      const graphPendingKey = `graph_extract:${input.conversationId}:pending_count`;
+      const graphCurrentVal = getMemoryCheckpoint(graphPendingKey);
+      const graphPendingCount =
+        (graphCurrentVal ? parseInt(graphCurrentVal, 10) : 0) + 1;
+      setMemoryCheckpoint(graphPendingKey, String(graphPendingCount));
 
-        const graphBatchFired = graphPendingCount >= batchSize;
-        if (graphBatchFired) {
-          setMemoryCheckpoint(graphPendingKey, "0");
-        }
+      const graphBatchFired = graphPendingCount >= batchSize;
+      if (graphBatchFired) {
+        setMemoryCheckpoint(graphPendingKey, "0");
+      }
 
-        // Single pending `graph_extract` row per conversation. If the
-        // batch threshold just fired, pull `runAfter` back to now so the
-        // job runs immediately; otherwise debounce by the idle timeout.
-        // Routing both paths through `upsertDebouncedJob` ensures the
-        // row's `runAfter` reflects whichever trigger ran last, so a
-        // batch crossing always takes effect immediately.
-        extractRunAfter = graphBatchFired
-          ? Date.now()
-          : Date.now() + idleTimeoutMs;
-        if (isMemoryEnabled()) {
-          upsertDebouncedJob(
-            "graph_extract",
-            {
-              conversationId: input.conversationId,
-              scopeId: input.scopeId ?? "default",
-            },
-            extractRunAfter,
-          );
-        }
-      } else {
-        extractRunAfter = Date.now() + idleTimeoutMs;
+      // Single pending `graph_extract` row per conversation. If the
+      // batch threshold just fired, pull `runAfter` back to now so the
+      // job runs immediately; otherwise debounce by the idle timeout.
+      // Routing both paths through `upsertDebouncedJob` ensures the
+      // row's `runAfter` reflects whichever trigger ran last, so a
+      // batch crossing always takes effect immediately.
+      const extractRunAfter = graphBatchFired
+        ? Date.now()
+        : Date.now() + idleTimeoutMs;
+      if (isMemoryEnabled()) {
+        upsertDebouncedJob(
+          "graph_extract",
+          {
+            conversationId: input.conversationId,
+            scopeId: input.scopeId ?? "default",
+          },
+          extractRunAfter,
+        );
       }
 
       // Memory v2 sweep: when v2 is on AND `sweep_enabled` is set, every

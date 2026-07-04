@@ -126,13 +126,14 @@ export function registerCredentialExecutionCommand(program: Command): void {
   registerCommand(program, {
     name: "credential-execution",
     transport: "local",
-    description: "Inspect and manage Credential Execution Service (CES) grants and audit records",
+    description:
+      "Inspect and manage Credential Execution Service (CES) grants and audit records",
     build: (ce) => {
       ce.option("--json", "Machine-readable compact JSON output");
 
-  ce.addHelpText(
-    "after",
-    `
+      ce.addHelpText(
+        "after",
+        `
 The Credential Execution Service (CES) mediates all secret-bearing operations.
 Grants authorize specific credential handles for constrained purposes, and
 audit records log each credentialed operation. Neither grants nor audit records
@@ -142,26 +143,26 @@ Examples:
   $ assistant credential-execution grants list
   $ assistant credential-execution grants revoke <grantId>
   $ assistant credential-execution audit list`,
-  );
+      );
 
-  // -------------------------------------------------------------------------
-  // grants
-  // -------------------------------------------------------------------------
+      // -------------------------------------------------------------------------
+      // grants
+      // -------------------------------------------------------------------------
 
-  const grants = ce.command("grants").description("Manage CES grants");
+      const grants = ce.command("grants").description("Manage CES grants");
 
-  // grants list
-  grants
-    .command("list")
-    .description("List current CES grants")
-    .option("--handle <handle>", "Filter by credential handle")
-    .option(
-      "--status <status>",
-      "Filter by grant status (active, expired, revoked, consumed)",
-    )
-    .addHelpText(
-      "after",
-      `
+      // grants list
+      grants
+        .command("list")
+        .description("List current CES grants")
+        .option("--handle <handle>", "Filter by credential handle")
+        .option(
+          "--status <status>",
+          "Filter by grant status (active, expired, revoked, consumed)",
+        )
+        .addHelpText(
+          "after",
+          `
 Lists all persistent grants tracked by the Credential Execution Service.
 Each grant authorizes a specific credential handle for a constrained purpose.
 
@@ -172,59 +173,59 @@ Examples:
   $ assistant credential-execution grants list
   $ assistant credential-execution grants list --handle local_static:github/token
   $ assistant credential-execution grants list --status active --json`,
-    )
-    .action(
-      async (opts: { handle?: string; status?: string }, cmd: Command) => {
-        let cleanup: (() => Promise<void>) | undefined;
-        try {
-          if (!ensureGrantAuditEnabled(cmd)) return;
-          const ces = await acquireCesClient();
-          cleanup = ces.cleanup;
+        )
+        .action(
+          async (opts: { handle?: string; status?: string }, cmd: Command) => {
+            let cleanup: (() => Promise<void>) | undefined;
+            try {
+              if (!ensureGrantAuditEnabled(cmd)) return;
+              const ces = await acquireCesClient();
+              cleanup = ces.cleanup;
 
-          const response: ListGrantsResponse = await ces.client.call(
-            CesRpcMethod.ListGrants as typeof CesRpcMethod.ListGrants,
-            {
-              credentialHandle: opts.handle,
-              status: opts.status as
-                | "active"
-                | "expired"
-                | "revoked"
-                | "consumed"
-                | undefined,
-            },
-          );
+              const response: ListGrantsResponse = await ces.client.call(
+                CesRpcMethod.ListGrants as typeof CesRpcMethod.ListGrants,
+                {
+                  credentialHandle: opts.handle,
+                  status: opts.status as
+                    | "active"
+                    | "expired"
+                    | "revoked"
+                    | "consumed"
+                    | undefined,
+                },
+              );
 
-          writeOutput(cmd, { ok: true, grants: response.grants });
+              writeOutput(cmd, { ok: true, grants: response.grants });
 
-          if (!shouldOutputJson(cmd)) {
-            if (response.grants.length === 0) {
-              log.info("No CES grants found");
-            } else {
-              log.info(`${response.grants.length} CES grant(s):\n`);
-              for (const grant of response.grants) {
-                printGrantHuman(grant);
-                log.info("");
+              if (!shouldOutputJson(cmd)) {
+                if (response.grants.length === 0) {
+                  log.info("No CES grants found");
+                } else {
+                  log.info(`${response.grants.length} CES grant(s):\n`);
+                  for (const grant of response.grants) {
+                    printGrantHuman(grant);
+                    log.info("");
+                  }
+                }
               }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              writeOutput(cmd, { ok: false, error: message });
+              process.exitCode = 1;
+            } finally {
+              if (cleanup) await cleanup();
             }
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          writeOutput(cmd, { ok: false, error: message });
-          process.exitCode = 1;
-        } finally {
-          if (cleanup) await cleanup();
-        }
-      },
-    );
+          },
+        );
 
-  // grants revoke
-  grants
-    .command("revoke <grantId>")
-    .description("Revoke a CES grant by its stable ID")
-    .option("--reason <reason>", "Human-readable reason for revocation")
-    .addHelpText(
-      "after",
-      `
+      // grants revoke
+      grants
+        .command("revoke <grantId>")
+        .description("Revoke a CES grant by its stable ID")
+        .option("--reason <reason>", "Human-readable reason for revocation")
+        .addHelpText(
+          "after",
+          `
 Revokes a specific CES grant, immediately preventing any further use of
 that grant for credentialed operations. The grant is permanently removed
 from CES state.
@@ -236,62 +237,64 @@ Arguments:
 Examples:
   $ assistant credential-execution grants revoke 7a3b1c2d-4e5f-6789-abcd-ef0123456789
   $ assistant credential-execution grants revoke abc123 --reason "credential rotated"`,
-    )
-    .action(
-      async (grantId: string, opts: { reason?: string }, cmd: Command) => {
-        let cleanup: (() => Promise<void>) | undefined;
-        try {
-          if (!ensureGrantAuditEnabled(cmd)) return;
-          const ces = await acquireCesClient();
-          cleanup = ces.cleanup;
+        )
+        .action(
+          async (grantId: string, opts: { reason?: string }, cmd: Command) => {
+            let cleanup: (() => Promise<void>) | undefined;
+            try {
+              if (!ensureGrantAuditEnabled(cmd)) return;
+              const ces = await acquireCesClient();
+              cleanup = ces.cleanup;
 
-          const response: RevokeGrantResponse = await ces.client.call(
-            CesRpcMethod.RevokeGrant as typeof CesRpcMethod.RevokeGrant,
-            {
-              grantId,
-              reason: opts.reason,
-            },
-          );
+              const response: RevokeGrantResponse = await ces.client.call(
+                CesRpcMethod.RevokeGrant as typeof CesRpcMethod.RevokeGrant,
+                {
+                  grantId,
+                  reason: opts.reason,
+                },
+              );
 
-          if (response.success) {
-            writeOutput(cmd, { ok: true, grantId });
+              if (response.success) {
+                writeOutput(cmd, { ok: true, grantId });
 
-            if (!shouldOutputJson(cmd)) {
-              log.info(`Revoked grant ${grantId}`);
+                if (!shouldOutputJson(cmd)) {
+                  log.info(`Revoked grant ${grantId}`);
+                }
+              } else {
+                writeOutput(cmd, {
+                  ok: false,
+                  error: response.error?.message ?? "Failed to revoke grant",
+                });
+                process.exitCode = 1;
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              writeOutput(cmd, { ok: false, error: message });
+              process.exitCode = 1;
+            } finally {
+              if (cleanup) await cleanup();
             }
-          } else {
-            writeOutput(cmd, {
-              ok: false,
-              error: response.error?.message ?? "Failed to revoke grant",
-            });
-            process.exitCode = 1;
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          writeOutput(cmd, { ok: false, error: message });
-          process.exitCode = 1;
-        } finally {
-          if (cleanup) await cleanup();
-        }
-      },
-    );
+          },
+        );
 
-  // -------------------------------------------------------------------------
-  // audit
-  // -------------------------------------------------------------------------
+      // -------------------------------------------------------------------------
+      // audit
+      // -------------------------------------------------------------------------
 
-  const audit = ce.command("audit").description("Inspect CES audit records");
+      const audit = ce
+        .command("audit")
+        .description("Inspect CES audit records");
 
-  // audit list
-  audit
-    .command("list")
-    .description("List recent CES audit records")
-    .option("--handle <handle>", "Filter by credential handle")
-    .option("--grant <grantId>", "Filter by grant ID")
-    .option("-l, --limit <n>", "Maximum number of records to return", "20")
-    .addHelpText(
-      "after",
-      `
+      // audit list
+      audit
+        .command("list")
+        .description("List recent CES audit records")
+        .option("--handle <handle>", "Filter by credential handle")
+        .option("--grant <grantId>", "Filter by grant ID")
+        .option("-l, --limit <n>", "Maximum number of records to return", "20")
+        .addHelpText(
+          "after",
+          `
 Lists recent audit records from the Credential Execution Service. Each
 record is a token-free summary of a credentialed operation (HTTP request
 or secure command execution).
@@ -305,58 +308,60 @@ Examples:
   $ assistant credential-execution audit list --limit 50
   $ assistant credential-execution audit list --handle local_static:github/token
   $ assistant credential-execution audit list --grant abc123 --json`,
-    )
-    .action(
-      async (
-        opts: { handle?: string; grant?: string; limit: string },
-        cmd: Command,
-      ) => {
-        let cleanup: (() => Promise<void>) | undefined;
-        try {
-          if (!ensureGrantAuditEnabled(cmd)) return;
-          const ces = await acquireCesClient();
-          cleanup = ces.cleanup;
+        )
+        .action(
+          async (
+            opts: { handle?: string; grant?: string; limit: string },
+            cmd: Command,
+          ) => {
+            let cleanup: (() => Promise<void>) | undefined;
+            try {
+              if (!ensureGrantAuditEnabled(cmd)) return;
+              const ces = await acquireCesClient();
+              cleanup = ces.cleanup;
 
-          const limit = parseInt(opts.limit, 10) || 20;
+              const limit = parseInt(opts.limit, 10) || 20;
 
-          const response: ListAuditRecordsResponse = await ces.client.call(
-            CesRpcMethod.ListAuditRecords as typeof CesRpcMethod.ListAuditRecords,
-            {
-              credentialHandle: opts.handle,
-              grantId: opts.grant,
-              limit,
-            },
-          );
+              const response: ListAuditRecordsResponse = await ces.client.call(
+                CesRpcMethod.ListAuditRecords as typeof CesRpcMethod.ListAuditRecords,
+                {
+                  credentialHandle: opts.handle,
+                  grantId: opts.grant,
+                  limit,
+                },
+              );
 
-          writeOutput(cmd, {
-            ok: true,
-            records: response.records,
-            nextCursor: response.nextCursor,
-          });
+              writeOutput(cmd, {
+                ok: true,
+                records: response.records,
+                nextCursor: response.nextCursor,
+              });
 
-          if (!shouldOutputJson(cmd)) {
-            if (response.records.length === 0) {
-              log.info("No CES audit records found");
-            } else {
-              log.info(`${response.records.length} CES audit record(s):\n`);
-              for (const record of response.records) {
-                printAuditRecordHuman(record);
-                log.info("");
+              if (!shouldOutputJson(cmd)) {
+                if (response.records.length === 0) {
+                  log.info("No CES audit records found");
+                } else {
+                  log.info(`${response.records.length} CES audit record(s):\n`);
+                  for (const record of response.records) {
+                    printAuditRecordHuman(record);
+                    log.info("");
+                  }
+                  if (response.nextCursor) {
+                    log.info(
+                      "(more records available — use --limit to increase)",
+                    );
+                  }
+                }
               }
-              if (response.nextCursor) {
-                log.info("(more records available — use --limit to increase)");
-              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              writeOutput(cmd, { ok: false, error: message });
+              process.exitCode = 1;
+            } finally {
+              if (cleanup) await cleanup();
             }
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          writeOutput(cmd, { ok: false, error: message });
-          process.exitCode = 1;
-        } finally {
-          if (cleanup) await cleanup();
-        }
-      },
-    );
+          },
+        );
     },
   });
 }

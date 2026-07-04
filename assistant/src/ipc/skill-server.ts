@@ -40,10 +40,7 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 
-import {
-  ensureSocketDir,
-  SocketWatchdog,
-} from "@vellumai/ipc-server-utils";
+import { ensureSocketDir, SocketWatchdog } from "@vellumai/ipc-server-utils";
 
 import {
   type SkillRouteHandle,
@@ -100,8 +97,6 @@ const SKILL_IPC_SUBSCRIBE_CLOSE_METHOD = "host.events.subscribe.close" as const;
  * on a genuinely stuck consumer.
  */
 const STREAM_BACKPRESSURE_BYTES = 1024 * 1024;
-
-
 
 // ---------------------------------------------------------------------------
 // Per-connection context

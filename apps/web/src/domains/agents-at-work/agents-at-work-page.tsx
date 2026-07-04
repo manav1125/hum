@@ -30,7 +30,10 @@ type FleetStatus = Subagent["status"];
 const POLL_MS = 3_000;
 
 /** Visual treatment per coarse status. */
-const STATUS_STYLE: Record<FleetStatus, { bg: string; fg: string; label: string }> = {
+const STATUS_STYLE: Record<
+  FleetStatus,
+  { bg: string; fg: string; label: string }
+> = {
   running: { bg: C.blueW, fg: C.blueS, label: "running" },
   completed: {
     bg: `color-mix(in srgb, ${C.green} 14%, transparent)`,
@@ -96,9 +99,7 @@ function AgentRow({ agent }: { agent: Subagent }) {
         background: C.surface,
         border: `1px solid ${C.line}`,
         borderLeft: `3px solid ${
-          agent.hasPendingConfirmation
-            ? C.amber
-            : STATUS_STYLE[agent.status].fg
+          agent.hasPendingConfirmation ? C.amber : STATUS_STYLE[agent.status].fg
         }`,
         borderRadius: "0 10px 10px 0",
         padding: "12px 14px",
@@ -159,9 +160,7 @@ function AgentRow({ agent }: { agent: Subagent }) {
         >
           ▸ parent thread →
         </Link>
-        <span style={{ color: C.t3 }}>
-          {agent.id.slice(0, 8)}
-        </span>
+        <span style={{ color: C.t3 }}>{agent.id.slice(0, 8)}</span>
       </div>
 
       {agent.error && (
@@ -277,9 +276,9 @@ export function AgentsAtWorkPage() {
             margin: "16px 0 22px",
           }}
         >
-          These are the sub-agents Cue spins up <em>inside</em> a chat to work in
-          parallel. Each row links back to the conversation that spawned it; a
-          ⏳ flag means a sub-agent is paused waiting for your approval.
+          These are the sub-agents Cue spins up <em>inside</em> a chat to work
+          in parallel. Each row links back to the conversation that spawned it;
+          a ⏳ flag means a sub-agent is paused waiting for your approval.
         </div>
 
         {isError && (

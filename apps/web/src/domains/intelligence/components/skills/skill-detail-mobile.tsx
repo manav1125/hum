@@ -1,23 +1,23 @@
 import {
-    ArrowDownToLine,
-    ArrowLeft,
-    ChevronDown,
-    Code,
-    Eye,
-    FileText,
-    Folder,
-    Loader2,
-    Trash2,
+  ArrowDownToLine,
+  ArrowLeft,
+  ChevronDown,
+  Code,
+  Eye,
+  FileText,
+  Folder,
+  Loader2,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { isMarkdown } from "@/components/file-markdown";
 import {
-    isAvailableSkill,
-    isRemovableSkill,
-    type SkillFileEntry,
-    type SkillInfo,
+  isAvailableSkill,
+  isRemovableSkill,
+  type SkillFileEntry,
+  type SkillInfo,
 } from "@/domains/intelligence/skills/types";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { Button, Card, Menu, SegmentControl } from "@vellumai/design-library";

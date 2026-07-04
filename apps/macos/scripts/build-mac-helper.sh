@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE_DIR="$ROOT_DIR/native/mac-helper"
 OUTPUT_DIR="$ROOT_DIR/resources"
-OUTPUT_BUNDLE="$OUTPUT_DIR/vellum-mac-helper.app"
-OUTPUT="$OUTPUT_BUNDLE/Contents/MacOS/vellum-mac-helper"
+OUTPUT_BUNDLE="$OUTPUT_DIR/cue-mac-helper.app"
+OUTPUT="$OUTPUT_BUNDLE/Contents/MacOS/cue-mac-helper"
 OUTPUT_INFO_PLIST="$OUTPUT_BUNDLE/Contents/Info.plist"
 INFO_PLIST="$PACKAGE_DIR/Sources/MacHelperExecutable/Info.plist"
 
@@ -18,6 +18,30 @@ if ! command -v xcrun >/dev/null 2>&1; then
   echo "build-mac-helper: xcrun not found; install Xcode command line tools" >&2
   exit 1
 fi
+
+# The default local-signing identity. "Apple Development" runs on the signing
+# machine and yields a STABLE, team-based designated requirement, so the
+# helper's TCC Accessibility grant persists across launches (an ad-hoc DR is
+# the volatile cdhash → re-prompt every launch).
+DEFAULT_MAC_HELPER_SIGN_IDENTITY="Apple Development: Manav Gupta (9CL7ZPZ325)"
+
+# Resolve the code-signing identity for the helper:
+#   1. MAC_HELPER_SIGN_IDENTITY env override (honored verbatim, incl. "-").
+#   2. The default Apple Development identity, when present in the keychain.
+#   3. Ad-hoc ("-") on hosts with no usable signing identity (CI / non-signing).
+resolve_sign_identity() {
+  if [ -n "${MAC_HELPER_SIGN_IDENTITY:-}" ]; then
+    printf '%s' "$MAC_HELPER_SIGN_IDENTITY"
+    return
+  fi
+  if command -v security >/dev/null 2>&1 &&
+     security find-identity -v -p codesigning 2>/dev/null |
+       grep -qF "$DEFAULT_MAC_HELPER_SIGN_IDENTITY"; then
+    printf '%s' "$DEFAULT_MAC_HELPER_SIGN_IDENTITY"
+    return
+  fi
+  printf '%s' "-"
+}
 
 BUILD_ARGS=(--package-path "$PACKAGE_DIR" -c release)
 if [ -n "${ELECTRON_TARGET_ARCH:-}" ]; then
@@ -39,8 +63,10 @@ BUILD_ARGS+=(
 )
 
 mkdir -p "$OUTPUT_DIR"
-# Legacy layouts (bare binary / old name) — always clear.
+# Legacy layouts (bare binary / old name / old .app + hash marker) — always clear.
 rm -f "$OUTPUT_DIR/hotkey-helper" "$OUTPUT_DIR/vellum-mac-helper" "$OUTPUT_DIR/Info.plist"
+rm -rf "$OUTPUT_DIR/vellum-mac-helper.app"
+rm -f "$OUTPUT_DIR/.vellum-mac-helper.source-hash"
 xcrun swift build "${BUILD_ARGS[@]}"
 BUILD_DIR="$(xcrun swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 
@@ -50,8 +76,12 @@ BUILD_DIR="$(xcrun swift build "${BUILD_ARGS[@]}" --show-bin-path)"
 # no-op rebuild (e.g. `bun run dev`'s postinstall) would re-prompt. The
 # signed binary never byte-matches the unsigned build output, so compare
 # against a hash marker of the inputs recorded at install time.
-SOURCE_HASH="$(cat "$BUILD_DIR/vellum-mac-helper" "$INFO_PLIST" "$ROOT_DIR/scripts/entitlements/helper.plist" | shasum -a 256 | cut -d' ' -f1)"
-HASH_MARKER="$OUTPUT_DIR/.vellum-mac-helper.source-hash"
+# The signing identity is part of the input hash: switching identities must
+# re-sign (the DR the TCC grant keys on changes), even if the binary is byte-
+# identical to a prior build.
+MAC_HELPER_SIGN_IDENTITY="$(resolve_sign_identity)"
+SOURCE_HASH="$(cat "$BUILD_DIR/cue-mac-helper" "$INFO_PLIST" "$ROOT_DIR/scripts/entitlements/helper.plist" <(printf '%s' "$MAC_HELPER_SIGN_IDENTITY") | shasum -a 256 | cut -d' ' -f1)"
+HASH_MARKER="$OUTPUT_DIR/.cue-mac-helper.source-hash"
 if [ -x "$OUTPUT" ] && [ -f "$HASH_MARKER" ] && [ "$(cat "$HASH_MARKER")" = "$SOURCE_HASH" ]; then
   echo "build-mac-helper: bundle unchanged; keeping existing copy"
 else
@@ -60,9 +90,20 @@ else
   # spawn (exit 137). A fresh bundle sidesteps it.
   rm -rf "$OUTPUT_BUNDLE"
   mkdir -p "$OUTPUT_BUNDLE/Contents/MacOS"
-  cp "$BUILD_DIR/vellum-mac-helper" "$OUTPUT"
+  cp "$BUILD_DIR/cue-mac-helper" "$OUTPUT"
   cp "$INFO_PLIST" "$OUTPUT_INFO_PLIST"
   chmod 755 "$OUTPUT"
-  codesign --force --sign - --entitlements "$ROOT_DIR/scripts/entitlements/helper.plist" "$OUTPUT_BUNDLE"
+  # Sign with a real (team-based) identity when one is available so the
+  # designated requirement is stable and TCC's Accessibility grant persists
+  # across launches. Ad-hoc DRs are the unstable cdhash, so the grant never
+  # sticks and every launch re-prompts. Fall back to ad-hoc ("-") on hosts
+  # without a signing identity (CI) so those builds keep working.
+  CODESIGN_ARGS=(--force --options runtime --sign "$MAC_HELPER_SIGN_IDENTITY" \
+    --entitlements "$ROOT_DIR/scripts/entitlements/helper.plist")
+  if [ "$MAC_HELPER_SIGN_IDENTITY" != "-" ]; then
+    CODESIGN_ARGS+=(--timestamp)
+  fi
+  codesign "${CODESIGN_ARGS[@]}" "$OUTPUT_BUNDLE"
+  echo "build-mac-helper: signed with identity=\"$MAC_HELPER_SIGN_IDENTITY\""
   printf '%s' "$SOURCE_HASH" > "$HASH_MARKER"
 fi

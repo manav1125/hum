@@ -12,7 +12,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 
 import { C, mono } from "./theme";
 
-export type PillTone = "neutral" | "blue" | "green" | "amber" | "danger" | "violet";
+export type PillTone =
+  "neutral" | "blue" | "green" | "amber" | "danger" | "violet";
 
 // Washes derive from the theme accents via color-mix so the pills read
 // correctly on both the light canvas and the dark ink.
@@ -97,10 +98,22 @@ export function RowButton({
     variant === "primary"
       ? { border: `1px solid ${C.blue}`, background: C.blue, color: "#fff" }
       : variant === "danger"
-        ? { border: `1px solid ${C.line2}`, background: C.surface, color: C.danger }
+        ? {
+            border: `1px solid ${C.line2}`,
+            background: C.surface,
+            color: C.danger,
+          }
         : variant === "ghost"
-          ? { border: "1px solid transparent", background: "transparent", color: C.t2 }
-          : { border: `1px solid ${C.line2}`, background: C.surface, color: C.t1 };
+          ? {
+              border: "1px solid transparent",
+              background: "transparent",
+              color: C.t2,
+            }
+          : {
+              border: `1px solid ${C.line2}`,
+              background: C.surface,
+              color: C.t1,
+            };
   return (
     <button
       type="button"
@@ -249,7 +262,9 @@ export function ActivityRow({
         ) : null}
         {children}
       </div>
-      {statusLabel ? <StatusPill label={statusLabel} tone={statusTone} /> : null}
+      {statusLabel ? (
+        <StatusPill label={statusLabel} tone={statusTone} />
+      ) : null}
       {actions ? (
         <div
           style={{

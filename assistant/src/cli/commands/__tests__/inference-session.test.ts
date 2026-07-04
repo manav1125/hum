@@ -50,7 +50,9 @@ mock.module("../../../util/logger.js", () => ({
 
 mock.module("../../../config/loader.js", () => ({
   loadConfig: () => ({ llm: { profileSession: { defaultTtlSeconds: 1800 } } }),
-  getConfigReadOnly: () => ({ llm: { profileSession: { defaultTtlSeconds: 1800 } } }),
+  getConfigReadOnly: () => ({
+    llm: { profileSession: { defaultTtlSeconds: 1800 } },
+  }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -373,12 +375,7 @@ describe("session list", () => {
       result: { sessions: [] },
     };
 
-    await runCommand([
-      "session",
-      "list",
-      "--conversation-id",
-      "conv-xyz",
-    ]);
+    await runCommand(["session", "list", "--conversation-id", "conv-xyz"]);
 
     expect(lastIpcCall).not.toBeNull();
     expect(lastIpcCall!.params).toEqual({

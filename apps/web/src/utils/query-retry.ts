@@ -62,7 +62,11 @@ export function httpStatusFromError(error: unknown): number | undefined {
     if (e.response && typeof e.response.status === "number") {
       return e.response.status;
     }
-    if (e.error && typeof e.error === "object" && typeof e.error.code === "string") {
+    if (
+      e.error &&
+      typeof e.error === "object" &&
+      typeof e.error.code === "string"
+    ) {
       return DAEMON_ERROR_CODE_STATUS[e.error.code];
     }
   }

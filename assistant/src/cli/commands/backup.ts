@@ -289,7 +289,9 @@ Examples:
   $ assistant backup destinations remove /Volumes/BackupSSD/vellum`,
         )
         .action(async (path: string, _opts: unknown, cmd: Command) => {
-          const r = await cliIpcCall("backup_destinations_remove", { body: { path } });
+          const r = await cliIpcCall("backup_destinations_remove", {
+            body: { path },
+          });
           if (!r.ok)
             return exitFromIpcResult(
               { ok: false, error: r.error, statusCode: r.statusCode },

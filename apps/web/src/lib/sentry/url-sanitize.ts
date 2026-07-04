@@ -45,7 +45,9 @@ const REDACTED = "[REDACTED]";
 
 function scrubSearchParams(search: string): string {
   if (!search || search === "?") return search;
-  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const params = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  );
   let changed = false;
   for (const key of [...params.keys()]) {
     if (SENSITIVE_PARAM_KEYS.has(key.toLowerCase())) {

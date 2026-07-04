@@ -423,14 +423,8 @@ Examples:
           "--ping-headers <json>",
           "JSON object of extra headers for the ping request",
         )
-        .option(
-          "--ping-body <json>",
-          "JSON body to send with the ping request",
-        )
-        .option(
-          "--revoke-url <url>",
-          "OAuth token revocation endpoint URL",
-        )
+        .option("--ping-body <json>", "JSON body to send with the ping request")
+        .option("--revoke-url <url>", "OAuth token revocation endpoint URL")
         .option(
           "--revoke-body-template <json>",
           "JSON object body template for the revoke request",
@@ -472,10 +466,7 @@ Examples:
           "--app-type <type>",
           'What the provider calls its OAuth apps (e.g. "OAuth App")',
         )
-        .option(
-          "--identity-url <url>",
-          "Identity verification endpoint URL",
-        )
+        .option("--identity-url <url>", "Identity verification endpoint URL")
         .option(
           "--identity-method <method>",
           "HTTP method for the identity endpoint: GET (default) or POST",
@@ -605,7 +596,8 @@ Examples:
                 body.ping_headers = JSON.parse(opts.pingHeaders);
               if (opts.pingBody !== undefined)
                 body.ping_body = JSON.parse(opts.pingBody);
-              if (opts.revokeUrl !== undefined) body.revoke_url = opts.revokeUrl;
+              if (opts.revokeUrl !== undefined)
+                body.revoke_url = opts.revokeUrl;
               if (opts.revokeBodyTemplate !== undefined)
                 body.revoke_body_template = JSON.parse(opts.revokeBodyTemplate);
               if (opts.displayName !== undefined)
@@ -678,18 +670,9 @@ Examples:
       providers
         .command("update <provider-key>")
         .description("Update an existing custom OAuth provider configuration")
-        .option(
-          "--auth-url <url>",
-          "OAuth authorization endpoint URL",
-        )
-        .option(
-          "--token-url <url>",
-          "OAuth token endpoint URL",
-        )
-        .option(
-          "--refresh-url <url>",
-          "OAuth token refresh endpoint URL",
-        )
+        .option("--auth-url <url>", "OAuth authorization endpoint URL")
+        .option("--token-url <url>", "OAuth token endpoint URL")
+        .option("--refresh-url <url>", "OAuth token refresh endpoint URL")
         .option("--base-url <url>", "API base URL for the service")
         .option("--userinfo-url <url>", "OpenID Connect userinfo endpoint URL")
         .option(
@@ -698,11 +681,11 @@ Examples:
         )
         .option(
           "--scope-separator <sep>",
-          'Separator used to join scopes in the authorize URL',
+          "Separator used to join scopes in the authorize URL",
         )
         .option(
           "--token-auth-method <method>",
-          'How the client authenticates at the token endpoint',
+          "How the client authenticates at the token endpoint",
         )
         .option(
           "--token-exchange-body-format <format>",
@@ -713,7 +696,10 @@ Examples:
           "--ping-method <method>",
           "HTTP method for the ping endpoint: GET (default) or POST",
         )
-        .option("--ping-headers <json>", "JSON object of extra headers for the ping request")
+        .option(
+          "--ping-headers <json>",
+          "JSON object of extra headers for the ping request",
+        )
         .option("--ping-body <json>", "JSON body for the ping request")
         .option(
           "--revoke-url <url>",
@@ -732,22 +718,49 @@ Examples:
         )
         .option(
           "--logo-simpleicons-slug <slug>",
-          'Simple Icons slug. Mutually exclusive with --logo-url.',
+          "Simple Icons slug. Mutually exclusive with --logo-url.",
         )
-        .option("--client-id-placeholder <text>", "Placeholder for client ID input")
+        .option(
+          "--client-id-placeholder <text>",
+          "Placeholder for client ID input",
+        )
         .option("--no-client-secret", "Mark as not requiring a client secret")
-        .option("--loopback-port <port>", "Fixed port for the local OAuth callback server")
-        .option("--injection-templates <json>", "JSON array of token injection templates")
+        .option(
+          "--loopback-port <port>",
+          "Fixed port for the local OAuth callback server",
+        )
+        .option(
+          "--injection-templates <json>",
+          "JSON array of token injection templates",
+        )
         .option("--app-type <type>", "What the provider calls its OAuth apps")
         .option("--identity-url <url>", "Identity verification endpoint URL")
-        .option("--identity-method <method>", "HTTP method for identity endpoint")
-        .option("--identity-headers <json>", "JSON object of extra headers for identity request")
+        .option(
+          "--identity-method <method>",
+          "HTTP method for identity endpoint",
+        )
+        .option(
+          "--identity-headers <json>",
+          "JSON object of extra headers for identity request",
+        )
         .option("--identity-body <body>", "JSON body for identity request")
-        .option("--identity-response-paths <paths>", "Comma-separated dot-notation paths")
-        .option("--identity-format <template>", "Format template for extracted identity")
-        .option("--identity-ok-field <field>", "Dot-notation path to a boolean ok field")
+        .option(
+          "--identity-response-paths <paths>",
+          "Comma-separated dot-notation paths",
+        )
+        .option(
+          "--identity-format <template>",
+          "Format template for extracted identity",
+        )
+        .option(
+          "--identity-ok-field <field>",
+          "Dot-notation path to a boolean ok field",
+        )
         .option("--setup-notes <json>", "JSON array of setup instruction notes")
-        .option("--available-scopes <value>", "Available scopes: JSON array or URL")
+        .option(
+          "--available-scopes <value>",
+          "Available scopes: JSON array or URL",
+        )
         .addHelpText(
           "after",
           `
@@ -832,8 +845,7 @@ Examples:
               if (opts.pingBody !== undefined)
                 body.ping_body = JSON.parse(opts.pingBody);
               if (opts.revokeUrl !== undefined) {
-                body.revoke_url =
-                  opts.revokeUrl === "" ? null : opts.revokeUrl;
+                body.revoke_url = opts.revokeUrl === "" ? null : opts.revokeUrl;
               }
               if (opts.revokeBodyTemplate !== undefined) {
                 body.revoke_body_template =
@@ -885,10 +897,11 @@ Examples:
                 if (opts.availableScopes === "") {
                   body.available_scopes = null;
                 } else {
-                  body.available_scopes =
-                    opts.availableScopes.startsWith("http")
-                      ? opts.availableScopes
-                      : JSON.parse(opts.availableScopes);
+                  body.available_scopes = opts.availableScopes.startsWith(
+                    "http",
+                  )
+                    ? opts.availableScopes
+                    : JSON.parse(opts.availableScopes);
                 }
               }
 

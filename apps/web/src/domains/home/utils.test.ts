@@ -87,8 +87,8 @@ describe("selectNoticed", () => {
   });
 
   test("is empty when nothing else is urgent", () => {
-    expect(selectNoticed([urgent("high", { id: "only" }), item()], "only")).toEqual(
-      [],
-    );
+    expect(
+      selectNoticed([urgent("high", { id: "only" }), item()], "only"),
+    ).toEqual([]);
   });
 });

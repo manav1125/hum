@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -9,6 +9,10 @@ import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialo
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { routes } from "@/utils/routes";
+import { useConversationStore } from "@/stores/conversation-store";
+import { useViewerStore } from "@/stores/viewer-store";
+import { usePendingDeepLinkStore } from "@/stores/pending-deep-link-store";
 import {
   memoryitemsByIdDelete,
   memoryitemsByIdPatch,
@@ -23,6 +27,18 @@ import { sourceTypeLabel, type MemoryItem } from "./memories/types";
 const MONO = "'DM Mono', monospace";
 const SERIF = "'Instrument Serif', serif";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Generates a fresh draft conversation id. Mirrors
+ * `domains/chat/utils/conversation-selection.createDraftConversationId`
+ * (a plain UUID) — inlined here so the Intelligence domain stays free of a
+ * cross-domain import into chat (see CONVENTIONS.md).
+ */
+function newDraftConversationId(): string {
+  return typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 type KindFilter = "all" | MemoryType;
 
@@ -64,10 +80,7 @@ export function MemoriesPage() {
 
   const items = useMemo<MemoryItem[]>(() => data?.items ?? [], [data?.items]);
   const total = items.length;
-  const kindCounts = useMemo(
-    () => data?.kindCounts ?? {},
-    [data?.kindCounts],
-  );
+  const kindCounts = useMemo(() => data?.kindCounts ?? {}, [data?.kindCounts]);
 
   // Header stats — derived from the real items (mock: "+24 this week" / "0.81
   // avg conf").
@@ -105,7 +118,9 @@ export function MemoriesPage() {
   // selection scrolls out of the filtered set.
   const selected = useMemo(
     () =>
-      filteredItems.find((i) => i.id === selectedId) ?? filteredItems[0] ?? null,
+      filteredItems.find((i) => i.id === selectedId) ??
+      filteredItems[0] ??
+      null,
     [filteredItems, selectedId],
   );
   useEffect(() => {
@@ -166,6 +181,24 @@ export function MemoriesPage() {
     setConfidentOnly(false);
   }
 
+  // "Teach Cue something" — open a FRESH conversation focused on teaching a
+  // memory, never resuming the user's last (possibly stale) thread. We mint a
+  // brand-new draft conversation (mirroring the Create surface's thread-seeding
+  // path — a plain UUID, inlined so this domain stays free of a cross-domain
+  // import into chat; see CONVENTIONS.md) and park a gentle teaching prompt in
+  // the shared pending-deep-link store. `useDeepLinkConsumer` applies that
+  // prompt to the empty composer on mount — a prefill, NOT an auto-send, so the
+  // user completes the sentence ("Remember that …").
+  const onTeachCue = useCallback(() => {
+    usePendingDeepLinkStore
+      .getState()
+      .setPendingComposerMessage("Remember that ");
+    useViewerStore.getState().setMainView("chat");
+    const draftId = newDraftConversationId();
+    useConversationStore.getState().setActiveConversationId(draftId);
+    void navigate(routes.conversation(draftId));
+  }, [navigate]);
+
   const showEmpty = !isLoading && !isError && filteredItems.length === 0;
 
   return (
@@ -222,12 +255,23 @@ export function MemoriesPage() {
               }}
             >
               Cue remembers{" "}
-              <span style={{ fontStyle: "italic", color: "var(--accent-cue-strong)" }}>
+              <span
+                style={{
+                  fontStyle: "italic",
+                  color: "var(--accent-cue-strong)",
+                }}
+              >
                 {total.toLocaleString()} things
               </span>{" "}
               about how you work.
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--content-secondary)", marginTop: 3 }}>
+            <div
+              style={{
+                fontSize: 12.5,
+                color: "var(--content-secondary)",
+                marginTop: 3,
+              }}
+            >
               Across 8 memory types · every one traceable to its source · you
               can edit or forget anything.
             </div>
@@ -235,21 +279,41 @@ export function MemoriesPage() {
           <div style={{ display: "flex", gap: 18, paddingLeft: 6 }}>
             <div style={{ textAlign: "right" }}>
               <div
-                style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.4px" }}
+                style={{
+                  fontSize: 19,
+                  fontWeight: 600,
+                  letterSpacing: "-.4px",
+                }}
               >
                 +{addedThisWeek}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--content-tertiary)" }}>
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  color: "var(--content-tertiary)",
+                }}
+              >
                 this week
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div
-                style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.4px" }}
+                style={{
+                  fontSize: 19,
+                  fontWeight: 600,
+                  letterSpacing: "-.4px",
+                }}
               >
                 {avgConfidence !== null ? avgConfidence.toFixed(2) : "—"}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--content-tertiary)" }}>
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  color: "var(--content-tertiary)",
+                }}
+              >
                 avg conf
               </div>
             </div>
@@ -310,8 +374,12 @@ export function MemoriesPage() {
             }
             style={{
               fontSize: 12,
-              background: confidentOnly ? "var(--primary-base)" : "var(--surface-base)",
-              color: confidentOnly ? "var(--content-inset)" : "var(--content-secondary)",
+              background: confidentOnly
+                ? "var(--primary-base)"
+                : "var(--surface-base)",
+              color: confidentOnly
+                ? "var(--content-inset)"
+                : "var(--content-secondary)",
               border: "none",
               borderRadius: 8,
               padding: "7px 12px",
@@ -324,7 +392,7 @@ export function MemoriesPage() {
           </button>
           <button
             type="button"
-            onClick={() => void navigate("/assistant/")}
+            onClick={onTeachCue}
             style={{
               fontSize: 12.5,
               background: "var(--primary-base)",
@@ -359,9 +427,16 @@ export function MemoriesPage() {
             onClick={() => setFilter("all")}
             style={{
               fontSize: 12,
-              background: filter === "all" ? "var(--primary-base)" : "var(--surface-lift)",
-              color: filter === "all" ? "var(--content-inset)" : "var(--content-default)",
-              border: filter === "all" ? "none" : "1px solid var(--border-base)",
+              background:
+                filter === "all"
+                  ? "var(--primary-base)"
+                  : "var(--surface-lift)",
+              color:
+                filter === "all"
+                  ? "var(--content-inset)"
+                  : "var(--content-default)",
+              border:
+                filter === "all" ? "none" : "1px solid var(--border-base)",
               borderRadius: 8,
               padding: "6px 11px",
               cursor: "pointer",
@@ -415,12 +490,10 @@ export function MemoriesPage() {
             <EmptyState
               firstRun={total === 0}
               onClearFilters={clearFilters}
-              onTeach={() => void navigate("/assistant/")}
+              onTeach={onTeachCue}
             />
           ) : (
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: 10 }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {filteredItems.map((item) => (
                 <MemoryRow
                   key={item.id}
@@ -562,9 +635,7 @@ function RailContent({
       ? Math.round(memory.confidence * 100)
       : 0;
   const confText =
-    typeof memory.confidence === "number"
-      ? memory.confidence.toFixed(2)
-      : "—";
+    typeof memory.confidence === "number" ? memory.confidence.toFixed(2) : "—";
   const reinforcement = memory.reinforcementCount ?? 0;
   const source = sourceTypeLabel(memory.sourceType);
   const firstSeen = Number.isFinite(memory.firstSeenAt)
@@ -662,14 +733,18 @@ function RailContent({
         >
           SOURCES
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--content-secondary)", lineHeight: 1.7 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "var(--content-secondary)",
+            lineHeight: 1.7,
+          }}
+        >
           {source ? <div>· {source}</div> : null}
           {memory.scopeLabel ? <div>· {memory.scopeLabel}</div> : null}
           {firstSeen ? <div>· first seen {firstSeen}</div> : null}
           {lastSeen ? <div>· last seen {lastSeen}</div> : null}
-          {reinforcement > 0 ? (
-            <div>· reinforced {reinforcement}×</div>
-          ) : null}
+          {reinforcement > 0 ? <div>· reinforced {reinforcement}×</div> : null}
           {!source &&
           !memory.scopeLabel &&
           !firstSeen &&
@@ -772,7 +847,13 @@ function EmptyState({
       <div style={{ fontSize: 17, fontWeight: 500 }}>
         {firstRun ? "Cue learns as you go" : "No memories match this filter"}
       </div>
-      <p style={{ fontSize: 13.5, color: "var(--content-secondary)", maxWidth: 360 }}>
+      <p
+        style={{
+          fontSize: 13.5,
+          color: "var(--content-secondary)",
+          maxWidth: 360,
+        }}
+      >
         Cue forms memories as you work — from chats, email, meetings, and the
         things you tell it to remember.
       </p>

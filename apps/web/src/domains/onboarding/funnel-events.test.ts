@@ -29,7 +29,9 @@ afterEach(() => {
 describe("onboarding funnel events", () => {
   test("maps experiment arms to funnel variants", () => {
     expect(onboardingFunnelVariantFromExperiment("control")).toBe("control");
-    expect(onboardingFunnelVariantFromExperiment("variant-a")).toBe("pared_down");
+    expect(onboardingFunnelVariantFromExperiment("variant-a")).toBe(
+      "pared_down",
+    );
   });
 
   test("builds the expected event shape with a stable session id", () => {
@@ -123,12 +125,12 @@ describe("onboarding funnel events", () => {
     const calls = fetchMock.mock.calls as Array<
       [RequestInfo | URL, RequestInit | undefined]
     >;
-    const firstPayload = JSON.parse(
-      calls[0]?.[1]?.body as string,
-    ) as { events: Array<Record<string, unknown>> };
-    const secondPayload = JSON.parse(
-      calls[1]?.[1]?.body as string,
-    ) as { events: Array<Record<string, unknown>> };
+    const firstPayload = JSON.parse(calls[0]?.[1]?.body as string) as {
+      events: Array<Record<string, unknown>>;
+    };
+    const secondPayload = JSON.parse(calls[1]?.[1]?.body as string) as {
+      events: Array<Record<string, unknown>>;
+    };
     const firstEvent = firstPayload.events[0];
     const secondEvent = secondPayload.events[0];
 

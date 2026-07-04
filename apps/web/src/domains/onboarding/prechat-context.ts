@@ -78,7 +78,12 @@ export function buildPreChatContext(
 
   let context: PreChatOnboardingContext;
   if (mode === "native") {
-    context = { tools: [], tasks: [], tone: input.tone, googleConnected: false };
+    context = {
+      tools: [],
+      tasks: [],
+      tone: input.tone,
+      googleConnected: false,
+    };
   } else if (mode === "paredDown") {
     context = {
       tools: connectedWithCurrentAction ? [...PARED_DOWN_GOOGLE_TOOL_IDS] : [],

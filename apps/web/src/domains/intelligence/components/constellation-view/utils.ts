@@ -19,7 +19,10 @@ export function mixedBg(color: string, percent: number): string {
 }
 
 /** Determines whether a node is visible at the given animation phase. */
-export function nodeVisibility(node: TreeNode, phase: 0 | 1 | 2 | 3 | 4): NodeVisibility {
+export function nodeVisibility(
+  node: TreeNode,
+  phase: 0 | 1 | 2 | 3 | 4,
+): NodeVisibility {
   switch (node.kind.type) {
     case "center":
       return { visible: phase >= 1 };

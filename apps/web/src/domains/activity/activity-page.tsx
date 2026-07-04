@@ -180,7 +180,9 @@ function SpendMeter({ assistantId }: { assistantId: string }) {
         ) : (
           <>
             This month: <span style={{ color: C.ink }}>{usd(monthUsd)}</span>
-            {cap != null && <span style={{ color: C.t3 }}> / {usd(cap)} cap</span>}
+            {cap != null && (
+              <span style={{ color: C.t3 }}> / {usd(cap)} cap</span>
+            )}
           </>
         )}
       </span>

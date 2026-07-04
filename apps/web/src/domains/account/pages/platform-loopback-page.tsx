@@ -33,7 +33,8 @@ export function PlatformLoopbackPage() {
     const state = searchParams.get("state");
     const sessionToken = searchParams.get("session_token");
     const expectedState = sessionStorage.getItem(LOOPBACK_STATE_KEY);
-    const returnTo = sessionStorage.getItem(LOOPBACK_RETURN_TO_KEY) || routes.assistant;
+    const returnTo =
+      sessionStorage.getItem(LOOPBACK_RETURN_TO_KEY) || routes.assistant;
 
     sessionStorage.removeItem(LOOPBACK_STATE_KEY);
     sessionStorage.removeItem(LOOPBACK_RETURN_TO_KEY);

@@ -2,22 +2,23 @@
  * Cue mobile tab bar.
  *
  * On mobile the three-column desktop layout collapses, so primary navigation
- * moves to a persistent bottom tab bar matching the mobile design's clean
- * 4-item rail: Today · Create · Voice · You.
- *   - Today  → the Home Command Center (`/home`) — the one consolidated
- *              operating-system landing. The old "Mission" tab folded in here;
- *              `/mission-control`, `/activity`, `/agents`, `/next-moves` all
- *              redirect to `/home`, so Today highlights for every one of them.
- *   - Create → the "what do you want to get done?" picker (`/create`).
- *   - Voice  → the full-bleed Voice mode screen (owns the live-voice session).
- *   - You    → identity hub (Channels / Memory / Settings), entered at Channels.
+ * moves to a persistent bottom tab bar: Today · Projects · Create · Voice · You.
+ *   - Today    → the Home Command Center (`/home`) — the one consolidated
+ *                operating-system landing. The old "Mission" tab folded in here;
+ *                `/mission-control`, `/activity`, `/agents`, `/next-moves` all
+ *                redirect to `/home`, so Today highlights for every one of them.
+ *   - Projects → the cowork surface (`/projects`): work grouped under briefs
+ *                Cue reads before running each task. A primary destination.
+ *   - Create   → the "what do you want to get done?" picker (`/create`).
+ *   - Voice    → the full-bleed Voice mode screen (owns the live-voice session).
+ *   - You      → identity hub (Channels / Memory / Settings), entered at Channels.
  * Chat is no longer a tab — it is a full-screen push reached by opening a
  * next-move card or a task. Rendered only at the mobile breakpoint, as a
  * flex-shrink-0 footer inside the root layout (so it sits above the safe-area
  * inset the shell pads). Active = brand accent; inactive = secondary at .5.
  */
 
-import { Home, Mic, User, Wand2 } from "lucide-react";
+import { FolderKanban, Home, Mic, User, Wand2 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
 import { routes } from "@/utils/routes";
@@ -45,6 +46,13 @@ const TABS: NavTab[] = [
       p.includes("/activity") ||
       p.includes("/agents") ||
       p.includes("/next-moves"),
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    to: routes.projects,
+    icon: <FolderKanban size={20} strokeWidth={2} />,
+    match: (p) => p.includes("/projects") || p.endsWith("/work"),
   },
   {
     key: "create",

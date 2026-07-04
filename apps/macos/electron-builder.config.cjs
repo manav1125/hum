@@ -32,6 +32,19 @@ const schemes =
     ? ["vellum", "vellum-assistant"]
     : [`vellum-assistant-${env}`];
 
+// Signing identity for the whole app. pack.sh resolves the local
+// "Apple Development" identity (when present in the keychain) and exports it as
+// CUE_MAC_SIGN_IDENTITY; on hosts with no identity (CI) it stays unset and we
+// leave electron-builder's ad-hoc arm64 fallback in place. A stable, team-based
+// signature is what makes the TCC Accessibility grant for the bundled helper
+// persist across launches. "Apple Development" is a `development`-type cert
+// (found via the "Mac Developer" type by the afterSign re-sign pass); it runs
+// on the signing machine and needs no notarization.
+const signIdentity = process.env.CUE_MAC_SIGN_IDENTITY || undefined;
+const macSigning = signIdentity
+  ? { identity: signIdentity, type: "development" }
+  : {};
+
 /** @type {import("electron-builder").Configuration} */
 module.exports = {
   appId,
@@ -48,8 +61,8 @@ module.exports = {
   extraResources: [
     { from: "resources/bun", to: "bun" },
     {
-      from: "resources/vellum-mac-helper.app",
-      to: "bin/vellum-mac-helper.app",
+      from: "resources/cue-mac-helper.app",
+      to: "bin/cue-mac-helper.app",
     },
     { from: "resources/web-dist", to: "web-dist" },
     { from: "resources/cli-lockfile", to: "cli-lockfile" },
@@ -71,6 +84,7 @@ module.exports = {
     },
   ],
   mac: {
+    ...macSigning,
     icon: "build/icon.icns",
     category: "public.app-category.productivity",
     hardenedRuntime: true,

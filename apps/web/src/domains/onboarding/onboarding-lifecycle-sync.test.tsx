@@ -98,7 +98,11 @@ mock.module("@/assistant/lifecycle-service", () => ({
 mock.module("@/assistant/api", () => ({
   hatchAssistant: hatchAssistantMock,
   getAssistant: getAssistantMock,
-  getAssistantHealthz: async () => ({ ok: true, status: 200, data: { status: "ok" } }),
+  getAssistantHealthz: async () => ({
+    ok: true,
+    status: 200,
+    data: { status: "ok" },
+  }),
 }));
 
 mock.module("@/assistant/avatar-api", () => ({

@@ -31,14 +31,35 @@ export const DEVICE_PREFIX = "device:";
  */
 const DEVICE_SETTINGS = {
   theme: { key: "device:theme", legacy: "vellum_theme" },
-  shareAnalytics: { key: "device:share_analytics", legacy: "vellum_share_analytics" },
-  shareDiagnostics: { key: "device:share_diagnostics", legacy: "vellum_share_diagnostics" },
-  biometricEnabled: { key: "device:biometric_enabled", legacy: "vellum_biometric_enabled" },
-  llmLogRetention: { key: "device:llm_log_retention", legacy: "vellum_llm_log_retention" },
+  shareAnalytics: {
+    key: "device:share_analytics",
+    legacy: "vellum_share_analytics",
+  },
+  shareDiagnostics: {
+    key: "device:share_diagnostics",
+    legacy: "vellum_share_diagnostics",
+  },
+  biometricEnabled: {
+    key: "device:biometric_enabled",
+    legacy: "vellum_biometric_enabled",
+  },
+  llmLogRetention: {
+    key: "device:llm_log_retention",
+    legacy: "vellum_llm_log_retention",
+  },
   timezone: { key: "device:timezone", legacy: "vellum_timezone" },
-  mediaEmbedsEnabled: { key: "device:media_embeds_enabled", legacy: "vellum_media_embeds_enabled" },
-  mediaEmbedDomains: { key: "device:media_embed_domains", legacy: "vellum_media_embed_domains" },
-  dockBadgesEnabled: { key: "device:dock_badges_enabled", legacy: "vellum_dock_badges_enabled" },
+  mediaEmbedsEnabled: {
+    key: "device:media_embeds_enabled",
+    legacy: "vellum_media_embeds_enabled",
+  },
+  mediaEmbedDomains: {
+    key: "device:media_embed_domains",
+    legacy: "vellum_media_embed_domains",
+  },
+  dockBadgesEnabled: {
+    key: "device:dock_badges_enabled",
+    legacy: "vellum_dock_badges_enabled",
+  },
   lastUserId: { key: "device:last_user_id", legacy: "onboarding.lastUserId" },
 } as const;
 
@@ -50,13 +71,18 @@ export function deviceKey(name: DeviceSettingName): string {
 }
 
 /** Read a device-scoped setting, returning `fallback` when absent or unreadable. */
-export function getDeviceSetting(name: DeviceSettingName, fallback: string): string {
+export function getDeviceSetting(
+  name: DeviceSettingName,
+  fallback: string,
+): string {
   if (typeof window === "undefined") return fallback;
   const entry = DEVICE_SETTINGS[name];
   try {
-    return localStorage.getItem(entry.key)
-      ?? localStorage.getItem(entry.legacy)
-      ?? fallback;
+    return (
+      localStorage.getItem(entry.key) ??
+      localStorage.getItem(entry.legacy) ??
+      fallback
+    );
   } catch {
     return fallback;
   }
@@ -68,12 +94,15 @@ export function setDeviceSetting(name: DeviceSettingName, value: string): void {
 }
 
 /** Read a boolean device setting. */
-export function getDeviceBool(name: DeviceSettingName, fallback: boolean): boolean {
+export function getDeviceBool(
+  name: DeviceSettingName,
+  fallback: boolean,
+): boolean {
   if (typeof window === "undefined") return fallback;
   const entry = DEVICE_SETTINGS[name];
   try {
-    const raw = localStorage.getItem(entry.key)
-      ?? localStorage.getItem(entry.legacy);
+    const raw =
+      localStorage.getItem(entry.key) ?? localStorage.getItem(entry.legacy);
     if (raw === "true") return true;
     if (raw === "false") return false;
   } catch {

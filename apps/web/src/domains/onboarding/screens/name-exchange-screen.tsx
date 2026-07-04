@@ -3,8 +3,8 @@ import { ChevronLeft } from "lucide-react";
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import { isElectron } from "@/runtime/is-electron";
 import {
-    PERSONALITY_GROUPS,
-    type PersonalityGroup,
+  PERSONALITY_GROUPS,
+  type PersonalityGroup,
 } from "@/domains/onboarding/prechat-names";
 import { Button } from "@vellumai/design-library/components/button";
 import { Input } from "@vellumai/design-library/components/input";
@@ -55,7 +55,9 @@ export function NameExchangeScreen({
               <ChevronLeft className="h-4 w-4" />
             </button>
           ) : null}
-          <h1 className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}>
+          <h1
+            className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}
+          >
             Let&apos;s get to know each other.
           </h1>
           {onBack ? <div aria-hidden="true" className="h-8 w-8" /> : null}

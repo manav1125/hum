@@ -30,9 +30,7 @@ import { useConversationStore } from "@/stores/conversation-store";
  *
  * @param assistantId — current assistant; `null` disables the subscription
  */
-export function useNotificationIntentSync(
-  assistantId: string | null,
-): void {
+export function useNotificationIntentSync(assistantId: string | null): void {
   useBusSubscription("sse.event", (envelope) => {
     const event = envelope.message;
     if (event.type !== "notification_intent") return;

@@ -135,5 +135,3 @@ if (typeof window !== "undefined") {
     }
   });
 }
-
-

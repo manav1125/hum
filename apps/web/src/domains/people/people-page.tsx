@@ -302,7 +302,10 @@ type FullContact = NonNullable<
 >;
 type FullContactChannel = FullContact["channels"][number];
 type ContactAssistantMetadata = NonNullable<
-  Extract<ContactsByIdGetResponse, { assistantMetadata?: unknown }>["assistantMetadata"]
+  Extract<
+    ContactsByIdGetResponse,
+    { assistantMetadata?: unknown }
+  >["assistantMetadata"]
 >;
 
 /** Render a flat, human-readable line for one assistant-metadata value. */
@@ -346,10 +349,14 @@ function Dossier({
   const notes = full?.notes ?? contact.notes;
   const interactionCount = full?.interactionCount ?? contact.interactionCount;
   const lastInteraction = full?.lastInteraction ?? contact.lastInteraction;
-  const channels: Array<FullContactChannel | ContactPayload["channels"][number]> =
-    full?.channels ?? contact.channels;
+  const channels: Array<
+    FullContactChannel | ContactPayload["channels"][number]
+  > = full?.channels ?? contact.channels;
 
-  const roleLabel = [full?.role ?? contact.role, full?.contactType ?? contact.contactType]
+  const roleLabel = [
+    full?.role ?? contact.role,
+    full?.contactType ?? contact.contactType,
+  ]
     .filter((v): v is string => Boolean(v) && v !== "contact")
     .join(" · ");
 
@@ -504,11 +511,11 @@ function Dossier({
               // `contactsByIdGet` channels carry richer per-channel detail
               // (verification + last-seen) than the list row; render it when
               // present.
-              const verifiedAt =
-                "verifiedAt" in ch ? ch.verifiedAt : undefined;
-              const lastSeenAt =
-                "lastSeenAt" in ch ? ch.lastSeenAt : undefined;
-              const sub: string[] = [`${ch.type}${ch.isPrimary ? " · primary" : ""}`];
+              const verifiedAt = "verifiedAt" in ch ? ch.verifiedAt : undefined;
+              const lastSeenAt = "lastSeenAt" in ch ? ch.lastSeenAt : undefined;
+              const sub: string[] = [
+                `${ch.type}${ch.isPrimary ? " · primary" : ""}`,
+              ];
               if (verifiedAt) sub.push(`verified ${fmtWhen(verifiedAt)}`);
               else if (lastSeenAt) sub.push(`seen ${fmtWhen(lastSeenAt)}`);
               return (
@@ -706,7 +713,9 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
         padding: "13px 15px",
       }}
     >
-      <div style={{ fontSize: 13.5, fontWeight: 500, color: C.t1 }}>{title}</div>
+      <div style={{ fontSize: 13.5, fontWeight: 500, color: C.t1 }}>
+        {title}
+      </div>
       <div style={{ fontSize: 12, color: C.t2, marginTop: 3 }}>{children}</div>
     </div>
   );

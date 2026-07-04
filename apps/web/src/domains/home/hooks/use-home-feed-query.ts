@@ -36,13 +36,13 @@ export function useHomeFeedQuery(assistantId: string | null) {
   // (passed via ref), not a cache dimension, so the key uses a fixed
   // placeholder to keep a single cache entry per assistant.
   const feedOpts = useMemo(
-    () => ({ path: { assistant_id: assistantId ?? "" }, query: { timeAwaySeconds: 0 } }),
+    () => ({
+      path: { assistant_id: assistantId ?? "" },
+      query: { timeAwaySeconds: 0 },
+    }),
     [assistantId],
   );
-  const feedQueryKey = useMemo(
-    () => homeFeedGetQueryKey(feedOpts),
-    [feedOpts],
-  );
+  const feedQueryKey = useMemo(() => homeFeedGetQueryKey(feedOpts), [feedOpts]);
 
   useBusSubscription("app.hidden", () => {
     hiddenAtRef.current = Date.now();
@@ -94,7 +94,8 @@ export function useHomeFeedQuery(assistantId: string | null) {
     onMutate: async ({ itemId, status }) => {
       await queryClient.cancelQueries({ queryKey: feedQueryKey });
 
-      const previous = queryClient.getQueryData<HomeFeedGetResponse>(feedQueryKey);
+      const previous =
+        queryClient.getQueryData<HomeFeedGetResponse>(feedQueryKey);
 
       homeFeedGetSetQueryData(queryClient, feedOpts, (old) => {
         if (!old) return old;

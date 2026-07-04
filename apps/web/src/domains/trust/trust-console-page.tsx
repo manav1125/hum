@@ -61,10 +61,7 @@ type TrustRule = {
 
 // Riskiest first, so the most consequential capabilities are most visible.
 const RISK_ORDER: ReadonlyArray<TrustRule["risk"]> = ["high", "medium", "low"];
-const RISK_META: Record<
-  TrustRule["risk"],
-  { label: string; dot: string }
-> = {
+const RISK_META: Record<TrustRule["risk"], { label: string; dot: string }> = {
   high: { label: "High risk", dot: C.danger },
   medium: { label: "Medium risk", dot: C.amber },
   low: { label: "Low risk", dot: C.green },
@@ -161,7 +158,8 @@ export function TrustConsolePage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 380px), 1fr))",
             gap: 18,
             alignItems: "start",
           }}
@@ -283,8 +281,16 @@ const MASTER_OPTIONS: ReadonlyArray<{
   label: string;
   sub: string;
 }> = [
-  { mode: "autonomous", label: "Autonomous", sub: "Run everything without asking" },
-  { mode: "balanced", label: "Balanced", sub: "Auto-run, but ask for money & deletes" },
+  {
+    mode: "autonomous",
+    label: "Autonomous",
+    sub: "Run everything without asking",
+  },
+  {
+    mode: "balanced",
+    label: "Balanced",
+    sub: "Auto-run, but ask for money & deletes",
+  },
   { mode: "careful", label: "Careful", sub: "Ask before every action" },
 ];
 
@@ -394,8 +400,8 @@ function AutonomyPolicyPanel({ assistantId }: { assistantId: string }) {
           />
           <div style={{ fontSize: 12.5, color: C.t2 }}>
             Or fine-tune by action type. <b>Ask</b> always prompts you first —
-            even at Full access. <b>Never</b> blocks the category outright. These
-            never weaken Cue&rsquo;s deny rules or risk checks.
+            even at Full access. <b>Never</b> blocks the category outright.
+            These never weaken Cue&rsquo;s deny rules or risk checks.
           </div>
           <div style={{ display: "grid", gap: 8 }}>
             {AUTONOMY_ROWS.map((row) => (
@@ -535,7 +541,9 @@ function AutonomyRow({
         padding: "11px 13px",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}
+      >
         <span
           style={{
             width: 8,
@@ -675,8 +683,8 @@ function PermissionRulesPanel({
             color: C.t2,
           }}
         >
-          Couldn&rsquo;t load the permission policy. Cue stays default-deny until
-          this resolves.
+          Couldn&rsquo;t load the permission policy. Cue stays default-deny
+          until this resolves.
         </div>
       ) : total === 0 ? (
         <div style={{ fontSize: 13, color: C.t2 }}>
@@ -993,7 +1001,9 @@ function ToggleRow({
       }}
     >
       <div>
-        <div style={{ fontSize: 14, fontWeight: 500, color: C.t1 }}>{title}</div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: C.t1 }}>
+          {title}
+        </div>
         <div style={{ fontSize: 12, color: C.t2 }}>{sub}</div>
       </div>
       <button
@@ -1055,7 +1065,12 @@ function AuditCard({
       }}
     >
       <div
-        style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
       >
         <span style={{ fontSize: 13.5, fontWeight: 500, color: C.t1 }}>
           {title}

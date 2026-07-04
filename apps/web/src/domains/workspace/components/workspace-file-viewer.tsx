@@ -6,32 +6,32 @@
  */
 
 import {
-    queryOptions,
-    useMutation,
-    useQuery,
-    useQueryClient,
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import {
-    Check,
-    Copy,
-    Download,
-    FileIcon,
-    FileText,
-    FilePlus,
-    FolderOpen,
-    Image as ImageIcon,
-    Loader2,
-    Pencil,
-    Send,
-    Sparkles,
-    Video,
+  Check,
+  Copy,
+  Download,
+  FileIcon,
+  FileText,
+  FilePlus,
+  FolderOpen,
+  Image as ImageIcon,
+  Loader2,
+  Pencil,
+  Send,
+  Sparkles,
+  Video,
 } from "lucide-react";
 import {
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
-    type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
 } from "react";
 
 import { useNavigate } from "react-router";
@@ -41,9 +41,9 @@ import { isJson, prettifyJson } from "@/domains/workspace/utils/file-json";
 import { formatFileSize } from "@/domains/workspace/utils/format-file-size";
 import { isHiddenPath } from "@/domains/workspace/utils/is-hidden-path";
 import {
-    workspaceFileContentGet,
-    workspaceFileGet,
-    workspaceWritePost,
+  workspaceFileContentGet,
+  workspaceFileGet,
+  workspaceWritePost,
 } from "@/generated/daemon/sdk.gen";
 import type { WorkspaceFileGetResponse } from "@/generated/daemon/types.gen";
 import { usePendingDeepLinkStore } from "@/stores/pending-deep-link-store";
@@ -503,7 +503,10 @@ function FilePreviewActions({
   return (
     <div
       className="flex items-center gap-2 border-t px-9 py-3"
-      style={{ borderColor: "var(--mv1-line)", background: "var(--mv1-canvas)" }}
+      style={{
+        borderColor: "var(--mv1-line)",
+        background: "var(--mv1-canvas)",
+      }}
     >
       <button
         type="button"
@@ -707,7 +710,10 @@ export function WorkspaceFileViewer({
               background: C.blueWash,
             }}
           >
-            <FilePlus style={{ width: 20, height: 20, color: C.blue }} aria-hidden />
+            <FilePlus
+              style={{ width: 20, height: 20, color: C.blue }}
+              aria-hidden
+            />
           </span>
           <div
             style={{
@@ -1073,7 +1079,10 @@ export function WorkspaceFileViewer({
           style={{ borderColor: C.line, backgroundColor: "var(--mv1-card)" }}
         >
           <FileIcon className="mx-auto h-10 w-10" style={{ color: C.t3 }} />
-          <p className="mt-3" style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>
+          <p
+            className="mt-3"
+            style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}
+          >
             {name}
           </p>
           <div className="mt-2 space-y-1">

@@ -46,7 +46,12 @@ function runTone(status: string, skipped: boolean): PillTone {
   if (skipped) return "neutral";
   const s = status.toLowerCase();
   if (s.includes("fail") || s.includes("error")) return "danger";
-  if (s.includes("ok") || s.includes("success") || s.includes("done") || s.includes("complete"))
+  if (
+    s.includes("ok") ||
+    s.includes("success") ||
+    s.includes("done") ||
+    s.includes("complete")
+  )
     return "green";
   return "neutral";
 }

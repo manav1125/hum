@@ -150,10 +150,7 @@ Examples:
           false,
         )
         .action(
-          async (
-            opts: { json?: boolean; remote?: boolean },
-            cmd: Command,
-          ) => {
+          async (opts: { json?: boolean; remote?: boolean }, cmd: Command) => {
             const r = await cliIpcCall<ReadinessResponse>(
               "channels_readiness_get",
               {
@@ -185,17 +182,10 @@ Examples:
         .description(
           "Live readiness snapshot for one channel (always re-probes; no caching)",
         )
-        .argument(
-          "<channel>",
-          `Channel id: ${KNOWN_CHANNELS.join(", ")}`,
-        )
+        .argument("<channel>", `Channel id: ${KNOWN_CHANNELS.join(", ")}`)
         .option("--json", "Machine-readable compact JSON output")
         .action(
-          async (
-            channel: string,
-            _opts: { json?: boolean },
-            cmd: Command,
-          ) => {
+          async (channel: string, _opts: { json?: boolean }, cmd: Command) => {
             // `get` is always live: invalidate the cache and re-run remote
             // checks. This matches what source code does when it needs to
             // know the channel's current state — no stale snapshots.
@@ -213,7 +203,9 @@ Examples:
               (s) => s.channel === channel,
             );
             if (!snapshot) {
-              log.error(`No readiness probe registered for channel: ${channel}`);
+              log.error(
+                `No readiness probe registered for channel: ${channel}`,
+              );
               process.exitCode = 1;
               return;
             }

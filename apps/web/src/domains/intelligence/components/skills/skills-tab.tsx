@@ -9,19 +9,19 @@ import { SkillDetail } from "@/domains/intelligence/components/skills/skill-deta
 import { SkillDetailMobile } from "@/domains/intelligence/components/skills/skill-detail-mobile";
 import { installSkill } from "@/domains/intelligence/skills/install";
 import {
-    isAvailableSkill,
-    type SkillFilter,
-    type SkillInfo,
+  isAvailableSkill,
+  type SkillFilter,
+  type SkillInfo,
 } from "@/domains/intelligence/skills/types";
 import { useSkillCategories } from "@/domains/intelligence/skills/use-skill-categories";
 import {
-    resolveFilterParams,
-    sortSkills,
+  resolveFilterParams,
+  sortSkills,
 } from "@/domains/intelligence/skills/utils";
 import {
-    skillsGetOptions,
-    skillsGetQueryKey,
-    useSkillsByIdDeleteMutation,
+  skillsGetOptions,
+  skillsGetQueryKey,
+  useSkillsByIdDeleteMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { type Options } from "@/generated/daemon/sdk.gen";
 import type { SkillsGetData } from "@/generated/daemon/types.gen";
@@ -223,7 +223,9 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
   // Active count for the hero sub-line — installed/bundled skills (anything
   // that isn't a not-yet-installed catalog entry).
   const activeCount = useMemo(
-    () => (countsSource?.skills ?? allSkills).filter((s) => !isAvailableSkill(s)).length,
+    () =>
+      (countsSource?.skills ?? allSkills).filter((s) => !isAvailableSkill(s))
+        .length,
     [countsSource?.skills, allSkills],
   );
 
@@ -467,9 +469,7 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
               onDescribe={() => void navigate("/assistant/")}
             />
           ) : (
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: 10 }}
-            >
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {displayedSkills.map((skill) => (
                 <SkillCard
                   key={skill.id}
@@ -477,9 +477,7 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
                   onSelect={() => setSelectedSkillId(skill.id)}
                   onInstall={() => handleInstall(skill)}
                   onRemove={() => handleRemove(skill)}
-                  isInstalling={
-                    installingSkillId === (skill.slug ?? skill.id)
-                  }
+                  isInstalling={installingSkillId === (skill.slug ?? skill.id)}
                   isRemoving={removingSkillId === skill.id}
                 />
               ))}
@@ -519,7 +517,10 @@ function useDerivedCounts(
 
 function LoadingState() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }} aria-hidden>
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 10 }}
+      aria-hidden
+    >
       {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
@@ -617,11 +618,22 @@ function EmptyState({
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 26, marginBottom: 10, color: C.violet }} aria-hidden>
+      <div
+        style={{ fontSize: 26, marginBottom: 10, color: C.violet }}
+        aria-hidden
+      >
         ✦
       </div>
       <div style={{ fontSize: 16, fontWeight: 600 }}>No skills yet</div>
-      <p style={{ fontSize: 13, color: C.t2, marginTop: 4, maxWidth: 360, marginInline: "auto" }}>
+      <p
+        style={{
+          fontSize: 13,
+          color: C.t2,
+          marginTop: 4,
+          maxWidth: 360,
+          marginInline: "auto",
+        }}
+      >
         Cue learns new skills from you — describe any task in chat and Cue will
         build a skill for it.
       </p>

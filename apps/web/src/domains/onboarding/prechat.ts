@@ -133,7 +133,9 @@ export function normalizePreChatTasks(tasks: string[]): string[] {
 }
 
 export function normalizePreChatPriorAssistants(ids: string[]): string[] {
-  return ids.map((id) => PRIOR_ASSISTANT_DISPLAY_NAMES[id] ?? capitalizeFirst(id));
+  return ids.map(
+    (id) => PRIOR_ASSISTANT_DISPLAY_NAMES[id] ?? capitalizeFirst(id),
+  );
 }
 
 /**
@@ -242,19 +244,27 @@ function isPreChatOnboardingContext(
   }
   if (candidate.googleScopes !== undefined) {
     if (!Array.isArray(candidate.googleScopes)) return false;
-    if (!candidate.googleScopes.every((s) => typeof s === "string")) return false;
+    if (!candidate.googleScopes.every((s) => typeof s === "string"))
+      return false;
   }
   if (candidate.priorAssistants !== undefined) {
     if (!Array.isArray(candidate.priorAssistants)) return false;
-    if (!candidate.priorAssistants.every((s) => typeof s === "string")) return false;
+    if (!candidate.priorAssistants.every((s) => typeof s === "string"))
+      return false;
   }
   if (candidate.cohort !== undefined && typeof candidate.cohort !== "string") {
     return false;
   }
-  if (candidate.initialMessage !== undefined && typeof candidate.initialMessage !== "string") {
+  if (
+    candidate.initialMessage !== undefined &&
+    typeof candidate.initialMessage !== "string"
+  ) {
     return false;
   }
-  if (candidate.bootstrapTemplate !== undefined && typeof candidate.bootstrapTemplate !== "string") {
+  if (
+    candidate.bootstrapTemplate !== undefined &&
+    typeof candidate.bootstrapTemplate !== "string"
+  ) {
     return false;
   }
   if (candidate.skills !== undefined) {
@@ -272,9 +282,7 @@ function isPreChatOnboardingContext(
  * just means the chat opener will fall back to its un-personalized
  * default, which is the right degraded behavior.
  */
-export function setPendingPreChatContext(
-  ctx: PreChatOnboardingContext,
-): void {
+export function setPendingPreChatContext(ctx: PreChatOnboardingContext): void {
   const storage = getSessionStorage();
   if (storage === null) return;
   try {

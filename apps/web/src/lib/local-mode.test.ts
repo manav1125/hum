@@ -94,7 +94,10 @@ describe("syncPlatformAssistantsToLockfile", () => {
     const [entries, org] = replacePlatformAssistantsHost.mock.calls[0]!;
     expect(org).toBe("org-1");
     expect(entries).toEqual([
-      expect.objectContaining({ assistantId: "platform-a", organizationId: "org-1" }),
+      expect.objectContaining({
+        assistantId: "platform-a",
+        organizationId: "org-1",
+      }),
     ]);
   });
 
@@ -207,9 +210,7 @@ describe("reconcileSelectedAssistant", () => {
 
     reconcileSelectedAssistant();
 
-    expect(
-      localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY),
-    ).toBeNull();
+    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBeNull();
     expect(getSelectedAssistant()).toBe(localA);
   });
 
@@ -219,7 +220,9 @@ describe("reconcileSelectedAssistant", () => {
 
     reconcileSelectedAssistant();
 
-    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBe("local-b");
+    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBe(
+      "local-b",
+    );
     expect(getSelectedAssistant()).toBe(localB);
   });
 
@@ -228,9 +231,7 @@ describe("reconcileSelectedAssistant", () => {
 
     reconcileSelectedAssistant();
 
-    expect(
-      localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY),
-    ).toBeNull();
+    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBeNull();
   });
 
   test("a transient empty-lockfile read does not clear the selection", () => {
@@ -241,7 +242,9 @@ describe("reconcileSelectedAssistant", () => {
 
     getLockfile();
 
-    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBe("local-a");
+    expect(localStorage.getItem(SELECTED_ASSISTANT_STORAGE_KEY)).toBe(
+      "local-a",
+    );
   });
 });
 

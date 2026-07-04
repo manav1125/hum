@@ -21,7 +21,11 @@
  * renaming the key. Idempotent — only writes when the current value
  * matches `oldValue` exactly.
  */
-export function migrateValue(key: string, oldValue: string, newValue: string): void {
+export function migrateValue(
+  key: string,
+  oldValue: string,
+  newValue: string,
+): void {
   if (typeof window === "undefined") return;
   try {
     if (localStorage.getItem(key) === oldValue) {
@@ -178,13 +182,19 @@ export function runStorageMigrations(): void {
 
   // voice: → vellum:voice:
   migrateKey("voice:permissionPrimerSeen", "vellum:voice:permissionPrimerSeen");
-  migrateKey("voice:conversationTimeoutSeconds", "vellum:voice:conversationTimeoutSeconds");
+  migrateKey(
+    "voice:conversationTimeoutSeconds",
+    "vellum:voice:conversationTimeoutSeconds",
+  );
   migrateKey("voice:ttsProvider", "vellum:voice:ttsProvider");
   migrateKey("voice:sttProvider", "vellum:voice:sttProvider");
   migrateKey("voice:activationKey", "vellum:voice:activationKey");
 
   // integrations. → vellum:integrations:
-  migrateKey("integrations.bannerDismissed", "vellum:integrations:bannerDismissed");
+  migrateKey(
+    "integrations.bannerDismissed",
+    "vellum:integrations:bannerDismissed",
+  );
 
   // onboarding. → vellum:onboarding:
   migrateKey("onboarding.tosAccepted", "vellum:onboarding:tosAccepted");
@@ -234,7 +244,10 @@ export function runStorageMigrations(): void {
   migratePrefix("ff:client:", "vellum:ff:");
 
   // Unprefixed per-entity → vellum:
-  migratePrefix("disk-pressure-warning-dismissed-", "vellum:diskPressureDismissed:");
+  migratePrefix(
+    "disk-pressure-warning-dismissed-",
+    "vellum:diskPressureDismissed:",
+  );
 
   // vellum_ per-org → vellum:
   migratePrefix("vellum_current_assistant_id__", "vellum:currentAssistantId:");

@@ -22,9 +22,7 @@ import {
  * Publish the current dictation lifecycle state to the overlay.
  * Fire-and-forget — interim transcription updates are high-frequency.
  */
-export function setDictationOverlayState(
-  state: DictationOverlayMessage,
-): void {
+export function setDictationOverlayState(state: DictationOverlayMessage): void {
   if (!isElectron()) return;
   window.vellum?.dictationOverlay?.setState(state);
 }

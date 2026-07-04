@@ -195,11 +195,7 @@ export function updateArchivedConversationsCache(
   assistantId: string | null,
   updater: ConversationUpdater,
 ): void {
-  updateCache(
-    queryClient,
-    archivedConversationsQueryKey(assistantId),
-    updater,
-  );
+  updateCache(queryClient, archivedConversationsQueryKey(assistantId), updater);
 }
 
 /**

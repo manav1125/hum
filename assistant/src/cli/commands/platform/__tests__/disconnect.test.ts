@@ -26,9 +26,7 @@ mock.module("../../../../ipc/cli-client.js", () => ({
   },
 }));
 
-const { registerPlatformDisconnectCommand } = await import(
-  "../disconnect.js"
-);
+const { registerPlatformDisconnectCommand } = await import("../disconnect.js");
 
 function buildProgram(): Command {
   const program = new Command();

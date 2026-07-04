@@ -34,11 +34,7 @@ export function resolveUsageRangeWindow(
   }
 
   const dayOffset = RANGE_START_DAY_OFFSETS[range];
-  const { fromDate } = resolveLastTimezoneCalendarDays(
-    dayOffset + 1,
-    tz,
-    to,
-  );
+  const { fromDate } = resolveLastTimezoneCalendarDays(dayOffset + 1, tz, to);
   return {
     from: timezoneDayStartEpoch(fromDate, tz),
     to,

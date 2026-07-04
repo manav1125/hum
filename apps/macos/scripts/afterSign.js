@@ -117,8 +117,8 @@ exports.default = async function afterSign(context) {
       entitlements: path.join(entitlementsDir, "bun.plist"),
     },
     {
-      name: "vellum-mac-helper",
-      path: path.join(resourcesDir, "bin", "vellum-mac-helper.app"),
+      name: "cue-mac-helper",
+      path: path.join(resourcesDir, "bin", "cue-mac-helper.app"),
       entitlements: path.join(entitlementsDir, "helper.plist"),
     },
   ];

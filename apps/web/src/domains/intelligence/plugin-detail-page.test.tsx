@@ -15,9 +15,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router";
 
-import {
-  pluginsByNameGetQueryKey,
-} from "@/generated/daemon/@tanstack/react-query.gen";
+import { pluginsByNameGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { Options } from "@/generated/daemon/sdk.gen";
 import type {
   PluginsByNameGetData,
@@ -42,9 +40,8 @@ mock.module("@/assistant/use-active-assistant-id", () => ({
   useActiveAssistantId: () => ASSISTANT_ID,
 }));
 
-const { PluginDetailPage } = await import(
-  "@/domains/intelligence/plugin-detail-page"
-);
+const { PluginDetailPage } =
+  await import("@/domains/intelligence/plugin-detail-page");
 
 function renderDetail(name: string, detail: PluginsByNameGetResponse): string {
   const client = new QueryClient({
@@ -60,7 +57,10 @@ function renderDetail(name: string, detail: PluginsByNameGetResponse): string {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[`/assistant/plugins/${name}`]}>
         <Routes>
-          <Route path="/assistant/plugins/:name" element={<PluginDetailPage />} />
+          <Route
+            path="/assistant/plugins/:name"
+            element={<PluginDetailPage />}
+          />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -127,7 +127,11 @@ describe("PluginDetailPage", () => {
       homepage: null,
       license: "MIT",
       version: "1.0.0",
-      source: { kind: "github", repo: "example-org/dynamic-notch", ref: "v1.0.0" },
+      source: {
+        kind: "github",
+        repo: "example-org/dynamic-notch",
+        ref: "v1.0.0",
+      },
       readme: "# Dynamic Notch",
       ref: "v1.0.0",
       artifact: { url, sha256: "a".repeat(64) },
@@ -150,7 +154,11 @@ describe("PluginDetailPage", () => {
       homepage: null,
       license: "MIT",
       version: "1.0.0",
-      source: { kind: "github", repo: "example-org/dynamic-notch", ref: "v1.0.0" },
+      source: {
+        kind: "github",
+        repo: "example-org/dynamic-notch",
+        ref: "v1.0.0",
+      },
       readme: "# Dynamic Notch",
       ref: "v1.0.0",
       artifact: { url, sha256: "a".repeat(64), label: "Download for macOS" },
@@ -169,7 +177,11 @@ describe("PluginDetailPage", () => {
       homepage: null,
       license: "MIT",
       version: "1.0.0",
-      source: { kind: "github", repo: "example-org/dynamic-notch", ref: "v1.0.0" },
+      source: {
+        kind: "github",
+        repo: "example-org/dynamic-notch",
+        ref: "v1.0.0",
+      },
       readme: "# Dynamic Notch",
       ref: "v1.0.0",
       artifact: {

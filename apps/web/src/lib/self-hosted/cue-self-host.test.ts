@@ -78,10 +78,7 @@ describe("isStoredActorTokenValid", () => {
 
   test("false once the actor token has passed its exp (with skew margin)", () => {
     localStorage.setItem(LS_SELF_HOST_FLAG, "1");
-    localStorage.setItem(
-      LS_ACTOR_TOKEN_KEY,
-      makeToken({ exp: nowSec() - 10 }),
-    );
+    localStorage.setItem(LS_ACTOR_TOKEN_KEY, makeToken({ exp: nowSec() - 10 }));
     expect(isStoredActorTokenValid()).toBe(false);
   });
 
@@ -110,10 +107,7 @@ describe("rehydrateGatewayTokenFromActor", () => {
 
   test("returns false (no resurrection) when the actor token is expired", () => {
     localStorage.setItem(LS_SELF_HOST_FLAG, "1");
-    localStorage.setItem(
-      LS_ACTOR_TOKEN_KEY,
-      makeToken({ exp: nowSec() - 10 }),
-    );
+    localStorage.setItem(LS_ACTOR_TOKEN_KEY, makeToken({ exp: nowSec() - 10 }));
     expect(rehydrateGatewayTokenFromActor()).toBe(false);
     expect(localStorage.getItem(LS_TOKEN_KEY)).toBeNull();
   });

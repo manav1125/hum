@@ -15,14 +15,34 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
   calendar: { displayName: "Calendar", color: "#0E9B8B", emoji: "\u{1F4C5}" },
   messaging: { displayName: "Messaging", color: "#6B8AE0", emoji: "\u{1F4AC}" },
   browsing: { displayName: "Browsing", color: "#E9642F", emoji: "\u{1F310}" },
-  productivity: { displayName: "Productivity", color: "#0E9B8B", emoji: "\u{1F4CB}" },
-  development: { displayName: "Development", color: "#EF4400", emoji: "\u{1F528}" },
+  productivity: {
+    displayName: "Productivity",
+    color: "#0E9B8B",
+    emoji: "\u{1F4CB}",
+  },
+  development: {
+    displayName: "Development",
+    color: "#EF4400",
+    emoji: "\u{1F528}",
+  },
   voice: { displayName: "Voice", color: "#DB4B77", emoji: "\u{1F3A4}" },
   commerce: { displayName: "Commerce", color: "#E9C91A", emoji: "\u{1F6D2}" },
   content: { displayName: "Content", color: "#DB4B77", emoji: "\u{1F3A8}" },
-  health: { displayName: "Health", color: "#4C9B50", emoji: "\u{2764}\u{FE0F}" },
-  system: { displayName: "System", color: "#8D99A5", emoji: "\u{2699}\u{FE0F}" },
-  integrations: { displayName: "Integrations", color: "#8D99A5", emoji: "\u{1F517}" },
+  health: {
+    displayName: "Health",
+    color: "#4C9B50",
+    emoji: "\u{2764}\u{FE0F}",
+  },
+  system: {
+    displayName: "System",
+    color: "#8D99A5",
+    emoji: "\u{2699}\u{FE0F}",
+  },
+  integrations: {
+    displayName: "Integrations",
+    color: "#8D99A5",
+    emoji: "\u{1F517}",
+  },
 };
 
 export function getCategoryConfig(category: string): CategoryConfig {
@@ -52,28 +72,81 @@ export interface SubCategoryDef {
 
 export const SUB_CATEGORY_MAP: Record<string, SubCategoryDef[]> = {
   email: [
-    { label: "Sending", emoji: "\u{1F4E8}", skillIds: new Set(["agentmail", "email-setup"]) },
-    { label: "Reading", emoji: "\u{1F4EC}", skillIds: new Set(["email-channel", "gmail"]) },
+    {
+      label: "Sending",
+      emoji: "\u{1F4E8}",
+      skillIds: new Set(["agentmail", "email-setup"]),
+    },
+    {
+      label: "Reading",
+      emoji: "\u{1F4EC}",
+      skillIds: new Set(["email-channel", "gmail"]),
+    },
   ],
   messaging: [
-    { label: "Chat", emoji: "\u{1F4AC}", skillIds: new Set(["messaging", "slack", "telegram"]) },
-    { label: "Notifications", emoji: "\u{1F514}", skillIds: new Set(["notifications"]) },
-    { label: "People", emoji: "\u{1F465}", skillIds: new Set(["contacts", "followups"]) },
+    {
+      label: "Chat",
+      emoji: "\u{1F4AC}",
+      skillIds: new Set(["messaging", "slack", "telegram"]),
+    },
+    {
+      label: "Notifications",
+      emoji: "\u{1F514}",
+      skillIds: new Set(["notifications"]),
+    },
+    {
+      label: "People",
+      emoji: "\u{1F465}",
+      skillIds: new Set(["contacts", "followups"]),
+    },
   ],
   development: [
-    { label: "Coding", emoji: "\u{1F4BB}", skillIds: new Set(["typescript-eval", "frontend-design"]) },
-    { label: "Dev Tools", emoji: "\u{1F527}", skillIds: new Set(["api-mapping", "cli-discover", "subagent", "app-builder"]) },
+    {
+      label: "Coding",
+      emoji: "\u{1F4BB}",
+      skillIds: new Set(["typescript-eval", "frontend-design"]),
+    },
+    {
+      label: "Dev Tools",
+      emoji: "\u{1F527}",
+      skillIds: new Set([
+        "api-mapping",
+        "cli-discover",
+        "subagent",
+        "app-builder",
+      ]),
+    },
   ],
   browsing: [
-    { label: "Control", emoji: "\u{1F3AE}", skillIds: new Set(["computer-use", "macos-automation", "browser"]) },
-    { label: "Triggers", emoji: "\u{23F0}", skillIds: new Set(["watcher", "time-based-actions"]) },
+    {
+      label: "Control",
+      emoji: "\u{1F3AE}",
+      skillIds: new Set(["computer-use", "macos-automation", "browser"]),
+    },
+    {
+      label: "Triggers",
+      emoji: "\u{23F0}",
+      skillIds: new Set(["watcher", "time-based-actions"]),
+    },
   ],
   commerce: [
-    { label: "Shopping", emoji: "\u{1F6D2}", skillIds: new Set(["amazon", "doordash", "restaurant-reservation"]) },
+    {
+      label: "Shopping",
+      emoji: "\u{1F6D2}",
+      skillIds: new Set(["amazon", "doordash", "restaurant-reservation"]),
+    },
   ],
   system: [
-    { label: "Core", emoji: "\u{1F9E0}", skillIds: new Set(["knowledge-graph", "skills-catalog", "self-upgrade"]) },
-    { label: "Daily", emoji: "\u{2600}\u{FE0F}", skillIds: new Set(["start-the-day", "weather"]) },
+    {
+      label: "Core",
+      emoji: "\u{1F9E0}",
+      skillIds: new Set(["knowledge-graph", "skills-catalog", "self-upgrade"]),
+    },
+    {
+      label: "Daily",
+      emoji: "\u{2600}\u{FE0F}",
+      skillIds: new Set(["start-the-day", "weather"]),
+    },
   ],
 };
 
@@ -198,11 +271,7 @@ function shrinkRoundedRect(
 }
 
 /** Distance from a node's center to its boundary along a unit direction. */
-export function shapeShrink(
-  def: NodeShapeDef,
-  ux: number,
-  uy: number,
-): number {
+export function shapeShrink(def: NodeShapeDef, ux: number, uy: number): number {
   switch (def.shape) {
     case "circle":
       return def.size / 2;
@@ -240,7 +309,10 @@ export function clipEdgeToNodes(
   // seams (e.g. along the avatar circle, which has no border to visually
   // bridge the gap between the line end and the visible image edge).
   const inset = 3;
-  const fromShrink = Math.max(0, shapeShrink(nodeShapeDef(from), ux, uy) - inset);
+  const fromShrink = Math.max(
+    0,
+    shapeShrink(nodeShapeDef(from), ux, uy) - inset,
+  );
   const toShrink = Math.max(0, shapeShrink(nodeShapeDef(to), -ux, -uy) - inset);
   // Guard against over-shortening when nodes visually overlap (rare, but can
   // happen if the overlap resolver bottoms out).
@@ -592,10 +664,18 @@ export function computeFit(
   }
   const contentWidth = maxX - minX + padding * 2;
   const contentHeight = maxY - minY + padding * 2;
-  if (contentWidth <= 0 || contentHeight <= 0 || viewWidth <= 0 || viewHeight <= 0) {
+  if (
+    contentWidth <= 0 ||
+    contentHeight <= 0 ||
+    viewWidth <= 0 ||
+    viewHeight <= 0
+  ) {
     return { zoom: 1, panX: 0, panY: 0 };
   }
-  const fitZoom = Math.min(viewWidth / contentWidth, viewHeight / contentHeight);
+  const fitZoom = Math.min(
+    viewWidth / contentWidth,
+    viewHeight / contentHeight,
+  );
   const zoom = Math.max(minZoom, Math.min(maxZoom, fitZoom));
   const contentCenterX = (minX + maxX) / 2 - center.x;
   const contentCenterY = (minY + maxY) / 2 - center.y;

@@ -38,9 +38,7 @@ export type NavigationQuery =
 // ---------------------------------------------------------------------------
 
 export type NavigationDecision =
-  | { action: "allow" }
-  | { action: "redirect"; to: string }
-  | { action: "wait" };
+  { action: "allow" } | { action: "redirect"; to: string } | { action: "wait" };
 
 // ---------------------------------------------------------------------------
 // Shared predicates & helpers
@@ -63,7 +61,10 @@ const LOCAL_ONLY_STANDALONE_PATHS: Set<string> = new Set([
 ]);
 
 function isOnboardingPath(pathname: string): boolean {
-  return pathname.startsWith(`${ONBOARDING_PREFIX}/`) || pathname === ONBOARDING_PREFIX;
+  return (
+    pathname.startsWith(`${ONBOARDING_PREFIX}/`) ||
+    pathname === ONBOARDING_PREFIX
+  );
 }
 
 function onboardingEntrypoint(isLocalMode: boolean): string {
@@ -163,7 +164,8 @@ function resolveRouteGuard(
   pathnameWithSearch: string,
 ): NavigationDecision {
   const qIdx = pathnameWithSearch.indexOf("?");
-  const path = qIdx >= 0 ? pathnameWithSearch.slice(0, qIdx) : pathnameWithSearch;
+  const path =
+    qIdx >= 0 ? pathnameWithSearch.slice(0, qIdx) : pathnameWithSearch;
 
   for (const step of ROUTE_GUARD_PIPELINE) {
     const decision = step(state, path, pathnameWithSearch);
@@ -187,7 +189,10 @@ function requireAuth(
 ): NavigationDecision | null {
   if (state.isAuthenticated) return null;
 
-  if (state.isLocalMode && (isOnboardingPath(path) || LOCAL_ONLY_STANDALONE_PATHS.has(path))) {
+  if (
+    state.isLocalMode &&
+    (isOnboardingPath(path) || LOCAL_ONLY_STANDALONE_PATHS.has(path))
+  ) {
     if (path === routes.selectAssistant && !state.hasAssistants) {
       return { action: "redirect", to: routes.onboarding.hosting };
     }
@@ -234,7 +239,10 @@ function allowSetupRoutes(
 
   if (isOnboardingPath(path)) {
     if (path === routes.onboarding.hatching && !hasCompletedOnboarding(state)) {
-      return { action: "redirect", to: onboardingEntrypoint(state.isLocalMode) };
+      return {
+        action: "redirect",
+        to: onboardingEntrypoint(state.isLocalMode),
+      };
     }
     return { action: "allow" };
   }
@@ -267,7 +275,10 @@ function requireConsent(
   if (state.isLocalMode || hasCompletedOnboarding(state)) return null;
 
   const returnTo = encodeURIComponent(pathnameWithSearch);
-  return { action: "redirect", to: `${routes.reviewTerms}?returnTo=${returnTo}` };
+  return {
+    action: "redirect",
+    to: `${routes.reviewTerms}?returnTo=${returnTo}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +299,8 @@ function resolveOnboardingIntercept(
 
   const path = extractPathname(intendedDestination);
   if (!path.startsWith(routes.assistant)) return { action: "allow" };
-  if (path.startsWith(`${routes.assistant}/onboarding`)) return { action: "allow" };
+  if (path.startsWith(`${routes.assistant}/onboarding`))
+    return { action: "allow" };
   if (path === routes.reviewTerms) return { action: "allow" };
 
   return {

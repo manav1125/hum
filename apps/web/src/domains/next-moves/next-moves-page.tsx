@@ -68,7 +68,10 @@ function categoryVisual(category: FeedItemCategory | undefined): {
     case "scheduling":
       return { icon: <Calendar size={15} color="#8C7225" />, bg: "#FCF3DD" };
     case "security":
-      return { icon: <ShieldAlert size={15} color={C.danger} />, bg: "#FDE7E2" };
+      return {
+        icon: <ShieldAlert size={15} color={C.danger} />,
+        bg: "#FDE7E2",
+      };
     case "background":
       return { icon: <Sparkles size={15} color={C.violetS} />, bg: "#EEEDFB" };
     case "system":
@@ -201,7 +204,8 @@ export function NextMovesPage() {
               color: C.t2,
             }}
           >
-            <Loader2 className="size-4 animate-spin" /> Gathering your next moves…
+            <Loader2 className="size-4 animate-spin" /> Gathering your next
+            moves…
           </div>
         ) : items.length === 0 ? (
           <EmptyState error={feed.isError} />
@@ -369,7 +373,9 @@ function MoveRow({
         ) : null}
       </div>
       {isDone ? (
-        <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>done</span>
+        <span style={{ fontFamily: mono, fontSize: 11, color: C.t3 }}>
+          done
+        </span>
       ) : (
         <div
           style={{
@@ -392,7 +398,9 @@ function MoveRow({
           {canOpen ? (
             <RowButton
               label="Open"
-              variant={actions.length === 0 && emphasize ? "primary" : "secondary"}
+              variant={
+                actions.length === 0 && emphasize ? "primary" : "secondary"
+              }
               disabled={pending}
               onClick={onOpen}
             />
@@ -432,7 +440,11 @@ function RowButton({
       ? { border: `1px solid ${C.blue}`, background: C.blue, color: "#fff" }
       : variant === "secondary"
         ? { border: `1px solid ${C.line2}`, background: C.surface, color: C.t1 }
-        : { border: "1px solid transparent", background: "transparent", color: C.t2 };
+        : {
+            border: "1px solid transparent",
+            background: "transparent",
+            color: C.t2,
+          };
 
   return (
     <button
@@ -605,12 +617,11 @@ function NextMovesMobile({
     [items],
   );
   const approvalAction = approval
-    ? (approval.actions ?? []).find((a) => a.defaultMode === "needs_you") ?? null
+    ? ((approval.actions ?? []).find((a) => a.defaultMode === "needs_you") ??
+      null)
     : null;
 
-  const workingCount = items.filter(
-    (i) => moveStatus(i) === "Working",
-  ).length;
+  const workingCount = items.filter((i) => moveStatus(i) === "Working").length;
   const needsYouCount = items.filter(
     (i) => i.status !== "acted_on" && needsApproval(i),
   ).length;
@@ -624,8 +635,7 @@ function NextMovesMobile({
         background: `linear-gradient(180deg,${M.ink} 0%,#11161F 78%,#0C1018 100%)`,
         color: M.t1,
         fontFamily: "'DM Sans', system-ui, sans-serif",
-        paddingTop:
-          "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
+        paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
       }}
     >
       {/* Header */}
@@ -743,9 +753,7 @@ function NextMovesMobile({
               >
                 Working on · {projectLabel(group.cat)}
               </div>
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 8 }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {group.items.map((item) => (
                   <MobileMoveRow
                     key={item.id}
@@ -831,7 +839,8 @@ function NextMovesMobile({
         <div
           style={{
             flexShrink: 0,
-            height: "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            height:
+              "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))",
           }}
         />
       )}

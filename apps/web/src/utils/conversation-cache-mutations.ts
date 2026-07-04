@@ -14,7 +14,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { GroupsGetData } from "@/generated/daemon/types.gen";
 import { groupsGetSetQueryData } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { Options } from "@/generated/daemon/sdk.gen";
-import type { Conversation, ConversationGroup } from "@/types/conversation-types";
+import type {
+  Conversation,
+  ConversationGroup,
+} from "@/types/conversation-types";
 import {
   isBackgroundConversation,
   isScheduledConversation,
@@ -107,7 +110,10 @@ export function shouldSurfaceConversationOnUserSend(
 ): boolean {
   if (conversation.archivedAt != null) return false;
   if (conversation.surfacedAt != null) return false;
-  if (conversation.isPinned === true || conversation.groupId === "system:pinned") {
+  if (
+    conversation.isPinned === true ||
+    conversation.groupId === "system:pinned"
+  ) {
     return false;
   }
   if (conversation.groupId && !conversation.groupId.startsWith("system:")) {
@@ -186,7 +192,11 @@ export async function refreshConversationRow(
 
   let result: Conversation;
   try {
-    result = await fetchConversationDetail(queryClient, assistantId, conversationId);
+    result = await fetchConversationDetail(
+      queryClient,
+      assistantId,
+      conversationId,
+    );
   } catch (err) {
     if (err instanceof ConversationNotFoundError) {
       removeConversation(queryClient, assistantId, conversationId);
@@ -217,17 +227,19 @@ export async function refreshConversationRow(
   }
 
   if (isScheduledConversation(result)) {
-    updateScheduledConversationsCache(queryClient, assistantId, (conversations) => [
-      ...conversations,
-      result,
-    ]);
+    updateScheduledConversationsCache(
+      queryClient,
+      assistantId,
+      (conversations) => [...conversations, result],
+    );
     return;
   }
   if (isBackgroundConversation(result)) {
-    updateBackgroundConversationsCache(queryClient, assistantId, (conversations) => [
-      ...conversations,
-      result,
-    ]);
+    updateBackgroundConversationsCache(
+      queryClient,
+      assistantId,
+      (conversations) => [...conversations, result],
+    );
     return;
   }
   updateConversationsCache(queryClient, assistantId, (conversations) => [
@@ -273,7 +285,10 @@ export function mergeListFirstPage(
 }
 
 const LIST_WINDOW_BUCKETS = [
-  { queryKey: conversationsQueryKey, fetchFirstPage: listConversationsFirstPage },
+  {
+    queryKey: conversationsQueryKey,
+    fetchFirstPage: listConversationsFirstPage,
+  },
   {
     queryKey: backgroundConversationsQueryKey,
     fetchFirstPage: listBackgroundConversationsFirstPage,
@@ -347,7 +362,9 @@ function updateGroupsCache(
   assistantId: string | null,
   updater: (groups: ConversationGroup[]) => ConversationGroup[],
 ): void {
-  const opts: Options<GroupsGetData> = { path: { assistant_id: assistantId ?? "" } };
+  const opts: Options<GroupsGetData> = {
+    path: { assistant_id: assistantId ?? "" },
+  };
   groupsGetSetQueryData(queryClient, opts, (prev) => {
     const list = prev?.groups ?? [];
     const next = updater(list);

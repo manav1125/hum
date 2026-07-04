@@ -8,5 +8,7 @@ export function SkillsPage() {
   const [searchParams] = useSearchParams();
   const initialSkillId = searchParams.get("skill") ?? undefined;
 
-  return <SkillsTab assistantId={assistantId} initialSkillId={initialSkillId} />;
+  return (
+    <SkillsTab assistantId={assistantId} initialSkillId={initialSkillId} />
+  );
 }

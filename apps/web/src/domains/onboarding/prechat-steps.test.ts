@@ -183,7 +183,10 @@ describe("nextStep / prevStep", () => {
   test("back never reveals a gated step: skips disabled prior-assistants", () => {
     // `prevStep` walks to the previous *enabled* step, so a disabled step is
     // never a back target regardless of which capability gated it off.
-    const steps = resolveWebSteps({ ...CONTROL, canOfferPriorAssistants: false });
+    const steps = resolveWebSteps({
+      ...CONTROL,
+      canOfferPriorAssistants: false,
+    });
     expect(prevStep(steps, "google")).toBe("tools");
   });
 

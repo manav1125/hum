@@ -90,7 +90,11 @@ export function IntelligenceLayout() {
   // deciding to redirect, so a deep-link to /assistant/plugins is safe.
   const tabs: readonly IntelligenceTab[] =
     hasHydrated && externalPlugins
-      ? [BASE_INTELLIGENCE_TABS[0], PLUGINS_TAB, ...BASE_INTELLIGENCE_TABS.slice(1)]
+      ? [
+          BASE_INTELLIGENCE_TABS[0],
+          PLUGINS_TAB,
+          ...BASE_INTELLIGENCE_TABS.slice(1),
+        ]
       : BASE_INTELLIGENCE_TABS;
 
   // Tabs whose mobile rendering is a full-bleed designed surface that paints
@@ -119,8 +123,7 @@ export function IntelligenceLayout() {
         aria-label="About assistant sections"
       >
         {tabs.map(({ label, to }) => {
-          const isActive =
-            pathname === to || pathname.startsWith(to + "/");
+          const isActive = pathname === to || pathname.startsWith(to + "/");
           return (
             <NavLink
               key={to}

@@ -96,6 +96,19 @@ async function notarizeApp(context, identity) {
     return;
   }
 
+  // Only a "Developer ID Application" identity can notarize. Local
+  // "Apple Development" (or "Apple Distribution") signing is valid and gives a
+  // stable DR for TCC, but notarytool rejects it — attempting it would fail the
+  // whole pack. Skip cleanly so signed-for-local builds still complete.
+  if (!/^Developer ID Application/.test(identity.name || "")) {
+    console.warn(
+      `notarize: skipped — signing identity "${identity.name}" is not a ` +
+        "'Developer ID Application' certificate, so the app cannot be " +
+        "notarized (this is expected for local Apple Development builds).",
+    );
+    return;
+  }
+
   const { appOutDir, packager } = context;
   const appPath = path.join(
     appOutDir,

@@ -18,11 +18,7 @@ import { activityGetOptions } from "@/generated/daemon/@tanstack/react-query.gen
 
 /** Server-side `ActivityLane` (docs/MISSION_CONTROL.md §2.2). */
 export type ActivityLane =
-  | "inbound"
-  | "awaiting_you"
-  | "in_progress"
-  | "scheduled"
-  | "done";
+  "inbound" | "awaiting_you" | "in_progress" | "scheduled" | "done";
 
 export type ActivityKind =
   | "work_item"

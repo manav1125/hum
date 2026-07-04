@@ -35,6 +35,7 @@ import { ActivitySection } from "../activity-section";
 import { ActivityRow, RowButton } from "../activity-row";
 import { C, relativeTime, str } from "../theme";
 import { useWorkItems, type WorkItemView } from "../use-work-items";
+import { MoveToProject, ProjectTag } from "./project-move-control";
 
 const MAX_ROWS = 10;
 
@@ -139,9 +140,17 @@ function ReviewRow({
               onClick={() => navigate(`/assistant/conversations/${threadId}`)}
             />
           ) : null}
+          <MoveToProject
+            assistantId={assistantId}
+            itemId={item.id}
+            currentProjectId={item.projectId}
+          />
         </>
       }
     >
+      <div style={{ marginTop: 6 }}>
+        <ProjectTag assistantId={assistantId} projectId={item.projectId} />
+      </div>
       {highlights.length > 0 ? (
         <ul
           style={{
@@ -161,7 +170,11 @@ function ReviewRow({
   );
 }
 
-export function AwaitingReviewSection({ assistantId }: { assistantId: string }) {
+export function AwaitingReviewSection({
+  assistantId,
+}: {
+  assistantId: string;
+}) {
   const awaiting = useWorkItems(assistantId, "awaiting_review");
   const rows = awaiting.items.slice(0, MAX_ROWS);
   const empty = !awaiting.isLoading && !awaiting.isError && rows.length === 0;

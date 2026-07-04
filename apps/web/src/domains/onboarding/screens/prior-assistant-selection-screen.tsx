@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import {
-    PRECHAT_PRIOR_ASSISTANTS,
-    type PreChatPriorAssistantItem,
+  PRECHAT_PRIOR_ASSISTANTS,
+  type PreChatPriorAssistantItem,
 } from "@/domains/onboarding/prechat-prior-assistants";
 import { isElectron } from "@/runtime/is-electron";
 import { Button } from "@vellumai/design-library/components/button";
@@ -35,7 +35,9 @@ export function PriorAssistantSelectionScreen({
     () => otherText.length > 0,
   );
 
-  const lastEmittedOtherSet = useRef<string>(setKeyForOtherEntries(selectedAssistants));
+  const lastEmittedOtherSet = useRef<string>(
+    setKeyForOtherEntries(selectedAssistants),
+  );
   useEffect(() => {
     const externalKey = setKeyForOtherEntries(selectedAssistants);
     if (externalKey === lastEmittedOtherSet.current) return;
@@ -94,7 +96,9 @@ export function PriorAssistantSelectionScreen({
 
   return (
     <OnboardingLayout showCreatureFooter={false}>
-      <div className={`mx-auto flex w-full max-w-2xl flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}>
+      <div
+        className={`mx-auto flex w-full max-w-2xl flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}
+      >
         <div
           className="grid w-full items-center grid-cols-[auto_1fr_auto]"
           style={{ animation: "fadeInUp 0.3s ease-out 0.1s both" }}
@@ -107,7 +111,9 @@ export function PriorAssistantSelectionScreen({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}>
+          <h1
+            className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}
+          >
             Have you used any of these?
           </h1>
           <div aria-hidden="true" className="h-8 w-8" />
@@ -311,7 +317,11 @@ function AssistantGlyph({
     if (assistant.logoSrcDark) {
       return (
         <>
-          <span className="flex items-center justify-center dark:hidden" style={{ width: size, height: size }} aria-hidden="true">
+          <span
+            className="flex items-center justify-center dark:hidden"
+            style={{ width: size, height: size }}
+            aria-hidden="true"
+          >
             <img
               src={assistant.logoSrc}
               alt=""
@@ -321,7 +331,11 @@ function AssistantGlyph({
               loading="eager"
             />
           </span>
-          <span className="hidden items-center justify-center dark:flex" style={{ width: size, height: size }} aria-hidden="true">
+          <span
+            className="hidden items-center justify-center dark:flex"
+            style={{ width: size, height: size }}
+            aria-hidden="true"
+          >
             <img
               src={assistant.logoSrcDark}
               alt=""
@@ -335,7 +349,10 @@ function AssistantGlyph({
       );
     }
     return (
-      <span className="flex items-center justify-center" style={{ width: size, height: size }}>
+      <span
+        className="flex items-center justify-center"
+        style={{ width: size, height: size }}
+      >
         <img
           src={assistant.logoSrc}
           alt=""

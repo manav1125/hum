@@ -138,7 +138,11 @@ export function WorkItemsWidget({ assistantId }: { assistantId: string }) {
             {rawCount} open {rawCount === 1 ? "item" : "items"} running in the
             background.
           </div>
-          <button type="button" onClick={() => navigate("/assistant")} style={secondary}>
+          <button
+            type="button"
+            onClick={() => navigate("/assistant")}
+            style={secondary}
+          >
             Open in chat
           </button>
         </div>
@@ -169,9 +173,7 @@ export function WorkItemsWidget({ assistantId }: { assistantId: string }) {
                 >
                   {item.title}
                 </div>
-                <div
-                  style={{ fontSize: 11, color: C.t3, fontFamily: mono }}
-                >
+                <div style={{ fontSize: 11, color: C.t3, fontFamily: mono }}>
                   {item.status}
                 </div>
               </div>

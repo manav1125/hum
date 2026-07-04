@@ -10,10 +10,12 @@ interface UserMeWithAttribution {
 
 export async function resolveUserCohort(): Promise<string | null> {
   try {
-    const { data, response } = await client.get<UserMeWithAttribution, unknown>({
-      url: "/v1/user/me/",
-      throwOnError: false,
-    });
+    const { data, response } = await client.get<UserMeWithAttribution, unknown>(
+      {
+        url: "/v1/user/me/",
+        throwOnError: false,
+      },
+    );
 
     if (!response?.ok || !data) return null;
 

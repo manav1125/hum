@@ -1,10 +1,16 @@
-
 import { motion } from "motion/react";
 import { type CSSProperties, type ReactNode } from "react";
 
-import { NODE_SPRING, NODE_VARIANT_CONFIGS, type NodeShellVariant } from "@/domains/intelligence/components/constellation-view/constants";
+import {
+  NODE_SPRING,
+  NODE_VARIANT_CONFIGS,
+  type NodeShellVariant,
+} from "@/domains/intelligence/components/constellation-view/constants";
 import { useNodeClickHandlers } from "@/domains/intelligence/components/constellation-view/use-node-click-handlers";
-import { mixedBg, type NodeVisibility } from "@/domains/intelligence/components/constellation-view/utils";
+import {
+  mixedBg,
+  type NodeVisibility,
+} from "@/domains/intelligence/components/constellation-view/utils";
 
 export type { NodeShellVariant } from "@/domains/intelligence/components/constellation-view/constants";
 
@@ -36,7 +42,11 @@ export function NodeShell({
   onDoubleClick,
 }: NodeShellProps) {
   const cfg = NODE_VARIANT_CONFIGS[variant];
-  const { active, ...handlers } = useNodeClickHandlers(onSingleClick, onDoubleClick, isSelected);
+  const { active, ...handlers } = useNodeClickHandlers(
+    onSingleClick,
+    onDoubleClick,
+    isSelected,
+  );
   const style: CSSProperties = {
     left: x - cfg.size / 2,
     top: y - cfg.size / 2,

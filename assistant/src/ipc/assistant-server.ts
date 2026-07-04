@@ -31,10 +31,7 @@
 import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 
-import {
-  ensureSocketDir,
-  SocketWatchdog,
-} from "@vellumai/ipc-server-utils";
+import { ensureSocketDir, SocketWatchdog } from "@vellumai/ipc-server-utils";
 
 import { findLocalGuardianPrincipalId } from "../runtime/local-actor-identity.js";
 import { RouteError } from "../runtime/routes/errors.js";

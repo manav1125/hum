@@ -27,9 +27,10 @@ async function fetchClientFlagValues(): Promise<ClientFeatureFlagsResponse> {
   return data;
 }
 
-function mapFlags(
-  serverFlags: Record<string, boolean | string>,
-): { boolFlags: Record<string, boolean>; stringFlags: Record<string, string> } {
+function mapFlags(serverFlags: Record<string, boolean | string>): {
+  boolFlags: Record<string, boolean>;
+  stringFlags: Record<string, string>;
+} {
   const boolFlags: Record<string, boolean> = {};
   const stringFlags: Record<string, string> = {};
   for (const [flagKey, value] of Object.entries(serverFlags)) {

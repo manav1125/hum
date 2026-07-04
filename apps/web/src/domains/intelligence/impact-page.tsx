@@ -408,7 +408,9 @@ export function ImpactPage() {
               >
                 Where the time went
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 13 }}
+              >
                 {byCategory.map((c) => {
                   const meta = categoryMeta(c.category);
                   return (
@@ -494,7 +496,9 @@ export function ImpactPage() {
               >
                 A few things Cue handled
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
                 {recent.length > 0 ? (
                   recent.slice(0, 4).map((r, i) => {
                     const meta = categoryMeta(r.category);
@@ -626,8 +630,9 @@ export function ImpactPage() {
                 Want next week to be even lighter?
               </div>
               <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
-                Connect more of your tools and Cue can handle more on your behalf
-                — every connection unlocks more it can take off your plate.
+                Connect more of your tools and Cue can handle more on your
+                behalf — every connection unlocks more it can take off your
+                plate.
               </div>
             </div>
             <div

@@ -617,31 +617,34 @@ export type BackendInfo =
  * visible.
  */
 export function getActiveBackendInfoAsync(): Promise<BackendInfo> {
-  return withCredentialTimeout(async () => {
-    const backend = await resolveBackendAsync();
-    if (backend.name === "encrypted-store") {
-      const protectedDir = getProtectedDir();
-      const storePath = join(protectedDir, "keys.enc");
-      const storeKeyPath = join(protectedDir, "store.key");
-      return {
-        backend: "encrypted-store" as const,
-        storePath,
-        storeKeyPath,
-        storeExists: existsSync(storePath),
-        storeKeyExists: existsSync(storeKeyPath),
-      };
-    }
-    if (backend.name === "ces-rpc") {
-      return { backend: "ces-rpc" as const, ready: backend.isAvailable() };
-    }
-    if (backend.name === "ces-http") {
-      return {
-        backend: "ces-http" as const,
-        url: process.env.CES_CREDENTIAL_URL ?? "",
-      };
-    }
-    return { backend: "none" as const };
-  }, { backend: "none" as const });
+  return withCredentialTimeout(
+    async () => {
+      const backend = await resolveBackendAsync();
+      if (backend.name === "encrypted-store") {
+        const protectedDir = getProtectedDir();
+        const storePath = join(protectedDir, "keys.enc");
+        const storeKeyPath = join(protectedDir, "store.key");
+        return {
+          backend: "encrypted-store" as const,
+          storePath,
+          storeKeyPath,
+          storeExists: existsSync(storePath),
+          storeKeyExists: existsSync(storeKeyPath),
+        };
+      }
+      if (backend.name === "ces-rpc") {
+        return { backend: "ces-rpc" as const, ready: backend.isAvailable() };
+      }
+      if (backend.name === "ces-http") {
+        return {
+          backend: "ces-http" as const,
+          url: process.env.CES_CREDENTIAL_URL ?? "",
+        };
+      }
+      return { backend: "none" as const };
+    },
+    { backend: "none" as const },
+  );
 }
 
 /** @internal Test-only: reset the cached backends so they're re-created. */

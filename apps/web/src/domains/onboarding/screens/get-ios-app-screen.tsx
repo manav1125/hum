@@ -2,8 +2,8 @@ import { Check } from "lucide-react";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import {
-    openIOSAppStore,
-    writeIOSAppDownloaded,
+  openIOSAppStore,
+  writeIOSAppDownloaded,
 } from "@/hooks/use-ios-app-nudge";
 import { Button } from "@vellumai/design-library/components/button";
 
@@ -12,10 +12,22 @@ interface GetIOSAppScreenProps {
 }
 
 const FEATURES = [
-  { label: "Push notifications", detail: "stay in the loop even when the browser is closed" },
-  { label: "Biometric login", detail: "Face ID & Touch ID for instant, secure access" },
-  { label: "Native haptics", detail: "tactile feedback that feels part of the device" },
-  { label: "Home screen access", detail: "launch your assistant with a single tap" },
+  {
+    label: "Push notifications",
+    detail: "stay in the loop even when the browser is closed",
+  },
+  {
+    label: "Biometric login",
+    detail: "Face ID & Touch ID for instant, secure access",
+  },
+  {
+    label: "Native haptics",
+    detail: "tactile feedback that feels part of the device",
+  },
+  {
+    label: "Home screen access",
+    detail: "launch your assistant with a single tap",
+  },
 ];
 
 export function GetIOSAppScreen({ onComplete }: GetIOSAppScreenProps) {
@@ -33,7 +45,8 @@ export function GetIOSAppScreen({ onComplete }: GetIOSAppScreenProps) {
           style={{
             background: "var(--surface-overlay)",
             borderColor: "var(--border-element)",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)",
+            boxShadow:
+              "0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04)",
             animation: "fadeInUp 0.3s ease-out both",
           }}
         >
@@ -81,8 +94,8 @@ export function GetIOSAppScreen({ onComplete }: GetIOSAppScreenProps) {
             animation: "fadeInUp 0.3s ease-out 0.15s both",
           }}
         >
-          The iOS app keeps your assistant a tap away — with push
-          notifications, biometric login, and native haptics.
+          The iOS app keeps your assistant a tap away — with push notifications,
+          biometric login, and native haptics.
         </p>
 
         <div
@@ -95,8 +108,12 @@ export function GetIOSAppScreen({ onComplete }: GetIOSAppScreenProps) {
         >
           <ul className="space-y-4">
             {FEATURES.map((feature, i) => (
-              <li key={feature.label} className="flex items-start gap-3"
-                style={{ animation: `fadeInUp 0.3s ease-out ${0.25 + i * 0.05}s both` }}
+              <li
+                key={feature.label}
+                className="flex items-start gap-3"
+                style={{
+                  animation: `fadeInUp 0.3s ease-out ${0.25 + i * 0.05}s both`,
+                }}
               >
                 <span
                   className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full"
@@ -118,7 +135,8 @@ export function GetIOSAppScreen({ onComplete }: GetIOSAppScreenProps) {
                     className="text-body-medium-lighter"
                     style={{ color: "var(--content-tertiary)" }}
                   >
-                    {" — "}{feature.detail}
+                    {" — "}
+                    {feature.detail}
                   </span>
                 </span>
               </li>

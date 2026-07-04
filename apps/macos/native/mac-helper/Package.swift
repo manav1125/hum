@@ -7,7 +7,7 @@ let package = Package(
         .macOS(.v15),
     ],
     products: [
-        .executable(name: "vellum-mac-helper", targets: ["MacHelperExecutable"]),
+        .executable(name: "cue-mac-helper", targets: ["MacHelperExecutable"]),
     ],
     targets: [
         .target(name: "MacHelperCore"),

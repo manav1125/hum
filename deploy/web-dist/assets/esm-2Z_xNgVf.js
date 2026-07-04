@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-C1-o5mco.js","assets/dist-DEJvMQLb.js"])))=>i.map(i=>d[i]);
+import{t as e}from"./preload-helper-BewR0kVT.js";import{i as t}from"./dist-DEJvMQLb.js";var n;(function(e){e.Light=`light`,e.Dark=`dark`})(n||={});var r=t(`SafeArea`,{web:()=>e(()=>import(`./web-C1-o5mco.js`).then(e=>new e.SafeAreaWeb),__vite__mapDeps([0,1]))});export{r as SafeArea};

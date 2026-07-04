@@ -104,17 +104,15 @@ function getScheduledConversations(qc: QueryClient): Conversation[] {
 
 function getGroups(qc: QueryClient): ConversationGroup[] {
   return (
-    qc.getQueryData<GroupsGetResponse>(
-      conversationGroupsQueryKey(ASSISTANT_ID),
-    )?.groups ?? []
+    qc.getQueryData<GroupsGetResponse>(conversationGroupsQueryKey(ASSISTANT_ID))
+      ?.groups ?? []
   );
 }
 
 function seedGroups(qc: QueryClient, groups: ConversationGroup[]): void {
-  qc.setQueryData<GroupsGetResponse>(
-    conversationGroupsQueryKey(ASSISTANT_ID),
-    { groups },
-  );
+  qc.setQueryData<GroupsGetResponse>(conversationGroupsQueryKey(ASSISTANT_ID), {
+    groups,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -151,9 +149,7 @@ describe("foreground/background/scheduled cache split", () => {
     // GIVEN a foreground list and a separate background list
     const qc = new QueryClient();
     seedConversations(qc, [makeConversation("fg")]);
-    seedBackgroundConversations(qc, [
-      makeConversation("bg", { title: "old" }),
-    ]);
+    seedBackgroundConversations(qc, [makeConversation("bg", { title: "old" })]);
 
     // WHEN we patch a conversation that only exists in the background cache
     patchConversation(qc, ASSISTANT_ID, "bg", { title: "new" });

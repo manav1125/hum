@@ -510,7 +510,10 @@ Rules:
 /** Render connected-channel messages as a context section for the synth. */
 function channelSection(channels: ChannelConversationSummary[]): string[] {
   if (channels.length === 0) return [];
-  const lines: string[] = ["", `## Connected channels (${channels.length} conversations)`];
+  const lines: string[] = [
+    "",
+    `## Connected channels (${channels.length} conversations)`,
+  ];
   for (const c of channels) {
     lines.push(
       `- [channel: ${c.channel}] [conversation: ${c.conversationId}] ${c.channelName} · ${c.conversationName}${c.unreadCount > 0 ? ` (${c.unreadCount} unread)` : ""}`,
@@ -541,7 +544,10 @@ async function synthesize(
   signal?: AbortSignal,
 ): Promise<{ headline: string; items: SynthItem[] } | null> {
   if (emails.length === 0 && events.length === 0 && channels.length === 0) {
-    return { headline: "Your inbox, calendar, and channels are clear.", items: [] };
+    return {
+      headline: "Your inbox, calendar, and channels are clear.",
+      items: [],
+    };
   }
   const provider = await getConfiguredProvider("actionBoard");
   if (!provider) {

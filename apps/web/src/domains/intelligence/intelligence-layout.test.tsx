@@ -46,9 +46,8 @@ mock.module("@/stores/assistant-feature-flag-store", () => ({
   },
 }));
 
-const { IntelligenceLayout } = await import(
-  "@/domains/intelligence/intelligence-layout"
-);
+const { IntelligenceLayout } =
+  await import("@/domains/intelligence/intelligence-layout");
 
 const renderLayout = () =>
   render(

@@ -100,7 +100,10 @@ export function RunningSection({
       const s = str((v as { status?: unknown }).status)?.toLowerCase() ?? "";
       return s === "running" || s === "active" || s === "in_progress";
     })
-    .map(([id, v]) => ({ id, status: str((v as { status?: unknown }).status) ?? "running" }));
+    .map(([id, v]) => ({
+      id,
+      status: str((v as { status?: unknown }).status) ?? "running",
+    }));
 
   const isLoading = running.isLoading;
   const isError = running.isError;
@@ -224,7 +227,11 @@ export function RunningSection({
               overflowY: "auto",
             }}
           >
-            {loadingOutput ? <Loader2 className="size-3 animate-spin" /> : output.text}
+            {loadingOutput ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              output.text
+            )}
           </pre>
         </div>
       ) : null}

@@ -262,7 +262,8 @@ export function RootLayout() {
           keyboardOpen && visibleViewport
             ? `${visibleViewport.height + keyboardOffsetTop}px`
             : "100dvh",
-        paddingTop: keyboardOffsetTop > 0 ? `${keyboardOffsetTop}px` : undefined,
+        paddingTop:
+          keyboardOffsetTop > 0 ? `${keyboardOffsetTop}px` : undefined,
         paddingBottom: keyboardOpen
           ? "0px"
           : "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))",
@@ -276,7 +277,10 @@ export function RootLayout() {
       }}
     >
       <UpdateToast />
-      <div className="flex min-w-0 flex-col overflow-hidden w-full" style={{ flex: "1 1 0%", minHeight: 0 }}>
+      <div
+        className="flex min-w-0 flex-col overflow-hidden w-full"
+        style={{ flex: "1 1 0%", minHeight: 0 }}
+      >
         <Outlet />
       </div>
 

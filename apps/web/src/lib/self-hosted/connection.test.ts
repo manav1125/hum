@@ -84,7 +84,10 @@ describe("getSelfHostedActorToken — gateway-auth token freshness", () => {
     // gateway-auth disabled (e.g. platform self-hosted) → the slot's
     // platform actor token is authoritative; a stray live token is ignored.
     liveGatewayToken = "should-be-ignored";
-    setSelfHostedConnection({ url: "https://gw.example", token: "platform-actor" });
+    setSelfHostedConnection({
+      url: "https://gw.example",
+      token: "platform-actor",
+    });
     expect(getSelfHostedActorToken()).toBe("platform-actor");
   });
 
@@ -93,7 +96,10 @@ describe("getSelfHostedActorToken — gateway-auth token freshness", () => {
     // slot was primed once with a now-stale snapshot, but the gateway token
     // has rotated. Runtime-proxy + SSE requests must carry the fresh token.
     gatewayAuthEnabled = true;
-    setSelfHostedConnection({ url: "https://gw.example", token: "stale-snapshot" });
+    setSelfHostedConnection({
+      url: "https://gw.example",
+      token: "stale-snapshot",
+    });
     liveGatewayToken = "fresh-rotated-token";
     expect(getSelfHostedActorToken()).toBe("fresh-rotated-token");
   });
@@ -101,7 +107,10 @@ describe("getSelfHostedActorToken — gateway-auth token freshness", () => {
   test("gateway-auth path: falls back to the snapshot before the first mint lands", () => {
     gatewayAuthEnabled = true;
     liveGatewayToken = null;
-    setSelfHostedConnection({ url: "https://gw.example", token: "snapshot-token" });
+    setSelfHostedConnection({
+      url: "https://gw.example",
+      token: "snapshot-token",
+    });
     expect(getSelfHostedActorToken()).toBe("snapshot-token");
   });
 

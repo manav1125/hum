@@ -1,4 +1,3 @@
-
 import { motion } from "motion/react";
 
 import { SKILL_NODE_SIZE } from "@/domains/intelligence/components/constellation-layout";
@@ -7,7 +6,10 @@ import { SkillIcon } from "@/domains/intelligence/components/skills/skill-icon";
 
 import { NODE_SPRING } from "@/domains/intelligence/components/constellation-view/constants";
 import { useNodeClickHandlers } from "@/domains/intelligence/components/constellation-view/use-node-click-handlers";
-import { mixedBg, type NodeVisibility } from "@/domains/intelligence/components/constellation-view/utils";
+import {
+  mixedBg,
+  type NodeVisibility,
+} from "@/domains/intelligence/components/constellation-view/utils";
 
 export interface SkillNodeProps {
   x: number;
@@ -34,7 +36,11 @@ export function SkillNode({
   onSingleClick,
   onDoubleClick,
 }: SkillNodeProps) {
-  const { active, ...handlers } = useNodeClickHandlers(onSingleClick, onDoubleClick, isSelected);
+  const { active, ...handlers } = useNodeClickHandlers(
+    onSingleClick,
+    onDoubleClick,
+    isSelected,
+  );
   // Skills use a diamond silhouette: only the background shape is rotated
   // 45°, while the icon + label render in a separate un-rotated layer so the
   // text always stays upright.
@@ -75,7 +81,11 @@ export function SkillNode({
         }}
       />
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <SkillIcon skill={item} className="h-4 w-4 text-[16px] leading-none" fallback={fallbackEmoji} />
+        <SkillIcon
+          skill={item}
+          className="h-4 w-4 text-[16px] leading-none"
+          fallback={fallbackEmoji}
+        />
         <span
           className="mt-0.5 max-w-[42px] truncate text-[9px] font-medium leading-tight text-[var(--content-default)]"
           title={item.label}

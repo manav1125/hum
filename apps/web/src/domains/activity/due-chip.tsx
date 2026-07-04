@@ -7,7 +7,12 @@ import { useState } from "react";
 
 import { C, mono } from "./theme";
 
-const LIVE_STATUSES = new Set(["queued", "pending", "running", "awaiting_review"]);
+const LIVE_STATUSES = new Set([
+  "queued",
+  "pending",
+  "running",
+  "awaiting_review",
+]);
 
 function dueLabel(dueAt: number, now: number): string {
   const diff = dueAt - now;

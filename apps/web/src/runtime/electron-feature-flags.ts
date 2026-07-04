@@ -59,7 +59,8 @@ export function useElectronFeatureFlagBridge(): void {
     writeToMainProcess();
 
     // Re-sync on every store update.
-    const unsubAssistant = useAssistantFeatureFlagStore.subscribe(writeToMainProcess);
+    const unsubAssistant =
+      useAssistantFeatureFlagStore.subscribe(writeToMainProcess);
     const unsubClient = useClientFeatureFlagStore.subscribe(writeToMainProcess);
     return () => {
       unsubAssistant();

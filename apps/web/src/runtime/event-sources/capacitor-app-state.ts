@@ -47,7 +47,10 @@ export function publishCapacitorAppStateSource(): () => void {
       handle = registered;
     })
     .catch((err) => {
-      captureError(err, { context: "event_bus_capacitor_init", level: "warning" });
+      captureError(err, {
+        context: "event_bus_capacitor_init",
+        level: "warning",
+      });
     });
 
   return () => {

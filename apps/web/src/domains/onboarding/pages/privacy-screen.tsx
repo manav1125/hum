@@ -5,17 +5,17 @@ import { useNavigate, useSearchParams } from "react-router";
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import { StepIndicatorDots } from "@/domains/onboarding/components/step-indicator-dots";
 import {
-    emitOnboardingFunnelStepCompleted,
-    getOnboardingFunnelSessionId,
-    ONBOARDING_FUNNEL_STEPS,
-    onboardingFunnelVariantFromExperiment,
-    resolveOnboardingFunnelVariant,
+  emitOnboardingFunnelStepCompleted,
+  getOnboardingFunnelSessionId,
+  ONBOARDING_FUNNEL_STEPS,
+  onboardingFunnelVariantFromExperiment,
+  resolveOnboardingFunnelVariant,
 } from "@/domains/onboarding/funnel-events";
 import {
-    useAiDataConsent,
-    useShareAnalytics,
-    useShareDiagnostics,
-    useTosAccepted,
+  useAiDataConsent,
+  useShareAnalytics,
+  useShareDiagnostics,
+  useTosAccepted,
 } from "@/domains/onboarding/prefs";
 import { isElectron } from "@/runtime/is-electron";
 import { useIsNativePlatform } from "@/runtime/native-auth";
@@ -42,11 +42,7 @@ function SettingRow({
   const toggleId = useId();
   return (
     <div className="flex items-start gap-4">
-      <Toggle
-        checked={checked}
-        onChange={onChange}
-        id={toggleId}
-      />
+      <Toggle checked={checked} onChange={onChange} id={toggleId} />
       <label htmlFor={toggleId} className="min-w-0 flex-1 cursor-pointer">
         <span className="block text-body-medium-default text-[var(--content-default)]">
           {label}
@@ -74,7 +70,8 @@ export function PrivacyScreen() {
   const electron = isElectron();
   const isNative = useIsNativePlatform();
   const preChatExperimentArm =
-    useClientFeatureFlagStore.use.stringFlags().preChatOnboardingExperiment20260606 ?? "control";
+    useClientFeatureFlagStore.use.stringFlags()
+      .preChatOnboardingExperiment20260606 ?? "control";
   const preferredFunnelVariant =
     onboardingFunnelVariantFromExperiment(preChatExperimentArm);
   const [shareAnalytics, setShareAnalyticsReal] = useShareAnalytics();
@@ -106,7 +103,14 @@ export function PrivacyScreen() {
       return;
     }
 
-    saveConsent({ userId, tos: tosAccepted, ai: aiDataConsent, shareAnalytics, shareDiagnostics, hasPlatformSession });
+    saveConsent({
+      userId,
+      tos: tosAccepted,
+      ai: aiDataConsent,
+      shareAnalytics,
+      shareDiagnostics,
+      hasPlatformSession,
+    });
     if (!isNative) {
       const variant = resolveOnboardingFunnelVariant(preferredFunnelVariant);
       emitOnboardingFunnelStepCompleted(ONBOARDING_FUNNEL_STEPS.privacyTos, {
@@ -185,7 +189,11 @@ export function PrivacyScreen() {
           </div>
         )}
         <h1
-          className={electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}
+          className={
+            electron
+              ? "text-title-large"
+              : "text-3xl font-semibold tracking-tight"
+          }
           style={{ animation: "fadeInUp 0.5s ease-out 0.1s both" }}
         >
           Before You Start
@@ -220,7 +228,9 @@ export function PrivacyScreen() {
             <div className="h-px bg-[var(--surface-active)] dark:bg-[var(--surface-lift)]" />
             <div className="flex items-center gap-2 text-body-small-default text-[var(--content-tertiary)]">
               <EyeOff className="h-4 w-4 shrink-0" />
-              <span>Your conversations and personal data are never included.</span>
+              <span>
+                Your conversations and personal data are never included.
+              </span>
             </div>
           </div>
         </Card>
@@ -275,7 +285,6 @@ export function PrivacyScreen() {
             Back
           </Button>
         </div>
-
       </div>
     </OnboardingLayout>
   );

@@ -69,7 +69,10 @@ export function ProviderSignupPage() {
       if (!result.ok) {
         if (isConflict(result)) {
           await refreshSession();
-          const conflict = resolvePostLoginDestination(returnTo, routes.account.root);
+          const conflict = resolvePostLoginDestination(
+            returnTo,
+            routes.account.root,
+          );
           if (conflict.requiresFullPageNavigation) {
             window.location.href = conflict.destination;
           } else {
@@ -78,9 +81,7 @@ export function ProviderSignupPage() {
           return;
         }
 
-        setError(
-          result.errors[0]?.message ?? "Failed to complete signup.",
-        );
+        setError(result.errors[0]?.message ?? "Failed to complete signup.");
         return;
       }
 

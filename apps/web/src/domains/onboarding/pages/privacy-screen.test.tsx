@@ -58,9 +58,13 @@ mock.module("@/domains/onboarding/components/step-indicator-dots", () => ({
 }));
 mock.module("lucide-react", () => ({ EyeOff: () => null }));
 mock.module("@vellumai/design-library/components/button", () => ({
-  Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-    <button onClick={onClick}>{children}</button>
-  ),
+  Button: ({
+    children,
+    onClick,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+  }) => <button onClick={onClick}>{children}</button>,
 }));
 mock.module("@vellumai/design-library/components/card", () => ({
   Card: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -72,9 +76,8 @@ mock.module("@vellumai/design-library/components/toggle", () => ({
   Toggle: () => null,
 }));
 
-const { PrivacyScreen } = await import(
-  "@/domains/onboarding/pages/privacy-screen"
-);
+const { PrivacyScreen } =
+  await import("@/domains/onboarding/pages/privacy-screen");
 
 function clickStart(): void {
   fireEvent.click(screen.getByText("Start"));

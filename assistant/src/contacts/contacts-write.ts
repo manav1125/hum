@@ -25,7 +25,6 @@ import type {
   ContactWriteResult,
 } from "./types.js";
 
-
 // ── Guardian operations ──────────────────────────────────────────────
 
 /**
@@ -174,4 +173,3 @@ export function revokeMember(
   emitContactChange();
   return { contact, channel: updatedChannel };
 }
-

@@ -1,21 +1,14 @@
-
-import {
-    Maximize2,
-    Minimize2,
-    Scan,
-    ZoomIn,
-    ZoomOut,
-} from "lucide-react";
+import { Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-    type MouseEvent as ReactMouseEvent,
-    type PointerEvent as ReactPointerEvent,
-    useCallback,
-    useEffect,
-    useLayoutEffect,
-    useMemo,
-    useRef,
-    useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 
 import type { SkillInfo } from "@/domains/intelligence/skills/types";
@@ -23,12 +16,12 @@ import type { CharacterComponents, CharacterTraits } from "@/types/avatar";
 import { Button } from "@vellumai/design-library";
 
 import {
-    buildGroups,
-    buildTree,
-    CENTER_AVATAR_SIZE,
-    getCategoryConfig,
-    type OrbitItem,
-    type TreeNode,
+  buildGroups,
+  buildTree,
+  CENTER_AVATAR_SIZE,
+  getCategoryConfig,
+  type OrbitItem,
+  type TreeNode,
 } from "@/domains/intelligence/components/constellation-layout";
 
 import { VIRTUAL_CENTER } from "@/domains/intelligence/components/constellation-view/constants";
@@ -160,12 +153,15 @@ export function ConstellationView({
     x: viewport.viewSize.width / 2,
     y: viewport.viewSize.height / 2,
   };
-  const offsetX = viewportCenter.x - VIRTUAL_CENTER.x * viewport.zoom + viewport.pan.x;
-  const offsetY = viewportCenter.y - VIRTUAL_CENTER.y * viewport.zoom + viewport.pan.y;
+  const offsetX =
+    viewportCenter.x - VIRTUAL_CENTER.x * viewport.zoom + viewport.pan.x;
+  const offsetY =
+    viewportCenter.y - VIRTUAL_CENTER.y * viewport.zoom + viewport.pan.y;
 
   // Compute popover position (relative to container) so it hovers above the
   // selected node and stays within viewport bounds.
-  const popoverNode = popoverNodeId != null ? nodeById.get(popoverNodeId) : undefined;
+  const popoverNode =
+    popoverNodeId != null ? nodeById.get(popoverNodeId) : undefined;
   let popoverLeft = 0;
   let popoverTop = 0;
   if (popoverItem != null && popoverNode) {
@@ -246,7 +242,9 @@ export function ConstellationView({
             components={components}
             traits={traits}
             customImageUrl={customImageUrl}
-            isSelected={popoverNodeId === node.id || viewport.zoomedNodeId === node.id}
+            isSelected={
+              popoverNodeId === node.id || viewport.zoomedNodeId === node.id
+            }
             onSingleClick={() => togglePopover(node.id)}
             onDoubleClick={() => handleZoomToNode(node.id)}
           />
@@ -286,7 +284,9 @@ export function ConstellationView({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            onPointerDown={(event: ReactPointerEvent) => event.stopPropagation()}
+            onPointerDown={(event: ReactPointerEvent) =>
+              event.stopPropagation()
+            }
             onClick={(event: ReactMouseEvent) => event.stopPropagation()}
           >
             <NodePopover

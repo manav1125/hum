@@ -35,7 +35,9 @@ export function TaskToneSelectionScreen({
 
   return (
     <OnboardingLayout showCreatureFooter={false}>
-      <div className={`mx-auto flex w-full max-w-xl flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}>
+      <div
+        className={`mx-auto flex w-full max-w-xl flex-col items-center ${electron ? "min-h-full px-8 pt-11 pb-8 electron-prechat-type" : "px-6 pt-12 pb-40"} text-[var(--content-default)]`}
+      >
         <div
           className="grid w-full grid-cols-[auto_1fr_auto] items-center"
           style={{ animation: "fadeInUp 0.3s ease-out 0.1s both" }}
@@ -48,7 +50,9 @@ export function TaskToneSelectionScreen({
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h1 className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}>
+          <h1
+            className={`text-center ${electron ? "text-title-large" : "text-3xl font-semibold tracking-tight"}`}
+          >
             What are you working on?
           </h1>
           <div aria-hidden="true" className="h-8 w-8" />
@@ -58,8 +62,8 @@ export function TaskToneSelectionScreen({
           className={`${electron ? "mt-2" : "mt-4"} text-center text-body-medium-lighter text-[var(--content-${electron ? "secondary" : "tertiary"})]`}
           style={{ animation: "fadeInUp 0.3s ease-out 0.15s both" }}
         >
-          Pick the one or two you do most — you can select more if it
-          really is all of it.
+          Pick the one or two you do most — you can select more if it really is
+          all of it.
         </p>
 
         <div

@@ -56,9 +56,7 @@ export function SchedulesWidget({ assistantId }: { assistantId: string }) {
       loading={query.isLoading}
       loadingLabel="Loading schedules…"
       error={query.isError}
-      empty={
-        !query.isLoading && !query.isError && schedules.length === 0
-      }
+      empty={!query.isLoading && !query.isError && schedules.length === 0}
       emptyLabel="No saved schedules — ask Cue to run something on a cadence."
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>

@@ -1,10 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import {
-  BarChart3,
-  Mail,
-  MonitorCog,
-  ScrollText,
-} from "lucide-react";
+import { BarChart3, Mail, MonitorCog, ScrollText } from "lucide-react";
 
 import { routes } from "@/utils/routes";
 

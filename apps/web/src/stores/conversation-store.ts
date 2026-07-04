@@ -84,7 +84,10 @@ export interface ConversationListActions {
   setEditingConversationId: (conversationId: string | null) => void;
 
   // --- Processing conversation ids (and their snapshots, kept atomic) ---
-  addProcessingConversationId: (conversationId: string, snapshot?: number) => void;
+  addProcessingConversationId: (
+    conversationId: string,
+    snapshot?: number,
+  ) => void;
   /**
    * Idempotent "this conversation is mid-turn" mark for SSE start events.
    * Like `addProcessingConversationId` but tolerant of repeat firings
@@ -100,7 +103,10 @@ export interface ConversationListActions {
    * No-op when the id is already in the set and a snapshot is already
    * recorded.
    */
-  markConversationProcessing: (conversationId: string, snapshot?: number) => void;
+  markConversationProcessing: (
+    conversationId: string,
+    snapshot?: number,
+  ) => void;
   removeProcessingConversationId: (conversationId: string) => void;
   removeMultipleProcessingConversationIds: (conversationIds: string[]) => void;
   transferProcessingConversationId: (
@@ -157,7 +163,10 @@ export const useConversationStore = createSelectors(
       const nextSnapshots = new Map(processingSnapshots);
       nextSnapshots.set(conversationId, snapshot);
       set({
-        processingConversationIds: addToSet(processingConversationIds, conversationId),
+        processingConversationIds: addToSet(
+          processingConversationIds,
+          conversationId,
+        ),
         processingSnapshots: nextSnapshots,
       });
     },
@@ -181,8 +190,14 @@ export const useConversationStore = createSelectors(
 
     removeProcessingConversationId: (conversationId) => {
       set({
-        processingConversationIds: removeFromSet(get().processingConversationIds, conversationId),
-        processingSnapshots: deleteFromMap(get().processingSnapshots, conversationId),
+        processingConversationIds: removeFromSet(
+          get().processingConversationIds,
+          conversationId,
+        ),
+        processingSnapshots: deleteFromMap(
+          get().processingSnapshots,
+          conversationId,
+        ),
       });
     },
 
@@ -201,7 +216,10 @@ export const useConversationStore = createSelectors(
       });
     },
 
-    transferProcessingConversationId: (oldConversationId, newConversationId) => {
+    transferProcessingConversationId: (
+      oldConversationId,
+      newConversationId,
+    ) => {
       const { processingConversationIds, processingSnapshots } = get();
       if (!processingConversationIds.has(oldConversationId)) return;
       const nextIds = new Set(processingConversationIds);
@@ -211,13 +229,21 @@ export const useConversationStore = createSelectors(
       const snapshot = nextSnapshots.get(oldConversationId);
       nextSnapshots.delete(oldConversationId);
       nextSnapshots.set(newConversationId, snapshot);
-      set({ processingConversationIds: nextIds, processingSnapshots: nextSnapshots });
+      set({
+        processingConversationIds: nextIds,
+        processingSnapshots: nextSnapshots,
+      });
     },
 
     // --- Attention conversation ids ---
 
     addAttentionConversationId: (conversationId) => {
-      set({ attentionConversationIds: addToSet(get().attentionConversationIds, conversationId) });
+      set({
+        attentionConversationIds: addToSet(
+          get().attentionConversationIds,
+          conversationId,
+        ),
+      });
     },
 
     removeAttentionConversationId: (conversationId) => {
@@ -231,13 +257,19 @@ export const useConversationStore = createSelectors(
 
     // --- Compound ---
 
-    graduateProcessingConversationId: (conversationId, hasPendingInteraction) => {
+    graduateProcessingConversationId: (
+      conversationId,
+      hasPendingInteraction,
+    ) => {
       set((state) => ({
         processingConversationIds: removeFromSet(
           state.processingConversationIds,
           conversationId,
         ),
-        processingSnapshots: deleteFromMap(state.processingSnapshots, conversationId),
+        processingSnapshots: deleteFromMap(
+          state.processingSnapshots,
+          conversationId,
+        ),
         attentionConversationIds: hasPendingInteraction
           ? addToSet(state.attentionConversationIds, conversationId)
           : state.attentionConversationIds,

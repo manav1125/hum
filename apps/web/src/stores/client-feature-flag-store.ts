@@ -64,90 +64,98 @@ type ClientFeatureFlagStore = Record<string, boolean> &
   ClientFeatureFlagActions;
 
 // See assistant-feature-flag-store.ts for why setStr() is needed.
-const useClientFeatureFlagStoreBase = create<ClientFeatureFlagStore>()(
-  (set) => {
-    const setStr = set as unknown as (
-      partial:
-        | { stringFlags: Record<string, string> }
-        | ((state: ClientFeatureFlagStore) => { stringFlags: Record<string, string> } | ClientFeatureFlagStore),
-    ) => void;
+const useClientFeatureFlagStoreBase = create<ClientFeatureFlagStore>()((
+  set,
+) => {
+  const setStr = set as unknown as (
+    partial:
+      | { stringFlags: Record<string, string> }
+      | ((
+          state: ClientFeatureFlagStore,
+        ) => { stringFlags: Record<string, string> } | ClientFeatureFlagStore),
+  ) => void;
 
-    return ({
-      ...CLIENT_FLAG_DEFAULTS,
-      ...localOverrides,
-      ...envOverrides.bool,
-      stringFlags: { ...CLIENT_STRING_FLAG_DEFAULTS, ...localStringOverrides, ...envOverrides.str },
+  return {
+    ...CLIENT_FLAG_DEFAULTS,
+    ...localOverrides,
+    ...envOverrides.bool,
+    stringFlags: {
+      ...CLIENT_STRING_FLAG_DEFAULTS,
+      ...localStringOverrides,
+      ...envOverrides.str,
+    },
 
-      setFlags: (flags: Record<string, boolean>) =>
-        set((prev) => {
-          const overrides = readOverrides();
-          const merged = { ...flags, ...overrides, ...envOverrides.bool };
-          const changed = Object.keys(merged).some(
-            (k) => merged[k] !== prev[k],
-          );
-          return changed ? merged : prev;
-        }),
+    setFlags: (flags: Record<string, boolean>) =>
+      set((prev) => {
+        const overrides = readOverrides();
+        const merged = { ...flags, ...overrides, ...envOverrides.bool };
+        const changed = Object.keys(merged).some((k) => merged[k] !== prev[k]);
+        return changed ? merged : prev;
+      }),
 
-      setFlag: (key: string, value: boolean) => {
-        try {
-          localStorage.setItem(LS_PREFIX + key, String(value));
-        } catch {
-          // localStorage unavailable
-        }
-        set({ [key]: envOverrides.bool[key] ?? value });
-      },
+    setFlag: (key: string, value: boolean) => {
+      try {
+        localStorage.setItem(LS_PREFIX + key, String(value));
+      } catch {
+        // localStorage unavailable
+      }
+      set({ [key]: envOverrides.bool[key] ?? value });
+    },
 
-      clearOverride: (key: string) => {
-        try {
-          localStorage.removeItem(LS_PREFIX + key);
-        } catch {
-          // localStorage unavailable
-        }
-        const defaultValue = envOverrides.bool[key] ?? CLIENT_FLAG_DEFAULTS[key];
-        if (defaultValue !== undefined) {
-          set({ [key]: defaultValue });
-        }
-      },
+    clearOverride: (key: string) => {
+      try {
+        localStorage.removeItem(LS_PREFIX + key);
+      } catch {
+        // localStorage unavailable
+      }
+      const defaultValue = envOverrides.bool[key] ?? CLIENT_FLAG_DEFAULTS[key];
+      if (defaultValue !== undefined) {
+        set({ [key]: defaultValue });
+      }
+    },
 
-      setStringFlags: (flags: Record<string, string>) =>
-        setStr((prev) => {
-          const overrides = readStringOverrides();
-          const merged = { ...flags, ...overrides, ...envOverrides.str };
-          const prevStr = prev.stringFlags;
-          const changed = Object.keys(merged).some(
-            (k) => merged[k] !== prevStr[k],
-          );
-          return changed ? { stringFlags: merged } : prev;
-        }),
+    setStringFlags: (flags: Record<string, string>) =>
+      setStr((prev) => {
+        const overrides = readStringOverrides();
+        const merged = { ...flags, ...overrides, ...envOverrides.str };
+        const prevStr = prev.stringFlags;
+        const changed = Object.keys(merged).some(
+          (k) => merged[k] !== prevStr[k],
+        );
+        return changed ? { stringFlags: merged } : prev;
+      }),
 
-      setStringFlag: (key: string, value: string) => {
-        try {
-          localStorage.setItem(LS_STRING_PREFIX + key, value);
-        } catch {
-          // localStorage unavailable
-        }
-        setStr((prev) => ({
-          stringFlags: { ...prev.stringFlags, [key]: envOverrides.str[key] ?? value },
-        }));
-      },
+    setStringFlag: (key: string, value: string) => {
+      try {
+        localStorage.setItem(LS_STRING_PREFIX + key, value);
+      } catch {
+        // localStorage unavailable
+      }
+      setStr((prev) => ({
+        stringFlags: {
+          ...prev.stringFlags,
+          [key]: envOverrides.str[key] ?? value,
+        },
+      }));
+    },
 
-      clearStringOverride: (key: string) => {
-        try {
-          localStorage.removeItem(LS_STRING_PREFIX + key);
-        } catch {
-          // localStorage unavailable
-        }
-        const defaultValue = envOverrides.str[key] ?? CLIENT_STRING_FLAG_DEFAULTS[key];
-        setStr((prev) => ({
-          stringFlags: {
-            ...prev.stringFlags,
-            [key]: defaultValue ?? "",
-          },
-        }));
-      },
-    }) as ClientFeatureFlagStore;
-  },
-);
+    clearStringOverride: (key: string) => {
+      try {
+        localStorage.removeItem(LS_STRING_PREFIX + key);
+      } catch {
+        // localStorage unavailable
+      }
+      const defaultValue =
+        envOverrides.str[key] ?? CLIENT_STRING_FLAG_DEFAULTS[key];
+      setStr((prev) => ({
+        stringFlags: {
+          ...prev.stringFlags,
+          [key]: defaultValue ?? "",
+        },
+      }));
+    },
+  } as ClientFeatureFlagStore;
+});
 
 export const useClientFeatureFlagStore = createSelectors(
   useClientFeatureFlagStoreBase,

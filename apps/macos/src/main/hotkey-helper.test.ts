@@ -158,27 +158,27 @@ afterEach(() => {
 describe("getMacHelperPath", () => {
   test("resolves dev helper app from app path resources", () => {
     expect(getMacHelperAppPath()).toBe(
-      "/repo/apps/macos/resources/vellum-mac-helper.app",
+      "/repo/apps/macos/resources/cue-mac-helper.app",
     );
   });
 
   test("resolves dev helper from app path resources", () => {
     expect(getMacHelperPath()).toBe(
-      "/repo/apps/macos/resources/vellum-mac-helper.app/Contents/MacOS/vellum-mac-helper",
+      "/repo/apps/macos/resources/cue-mac-helper.app/Contents/MacOS/cue-mac-helper",
     );
   });
 
   test("resolves packaged helper app from process.resourcesPath", () => {
     appState.isPackaged = true;
     expect(getMacHelperAppPath()).toBe(
-      "/mock/resources/bin/vellum-mac-helper.app",
+      "/mock/resources/bin/cue-mac-helper.app",
     );
   });
 
   test("resolves packaged helper from process.resourcesPath", () => {
     appState.isPackaged = true;
     expect(getMacHelperPath()).toBe(
-      "/mock/resources/bin/vellum-mac-helper.app/Contents/MacOS/vellum-mac-helper",
+      "/mock/resources/bin/cue-mac-helper.app/Contents/MacOS/cue-mac-helper",
     );
   });
 });
@@ -192,7 +192,7 @@ describe("permission request launchers", () => {
     const args = spawnCalls[0]?.[1] ?? [];
     expect(args.slice(0, 4)).toEqual([
       "-n",
-      "/repo/apps/macos/resources/vellum-mac-helper.app",
+      "/repo/apps/macos/resources/cue-mac-helper.app",
       "--args",
       "--permission-status",
     ]);
@@ -211,7 +211,7 @@ describe("permission request launchers", () => {
     expect(spawnCalls[0]?.[0]).toBe("open");
     expect(spawnCalls[0]?.[1]).toEqual([
       "-n",
-      "/repo/apps/macos/resources/vellum-mac-helper.app",
+      "/repo/apps/macos/resources/cue-mac-helper.app",
       "--args",
       "--request-speech-recognition",
     ]);
@@ -226,7 +226,7 @@ describe("permission request launchers", () => {
     expect(spawnCalls[0]?.[0]).toBe("open");
     expect(spawnCalls[0]?.[1]).toEqual([
       "-n",
-      "/repo/apps/macos/resources/vellum-mac-helper.app",
+      "/repo/apps/macos/resources/cue-mac-helper.app",
       "--args",
       "--request-input-monitoring",
     ]);
@@ -270,7 +270,7 @@ describe("installHotkeyHelper", () => {
       state: { status: "running" },
     });
     expect(spawnCalls[0]?.[0]).toBe(
-      "/repo/apps/macos/resources/vellum-mac-helper.app/Contents/MacOS/vellum-mac-helper",
+      "/repo/apps/macos/resources/cue-mac-helper.app/Contents/MacOS/cue-mac-helper",
     );
   });
 
@@ -333,7 +333,7 @@ describe("installHotkeyHelper", () => {
     const pending = invokeFnPushToTalk(true);
 
     expect(spawnCalls[0]?.[0]).toBe(
-      "/repo/apps/macos/resources/vellum-mac-helper.app/Contents/MacOS/vellum-mac-helper",
+      "/repo/apps/macos/resources/cue-mac-helper.app/Contents/MacOS/cue-mac-helper",
     );
     expect(lastChild?.stdin.writes[0]).toContain("\"jsonrpc\":\"2.0\"");
     expect(lastChild?.stdin.writes[0]).toContain(

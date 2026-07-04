@@ -45,9 +45,8 @@ mock.module("@/runtime/local-mode-host", () => ({
   wakeLocalAssistantHost: async () => ({ ok: true }),
 }));
 
-const { remintGatewayTokenOnce, __resetRemintStateForTesting } = await import(
-  "@/lib/local-mode"
-);
+const { remintGatewayTokenOnce, __resetRemintStateForTesting } =
+  await import("@/lib/local-mode");
 
 beforeEach(() => {
   mockIsSelfHost = true;

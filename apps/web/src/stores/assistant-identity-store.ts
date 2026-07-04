@@ -38,17 +38,15 @@ interface AssistantIdentityActions {
 
 type AssistantIdentityStore = AssistantIdentityState & AssistantIdentityActions;
 
-const useAssistantIdentityStoreBase = create<AssistantIdentityStore>(
-  (set) => ({
-    name: null,
-    version: null,
-    setIdentity: (name, version) => {
-      const impersonated = getImpersonatedAssistantVersion();
-      set({ name, version: impersonated ?? version });
-    },
-    clearIdentity: () => set({ name: null, version: null }),
-  }),
-);
+const useAssistantIdentityStoreBase = create<AssistantIdentityStore>((set) => ({
+  name: null,
+  version: null,
+  setIdentity: (name, version) => {
+    const impersonated = getImpersonatedAssistantVersion();
+    set({ name, version: impersonated ?? version });
+  },
+  clearIdentity: () => set({ name: null, version: null }),
+}));
 
 export const useAssistantIdentityStore = createSelectors(
   useAssistantIdentityStoreBase,

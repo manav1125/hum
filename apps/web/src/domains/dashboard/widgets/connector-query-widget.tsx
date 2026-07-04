@@ -52,7 +52,9 @@ export function ConnectorQueryWidget({
   return (
     <WidgetFrame
       title={preset.label}
-      badge={<ProvenanceBadge>via Cue · from your connected apps</ProvenanceBadge>}
+      badge={
+        <ProvenanceBadge>via Cue · from your connected apps</ProvenanceBadge>
+      }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <p style={{ fontSize: 13, color: C.t2, lineHeight: 1.4, margin: 0 }}>

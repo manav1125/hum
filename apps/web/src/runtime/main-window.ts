@@ -41,4 +41,3 @@ export async function setOnboardingWindow(active: boolean): Promise<void> {
   if (!isElectron()) return;
   await window.vellum?.mainWindow.setOnboarding(active);
 }
-

@@ -33,6 +33,7 @@ import {
   type WorkItem,
 } from "./work-item-store.js";
 import {
+  buildSourceContext,
   classifyWorkItemAutonomy,
   hardDeniedAutoRunTools,
   isHardDeniedForAutoRun,
@@ -58,6 +59,9 @@ function makeItem(overrides: Partial<WorkItem> = {}): WorkItem {
     requiredTools: null,
     approvedTools: null,
     approvalStatus: "none",
+    context: null,
+    sourceContext: null,
+    lastActivityAt: null,
     createdAt: 0,
     updatedAt: 0,
     ...overrides,
@@ -277,6 +281,62 @@ describe("triageWorkItem stamping (DB-backed)", () => {
     updateWorkItem(item.id, { status: "cancelled" });
     await triageWorkItem(item.id, {});
     expect(getWorkItem(item.id)!.sortIndex).toBeNull();
+  });
+
+  test("stamps source_context (origin + snippet) from the creating channel", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "Reply to Aileen about the OTP",
+      notes: "She DM'd asking for the login code",
+      sourceType: "whatsapp",
+      sourceId: "chat-42",
+    });
+    await triageWorkItem(item.id, {});
+    const fresh = getWorkItem(item.id)!;
+    expect(fresh.sourceContext).not.toBeNull();
+    const parsed = JSON.parse(fresh.sourceContext!) as {
+      origin: string;
+      sourceId?: string;
+      snippet: string;
+    };
+    expect(parsed.origin).toBe("whatsapp");
+    expect(parsed.sourceId).toBe("chat-42");
+    expect(parsed.snippet).toBe("She DM'd asking for the login code");
+  });
+
+  test("source_context defaults origin to 'chat' and uses the title when there are no notes", async () => {
+    const item = createWorkItem({ taskId, title: "Draft the launch email" });
+    await triageWorkItem(item.id, {});
+    const parsed = JSON.parse(getWorkItem(item.id)!.sourceContext!) as {
+      origin: string;
+      snippet: string;
+    };
+    expect(parsed.origin).toBe("chat");
+    expect(parsed.snippet).toBe("Draft the launch email");
+  });
+
+  test("never overwrites an existing source_context", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "Task",
+      sourceContext: JSON.stringify({ origin: "mcp", snippet: "pre-set" }),
+    });
+    await triageWorkItem(item.id, {});
+    const parsed = JSON.parse(getWorkItem(item.id)!.sourceContext!) as {
+      origin: string;
+    };
+    expect(parsed.origin).toBe("mcp");
+  });
+});
+
+describe("buildSourceContext", () => {
+  test("truncates a long snippet to 500 chars with an ellipsis", () => {
+    const long = "x".repeat(600);
+    const parsed = JSON.parse(
+      buildSourceContext(makeItem({ title: "t", notes: long })),
+    ) as { snippet: string };
+    expect(parsed.snippet.endsWith("…")).toBe(true);
+    expect(parsed.snippet.length).toBe(501); // 500 chars + ellipsis
   });
 });
 

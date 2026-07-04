@@ -28,7 +28,9 @@ export type CommandHandlers = Partial<
 
 export function useVellumCommands(handlers: CommandHandlers): void {
   const handlersRef = useRef<CommandHandlers>(handlers);
-  useLayoutEffect(() => { handlersRef.current = handlers; });
+  useLayoutEffect(() => {
+    handlersRef.current = handlers;
+  });
 
   useEffect(() => {
     if (!isElectron()) return;

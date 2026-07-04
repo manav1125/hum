@@ -5,7 +5,10 @@ import { Button } from "@vellumai/design-library";
 
 import { AppleLogo } from "@/components/icons/apple-logo";
 import { GoogleLogo } from "@/components/icons/google-logo";
-import { LoginErrorText, LoginHeading } from "@/domains/account/components/login-shell";
+import {
+  LoginErrorText,
+  LoginHeading,
+} from "@/domains/account/components/login-shell";
 import { routes } from "@/utils/routes";
 
 function SignUpFooter({ signUpHref }: { signUpHref: string }) {

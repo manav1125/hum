@@ -216,7 +216,8 @@ export async function bridgeCesApproval(
     approval,
     cesClient,
     decision: cesDecision,
-    reason: response.decision === "allow" ? "guardian_approved" : "guardian_denied",
+    reason:
+      response.decision === "allow" ? "guardian_approved" : "guardian_denied",
   });
 }
 

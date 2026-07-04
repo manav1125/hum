@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, renderHook, act } from "@testing-library/react";
 
-import {
-  __resetForTesting,
-  publish,
-} from "@/lib/event-bus";
+import { __resetForTesting, publish } from "@/lib/event-bus";
 import {
   __resetPendingDeepLinkForTesting,
   usePendingDeepLinkStore,
@@ -29,9 +26,8 @@ mock.module("@sentry/react", () => ({
   captureException: () => {},
 }));
 
-const { useGlobalDeepLinkConsumer } = await import(
-  "./use-global-deep-link-consumer"
-);
+const { useGlobalDeepLinkConsumer } =
+  await import("./use-global-deep-link-consumer");
 
 beforeEach(() => {
   __resetForTesting();

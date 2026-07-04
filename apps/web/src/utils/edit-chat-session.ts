@@ -37,7 +37,10 @@ function readEntry(key: string): Entry | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Entry;
-    if (typeof parsed.conversationId !== "string" || typeof parsed.lastUsedAt !== "number") {
+    if (
+      typeof parsed.conversationId !== "string" ||
+      typeof parsed.lastUsedAt !== "number"
+    ) {
       return null;
     }
     return parsed;
@@ -87,7 +90,10 @@ export function setEditChatConversationId(
  * the draft. Without this, the next Edit click would land on a conversation
  * id that no longer exists.
  */
-export function resolveEditChatDraftConversationId(oldConversationId: string, newConversationId: string): void {
+export function resolveEditChatDraftConversationId(
+  oldConversationId: string,
+  newConversationId: string,
+): void {
   const store = storage();
   if (!store) return;
   for (let i = 0; i < store.length; i += 1) {

@@ -74,6 +74,34 @@ esac
 
 cd "$APP_DIR"
 
+# Resolve a stable code-signing identity for the whole app + bundled helper.
+# "Apple Development" runs on the signing machine and yields a stable,
+# team-based designated requirement, so macOS TCC persists the helper's
+# Accessibility grant across launches instead of re-prompting every time
+# (an ad-hoc signature's DR is the volatile cdhash). Honor an explicit
+# CUE_MAC_SIGN_IDENTITY override; otherwise auto-pick the local Apple
+# Development identity when present. On hosts with no identity (CI) leave it
+# unset so electron-builder's ad-hoc arm64 fallback still produces a build.
+DEFAULT_MAC_SIGN_IDENTITY="Apple Development: Manav Gupta (9CL7ZPZ325)"
+if [ -z "${CUE_MAC_SIGN_IDENTITY:-}" ]; then
+  if command -v security >/dev/null 2>&1 &&
+     security find-identity -v -p codesigning 2>/dev/null |
+       grep -qF "$DEFAULT_MAC_SIGN_IDENTITY"; then
+    export CUE_MAC_SIGN_IDENTITY="$DEFAULT_MAC_SIGN_IDENTITY"
+  fi
+fi
+if [ -n "${CUE_MAC_SIGN_IDENTITY:-}" ]; then
+  # afterPack.js (Quick Look appex) and afterSign.js (nested re-sign) both read
+  # CSC_NAME; keep it in lockstep with the identity electron-builder uses.
+  export CSC_NAME="$CUE_MAC_SIGN_IDENTITY"
+  # build-mac-helper.sh signs the helper with the same identity by default;
+  # keep it explicit so a helper rebuilt during pack matches the app.
+  export MAC_HELPER_SIGN_IDENTITY="${MAC_HELPER_SIGN_IDENTITY:-$CUE_MAC_SIGN_IDENTITY}"
+  echo "pack: signing with identity=\"$CUE_MAC_SIGN_IDENTITY\""
+else
+  echo "pack: no signing identity found — building ad-hoc (TCC grants will not persist)"
+fi
+
 # Local builds run the repo CLI source at runtime (see getLocalCliEntry in
 # src/main/cli-installer.ts); install its deps so the checkout is runnable.
 if [ "$VELLUM_ENVIRONMENT" = "local" ]; then

@@ -134,7 +134,9 @@ describe("buildPreChatContext — native", () => {
     expect(context.googleConnected).toBe(false);
     expect(context.priorAssistants).toBeUndefined();
     expect(context.userName).toBe("Alice");
-    expect(context.initialMessage).toBe("Hi Vela, I'm Alice. Nice to meet you.");
+    expect(context.initialMessage).toBe(
+      "Hi Vela, I'm Alice. Nice to meet you.",
+    );
   });
 });
 

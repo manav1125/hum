@@ -7,7 +7,10 @@
  */
 
 import { client as platformClient } from "@/generated/api/client.gen";
-import { normalizeSSEPayload, unwrapMessageEnvelope } from "@/lib/streaming/sse-payload";
+import {
+  normalizeSSEPayload,
+  unwrapMessageEnvelope,
+} from "@/lib/streaming/sse-payload";
 import { getClientRegistrationHeaders } from "@/lib/telemetry/client-identity";
 import { toError } from "@/utils/to-error";
 

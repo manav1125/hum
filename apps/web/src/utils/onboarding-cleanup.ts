@@ -16,7 +16,11 @@
  * - `persistConsentForUser` — write device keys
  * - `clearConsentForUser`   — delete device keys + legacy active keys
  */
-import { removeLocalSetting, getLocalBool, setLocalBool } from "@/utils/local-settings";
+import {
+  removeLocalSetting,
+  getLocalBool,
+  setLocalBool,
+} from "@/utils/local-settings";
 import { setDeviceBool } from "@/utils/device-settings";
 import { useOnboardingStore } from "@/domains/onboarding/onboarding-store";
 import { patchConsent, type UserConsent } from "@/domains/account/profile";
@@ -27,8 +31,12 @@ function consentKey(field: string, userId: string): string {
   return `device:consent:${field}:v${CONSENT_VERSION}:${userId}`;
 }
 
-export function restoreConsentForUser(userId: string | null): { tos: boolean; ai: boolean } {
-  if (typeof window === "undefined" || !userId) return { tos: false, ai: false };
+export function restoreConsentForUser(userId: string | null): {
+  tos: boolean;
+  ai: boolean;
+} {
+  if (typeof window === "undefined" || !userId)
+    return { tos: false, ai: false };
   try {
     const tos = getLocalBool(consentKey("tos", userId), false);
     const ai = getLocalBool(consentKey("ai", userId), false);
@@ -81,13 +89,23 @@ export function clearConsentForUser(userId: string | null): void {
 // Server consent resolution
 // ---------------------------------------------------------------------------
 
-export function resolveServerConsent(
-  consent: UserConsent | null | undefined,
-): { tos: boolean; ai: boolean; shareAnalytics: boolean | null; shareDiagnostics: boolean | null } {
-  if (!consent) return { tos: false, ai: false, shareAnalytics: null, shareDiagnostics: null };
+export function resolveServerConsent(consent: UserConsent | null | undefined): {
+  tos: boolean;
+  ai: boolean;
+  shareAnalytics: boolean | null;
+  shareDiagnostics: boolean | null;
+} {
+  if (!consent)
+    return {
+      tos: false,
+      ai: false,
+      shareAnalytics: null,
+      shareDiagnostics: null,
+    };
   return {
-    tos: consent.tos_accepted_version === CONSENT_VERSION
-      && consent.privacy_policy_accepted_version === CONSENT_VERSION,
+    tos:
+      consent.tos_accepted_version === CONSENT_VERSION &&
+      consent.privacy_policy_accepted_version === CONSENT_VERSION,
     ai: consent.ai_data_sharing_accepted_version === CONSENT_VERSION,
     shareAnalytics: consent.share_analytics,
     shareDiagnostics: consent.share_diagnostics,

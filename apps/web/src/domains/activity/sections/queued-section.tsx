@@ -49,7 +49,8 @@ export function QueuedSection({
   });
   const mutating = run.isPending || cancel.isPending;
 
-  const empty = !pending.isLoading && !pending.isError && pending.items.length === 0;
+  const empty =
+    !pending.isLoading && !pending.isError && pending.items.length === 0;
 
   return (
     <ActivitySection

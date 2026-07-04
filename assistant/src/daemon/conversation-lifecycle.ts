@@ -4,7 +4,6 @@
  * can delegate without exposing its full surface.
  */
 
-import { getConfig } from "../config/loader.js";
 import type { EventBus } from "../events/bus.js";
 import type { AssistantDomainEvents } from "../events/domain-events.js";
 import type { ToolProfiler } from "../events/tool-profiling-listener.js";
@@ -162,18 +161,15 @@ export function disposeConversation(ctx: DisposeContext): void {
       // Best-effort — don't block conversation disposal
     }
     if (!isAutoAnalysis) {
-      // Suppress v1 graph extraction when memory v2 is active — v2 reads
-      // from buffer.md and concept pages, so the v1 graph would be stale
-      // data nobody consumes. Mirrors the gate applied in `indexer.ts`
-      // for the per-message indexing path. Fail open to v1 if config
-      // can't load, since the worker handler also short-circuits.
-      let v2Enabled = false;
-      try {
-        v2Enabled = getConfig().memory.v2.enabled;
-      } catch {
-        // Best-effort — fall through to legacy v1 enqueue
-      }
-      if (!v2Enabled && isMemoryEnabled()) {
+      // Run graph extraction under BOTH v1 and v2. The graph store this
+      // writes is what the Memory page reads for its episodic / semantic /
+      // etc. counts; v2's concept-page store never classifies into those
+      // typed buckets, so suppressing extraction under v2 froze the Memory
+      // page the day v2 was enabled. Mirrors the enqueue in `indexer.ts`
+      // and the dispatch in `jobs-worker.ts`, both of which also run under
+      // v2. This is the end-of-conversation safety-net that captures the
+      // full transcript when the per-message batch trigger didn't fire.
+      if (isMemoryEnabled()) {
         try {
           enqueueMemoryJob("graph_extract", {
             conversationId: ctx.conversationId,

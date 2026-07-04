@@ -161,12 +161,12 @@ function renderUsageTab(initialEntry: string) {
 }
 
 function readLegendItems(container: HTMLElement) {
-  return Array.from(container.querySelectorAll("[data-usage-legend-state]")).map(
-    (item) => ({
-      label: item.querySelectorAll("span")[1]!,
-      state: item.getAttribute("data-usage-legend-state"),
-    }),
-  );
+  return Array.from(
+    container.querySelectorAll("[data-usage-legend-state]"),
+  ).map((item) => ({
+    label: item.querySelectorAll("span")[1]!,
+    state: item.getAttribute("data-usage-legend-state"),
+  }));
 }
 
 describe("UsageTab", () => {
@@ -179,9 +179,7 @@ describe("UsageTab", () => {
       expect(fetchUsageSeriesMock.mock.calls).toHaveLength(1),
     );
 
-    expect(
-      screen.queryByLabelText("Schedule usage filter"),
-    ).toBeNull();
+    expect(screen.queryByLabelText("Schedule usage filter")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Clear schedule filter" }),
     ).toBeNull();

@@ -107,7 +107,10 @@ Examples:
       cvs
         .command("create")
         .description("Create a new verification session")
-        .option("--channel <channel>", "Channel type (telegram, phone, slack, email)")
+        .option(
+          "--channel <channel>",
+          "Channel type (telegram, phone, slack, email)",
+        )
         .option(
           "--destination <destination>",
           "Destination address for outbound verification (handle, phone number, user ID, or email address)",

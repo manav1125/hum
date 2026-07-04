@@ -27,6 +27,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { FolderKanban } from "lucide-react";
 import { Link } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
@@ -314,7 +315,9 @@ export function CommandCenterPage({
   const userName = stateQuery.data?.userName?.trim();
   const hour = new Date().getHours();
   const greetingWord = greetingFor(hour);
-  const greeting = userName ? `${greetingWord}, ${userName}.` : `${greetingWord}.`;
+  const greeting = userName
+    ? `${greetingWord}, ${userName}.`
+    : `${greetingWord}.`;
 
   const statusBits = [
     tally.awaiting > 0 ? `${tally.awaiting} need you` : null,
@@ -355,7 +358,7 @@ export function CommandCenterPage({
             '[data-slot="command-center-page"] [data-slot="activity-row"]{transition:background .14s ease,box-shadow .14s ease}',
             '[data-slot="command-center-page"] [data-slot="activity-row"]:hover{background:color-mix(in srgb, var(--mv1-t1) 3%, transparent)}',
             // Respect reduced-motion.
-            "@media (prefers-reduced-motion:reduce){[data-slot=\"command-center-page\"] *{animation:none !important}}",
+            '@media (prefers-reduced-motion:reduce){[data-slot="command-center-page"] *{animation:none !important}}',
             // Mobile rhythm.
             '@media (max-width:640px){[data-slot="command-center-page"] [data-slot="command-center-inner"]{padding:18px 16px !important;}[data-slot="command-center-page"] [data-slot="command-center-greeting"]{font-size:30px !important;}}',
           ].join(""),
@@ -387,7 +390,30 @@ export function CommandCenterPage({
             >
               Command
             </div>
-            <LiveDot />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Link
+                to={routes.projects}
+                data-slot="command-center-projects-link"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontFamily: mono,
+                  fontSize: 11,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: C.violetS,
+                  textDecoration: "none",
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: `1px solid color-mix(in srgb, ${C.violet} 32%, transparent)`,
+                  background: `color-mix(in srgb, ${C.violet} 10%, transparent)`,
+                }}
+              >
+                <FolderKanban size={12} /> Projects
+              </Link>
+              <LiveDot />
+            </div>
           </div>
 
           <div
@@ -504,23 +530,47 @@ export function CommandCenterPage({
               Kept always-visible: it's the calm "what's queued" act and its
               sub-sections each carry their own honest empty copy. */}
           <GroupBlock>
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
               <GroupHeader
                 kicker="Up next"
                 title="Queued and watching."
                 accent={C.violet}
                 hint="What came in, what's scheduled, and what Cue is keeping an eye on."
               />
-              <div style={{ display: "flex", gap: 12, paddingTop: 4, flexShrink: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  paddingTop: 4,
+                  flexShrink: 0,
+                }}
+              >
                 <Link
                   to={routes.projects}
-                  style={{ fontFamily: mono, fontSize: 11.5, color: C.t3, textDecoration: "none" }}
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 11.5,
+                    color: C.t3,
+                    textDecoration: "none",
+                  }}
                 >
                   → Projects
                 </Link>
                 <Link
                   to={routes.allWork}
-                  style={{ fontFamily: mono, fontSize: 11.5, color: C.t3, textDecoration: "none" }}
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 11.5,
+                    color: C.t3,
+                    textDecoration: "none",
+                  }}
                 >
                   → All work
                 </Link>

@@ -36,6 +36,12 @@ export interface WorkItem {
   dueAt: number | null;
   labels: string | null;
   assignee: string | null;
+  /** Per-task notes/context the user adds; injected into the agent before a run. */
+  context: string | null;
+  /** JSON snapshot of where the task came from (origin + original snippet). */
+  sourceContext: string | null;
+  /** Epoch ms; bumped on any event/update so ranking de-prioritizes stale items. */
+  lastActivityAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -57,6 +63,10 @@ export function createWorkItem(opts: {
   labels?: string;
   /** Defaults to "cue" — the AI runs it unless a human claims it. */
   assignee?: string;
+  /** Per-task notes/context the user adds; read by the agent before a run. */
+  context?: string;
+  /** JSON snapshot of where the task came from (origin + original snippet). */
+  sourceContext?: string;
   /** Audit-trail attribution for the created event (default "system"). */
   actor?: string;
 }): WorkItem {
@@ -83,6 +93,11 @@ export function createWorkItem(opts: {
     dueAt: opts.dueAt ?? null,
     labels: opts.labels ?? null,
     assignee: opts.assignee ?? "cue",
+    context: opts.context ?? null,
+    sourceContext: opts.sourceContext ?? null,
+    // A freshly-created item is maximally fresh — seed last_activity_at so
+    // ranking treats new captures as active from the moment they land.
+    lastActivityAt: now,
     createdAt: now,
     updatedAt: now,
   };
@@ -167,6 +182,8 @@ export function updateWorkItem(
       | "dueAt"
       | "labels"
       | "assignee"
+      | "context"
+      | "sourceContext"
     >
   >,
   opts?: { actor?: string },
@@ -176,8 +193,11 @@ export function updateWorkItem(
   // single choke point (routes, runner, triage, and cancel all pass through
   // here).
   const existing = getWorkItem(id);
+  const now = Date.now();
+  // Any mutation counts as activity — bump last_activity_at so next-move
+  // ranking treats the item as fresh and stops de-prioritizing it as stale.
   db.update(workItems)
-    .set({ ...updates, updatedAt: Date.now() })
+    .set({ ...updates, updatedAt: now, lastActivityAt: now })
     .where(eq(workItems.id, id))
     .run();
   if (

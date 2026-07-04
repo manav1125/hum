@@ -743,7 +743,9 @@ describe("ui request — --actions parsing", () => {
     ]);
 
     expect(exitCode).toBe(0);
-    expect(lastIpcCall!.params.body.actions).toEqual([{ id: "ok", label: "OK" }]);
+    expect(lastIpcCall!.params.body.actions).toEqual([
+      { id: "ok", label: "OK" },
+    ]);
   });
 
   test("actions are omitted from IPC params when --actions is not provided", async () => {

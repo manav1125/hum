@@ -22811,7 +22811,9 @@ paths:
     get:
       operationId: projects_get
       summary: List projects
-      description: Return projects, filtered by status (default active).
+      description:
+        "Return projects (ordered pinned-first, then sortIndex, then newest) with per-project stats: counts of
+        queued/running/awaiting_review/done and the single most-urgent next task."
       tags:
         - projects
       responses:
@@ -22844,6 +22846,26 @@ paths:
                           enum:
                             - active
                             - archived
+                        category:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        context:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Project brief the agent reads for every task in this project
+                        sortIndex:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        pinned:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — pinned projects float to the top
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -22852,14 +22874,90 @@ paths:
                           type: integer
                           minimum: -9007199254740991
                           maximum: 9007199254740991
+                        stats:
+                          type: object
+                          properties:
+                            counts:
+                              type: object
+                              properties:
+                                queued:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                running:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                awaiting_review:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                done:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                open:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                total:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                              required:
+                                - queued
+                                - running
+                                - awaiting_review
+                                - done
+                                - open
+                                - total
+                              additionalProperties: false
+                            nextTask:
+                              anyOf:
+                                - type: object
+                                  properties:
+                                    id:
+                                      type: string
+                                    title:
+                                      type: string
+                                    status:
+                                      type: string
+                                    dueAt:
+                                      anyOf:
+                                        - type: integer
+                                          minimum: -9007199254740991
+                                          maximum: 9007199254740991
+                                        - type: "null"
+                                    priorityTier:
+                                      type: integer
+                                      minimum: -9007199254740991
+                                      maximum: 9007199254740991
+                                  required:
+                                    - id
+                                    - title
+                                    - status
+                                    - dueAt
+                                    - priorityTier
+                                  additionalProperties: false
+                                - type: "null"
+                              description: The single most-urgent next actionable task, or null
+                          required:
+                            - counts
+                            - nextTask
+                          additionalProperties: false
                       required:
                         - id
                         - title
                         - emoji
                         - color
                         - status
+                        - category
+                        - context
+                        - sortIndex
+                        - pinned
                         - createdAt
                         - updatedAt
+                        - stats
                       additionalProperties: false
                 required:
                   - projects
@@ -22907,6 +23005,26 @@ paths:
                         enum:
                           - active
                           - archived
+                      category:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      context:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Project brief the agent reads for every task in this project
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      pinned:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — pinned projects float to the top
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -22921,6 +23039,10 @@ paths:
                       - emoji
                       - color
                       - status
+                      - category
+                      - context
+                      - sortIndex
+                      - pinned
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -22941,6 +23063,16 @@ paths:
                   type: string
                 color:
                   type: string
+                category:
+                  type: string
+                context:
+                  type: string
+                sortIndex:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                pinned:
+                  type: boolean
               required:
                 - title
               additionalProperties: false
@@ -23006,6 +23138,26 @@ paths:
                         enum:
                           - active
                           - archived
+                      category:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      context:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Project brief the agent reads for every task in this project
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      pinned:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — pinned projects float to the top
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -23020,6 +23172,10 @@ paths:
                       - emoji
                       - color
                       - status
+                      - category
+                      - context
+                      - sortIndex
+                      - pinned
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -23066,6 +23222,26 @@ paths:
                         enum:
                           - active
                           - archived
+                      category:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      context:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Project brief the agent reads for every task in this project
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      pinned:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — pinned projects float to the top
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -23080,6 +23256,10 @@ paths:
                       - emoji
                       - color
                       - status
+                      - category
+                      - context
+                      - sortIndex
+                      - pinned
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -23114,6 +23294,22 @@ paths:
                   enum:
                     - active
                     - archived
+                category:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                context:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                sortIndex:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                pinned:
+                  type: boolean
               additionalProperties: false
   /v1/projects/{id}/work-items:
     get:
@@ -23177,6 +23373,23 @@ paths:
                             - type: string
                             - type: "null"
                           description: '"cue" | "you" | contact name; null reads as "cue"'
+                        context:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Per-task context the user adds; read by the agent before a run
+                        sourceContext:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: JSON snapshot of where the task came from (triage-stamped)
+                        lastActivityAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Epoch ms of last activity; drives stale-item ranking
                         lastRunId:
                           anyOf:
                             - type: string
@@ -23221,6 +23434,9 @@ paths:
                         - dueAt
                         - labels
                         - assignee
+                        - context
+                        - sourceContext
+                        - lastActivityAt
                         - lastRunId
                         - lastRunConversationId
                         - lastRunStatus
@@ -23253,6 +23469,43 @@ paths:
               - cancelled
               - archived
           description: Filter by work item status
+  /v1/projects/reorder:
+    post:
+      operationId: projects_reorder_post
+      summary: Reorder projects
+      description:
+        Persist a new top-to-bottom project order. `orderedIds` is the desired order; each project's sortIndex is
+        set to its position.
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required:
+                  - success
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                orderedIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Project ids in the desired top-to-bottom order
+              required:
+                - orderedIds
+              additionalProperties: false
   /v1/ps:
     get:
       operationId: ps_get
@@ -30598,6 +30851,23 @@ paths:
                             - type: string
                             - type: "null"
                           description: '"cue" | "you" | contact name; null reads as "cue"'
+                        context:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Per-task context the user adds; read by the agent before a run
+                        sourceContext:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: JSON snapshot of where the task came from (triage-stamped)
+                        lastActivityAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Epoch ms of last activity; drives stale-item ranking
                         lastRunId:
                           anyOf:
                             - type: string
@@ -30642,6 +30912,9 @@ paths:
                         - dueAt
                         - labels
                         - assignee
+                        - context
+                        - sourceContext
+                        - lastActivityAt
                         - lastRunId
                         - lastRunConversationId
                         - lastRunStatus
@@ -30748,7 +31021,7 @@ paths:
                   anyOf:
                     - type: string
                     - type: "null"
-                  description: null clears the project
+                  description: null clears the project; a value moves the task
                 dueAt:
                   anyOf:
                     - type: integer
@@ -30764,6 +31037,11 @@ paths:
                 assignee:
                   type: string
                   description: '"cue" | "you" | contact name'
+                context:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                  description: Per-task context the agent reads before a run
               required:
                 - title
                 - notes
@@ -30774,6 +31052,7 @@ paths:
                 - dueAt
                 - labels
                 - assignee
+                - context
               additionalProperties: false
   /v1/work-items/{id}/approve-permissions:
     post:

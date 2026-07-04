@@ -39,9 +39,7 @@ describe("useAssistantFeatureFlagStore", () => {
   });
 
   test("reverts an optimistic assistant flag update when the server rejects it", async () => {
-    let resolvePatch:
-      | ((value: { response: Response }) => void)
-      | undefined;
+    let resolvePatch: ((value: { response: Response }) => void) | undefined;
     patchMock.mockImplementation(
       (_request: unknown) =>
         new Promise((resolve) => {

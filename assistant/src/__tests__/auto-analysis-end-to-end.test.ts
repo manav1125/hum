@@ -545,13 +545,14 @@ describe("auto-analysis batch trigger uses analysis.batchSize cadence", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Indexer v1/v2 mutual exclusion: when memory.v2.enabled is on, the
-// v1 graph_extract enqueue is suppressed (v2 reads from buffer.md,
-// so v1 graph data is unread). When v2 is disabled, v1 graph_extract
-// fires.
+// graph_extract runs under BOTH v1 and v2. The graph store it writes is what
+// the Memory page reads for its episodic / semantic / etc. counts; v2's
+// concept-page store never classifies into those typed buckets, so extraction
+// must fire regardless of v2 or the Memory page freezes (the "no memories
+// since v2 was enabled" bug).
 // ─────────────────────────────────────────────────────────────────
 
-describe("indexer v1/v2 mutual exclusion for graph_extract", () => {
+describe("indexer enqueues graph_extract under both v1 and v2", () => {
   // Force the v1 batch trigger so any enqueued row is observable.
   const originalExtractionBatch = TEST_CONFIG.memory.extraction.batchSize;
   const originalV2Enabled = TEST_CONFIG.memory.v2.enabled;
@@ -565,16 +566,18 @@ describe("indexer v1/v2 mutual exclusion for graph_extract", () => {
     TEST_CONFIG.memory.v2.enabled = originalV2Enabled;
   });
 
-  test("v2 active (config on) → graph_extract not enqueued", async () => {
+  test("v2 active (config on) → graph_extract enqueued", async () => {
     TEST_CONFIG.memory.v2.enabled = true;
 
     const source = createConversation("v2-active");
     await indexMessages(source.id, 2);
 
-    expect(countJobsOfType("graph_extract", source.id)).toBe(0);
+    expect(countJobsOfType("graph_extract", source.id)).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
-  test("config gate off → graph_extract enqueued", async () => {
+  test("v2 disabled → graph_extract enqueued", async () => {
     TEST_CONFIG.memory.v2.enabled = false;
 
     const source = createConversation("v2-config-off");

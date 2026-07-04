@@ -200,7 +200,9 @@ export function ConnectorsPage() {
       return;
     }
     window.open(url, "_blank", "noopener,noreferrer");
-    setNote("A login tab opened — authorize, then this list updates automatically.");
+    setNote(
+      "A login tab opened — authorize, then this list updates automatically.",
+    );
     if (pollRef.current) clearInterval(pollRef.current);
     let ticks = 0;
     pollRef.current = setInterval(() => {
@@ -213,7 +215,12 @@ export function ConnectorsPage() {
   if (available === null) return null;
   if (!available) {
     return (
-      <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", padding: "8px 0" }}>
+      <div
+        style={{
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+          padding: "8px 0",
+        }}
+      >
         <div
           style={{
             border: `1px solid ${C.line}`,
@@ -224,7 +231,8 @@ export function ConnectorsPage() {
             color: C.t2,
           }}
         >
-          Connectors are a macOS desktop feature and aren&apos;t set up on this install yet.
+          Connectors are a macOS desktop feature and aren&apos;t set up on this
+          install yet.
         </div>
       </div>
     );
@@ -236,17 +244,27 @@ export function ConnectorsPage() {
   ).sort();
   const matches = (c: ConnectorStatus) =>
     (category === "all" || c.category === category) &&
-    (q === "" || c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q));
+    (q === "" ||
+      c.name.toLowerCase().includes(q) ||
+      c.category.toLowerCase().includes(q));
 
   const connected = connectors.filter((c) => c.connected && matches(c));
-  const availableConnectors = connectors.filter((c) => !c.connected && matches(c));
+  const availableConnectors = connectors.filter(
+    (c) => !c.connected && matches(c),
+  );
   const total = connectors.length || 12;
   const connectedTotal = connectors.filter((c) => c.connected).length;
   const availTotal = connectors.length - connectedTotal;
   const pct = total > 0 ? Math.round((connectedTotal / total) * 100) : 0;
 
   return (
-    <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", padding: "0 0 28px", color: C.t1 }}>
+    <div
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        padding: "0 0 28px",
+        color: C.t1,
+      }}
+    >
       {/* progress hero */}
       <div
         style={{
@@ -279,11 +297,13 @@ export function ConnectorsPage() {
             }}
           >
             The more Cue connects, the more it can{" "}
-            <span style={{ fontStyle: "italic", color: "#9DB4E6" }}>do for you.</span>
+            <span style={{ fontStyle: "italic", color: "#9DB4E6" }}>
+              do for you.
+            </span>
           </div>
           <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
-            You&apos;ve connected {connectedTotal} of {total}. Each one unlocks new things Cue can
-            handle on its own.
+            You&apos;ve connected {connectedTotal} of {total}. Each one unlocks
+            new things Cue can handle on its own.
           </div>
           <div
             style={{
@@ -313,7 +333,9 @@ export function ConnectorsPage() {
                 }}
               />
             </span>
-            <span style={{ fontFamily: mono, fontSize: 11, color: "#9DB4E6" }}>{pct}%</span>
+            <span style={{ fontFamily: mono, fontSize: 11, color: "#9DB4E6" }}>
+              {pct}%
+            </span>
           </div>
         </div>
         <div
@@ -341,7 +363,14 @@ export function ConnectorsPage() {
           >
             Browse catalog
           </button>
-          <span style={{ fontFamily: mono, fontSize: 10.5, color: "#7E8BA3", textAlign: "center" }}>
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 10.5,
+              color: "#7E8BA3",
+              textAlign: "center",
+            }}
+          >
             +{availTotal} available
           </span>
         </div>
@@ -362,8 +391,8 @@ export function ConnectorsPage() {
             color: C.t2,
           }}
         >
-          <span style={{ color: C.violet }}>✦</span> Tip: you can enable a connector by mentioning
-          it in chat.
+          <span style={{ color: C.violet }}>✦</span> Tip: you can enable a
+          connector by mentioning it in chat.
           <button
             type="button"
             onClick={() => setTipDismissed(true)}
@@ -540,7 +569,14 @@ export function ConnectorsPage() {
       )}
 
       {/* MCP servers */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "26px 0 11px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          margin: "26px 0 11px",
+        }}
+      >
         <span
           style={{
             fontFamily: mono,

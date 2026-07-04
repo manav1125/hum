@@ -12,7 +12,10 @@ import { isLocalMode } from "@/lib/local-mode";
 import { isElectron } from "@/runtime/is-electron";
 import { setMenuPlatformSession } from "@/runtime/menu";
 import { primeElectronSessionToken } from "@/runtime/session-token";
-import { isBiometricEnabled, storeBiometricToken } from "@/runtime/native-biometric";
+import {
+  isBiometricEnabled,
+  storeBiometricToken,
+} from "@/runtime/native-biometric";
 import { routes } from "@/utils/routes";
 
 /**
@@ -200,7 +203,8 @@ export function installSessionCookies(sessionToken: string): void {
   // `max-age` makes the cookie persistent. If unspecified, the cookie
   // expires at the end of the session, and users will be required to
   // login again.
-  const cookieAttrs = "path=/; domain=.vellum.ai; secure; samesite=lax; max-age=1209600";
+  const cookieAttrs =
+    "path=/; domain=.vellum.ai; secure; samesite=lax; max-age=1209600";
   document.cookie = `sessionid=${sessionToken}; ${cookieAttrs}`;
   document.cookie = `__Secure-sessionid=${sessionToken}; ${cookieAttrs}`;
 }
@@ -248,7 +252,7 @@ export async function startAuthFlow(
         returnTo:
           options.intent === "signup"
             ? routes.onboarding.privacy
-            : options.returnTo ?? null,
+            : (options.returnTo ?? null),
         loginHint: options.loginHint,
         providerHint: options.providerHint,
         intent: options.intent,
@@ -284,7 +288,7 @@ export async function startAuthFlow(
         const destination = sanitizeReturnTo(
           options.intent === "signup"
             ? routes.onboarding.privacy
-            : options.returnTo ?? null,
+            : (options.returnTo ?? null),
           DEFAULT_POST_AUTH_DESTINATION,
         );
         window.location.href = destination;

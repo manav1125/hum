@@ -41,7 +41,9 @@ beforeEach(() => {
   isLocalModeMock.mockImplementation(() => true);
   hasAssistantsMock.mockImplementation(() => false);
   useAuthStore.setState(initialAuthState, true);
-  useAssistantLifecycleStore.setState({ assistantState: { kind: "error", message: "no assistant" } });
+  useAssistantLifecycleStore.setState({
+    assistantState: { kind: "error", message: "no assistant" },
+  });
 });
 
 afterEach(() => {

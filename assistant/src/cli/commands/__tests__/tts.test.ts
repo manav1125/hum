@@ -140,7 +140,11 @@ async function runCommand(
   const exitCode = process.exitCode ?? 0;
   process.exitCode = 0;
 
-  return { exitCode, stdout: localStdout.join(""), stderr: localStderr.join("") };
+  return {
+    exitCode,
+    stdout: localStdout.join(""),
+    stderr: localStderr.join(""),
+  };
 }
 
 // ---------------------------------------------------------------------------

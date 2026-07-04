@@ -12,10 +12,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { MessagingProvider } from "../messaging/provider.js";
-import type {
-  Conversation,
-  Message,
-} from "../messaging/provider-types.js";
+import type { Conversation, Message } from "../messaging/provider-types.js";
 import {
   channelToCategory,
   fetchChannelConversations,

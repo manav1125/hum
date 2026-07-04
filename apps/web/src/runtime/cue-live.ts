@@ -77,7 +77,10 @@ export async function openCueLiveSystemSettings(
 
 /** Stop everything — abort any auto-run and hide the overlay (⌥ esc mirror). */
 export async function stopCueLive(): Promise<void> {
-  if (!isCueLiveAvailable() || typeof window.vellum?.cueLive?.stop !== "function") {
+  if (
+    !isCueLiveAvailable() ||
+    typeof window.vellum?.cueLive?.stop !== "function"
+  ) {
     return;
   }
   await window.vellum.cueLive.stop();
@@ -86,7 +89,8 @@ export async function stopCueLive(): Promise<void> {
 /** Whether the typed-goal test box is available (newer preloads only). */
 export function isRunGoalSupported(): boolean {
   return (
-    isCueLiveAvailable() && typeof window.vellum?.cueLive?.runGoal === "function"
+    isCueLiveAvailable() &&
+    typeof window.vellum?.cueLive?.runGoal === "function"
   );
 }
 

@@ -162,8 +162,7 @@ async function registerTapListeners(): Promise<void> {
       "localNotificationActionPerformed",
       (action) => {
         const extra = action.notification.extra as
-          | NotificationTapPayload
-          | undefined;
+          NotificationTapPayload | undefined;
         if (extra && tapHandler) tapHandler(extra);
       },
     );

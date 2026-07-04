@@ -78,8 +78,6 @@ export const ONBOARDING_PROVIDERS: readonly OnboardingProvider[] = [
 
 export const DEFAULT_ONBOARDING_PROVIDER = ONBOARDING_PROVIDERS[0];
 
-export function onboardingProvider(
-  id: string,
-): OnboardingProvider | undefined {
+export function onboardingProvider(id: string): OnboardingProvider | undefined {
   return ONBOARDING_PROVIDERS.find((p) => p.id === id);
 }

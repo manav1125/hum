@@ -5,8 +5,7 @@ import {
 import { openSystemPermissionSettings } from "@/runtime/system-permissions";
 
 export type TextInsertionResult =
-  | ElectronTextInsertionResult
-  | { status: "unavailable" };
+  ElectronTextInsertionResult | { status: "unavailable" };
 
 export async function insertTextIntoFrontApp(
   text: string,

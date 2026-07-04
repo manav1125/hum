@@ -1,19 +1,19 @@
 import {
-    ArrowLeft,
-    CircleX,
-    Mail,
-    MailOpen,
-    MoreVertical,
-    RotateCcw,
-    Trash2,
-    X,
+  ArrowLeft,
+  CircleX,
+  Mail,
+  MailOpen,
+  MoreVertical,
+  RotateCcw,
+  Trash2,
+  X,
 } from "lucide-react";
 
 import { formatFullLocalDate, formatRelativeDate } from "@/utils/format-date";
 import type {
-    FeedItem,
-    FeedItemCategory,
-    FeedItemStatus,
+  FeedItem,
+  FeedItemCategory,
+  FeedItemStatus,
 } from "@vellumai/assistant-api";
 import { Button, Menu, Tag, Typography } from "@vellumai/design-library";
 import { CATEGORY_STYLES } from "../home-feed-filter-bar";
@@ -82,9 +82,7 @@ export function HomeDetailPanel({
             <Button
               variant="ghost"
               iconOnly={isUnread ? <MailOpen /> : <Mail />}
-              onClick={() =>
-                onUpdateStatus(item.id, isUnread ? "seen" : "new")
-              }
+              onClick={() => onUpdateStatus(item.id, isUnread ? "seen" : "new")}
               aria-label={isUnread ? "Mark as read" : "Mark as unread"}
               tooltip={isUnread ? "Mark as read" : "Mark as unread"}
             />

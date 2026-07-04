@@ -43,8 +43,17 @@ export interface DeployState {
 }
 
 export interface DeployActions {
-  shareApp: (assistantId: string, appId: string, appName: string) => Promise<void>;
-  deployApp: (assistantId: string, appId: string, appName: string, appHtml: string) => Promise<void>;
+  shareApp: (
+    assistantId: string,
+    appId: string,
+    appName: string,
+  ) => Promise<void>;
+  deployApp: (
+    assistantId: string,
+    appId: string,
+    appName: string,
+    appHtml: string,
+  ) => Promise<void>;
   deployAfterTokenSaved: (assistantId: string) => Promise<void>;
   showTokenDialog: (pendingAppId: string) => void;
   hideTokenDialog: () => void;
@@ -133,13 +142,21 @@ const useDeployStoreBase = create<DeployStore>()((set, get) => ({
         throwOnError: true,
       });
       if (!config.hasToken) {
-        set({ isTokenDialogOpen: true, pendingDeployAppId: appId, isDeploying: false });
+        set({
+          isTokenDialogOpen: true,
+          pendingDeployAppId: appId,
+          isDeploying: false,
+        });
         return;
       }
       const result = await publishApp(assistantId, appId);
       if (!result.success) {
         if (isCredentialError(result)) {
-          set({ isTokenDialogOpen: true, pendingDeployAppId: appId, isDeploying: false });
+          set({
+            isTokenDialogOpen: true,
+            pendingDeployAppId: appId,
+            isDeploying: false,
+          });
         } else {
           toast.error("Failed to deploy", { description: result.error });
         }

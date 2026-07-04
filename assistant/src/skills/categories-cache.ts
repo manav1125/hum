@@ -37,7 +37,9 @@ async function fetchCategories(): Promise<SkillCategoryDef[]> {
     categories: SkillCategoryDef[];
   };
   if (!Array.isArray(data.categories)) {
-    throw new Error("Platform categories response has invalid categories array");
+    throw new Error(
+      "Platform categories response has invalid categories array",
+    );
   }
   return data.categories.filter(
     (c): c is SkillCategoryDef =>
@@ -75,10 +77,7 @@ export async function getCategories(): Promise<SkillCategoryDef[]> {
     const remote = await fetchCategories();
     if (local.length > 0) {
       const localSlugs = new Set(local.map((c) => c.slug));
-      categories = [
-        ...local,
-        ...remote.filter((c) => !localSlugs.has(c.slug)),
-      ];
+      categories = [...local, ...remote.filter((c) => !localSlugs.has(c.slug))];
     } else {
       categories = remote;
     }

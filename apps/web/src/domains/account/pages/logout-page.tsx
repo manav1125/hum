@@ -31,10 +31,16 @@ export function LogoutPage() {
 
     let cancelled = false;
     logout().then(
-      () => { if (!cancelled) hardNavigate(target); },
-      () => { if (!cancelled) hardNavigate(target); },
+      () => {
+        if (!cancelled) hardNavigate(target);
+      },
+      () => {
+        if (!cancelled) hardNavigate(target);
+      },
     );
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [logout, searchParams]);
 
   return (

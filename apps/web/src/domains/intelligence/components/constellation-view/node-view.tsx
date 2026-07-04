@@ -1,4 +1,3 @@
-
 import { motion } from "motion/react";
 
 import { ChatAvatar } from "@/components/avatar/chat-avatar";
@@ -11,9 +10,15 @@ import {
 } from "@/domains/intelligence/components/constellation-layout";
 
 import { NODE_SPRING } from "@/domains/intelligence/components/constellation-view/constants";
-import { NodeShell, type NodeShellVariant } from "@/domains/intelligence/components/constellation-view/node-shell";
+import {
+  NodeShell,
+  type NodeShellVariant,
+} from "@/domains/intelligence/components/constellation-view/node-shell";
 import { SkillNode } from "@/domains/intelligence/components/constellation-view/skill-node";
-import { nodeDelay, nodeVisibility } from "@/domains/intelligence/components/constellation-view/utils";
+import {
+  nodeDelay,
+  nodeVisibility,
+} from "@/domains/intelligence/components/constellation-view/utils";
 
 export interface NodeViewProps {
   node: TreeNode;

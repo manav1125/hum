@@ -23,11 +23,7 @@ import type {
 } from "./trace-events-api";
 
 export type RequestGroupStatus =
-  | "active"
-  | "completed"
-  | "cancelled"
-  | "handedOff"
-  | "error";
+  "active" | "completed" | "cancelled" | "handedOff" | "error";
 
 export interface ConversationMetrics {
   requestCount: number;

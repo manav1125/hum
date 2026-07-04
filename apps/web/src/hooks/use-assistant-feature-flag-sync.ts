@@ -27,16 +27,20 @@ interface AssistantFlagValuesResponse {
 const VALID_BOOL_KEYS = new Set(Object.keys(ASSISTANT_FLAG_DEFAULTS));
 const VALID_STRING_KEYS = new Set(Object.keys(ASSISTANT_STRING_FLAG_DEFAULTS));
 
-function mapFlags(
-  entries: FeatureFlagEntry[],
-): { boolFlags: Record<string, boolean>; stringFlags: Record<string, string> } {
+function mapFlags(entries: FeatureFlagEntry[]): {
+  boolFlags: Record<string, boolean>;
+  stringFlags: Record<string, string>;
+} {
   const boolFlags: Record<string, boolean> = {};
   const stringFlags: Record<string, string> = {};
   for (const entry of entries) {
     const storeKey = flagKeyToStoreKey(entry.key);
     if (typeof entry.enabled === "boolean" && VALID_BOOL_KEYS.has(storeKey)) {
       boolFlags[storeKey] = entry.enabled;
-    } else if (typeof entry.enabled === "string" && VALID_STRING_KEYS.has(storeKey)) {
+    } else if (
+      typeof entry.enabled === "string" &&
+      VALID_STRING_KEYS.has(storeKey)
+    ) {
       stringFlags[storeKey] = entry.enabled;
     }
   }
@@ -54,11 +58,7 @@ export async function fetchAssistantFlagValues(
     url: `/v1/assistants/${assistantId}/feature-flags`,
     throwOnError: false,
   });
-  assertHasResponse(
-    response,
-    error,
-    "Failed to fetch assistant feature flags",
-  );
+  assertHasResponse(response, error, "Failed to fetch assistant feature flags");
   if (!response.ok) {
     throw new Error(
       `Failed to fetch assistant feature flags: ${response.status}`,
@@ -109,5 +109,3 @@ export function useAssistantFeatureFlagSync(assistantId: string | null) {
     }
   }, [data]);
 }
-
-

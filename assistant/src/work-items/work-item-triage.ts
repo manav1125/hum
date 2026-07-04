@@ -101,6 +101,31 @@ function heuristicScore(item: WorkItem): TriageScore {
 }
 
 // ---------------------------------------------------------------------------
+// Source-context stamping
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the `source_context` JSON snapshot stamped at triage time: the origin
+ * (the capturing channel/surface — chat/voice/mcp/a channel name) plus a short
+ * snippet of the original request text. The runner reads this to tell the
+ * agent where a task came from. Returns a compact JSON string.
+ */
+export function buildSourceContext(item: WorkItem): string {
+  const origin = item.sourceType ?? "chat";
+  const snippetSource = item.notes?.trim() || item.title.trim();
+  const snippet =
+    snippetSource.length > 500
+      ? `${snippetSource.slice(0, 500)}…`
+      : snippetSource;
+  return JSON.stringify({
+    origin,
+    ...(item.sourceId ? { sourceId: item.sourceId } : {}),
+    snippet,
+    capturedAt: item.createdAt,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Flash-LLM scoring (best-effort)
 // ---------------------------------------------------------------------------
 
@@ -348,8 +373,16 @@ export async function triageWorkItem(
     sortIndex?: number;
     projectId?: string;
     dueAt?: number;
+    sourceContext?: string;
   } = {};
   if (!opts.callerSetPriority) updates.priorityTier = score.tier;
+  // Stamp where this task came from — the creating channel/origin plus a
+  // snippet of the original text — so the runner can tell the agent the
+  // provenance ("this came from a WhatsApp thread") when it works the task.
+  // Only fill when blank; a caller may have supplied richer source context.
+  if (item.sourceContext == null) {
+    updates.sourceContext = buildSourceContext(item);
+  }
   // Higher urgency → smaller sortIndex → sorts first within its tier.
   if (item.sortIndex == null) updates.sortIndex = 100 - score.urgency;
   // Never overwrite a human/caller assignment — triage only fills blanks.
@@ -371,6 +404,7 @@ export async function triageWorkItem(
   if (fresh.sortIndex != null) delete updates.sortIndex;
   if (fresh.projectId != null) delete updates.projectId;
   if (fresh.dueAt != null) delete updates.dueAt;
+  if (fresh.sourceContext != null) delete updates.sourceContext;
 
   if (Object.keys(updates).length === 0) return;
   updateWorkItem(workItemId, updates, { actor: "triage" });

@@ -28,7 +28,8 @@ function lastStatusTone(status: string | null): PillTone {
   if (!status) return "neutral";
   const s = status.toLowerCase();
   if (s.includes("fail") || s.includes("error")) return "danger";
-  if (s.includes("success") || s.includes("ok") || s.includes("done")) return "green";
+  if (s.includes("success") || s.includes("ok") || s.includes("done"))
+    return "green";
   return "neutral";
 }
 
@@ -42,11 +43,21 @@ export function ScheduledSection({ assistantId }: { assistantId: string }) {
   });
 
   const key = schedulesGetQueryKey({ path: { assistant_id: assistantId } });
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: key });
+  const invalidate = () =>
+    void queryClient.invalidateQueries({ queryKey: key });
 
-  const run = useMutation({ ...schedulesByIdRunPostMutation(), onSuccess: invalidate });
-  const toggle = useMutation({ ...schedulesByIdTogglePostMutation(), onSuccess: invalidate });
-  const cancel = useMutation({ ...schedulesByIdCancelPostMutation(), onSuccess: invalidate });
+  const run = useMutation({
+    ...schedulesByIdRunPostMutation(),
+    onSuccess: invalidate,
+  });
+  const toggle = useMutation({
+    ...schedulesByIdTogglePostMutation(),
+    onSuccess: invalidate,
+  });
+  const cancel = useMutation({
+    ...schedulesByIdCancelPostMutation(),
+    onSuccess: invalidate,
+  });
   const mutating = run.isPending || toggle.isPending || cancel.isPending;
 
   // Hide cancelled/fired one-shots that have nothing left to do — keep the
@@ -85,9 +96,7 @@ export function ScheduledSection({ assistantId }: { assistantId: string }) {
             provenance={s.isOneShot ? "one-shot" : "recurring"}
             meta={meta || null}
             statusLabel={s.enabled ? "active" : "paused"}
-            statusTone={
-              s.enabled ? lastStatusTone(s.lastStatus) : "neutral"
-            }
+            statusTone={s.enabled ? lastStatusTone(s.lastStatus) : "neutral"}
             last={i === schedules.length - 1}
             actions={
               <>

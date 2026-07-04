@@ -90,7 +90,13 @@ export function composeSvg(
     eyeStyleId,
     colorId,
   );
-  return composeSvgFromDefinitions(bodyShape, eyeStyle, color, components, size);
+  return composeSvgFromDefinitions(
+    bodyShape,
+    eyeStyle,
+    color,
+    components,
+    size,
+  );
 }
 
 export function composeSvgFromDefinitions(
@@ -100,7 +106,12 @@ export function composeSvgFromDefinitions(
   components: CharacterComponents,
   size: number = 512,
 ): string {
-  const { bodyTransform, eyeTransform } = computeTransforms(bodyShape, eyeStyle, components, size);
+  const { bodyTransform, eyeTransform } = computeTransforms(
+    bodyShape,
+    eyeStyle,
+    components,
+    size,
+  );
 
   const bodyPath = `<path d="${escapeAttr(bodyShape.svgPath)}" fill="${escapeAttr(color.hex)}" transform="${bodyTransform}"/>`;
 

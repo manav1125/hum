@@ -18,7 +18,12 @@ export interface UserConsent {
 }
 
 export type ConsentPatch = Partial<
-  Omit<UserConsent, "tos_accepted_at" | "privacy_policy_accepted_at" | "ai_data_sharing_accepted_at">
+  Omit<
+    UserConsent,
+    | "tos_accepted_at"
+    | "privacy_policy_accepted_at"
+    | "ai_data_sharing_accepted_at"
+  >
 >;
 
 export interface UserMe {

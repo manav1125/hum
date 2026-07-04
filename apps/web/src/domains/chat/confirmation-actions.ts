@@ -200,11 +200,9 @@ export async function handleConfirmationSubmit(
     cleanupAfterConfirmationDecision(snapshot, mappedToolCallId, decision);
   } catch (err) {
     captureError(err, { context: "submit_confirmation" });
-    useChatSessionStore
-      .getState()
-      .setError({
-        message: "Failed to submit confirmation. Please try again.",
-      });
+    useChatSessionStore.getState().setError({
+      message: "Failed to submit confirmation. Please try again.",
+    });
     useInteractionStore.getState().submitConfirmationEnd();
   }
 }
@@ -295,12 +293,10 @@ export async function handleAllowAndCreateRule(
         clearConfirmationByRequestId(prev, snapshot.requestId),
       );
     openCreateEditor({ ...editorContext, requestId: "" });
-    useChatSessionStore
-      .getState()
-      .setError({
-        message:
-          "Failed to submit confirmation, but you can still create a rule.",
-      });
+    useChatSessionStore.getState().setError({
+      message:
+        "Failed to submit confirmation, but you can still create a rule.",
+    });
     useInteractionStore.getState().submitConfirmationEnd();
   }
 }

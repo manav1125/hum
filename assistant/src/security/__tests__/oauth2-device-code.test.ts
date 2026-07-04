@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 // ---------------------------------------------------------------------------
 // Mock logger before importing any code that uses it.
@@ -121,9 +114,7 @@ describe("oauth2-device-code", () => {
 
       expect(result.deviceCode).toBe("dev-code-123");
       expect(result.userCode).toBe("ABCD-1234");
-      expect(result.verificationUri).toBe(
-        "https://auth.example.com/activate",
-      );
+      expect(result.verificationUri).toBe("https://auth.example.com/activate");
       expect(result.verificationUriComplete).toBe(
         "https://auth.example.com/activate?user_code=ABCD-1234",
       );
@@ -169,9 +160,7 @@ describe("oauth2-device-code", () => {
     });
 
     test("throws DeviceCodeError on non-OK response", async () => {
-      mockFetch(async () =>
-        jsonResponse({ error: "invalid_client" }, 400),
-      );
+      mockFetch(async () => jsonResponse({ error: "invalid_client" }, 400));
 
       await expect(requestDeviceCode(TEST_CONFIG)).rejects.toThrow(
         DeviceCodeError,
@@ -217,10 +206,7 @@ describe("oauth2-device-code", () => {
       mockFetch(async () => {
         callCount++;
         if (callCount < 3) {
-          return jsonResponse(
-            { error: "authorization_pending" },
-            403,
-          );
+          return jsonResponse({ error: "authorization_pending" }, 403);
         }
         return jsonResponse({
           access_token: "at-after-pending",
@@ -229,12 +215,7 @@ describe("oauth2-device-code", () => {
         });
       });
 
-      const result = await pollForToken(
-        TEST_CONFIG,
-        "dev-code-123",
-        0.01,
-        30,
-      );
+      const result = await pollForToken(TEST_CONFIG, "dev-code-123", 0.01, 30);
 
       expect(result.accessToken).toBe("at-after-pending");
       expect(callCount).toBe(3);
@@ -277,9 +258,7 @@ describe("oauth2-device-code", () => {
     });
 
     test("throws on expired_token", async () => {
-      mockFetch(async () =>
-        jsonResponse({ error: "expired_token" }, 403),
-      );
+      mockFetch(async () => jsonResponse({ error: "expired_token" }, 403));
 
       try {
         await pollForToken(TEST_CONFIG, "dev-code-123", 0.01, 30);
@@ -292,9 +271,7 @@ describe("oauth2-device-code", () => {
     });
 
     test("throws on access_denied", async () => {
-      mockFetch(async () =>
-        jsonResponse({ error: "access_denied" }, 403),
-      );
+      mockFetch(async () => jsonResponse({ error: "access_denied" }, 403));
 
       try {
         await pollForToken(TEST_CONFIG, "dev-code-123", 0.01, 30);
@@ -330,10 +307,7 @@ describe("oauth2-device-code", () => {
         if (callCount === 1) {
           ac.abort();
         }
-        return jsonResponse(
-          { error: "authorization_pending" },
-          403,
-        );
+        return jsonResponse({ error: "authorization_pending" }, 403);
       });
 
       try {
@@ -367,9 +341,7 @@ describe("oauth2-device-code", () => {
     });
 
     test("throws on unexpected error code", async () => {
-      mockFetch(async () =>
-        jsonResponse({ error: "server_error" }, 500),
-      );
+      mockFetch(async () => jsonResponse({ error: "server_error" }, 500));
 
       try {
         await pollForToken(TEST_CONFIG, "dev-code-123", 0.01, 30);
@@ -394,12 +366,7 @@ describe("oauth2-device-code", () => {
         });
       });
 
-      const result = await pollForToken(
-        TEST_CONFIG,
-        "dev-code-123",
-        0.01,
-        30,
-      );
+      const result = await pollForToken(TEST_CONFIG, "dev-code-123", 0.01, 30);
 
       expect(result.accessToken).toBe("at-retry");
       expect(callCount).toBe(2);
@@ -423,10 +390,7 @@ describe("oauth2-device-code", () => {
         }
         // Token endpoint — succeed on second poll
         if (callCount === 2) {
-          return jsonResponse(
-            { error: "authorization_pending" },
-            403,
-          );
+          return jsonResponse({ error: "authorization_pending" }, 403);
         }
         return jsonResponse({
           access_token: "at-full-flow",
@@ -461,10 +425,7 @@ describe("oauth2-device-code", () => {
         }
         // Abort before returning token
         ac.abort();
-        return jsonResponse(
-          { error: "authorization_pending" },
-          403,
-        );
+        return jsonResponse({ error: "authorization_pending" }, 403);
       });
 
       try {

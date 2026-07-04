@@ -1,45 +1,45 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-    AlertTriangle,
-    ChevronDown,
-    ChevronUp,
-    Loader2,
-    ScrollText,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  ScrollText,
 } from "lucide-react";
 import { createElement, useCallback, useMemo, useState } from "react";
 
 import { Dropdown } from "@vellumai/design-library";
 
 import {
-    formatLatency,
-    formatTimelineTimestamp,
-    formatTokens,
-    formatTokensCombined,
+  formatLatency,
+  formatTimelineTimestamp,
+  formatTokens,
+  formatTokensCombined,
 } from "@/domains/logs/format";
 import {
-    calculateMetrics,
-    determineGroupStatus,
-    getGroupStatusMeta,
-    getIconForKind,
-    getStatusColor,
-    groupEventsByRequest,
-    stringifyAttributeValue,
-    type ConversationMetrics,
+  calculateMetrics,
+  determineGroupStatus,
+  getGroupStatusMeta,
+  getIconForKind,
+  getStatusColor,
+  groupEventsByRequest,
+  stringifyAttributeValue,
+  type ConversationMetrics,
 } from "@/domains/logs/trace-event-processing";
 import {
-    fetchTraceEvents,
-    type TraceEventRow,
+  fetchTraceEvents,
+  type TraceEventRow,
 } from "@/domains/logs/trace-events-api";
 import {
-    useBackgroundConversationListQuery,
-    useConversationListQuery,
-    useScheduledConversationListQuery,
+  useBackgroundConversationListQuery,
+  useConversationListQuery,
+  useScheduledConversationListQuery,
 } from "@/hooks/conversation-queries";
 import type { Conversation } from "@/types/conversation-types";
 import { mergeConversationLists } from "@/utils/conversation-cache";
 import {
-    loadLastViewedConversationId,
-    saveLastViewedConversationId,
+  loadLastViewedConversationId,
+  saveLastViewedConversationId,
 } from "@/utils/last-viewed-conversation-storage";
 
 interface LogsTabProps {

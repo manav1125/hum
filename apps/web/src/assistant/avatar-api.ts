@@ -236,9 +236,7 @@ async function uploadAvatarImageLegacy(
  * `none` — which `ChatAvatar` renders as the brand ApertureAvatar.
  * Returns `false` on transport failure.
  */
-export async function removeAvatarImage(
-  assistantId: string,
-): Promise<boolean> {
+export async function removeAvatarImage(assistantId: string): Promise<boolean> {
   try {
     const { error, response } = await avatarRemovePost({
       path: { assistant_id: assistantId },

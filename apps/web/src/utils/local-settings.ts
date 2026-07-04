@@ -80,10 +80,7 @@ interface PrefChangedDetail {
   value: string | null;
 }
 
-export function watchSetting(
-  key: string,
-  callback: () => void,
-): () => void {
+export function watchSetting(key: string, callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   const onStorage = (event: StorageEvent) => {
     if (event.key === key) callback();

@@ -458,7 +458,10 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         `Build an interactive ROI calculator app for: ${str(v, "subject")}.`,
         "",
         "Configure it from these inputs:",
-        line("Input variables (as sliders/fields)", list(v, "inputs").join(", ")),
+        line(
+          "Input variables (as sliders/fields)",
+          list(v, "inputs").join(", "),
+        ),
         line(
           "Outputs to compute live",
           list(v, "outputs").join(", ") || "ROI %, net benefit, payback period",
@@ -819,7 +822,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         key: "prompt",
         label: "Prompt",
         type: "textarea",
-        placeholder: "A golden retriever astronaut floating above Earth, cinematic lighting",
+        placeholder:
+          "A golden retriever astronaut floating above Earth, cinematic lighting",
         required: true,
       },
       {
@@ -976,7 +980,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
         key: "prompt",
         label: "Prompt",
         type: "textarea",
-        placeholder: "A drone shot flying over a misty mountain range at sunrise",
+        placeholder:
+          "A drone shot flying over a misty mountain range at sunrise",
         required: true,
       },
       {

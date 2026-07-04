@@ -159,5 +159,3 @@ export function writeSelectedVersion(version: string): void {
     // the right default.
   }
 }
-
-

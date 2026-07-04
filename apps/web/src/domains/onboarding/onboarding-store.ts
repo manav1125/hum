@@ -95,6 +95,8 @@ const SYNCED_DEFAULTS: Record<string, boolean> = {
 for (const [key, field] of SYNCED_KEYS) {
   watchSetting(key, () => {
     const next = getLocalBool(key, SYNCED_DEFAULTS[field] ?? false);
-    useOnboardingStoreBase.setState({ [field]: next } as Partial<OnboardingState>);
+    useOnboardingStoreBase.setState({
+      [field]: next,
+    } as Partial<OnboardingState>);
   });
 }

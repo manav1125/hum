@@ -1,11 +1,11 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
-    AlertTriangle,
-    CheckCircle,
-    ChevronDown,
-    Clock,
-    Loader2,
-    XCircle,
+  AlertTriangle,
+  CheckCircle,
+  ChevronDown,
+  Clock,
+  Loader2,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -13,9 +13,9 @@ import { Tag } from "@vellumai/design-library";
 
 import { assistantsSystemEventsListInfiniteOptions } from "@/generated/api/@tanstack/react-query.gen";
 import type {
-    AssistantSystemEvent,
-    EventStatusEnum,
-    SystemEventTypeEnum,
+  AssistantSystemEvent,
+  EventStatusEnum,
+  SystemEventTypeEnum,
 } from "@/generated/api/types.gen";
 
 type TagTone = "positive" | "negative" | "warning" | "neutral";
@@ -249,8 +249,7 @@ export function SystemEventsTab({ assistantId }: SystemEventsTabProps) {
         className="text-body-medium-lighter"
         style={{ color: "var(--content-tertiary)" }}
       >
-        Lifecycle events for your assistant from the last 30 days, newest
-        first.
+        Lifecycle events for your assistant from the last 30 days, newest first.
       </p>
 
       {isLoading ? (

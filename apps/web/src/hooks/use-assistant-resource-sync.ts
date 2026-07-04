@@ -56,7 +56,7 @@ import { SYNC_TAGS } from "@/lib/sync/types";
  */
 export function useAssistantResourceSync(
   assistantId: string | null,
-  isAssistantActive: boolean
+  isAssistantActive: boolean,
 ): void {
   const queryClient = useQueryClient();
 
@@ -66,7 +66,8 @@ export function useAssistantResourceSync(
 
     switch (event.type) {
       case "sync_changed":
-        if (event.originClientId && event.originClientId === getClientId()) return;
+        if (event.originClientId && event.originClientId === getClientId())
+          return;
         for (const tag of event.tags) {
           switch (tag) {
             case SYNC_TAGS.assistantAvatar:

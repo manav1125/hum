@@ -5,9 +5,9 @@ import { isMarkdown } from "@/components/file-markdown";
 import { SkillFileContent } from "@/domains/intelligence/components/skills/skill-file-content";
 import { SkillIcon } from "@/domains/intelligence/components/skills/skill-icon";
 import {
-    isAvailableSkill,
-    isRemovableSkill,
-    type SkillInfo,
+  isAvailableSkill,
+  isRemovableSkill,
+  type SkillInfo,
 } from "@/domains/intelligence/skills/types";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { formatFriendlyDate } from "@/utils/format-date";
@@ -211,11 +211,20 @@ export function SkillDetail({
             }}
           >
             <div
-              style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                minWidth: 0,
+              }}
             >
               <SkillIcon skill={skill} className="h-7 w-7 shrink-0" />
               <div
-                style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-.3px" }}
+                style={{
+                  fontSize: 20,
+                  fontWeight: 600,
+                  letterSpacing: "-.3px",
+                }}
               >
                 {skill.name}
               </div>
@@ -233,7 +242,14 @@ export function SkillDetail({
           </div>
 
           {/* Metadata triplet */}
-          <div style={{ display: "flex", gap: 40, marginTop: 18, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 40,
+              marginTop: 18,
+              flexWrap: "wrap",
+            }}
+          >
             <div>
               <div style={metaLabel}>Added by</div>
               <div style={{ fontSize: 13.5, marginTop: 4 }}>{addedBy}</div>
@@ -377,9 +393,7 @@ export function SkillDetail({
                 No files available.
               </div>
             ) : (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 6 }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {fileEntries.map((entry) => {
                   const isDirectory = (entry.mimeType ?? "").endsWith(
                     "/directory",

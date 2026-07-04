@@ -75,7 +75,9 @@ export function LibraryView({
   } = useLibraryData(assistantId);
 
   // --- Delete state ---
-  const [appPendingDelete, setAppPendingDelete] = useState<AppSummary | null>(null);
+  const [appPendingDelete, setAppPendingDelete] = useState<AppSummary | null>(
+    null,
+  );
   const [isDeleting, setIsDeleting] = useState(false);
 
   const handleConfirmDelete = useCallback(async () => {
@@ -100,7 +102,14 @@ export function LibraryView({
     } finally {
       setIsDeleting(false);
     }
-  }, [appPendingDelete, isDeleting, assistantId, pinnedAppIds, togglePin, queryClient]);
+  }, [
+    appPendingDelete,
+    isDeleting,
+    assistantId,
+    pinnedAppIds,
+    togglePin,
+    queryClient,
+  ]);
 
   const handleCancelDelete = useCallback(() => {
     if (!isDeleting) setAppPendingDelete(null);
@@ -110,37 +119,49 @@ export function LibraryView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-  const handleImportBundle = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || isImporting) return;
-    setIsImporting(true);
-    try {
-      const result = await importBundle(assistantId, file);
-      await queryClient.invalidateQueries({
-        queryKey: appsGetQueryKey({ path: { assistant_id: assistantId } }),
-      });
-      toast.success(result.name + " imported");
-      onOpenApp(result.appId);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to import app");
-    } finally {
-      setIsImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }, [assistantId, isImporting, queryClient, onOpenApp]);
+  const handleImportBundle = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || isImporting) return;
+      setIsImporting(true);
+      try {
+        const result = await importBundle(assistantId, file);
+        await queryClient.invalidateQueries({
+          queryKey: appsGetQueryKey({ path: { assistant_id: assistantId } }),
+        });
+        toast.success(result.name + " imported");
+        onOpenApp(result.appId);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to import app",
+        );
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [assistantId, isImporting, queryClient, onOpenApp],
+  );
 
   // --- Deploy ---
-  const handleDeploy = useCallback(async (appId: string) => {
-    if (isDeploying) return;
-    const app = apps.find((a) => a.id === appId);
-    const appName = app?.name ?? "this app";
-    try {
-      const html = await getCachedAppHtml(assistantId, appId);
-      void useDeployStore.getState().deployApp(assistantId, appId, appName, html);
-    } catch {
-      void useDeployStore.getState().deployApp(assistantId, appId, appName, "");
-    }
-  }, [assistantId, isDeploying, apps]);
+  const handleDeploy = useCallback(
+    async (appId: string) => {
+      if (isDeploying) return;
+      const app = apps.find((a) => a.id === appId);
+      const appName = app?.name ?? "this app";
+      try {
+        const html = await getCachedAppHtml(assistantId, appId);
+        void useDeployStore
+          .getState()
+          .deployApp(assistantId, appId, appName, html);
+      } catch {
+        void useDeployStore
+          .getState()
+          .deployApp(assistantId, appId, appName, "");
+      }
+    },
+    [assistantId, isDeploying, apps],
+  );
 
   const handlePinToggle = useCallback(
     (app: AppSummary) => togglePin(app),
@@ -185,7 +206,9 @@ export function LibraryView({
         fileInputRef={fileInputRef}
         isImporting={isImporting}
         onImportBundle={handleImportBundle}
-        onNewConversation={onNewConversation ? () => onNewConversation() : undefined}
+        onNewConversation={
+          onNewConversation ? () => onNewConversation() : undefined
+        }
       />
     );
   }
@@ -194,11 +217,18 @@ export function LibraryView({
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
-      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: "#1A2230",
+      }}
     >
       {/* Editorial hero — "Everything you and Cue have made together." */}
       <div className="mb-5 flex shrink-0 items-center gap-4">
-        <ApertureAvatar state="listening" size={42} className="rounded-[12px]" />
+        <ApertureAvatar
+          state="listening"
+          size={42}
+          className="rounded-[12px]"
+        />
         <div className="flex-1 min-w-0">
           <div
             style={{
@@ -258,7 +288,9 @@ export function LibraryView({
           type="text"
           placeholder="Search your library"
           value={searchText}
-          onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchText(e.target.value)}
+          onChange={(e: ChangeEvent<HTMLInputElement>) =>
+            setSearchText(e.target.value)
+          }
           leftIcon={<Search size={16} />}
         />
       </div>

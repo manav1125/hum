@@ -199,17 +199,15 @@ export function setupOrganizationStore(): () => void {
   const unsubAuth = useAuthStore.subscribe((state, prevState) => {
     const hasSession = hasLivePlatformSession(state.platformSession);
     const hadSession = hasLivePlatformSession(prevState.platformSession);
-    if (
-      hasSession &&
-      (!hadSession || state.user?.id !== prevState.user?.id)
-    ) {
+    if (hasSession && (!hadSession || state.user?.id !== prevState.user?.id)) {
       useOrganizationStore.getState().fetchOrganizations();
     }
   });
 
   // 2. App resume — refetch if stale and platform session is active.
   const refetchIfStale = () => {
-    if (!hasLivePlatformSession(useAuthStore.getState().platformSession)) return;
+    if (!hasLivePlatformSession(useAuthStore.getState().platformSession))
+      return;
     const { status } = useOrganizationStore.getState();
     if (
       (status === "ready" || status === "error") &&

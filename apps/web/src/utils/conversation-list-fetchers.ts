@@ -84,7 +84,11 @@ async function fetchConversationListPage(
   });
   assertHasResponse(response, error, "Failed to list conversations.");
   if (!response.ok) {
-    const msg = extractErrorMessage(error, response, "Failed to list conversations.");
+    const msg = extractErrorMessage(
+      error,
+      response,
+      "Failed to list conversations.",
+    );
     throw new ApiError(response.status, msg);
   }
 
@@ -138,8 +142,12 @@ async function fetchMergedConversationList(
   archiveStatus: "active" | "archived" = "active",
   sortKey: "lastMessageAt" | "archivedAt" = "lastMessageAt",
 ): Promise<Conversation[]> {
-  const opts: FetchConversationListOptions = archiveStatus === "active" ? {} : { archiveStatus };
-  const bgOpts: FetchConversationListOptions = { ...opts, conversationType: "background" };
+  const opts: FetchConversationListOptions =
+    archiveStatus === "active" ? {} : { archiveStatus };
+  const bgOpts: FetchConversationListOptions = {
+    ...opts,
+    conversationType: "background",
+  };
 
   const [foregroundResult, backgroundResult] = await Promise.allSettled([
     fetchConversationList(assistantId, opts),
@@ -269,7 +277,9 @@ export async function listConversationsFirstPage(
   const page = await fetchConversationListPage(assistantId, 0);
   return {
     ...page,
-    conversations: [...page.conversations].sort(byTimestampDesc("lastMessageAt")),
+    conversations: [...page.conversations].sort(
+      byTimestampDesc("lastMessageAt"),
+    ),
   };
 }
 
@@ -297,7 +307,9 @@ export async function listScheduledConversationsFirstPage(
   });
   return {
     ...page,
-    conversations: [...page.conversations].sort(byTimestampDesc("lastMessageAt")),
+    conversations: [...page.conversations].sort(
+      byTimestampDesc("lastMessageAt"),
+    ),
   };
 }
 

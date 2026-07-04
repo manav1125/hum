@@ -1,11 +1,4 @@
-import {
-    ArrowUp,
-    Ellipsis,
-    Globe,
-    Pin,
-    PinOff,
-    Trash2,
-} from "lucide-react";
+import { ArrowUp, Ellipsis, Globe, Pin, PinOff, Trash2 } from "lucide-react";
 import { type MouseEvent, useCallback, useState } from "react";
 
 import { AppPreviewThumbnail } from "@/components/app-card";
@@ -16,11 +9,11 @@ import { formatFriendlyDate } from "@/utils/format-date";
 import { cn } from "@/utils/misc";
 import { shareApp } from "@/utils/share-app";
 import {
-    BottomSheet,
-    Button,
-    Menu,
-    PanelItem,
-    toast,
+  BottomSheet,
+  Button,
+  Menu,
+  PanelItem,
+  toast,
 } from "@vellumai/design-library";
 
 interface LibraryAppCardProps {

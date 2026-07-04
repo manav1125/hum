@@ -1,4 +1,3 @@
-
 export const INITIAL_MESSAGE_SESSION_KEY = "vellum.assistant.initialMessage";
 
 function getSessionStorage(): Storage | null {

@@ -1,4 +1,3 @@
-
 import { useEffect } from "react";
 
 /**
@@ -130,5 +129,14 @@ export function useOptionHotkeys(
     return () => {
       window.removeEventListener("keydown", handler);
     };
-  }, [optionCount, onSelect, onFreeText, enabled, onPrev, onNext, onSkip, onClose]);
+  }, [
+    optionCount,
+    onSelect,
+    onFreeText,
+    enabled,
+    onPrev,
+    onNext,
+    onSkip,
+    onClose,
+  ]);
 }

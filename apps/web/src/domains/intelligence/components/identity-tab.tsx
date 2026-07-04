@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { getAssistant } from "@/assistant/api";
 import { fetchAssistantIdentity } from "@/assistant/identity";
@@ -11,12 +17,15 @@ import { SkillDetail } from "@/domains/intelligence/components/skills/skill-deta
 import { installSkill } from "@/domains/intelligence/skills/install";
 import type { SkillInfo } from "@/domains/intelligence/skills/types";
 import {
-    skillsGetOptions,
-    skillsGetQueryKey,
-    useSkillsByIdDeleteMutation,
+  skillsGetOptions,
+  skillsGetQueryKey,
+  useSkillsByIdDeleteMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { type Options } from "@/generated/daemon/sdk.gen";
-import type { IdentityGetResponse, SkillsGetData } from "@/generated/daemon/types.gen";
+import type {
+  IdentityGetResponse,
+  SkillsGetData,
+} from "@/generated/daemon/types.gen";
 import { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
 import { captureError } from "@/lib/sentry/capture-error";
 import type { CharacterComponents, CharacterTraits } from "@/types/avatar";
@@ -293,33 +302,46 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
     invalidate: invalidateAvatar,
   } = useAssistantAvatar(assistantId);
   const [identity, setIdentity] = useState<IdentityGetResponse | null>(null);
-  const [assistantCreatedAt, setAssistantCreatedAt] = useState<string | null>(null);
-  const [loadedAssistantId, setLoadedAssistantId] = useState<string | null>(null);
+  const [assistantCreatedAt, setAssistantCreatedAt] = useState<string | null>(
+    null,
+  );
+  const [loadedAssistantId, setLoadedAssistantId] = useState<string | null>(
+    null,
+  );
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
-  const [installingSkillId, setInstallingSkillId] = useState<string | null>(null);
+  const [installingSkillId, setInstallingSkillId] = useState<string | null>(
+    null,
+  );
   const [removingSkillId, setRemovingSkillId] = useState<string | null>(null);
-  const [skillPendingRemoval, setSkillPendingRemoval] = useState<SkillInfo | null>(null);
+  const [skillPendingRemoval, setSkillPendingRemoval] =
+    useState<SkillInfo | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     Promise.all([
       fetchAssistantIdentity(assistantId),
-      getAssistant(assistantId).catch(() => ({ ok: false as const, status: 0, error: {} })),
-    ]).then(([identityData, assistantResult]) => {
-      if (cancelled) return;
-      setIdentity(identityData);
-      if (assistantResult.ok) {
-        setAssistantCreatedAt(assistantResult.data.created);
-      } else {
-        setAssistantCreatedAt(null);
-      }
-      setLoadedAssistantId(assistantId);
-    }).catch((err) => {
-      if (cancelled) return;
-      captureError(err, { context: "identity_tab_load" });
-    });
+      getAssistant(assistantId).catch(() => ({
+        ok: false as const,
+        status: 0,
+        error: {},
+      })),
+    ])
+      .then(([identityData, assistantResult]) => {
+        if (cancelled) return;
+        setIdentity(identityData);
+        if (assistantResult.ok) {
+          setAssistantCreatedAt(assistantResult.data.created);
+        } else {
+          setAssistantCreatedAt(null);
+        }
+        setLoadedAssistantId(assistantId);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        captureError(err, { context: "identity_tab_load" });
+      });
 
     return () => {
       cancelled = true;
@@ -337,7 +359,10 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
     select: (data): SkillInfo[] => data.skills,
     enabled: Boolean(assistantId),
   });
-  const installedSkills = useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
+  const installedSkills = useMemo(
+    () => skillsQuery.data ?? [],
+    [skillsQuery.data],
+  );
 
   const handleAvatarChange = useCallback(() => {
     invalidateAvatar();
@@ -435,7 +460,9 @@ export function IdentityTab({ assistantId, onOpenThread }: IdentityTabProps) {
           onSelectSkill={(id) => setSelectedSkillId(id)}
           onInstall={() => handleInstall(selectedSkill)}
           onRemove={() => handleRemove(selectedSkill)}
-          isInstalling={installingSkillId === (selectedSkill.slug ?? selectedSkill.id)}
+          isInstalling={
+            installingSkillId === (selectedSkill.slug ?? selectedSkill.id)
+          }
           isRemoving={removingSkillId === selectedSkill.id}
         />
         {removalDialog}

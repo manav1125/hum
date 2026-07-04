@@ -17,7 +17,9 @@ export function IdentityPageRoute() {
       onOpenThread={(message) => {
         useViewerStore.getState().setMainView("chat");
         const draftConversationId = createDraftConversationId();
-        useConversationStore.getState().setActiveConversationId(draftConversationId);
+        useConversationStore
+          .getState()
+          .setActiveConversationId(draftConversationId);
         void navigate(
           `${routes.conversation(draftConversationId)}?prompt=${encodeURIComponent(message)}`,
         );

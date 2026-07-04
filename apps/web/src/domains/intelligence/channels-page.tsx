@@ -292,7 +292,9 @@ function ActiveCard({
         background: "linear-gradient(180deg,#FAFBFF,#fff)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 13 }}>{inner}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+        {inner}
+      </div>
     </div>
   );
 }
@@ -441,7 +443,14 @@ export function ChannelsPage() {
         <div style={{ fontSize: 14.5, fontWeight: 600, color: C.t1 }}>
           Couldn’t load channels
         </div>
-        <div style={{ fontSize: 13, color: C.t2, maxWidth: 360, textAlign: "center" }}>
+        <div
+          style={{
+            fontSize: 13,
+            color: C.t2,
+            maxWidth: 360,
+            textAlign: "center",
+          }}
+        >
           The channel catalog didn’t load — the assistant may be unreachable.
         </div>
         <button
@@ -496,7 +505,10 @@ export function ChannelsPage() {
 
   return (
     <div
-      style={{ padding: "0 0 28px", fontFamily: "'DM Sans', system-ui, sans-serif" }}
+      style={{
+        padding: "0 0 28px",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+      }}
     >
       <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
 
@@ -589,7 +601,9 @@ export function ChannelsPage() {
                   strokeWidth="1.5"
                   strokeDasharray="3 4"
                   opacity={NODE_OPACITY[i]}
-                  style={{ animation: `cueDash ${NODE_DASH[i]}s linear infinite` }}
+                  style={{
+                    animation: `cueDash ${NODE_DASH[i]}s linear infinite`,
+                  }}
                 />
               );
             })}
@@ -783,7 +797,8 @@ export function ChannelsPage() {
                   const style = iconStyle(c.id);
                   // Last card spans full width when the count is odd, matching
                   // the v0.2 layout.
-                  const full = active.length % 2 === 1 && i === active.length - 1;
+                  const full =
+                    active.length % 2 === 1 && i === active.length - 1;
                   return (
                     <ActiveCard
                       key={c.id}

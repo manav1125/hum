@@ -1,13 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-    ArrowDownToLine,
-    ArrowLeft,
-    ArrowUpCircle,
-    Download,
-    ExternalLink,
-    Loader2,
-    Trash2,
-    TriangleAlert,
+  ArrowDownToLine,
+  ArrowLeft,
+  ArrowUpCircle,
+  Download,
+  ExternalLink,
+  Loader2,
+  Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
@@ -16,19 +16,19 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { FileMarkdown } from "@/components/file-markdown";
 import { UpdateAvailableBadge } from "@/domains/intelligence/components/plugins/update-available-badge";
 import {
-    hasLocalEdits,
-    type PluginDrift,
-    usePluginDrift,
+  hasLocalEdits,
+  type PluginDrift,
+  usePluginDrift,
 } from "@/domains/intelligence/use-plugin-drift";
 import {
-    pluginsByNameGetOptions,
-    pluginsByNameGetQueryKey,
-    pluginsByNameInspectGetQueryKey,
-    pluginsGetQueryKey,
-    pluginsSearchGetQueryKey,
-    usePluginsByNameDeleteMutation,
-    usePluginsByNameUpgradePostMutation,
-    usePluginsInstallPostMutation,
+  pluginsByNameGetOptions,
+  pluginsByNameGetQueryKey,
+  pluginsByNameInspectGetQueryKey,
+  pluginsGetQueryKey,
+  pluginsSearchGetQueryKey,
+  usePluginsByNameDeleteMutation,
+  usePluginsByNameUpgradePostMutation,
+  usePluginsInstallPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { PluginsByNameGetResponse } from "@/generated/daemon/types.gen";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
@@ -402,8 +402,7 @@ function Header({
 }
 
 function Metadata({ plugin }: { plugin: PluginsByNameGetResponse }) {
-  const repo =
-    plugin.source?.kind === "github" ? plugin.source.repo : "Local";
+  const repo = plugin.source?.kind === "github" ? plugin.source.repo : "Local";
   const repoHref =
     plugin.source?.kind === "github"
       ? `https://github.com/${plugin.source.repo}`

@@ -83,10 +83,28 @@ function classifyTool(tool: ConnectorTool): ToolKind {
 function PolicyTag({ kind }: { kind: ToolKind }) {
   const style =
     kind === "read"
-      ? { bg: "#E9F5EE", border: "#BFE3CD", color: C.green, glyph: "✓", label: "allow" }
+      ? {
+          bg: "#E9F5EE",
+          border: "#BFE3CD",
+          color: C.green,
+          glyph: "✓",
+          label: "allow",
+        }
       : kind === "high"
-        ? { bg: "#FCEBEB", border: "#F0B9AC", color: C.danger, glyph: "⊘", label: "never" }
-        : { bg: "#FBF0DA", border: "#ECD9A6", color: C.amber, glyph: "✋", label: "ask" };
+        ? {
+            bg: "#FCEBEB",
+            border: "#F0B9AC",
+            color: C.danger,
+            glyph: "⊘",
+            label: "never",
+          }
+        : {
+            bg: "#FBF0DA",
+            border: "#ECD9A6",
+            color: C.amber,
+            glyph: "✋",
+            label: "ask",
+          };
   return (
     <span
       aria-label={`Default policy: ${style.label}`}
@@ -158,7 +176,11 @@ function ToolRow({
         disabled={pending}
         onClick={onToggle}
         aria-pressed={tool.enabled}
-        title={tool.enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
+        title={
+          tool.enabled
+            ? "Enabled — click to disable"
+            : "Disabled — click to enable"
+        }
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -472,7 +494,9 @@ export function ConnectorDetailPage() {
 
   // Connected → permission matrix.
   return (
-    <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: C.t1 }}>
+    <div
+      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: C.t1 }}
+    >
       <button
         type="button"
         onClick={() => navigate(routes.connectors)}
@@ -481,7 +505,14 @@ export function ConnectorDetailPage() {
         ← Connectors
       </button>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 13,
+          marginTop: 16,
+        }}
+      >
         <span
           style={{
             width: 40,
@@ -500,7 +531,9 @@ export function ConnectorDetailPage() {
           {initial}
         </span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.3px" }}>
+          <div
+            style={{ fontSize: 19, fontWeight: 600, letterSpacing: "-.3px" }}
+          >
             {connector.name}
           </div>
           <div style={{ fontSize: 12, color: C.t2 }}>Connected</div>
@@ -590,9 +623,9 @@ export function ConnectorDetailPage() {
               color: C.t3,
             }}
           >
-            ✓ allow · ✋ ask each time · ⊘ never — policy derived from tool type ·
-            per-tool allow/ask/never coming soon. The ENABLED/OFF toggle is live
-            today.
+            ✓ allow · ✋ ask each time · ⊘ never — policy derived from tool type
+            · per-tool allow/ask/never coming soon. The ENABLED/OFF toggle is
+            live today.
           </div>
         </>
       )}

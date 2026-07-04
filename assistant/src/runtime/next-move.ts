@@ -29,6 +29,7 @@ import { readHomeFeed } from "../home/feed-writer.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { getLogger } from "../util/logger.js";
 import { truncate } from "../util/truncate.js";
+import { getProject } from "../work-items/project-store.js";
 import { listWorkItems, type WorkItem } from "../work-items/work-item-store.js";
 import { runBtwSidechain } from "./btw-sidechain.js";
 import { getByKind } from "./pending-interactions.js";
@@ -72,10 +73,20 @@ interface NextMoveCandidate {
   /** Grounding context for the LLM prompt + deterministic reasoning fallback. */
   notes: string;
   source: string;
-  /** Epoch ms the underlying item was created — older = more urgent within a tier. */
+  /** Epoch ms the underlying item was created. */
   createdAtMs: number;
   /** Lower = ranked first. */
   rankTier: number;
+  /**
+   * Epoch ms of the most recent activity on the underlying item. Drives the
+   * freshness axis of intra-tier ranking; falls back to createdAtMs when the
+   * item carries no activity timestamp (approvals, feed items).
+   */
+  lastActivityAtMs: number;
+  /** Explicit deadline (epoch ms) when the item has one, else null. */
+  dueAtMs: number | null;
+  /** True when the item belongs to a pinned project (higher priority). */
+  pinnedProject: boolean;
   conversationId?: string;
   actions: NextMoveAction[];
 }
@@ -138,6 +149,9 @@ function gatherApprovalCandidates(): NextMoveCandidate[] {
         // treat them as "now" — the tier already floats them to the top, so
         // intra-tier age ordering is not load-bearing here.
         createdAtMs: Date.now(),
+        lastActivityAtMs: Date.now(),
+        dueAtMs: null,
+        pinnedProject: false,
         rankTier: TIER_APPROVAL,
         conversationId: row.conversationId,
         actions: [
@@ -202,6 +216,17 @@ function gatherWorkItemCandidates(): NextMoveCandidate[] {
       continue;
     }
 
+    // A pinned parent project bumps the item's intra-tier priority. Lookups
+    // are cheap (single-row by id) and only run for actionable items.
+    let pinnedProject = false;
+    if (item.projectId) {
+      try {
+        pinnedProject = getProject(item.projectId)?.pinned === 1;
+      } catch {
+        pinnedProject = false;
+      }
+    }
+
     candidates.push({
       id: `wi:${item.id}`,
       kind: "work_item",
@@ -209,6 +234,9 @@ function gatherWorkItemCandidates(): NextMoveCandidate[] {
       notes: item.notes?.trim() || item.title,
       source: item.sourceType ?? "task queue",
       createdAtMs: item.createdAt,
+      lastActivityAtMs: item.lastActivityAt ?? item.createdAt,
+      dueAtMs: item.dueAt,
+      pinnedProject,
       rankTier,
       conversationId: item.lastRunConversationId ?? undefined,
       actions,
@@ -242,6 +270,9 @@ function gatherFeedCandidates(): NextMoveCandidate[] {
       notes: item.summary || item.title || "",
       source: item.category ?? "home feed",
       createdAtMs: Number.isNaN(createdMs) ? Date.now() : createdMs,
+      lastActivityAtMs: Number.isNaN(createdMs) ? Date.now() : createdMs,
+      dueAtMs: null,
+      pinnedProject: false,
       // Feed items rank within their tier by urgency, then age.
       rankTier:
         TIER_FEED + (URGENCY_RANK[item.urgency ?? "medium"] ?? 2) * 0.01,
@@ -261,14 +292,88 @@ function gatherFeedCandidates(): NextMoveCandidate[] {
 }
 
 /**
+ * Ranking constants for the intra-tier freshness/staleness axis.
+ *
+ * The old ranking sorted OLDEST-first within a tier, which floated zombie
+ * items forever: a task captured three weeks ago and never touched sat at the
+ * top and dominated the "next move" every day. The new ranking prioritizes
+ * things that are actually live — due-soon/overdue, pinned, or recently
+ * active — and pushes untouched drifters to the back UNLESS they have a due
+ * date (a real deadline is always worth surfacing regardless of activity).
+ */
+
+/** A due_at within this window (or already past) makes an item "due soon". */
+const DUE_SOON_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+/** No activity for longer than this ⇒ "stale", deprioritized unless due. */
+const STALE_AFTER_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
+
+/** Whether an item has a deadline that is overdue or lands within the window. */
+function isDueSoon(c: NextMoveCandidate, now: number): boolean {
+  return c.dueAtMs != null && c.dueAtMs <= now + DUE_SOON_WINDOW_MS;
+}
+
+/**
+ * Whether an item is a stale drifter: no activity in >10 days AND no deadline.
+ * A due item is never treated as stale — a real deadline keeps it live even if
+ * nothing has touched it in weeks.
+ */
+function isStaleDrifter(c: NextMoveCandidate, now: number): boolean {
+  if (c.dueAtMs != null) return false;
+  return now - c.lastActivityAtMs > STALE_AFTER_MS;
+}
+
+/**
+ * Deterministic intra-tier comparator. Smaller sorts first. Axes, in order:
+ *   1. Stale drifters (no activity >10 days, no due date) sink to the back.
+ *   2. Due-soon/overdue items rise to the front.
+ *   3. Among due items, the SOONER deadline wins.
+ *   4. Pinned-project items rank above unpinned.
+ *   5. FRESHEST last_activity_at wins (was: oldest createdAt — the bug).
+ *   6. id, as a final stable tie-break.
+ */
+export function compareCandidates(
+  a: NextMoveCandidate,
+  b: NextMoveCandidate,
+  now: number,
+): number {
+  // 1. Stale drifters last within the tier.
+  const aStale = isStaleDrifter(a, now);
+  const bStale = isStaleDrifter(b, now);
+  if (aStale !== bStale) return aStale ? 1 : -1;
+
+  // 2. Due-soon/overdue first.
+  const aDue = isDueSoon(a, now);
+  const bDue = isDueSoon(b, now);
+  if (aDue !== bDue) return aDue ? -1 : 1;
+
+  // 3. Among two due items, the sooner deadline wins.
+  if (aDue && bDue && a.dueAtMs !== b.dueAtMs) {
+    return (a.dueAtMs as number) - (b.dueAtMs as number);
+  }
+
+  // 4. Pinned-project items outrank unpinned.
+  if (a.pinnedProject !== b.pinnedProject) return a.pinnedProject ? -1 : 1;
+
+  // 5. Freshest activity first (descending last_activity_at).
+  if (a.lastActivityAtMs !== b.lastActivityAtMs) {
+    return b.lastActivityAtMs - a.lastActivityAtMs;
+  }
+
+  // 6. Stable tie-break.
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
  * Gather all candidates and pick the single highest-ranked one
  * DETERMINISTICALLY. Ordering, smallest-first:
  *   1. rankTier (approval < awaiting_review < queued < feed)
- *   2. within a tier, OLDEST first (smallest createdAtMs) — the longest-waiting
- *      / highest-urgency item wins.
- *   3. id, as a final stable tie-break.
+ *   2. within a tier, {@link compareCandidates} — due-soon/pinned/freshest
+ *      first, stale drifters last.
  */
-export function pickTopCandidate(): NextMoveCandidate | null {
+export function pickTopCandidate(
+  now: number = Date.now(),
+): NextMoveCandidate | null {
   const all = [
     ...gatherApprovalCandidates(),
     ...gatherWorkItemCandidates(),
@@ -276,12 +381,7 @@ export function pickTopCandidate(): NextMoveCandidate | null {
   ];
   if (all.length === 0) return null;
 
-  all.sort(
-    (a, b) =>
-      a.rankTier - b.rankTier ||
-      a.createdAtMs - b.createdAtMs ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
+  all.sort((a, b) => a.rankTier - b.rankTier || compareCandidates(a, b, now));
   return all[0];
 }
 

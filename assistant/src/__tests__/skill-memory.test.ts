@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import type { SkillSummary } from "../config/skills.js";
-import { fromSkillSummary } from "../skills/skill-memory.js";
+import type { CatalogSkill } from "../skills/catalog-install.js";
+import {
+  fromCatalogSkill,
+  fromSkillSummary,
+  rebrandSkillDisplayText,
+} from "../skills/skill-memory.js";
 
 function makeSkillSummary(overrides: Partial<SkillSummary> = {}): SkillSummary {
   return {
@@ -81,5 +86,89 @@ describe("fromSkillSummary", () => {
       activationHints: ["user asks for local article drafts"],
       avoidWhen: ["user only wants citation extraction"],
     });
+  });
+});
+
+// ─── rebrand: Vellum → Cue in user-visible display text ──────────────────────
+
+describe("rebrandSkillDisplayText", () => {
+  test("rebrands multi-word product phrases", () => {
+    expect(rebrandSkillDisplayText("Vellum OAuth Integrations")).toBe(
+      "Cue OAuth Integrations",
+    );
+    expect(
+      rebrandSkillDisplayText(
+        "Connect a Telegram bot to the Vellum Assistant gateway",
+      ),
+    ).toBe("Connect a Telegram bot to the Cue gateway");
+    expect(rebrandSkillDisplayText("the Vellum gateway")).toBe(
+      "the Cue gateway",
+    );
+    expect(rebrandSkillDisplayText("the Vellum Assistant helps you")).toBe(
+      "the Cue helps you",
+    );
+    expect(rebrandSkillDisplayText("built on the Vellum platform")).toBe(
+      "built on the Cue",
+    );
+  });
+
+  test("rebrands a bare standalone product name", () => {
+    expect(rebrandSkillDisplayText("Powered by Vellum.")).toBe(
+      "Powered by Cue.",
+    );
+  });
+
+  test("leaves non-product text untouched", () => {
+    expect(rebrandSkillDisplayText("Browse the web using commands")).toBe(
+      "Browse the web using commands",
+    );
+  });
+});
+
+describe("rebrand applied through capability producers", () => {
+  test("fromSkillSummary rebrands display prose but never the id", () => {
+    const input = fromSkillSummary(
+      makeSkillSummary({
+        id: "vellum-oauth-integrations",
+        name: "vellum-oauth-integrations",
+        displayName: "Vellum OAuth Integrations",
+        description:
+          "Act on behalf of your user via the Vellum Assistant gateway",
+        activationHints: ["When the user wants to connect Vellum to a service"],
+      }),
+    );
+
+    // id is a protocol identifier — must stay "vellum-*".
+    expect(input.id).toBe("vellum-oauth-integrations");
+    expect(input.displayName).toBe("Cue OAuth Integrations");
+    expect(input.description).toBe(
+      "Act on behalf of your user via the Cue gateway",
+    );
+    expect(input.activationHints).toEqual([
+      "When the user wants to connect Cue to a service",
+    ]);
+  });
+
+  test("fromCatalogSkill rebrands display prose but never the id", () => {
+    const entry: CatalogSkill = {
+      id: "vellum-browser-use",
+      name: "vellum-browser-use",
+      description: "Browse the web on behalf of the Vellum Assistant",
+      metadata: {
+        vellum: {
+          "display-name": "Vellum Browser",
+          "activation-hints": ["Load first to browse the web with Vellum"],
+        },
+      },
+    };
+
+    const input = fromCatalogSkill(entry);
+
+    expect(input.id).toBe("vellum-browser-use");
+    expect(input.displayName).toBe("Cue Browser");
+    expect(input.description).toBe("Browse the web on behalf of the Cue");
+    expect(input.activationHints).toEqual([
+      "Load first to browse the web with Cue",
+    ]);
   });
 });

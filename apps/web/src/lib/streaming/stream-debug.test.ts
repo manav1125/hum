@@ -195,7 +195,9 @@ describe("markClientEstablished", () => {
 
     // wait a tick so timestamps would differ
     const start = Date.now();
-    while (Date.now() - start < 2) { /* busy wait */ }
+    while (Date.now() - start < 2) {
+      /* busy wait */
+    }
 
     markClientEstablished(id);
     const second = getSseClients().find((c) => c.id === id)!.establishedAt;

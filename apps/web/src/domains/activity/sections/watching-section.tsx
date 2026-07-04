@@ -61,7 +61,10 @@ function narrow(raw: unknown): WatcherView | null {
 }
 
 /** Pull the watcher array out of whatever envelope the daemon returned. */
-function extractWatchers(data: unknown): { rows: WatcherView[]; rawCount: number } {
+function extractWatchers(data: unknown): {
+  rows: WatcherView[];
+  rawCount: number;
+} {
   let list: unknown[] = [];
   if (Array.isArray(data)) {
     list = data;

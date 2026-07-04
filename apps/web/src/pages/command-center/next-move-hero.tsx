@@ -82,7 +82,8 @@ function HeroButton({
         cursor: busy ? "default" : "pointer",
         opacity: busy ? 0.6 : 1,
         whiteSpace: "nowrap",
-        transition: "transform .12s ease, box-shadow .12s ease, background .12s ease",
+        transition:
+          "transform .12s ease, box-shadow .12s ease, background .12s ease",
         border: primary
           ? "none"
           : `1px solid ${
@@ -160,7 +161,9 @@ function CaughtUpCard() {
         >
           You&rsquo;re all caught up.
         </div>
-        <div style={{ fontSize: 13, color: C.t2, marginTop: 3, lineHeight: 1.5 }}>
+        <div
+          style={{ fontSize: 13, color: C.t2, marginTop: 3, lineHeight: 1.5 }}
+        >
           Nothing needs a decision right now. Cue is watching your inbox and
           standing by — the moment something matters, it&rsquo;ll surface here.
         </div>

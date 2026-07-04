@@ -109,7 +109,11 @@ Examples:
                 source: opts.source,
               },
             });
-            if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+            if (!r.ok)
+              return exitFromIpcResult(
+                { ok: false, error: r.error, statusCode: r.statusCode },
+                cmd,
+              );
             if (shouldOutputJson(cmd)) {
               writeOutput(cmd, { ok: true, ...r.result });
             } else {
@@ -151,7 +155,11 @@ Examples:
               source_identifier: string | null;
             }>;
           }>("webhooks_list", {});
-          if (!r.ok) return exitFromIpcResult({ ok: false, error: r.error, statusCode: r.statusCode }, cmd);
+          if (!r.ok)
+            return exitFromIpcResult(
+              { ok: false, error: r.error, statusCode: r.statusCode },
+              cmd,
+            );
           if (shouldOutputJson(cmd)) {
             writeOutput(cmd, { ok: true, routes: r.result!.routes });
           } else {

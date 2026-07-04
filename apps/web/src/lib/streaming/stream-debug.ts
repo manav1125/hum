@@ -34,11 +34,7 @@ import type { AssistantEvent } from "@/types/event-types";
  *   upgraded to one of the above by the transport's teardown path.
  */
 export type SseClientEndReason =
-  | "watchdog"
-  | "cancelled"
-  | "error"
-  | "ended"
-  | "aborted";
+  "watchdog" | "cancelled" | "error" | "ended" | "aborted";
 
 export interface SseDebugClient {
   /** Stable client identifier. */

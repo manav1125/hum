@@ -217,7 +217,13 @@ export function MemoryRow({
           </div>
         </div>
       ) : (
-        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--content-default)" }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 500,
+            color: "var(--content-default)",
+          }}
+        >
           {item.statement}
         </div>
       )}

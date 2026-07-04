@@ -7,13 +7,14 @@ export function registerCompletionsCommand(program: Command): void {
   registerCommand(program, {
     name: "completions",
     transport: "local",
-    description: "Generate shell completion script (e.g. assistant completions bash >> ~/.bashrc)",
+    description:
+      "Generate shell completion script (e.g. assistant completions bash >> ~/.bashrc)",
     build: (cmd) => {
       cmd
-    .argument("<shell>", "Shell type: bash, zsh, or fish")
-    .addHelpText(
-      "after",
-      `
+        .argument("<shell>", "Shell type: bash, zsh, or fish")
+        .addHelpText(
+          "after",
+          `
 Arguments:
   shell   Shell to generate completions for: bash, zsh, or fish
 
@@ -34,45 +35,49 @@ Examples:
   $ assistant completions bash >> ~/.bashrc
   $ eval "$(assistant completions zsh)"
   $ assistant completions fish | source`,
-    )
-    .action((shell: string) => {
-      const subcommands: Record<string, string[]> = {
-        conversations: ["list", "new", "export", "clear"],
-        config: ["set", "get", "list", "validate-allowlist"],
-        keys: ["list", "set", "delete"],
-        trust: ["list"],
-        memory: ["status", "backfill", "cleanup", "query", "rebuild-index"],
-        contacts: ["list", "invites", "get", "merge"],
-      };
-      const topLevel = [
-        "conversations",
-        "config",
-        "keys",
-        "trust",
-        "memory",
-        "contacts",
-        "audit",
-        "completions",
-        "help",
-      ];
+        )
+        .action((shell: string) => {
+          const subcommands: Record<string, string[]> = {
+            conversations: ["list", "new", "export", "clear"],
+            config: ["set", "get", "list", "validate-allowlist"],
+            keys: ["list", "set", "delete"],
+            trust: ["list"],
+            memory: ["status", "backfill", "cleanup", "query", "rebuild-index"],
+            contacts: ["list", "invites", "get", "merge"],
+          };
+          const topLevel = [
+            "conversations",
+            "config",
+            "keys",
+            "trust",
+            "memory",
+            "contacts",
+            "audit",
+            "completions",
+            "help",
+          ];
 
-      switch (shell) {
-        case "bash":
-          process.stdout.write(generateBashCompletion(topLevel, subcommands));
-          break;
-        case "zsh":
-          process.stdout.write(generateZshCompletion(subcommands));
-          break;
-        case "fish":
-          process.stdout.write(generateFishCompletion(topLevel, subcommands));
-          break;
-        default:
-          log.error(
-            `Unknown shell: ${shell}. Supported shells: bash, zsh, fish`,
-          );
-          process.exit(1);
-      }
-    });
+          switch (shell) {
+            case "bash":
+              process.stdout.write(
+                generateBashCompletion(topLevel, subcommands),
+              );
+              break;
+            case "zsh":
+              process.stdout.write(generateZshCompletion(subcommands));
+              break;
+            case "fish":
+              process.stdout.write(
+                generateFishCompletion(topLevel, subcommands),
+              );
+              break;
+            default:
+              log.error(
+                `Unknown shell: ${shell}. Supported shells: bash, zsh, fish`,
+              );
+              process.exit(1);
+          }
+        });
     },
   });
 }

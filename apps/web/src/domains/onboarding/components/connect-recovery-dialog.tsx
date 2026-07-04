@@ -59,9 +59,9 @@ function ConnectRecoveryDialog({
         title="Repair Assistant?"
         message={
           <>
-            Repairing re-provisions this assistant&rsquo;s authentication
-            token. Any other devices or browser sessions connected to it will
-            be signed out and need to reconnect.
+            Repairing re-provisions this assistant&rsquo;s authentication token.
+            Any other devices or browser sessions connected to it will be signed
+            out and need to reconnect.
             {errorLine}
           </>
         }
@@ -107,8 +107,8 @@ function ConnectRecoveryDialog({
         <Modal.Body>
           <Modal.Description>
             The authentication token for {assistantName} is missing or can no
-            longer be refreshed, so this assistant can&rsquo;t be connected.
-            You can repair it, retire it, or pick a different assistant.
+            longer be refreshed, so this assistant can&rsquo;t be connected. You
+            can repair it, retire it, or pick a different assistant.
           </Modal.Description>
           {errorLine}
           <div className="mt-5 flex w-full flex-col gap-2">

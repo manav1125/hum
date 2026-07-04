@@ -1,10 +1,7 @@
 // Mirrors assistant/src/daemon/message-types/web-activity.ts in vellum-ai/vellum-assistant — keep in sync.
 
 export type WebSearchProviderId =
-  | "anthropic-native"
-  | "brave"
-  | "perplexity"
-  | "tavily";
+  "anthropic-native" | "brave" | "perplexity" | "tavily";
 
 export interface WebSearchResultItem {
   rank: number;

@@ -111,12 +111,9 @@ export function useConversationSync(
         return;
 
       case "conversation_title_updated":
-        patchConversation(
-          queryClient,
-          assistantId,
-          event.conversationId,
-          { title: event.title },
-        );
+        patchConversation(queryClient, assistantId, event.conversationId, {
+          title: event.title,
+        });
         return;
     }
   });
@@ -124,11 +121,7 @@ export function useConversationSync(
   useBusSubscription("sse.opened", ({ cause }) => {
     if (!assistantId || !isAssistantActive) return;
     if (cause === "fresh") return;
-    scheduleConversationListRefetch(
-      queryClient,
-      assistantId,
-      debounceTimerRef,
-    );
+    scheduleConversationListRefetch(queryClient, assistantId, debounceTimerRef);
   });
 }
 

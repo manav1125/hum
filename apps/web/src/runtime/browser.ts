@@ -42,9 +42,7 @@ export const openUrl = async (url: string): Promise<void> => {
  * Usage:
  *   useEffect(() => openUrlFinishedListener(() => { refetch(); onClose(); }), []);
  */
-export const openUrlFinishedListener = (
-  callback: () => void,
-): (() => void) => {
+export const openUrlFinishedListener = (callback: () => void): (() => void) => {
   if (!Capacitor.isNativePlatform()) return () => {};
 
   let handle: { remove: () => void } | null = null;

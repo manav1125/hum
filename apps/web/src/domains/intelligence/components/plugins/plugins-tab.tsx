@@ -1,23 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Puzzle, Search, TriangleAlert } from "lucide-react";
 import {
-    type ChangeEvent,
-    type Dispatch,
-    type SetStateAction,
-    useMemo,
-    useState,
+  type ChangeEvent,
+  type Dispatch,
+  type SetStateAction,
+  useMemo,
+  useState,
 } from "react";
 
 import { CatalogRow } from "@/domains/intelligence/components/plugins/catalog-row";
 import { PluginRow } from "@/domains/intelligence/components/plugins/plugin-row";
 import {
-    pluginsGetQueryKey,
-    pluginsSearchGetOptions,
+  pluginsGetQueryKey,
+  pluginsSearchGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { pluginsGet } from "@/generated/daemon/sdk.gen";
 import type {
-    PluginsGetResponse,
-    PluginsSearchGetResponse,
+  PluginsGetResponse,
+  PluginsSearchGetResponse,
 } from "@/generated/daemon/types.gen";
 import { Card, Input } from "@vellumai/design-library";
 
@@ -122,7 +122,9 @@ export function PluginsTab({ assistantId }: PluginsTabProps) {
   const isLoadingCatalog = catalogQuery.isLoading;
 
   const showInstalledEmpty =
-    !isLoadingInstalled && !pluginsQuery.isError && visibleInstalled.length === 0;
+    !isLoadingInstalled &&
+    !pluginsQuery.isError &&
+    visibleInstalled.length === 0;
   const showCatalogEmpty = !isLoadingCatalog && catalogMatches.length === 0;
 
   // Total available-to-install count drives the search placeholder copy,
@@ -132,7 +134,10 @@ export function PluginsTab({ assistantId }: PluginsTabProps) {
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col gap-4"
-      style={{ fontFamily: "'DM Sans', system-ui, sans-serif", color: "#1A2230" }}
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: "#1A2230",
+      }}
     >
       <div className="flex shrink-0 items-center gap-3">
         <h2 style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-.4px" }}>

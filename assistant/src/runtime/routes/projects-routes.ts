@@ -14,8 +14,9 @@ import {
   createProject,
   deleteProject,
   getProject,
-  listProjects,
+  listProjectsWithStats,
   type ProjectStatus,
+  reorderProjects,
   updateProject,
 } from "../../work-items/project-store.js";
 import {
@@ -39,8 +40,40 @@ const projectSchema = z.object({
   emoji: z.string().nullable(),
   color: z.string().nullable(),
   status: z.enum(["active", "archived"]),
+  category: z.string().nullable(),
+  context: z
+    .string()
+    .nullable()
+    .describe("Project brief the agent reads for every task in this project"),
+  sortIndex: z.number().int().nullable(),
+  pinned: z.number().int().describe("0/1 — pinned projects float to the top"),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+});
+
+const projectStatsSchema = z.object({
+  counts: z.object({
+    queued: z.number().int(),
+    running: z.number().int(),
+    awaiting_review: z.number().int(),
+    done: z.number().int(),
+    open: z.number().int(),
+    total: z.number().int(),
+  }),
+  nextTask: z
+    .object({
+      id: z.string(),
+      title: z.string(),
+      status: z.string(),
+      dueAt: z.number().int().nullable(),
+      priorityTier: z.number().int(),
+    })
+    .nullable()
+    .describe("The single most-urgent next actionable task, or null"),
+});
+
+const projectWithStatsSchema = projectSchema.extend({
+  stats: projectStatsSchema,
 });
 
 export const ROUTES: RouteDefinition[] = [
@@ -53,7 +86,8 @@ export const ROUTES: RouteDefinition[] = [
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     summary: "List projects",
-    description: "Return projects, filtered by status (default active).",
+    description:
+      "Return projects (ordered pinned-first, then sortIndex, then newest) with per-project stats: counts of queued/running/awaiting_review/done and the single most-urgent next task.",
     tags: ["projects"],
     queryParams: [
       {
@@ -62,10 +96,12 @@ export const ROUTES: RouteDefinition[] = [
         schema: { type: "string", enum: ["active", "archived"] },
       },
     ],
-    responseBody: z.object({ projects: z.array(projectSchema) }),
+    responseBody: z.object({ projects: z.array(projectWithStatsSchema) }),
     handler: ({ queryParams }) => {
       const status = queryParams?.status as ProjectStatus | undefined;
-      return { projects: listProjects(status ? { status } : undefined) };
+      return {
+        projects: listProjectsWithStats(status ? { status } : undefined),
+      };
     },
   },
 
@@ -83,15 +119,31 @@ export const ROUTES: RouteDefinition[] = [
       title: z.string().min(1),
       emoji: z.string().optional(),
       color: z.string().optional(),
+      category: z.string().optional(),
+      context: z.string().optional(),
+      sortIndex: z.number().int().optional(),
+      pinned: z.boolean().optional(),
     }),
     responseBody: z.object({ project: projectSchema }),
     handler: ({ body }) => {
       const title = typeof body?.title === "string" ? body.title.trim() : "";
       if (!title) throw new BadRequestError("title is required");
+      const b = (body ?? {}) as {
+        emoji?: string;
+        color?: string;
+        category?: string;
+        context?: string;
+        sortIndex?: number;
+        pinned?: boolean;
+      };
       const project = createProject({
         title,
-        ...(typeof body?.emoji === "string" ? { emoji: body.emoji } : {}),
-        ...(typeof body?.color === "string" ? { color: body.color } : {}),
+        ...(typeof b.emoji === "string" ? { emoji: b.emoji } : {}),
+        ...(typeof b.color === "string" ? { color: b.color } : {}),
+        ...(typeof b.category === "string" ? { category: b.category } : {}),
+        ...(typeof b.context === "string" ? { context: b.context } : {}),
+        ...(typeof b.sortIndex === "number" ? { sortIndex: b.sortIndex } : {}),
+        ...(typeof b.pinned === "boolean" ? { pinned: b.pinned } : {}),
       });
       publishEvent({ type: "tasks_changed" } as ServerMessage);
       return { project };
@@ -135,6 +187,10 @@ export const ROUTES: RouteDefinition[] = [
         emoji: z.string().nullable(),
         color: z.string().nullable(),
         status: z.enum(["active", "archived"]),
+        category: z.string().nullable(),
+        context: z.string().nullable(),
+        sortIndex: z.number().int().nullable(),
+        pinned: z.boolean(),
       })
       .partial(),
     responseBody: z.object({ project: projectSchema }),
@@ -146,15 +202,56 @@ export const ROUTES: RouteDefinition[] = [
         emoji?: string | null;
         color?: string | null;
         status?: ProjectStatus;
+        category?: string | null;
+        context?: string | null;
+        sortIndex?: number | null;
+        pinned?: boolean;
       };
       const updates: Parameters<typeof updateProject>[1] = {};
       if (raw.title !== undefined) updates.title = raw.title;
       if (raw.emoji !== undefined) updates.emoji = raw.emoji;
       if (raw.color !== undefined) updates.color = raw.color;
       if (raw.status !== undefined) updates.status = raw.status;
+      if (raw.category !== undefined) updates.category = raw.category;
+      if (raw.context !== undefined) updates.context = raw.context;
+      if (raw.sortIndex !== undefined) updates.sortIndex = raw.sortIndex;
+      // The store column is 0/1; accept a boolean at the wire and normalize.
+      if (raw.pinned !== undefined) updates.pinned = raw.pinned ? 1 : 0;
       const project = updateProject(id, updates);
       publishEvent({ type: "tasks_changed" } as ServerMessage);
       return { project };
+    },
+  },
+
+  {
+    operationId: "reorderProjects",
+    endpoint: "projects/reorder",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Reorder projects",
+    description:
+      "Persist a new top-to-bottom project order. `orderedIds` is the desired order; each project's sortIndex is set to its position.",
+    tags: ["projects"],
+    requestBody: z.object({
+      orderedIds: z
+        .array(z.string())
+        .describe("Project ids in the desired top-to-bottom order"),
+    }),
+    responseBody: z.object({ success: z.boolean() }),
+    handler: ({ body }) => {
+      const orderedIds = (body as { orderedIds?: unknown })?.orderedIds;
+      if (
+        !Array.isArray(orderedIds) ||
+        !orderedIds.every((x) => typeof x === "string")
+      ) {
+        throw new BadRequestError("orderedIds must be an array of strings");
+      }
+      reorderProjects(orderedIds as string[]);
+      publishEvent({ type: "tasks_changed" } as ServerMessage);
+      return { success: true };
     },
   },
 

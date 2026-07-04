@@ -171,6 +171,7 @@ import {
   migrateOAuthProvidersTokenExchangeBodyFormat,
   migrateOnboardingEventsFunnelColumns,
   migrateOnboardingEventsPriorAssistants,
+  migrateProjectsCoworkColumns,
   migrateProviderConnectionBaseUrlAndModels,
   migrateProviderConnectionStatusLabel,
   migrateReconcileDuplicateGuardians,
@@ -512,6 +513,7 @@ export function initializeDb(): void {
     migrateWorkItemPmColumns,
     migrateCreateWorkItemEvents,
     migrateCreatePushDevices,
+    migrateProjectsCoworkColumns,
   ];
 
   // Run each migration step, catching and logging individual failures so one

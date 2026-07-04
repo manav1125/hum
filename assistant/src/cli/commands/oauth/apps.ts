@@ -133,10 +133,9 @@ Examples:
             return;
           }
 
-          const r = await cliIpcCall<{ apps: AppRow[] }>(
-            "oauth_apps_get",
-            { queryParams: { provider_key: opts.providerKey } },
-          );
+          const r = await cliIpcCall<{ apps: AppRow[] }>("oauth_apps_get", {
+            queryParams: { provider_key: opts.providerKey },
+          });
 
           if (!r.ok) return exitFromIpcResult(r);
 
@@ -306,10 +305,9 @@ Examples:
               );
             }
 
-            const r = await cliIpcCall<{ app: AppRow }>(
-              "oauth_apps_upsert",
-              { body },
-            );
+            const r = await cliIpcCall<{ app: AppRow }>("oauth_apps_upsert", {
+              body,
+            });
 
             if (!r.ok) {
               writeOutput(cmd, {
@@ -356,10 +354,9 @@ Examples:
   $ assistant oauth apps delete 550e8400-e29b-41d4-a716-446655440000 --json`,
         )
         .action(async (id: string, _opts: unknown, cmd: Command) => {
-          const r = await cliIpcCall<{ ok: boolean }>(
-            "oauth_apps_delete",
-            { pathParams: { id } },
-          );
+          const r = await cliIpcCall<{ ok: boolean }>("oauth_apps_delete", {
+            pathParams: { id },
+          });
 
           if (!r.ok) {
             if (r.statusCode === 404) {

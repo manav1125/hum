@@ -516,7 +516,9 @@ function SplitMenuItem({
       onMouseEnter={(e) => (e.currentTarget.style.background = C.bg)}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
     >
-      <div style={{ fontSize: 12.5, fontWeight: 500, color: C.t1 }}>{label}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 500, color: C.t1 }}>
+        {label}
+      </div>
       <div style={{ fontSize: 11, color: C.t3, marginTop: 1 }}>{sub}</div>
     </button>
   );
@@ -669,19 +671,25 @@ export function HomeElevatedRoute() {
             if (resolved === "thread" && conversationId) {
               navigate(routes.conversation(conversationId));
             } else if (resolved === "background") {
-              toast.success("Running in the background — track it in Activity.", {
-                action: {
-                  label: "View in Activity",
-                  onClick: () => navigate(activityRouteFor(workItemId)),
+              toast.success(
+                "Running in the background — track it in Activity.",
+                {
+                  action: {
+                    label: "View in Activity",
+                    onClick: () => navigate(activityRouteFor(workItemId)),
+                  },
                 },
-              });
+              );
             } else if (resolved === "needs_you") {
-              toast.success("Queued — it'll wait for your approval in Activity.", {
-                action: {
-                  label: "Review in Activity",
-                  onClick: () => navigate(activityRouteFor(workItemId)),
+              toast.success(
+                "Queued — it'll wait for your approval in Activity.",
+                {
+                  action: {
+                    label: "Review in Activity",
+                    onClick: () => navigate(activityRouteFor(workItemId)),
+                  },
                 },
-              });
+              );
             }
           },
         },
@@ -758,7 +766,10 @@ export function HomeElevatedRoute() {
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 8px" }}>
           {/* THE MOMENT */}
           <div
-            style={{ padding: "30px 20px 22px", borderBottom: `1px solid ${C.line}` }}
+            style={{
+              padding: "30px 20px 22px",
+              borderBottom: `1px solid ${C.line}`,
+            }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <ApertureAvatar size={38} />
@@ -817,8 +828,8 @@ export function HomeElevatedRoute() {
                 </>
               ) : (
                 <>
-                  {greeting}. You&apos;re all caught up — nothing needs you right
-                  now.
+                  {greeting}. You&apos;re all caught up — nothing needs you
+                  right now.
                 </>
               )}
             </div>
@@ -1354,7 +1365,10 @@ export function HomeElevatedRoute() {
             {upcoming.map((s, idx) => {
               const isNow = idx === 0;
               return (
-                <div key={s.id} style={{ position: "relative", marginBottom: 18 }}>
+                <div
+                  key={s.id}
+                  style={{ position: "relative", marginBottom: 18 }}
+                >
                   <span
                     style={{
                       position: "absolute",
@@ -1433,7 +1447,9 @@ export function HomeElevatedRoute() {
                     boxShadow: `0 0 0 3px ${C.bg}`,
                   }}
                 />
-                <div style={{ fontSize: 12.5, fontWeight: 500 }}>{r.detail}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 500 }}>
+                  {r.detail}
+                </div>
                 <div style={{ fontSize: 11, color: C.t2 }}>by Cue</div>
               </div>
             ))}
@@ -1497,7 +1513,9 @@ export function HomeElevatedRoute() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {item.title ? item.summary : queueChipStyle(item).provenance}
+                    {item.title
+                      ? item.summary
+                      : queueChipStyle(item).provenance}
                   </div>
                 </div>
               ))}
@@ -1624,7 +1642,9 @@ function HomeQueryBar({ assistantId }: { assistantId: string }) {
         </button>
       </form>
       {error ? (
-        <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>{error}</div>
+        <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>
+          {error}
+        </div>
       ) : null}
     </div>
   );
@@ -2217,7 +2237,9 @@ function ApprovalCardMobile({
         {item.title ?? item.summary}
       </div>
       {item.title && (
-        <div style={{ fontSize: 12, color: M.t2, marginTop: 4, lineHeight: 1.45 }}>
+        <div
+          style={{ fontSize: 12, color: M.t2, marginTop: 4, lineHeight: 1.45 }}
+        >
           {item.summary}
         </div>
       )}
@@ -2332,7 +2354,9 @@ function TodayMobileEmpty() {
           />
         </span>
       </span>
-      <div style={{ fontSize: 17, fontWeight: 600 }}>You&apos;re all caught up</div>
+      <div style={{ fontSize: 17, fontWeight: 600 }}>
+        You&apos;re all caught up
+      </div>
       <div
         style={{
           fontSize: 13,
@@ -2360,7 +2384,8 @@ function TodayMobileComposer({
   assistantId: string;
   onVoice: () => void;
 }) {
-  const { value, setValue, submitting, submit } = useDashboardQuery(assistantId);
+  const { value, setValue, submitting, submit } =
+    useDashboardQuery(assistantId);
   const canSend = value.trim().length > 0 && !submitting;
 
   return (

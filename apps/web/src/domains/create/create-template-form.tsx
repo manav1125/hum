@@ -40,7 +40,9 @@ export function CreateTemplateForm({
   onBack,
   onSubmit,
 }: CreateTemplateFormProps) {
-  const [values, setValues] = useState<TemplateValues>(() => initialValues(template));
+  const [values, setValues] = useState<TemplateValues>(() =>
+    initialValues(template),
+  );
   const [showErrors, setShowErrors] = useState(false);
 
   const missing = useMemo(

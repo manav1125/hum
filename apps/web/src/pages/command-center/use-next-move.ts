@@ -28,11 +28,7 @@ import type { AssistantEvent } from "@/types/event-types";
  * the surface stays declarative — it POSTs/GETs whatever the move attached,
  * with `open_thread` handled client-side as a navigation. */
 export type NextMoveActionKind =
-  | "approve"
-  | "decline"
-  | "run"
-  | "open_thread"
-  | "snooze";
+  "approve" | "decline" | "run" | "open_thread" | "snooze";
 
 export interface NextMoveAction {
   id: string;
@@ -92,7 +88,10 @@ function normalize(raw: unknown): NextMove {
           "open_thread",
           "snooze",
         ];
-        if (typeof kind !== "string" || !valid.includes(kind as NextMoveActionKind))
+        if (
+          typeof kind !== "string" ||
+          !valid.includes(kind as NextMoveActionKind)
+        )
           return [];
         return [
           {
@@ -126,8 +125,7 @@ function normalize(raw: unknown): NextMove {
       typeof r.sourceConversationId === "string"
         ? r.sourceConversationId
         : undefined,
-    generatedAt:
-      typeof r.generatedAt === "string" ? r.generatedAt : undefined,
+    generatedAt: typeof r.generatedAt === "string" ? r.generatedAt : undefined,
   };
 }
 
@@ -141,14 +139,15 @@ function normalize(raw: unknown): NextMove {
  */
 async function computeClientSideMove(assistantId: string): Promise<NextMove> {
   try {
-    const { data, response } = await client.get<Record<string, unknown>, unknown>(
-      {
-        url: "/v1/assistants/{assistant_id}/work-items",
-        path: { assistant_id: assistantId },
-        query: { status: "queued" },
-        throwOnError: false,
-      },
-    );
+    const { data, response } = await client.get<
+      Record<string, unknown>,
+      unknown
+    >({
+      url: "/v1/assistants/{assistant_id}/work-items",
+      path: { assistant_id: assistantId },
+      query: { status: "queued" },
+      throwOnError: false,
+    });
     if (!response?.ok || !data || typeof data !== "object") return CAUGHT_UP;
     const items = Array.isArray((data as Record<string, unknown>).items)
       ? ((data as Record<string, unknown>).items as Record<string, unknown>[])
@@ -171,11 +170,9 @@ async function computeClientSideMove(assistantId: string): Promise<NextMove> {
         : undefined;
     if (!id) return CAUGHT_UP;
 
-    const reasoning =
-      (notes || "This is the oldest item still waiting in your queue.").slice(
-        0,
-        320,
-      );
+    const reasoning = (
+      notes || "This is the oldest item still waiting in your queue."
+    ).slice(0, 320);
     const actions: NextMoveAction[] = [
       {
         id: "run",

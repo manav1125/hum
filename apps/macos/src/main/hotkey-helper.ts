@@ -107,15 +107,15 @@ export const getMacHelperPath = (): string => {
     getMacHelperAppPath(),
     "Contents",
     "MacOS",
-    "vellum-mac-helper",
+    "cue-mac-helper",
   );
 };
 
 export const getMacHelperAppPath = (): string => {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "bin", "vellum-mac-helper.app");
+    return path.join(process.resourcesPath, "bin", "cue-mac-helper.app");
   }
-  return path.join(app.getAppPath(), "resources", "vellum-mac-helper.app");
+  return path.join(app.getAppPath(), "resources", "cue-mac-helper.app");
 };
 
 const makeClient = (): MacHelperClient =>
@@ -193,7 +193,7 @@ const queryBundledMacHelperPermission = async (
   kind: MacHelperPermissionKind,
 ): Promise<unknown> => {
   const tempDir = await mkdtemp(
-    path.join(tmpdir(), "vellum-mac-helper-permission-"),
+    path.join(tmpdir(), "cue-mac-helper-permission-"),
   );
   const outputPath = path.join(tempDir, "status.json");
 

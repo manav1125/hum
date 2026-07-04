@@ -52,8 +52,10 @@ function provenanceFor(rec: Record<string, unknown>): string | null {
   const t = token.toLowerCase();
   if (t.includes("watch")) return "watcher event";
   if (t.includes("schedul") || t.includes("cron")) return "schedule";
-  if (t.includes("heartbeat") || t.includes("proactiv")) return "Cue’s heartbeat";
-  if (t.includes("user") || t.includes("chat") || t.includes("manual")) return "you, in chat";
+  if (t.includes("heartbeat") || t.includes("proactiv"))
+    return "Cue’s heartbeat";
+  if (t.includes("user") || t.includes("chat") || t.includes("manual"))
+    return "you, in chat";
   if (t.includes("sequence") || t.includes("drip")) return "sequence";
   if (t.includes("agent") || t.includes("subagent")) return "an agent";
   // Unknown but present — surface it honestly rather than dropping it.

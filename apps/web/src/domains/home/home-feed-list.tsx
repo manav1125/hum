@@ -2,20 +2,24 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import type {
-    FeedItem,
-    FeedItemCategory,
-    FeedItemStatus,
+  FeedItem,
+  FeedItemCategory,
+  FeedItemStatus,
 } from "@vellumai/assistant-api";
-import { ApertureAvatar, Collapsible, Typography } from "@vellumai/design-library";
+import {
+  ApertureAvatar,
+  Collapsible,
+  Typography,
+} from "@vellumai/design-library";
 import { HomeFeedFilterBar } from "./home-feed-filter-bar";
 import { HomeRecapRow } from "./home-recap-row";
 import type { FeedTimeGroup } from "./utils";
 import {
-    excludeHighUrgency,
-    filterByCategory,
-    getPresentCategories,
-    groupByTime,
-    sortFeedItems,
+  excludeHighUrgency,
+  filterByCategory,
+  getPresentCategories,
+  groupByTime,
+  sortFeedItems,
 } from "./utils";
 
 const TIME_GROUP_LABELS: Record<FeedTimeGroup, string> = {
@@ -108,8 +112,8 @@ export function HomeFeedList({
               variant="body-medium-lighter"
               className="max-w-[280px] text-[var(--content-tertiary)]"
             >
-              All caught up. I&apos;ll surface the next move the moment something
-              comes in.
+              All caught up. I&apos;ll surface the next move the moment
+              something comes in.
             </Typography>
           </div>
         )

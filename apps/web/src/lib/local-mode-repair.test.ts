@@ -39,7 +39,8 @@ mock.module("@/lib/self-hosted/connection", () => ({
 }));
 
 const { GuardianTokenError } = host;
-const { primeLocalGatewayConnectionWithRepair } = await import("@/lib/local-mode");
+const { primeLocalGatewayConnectionWithRepair } =
+  await import("@/lib/local-mode");
 
 const localAssistant: LockfileAssistant = {
   assistantId: "local-a",

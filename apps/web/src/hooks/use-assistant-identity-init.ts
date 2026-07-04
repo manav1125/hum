@@ -104,10 +104,9 @@ export function useAssistantIdentityInit({
     // good cached name with a transient null on the same assistant —
     // cross-assistant clears are handled by the effect above.
     if (!data) return;
-    useAssistantIdentityStore.getState().setIdentity(
-      data.name ?? null,
-      data.version ?? null,
-    );
+    useAssistantIdentityStore
+      .getState()
+      .setIdentity(data.name ?? null, data.version ?? null);
     lastWrittenForRef.current = assistantId;
   }, [identityQuery.data, assistantId]);
 }

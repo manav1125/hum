@@ -60,10 +60,7 @@ export function selectSeedProfileForOverride<T extends ProfilePickerEntry>(
     profiles.filter((p) => p.status !== "disabled"),
     queryComplexityRoutingEnabled,
   );
-  if (
-    preferredProfile &&
-    candidates.some((p) => p.name === preferredProfile)
-  ) {
+  if (preferredProfile && candidates.some((p) => p.name === preferredProfile)) {
     return preferredProfile;
   }
   return candidates[0]?.name;

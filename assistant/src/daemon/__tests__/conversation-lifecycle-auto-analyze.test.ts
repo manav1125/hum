@@ -362,11 +362,12 @@ describe("disposeConversation — auto-analysis enqueue", () => {
     autoAnalyzeEnabled = originalEnabled;
   });
 
-  test("memory v2 enabled — graph_extract enqueue is suppressed (auto-analysis still runs)", () => {
-    // Under memory v2, the v1 graph has no readers (retrieval is bypassed at
-    // conversation-graph-memory.ts), so producing extraction jobs just fills
-    // the queue with stale work. Auto-analysis is orthogonal and must keep
-    // running.
+  test("memory v2 enabled — graph_extract still enqueued (Memory page reads the graph store)", () => {
+    // graph_extract runs under both v1 and v2: the graph store it writes is
+    // the source the Memory page reads for its episodic / semantic / etc.
+    // counts, which v2's concept-page store never populates. Suppressing it
+    // under v2 froze the Memory page. Auto-analysis is orthogonal and also
+    // keeps running.
     v2Enabled = true;
     const ctx = makeDisposeContext({
       conversationId: "conv-v2-on",
@@ -375,7 +376,12 @@ describe("disposeConversation — auto-analysis enqueue", () => {
 
     disposeConversation(ctx);
 
-    expect(memoryJobCalls).toHaveLength(0);
+    expect(memoryJobCalls).toHaveLength(1);
+    expect(memoryJobCalls[0]!.type).toBe("graph_extract");
+    expect(memoryJobCalls[0]!.payload).toMatchObject({
+      conversationId: "conv-v2-on",
+      scopeId: "default",
+    });
     expect(autoAnalyzeCalls).toHaveLength(1);
     expect(autoAnalyzeCalls[0]).toEqual({
       conversationId: "conv-v2-on",

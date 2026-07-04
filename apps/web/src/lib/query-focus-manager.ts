@@ -52,8 +52,7 @@ export function setupQueryFocusManager(): () => void {
   // setup that re-registers the standard visibilitychange handler.
   return () => {
     focusManager.setEventListener((handleFocus) => {
-      const handler = () =>
-        handleFocus(document.visibilityState === "visible");
+      const handler = () => handleFocus(document.visibilityState === "visible");
       document.addEventListener("visibilitychange", handler);
       return () => document.removeEventListener("visibilitychange", handler);
     });

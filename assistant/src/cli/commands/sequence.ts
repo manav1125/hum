@@ -32,7 +32,12 @@ interface SequenceSummary {
   id: string;
   name: string;
   status: string;
-  steps: { index: number; subjectTemplate: string; delaySeconds: number; requireApproval?: boolean }[];
+  steps: {
+    index: number;
+    subjectTemplate: string;
+    delaySeconds: number;
+    requireApproval?: boolean;
+  }[];
   activeEnrollments: number;
   description?: string;
   channel?: string;
@@ -86,7 +91,10 @@ Examples:
       seqCmd
         .command("list")
         .description("List all sequences")
-        .option("--status <status>", "Filter by status (active, paused, archived)")
+        .option(
+          "--status <status>",
+          "Filter by status (active, paused, archived)",
+        )
         .addHelpText(
           "after",
           `
@@ -162,18 +170,23 @@ Examples:
           const { sequence: seq, enrollments } = r.result!;
 
           if (json) {
-            console.log(JSON.stringify({ ok: true, sequence: seq, enrollments }));
+            console.log(
+              JSON.stringify({ ok: true, sequence: seq, enrollments }),
+            );
             return;
           }
 
           process.stdout.write(`  Name:          ${seq.name}\n`);
           process.stdout.write(`  ID:            ${seq.id}\n`);
           process.stdout.write(`  Status:        ${seq.status}\n`);
-          if (seq.channel) process.stdout.write(`  Channel:       ${seq.channel}\n`);
+          if (seq.channel)
+            process.stdout.write(`  Channel:       ${seq.channel}\n`);
           if (seq.description)
             process.stdout.write(`  Description:   ${seq.description}\n`);
           process.stdout.write(`  Exit on reply: ${seq.exitOnReply}\n`);
-          process.stdout.write(`  Active:        ${seq.activeEnrollments} enrollment(s)\n\n`);
+          process.stdout.write(
+            `  Active:        ${seq.activeEnrollments} enrollment(s)\n\n`,
+          );
 
           process.stdout.write(`  Steps (${seq.steps.length}):\n`);
           for (const step of seq.steps) {
@@ -211,11 +224,15 @@ Examples:
         )
         .action(async (id: string) => {
           const json = resolveJson(seqCmd);
-          const r = await cliIpcCall<{ message: string }>("sequence_pause", { id });
+          const r = await cliIpcCall<{ message: string }>("sequence_pause", {
+            id,
+          });
           if (!r.ok) return exitFromIpcResult(r);
 
           if (json) {
-            console.log(JSON.stringify({ ok: true, message: r.result!.message }));
+            console.log(
+              JSON.stringify({ ok: true, message: r.result!.message }),
+            );
           } else {
             process.stdout.write(r.result!.message + "\n");
           }
@@ -240,11 +257,15 @@ Examples:
         )
         .action(async (id: string) => {
           const json = resolveJson(seqCmd);
-          const r = await cliIpcCall<{ message: string }>("sequence_resume", { id });
+          const r = await cliIpcCall<{ message: string }>("sequence_resume", {
+            id,
+          });
           if (!r.ok) return exitFromIpcResult(r);
 
           if (json) {
-            console.log(JSON.stringify({ ok: true, message: r.result!.message }));
+            console.log(
+              JSON.stringify({ ok: true, message: r.result!.message }),
+            );
           } else {
             process.stdout.write(r.result!.message + "\n");
           }
@@ -279,7 +300,9 @@ Examples:
           if (!r.ok) return exitFromIpcResult(r);
 
           if (json) {
-            console.log(JSON.stringify({ ok: true, message: r.result!.message }));
+            console.log(
+              JSON.stringify({ ok: true, message: r.result!.message }),
+            );
           } else {
             process.stdout.write(r.result!.message + "\n");
           }
@@ -378,7 +401,9 @@ Examples:
           }
 
           process.stdout.write("Guardrail Configuration:\n");
-          process.stdout.write(`  Daily send cap:         ${cfg.dailySendCap}\n`);
+          process.stdout.write(
+            `  Daily send cap:         ${cfg.dailySendCap}\n`,
+          );
           process.stdout.write(
             `  Hourly rate (per-seq):  ${cfg.perSequenceHourlyRate}\n`,
           );
@@ -423,10 +448,10 @@ Examples:
         )
         .action(async (key: string, value: string) => {
           const json = resolveJson(seqCmd);
-          const r = await cliIpcCall<{ message: string; config: GuardrailConfig }>(
-            "sequence_guardrails_set",
-            { key, value },
-          );
+          const r = await cliIpcCall<{
+            message: string;
+            config: GuardrailConfig;
+          }>("sequence_guardrails_set", { key, value });
           if (!r.ok) return exitFromIpcResult(r);
 
           if (json) {

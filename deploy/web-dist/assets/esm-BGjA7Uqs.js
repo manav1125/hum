@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-CVUHFlai.js","assets/dist-DEJvMQLb.js"])))=>i.map(i=>d[i]);
+import{t as e}from"./preload-helper-BewR0kVT.js";import{i as t}from"./dist-DEJvMQLb.js";var n=t(`App`,{web:()=>e(()=>import(`./web-CVUHFlai.js`).then(e=>new e.AppWeb),__vite__mapDeps([0,1]))});export{n as App};

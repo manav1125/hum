@@ -154,7 +154,9 @@ Examples:
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           if (opts.json) {
-            process.stdout.write(JSON.stringify({ ok: false, error: msg }) + "\n");
+            process.stdout.write(
+              JSON.stringify({ ok: false, error: msg }) + "\n",
+            );
           } else {
             log.error(`Error: ${msg}`);
           }
@@ -176,7 +178,9 @@ Examples:
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (opts.json) {
-                process.stdout.write(JSON.stringify({ ok: false, error: msg }) + "\n");
+                process.stdout.write(
+                  JSON.stringify({ ok: false, error: msg }) + "\n",
+                );
               } else {
                 log.error(`Error: ${msg}`);
               }
@@ -201,7 +205,9 @@ Examples:
 
         if (!ipcResult.ok) {
           if (opts.json) {
-            process.stdout.write(JSON.stringify({ ok: false, error: ipcResult.error }) + "\n");
+            process.stdout.write(
+              JSON.stringify({ ok: false, error: ipcResult.error }) + "\n",
+            );
           } else {
             log.error(`Error: ${ipcResult.error}`);
           }
@@ -239,14 +245,17 @@ Examples:
             typeof resultTtlSeconds === "number" &&
             requestedTtlSeconds !== resultTtlSeconds
           ) {
-            writeLine(`note: ttl clamped to ${formatDuration(resultTtlSeconds)} (config maxTtlSeconds)`);
+            writeLine(
+              `note: ttl clamped to ${formatDuration(resultTtlSeconds)} (config maxTtlSeconds)`,
+            );
           }
 
           // Human-readable output
           if (resultTtlSeconds == null) {
             writeLine(`profile ${profileName} active (sticky, no expiry)`);
           } else {
-            const expireStr = expiresAt != null ? formatLocalTime(expiresAt) : "?";
+            const expireStr =
+              expiresAt != null ? formatLocalTime(expiresAt) : "?";
             writeLine(
               `profile ${profileName} active for ${formatDuration(resultTtlSeconds)} (until ${expireStr})`,
             );
@@ -268,7 +277,9 @@ Examples:
 
   session
     .command("close")
-    .description("Close the active profile session for the current conversation")
+    .description(
+      "Close the active profile session for the current conversation",
+    )
     .option(
       "--conversation-id <id>",
       "Conversation ID (auto-resolved from context if omitted)",
@@ -285,70 +296,69 @@ Examples:
   $ assistant inference session close
   $ assistant inference session close --json`,
     )
-    .action(
-      async (opts: { conversationId?: string; json?: boolean }) => {
-        let conversationId: string;
-        try {
-          conversationId = resolveConversationId({
-            explicit: opts.conversationId,
-            failureHelp: CONV_ID_HELP,
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (opts.json) {
-            process.stdout.write(JSON.stringify({ ok: false, error: msg }) + "\n");
-          } else {
-            log.error(`Error: ${msg}`);
-          }
-          process.exitCode = 1;
-          return;
-        }
-
-        const ipcResult = await cliIpcCall<CloseResult>(
-          "inference_profile_close",
-          { body: { conversationId } },
-        );
-
-        if (!ipcResult.ok) {
-          if (opts.json) {
-            process.stdout.write(JSON.stringify({ ok: false, error: ipcResult.error }) + "\n");
-          } else {
-            log.error(`Error: ${ipcResult.error}`);
-          }
-          process.exitCode = 1;
-          return;
-        }
-
-        const result = ipcResult.result!;
-
+    .action(async (opts: { conversationId?: string; json?: boolean }) => {
+      let conversationId: string;
+      try {
+        conversationId = resolveConversationId({
+          explicit: opts.conversationId,
+          failureHelp: CONV_ID_HELP,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         if (opts.json) {
           process.stdout.write(
-            JSON.stringify({
-              ok: true,
-              conversationId: result.conversationId,
-              closed: result.closed,
-              noop: result.noop,
-            }) + "\n",
+            JSON.stringify({ ok: false, error: msg }) + "\n",
           );
         } else {
-          if (result.noop || !result.closed) {
-            writeLine("no active profile session");
-          } else {
-            writeLine(`closed profile ${result.closed.profile}`);
-          }
+          log.error(`Error: ${msg}`);
         }
-      },
-    );
+        process.exitCode = 1;
+        return;
+      }
+
+      const ipcResult = await cliIpcCall<CloseResult>(
+        "inference_profile_close",
+        { body: { conversationId } },
+      );
+
+      if (!ipcResult.ok) {
+        if (opts.json) {
+          process.stdout.write(
+            JSON.stringify({ ok: false, error: ipcResult.error }) + "\n",
+          );
+        } else {
+          log.error(`Error: ${ipcResult.error}`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      const result = ipcResult.result!;
+
+      if (opts.json) {
+        process.stdout.write(
+          JSON.stringify({
+            ok: true,
+            conversationId: result.conversationId,
+            closed: result.closed,
+            noop: result.noop,
+          }) + "\n",
+        );
+      } else {
+        if (result.noop || !result.closed) {
+          writeLine("no active profile session");
+        } else {
+          writeLine(`closed profile ${result.closed.profile}`);
+        }
+      }
+    });
 
   // ── profile list ──────────────────────────────────────────────────
 
   session
     .command("list")
     .description("List active profile sessions")
-    .option(
-      "--conversation-id <id>",
-      "Filter to a specific conversation ID",
-    )
+    .option("--conversation-id <id>", "Filter to a specific conversation ID")
     .option("--json", "Output result as machine-readable JSON")
     .addHelpText(
       "after",
@@ -362,18 +372,17 @@ Examples:
   $ assistant inference session list --json`,
     )
     .action(async (opts: { conversationId?: string; json?: boolean }) => {
-      const ipcResult = await cliIpcCall<ListResult>(
-        "inference_profile_list",
-        {
-          queryParams: opts.conversationId
-            ? { conversationId: opts.conversationId }
-            : {},
-        },
-      );
+      const ipcResult = await cliIpcCall<ListResult>("inference_profile_list", {
+        queryParams: opts.conversationId
+          ? { conversationId: opts.conversationId }
+          : {},
+      });
 
       if (!ipcResult.ok) {
         if (opts.json) {
-          process.stdout.write(JSON.stringify({ ok: false, error: ipcResult.error }) + "\n");
+          process.stdout.write(
+            JSON.stringify({ ok: false, error: ipcResult.error }) + "\n",
+          );
         } else {
           log.error(`Error: ${ipcResult.error}`);
         }
@@ -389,7 +398,10 @@ Examples:
             ok: true,
             sessions: sessions.map((s) => ({
               ...s,
-              expiresAt: s.expiresAt != null ? new Date(s.expiresAt).toISOString() : null,
+              expiresAt:
+                s.expiresAt != null
+                  ? new Date(s.expiresAt).toISOString()
+                  : null,
             })),
           }) + "\n",
         );
@@ -405,7 +417,9 @@ Examples:
       for (const s of sessions) {
         const convId = s.conversationId.padEnd(14);
         const profile = s.profile.padEnd(16);
-        const remaining = `${formatDuration(s.remainingSeconds)} left`.padEnd(12);
+        const remaining = `${formatDuration(s.remainingSeconds)} left`.padEnd(
+          12,
+        );
         const rawTitle = s.conversationTitle ?? "...";
         const title =
           rawTitle.length > 30 ? rawTitle.slice(0, 30) + "..." : rawTitle;

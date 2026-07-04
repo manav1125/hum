@@ -15,7 +15,10 @@ export const authUserContext = createRouterContext<AuthUser | null>(null);
 
 const PLATFORM_SESSION_PROBE_TIMEOUT_MS = 5_000;
 
-export const authMiddleware: MiddlewareFunction = async ({ request, context }, next) => {
+export const authMiddleware: MiddlewareFunction = async (
+  { request, context },
+  next,
+) => {
   const url = new URL(request.url);
 
   const state = buildNavigationState();
@@ -26,7 +29,9 @@ export const authMiddleware: MiddlewareFunction = async ({ request, context }, n
   });
 
   if (decision.action === "wait") {
-    await whenStoreState(useAuthStore, (s) => isSessionSettled(s.sessionStatus));
+    await whenStoreState(useAuthStore, (s) =>
+      isSessionSettled(s.sessionStatus),
+    );
     if (isLocalMode() && !hasAssistants()) {
       await whenStoreState(
         useAuthStore,
@@ -34,7 +39,10 @@ export const authMiddleware: MiddlewareFunction = async ({ request, context }, n
         { timeoutMs: PLATFORM_SESSION_PROBE_TIMEOUT_MS },
       );
     }
-    return authMiddleware({ request, context } as Parameters<MiddlewareFunction>[0], next);
+    return authMiddleware(
+      { request, context } as Parameters<MiddlewareFunction>[0],
+      next,
+    );
   }
 
   if (decision.action === "redirect") {

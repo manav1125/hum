@@ -1,4 +1,3 @@
-
 import { FileText, Zap } from "lucide-react";
 
 import type { OrbitItem } from "@/domains/intelligence/components/constellation-layout";
@@ -44,8 +43,11 @@ export function NodePopover({ item, color, onViewDetails }: NodePopoverProps) {
         ) : null}
       </div>
       <div className="mt-2 flex items-start gap-2">
-        {(item.icon || item.emoji) ? (
-          <SkillIcon skill={item} className="h-5 w-5 shrink-0 text-[20px] leading-none" />
+        {item.icon || item.emoji ? (
+          <SkillIcon
+            skill={item}
+            className="h-5 w-5 shrink-0 text-[20px] leading-none"
+          />
         ) : null}
         <div className="min-w-0 flex-1">
           <div className="truncate text-body-medium-default text-[var(--content-default)]">
