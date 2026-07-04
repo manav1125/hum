@@ -23315,6 +23315,227 @@ paths:
                 pinned:
                   type: boolean
               additionalProperties: false
+  /v1/projects/{id}/knowledge:
+    get:
+      operationId: projects_by_id_knowledge_get
+      summary: List a project's knowledge
+      description:
+        Return the project's attached knowledge — uploaded files and reference links — that the agent reads when
+        working any task in the project.
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        projectId:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - file
+                            - link
+                        attachmentId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for kind='file' — the linked attachments row
+                        url:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Set for kind='link'
+                        label:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        filename:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Original filename for kind='file'
+                        mimeType:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sizeBytes:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        addedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - projectId
+                        - kind
+                        - attachmentId
+                        - url
+                        - label
+                        - filename
+                        - mimeType
+                        - sizeBytes
+                        - addedAt
+                      additionalProperties: false
+                required:
+                  - items
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    post:
+      operationId: projects_by_id_knowledge_post
+      summary: Attach knowledge to a project
+      description:
+        Attach either an uploaded file (pass `attachmentId` from POST /attachments) or a reference link (pass
+        `url`) to a project. Exactly one of the two must be provided. Attached files are materialized into the agent's
+        workspace so task runs in the project can read them.
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      projectId:
+                        type: string
+                      kind:
+                        type: string
+                        enum:
+                          - file
+                          - link
+                      attachmentId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Set for kind='file' — the linked attachments row
+                      url:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Set for kind='link'
+                      label:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      filename:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Original filename for kind='file'
+                      mimeType:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sizeBytes:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      addedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - projectId
+                      - kind
+                      - attachmentId
+                      - url
+                      - label
+                      - filename
+                      - mimeType
+                      - sizeBytes
+                      - addedAt
+                    additionalProperties: false
+                required:
+                  - item
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attachmentId:
+                  description: Attachment id from the upload route (kind='file')
+                  type: string
+                url:
+                  description: http(s) URL (kind='link')
+                  type: string
+                label:
+                  description: Display name; defaults to the filename/URL
+                  type: string
+              additionalProperties: false
+  /v1/projects/{id}/knowledge/{knowledgeId}:
+    delete:
+      operationId: projects_by_id_knowledge_by_knowledgeId_delete
+      summary: Remove knowledge from a project
+      description:
+        Detach a knowledge entry. For files this also removes the materialized workspace copy and best-effort
+        deletes the underlying attachment.
+      tags:
+        - projects
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: knowledgeId
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/projects/{id}/work-items:
     get:
       operationId: projects_by_id_workitems_get
@@ -30964,6 +31185,179 @@ paths:
           schema:
             type: string
           description: Filter to a single project
+    post:
+      operationId: workitems_post
+      summary: Create a work item
+      description:
+        Create a queued work item directly (e.g. the project-board quick-add). Mints the backing task template,
+        stamps a manual source context, and runs triage without auto-running — a manually filed task waits for the user
+        (or an explicit run) to start it.
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      taskId:
+                        type: string
+                      title:
+                        type: string
+                      notes:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                      priorityTier:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      dueAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Due deadline, epoch ms
+                      labels:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON array string of labels
+                      assignee:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: '"cue" | "you" | contact name; null reads as "cue"'
+                      context:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Per-task context the user adds; read by the agent before a run
+                      sourceContext:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON snapshot of where the task came from (triage-stamped)
+                      lastActivityAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms of last activity; drives stale-item ranking
+                      lastRunId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastRunConversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastRunStatus:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastProgressNote:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Live activity line ("Searching the web…") stamped by the runner while status is "running"; null otherwise
+                      sourceType:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sourceId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      approvalStatus:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - taskId
+                      - title
+                      - notes
+                      - status
+                      - priorityTier
+                      - sortIndex
+                      - projectId
+                      - dueAt
+                      - labels
+                      - assignee
+                      - context
+                      - sourceContext
+                      - lastActivityAt
+                      - lastRunId
+                      - lastRunConversationId
+                      - lastRunStatus
+                      - lastProgressNote
+                      - sourceType
+                      - sourceId
+                      - approvalStatus
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - item
+                additionalProperties: false
+        "400":
+          description: Missing or empty title
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                notes:
+                  type: string
+                projectId:
+                  description: File the new task into this project
+                  type: string
+                dueAt:
+                  description: Due deadline, epoch ms
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                context:
+                  description: Per-task context the agent reads before a run
+                  type: string
+              required:
+                - title
+              additionalProperties: false
   /v1/work-items/{id}:
     delete:
       operationId: workitems_by_id_delete

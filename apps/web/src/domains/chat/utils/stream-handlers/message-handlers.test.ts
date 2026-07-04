@@ -10,6 +10,7 @@ import {
   handleGenerationHandoff,
   handleGenerationCancelled,
 } from "@/domains/chat/utils/stream-handlers/message-handlers";
+import { useLiveStatusStore } from "@/domains/chat/live-status-store";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { textBody } from "@/domains/chat/utils/message-test-helpers";
 import { conversationsQueryKey } from "@/lib/sync/query-tags";
@@ -100,6 +101,66 @@ describe("handleAssistantTextDelta", () => {
 });
 
 describe("handleAssistantThinkingDelta", () => {
+  // NOTE: these live-status tests use conversation ids no other test file's
+  // mounted components use as their active conversation — component trees
+  // leaked by earlier suite files react to live-status store writes and
+  // re-stamp a slice for THEIR active id ("conv-1"), which would otherwise
+  // race these assertions in a full-suite run.
+  it("routes the live thinking preview to the EVENT's conversation, not the stream anchor", () => {
+    // Regression: while viewing conversation A, a background conversation
+    // B's thinking deltas surfaced in A's live status line because the
+    // preview buffer was global. The preview must land under the event's
+    // own conversation id.
+    useLiveStatusStore.getState().resetAll();
+    const ctx = makeCtx({
+      // The viewed conversation (stream anchor).
+      streamContext: { assistantId: "ast-1", conversationId: "conv-live-a" },
+    });
+
+    handleAssistantThinkingDelta(
+      {
+        type: "assistant_thinking_delta",
+        thinking: "Projecting Q3 revenue",
+        conversationId: "conv-live-b",
+      },
+      ctx,
+    );
+
+    const { byConversation } = useLiveStatusStore.getState();
+    expect(byConversation["conv-live-a"]).toBeUndefined();
+    expect(byConversation["conv-live-b"]?.thinkingTail).toBe(
+      "Projecting Q3 revenue",
+    );
+  });
+
+  it("falls back to the stream anchor when the event carries no conversation id", () => {
+    useLiveStatusStore.getState().resetAll();
+    const ctx = makeCtx({
+      streamContext: { assistantId: "ast-1", conversationId: "conv-live-a" },
+    });
+
+    handleAssistantThinkingDelta(
+      { type: "assistant_thinking_delta", thinking: "anchored reasoning" },
+      ctx,
+    );
+
+    expect(
+      useLiveStatusStore.getState().byConversation["conv-live-a"]?.thinkingTail,
+    ).toBe("anchored reasoning");
+  });
+
+  it("drops the preview when neither the event nor the stream names a conversation", () => {
+    useLiveStatusStore.getState().resetAll();
+    const ctx = makeCtx({ streamContext: null });
+
+    handleAssistantThinkingDelta(
+      { type: "assistant_thinking_delta", thinking: "unattributable" },
+      ctx,
+    );
+
+    expect(useLiveStatusStore.getState().byConversation).toEqual({});
+  });
+
   it("cancels reconciliation and accumulates reasoning onto the streaming row", () => {
     // GIVEN a fresh stream context (no assistant tail yet — the reasoning
     // burst precedes any text, as with reasoning-heavy models)
@@ -267,6 +328,30 @@ describe("handleMessageComplete", () => {
     });
   });
 
+  it("drops only the completed conversation's live-status slice", () => {
+    useLiveStatusStore.getState().resetAll();
+    useLiveStatusStore
+      .getState()
+      .noteThinkingDelta("conv-live-a", "A reasoning");
+    useLiveStatusStore
+      .getState()
+      .noteThinkingDelta("conv-live-b", "B reasoning");
+
+    const ctx = makeCtx();
+    handleMessageComplete(
+      {
+        type: "message_complete",
+        messageId: "msg-1",
+        conversationId: "conv-live-b",
+      },
+      ctx,
+    );
+
+    const { byConversation } = useLiveStatusStore.getState();
+    expect(byConversation["conv-live-b"]).toBeUndefined();
+    expect(byConversation["conv-live-a"]?.thinkingTail).toBe("A reasoning");
+  });
+
   it("re-anchors a spawned subagent from the streaming id to the server messageId", () => {
     useSubagentStore.getState().reset();
     // Spawn stamped with the optimistic streaming bubble id.
@@ -354,6 +439,31 @@ describe("handleGenerationHandoff", () => {
     );
     expect(ctx.cancelReconciliation).toHaveBeenCalled();
     expect(ctx.turnActions.handoffGeneration).toHaveBeenCalled();
+  });
+
+  it("clears only the handed-off conversation's thinking preview", () => {
+    useLiveStatusStore.getState().resetAll();
+    useLiveStatusStore
+      .getState()
+      .noteThinkingDelta("conv-live-a", "A reasoning");
+    useLiveStatusStore
+      .getState()
+      .noteThinkingDelta("conv-live-b", "B reasoning");
+
+    const ctx = makeCtx();
+    handleGenerationHandoff(
+      {
+        type: "generation_handoff",
+        queuedCount: 0,
+        conversationId: "conv-live-b",
+      },
+      ctx,
+    );
+
+    const { byConversation } = useLiveStatusStore.getState();
+    expect(byConversation["conv-live-b"]?.thinkingTail).toBe("");
+    // The viewed conversation's live preview survives a background handoff.
+    expect(byConversation["conv-live-a"]?.thinkingTail).toBe("A reasoning");
   });
 });
 

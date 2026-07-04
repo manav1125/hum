@@ -5,7 +5,15 @@
  * item falls back to the task-level required tools instead of silently
  * skipping permission checks.
  */
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "bun:test";
 
 mock.module("../../util/logger.js", () => ({
   getLogger: () =>
@@ -30,12 +38,43 @@ mock.module("../../tasks/task-runner.js", () => ({
   }),
 }));
 
+// The createWorkItem route fires a fire-and-forget triage pass; stub it for
+// this file's tests so no flash-LLM sidechain spins up in the background, and
+// record the calls so the skipAutoRun contract is assertable. Captured by
+// value + restored in afterAll so the mock doesn't leak into other test files
+// sharing the same `bun test` process (mirrors work-item-triage.test.ts).
+import * as workItemTriage from "../../work-items/work-item-triage.js";
+
+const realTriageAndMaybeAutoRunWorkItem =
+  workItemTriage.triageAndMaybeAutoRunWorkItem;
+
+const triageCalls: Array<{ id: string; opts: unknown }> = [];
+
+beforeAll(() => {
+  mock.module("../../work-items/work-item-triage.js", () => ({
+    ...workItemTriage,
+    triageAndMaybeAutoRunWorkItem: (id: string, opts: unknown) => {
+      triageCalls.push({ id, opts });
+      return Promise.resolve({ autoRunStarted: false, reason: "skipped" });
+    },
+  }));
+});
+
+afterAll(() => {
+  mock.module("../../work-items/work-item-triage.js", () => ({
+    ...workItemTriage,
+    triageAndMaybeAutoRunWorkItem: realTriageAndMaybeAutoRunWorkItem,
+  }));
+});
+
 import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { createTask } from "../../tasks/task-store.js";
+import { createProject } from "../../work-items/project-store.js";
 import {
   createWorkItem,
   getWorkItem,
+  type WorkItem,
 } from "../../work-items/work-item-store.js";
 import { preflightWorkItem, ROUTES } from "./work-items-routes.js";
 
@@ -154,6 +193,77 @@ describe("listWorkItems status filter", () => {
 
     const queued = listByStatus("queued");
     expect(queued.some((i) => i.id === wi.id)).toBe(true);
+  });
+});
+
+describe("POST work-items (createWorkItem)", () => {
+  const createRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items" && r.method === "POST",
+  )!;
+  const listRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items" && r.method === "GET",
+  )!;
+
+  test("creates a queued item filed into the project, visible in GET ?projectId=", () => {
+    // The project-board quick-add path: one POST with title + projectId must
+    // land a persisted, filed work item (the old create→find→patch dance went
+    // through /tasks/queue/add, which is LOCAL_PRINCIPALS-only and 403'd for
+    // web actor principals — no item was ever created).
+    const project = createProject({ title: "Launch" });
+
+    const result = createRoute.handler({
+      headers: {},
+      body: {
+        title: "Draft the launch email",
+        notes: "Keep it under 200 words",
+        projectId: project.id,
+      },
+    }) as { item: WorkItem };
+
+    expect(result.item.id).toBeTruthy();
+    expect(result.item.status).toBe("queued");
+    expect(result.item.title).toBe("Draft the launch email");
+    expect(result.item.notes).toBe("Keep it under 200 words");
+    expect(result.item.projectId).toBe(project.id);
+
+    // Manual origin is stamped at creation (not left for triage to guess).
+    const sourceContext = JSON.parse(result.item.sourceContext!) as {
+      origin: string;
+      snippet: string;
+    };
+    expect(sourceContext.origin).toBe("manual");
+    expect(sourceContext.snippet).toBe("Keep it under 200 words");
+
+    // Persisted, and round-trips through the project-filtered list the
+    // board reads.
+    expect(getWorkItem(result.item.id)!.projectId).toBe(project.id);
+    const listed = listRoute.handler({
+      queryParams: { projectId: project.id },
+      headers: {},
+    }) as { items: Array<{ id: string }> };
+    expect(listed.items.some((i) => i.id === result.item.id)).toBe(true);
+  });
+
+  test("runs triage with auto-run suppressed", () => {
+    triageCalls.length = 0;
+
+    const result = createRoute.handler({
+      headers: {},
+      body: { title: "Manual add, no project" },
+    }) as { item: WorkItem };
+
+    expect(triageCalls).toHaveLength(1);
+    expect(triageCalls[0].id).toBe(result.item.id);
+    expect(triageCalls[0].opts).toEqual({ skipAutoRun: true });
+  });
+
+  test("400s on a missing or blank title", () => {
+    expect(() => createRoute.handler({ headers: {}, body: {} })).toThrow(
+      "title is required",
+    );
+    expect(() =>
+      createRoute.handler({ headers: {}, body: { title: "   " } }),
+    ).toThrow("title is required");
   });
 });
 

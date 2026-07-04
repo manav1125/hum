@@ -15,8 +15,11 @@
  * Always animated (typing dots + fade-in on copy changes) and always
  * textual — never a bare pulsing logo. Renders `null` when no turn is
  * active. The signal comes from `useTurnStore` (phase, daemon statusText,
- * queue depth) and `useLiveStatusStore` (turn start time, thinking preview,
- * running tools) — see `live-status-store.ts` for the writers.
+ * queue depth) and the per-conversation slice of `useLiveStatusStore`
+ * (turn start time, thinking preview, running tools) for the conversation
+ * being VIEWED — other conversations' concurrently-streaming turns keep
+ * their signal under their own key and never reach this line. See
+ * `live-status-store.ts` for the writers.
  *
  * Styling mirrors the existing thinking affordances: `typing-dot-pulse`
  * dots (transcript thinking row), Brain-glyph + tertiary text preview
@@ -31,6 +34,7 @@ import { Typography } from "@vellumai/design-library";
 
 import { deriveStepLabelFromName } from "@/domains/chat/components/tool-progress-card/derive-step-label";
 import {
+  useLiveStatusForConversation,
   useLiveStatusStore,
   type LiveToolRun,
 } from "@/domains/chat/live-status-store";
@@ -40,6 +44,7 @@ import {
   type TurnPhase,
 } from "@/domains/chat/turn-store";
 import { truncate } from "@/domains/chat/utils/truncate";
+import { useConversationStore } from "@/stores/conversation-store";
 import { useSSEConnectedStore } from "@/stores/sse-connected-store";
 
 // ---------------------------------------------------------------------------
@@ -218,10 +223,13 @@ export function LiveTurnStatus({
   const statusText = useTurnStore.use.statusText();
   const pendingQueuedCount = useTurnStore.use.pendingQueuedCount();
 
-  const turnStartedAt = useLiveStatusStore.use.turnStartedAt();
-  const thinkingTail = useLiveStatusStore.use.thinkingTail();
-  const thinkingAt = useLiveStatusStore.use.thinkingAt();
-  const runningTools = useLiveStatusStore.use.runningTools();
+  // The line renders inside the ACTIVE conversation's transcript, so it
+  // must only project that conversation's live slice — a concurrently
+  // running background conversation's thinking/tool signal lives under its
+  // own key in the store and never reaches this selector.
+  const activeConversationId = useConversationStore.use.activeConversationId();
+  const { turnStartedAt, thinkingTail, thinkingAt, runningTools } =
+    useLiveStatusForConversation(activeConversationId);
   const sseConnected = useSSEConnectedStore.use.isConnected();
 
   const active = isSending(phase) || fallbackActive;
@@ -237,13 +245,13 @@ export function LiveTurnStatus({
   }, [active]);
 
   // Restored/external turns never pass through the turn reducer's
-  // inactive→active transition, so the store has no start stamp — take one
-  // the moment this component sees activity.
+  // inactive→active transition, so the store has no start stamp for the
+  // viewed conversation — take one the moment this component sees activity.
   useEffect(() => {
-    if (active && turnStartedAt === null) {
-      useLiveStatusStore.getState().noteTurnStart();
+    if (active && activeConversationId && turnStartedAt === null) {
+      useLiveStatusStore.getState().noteTurnStart(activeConversationId);
     }
-  }, [active, turnStartedAt]);
+  }, [active, activeConversationId, turnStartedAt]);
 
   const view = deriveLiveStatus({
     phase,

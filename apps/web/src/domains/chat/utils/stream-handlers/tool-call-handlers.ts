@@ -1,4 +1,5 @@
 import { useLiveStatusStore } from "@/domains/chat/live-status-store";
+import { resolveConversationId } from "@/domains/chat/utils/stream-handlers/message-handlers";
 import {
   applyToolResult,
   upsertToolCall,
@@ -27,12 +28,18 @@ export function handleToolUseStart(
         ? event.startedAt
         : Date.now(),
   };
-  // Feed the live turn-status line ("Searching the web… · 12s").
-  useLiveStatusStore.getState().noteToolStart({
-    toolUseId: toolCallId,
-    toolName: event.toolName,
-    input: event.input,
-  });
+  // Feed the live turn-status line ("Searching the web… · 12s") — under
+  // the EVENT's conversation so a background conversation's tool activity
+  // never surfaces in the transcript being viewed. Unattributable events
+  // are dropped rather than guessed into the viewed slice.
+  const liveConvId = resolveConversationId(event, ctx);
+  if (liveConvId) {
+    useLiveStatusStore.getState().noteToolStart(liveConvId, {
+      toolUseId: toolCallId,
+      toolName: event.toolName,
+      input: event.input,
+    });
+  }
   ctx.setMessages((prev) => {
     const next = upsertToolCall(prev, newToolCall, event.messageId);
     const tail = next[next.length - 1];
@@ -50,7 +57,10 @@ export function handleToolResult(
   ctx: StreamHandlerContext,
 ): void {
   ctx.turnActions.onToolResult();
-  useLiveStatusStore.getState().noteToolEnd(event.toolUseId);
+  const liveConvId = resolveConversationId(event, ctx);
+  if (liveConvId) {
+    useLiveStatusStore.getState().noteToolEnd(liveConvId, event.toolUseId);
+  }
   // Forward structured tool activity metadata (web_search / web_fetch) onto
   // the turn store so the web-search inline link can render during the
   // active turn. Metadata is live-only — the store clears it on idle

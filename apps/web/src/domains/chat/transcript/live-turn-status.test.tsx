@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 
+import {
+  EMPTY_LIVE_STATUS,
+  useLiveStatusStore,
+  type ConversationLiveStatus,
+} from "@/domains/chat/live-status-store";
 import {
   deriveLiveStatus,
   type DeriveLiveStatusInput,
@@ -214,5 +219,134 @@ describe("deriveLiveStatus", () => {
     expect(deriveLiveStatus(input({ now: T0 + 2_000 }))?.text).toBe(
       "Cue is reading your message…",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-conversation store scoping — the cross-conversation leak regression.
+// The status line reads exactly one conversation's slice (the viewed one),
+// so signal written under any other conversation id must never surface.
+// ---------------------------------------------------------------------------
+
+/** Mirror of `useLiveStatusForConversation`'s selector, callable outside
+ *  React: the slice the LiveTurnStatus component would render for
+ *  `conversationId`. */
+function sliceFor(conversationId: string): ConversationLiveStatus {
+  return (
+    useLiveStatusStore.getState().byConversation[conversationId] ??
+    EMPTY_LIVE_STATUS
+  );
+}
+
+/** Derive the status-line view exactly as the component does when viewing
+ *  `conversationId` with an active thinking-phase turn. */
+function viewWhileViewing(conversationId: string) {
+  const slice = sliceFor(conversationId);
+  return deriveLiveStatus(
+    input({
+      thinkingTail: slice.thinkingTail,
+      thinkingAt: slice.thinkingAt,
+      runningTools: slice.runningTools,
+      turnStartedAt: slice.turnStartedAt ?? T0,
+    }),
+  );
+}
+
+describe("live-status store conversation scoping", () => {
+  beforeEach(() => {
+    useLiveStatusStore.getState().resetAll();
+  });
+
+  test("a thinking delta for conversation B does NOT surface while viewing A", () => {
+    const live = useLiveStatusStore.getState();
+    live.noteTurnStart("conv-a");
+    // Concurrent background turn in B streams its reasoning.
+    live.noteThinkingDelta("conv-b", "Projecting Q3 revenue for the model");
+
+    // Viewing A: no thinking preview leaks — the line falls back to the
+    // elapsed ladder copy instead of B's reasoning.
+    expect(sliceFor("conv-a").thinkingTail).toBe("");
+    const view = viewWhileViewing("conv-a");
+    expect(view?.text).not.toContain("Projecting Q3 revenue");
+    expect(view?.brain).toBeUndefined();
+
+    // B's own slice carries the preview for whoever views B.
+    expect(sliceFor("conv-b").thinkingTail).toBe(
+      "Projecting Q3 revenue for the model",
+    );
+  });
+
+  test("thinking deltas for the viewed conversation DO surface", () => {
+    const live = useLiveStatusStore.getState();
+    live.noteTurnStart("conv-a");
+    live.noteThinkingDelta("conv-a", "The user wants a new personality");
+    live.noteThinkingDelta("conv-b", "unrelated background reasoning");
+
+    const view = viewWhileViewing("conv-a");
+    expect(view?.text).toBe("The user wants a new personality");
+    expect(view?.brain).toBe(true);
+    expect(sliceFor("conv-a").thinkingTail).not.toContain("unrelated");
+  });
+
+  test("running tools are scoped per conversation", () => {
+    const live = useLiveStatusStore.getState();
+    live.noteToolStart("conv-b", { toolUseId: "t1", toolName: "web_search" });
+
+    expect(sliceFor("conv-a").runningTools).toHaveLength(0);
+    expect(viewWhileViewing("conv-a")?.text).not.toBe("Searching the web…");
+    expect(viewWhileViewing("conv-b")?.text).toBe("Searching the web…");
+
+    live.noteToolEnd("conv-b", "t1");
+    expect(sliceFor("conv-b").runningTools).toHaveLength(0);
+  });
+
+  test("tool ends only pop the named conversation's run", () => {
+    const live = useLiveStatusStore.getState();
+    live.noteToolStart("conv-a", { toolUseId: "t1", toolName: "bash" });
+    live.noteToolStart("conv-b", { toolUseId: "t1", toolName: "web_fetch" });
+
+    // Same toolUseId, different conversation — A's run must survive.
+    live.noteToolEnd("conv-b", "t1");
+    expect(sliceFor("conv-a").runningTools).toHaveLength(1);
+    expect(sliceFor("conv-b").runningTools).toHaveLength(0);
+  });
+
+  test("turn-boundary clearing is per-conversation", () => {
+    const live = useLiveStatusStore.getState();
+    live.noteThinkingDelta("conv-a", "A reasoning");
+    live.noteThinkingDelta("conv-b", "B reasoning");
+
+    // A's turn ends — only A's slice is dropped.
+    live.reset("conv-a");
+    expect(sliceFor("conv-a")).toBe(EMPTY_LIVE_STATUS);
+    expect(sliceFor("conv-b").thinkingTail).toBe("B reasoning");
+
+    // A queued-continuation boundary in B re-stamps B without touching
+    // any other conversation.
+    live.noteThinkingDelta("conv-a", "A again");
+    live.noteTurnBoundary("conv-b");
+    expect(sliceFor("conv-b").thinkingTail).toBe("");
+    expect(sliceFor("conv-b").turnStartedAt).not.toBeNull();
+    expect(sliceFor("conv-a").thinkingTail).toBe("A again");
+  });
+
+  test("clearThinking (generation handoff) only clears its conversation", () => {
+    const live = useLiveStatusStore.getState();
+    live.noteThinkingDelta("conv-a", "A reasoning");
+    live.noteThinkingDelta("conv-b", "B reasoning");
+    live.clearThinking("conv-b");
+    expect(sliceFor("conv-a").thinkingTail).toBe("A reasoning");
+    expect(sliceFor("conv-b").thinkingTail).toBe("");
+  });
+
+  test("tracked-conversation map stays bounded (oldest evicted)", () => {
+    const live = useLiveStatusStore.getState();
+    for (let i = 0; i < 12; i++) {
+      live.noteThinkingDelta(`conv-${i}`, "x");
+    }
+    const keys = Object.keys(useLiveStatusStore.getState().byConversation);
+    expect(keys.length).toBeLessThanOrEqual(8);
+    expect(keys).not.toContain("conv-0");
+    expect(keys).toContain("conv-11");
   });
 });

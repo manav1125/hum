@@ -21,6 +21,10 @@ import {
   sanitizeToolList,
 } from "../tasks/tool-sanitizer.js";
 import { getLogger } from "../util/logger.js";
+import {
+  ensureProjectKnowledgeFiles,
+  type MaterializedProjectKnowledge,
+} from "./project-knowledge-store.js";
 import { getProject } from "./project-store.js";
 import { resolveRequiredTools } from "./resolve-required-tools.js";
 import { recordWorkItemEvent } from "./work-item-events.js";
@@ -189,12 +193,58 @@ export interface RunWorkItemResult {
   errorCode?: string;
 }
 
+function formatKnowledgeSize(sizeBytes: number | null): string {
+  if (sizeBytes == null) return "";
+  if (sizeBytes < 1024) return `, ${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `, ${(sizeBytes / 1024).toFixed(1)} KB`;
+  return `, ${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Render the project-knowledge section of the run preamble: attached files
+ * (already materialized inside the agent's sandbox boundary, listed with the
+ * exact paths its file tools can read) plus reference links. Returns "" when
+ * the project has no knowledge.
+ */
+function buildProjectKnowledgeSection(
+  entries: MaterializedProjectKnowledge[],
+): string {
+  const files = entries.filter((e) => e.kind === "file" && e.absPath);
+  const links = entries.filter((e) => e.kind === "link" && e.url);
+  if (files.length === 0 && links.length === 0) return "";
+
+  const lines: string[] = ["### Project knowledge"];
+  if (files.length > 0) {
+    lines.push(
+      "The project has reference files attached. They are on disk at the paths below — read them with the file_read tool (or bash) whenever they are relevant to the task:",
+      ...files.map(
+        (f) =>
+          `- ${f.label} — ${f.absPath}${
+            f.mimeType
+              ? ` (${f.mimeType}${formatKnowledgeSize(f.sizeBytes)})`
+              : ""
+          }`,
+      ),
+    );
+  }
+  if (links.length > 0) {
+    if (files.length > 0) lines.push("");
+    lines.push(
+      "Reference links attached to the project:",
+      ...links.map((l) => `- ${l.label} — ${l.url}`),
+    );
+  }
+  return lines.join("\n");
+}
+
 /**
  * Build the cowork context preamble prepended to a work item's run message.
  * This is how cowork "extends context per project/task": before the agent
  * sees the task template, it reads (a) the parent project's brief/instructions
- * that apply to every task in the project, and (b) the task's own user-added
- * context. Returns "" when the item carries neither, so plain items run exactly
+ * that apply to every task in the project, (b) the project's knowledge — file
+ * attachments materialized into the sandbox so the agent can actually read
+ * them, plus reference links — and (c) the task's own user-added context.
+ * Returns "" when the item carries none of these, so plain items run exactly
  * as before.
  */
 export function buildWorkItemContextPreamble(item: WorkItem): string {
@@ -206,6 +256,19 @@ export function buildWorkItemContextPreamble(item: WorkItem): string {
       const header = `## Project: ${project.title}`;
       const brief = project.context?.trim();
       sections.push(brief ? `${header}\n${brief}` : header);
+
+      // Project knowledge — never let a knowledge failure break the run.
+      try {
+        const knowledge = buildProjectKnowledgeSection(
+          ensureProjectKnowledgeFiles(project.id),
+        );
+        if (knowledge) sections.push(knowledge);
+      } catch (err) {
+        log.warn(
+          { err: String(err), projectId: project.id, workItemId: item.id },
+          "failed to resolve project knowledge for run preamble (skipped)",
+        );
+      }
     }
   }
 

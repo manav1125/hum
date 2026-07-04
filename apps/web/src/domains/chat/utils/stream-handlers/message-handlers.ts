@@ -38,8 +38,11 @@ import {
  * `conversationId`, but the resolver matches the same fallback chain used
  * by the terminal handlers (`handleMessageComplete`,
  * `handleGenerationCancelled`) for symmetry.
+ *
+ * Exported for the sibling handler modules (tool-call handlers) so every
+ * writer of per-conversation stores attributes signal the same way.
  */
-function resolveConversationId(
+export function resolveConversationId(
   event: { conversationId?: string },
   ctx: StreamHandlerContext,
 ): string | undefined {
@@ -160,8 +163,14 @@ export function handleAssistantThinkingDelta(
 ): void {
   ctx.cancelReconciliation();
 
-  // Feed the live turn-status line's rolling thinking preview.
-  useLiveStatusStore.getState().noteThinkingDelta(event.thinking);
+  // Feed the live turn-status line's rolling thinking preview — under the
+  // EVENT's conversation, so a background conversation's reasoning can
+  // never surface in the transcript being viewed. Unattributable deltas
+  // (no id on the wire, no stream anchor) are dropped rather than guessed.
+  const liveConvId = resolveConversationId(event, ctx);
+  if (liveConvId) {
+    useLiveStatusStore.getState().noteThinkingDelta(liveConvId, event.thinking);
+  }
 
   ctx.setMessages((prev) => {
     const next = appendThinkingDelta(prev, event.thinking, event.messageId);
@@ -221,6 +230,11 @@ export function handleAssistantActivityState(
     patchConversation(ctx.queryClient, ctx.assistantId, convId, {
       isProcessing: false,
     });
+    // Per-conversation turn-boundary clearing for the live status line.
+    // Runs BEFORE `endTurn` so the queued-continuation transition (which
+    // re-stamps a fresh boundary via the turn-store subscription) is not
+    // wiped by this reset.
+    useLiveStatusStore.getState().reset(convId);
   }
   const turnPhaseBefore = ctx.getTurnState().phase;
   ctx.endTurn({ conversationId: convId, reason: "complete" });
@@ -268,6 +282,9 @@ export function handleMessageComplete(
     patchConversation(ctx.queryClient, ctx.assistantId, convId, {
       isProcessing: false,
     });
+    // Drop this conversation's live-status slice (see the parallel reset
+    // in `handleAssistantActivityState` for the ordering rationale).
+    useLiveStatusStore.getState().reset(convId);
   }
   const turnPhaseBefore = ctx.getTurnState().phase;
   ctx.endTurn({ conversationId: convId, reason: "complete" });
@@ -296,15 +313,19 @@ export function handleUserMessageEcho(
 }
 
 export function handleGenerationHandoff(
-  _event: GenerationHandoffEvent,
+  event: GenerationHandoffEvent,
   ctx: StreamHandlerContext,
 ): void {
   ctx.cancelReconciliation();
   ctx.turnActions.handoffGeneration();
   // New LLM call within the same turn — the live status line's thinking
   // preview should start fresh with the next block instead of echoing the
-  // finalized chunk's reasoning.
-  useLiveStatusStore.getState().clearThinking();
+  // finalized chunk's reasoning. Scoped to the event's conversation so a
+  // background handoff never clears the viewed conversation's preview.
+  const convId = resolveConversationId(event, ctx);
+  if (convId) {
+    useLiveStatusStore.getState().clearThinking(convId);
+  }
 }
 
 export function handleGenerationCancelled(
@@ -318,6 +339,7 @@ export function handleGenerationCancelled(
     patchConversation(ctx.queryClient, ctx.assistantId, convId, {
       isProcessing: false,
     });
+    useLiveStatusStore.getState().reset(convId);
   }
   ctx.endTurn({ conversationId: convId, reason: "cancelled" });
 }
@@ -339,6 +361,7 @@ export function handleTurnInterrupted(
     patchConversation(ctx.queryClient, ctx.assistantId, convId, {
       isProcessing: false,
     });
+    useLiveStatusStore.getState().reset(convId);
   }
   ctx.setMessages((prev) => markMessageInterrupted(prev, event.messageId));
   ctx.endTurn({ conversationId: convId, reason: "error" });

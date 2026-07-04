@@ -25,6 +25,7 @@ import { routes } from "@/utils/routes";
 import type { BoardItem } from "./board-item";
 import { BOARD_LANES, categoryLabel, laneForStatus } from "./project-kit";
 import { ProjectBrief } from "./project-brief";
+import { ProjectKnowledge } from "./project-knowledge";
 import { TaskDrawer } from "./task-drawer";
 import { useQuickAddTask } from "./use-quick-add";
 import { useProject, useProjects, useProjectWorkItems } from "./use-projects";
@@ -151,18 +152,20 @@ export function ProjectDetailPage() {
   const submitAdd = () => {
     const title = draft.trim();
     if (!title || quickAdd.isPending) return;
-    quickAdd.mutate(
-      {
-        path: { assistant_id: assistantId },
-        body: { title, if_exists: "create_duplicate" },
+    quickAdd.add(title, {
+      // Only clear on success — on failure the draft stays put next to the
+      // inline error so the user can retry without retyping.
+      onSuccess: () => {
+        setDraft("");
+        setAdding(false);
       },
-      {
-        onSettled: () => {
-          setDraft("");
-          setAdding(false);
-        },
-      },
-    );
+    });
+  };
+
+  const dismissAdd = () => {
+    setDraft("");
+    setAdding(false);
+    quickAdd.reset();
   };
 
   const accentColor = project?.color ?? C.violet;
@@ -271,59 +274,80 @@ export function ProjectDetailPage() {
           />
         ) : null}
 
+        {/* Project knowledge — files/links Cue reads when working any task here */}
+        {project ? (
+          <ProjectKnowledge
+            assistantId={assistantId}
+            projectId={projectId}
+            accent={accentColor}
+          />
+        ) : null}
+
         {/* Quick add */}
         <div style={{ margin: "20px 0 6px" }}>
           {adding ? (
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                padding: "10px 12px",
-                border: `1px solid ${C.line2}`,
-                borderRadius: 10,
-                background: C.surface,
-              }}
-            >
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") submitAdd();
-                  if (e.key === "Escape") {
-                    setDraft("");
-                    setAdding(false);
-                  }
-                }}
-                placeholder="Add a task to this project…"
+            <>
+              <div
                 style={{
-                  flex: 1,
-                  border: "none",
-                  outline: "none",
-                  background: "transparent",
-                  fontSize: 14,
-                  color: C.ink,
-                }}
-              />
-              <button
-                type="button"
-                onClick={submitAdd}
-                disabled={quickAdd.isPending || !draft.trim()}
-                style={{
-                  fontFamily: mono,
-                  fontSize: 11.5,
-                  padding: "5px 12px",
-                  borderRadius: 8,
-                  border: "none",
-                  cursor: "pointer",
-                  background: C.ink,
-                  color: C.bg,
-                  opacity: quickAdd.isPending || !draft.trim() ? 0.5 : 1,
+                  display: "flex",
+                  gap: 8,
+                  padding: "10px 12px",
+                  border: `1px solid ${quickAdd.isError ? C.danger : C.line2}`,
+                  borderRadius: 10,
+                  background: C.surface,
                 }}
               >
-                {quickAdd.isPending ? "Adding…" : "Add"}
-              </button>
-            </div>
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitAdd();
+                    if (e.key === "Escape") dismissAdd();
+                  }}
+                  placeholder="Add a task to this project…"
+                  style={{
+                    flex: 1,
+                    border: "none",
+                    outline: "none",
+                    background: "transparent",
+                    fontSize: 14,
+                    color: C.ink,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={submitAdd}
+                  disabled={quickAdd.isPending || !draft.trim()}
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 11.5,
+                    padding: "5px 12px",
+                    borderRadius: 8,
+                    border: "none",
+                    cursor: "pointer",
+                    background: C.ink,
+                    color: C.bg,
+                    opacity: quickAdd.isPending || !draft.trim() ? 0.5 : 1,
+                  }}
+                >
+                  {quickAdd.isPending ? "Adding…" : "Add"}
+                </button>
+              </div>
+              {quickAdd.isError ? (
+                <div
+                  role="alert"
+                  style={{
+                    marginTop: 6,
+                    fontFamily: mono,
+                    fontSize: 11.5,
+                    color: C.danger,
+                  }}
+                >
+                  Couldn’t add the task — nothing was saved. Try again.
+                </div>
+              ) : null}
+            </>
           ) : (
             <button
               type="button"

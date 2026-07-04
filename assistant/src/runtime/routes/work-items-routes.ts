@@ -13,7 +13,7 @@ import { reconcileFeedForWorkItemStatus } from "../../home/feed-writer.js";
 import { getMessages } from "../../memory/conversation-crud.js";
 import { check, classifyRisk } from "../../permissions/checker.js";
 import { getSubagentManager } from "../../subagent/index.js";
-import { getTask, getTaskRun } from "../../tasks/task-store.js";
+import { createTask, getTask, getTaskRun } from "../../tasks/task-store.js";
 import {
   getRegisteredToolNames,
   getToolDescription,
@@ -29,12 +29,14 @@ import {
 } from "../../work-items/work-item-events.js";
 import { runWorkItemInBackground } from "../../work-items/work-item-runner.js";
 import {
+  createWorkItem,
   deleteWorkItem,
   getWorkItem,
   listWorkItems,
   updateWorkItem,
   type WorkItemStatus,
 } from "../../work-items/work-item-store.js";
+import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import { buildAssistantEvent } from "../assistant-event.js";
 import { assistantEventHub } from "../assistant-event-hub.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
@@ -552,6 +554,88 @@ export const ROUTES: RouteDefinition[] = [
         ...(projectId ? { projectId } : {}),
       });
       return { items };
+    },
+  },
+
+  {
+    operationId: "createWorkItem",
+    endpoint: "work-items",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Create a work item",
+    description:
+      "Create a queued work item directly (e.g. the project-board quick-add). " +
+      "Mints the backing task template, stamps a manual source context, and " +
+      "runs triage without auto-running — a manually filed task waits for the " +
+      "user (or an explicit run) to start it.",
+    tags: ["work-items"],
+    additionalResponses: {
+      "400": { description: "Missing or empty title" },
+    },
+    requestBody: z.object({
+      title: z.string().min(1),
+      notes: z.string().optional(),
+      projectId: z
+        .string()
+        .optional()
+        .describe("File the new task into this project"),
+      dueAt: z.number().int().optional().describe("Due deadline, epoch ms"),
+      context: z
+        .string()
+        .optional()
+        .describe("Per-task context the agent reads before a run"),
+    }),
+    responseBody: z.object({ item: workItemSchema }),
+    handler: ({ body }) => {
+      const { title, notes, projectId, dueAt, context } = (body ?? {}) as {
+        title?: string;
+        notes?: string;
+        projectId?: string;
+        dueAt?: number;
+        context?: string;
+      };
+      if (typeof title !== "string" || !title.trim()) {
+        throw new BadRequestError("title is required");
+      }
+      const trimmedTitle = title.trim();
+
+      // `work_items.taskId` requires a real tasks row — mint a lightweight
+      // template per item, mirroring the ad-hoc enqueue tool. The notes (when
+      // present) are the richer instruction sent to the model at run time.
+      const template = notes?.trim() || trimmedTitle;
+      const task = createTask({ title: trimmedTitle, template });
+
+      // Stamp the manual origin at creation so triage's blank-fill pass leaves
+      // it alone: a quick-add is user-typed, not captured from a channel.
+      const snippet =
+        template.length > 500 ? `${template.slice(0, 500)}…` : template;
+      const item = createWorkItem({
+        taskId: task.id,
+        title: trimmedTitle,
+        notes,
+        projectId,
+        dueAt,
+        context,
+        sourceContext: JSON.stringify({
+          origin: "manual",
+          snippet,
+          capturedAt: Date.now(),
+        }),
+        actor: "user",
+      });
+
+      // Triage fills the blanks (tier / sortIndex / dueAt) but never
+      // auto-runs: a manually filed task waits for the user to say go. The
+      // caller-supplied projectId is already set, so triage won't reassign it.
+      void triageAndMaybeAutoRunWorkItem(item.id, { skipAutoRun: true });
+
+      broadcastWorkItemStatus(item.id);
+      publishEvent({ type: "tasks_changed" });
+
+      return { item };
     },
   },
 

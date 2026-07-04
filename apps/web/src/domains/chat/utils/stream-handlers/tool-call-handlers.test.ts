@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { useLiveStatusStore } from "@/domains/chat/live-status-store";
 import { makeCtx } from "@/domains/chat/utils/stream-handlers/test-helpers";
 import {
   handleToolResult,
@@ -84,6 +85,61 @@ describe("handleToolUseStart", () => {
     expect(next[0]?.isOptimistic).toBeUndefined();
   });
 
+  // NOTE: these live-status tests use conversation ids no other test file's
+  // mounted components use as their active conversation — component trees
+  // leaked by earlier suite files react to live-status store writes and
+  // re-stamp a slice for THEIR active id ("conv-1"), which would otherwise
+  // race these assertions in a full-suite run.
+  it("routes live tool activity to the EVENT's conversation, not the stream anchor", () => {
+    // Regression: a background conversation's tool starts fed the global
+    // live-status line shown in whichever transcript was open. The run
+    // must land under the event's own conversation id.
+    useLiveStatusStore.getState().resetAll();
+    const ctx = makeCtx({
+      // The viewed conversation (stream anchor).
+      streamContext: { assistantId: "ast-1", conversationId: "conv-live-a" },
+    });
+
+    handleToolUseStart(
+      {
+        type: "tool_use_start",
+        toolName: "web_search",
+        input: {},
+        toolUseId: "tc-b",
+        conversationId: "conv-live-b",
+      },
+      ctx,
+    );
+
+    const { byConversation } = useLiveStatusStore.getState();
+    expect(byConversation["conv-live-a"]).toBeUndefined();
+    expect(byConversation["conv-live-b"]?.runningTools).toHaveLength(1);
+    expect(byConversation["conv-live-b"]?.runningTools[0]?.toolUseId).toBe(
+      "tc-b",
+    );
+  });
+
+  it("falls back to the stream anchor when the event carries no conversation id", () => {
+    useLiveStatusStore.getState().resetAll();
+    const ctx = makeCtx({
+      streamContext: { assistantId: "ast-1", conversationId: "conv-live-a" },
+    });
+
+    handleToolUseStart(
+      {
+        type: "tool_use_start",
+        toolName: "web_search",
+        input: {},
+        toolUseId: "tc-1",
+      },
+      ctx,
+    );
+
+    expect(
+      useLiveStatusStore.getState().byConversation["conv-live-a"]?.runningTools,
+    ).toHaveLength(1);
+  });
+
   it("folds three sequential tool_use_starts with the same messageId into one bubble", () => {
     // Concrete reproduction of the bug behind the screenshot: three
     // tool_use_starts arriving back-to-back with the same anchor messageId
@@ -129,6 +185,35 @@ describe("handleToolUseStart", () => {
 });
 
 describe("handleToolResult", () => {
+  it("only pops the tool run from the EVENT's conversation", () => {
+    useLiveStatusStore.getState().resetAll();
+    const live = useLiveStatusStore.getState();
+    live.noteToolStart("conv-live-a", { toolUseId: "tc-1", toolName: "bash" });
+    live.noteToolStart("conv-live-b", {
+      toolUseId: "tc-1",
+      toolName: "web_fetch",
+    });
+
+    const ctx = makeCtx({
+      streamContext: { assistantId: "ast-1", conversationId: "conv-live-a" },
+    });
+    handleToolResult(
+      {
+        type: "tool_result",
+        toolName: "web_fetch",
+        result: "done",
+        toolUseId: "tc-1",
+        conversationId: "conv-live-b",
+      },
+      ctx,
+    );
+
+    const { byConversation } = useLiveStatusStore.getState();
+    // The viewed conversation's identically-ided run survives.
+    expect(byConversation["conv-live-a"]?.runningTools).toHaveLength(1);
+    expect(byConversation["conv-live-b"]?.runningTools).toHaveLength(0);
+  });
+
   it("dispatches TOOL_RESULT and updates messages", () => {
     const ctx = makeCtx();
     handleToolResult(

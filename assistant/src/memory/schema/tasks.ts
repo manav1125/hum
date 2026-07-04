@@ -84,6 +84,16 @@ export const projects = sqliteTable("projects", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const projectKnowledge = sqliteTable("project_knowledge", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull(), // reference-by-convention to projects.id (store-enforced)
+  kind: text("kind").notNull(), // 'file' | 'link'
+  attachmentId: text("attachment_id"), // set when kind='file'; reference-by-convention to attachments.id
+  url: text("url"), // set when kind='link'
+  label: text("label"), // display name; defaults to filename/url at the store layer
+  addedAt: integer("added_at").notNull(),
+});
+
 export const workItemEvents = sqliteTable("work_item_events", {
   id: text("id").primaryKey(),
   workItemId: text("work_item_id")

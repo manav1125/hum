@@ -110,6 +110,7 @@ import { ROUTES as PLATFORM_ROUTES } from "./platform-routes.js";
 import { ROUTES as PLAYGROUND_ROUTES } from "./playground/index.js";
 import { ROUTES as PLUGINS_ROUTES } from "./plugins-routes.js";
 import { ROUTES as PROFILER_ROUTES } from "./profiler-routes.js";
+import { ROUTES as PROJECT_KNOWLEDGE_ROUTES } from "./project-knowledge-routes.js";
 import { ROUTES as PROJECT_ROUTES } from "./projects-routes.js";
 import { ROUTES as PS_ROUTES } from "./ps-routes.js";
 import { ROUTES as PUBLISH_ROUTES } from "./publish-routes.js";
@@ -283,6 +284,7 @@ export const ROUTES: RouteDefinition[] = [
   ...USAGE_ROUTES,
   ...VERCEL_ROUTES,
   ...WORK_ITEM_ROUTES,
+  ...PROJECT_KNOWLEDGE_ROUTES,
   ...PROJECT_ROUTES,
   ...WATCHER_ROUTES,
   ...WEBHOOK_ROUTES,

@@ -16,6 +16,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "../memory/db-connection.js";
 import { projects, workItems } from "../memory/schema/index.js";
+import { removeAllProjectKnowledge } from "./project-knowledge-store.js";
 import type { WorkItemStatus } from "./work-item-store.js";
 
 export type ProjectStatus = "active" | "archived";
@@ -261,7 +262,8 @@ export function reorderProjects(orderedIds: string[]): void {
 
 /**
  * Hard-delete a project. Work items that referenced it keep living — their
- * project_id is nulled so they fall back to the ungrouped pool.
+ * project_id is nulled so they fall back to the ungrouped pool. The project's
+ * knowledge (file/link rows + materialized copies) is removed with it.
  */
 export function deleteProject(id: string): void {
   const db = getDb();
@@ -269,5 +271,6 @@ export function deleteProject(id: string): void {
     .set({ projectId: null, updatedAt: Date.now() })
     .where(eq(workItems.projectId, id))
     .run();
+  removeAllProjectKnowledge(id);
   db.delete(projects).where(eq(projects.id, id)).run();
 }

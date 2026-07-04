@@ -1,5 +1,6 @@
 /**
- * Zustand store for the live turn-status affordance.
+ * Zustand store for the live turn-status affordance — keyed PER
+ * CONVERSATION.
  *
  * Captures the transient, per-turn signal the SSE stream carries but the
  * turn reducer intentionally doesn't hold: the wall-clock moment the turn
@@ -8,15 +9,33 @@
  * `LiveTurnStatus` component projects this into the "show our work" status
  * line pinned next to the assistant avatar while a turn is in flight.
  *
+ * Scoping: all signal is stored under the conversation id the originating
+ * SSE event belongs to (`byConversation`), and readers select a single
+ * conversation's slice. A single global buffer let ANY conversation's
+ * thinking/tool deltas surface in whichever transcript was on screen —
+ * e.g. a background conversation's reasoning previewing inside an
+ * unrelated chat — which was both confusing and a cross-thread privacy
+ * leak. Writers must therefore always attribute signal to the event's own
+ * conversation id (falling back to the stream anchor), never to "whatever
+ * is currently rendered".
+ *
  * Writers:
  *   - a module-scope `useTurnStore.subscribe` below stamps turn start /
- *     turn boundary / reset transitions so every activation path (composer
- *     send, queued continuation, external-channel turn, reconnect) is
- *     covered without touching each call site;
- *   - `handleAssistantThinkingDelta` appends thinking chunks;
- *   - `handleGenerationHandoff` clears the thinking buffer between LLM
- *     calls inside one turn;
- *   - `handleToolUseStart` / `handleToolResult` push/pop running tools.
+ *     turn boundary / reset transitions for the ACTIVE conversation (the
+ *     turn reducer only ever tracks the active conversation's turn) so
+ *     every activation path (composer send, queued continuation,
+ *     external-channel turn, reconnect) is covered without touching each
+ *     call site;
+ *   - `handleAssistantThinkingDelta` appends thinking chunks under the
+ *     event's conversation;
+ *   - `handleGenerationHandoff` clears that conversation's thinking buffer
+ *     between LLM calls inside one turn;
+ *   - `handleToolUseStart` / `handleToolResult` push/pop running tools
+ *     under the event's conversation;
+ *   - the terminal stream handlers (`message_complete`,
+ *     `generation_cancelled`, `turn_interrupted`, `assistant_activity_state`
+ *     idle) drop the finished conversation's slice, so turn-boundary
+ *     clearing is itself per-conversation.
  *
  * All timestamps are stamped inside actions at event time — never during
  * render (see the repo rule: no `Date.now()` in render).
@@ -27,7 +46,7 @@
 import { create } from "zustand";
 
 import { isSending, useTurnStore } from "@/domains/chat/turn-store";
-import { createSelectors } from "@/utils/create-selectors";
+import { useConversationStore } from "@/stores/conversation-store";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,8 +60,11 @@ export interface LiveToolRun {
   startedAt: number;
 }
 
-export interface LiveStatusState {
-  /** Wall-clock ms when the current turn became active. Null when idle. */
+/** Per-conversation transient turn signal. */
+export interface ConversationLiveStatus {
+  /** Wall-clock ms when this conversation's turn became active. Null when
+   *  the turn started before this slice existed (e.g. a restored/external
+   *  turn — the viewer stamps it on first sight). */
   turnStartedAt: number | null;
   /** Accumulated text of the CURRENT thinking block (capped — the status
    *  line only previews the first ~80 chars). Cleared on tool start,
@@ -56,40 +78,84 @@ export interface LiveStatusState {
   runningTools: LiveToolRun[];
 }
 
+export interface LiveStatusState {
+  /** Live signal keyed by conversation id. Absent key ⇒ no signal — read
+   *  through `useLiveStatusForConversation` / `EMPTY_LIVE_STATUS`. */
+  byConversation: Record<string, ConversationLiveStatus>;
+}
+
 /** Stop growing the buffer once the preview window is comfortably covered. */
 const THINKING_TAIL_CAP = 400;
 
-const INITIAL_STATE: LiveStatusState = {
+/** Bound on tracked conversations — the viewer only ever reads one slice,
+ *  so a small LRU-ish window (evict oldest-inserted) keeps leaked or
+ *  never-terminated background turns from growing the map unbounded. */
+const MAX_TRACKED_CONVERSATIONS = 8;
+
+export const EMPTY_LIVE_STATUS: ConversationLiveStatus = {
   turnStartedAt: null,
   thinkingTail: "",
   thinkingAt: null,
   runningTools: [],
 };
 
+const INITIAL_STATE: LiveStatusState = {
+  byConversation: {},
+};
+
+/**
+ * Return `by` with `conversationId`'s slice replaced by `next`, evicting
+ * the oldest-inserted conversation when a NEW key would exceed the cap.
+ * (String-keyed object insertion order is spec-guaranteed, so `keys[0]`
+ * is the least recently created slice.)
+ */
+function withSlice(
+  by: Record<string, ConversationLiveStatus>,
+  conversationId: string,
+  next: ConversationLiveStatus,
+): Record<string, ConversationLiveStatus> {
+  if (!(conversationId in by)) {
+    const keys = Object.keys(by);
+    if (keys.length >= MAX_TRACKED_CONVERSATIONS) {
+      const { [keys[0]!]: _evicted, ...rest } = by;
+      return { ...rest, [conversationId]: next };
+    }
+  }
+  return { ...by, [conversationId]: next };
+}
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
 export interface LiveStatusActions {
-  /** A turn became active — stamp the start time and drop any transient
-   *  signal left over from a previous turn. Idempotent per activation:
-   *  callers guard on the inactive→active transition. */
-  noteTurnStart: () => void;
+  /** A turn became active in `conversationId` — stamp the start time and
+   *  drop any transient signal left over from a previous turn. Idempotent
+   *  per activation: callers guard on the inactive→active transition. */
+  noteTurnStart: (conversationId: string) => void;
   /** A turn finished but the queue keeps the phase active ("queued" →
    *  next turn). Re-stamps the start time and clears transient signal so
    *  the continuation reads as a fresh turn. */
-  noteTurnBoundary: () => void;
-  /** Append a streaming thinking chunk to the current block's buffer. */
-  noteThinkingDelta: (chunk: string) => void;
-  /** Clear the thinking buffer (new LLM call / new phase of work). */
-  clearThinking: () => void;
-  noteToolStart: (run: {
-    toolUseId: string;
-    toolName: string;
-    input?: Record<string, unknown>;
-  }) => void;
-  noteToolEnd: (toolUseId: string | undefined) => void;
-  reset: () => void;
+  noteTurnBoundary: (conversationId: string) => void;
+  /** Append a streaming thinking chunk to the conversation's current
+   *  block buffer. */
+  noteThinkingDelta: (conversationId: string, chunk: string) => void;
+  /** Clear the conversation's thinking buffer (new LLM call / new phase
+   *  of work). */
+  clearThinking: (conversationId: string) => void;
+  noteToolStart: (
+    conversationId: string,
+    run: {
+      toolUseId: string;
+      toolName: string;
+      input?: Record<string, unknown>;
+    },
+  ) => void;
+  noteToolEnd: (conversationId: string, toolUseId: string | undefined) => void;
+  /** Drop one conversation's slice (its turn reached a terminal state). */
+  reset: (conversationId: string) => void;
+  /** Drop everything (tests / hard teardown). */
+  resetAll: () => void;
 }
 
 export type LiveStatusStore = LiveStatusState & LiveStatusActions;
@@ -98,63 +164,116 @@ export type LiveStatusStore = LiveStatusState & LiveStatusActions;
 // Store
 // ---------------------------------------------------------------------------
 
-const useLiveStatusStoreBase = create<LiveStatusStore>()((set, get) => ({
+export const useLiveStatusStore = create<LiveStatusStore>()((set, get) => ({
   ...INITIAL_STATE,
 
-  noteTurnStart: () =>
-    set({
-      turnStartedAt: Date.now(),
-      thinkingTail: "",
-      thinkingAt: null,
-      runningTools: [],
-    }),
+  noteTurnStart: (conversationId) =>
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        turnStartedAt: Date.now(),
+        thinkingTail: "",
+        thinkingAt: null,
+        runningTools: [],
+      }),
+    })),
 
-  noteTurnBoundary: () =>
-    set({
-      turnStartedAt: Date.now(),
-      thinkingTail: "",
-      thinkingAt: null,
-      runningTools: [],
-    }),
+  noteTurnBoundary: (conversationId) =>
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        turnStartedAt: Date.now(),
+        thinkingTail: "",
+        thinkingAt: null,
+        runningTools: [],
+      }),
+    })),
 
-  noteThinkingDelta: (chunk) => {
-    const s = get();
+  noteThinkingDelta: (conversationId, chunk) => {
+    const cur = get().byConversation[conversationId] ?? EMPTY_LIVE_STATUS;
     const tail =
-      s.thinkingTail.length >= THINKING_TAIL_CAP
-        ? s.thinkingTail
-        : (s.thinkingTail + chunk).slice(0, THINKING_TAIL_CAP);
-    set({ thinkingTail: tail, thinkingAt: Date.now() });
+      cur.thinkingTail.length >= THINKING_TAIL_CAP
+        ? cur.thinkingTail
+        : (cur.thinkingTail + chunk).slice(0, THINKING_TAIL_CAP);
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        ...cur,
+        thinkingTail: tail,
+        thinkingAt: Date.now(),
+      }),
+    }));
   },
 
-  clearThinking: () => set({ thinkingTail: "", thinkingAt: null }),
-
-  noteToolStart: ({ toolUseId, toolName, input }) => {
-    const s = get();
-    set({
-      runningTools: [
-        ...s.runningTools.filter((t) => t.toolUseId !== toolUseId),
-        { toolUseId, toolName, input, startedAt: Date.now() },
-      ],
-      // A tool starting marks a new phase of work — the previous thinking
-      // block is done, so the next thinking preview starts fresh.
-      thinkingTail: "",
-      thinkingAt: null,
-    });
+  clearThinking: (conversationId) => {
+    const cur = get().byConversation[conversationId];
+    if (!cur) return;
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        ...cur,
+        thinkingTail: "",
+        thinkingAt: null,
+      }),
+    }));
   },
 
-  noteToolEnd: (toolUseId) => {
+  noteToolStart: (conversationId, { toolUseId, toolName, input }) => {
+    const cur = get().byConversation[conversationId] ?? EMPTY_LIVE_STATUS;
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        ...cur,
+        runningTools: [
+          ...cur.runningTools.filter((t) => t.toolUseId !== toolUseId),
+          { toolUseId, toolName, input, startedAt: Date.now() },
+        ],
+        // A tool starting marks a new phase of work — the previous thinking
+        // block is done, so the next thinking preview starts fresh.
+        thinkingTail: "",
+        thinkingAt: null,
+      }),
+    }));
+  },
+
+  noteToolEnd: (conversationId, toolUseId) => {
     if (!toolUseId) return;
-    const s = get();
-    if (!s.runningTools.some((t) => t.toolUseId === toolUseId)) return;
-    set({
-      runningTools: s.runningTools.filter((t) => t.toolUseId !== toolUseId),
+    const cur = get().byConversation[conversationId];
+    if (!cur?.runningTools.some((t) => t.toolUseId === toolUseId)) return;
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        ...cur,
+        runningTools: cur.runningTools.filter((t) => t.toolUseId !== toolUseId),
+      }),
+    }));
+  },
+
+  reset: (conversationId) => {
+    if (!(conversationId in get().byConversation)) return;
+    set((s) => {
+      const { [conversationId]: _dropped, ...rest } = s.byConversation;
+      return { byConversation: rest };
     });
   },
 
-  reset: () => set({ ...INITIAL_STATE }),
+  resetAll: () => set({ byConversation: {} }),
 }));
 
-export const useLiveStatusStore = createSelectors(useLiveStatusStoreBase);
+// ---------------------------------------------------------------------------
+// Read helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Select one conversation's live slice — the ONLY way the status line
+ * should read this store, so a background conversation's signal can never
+ * bleed into the transcript being viewed. Returns the stable
+ * `EMPTY_LIVE_STATUS` when the conversation has no signal (or no
+ * conversation is provided), keeping referential equality for bail-outs.
+ */
+export function useLiveStatusForConversation(
+  conversationId: string | null | undefined,
+): ConversationLiveStatus {
+  return useLiveStatusStore(
+    (s) =>
+      (conversationId ? s.byConversation[conversationId] : undefined) ??
+      EMPTY_LIVE_STATUS,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Turn lifecycle wiring
@@ -166,22 +285,28 @@ export const useLiveStatusStore = createSelectors(useLiveStatusStoreBase);
  * (composer send, surface-action send, queued continuation, SSE-driven
  * external turns, cancel/error/timeout/reset, conversation switches) so no
  * send-path call site needs editing.
+ *
+ * The turn reducer only ever tracks the ACTIVE conversation's turn (its
+ * events are filtered upstream), so transitions are attributed to the
+ * conversation-store's `activeConversationId` at transition time.
  */
 useTurnStore.subscribe((state, prev) => {
   const wasActive = isSending(prev.phase);
   const nowActive = isSending(state.phase);
+  const conversationId = useConversationStore.getState().activeConversationId;
+  if (!conversationId) return;
   const live = useLiveStatusStore.getState();
   if (!wasActive && nowActive) {
-    live.noteTurnStart();
+    live.noteTurnStart(conversationId);
     return;
   }
   if (wasActive && !nowActive) {
-    live.reset();
+    live.reset(conversationId);
     return;
   }
   // Turn completed but the phase stayed active because queued messages
   // remain ("queued" continuation) — treat as a fresh turn boundary.
   if (nowActive && prev.activeTurnId !== null && state.activeTurnId === null) {
-    live.noteTurnBoundary();
+    live.noteTurnBoundary(conversationId);
   }
 });
