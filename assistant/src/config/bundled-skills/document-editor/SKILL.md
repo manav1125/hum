@@ -60,6 +60,16 @@ When the user requests changes to a document:
    - `document_find` + `document_replace_text` — **for everything else**. Fixing typos, renaming terms, swapping sections, reordering content, adjusting formatting, or any edit that touches only part of the document. This is the default choice for edits. It avoids rewriting the entire document and eliminates the risk of accidentally dropping content.
 4. **Do NOT use `document_update` with `mode: "replace"` for targeted edits.** Rewriting the entire document to change a few words or rearrange sections is wasteful and error-prone.
 
+## Honoring a design contract (Create Studio)
+
+When the request is prefixed with a **`DESIGN CONTRACT`** or **`BRAND`** block (compiled by Create Studio, above a `---` divider), honor what a Markdown document can carry:
+
+- **Voice & tone** — write ALL copy in the specified tone; follow the brand's do/don't lists; weave the boilerplate in where natural (e.g. an intro or closing line). This is the part that matters most for docs and you must apply it.
+- **Boilerplate / naming** — use the exact brand name, product names, and any required phrasing verbatim.
+- **Palette / fonts / logo** — the editor renders Markdown, so you can't set arbitrary hexes or font faces inline; don't fake it with HTML. Instead, when the user exports (`document_export_pdf`) the brand styling is applied at that layer — just keep the content brand-appropriate. If a logo asset is named, mention it as a placeholder at the top ("_[Brand logo]_") rather than trying to embed a remote image.
+
+The user's words after the `---` are the primary instruction; the contract shapes the writing style. Absent any such block, write as usual.
+
 ## Retrieving existing documents
 
 When the user asks to see, open, or pull up a document:

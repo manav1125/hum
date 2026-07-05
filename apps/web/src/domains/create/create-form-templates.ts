@@ -20,10 +20,12 @@
  *   - replicate        → image & video generation (replicate_run, any model)
  *   - apify            → lead-gen / contact scraping (apify_run_actor)
  *
- * The Image / Video / Leads templates compose prompts that explicitly instruct
- * the agent to invoke the daemon skill (skill_execute → replicate_run /
- * apify_run_actor) with the user's typed inputs. The Replicate + Apify keys are
- * configured at runtime, so these produce real media / real lead lists.
+ * The Image / Video / Leads templates compose natural-language briefs that name
+ * the subject, look and constraints from the user's typed inputs. Routing to the
+ * daemon skill (Replicate for media, Apify/web for leads) is handled by that
+ * skill's own activation — the prompt never hand-writes tool-call syntax. The
+ * Replicate + Apify keys are configured at runtime, so these produce real media
+ * / real lead lists.
  */
 
 import type { CreateSkill } from "@/domains/create/create-templates";
@@ -878,15 +880,15 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       },
     ],
     composePrompt: (v) => {
-      const model = str(v, "model") || "black-forest-labs/flux-1.1-pro";
-      const prompt = `${str(v, "prompt")}${str(v, "style") ? `, in a ${str(v, "style").toLowerCase()} style` : ""}`;
+      const model = str(v, "model");
       const aspect = str(v, "aspect") || "1:1";
       return block(
-        "Generate an image by calling the `replicate_run` tool exactly once.",
-        `Call it with model="${model}" and input set to an object with a "prompt" key and an "aspect_ratio" key:`,
-        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "${aspect}" } })`,
+        `Generate an image: ${str(v, "prompt")}.`,
+        line("Style", str(v, "style")),
+        line("Aspect ratio", aspect),
+        model ? line("Preferred model", model) : "",
         "",
-        "When it returns, show me the resulting image URL(s).",
+        "Render it and show me the result. If I picked a style above, honour it unless it clashes with a design direction already set for this generation.",
       );
     },
   },
@@ -930,14 +932,14 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       },
     ],
     composePrompt: (v) => {
-      const model = str(v, "model") || "black-forest-labs/flux-1.1-pro";
-      const prompt = `a clean, modern vector logo for '${str(v, "brand")}' — vibe: ${str(v, "vibe")}.${str(v, "symbol") ? ` Incorporate: ${str(v, "symbol")}.` : ""} Centered on a plain background, simple and scalable, no text artifacts.`;
+      const model = str(v, "model");
       return block(
-        "Generate a logo concept by calling the `replicate_run` tool exactly once.",
-        `Call it with model="${model}" and a 1:1 aspect ratio:`,
-        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "1:1" } })`,
+        `Generate a logo concept for "${str(v, "brand")}".`,
+        line("Vibe / keywords", str(v, "vibe")),
+        line("Symbol idea", str(v, "symbol")),
+        model ? line("Preferred model", model) : "",
         "",
-        "When it returns, show me the resulting logo image URL(s).",
+        "Make it a clean, modern, scalable mark centered on a plain background, square (1:1), with no garbled text. Render it and show me the result.",
       );
     },
   },
@@ -981,15 +983,15 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       },
     ],
     composePrompt: (v) => {
-      const model = str(v, "model") || "black-forest-labs/flux-1.1-pro";
-      const prompt = `a bold, scroll-stopping social graphic — ${str(v, "theme")}${str(v, "style") ? `, ${str(v, "style").toLowerCase()} style` : ""}. Strong composition with clear negative space for an overlaid headline.`;
+      const model = str(v, "model");
       const aspect = str(v, "aspect") || "1:1";
       return block(
-        "Generate a social media graphic by calling the `replicate_run` tool exactly once.",
-        `Call it with model="${model}" and the chosen aspect ratio:`,
-        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "${aspect}" } })`,
+        `Generate a bold, scroll-stopping social graphic: ${str(v, "theme")}.`,
+        line("Style", str(v, "style")),
+        line("Aspect ratio", aspect),
+        model ? line("Preferred model", model) : "",
         "",
-        "When it returns, show me the resulting image URL(s).",
+        "Give it a strong, confident composition with clear negative space for an overlaid headline. Render it and show me the result.",
       );
     },
   },
@@ -1036,22 +1038,22 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       },
     ],
     composePrompt: (v) => {
-      const model = str(v, "model") || "kwaivgi/kling-v1.6-standard";
-      const prompt = str(v, "prompt");
+      const model = str(v, "model");
       const aspect = str(v, "aspect") || "16:9";
-      const duration = (str(v, "duration") || "5s").replace(/s$/, "");
+      const duration = str(v, "duration") || "5s";
       return block(
-        "Generate a video from text by calling the `replicate_run` tool exactly once.",
-        `Call it with model="${model}", a "prompt" in the input object, plus aspect_ratio and duration keys, and a generous wait_seconds (video jobs are slow):`,
-        `replicate_run({ "model": "${model}", "input": { "prompt": "${prompt.replace(/"/g, "'")}", "aspect_ratio": "${aspect}", "duration": ${duration} }, "wait_seconds": 300 })`,
+        `Generate a short video from this prompt: ${str(v, "prompt")}.`,
+        line("Duration", duration),
+        line("Aspect ratio", aspect),
+        model ? line("Preferred model", model) : "",
         "",
-        "If this model rejects a key, map duration/aspect_ratio to whatever keys it expects and retry. When it returns, show me the resulting video URL.",
+        "Allow plenty of time — video generation is slow. When it's ready, show me the result.",
       );
     },
   },
 
   /* ------------------------------ Leads ------------------------------ */
-  /* Backed by the `apify` daemon skill (apify_run_actor, scraper actor).  */
+  /* Backed by the `apify` daemon skill (web scraping / contact gathering). */
   {
     id: "form-find-leads",
     mode: "leads",
@@ -1093,14 +1095,10 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       const role = str(v, "role");
       const location = str(v, "location");
       const count = str(v, "count") || "25";
-      const query = `${role} ${industry} ${location}`.trim();
       return block(
-        `Find a lead list of ${count} ${role} in ${industry} located in ${location} by calling the \`apify_run_actor\` tool exactly once.`,
-        "Use a Google-search-based people/contact finder actor. A reliable default is apify/google-search-scraper; call it like this:",
-        `apify_run_actor({ "actor_id": "apify/google-search-scraper", "input": { "queries": "${query.replace(/"/g, "'")}" }, "max_items": ${count} })`,
+        `Find me a lead list of ${count} ${role} in ${industry} based in ${location}.`,
         "",
-        "(If a better-fitting lead/contact scraper actor exists, you may substitute its actor_id and its expected input keys — but always put the search criteria inside the `input` object and set max_items to the requested count.)",
-        "When it returns, show me the results as a clean table with name, title, company, location, and any contact info (email / LinkedIn) found.",
+        "Scrape the web for real prospects matching that profile and return the results as a clean table with name, title, company, location, and any contact info (email or LinkedIn) you can find.",
       );
     },
   },

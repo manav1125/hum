@@ -35,6 +35,16 @@ Any cell derivable from other cells MUST be a live formula (a string starting wi
 - **Budget**: Categories down, months across, `"=SUM(...)"` row + column totals, Variance column `"=C4-B4"` vs plan.
 - **Cap table**: Holders down; shares, `"=B4/SUM($B$4:$B$12)"` ownership %, per-round columns; post-money math via formulas.
 
+## Honoring a design contract (Create Studio)
+
+When the request is prefixed with a **`DESIGN CONTRACT`** or **`BRAND`** block (compiled by Create Studio, above a `---` divider), apply what a workbook can carry — the model recalcs first, the look second, but a branded model reads far better:
+
+- **Palette** — use the brand/template primary and accent hexes for header-row fills and section labels (where `spreadsheet_create` supports cell fill/font color); keep body cells legible (dark text on light).
+- **Fonts** — set the workbook font to the brand's body font if a font option is available; otherwise skip silently (don't hardcode a font into a formula).
+- **Naming / voice** — use the exact brand name in the title, sheet names, and any labels; keep header wording in the brand's tone.
+
+Never let styling compromise the formulas rule below — a correct, recalculating model in brand colors, not a static colored snapshot. Absent any such block, use the clean default formatting.
+
 ## Anti-patterns
 
 - Don't emit CSV into chat or paste giant markdown tables when a FILE was requested — call the tool.

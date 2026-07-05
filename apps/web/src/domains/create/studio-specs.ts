@@ -1077,7 +1077,8 @@ export const CANVAS_ACTION_SPECS: CanvasActionSpec[] = [
     label: "Create new",
     description: "Start from a blank canvas or a prompt.",
     glyph: "plus",
-    promptSeed: "Open a new blank image canvas — I'll describe what to create.",
+    promptSeed:
+      "Start a fresh image from a prompt — I'll describe what I want. Ask me for the subject if it isn't clear, then generate it and show me the result.",
   },
   {
     id: "edit_image",
@@ -1085,7 +1086,7 @@ export const CANVAS_ACTION_SPECS: CanvasActionSpec[] = [
     description: "Inpaint, extend or restyle an upload.",
     glyph: "edit",
     promptSeed:
-      "I want to edit an image — help me inpaint, extend, or restyle an upload.",
+      "I'll attach an image I want to edit. Ask me what to change, then make the edit — inpaint, extend/outpaint, or restyle it — blending the result cleanly with the rest of the image.",
   },
   {
     id: "upscale",
@@ -1093,7 +1094,7 @@ export const CANVAS_ACTION_SPECS: CanvasActionSpec[] = [
     description: "2× / 4× resolution, sharpen detail.",
     glyph: "upscale",
     promptSeed:
-      "Upscale an image for me — 2× / 4× resolution and sharpen the detail.",
+      "I'll attach an image to upscale — increase its resolution (2× or 4×) and sharpen the detail without introducing artifacts. Show me the higher-resolution result.",
   },
   {
     id: "remove_background",
@@ -1101,7 +1102,7 @@ export const CANVAS_ACTION_SPECS: CanvasActionSpec[] = [
     description: "Cut the subject onto transparency.",
     glyph: "cutout",
     promptSeed:
-      "Remove the background from an image — cut the subject onto transparency.",
+      "I'll attach an image — cleanly cut out the main subject and return it on a transparent background, with tidy edges.",
   },
 ];
 

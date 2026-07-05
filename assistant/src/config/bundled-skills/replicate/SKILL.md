@@ -1,6 +1,6 @@
 ---
 name: replicate
-description: THE tool for image AND video generation. Use `replicate_run` to generate or create an image, make or render a video, or run any Replicate-hosted model (flux, SDXL, upscalers, video models, etc.) when a Replicate token is configured. Handles plain requests like "generate an image of X", "create a picture of Y", and "make a video of Z" — not only when the user names a specific model. Runs the model on Replicate and returns the output media URL(s).
+description: THE tool for image, video, AND audio generation. Use `replicate_run` to generate or create an image, make or render a video, produce audio (music, voiceover/text-to-speech, sound effects), or run any Replicate-hosted model (flux, SDXL, upscalers, video models, musicgen, TTS, etc.) when a Replicate token is configured. Handles plain requests like "generate an image of X", "make a video of Y", "generate background music", "make a voiceover of this script", and "create a sound effect" — not only when the user names a specific model. Runs the model on Replicate and returns the output media URL(s).
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🛰️"
@@ -10,7 +10,8 @@ metadata:
     activation-hints:
       - "User asks to generate, create, draw, or render an image from a text prompt"
       - "User asks to make, generate, or render a video from a text prompt or image"
-      - "User names a specific Replicate model (e.g. black-forest-labs/flux-schnell, stability-ai/sdxl)"
+      - "User asks to generate audio — background music, a voiceover / text-to-speech narration, a sound effect, or an audio sting"
+      - "User names a specific Replicate model (e.g. black-forest-labs/flux-schnell, stability-ai/sdxl, meta/musicgen, minimax/speech-02-turbo)"
       - "User wants to upscale, restyle, or otherwise transform media via a Replicate model"
 ---
 
@@ -30,10 +31,22 @@ Pass the `model` exactly as Replicate names it:
 
 Common defaults when the user does not name one:
 
-- Image: `black-forest-labs/flux-schnell` (fast) or `black-forest-labs/flux-dev` (higher fidelity).
+- Image: `black-forest-labs/flux-schnell` (fast) or `black-forest-labs/flux-dev` (higher fidelity). For a **polished, presentation-grade or branded** image — a hero/banner, social graphic, logo concept, key art, anything the user will actually publish — default to the higher-fidelity `black-forest-labs/flux-1.1-pro` instead; `flux-schnell` is for quick drafts. Prefer a quality tier over speed whenever the output is a finished deliverable.
 - Video: `minimax/video-01` or another text/image-to-video model the user requests.
 
 If you are unsure a model exists, ask the user for the exact `owner/name` rather than guessing a version hash.
+
+### Audio models (music / voiceover / sound)
+
+Replicate also generates audio — this is the audio path when no dedicated audio provider is set up. Verified defaults and their input keys:
+
+| Need | Model | Key input |
+| --- | --- | --- |
+| Background music / instrumental | `meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb` | `prompt` (mood/genre), `duration` (seconds) |
+| Voiceover / text-to-speech | `minimax/speech-02-turbo` | `text` (the script) |
+| Sound effect / short audio | `meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb` | `prompt` (describe the sound), short `duration` |
+
+`meta/musicgen` is a **community** model — it is NOT runnable by bare `owner/name` and must be pinned as `owner/name:version` (the hash above), or `replicate_run` returns a 404. TTS models take `text`, not `prompt`; if a model rejects the key, read its error and swap the key name. To combine a spoken line over a music bed into one clip (e.g. a podcast intro), generate each track, then hand both to `video_compose` (or the video-studio skill) for mixing — `replicate_run` returns separate tracks, it does not mux them.
 
 ## Inputs
 
@@ -84,6 +97,17 @@ Requires a Replicate API token. It is resolved from the secure store under the p
 - **Model or version not found**: the model identifier is wrong. Ask the user for the exact `owner/name` (or `owner/name:version`).
 - **Prediction failed**: Replicate returns an error string. Report it. Do not silently retry on the same model with the same input.
 - **Timed out while polling**: the job may still be running on Replicate; retry with a larger `wait_seconds`.
+
+## Honoring a design contract (Create Studio)
+
+When the request is prefixed with a **`STYLE`**, **`BRAND`**, **`REFERENCE`**, or **`DESIGN CONTRACT`** block (compiled by Create Studio from the user's gallery selection, above a `---` divider), fold those constraints into the generation `input` — do not ignore them:
+
+- **STYLE** — append the style fragment to your `prompt` (e.g. "…, flat vector illustration, bold saturated color"), and if the block names a preferred model, use it.
+- **BRAND** — bake the brand's palette hexes and mood into the `prompt` ("in brand colors #0B5FFF and #FF6B00, clean modern"). Replicate can't place a logo file, so leave clear negative space for one and say so; note the logo asset for the user to overlay.
+- **REFERENCE** — if a reference image URL is given, pass it as an image/reference input for models that accept one (e.g. `image`, `image_prompt`, or an img2img key) and describe borrowing its palette/composition/mood in the prompt; for text-only models, translate the reference's look into words in the prompt.
+- **DESIGN CONTRACT** — use its palette/mood as prompt direction the same way.
+
+The user's words after the `---` are the primary subject; the contract shapes the look. For finished/branded outputs also prefer the quality model tier (see "Choosing a model"). Absent any such block, generate as usual.
 
 ## Complete when
 

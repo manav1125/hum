@@ -70,6 +70,16 @@ Match the destination: **16:9** for standard/landscape/YouTube (default), **9:16
 - **Captions** burn in reliably (Cue ships a caption-capable ffmpeg). Offer them — they make explainers and social clips far more watchable. Add a short `caption` per scene to `video_compose`; the user can opt out (pass `captions: false`) for clean visuals. Keep captions to a line or two so they don't crowd the frame.
 - For a quick "slideshow" video you can skip motion clips entirely: stills + captions + music compose into a clean result fast.
 
+## Honoring a design contract (Create Studio)
+
+When the request is prefixed with a **`STYLE`**, **`BRAND`**, or **`DESIGN CONTRACT`** block (compiled by Create Studio, above a `---` divider), thread it through the whole pipeline:
+
+- **STYLE** — fold the style fragment into your consistent per-scene visual phrase so every generated shot matches it.
+- **BRAND** — steer every scene prompt to the brand's palette/mood; write captions and narration in the brand voice; keep the aspect ratio the destination wants. If a logo asset is named, add a short opening or closing scene that leaves clean space for it.
+- Keep one cohesive look across all scenes — the contract defines that look.
+
+The user's words after the `---` are the subject; the contract shapes the look and voice. Absent any such block, direct it as usual.
+
 ## Anti-patterns
 
 - **Don't** try to assemble, concatenate, or mux video yourself, or write your own ffmpeg — always finish through `video_compose`.

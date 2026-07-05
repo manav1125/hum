@@ -328,10 +328,15 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
     setSelection((prev) => (prev && prev.mode === id ? prev : null));
   };
 
-  // Submit the composer: compile the selection + per-generation reference into
-  // a design contract and prepend it to the typed prompt before seeding.
-  const submitComposer = () => {
-    const text = prompt.trim();
+  // The single funnel EVERY content path routes through — typed prompt, a
+  // filled form template, or a one-tap quick-start. It compiles the active
+  // gallery selection (style / template / reference / brand) into a design
+  // contract and prepends it, so the picked "look" always composes with the
+  // "content" instead of one silently dropping the other. Previously only the
+  // composer applied the selection; the form and quick-start paths ignored it,
+  // which is exactly why a chosen style didn't carry through to a template.
+  const runContent = (rawText: string) => {
+    const text = rawText.trim();
     if (!text) return;
     if (selection || reference) {
       const intent = selection
@@ -346,6 +351,8 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
       onRunPrompt(text);
     }
   };
+
+  const submitComposer = () => runContent(prompt);
 
   // Canvas actions seed a thread directly (they carry their own prompt).
   const runCanvasAction = (sel: GallerySelection) => {
@@ -374,7 +381,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
       <CreateTemplateForm
         template={activeTemplate}
         onBack={() => setActiveTemplateId(null)}
-        onSubmit={onRunPrompt}
+        onSubmit={runContent}
       />
     );
   }
@@ -599,7 +606,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                 template={template}
                 modeId={activeMode.id}
                 skillLabel={activeMode.skillLabel}
-                onSelect={() => onRunPrompt(template.prompt)}
+                onSelect={() => runContent(template.prompt)}
               />
             ))}
           </div>

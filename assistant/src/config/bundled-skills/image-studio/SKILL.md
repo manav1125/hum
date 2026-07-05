@@ -73,6 +73,12 @@ Edit:
 - Wrong: `"source_paths": [{ "path": "img.jpeg" }]` → schema validation error
 - Right: `"source_paths": ["img.jpeg"]`
 
+## Edit requested but no image attached yet
+
+A request can ask for an edit (inpaint, extend, restyle, retouch, remove background) before any image is attached — e.g. a Create-studio seed like "I want to edit an image — help me inpaint, extend, or restyle an upload." There is nothing in the workspace to edit yet, and `media_generate_image` edit mode requires `source_paths`.
+
+Do NOT call the tool with no source and do NOT stall silently. Instead, reply in chat immediately: acknowledge the edit they want, and ask them to attach the image ("Drop the image here and tell me what to change — I'll inpaint / extend / restyle / clean it up"). Once the attachment arrives (under `conversations/<conversation-id>/attachments/`), proceed with edit mode. The thread must always end its turn with a visible prompt for the upload, never a dead "thinking" state.
+
 ## Source images for edit mode
 
 - Paths resolve inside the workspace. Conversation attachments live under `conversations/<conversation-id>/attachments/`; prefer that path for images the user attached.
@@ -88,6 +94,16 @@ Edit:
 ## Timing
 
 Edits on large photos are slow (1 to 2 minutes). If the tool reports a timeout ("timed out after Ns"), the result is lost; do not wait for it to appear. Retry with `variants: 1`, or if it already was 1, fall back to the CLI which writes files to disk: `assistant image-generation generate --prompt "..." --mode edit --source <path> --model openai --output-dir <dir>`.
+
+## Honoring a design contract (Create Studio)
+
+When the request is prefixed with a **`STYLE`**, **`BRAND`**, **`REFERENCE`**, or **`DESIGN CONTRACT`** block (compiled by Create Studio, above a `---` divider), fold it into the `prompt`:
+
+- **STYLE** — append the style fragment to the prompt ("…, watercolor, soft edges").
+- **BRAND** — steer color/mood to the brand's palette hexes; keep the subject/framing preservation language for edits intact so a restyle stays on the brand's colors without warping the composition.
+- **REFERENCE** — for a generate, describe the reference's palette/composition/mood in the prompt; for an edit, the reference is guidance for the target look, distinct from the `source_paths` image being edited.
+
+The user's words after the `---` are the primary instruction; the contract shapes the look. Absent any such block, proceed as usual.
 
 ## Output handling
 

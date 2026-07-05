@@ -271,32 +271,37 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Hero image",
         description: "A polished banner for a site or deck.",
         prompt:
-          "Generate a striking hero/banner image I can use at the top of a landing page. Aim for a clean, modern, professional look with room for overlaid text. Describe a sensible subject if I don't specify one, then create it.",
+          "Generate a striking hero/banner image I can use at the top of a landing page, with room for overlaid text. Describe a sensible subject if I don't specify one, then create it. Follow any style or brand direction already set for this generation; otherwise default to a clean, modern, professional look.",
       },
       {
         id: "logo-concepts",
         title: "Logo concepts",
         description: "A few distinct logo directions to choose from.",
         prompt:
-          "Generate a few distinct logo concept variations for a brand (ask me the name and vibe if not given). Make them visually different from each other — different styles and color directions — so I can pick a direction.",
+          "Generate a few distinct logo concept variations for a brand (ask me the name and vibe if not given). Make them visually different from each other — different directions I can choose between. If a style or brand direction is already set for this generation, keep them all within it.",
       },
       {
         id: "social-graphic",
         title: "Social graphic",
         description: "An eye-catching square post image.",
         prompt:
-          "Generate an eye-catching square social media graphic. Bold, scroll-stopping composition with space for a short headline. Tell me a sensible theme if I don't give one, then create it.",
+          "Generate an eye-catching square (1:1) social media graphic with a scroll-stopping composition and clear space for a short headline. Tell me a sensible theme if I don't give one, then create it. Follow any style or brand direction already set for this generation; otherwise use a bold, confident look.",
       },
       {
         id: "illustration",
         title: "Illustration",
         description: "A custom illustration in a chosen style.",
         prompt:
-          "Generate a custom illustration. Pick a cohesive art style (flat, isometric, watercolor — your call unless I specify) and a subject that fits the context. Produce a clean, usable result.",
+          "Generate a custom illustration of a subject that fits the context (ask me if it isn't clear). Produce a clean, cohesive, usable result. Follow any style or brand direction already set for this generation; otherwise pick a fitting art style and commit to it consistently.",
       },
     ],
   },
   {
+    // Canvas is an EDIT surface: the gallery overlay (CANVAS_ACTION_SPECS in
+    // studio-specs.ts) owns the four core actions — Create new · Edit image ·
+    // Upscale · Remove background. These quick-starts are deliberately the
+    // *specific* edit recipes that the gallery's generic "Edit image" doesn't
+    // spell out, so the two don't duplicate each other.
     id: "canvas",
     label: "Canvas",
     tagline: "Edit & transform existing images",
@@ -305,25 +310,25 @@ export const CREATE_MODES: CreateMode[] = [
     skillLabel: "Image Studio",
     templates: [
       {
-        id: "remove-bg",
-        title: "Remove background",
-        description: "Cut out the subject from an image.",
-        prompt:
-          "I want to remove the background from an image. I'll attach it next — cleanly cut out the main subject and give me back a version with the background removed.",
-      },
-      {
         id: "restyle",
         title: "Restyle an image",
         description: "Reimagine a photo in a new style.",
         prompt:
-          "I want to restyle an image I'll attach — reimagine it in a new artistic style while keeping the core composition. Suggest a couple of style directions and apply the one I pick.",
+          "I want to restyle an image I'll attach — reimagine it in a new artistic style while keeping the core composition and subject. If a style is already set for this generation, apply that; otherwise suggest a couple of directions and apply the one I pick.",
       },
       {
         id: "retouch",
         title: "Retouch & clean up",
         description: "Remove blemishes or unwanted objects.",
         prompt:
-          "I'll attach an image I want retouched — clean it up by removing blemishes or unwanted objects and improving the overall look, while keeping it natural.",
+          "I'll attach an image I want retouched — clean it up by removing blemishes or unwanted objects and improving the overall look, while keeping it natural and photographic.",
+      },
+      {
+        id: "replace-object",
+        title: "Replace or add an object",
+        description: "Inpaint something new into the photo.",
+        prompt:
+          "I'll attach an image and point to a spot — inpaint it to replace or add an object there (I'll describe what I want). Blend it in seamlessly so the lighting, perspective, and edges match the rest of the photo.",
       },
     ],
   },
@@ -340,42 +345,42 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Cinematic clip",
         description: "A short, filmic shot from a text prompt.",
         prompt:
-          "Generate a short, cinematic video clip from a text prompt using a Replicate text-to-video model. Aim for a filmic look — nice lighting, shallow depth of field, smooth camera motion. Suggest a striking subject/scene if I don't give one, then create it and show me the result.",
+          "Generate a short, cinematic video clip from a text prompt. Aim for a filmic look — nice lighting, shallow depth of field, smooth camera motion. Suggest a striking subject/scene if I don't give one, then create it and show me the result.",
       },
       {
         id: "product-reveal",
         title: "Product reveal",
         description: "A slick product shot in motion.",
         prompt:
-          "Generate a short product-reveal video clip — a slick, well-lit hero shot of a product with subtle camera motion (slow rotate, push-in, or reveal), studio or lifestyle backdrop. Ask me the product if I don't say, then create it with a Replicate text-to-video model.",
+          "Generate a short product-reveal video clip — a slick, well-lit hero shot of a product with subtle camera motion (slow rotate, push-in, or reveal), studio or lifestyle backdrop. Ask me the product if I don't say, then create it and show me the result.",
       },
       {
         id: "logo-animation",
         title: "Logo animation",
         description: "An animated logo sting or reveal.",
         prompt:
-          "Generate a short animated logo sting / reveal as a video clip — clean motion, a tasteful build-on or shimmer, brand-appropriate background. Tell me a sensible style if I don't specify, then create it with a Replicate text-to-video model.",
+          "Generate a short animated logo sting / reveal as a video clip — clean motion, a tasteful build-on or shimmer, brand-appropriate background. Tell me a sensible style if I don't specify, then create it and show me the result.",
       },
       {
         id: "social-ad-clip",
         title: "Social ad clip",
         description: "A punchy vertical video for social.",
         prompt:
-          "Generate a punchy short vertical (9:16) video clip for social — eye-catching motion that stops the scroll, room for a short caption. Ask me the topic/brand if I don't give one, then create it with a Replicate text-to-video model.",
+          "Generate a punchy short vertical (9:16) video clip for social — eye-catching motion that stops the scroll, room for a short caption. Ask me the topic/brand if I don't give one, then create it and show me the result.",
       },
       {
         id: "anime-scene",
         title: "Anime scene",
         description: "A short anime / Ghibli-style animation.",
         prompt:
-          "Generate a short anime / Ghibli-style animated video clip — soft painterly backgrounds, gentle camera drift, a whimsical subject. Suggest a charming scene if I don't specify one, then create it with a Replicate text-to-video model.",
+          "Generate a short anime / Ghibli-style animated video clip — soft painterly backgrounds, gentle camera drift, a whimsical subject. Suggest a charming scene if I don't specify one, then create it and show me the result.",
       },
       {
         id: "explainer-clip",
         title: "Explainer clip",
         description: "A short clip that illustrates an idea.",
         prompt:
-          "Generate a short video clip that visually illustrates a concept or idea I'll give you — clear, simple, motion that helps explain the point. Tell me the concept (or pick a good example), then create it with a Replicate text-to-video model.",
+          "Generate a short video clip that visually illustrates a concept or idea I'll give you — clear, simple, motion that helps explain the point. Tell me the concept (or pick a good example), then create it and show me the result.",
       },
       {
         id: "summarize-video",
@@ -413,28 +418,28 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Background music",
         description: "An original track in a chosen mood.",
         prompt:
-          "Generate an original background music track using a Replicate music-generation model. I'll give you a mood/genre and rough length (or pick something fitting) — produce an instrumental bed I could use under a video or podcast, and share the audio.",
+          "Generate an original background music track. I'll give you a mood/genre and rough length (or pick something fitting) — produce an instrumental bed I could use under a video or podcast, and share the audio.",
       },
       {
         id: "voiceover",
         title: "Voiceover",
         description: "Natural narration from your script.",
         prompt:
-          "Generate a natural-sounding voiceover from a script using a Replicate text-to-speech model. I'll paste the script and tell you the voice/tone I want (warm, energetic, neutral) — produce the narration audio and share it.",
+          "Generate a natural-sounding voiceover from a script. I'll paste the script and tell you the voice/tone I want (warm, energetic, neutral) — produce the narration audio and share it.",
       },
       {
         id: "sound-effect",
         title: "Sound effect",
         description: "A short custom sound or sting.",
         prompt:
-          "Generate a short custom sound effect or audio sting using a Replicate audio-generation model. I'll describe the sound I need (a notification chime, a whoosh, an ambient loop) — create it and share the audio.",
+          "Generate a short custom sound effect or audio sting. I'll describe the sound I need (a notification chime, a whoosh, an ambient loop) — create it and share the audio.",
       },
       {
         id: "podcast-intro",
         title: "Podcast intro",
         description: "A spoken hook over a music bed.",
         prompt:
-          "Create a short podcast intro: generate an upbeat music bed with a Replicate music model and a spoken intro line with a Replicate text-to-speech model, then combine them into a single intro clip. I'll give you the show name and tagline.",
+          "Create a short podcast intro: generate an upbeat music bed and a spoken intro line, then combine them into a single intro clip. I'll give you the show name and tagline.",
       },
     ],
   },
@@ -451,21 +456,21 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Find leads",
         description: "Scrape a structured list of prospects by criteria.",
         prompt:
-          "Use the apify_run_actor skill with an appropriate lead/contact scraping actor (an apollo- or linkedin-style scraper, e.g. apify/contact-info-scraper or a Google-search-based finder) to build a structured lead list. I'll specify the industry, role/title, location, and how many leads I want — return name, title, company, location, and contact info as a clean table.",
+          "Build me a structured lead list by scraping the web. I'll specify the industry, role/title, location, and how many leads I want — find real prospects matching that profile and return name, title, company, location, and contact info as a clean table.",
       },
       {
         id: "scrape-site-contacts",
         title: "Scrape site contacts",
         description: "Pull emails, phones, and socials from URLs.",
         prompt:
-          "Use the apify_run_actor skill with the apify/contact-info-scraper actor to extract contact details (emails, phone numbers, social profiles) from a set of website URLs I'll provide. Return the results as a structured table grouped by source URL.",
+          "Scrape contact details (emails, phone numbers, social profiles) from a set of website URLs I'll provide. Return the results as a structured table grouped by source URL.",
       },
       {
         id: "company-list",
         title: "Build a company list",
         description: "Find companies matching a profile.",
         prompt:
-          "Use the apify_run_actor skill with a suitable company/business scraping actor (e.g. a Google-search or maps-based actor) to build a list of companies matching a profile I'll describe (industry, size, location). Return company name, website, location, and any contact info found as a structured table.",
+          "Build me a list of companies matching a profile I'll describe (industry, size, location) by scraping the web. Return company name, website, location, and any contact info found as a structured table.",
       },
     ],
   },
