@@ -20,7 +20,7 @@
  * so light + dark both render from the shared `--mv1-*` system.
  */
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, LayoutGrid, Send, X } from "lucide-react";
 import { useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
@@ -39,6 +39,65 @@ import {
   CreatePreview,
   previewForTemplate,
 } from "@/domains/create/create-previews";
+import {
+  CreateGalleryOverlay,
+  type GallerySelection,
+} from "@/domains/create/create-gallery-overlay";
+import {
+  applyCreateIntent,
+  type CreateIntent,
+} from "@/domains/create/create-intent";
+import { getCanvasActionSpec } from "@/domains/create/studio-specs";
+import { useActiveBrand } from "@/domains/create/use-active-brand";
+
+/** Modes that have a gallery variant (drives the "Browse …" affordance). */
+const GALLERY_MODES = new Set([
+  "slides",
+  "images",
+  "video",
+  "data",
+  "docs",
+  "canvas",
+]);
+
+/** Per-mode label for the "Browse …" entry-point button. */
+function browseLabel(modeId: string): string {
+  switch (modeId) {
+    case "images":
+    case "video":
+      return "Browse styles";
+    case "data":
+      return "Output & charts";
+    case "docs":
+      return "Browse documents";
+    case "canvas":
+      return "Choose an action";
+    default:
+      return "Browse templates";
+  }
+}
+
+/** The short chip label + icon glyph for a confirmed gallery selection. */
+function selectionChipText(sel: GallerySelection): string {
+  if (sel.styleId) return `Style: ${sel.label.replace(/"/g, "")}`;
+  if (sel.formatId) return sel.label; // "Dashboard · 2 charts"
+  if (sel.actionId) return `Canvas: ${sel.label.replace(/"/g, "")}`;
+  return `Template: ${sel.label.replace(/"/g, "")}`;
+}
+
+/** Compile a confirmed gallery selection into a CreateIntent. */
+function selectionToIntent(
+  sel: GallerySelection,
+  brandKitId: string | null,
+): CreateIntent {
+  return {
+    mode: sel.mode,
+    templateId: sel.templateId,
+    styleId: sel.styleId,
+    chartTypes: sel.chartTypes,
+    brandKitId: sel.inBrand ? brandKitId : null,
+  };
+}
 
 // Theme-aware tokens for the HQ design language. These point at the shipped
 // `--mv1-*` CSS-variable system (src/index.css) — the same tokens the HQ /
@@ -236,12 +295,60 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const [activeModeId, setActiveModeId] = useState<string>(CREATE_MODES[0].id);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
+  // Create Studio — gallery overlay + composer selection.
+  const { brand } = useActiveBrand();
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [selection, setSelection] = useState<GallerySelection | null>(null);
+  const [prompt, setPrompt] = useState("");
+
   const activeMode: CreateMode =
     CREATE_MODES.find((mode) => mode.id === activeModeId) ?? CREATE_MODES[0];
   const formTemplates = templatesForMode(activeMode.id);
   const activeTemplate = activeTemplateId
     ? findTemplate(activeTemplateId)
     : undefined;
+
+  const hasGallery = GALLERY_MODES.has(activeMode.id);
+
+  // Selecting a new mode clears a stale selection (it was mode-scoped).
+  const switchMode = (id: string) => {
+    setActiveModeId(id);
+    setActiveTemplateId(null);
+    setSelection((prev) => (prev && prev.mode === id ? prev : null));
+  };
+
+  // Submit the composer: compile the selection into a design contract and
+  // prepend it to the typed prompt before seeding the thread.
+  const submitComposer = () => {
+    const text = prompt.trim();
+    if (!text) return;
+    if (selection) {
+      const intent = selectionToIntent(selection, brand?.id ?? null);
+      onRunPrompt(applyCreateIntent(text, intent, selection.inBrand ? brand : null));
+    } else {
+      onRunPrompt(text);
+    }
+  };
+
+  // Canvas actions seed a thread directly (they carry their own prompt).
+  const runCanvasAction = (sel: GallerySelection) => {
+    const action = sel.actionId ? getCanvasActionSpec(sel.actionId) : undefined;
+    if (!action) return;
+    const intent = selectionToIntent(sel, brand?.id ?? null);
+    onRunPrompt(
+      applyCreateIntent(action.promptSeed, intent, sel.inBrand ? brand : null),
+    );
+  };
+
+  const handleGalleryConfirm = (sel: GallerySelection) => {
+    setGalleryOpen(false);
+    // Canvas actions are self-seeding; everything else parks as a composer chip.
+    if (sel.mode === "canvas") {
+      runCanvasAction(sel);
+      return;
+    }
+    setSelection(sel);
+  };
 
   // Detail (form) view takes over the whole surface when a template is open.
   if (activeTemplate) {
@@ -283,60 +390,120 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
         </p>
       </header>
 
-      {/* Mode picker — pill tab row. On mobile this is a single
-          horizontal-SCROLL row (no wrap) per the mobile S1 design; on desktop
-          it wraps as before. */}
+      {/* Mode picker — pill tab row + a "Browse …" gallery affordance. On mobile
+          this is a single horizontal-SCROLL row (no wrap) per the mobile S1
+          design; on desktop it wraps as before. */}
       <div
-        role="tablist"
-        aria-label="Create mode"
         className={
-          isMobile
-            ? "mb-7 -mx-4 flex flex-nowrap gap-2 overflow-x-auto px-4"
-            : "mb-7 flex flex-wrap gap-2"
-        }
-        style={
-          isMobile
-            ? {
-                scrollbarWidth: "none",
-                msOverflowStyle: "none",
-                WebkitOverflowScrolling: "touch",
-              }
-            : undefined
+          isMobile ? "mb-4 flex flex-col gap-3" : "mb-4 flex items-center gap-3"
         }
       >
-        {CREATE_MODES.map((mode) => {
-          const Icon = mode.icon;
-          const active = mode.id === activeMode.id;
-          return (
-            <button
-              key={mode.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => {
-                setActiveModeId(mode.id);
-                setActiveTemplateId(null);
-              }}
-              className="group flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors"
-              style={{
-                borderColor: active ? C.blue : C.line,
-                background: active
-                  ? `color-mix(in srgb, ${C.blue} 12%, transparent)`
-                  : "transparent",
-                color: active ? C.blueS : C.t2,
-              }}
-            >
-              <Icon
-                className="size-4"
-                strokeWidth={2}
-                aria-hidden="true"
-                style={{ color: active ? C.blueS : C.t3 }}
-              />
-              {mode.label}
-            </button>
-          );
-        })}
+        <div
+          role="tablist"
+          aria-label="Create mode"
+          className={
+            isMobile
+              ? "-mx-4 flex flex-nowrap gap-2 overflow-x-auto px-4"
+              : "flex flex-1 flex-wrap gap-2"
+          }
+          style={
+            isMobile
+              ? {
+                  scrollbarWidth: "none",
+                  msOverflowStyle: "none",
+                  WebkitOverflowScrolling: "touch",
+                }
+              : undefined
+          }
+        >
+          {CREATE_MODES.map((mode) => {
+            const Icon = mode.icon;
+            const active = mode.id === activeMode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => switchMode(mode.id)}
+                className="group flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors"
+                style={{
+                  borderColor: active ? C.blue : C.line,
+                  background: active
+                    ? `color-mix(in srgb, ${C.blue} 12%, transparent)`
+                    : "transparent",
+                  color: active ? C.blueS : C.t2,
+                }}
+              >
+                <Icon
+                  className="size-4"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                  style={{ color: active ? C.blueS : C.t3 }}
+                />
+                {mode.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Gallery entry point — opens the overlay for the active mode. */}
+        {hasGallery ? (
+          <button
+            type="button"
+            onClick={() => setGalleryOpen(true)}
+            className={
+              isMobile
+                ? "flex shrink-0 items-center justify-center gap-2 self-start rounded-full border px-3.5 py-2 text-sm font-medium"
+                : "flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium"
+            }
+            style={{ borderColor: C.line, color: C.t2, background: C.surface }}
+          >
+            <LayoutGrid className="size-4" style={{ color: C.blueS }} />
+            {browseLabel(activeMode.id)} →
+          </button>
+        ) : null}
       </div>
+
+      {/* Composer — the typed prompt + a dismissible selection chip and the
+          "In your brand" toggle. Submitting compiles the selection into a
+          design contract (applyCreateIntent) and seeds a thread. */}
+      {hasGallery ? (
+        <StudioComposer
+          isMobile={isMobile}
+          prompt={prompt}
+          onPrompt={setPrompt}
+          selection={selection}
+          onClearSelection={() => setSelection(null)}
+          onToggleBrand={
+            selection && brand
+              ? () =>
+                  setSelection((prev) =>
+                    prev ? { ...prev, inBrand: !prev.inBrand } : prev,
+                  )
+              : undefined
+          }
+          brandName={brand?.name ?? null}
+          onSubmit={submitComposer}
+        />
+      ) : (
+        <div className="mb-3" />
+      )}
+
+      {/* Gallery overlay */}
+      {galleryOpen ? (
+        <CreateGalleryOverlay
+          mode={activeMode.id}
+          hasBrand={Boolean(brand)}
+          initialInBrand={selection?.inBrand ?? true}
+          onConfirm={handleGalleryConfirm}
+          onTakeAiDirection={() => {
+            setGalleryOpen(false);
+            setSelection(null);
+          }}
+          onClose={() => setGalleryOpen(false)}
+        />
+      ) : null}
 
       {/* Sections */}
       <section className="min-h-0 flex-1 overflow-y-auto">
@@ -416,6 +583,166 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/**
+ * Studio composer — a lightweight prompt box under the mode chips. When the
+ * user has confirmed a gallery selection it shows a dismissible chip (▣
+ * Template: Startup ✕) plus an "In your brand ✓/Off" toggle; on submit the
+ * parent compiles the selection into a design contract and seeds a thread.
+ */
+function StudioComposer({
+  isMobile,
+  prompt,
+  onPrompt,
+  selection,
+  onClearSelection,
+  onToggleBrand,
+  brandName,
+  onSubmit,
+}: {
+  isMobile: boolean;
+  prompt: string;
+  onPrompt: (v: string) => void;
+  selection: GallerySelection | null;
+  onClearSelection: () => void;
+  onToggleBrand?: () => void;
+  brandName: string | null;
+  onSubmit: () => void;
+}) {
+  const canSend = prompt.trim().length > 0;
+  return (
+    <div
+      className="mb-7"
+      style={{
+        ...cardChrome,
+        borderRadius: 16,
+        padding: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      {/* Selection + brand chips */}
+      {selection ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: C.blueS,
+              background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
+              borderRadius: 999,
+              padding: "5px 6px 5px 11px",
+            }}
+          >
+            <span aria-hidden>▣</span>
+            {selectionChipText(selection)}
+            <button
+              type="button"
+              onClick={onClearSelection}
+              aria-label="Clear selection"
+              style={{
+                display: "grid",
+                placeItems: "center",
+                width: 18,
+                height: 18,
+                borderRadius: 999,
+                border: "none",
+                background: "transparent",
+                color: C.blueS,
+                cursor: "pointer",
+              }}
+            >
+              <X size={13} />
+            </button>
+          </span>
+
+          {onToggleBrand ? (
+            <button
+              type="button"
+              onClick={onToggleBrand}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                color: selection.inBrand ? C.t1 : C.t3,
+                background: "transparent",
+                border: `1px solid ${C.line}`,
+                borderRadius: 999,
+                padding: "5px 11px",
+                cursor: "pointer",
+              }}
+            >
+              {selection.inBrand
+                ? `In ${brandName ?? "your brand"} ✓`
+                : "Brand: Off"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Prompt row */}
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+        <textarea
+          value={prompt}
+          onChange={(e) => onPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onSubmit();
+            }
+          }}
+          rows={isMobile ? 2 : 1}
+          placeholder={
+            selection
+              ? "Describe what you want — your pick rides along…"
+              : "Describe what you want to create…"
+          }
+          style={{
+            flex: 1,
+            resize: "none",
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            color: C.t1,
+            fontSize: 14,
+            lineHeight: 1.45,
+            fontFamily: "'DM Sans', system-ui, sans-serif",
+            maxHeight: 140,
+            padding: "6px 4px",
+          }}
+        />
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={!canSend}
+          aria-label="Create"
+          style={{
+            flexShrink: 0,
+            width: 38,
+            height: 38,
+            borderRadius: 11,
+            display: "grid",
+            placeItems: "center",
+            border: "none",
+            background: canSend ? C.blue : C.line,
+            color: "#fff",
+            cursor: canSend ? "pointer" : "not-allowed",
+            opacity: canSend ? 1 : 0.7,
+          }}
+        >
+          <Send size={16} />
+        </button>
+      </div>
     </div>
   );
 }

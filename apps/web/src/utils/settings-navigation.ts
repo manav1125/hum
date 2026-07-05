@@ -19,6 +19,7 @@ import {
   Keyboard,
   Laptop,
   Mic,
+  Palette,
   Settings,
   Users,
   Volume2,
@@ -37,6 +38,7 @@ import { routes } from "@/utils/routes";
 /** All panel IDs supported by the Settings page. */
 export const PANEL_IDS = [
   "integrations",
+  "brand",
   "model",
   "notifications",
   "keyboard-shortcuts",
@@ -95,6 +97,12 @@ export const SETTINGS_SIDEBAR: SidebarItem[] = [
     label: "Integrations",
     href: routes.settings.integrations,
     icon: Puzzle,
+  },
+  {
+    id: "brand",
+    label: "Brand",
+    href: routes.settings.brand,
+    icon: Palette,
   },
   {
     id: "schedules",

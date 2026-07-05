@@ -5,7 +5,8 @@
  * `extract` endpoint that turns an upload/website into a draft BrandProfile the
  * review screen can accept.
  *
- * `:id` is the owning assistant id (scope); `:bid` is the brand-profile id.
+ * Registered SCOPE-LESS (`brand-profiles`); the spec transform + gateway wrap
+ * the `/assistants/{id}` scope around them. `:bid` is the brand-profile id.
  * Auth is enforced at the transport layer; handlers contain only business
  * logic and throw RouteError subclasses.
  */
@@ -91,10 +92,21 @@ function readProfileInput(body: unknown): {
   return (body ?? {}) as ReturnType<typeof readProfileInput>;
 }
 
+/**
+ * The daemon is single-assistant: gateway-proxied routes are registered
+ * SCOPE-LESS (e.g. `brand-profiles`), and the spec transform + gateway add and
+ * strip the `/assistants/{id}` scope around them (see agents-routes for the
+ * same convention). The handler therefore has no assistant id in its path, so
+ * the store is scoped to this one constant. (Earlier this route was wrongly
+ * registered as `assistants/:id/brand-profiles`, which double-scoped the
+ * client path and 404'd on the stripped daemon path.)
+ */
+const BRAND_SCOPE = "default";
+
 export const ROUTES: RouteDefinition[] = [
   {
     operationId: "listBrandProfiles",
-    endpoint: "assistants/:id/brand-profiles",
+    endpoint: "brand-profiles",
     method: "GET",
     policy: {
       requiredScopes: ["settings.read"],
@@ -105,14 +117,14 @@ export const ROUTES: RouteDefinition[] = [
       "Every saved Brand Kit for the assistant (palette, fonts, logo, voice, assets, source), oldest first. At most one carries isActive=1 — the kit applied to every Create output.",
     tags: ["brand"],
     responseBody: z.object({ brandProfiles: z.array(brandProfileSchema) }),
-    handler: ({ pathParams }) => ({
-      brandProfiles: listBrandProfiles(pathParams!.id),
+    handler: () => ({
+      brandProfiles: listBrandProfiles(BRAND_SCOPE),
     }),
   },
 
   {
     operationId: "createBrandProfile",
-    endpoint: "assistants/:id/brand-profiles",
+    endpoint: "brand-profiles",
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
@@ -133,11 +145,11 @@ export const ROUTES: RouteDefinition[] = [
     }),
     responseStatus: "201",
     responseBody: z.object({ brandProfile: brandProfileSchema }),
-    handler: ({ pathParams, body }) => {
+    handler: ({ body }) => {
       const b = readProfileInput(body);
       const name = typeof b.name === "string" ? b.name.trim() : "";
       if (!name) throw new BadRequestError("name is required");
-      const brandProfile = createBrandProfile(pathParams!.id, {
+      const brandProfile = createBrandProfile(BRAND_SCOPE, {
         name,
         ...(b.palette ? { palette: b.palette } : {}),
         ...(b.fonts ? { fonts: b.fonts } : {}),
@@ -152,7 +164,7 @@ export const ROUTES: RouteDefinition[] = [
 
   {
     operationId: "extractBrandProfile",
-    endpoint: "assistants/:id/brand-profiles/extract",
+    endpoint: "brand-profiles/extract",
     method: "POST",
     policy: {
       requiredScopes: ["settings.write"],
@@ -186,7 +198,7 @@ export const ROUTES: RouteDefinition[] = [
 
   {
     operationId: "getBrandProfile",
-    endpoint: "assistants/:id/brand-profiles/:bid",
+    endpoint: "brand-profiles/:bid",
     method: "GET",
     policy: {
       requiredScopes: ["settings.read"],
@@ -197,7 +209,7 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({ brandProfile: brandProfileSchema }),
     handler: ({ pathParams }) => {
       const brandProfile = getBrandProfile(pathParams!.bid);
-      if (!brandProfile || brandProfile.assistantId !== pathParams!.id) {
+      if (!brandProfile || brandProfile.assistantId !== BRAND_SCOPE) {
         throw new NotFoundError(`Brand profile not found: ${pathParams!.bid}`);
       }
       return { brandProfile };
@@ -206,7 +218,7 @@ export const ROUTES: RouteDefinition[] = [
 
   {
     operationId: "updateBrandProfile",
-    endpoint: "assistants/:id/brand-profiles/:bid",
+    endpoint: "brand-profiles/:bid",
     method: "PATCH",
     policy: {
       requiredScopes: ["settings.write"],
@@ -230,7 +242,7 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({ brandProfile: brandProfileSchema }),
     handler: ({ pathParams, body }) => {
       const existing = getBrandProfile(pathParams!.bid);
-      if (!existing || existing.assistantId !== pathParams!.id) {
+      if (!existing || existing.assistantId !== BRAND_SCOPE) {
         throw new NotFoundError(`Brand profile not found: ${pathParams!.bid}`);
       }
       const b = readProfileInput(body);
@@ -253,7 +265,7 @@ export const ROUTES: RouteDefinition[] = [
 
   {
     operationId: "deleteBrandProfile",
-    endpoint: "assistants/:id/brand-profiles/:bid",
+    endpoint: "brand-profiles/:bid",
     method: "DELETE",
     policy: {
       requiredScopes: ["settings.write"],
@@ -264,7 +276,7 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({ id: z.string(), success: z.boolean() }),
     handler: ({ pathParams }) => {
       const existing = getBrandProfile(pathParams!.bid);
-      if (!existing || existing.assistantId !== pathParams!.id) {
+      if (!existing || existing.assistantId !== BRAND_SCOPE) {
         throw new NotFoundError(`Brand profile not found: ${pathParams!.bid}`);
       }
       deleteBrandProfile(pathParams!.bid);
@@ -274,7 +286,7 @@ export const ROUTES: RouteDefinition[] = [
 
   {
     operationId: "activateBrandProfile",
-    endpoint: "assistants/:id/brand-profiles/:bid/activate",
+    endpoint: "brand-profiles/:bid/activate",
     method: "PATCH",
     policy: {
       requiredScopes: ["settings.write"],
@@ -287,7 +299,7 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({ brandProfile: brandProfileSchema }),
     handler: ({ pathParams }) => {
       const existing = getBrandProfile(pathParams!.bid);
-      if (!existing || existing.assistantId !== pathParams!.id) {
+      if (!existing || existing.assistantId !== BRAND_SCOPE) {
         throw new NotFoundError(`Brand profile not found: ${pathParams!.bid}`);
       }
       const brandProfile = setActiveBrandProfile(pathParams!.bid);

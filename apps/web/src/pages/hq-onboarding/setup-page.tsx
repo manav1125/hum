@@ -40,6 +40,7 @@ import {
   MicroLabel,
   MODE_META,
 } from "@/pages/hq/hq-kit";
+import { BrandOnboardingStep } from "@/pages/brand-kit/brand-onboarding-step";
 
 import {
   isPersonalFork,
@@ -67,12 +68,20 @@ import {
 // The flow model — Step 0 (fork) + five tracked steps.
 // ---------------------------------------------------------------------------
 
-type Screen = "fork" | "name" | "connect" | "direction" | "mission" | "team";
+type Screen =
+  | "fork"
+  | "name"
+  | "connect"
+  | "brand"
+  | "direction"
+  | "mission"
+  | "team";
 
 const ORDER: Screen[] = [
   "fork",
   "name",
   "connect",
+  "brand",
   "direction",
   "mission",
   "team",
@@ -185,6 +194,14 @@ export function HqSetupPage() {
               markStep("connect", "skipped");
               advance();
             }}
+          />
+        )}
+
+        {screen === "brand" && (
+          <BrandOnboardingStep
+            stepLabel="Make everything look like you"
+            onContinue={advance}
+            onSkip={advance}
           />
         )}
 

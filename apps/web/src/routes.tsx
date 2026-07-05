@@ -442,6 +442,18 @@ export const routeTree = [
                     },
                   },
                   {
+                    // Settings → Brand — the Brand Kit surface (Create Studio
+                    // SET 2). Owns its own area under `@/pages/brand-kit` and
+                    // wires to the daemon `/brand-profiles` routes.
+                    path: "brand",
+                    lazy: {
+                      Component: () =>
+                        import("@/pages/brand-kit/brand-settings-page").then(
+                          (m) => m.BrandSettingsPage,
+                        ),
+                    },
+                  },
+                  {
                     path: "schedules",
                     lazy: {
                       Component: () =>

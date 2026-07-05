@@ -872,3 +872,204 @@ export const STYLE_SPECS: StyleSpec[] = [
 export function getStyleSpec(id: string): StyleSpec | undefined {
   return STYLE_SPECS.find((s) => s.id === id);
 }
+
+// ---------------------------------------------------------------------------
+// Docs — document-type specs (Docs mode gallery: "Choose a document"). Each
+// carries a compact structural preview (an ordered outline the gallery renders
+// as a skeleton) plus a promptFragment the contract loader appends so the
+// document-editor produces the right shape. These are document skeletons, not
+// visual themes — the active brand still styles the output.
+// ---------------------------------------------------------------------------
+
+export interface DocTypeSpec {
+  /** Stable id used in CreateIntent.templateId (docs mode). */
+  id: string;
+  /** Human-facing name shown in the gallery. */
+  name: string;
+  /** One-line description of the document shape. */
+  description: string;
+  /**
+   * The document's section outline — rendered as a small structural preview
+   * (skeleton lines) in the gallery card, and appended to the prompt so the
+   * doc comes out with the right sections.
+   */
+  outline: string[];
+  /** "reach for this when…" guidance. */
+  bestFor: string;
+}
+
+/** 4 document-type specs (One-pager / PRD / Tech spec / Proposal). */
+export const DOC_TYPE_SPECS: DocTypeSpec[] = [
+  {
+    id: "one_pager",
+    name: "One-pager",
+    description: "A single-page brief — title, problem, solution, the ask.",
+    outline: ["Title", "Problem", "Solution", "The ask"],
+    bestFor: "Fast exec briefs, pitch summaries, project one-pagers",
+  },
+  {
+    id: "prd",
+    name: "PRD",
+    description:
+      "A full product requirements doc — goals, scope, specs, rollout.",
+    outline: [
+      "Overview",
+      "Goals & non-goals",
+      "Scope",
+      "Requirements",
+      "Specs",
+      "Rollout plan",
+    ],
+    bestFor: "Product specs, feature definition, cross-functional alignment",
+  },
+  {
+    id: "tech_spec",
+    name: "Tech spec",
+    description:
+      "An engineering design doc — architecture, API surface, risks.",
+    outline: [
+      "Context",
+      "Architecture",
+      "API surface",
+      "Data model",
+      "Risks & tradeoffs",
+      "Milestones",
+    ],
+    bestFor: "System design, RFCs, engineering review docs",
+  },
+  {
+    id: "proposal",
+    name: "Proposal",
+    description:
+      "A client-facing proposal — overview, terms, timeline, pricing.",
+    outline: [
+      "Overview",
+      "Approach",
+      "Scope of work",
+      "Timeline",
+      "Terms & pricing",
+      "Next steps",
+    ],
+    bestFor: "Client proposals, SOWs, partnership pitches",
+  },
+];
+
+/** Lookup a DocTypeSpec by id. */
+export function getDocTypeSpec(id: string): DocTypeSpec | undefined {
+  return DOC_TYPE_SPECS.find((d) => d.id === id);
+}
+
+// ---------------------------------------------------------------------------
+// Data — output-format + chart-type specs (Data mode gallery: "Output & chart
+// types"). The user picks ONE output format and MULTI-SELECTs chart types. Both
+// ride into the CreateIntent (format → mode hint on the app-builder prompt;
+// chartTypes → CreateIntent.chartTypes).
+// ---------------------------------------------------------------------------
+
+export interface DataFormatSpec {
+  /** Stable id used in CreateIntent (data output format). */
+  id: string;
+  /** Human-facing label. */
+  label: string;
+  /** One-line description of the output. */
+  description: string;
+}
+
+/** 4 output formats (Dashboard / Report / Sheet / Slides). */
+export const DATA_FORMAT_SPECS: DataFormatSpec[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    description: "An interactive dashboard — KPI tiles + live charts.",
+  },
+  {
+    id: "report",
+    label: "Report",
+    description: "A written report with charts embedded inline.",
+  },
+  {
+    id: "sheet",
+    label: "Sheet",
+    description: "A spreadsheet — tables, formulas, pivots.",
+  },
+  {
+    id: "slides",
+    label: "Slides",
+    description: "A slide deck built around the data story.",
+  },
+];
+
+/** Lookup a DataFormatSpec by id. */
+export function getDataFormatSpec(id: string): DataFormatSpec | undefined {
+  return DATA_FORMAT_SPECS.find((f) => f.id === id);
+}
+
+export interface ChartTypeSpec {
+  /** Stable id — this is what lands in CreateIntent.chartTypes. */
+  id: string;
+  /** Human-facing label. */
+  label: string;
+}
+
+/** 6 chart types (multi-select). */
+export const CHART_TYPE_SPECS: ChartTypeSpec[] = [
+  { id: "bar", label: "Bar" },
+  { id: "line", label: "Line" },
+  { id: "pie", label: "Pie" },
+  { id: "scatter", label: "Scatter" },
+  { id: "heatmap", label: "Heatmap" },
+  { id: "area", label: "Area" },
+];
+
+// ---------------------------------------------------------------------------
+// Canvas — action specs (Canvas mode gallery: "Choose an action"). A canvas
+// action seeds the thread with a directive rather than a design contract; the
+// gallery renders these as action cards. `promptSeed` is the prompt the action
+// kicks off with.
+// ---------------------------------------------------------------------------
+
+export interface CanvasActionSpec {
+  /** Stable id used in CreateIntent (canvas action). */
+  id: string;
+  /** Human-facing label. */
+  label: string;
+  /** One-line description of what the action does. */
+  description: string;
+  /** The prompt this action seeds the thread with. */
+  promptSeed: string;
+}
+
+/** 4 canvas actions. */
+export const CANVAS_ACTION_SPECS: CanvasActionSpec[] = [
+  {
+    id: "blank",
+    label: "Blank canvas",
+    description: "Start a fresh interactive canvas from scratch.",
+    promptSeed: "Open a new blank canvas I can build on.",
+  },
+  {
+    id: "diagram",
+    label: "Diagram",
+    description: "Sketch a flow, architecture, or mind map.",
+    promptSeed:
+      "Create a diagram canvas — help me map out a flow / architecture.",
+  },
+  {
+    id: "whiteboard",
+    label: "Whiteboard",
+    description: "A freeform whiteboard for notes and shapes.",
+    promptSeed: "Open a freeform whiteboard canvas for notes and shapes.",
+  },
+  {
+    id: "moodboard",
+    label: "Moodboard",
+    description: "Collect images and references into a visual board.",
+    promptSeed:
+      "Create a moodboard canvas — collect images and references into a visual board.",
+  },
+];
+
+/** Lookup a CanvasActionSpec by id. */
+export function getCanvasActionSpec(id: string): CanvasActionSpec | undefined {
+  return CANVAS_ACTION_SPECS.find((a) => a.id === id);
+}
