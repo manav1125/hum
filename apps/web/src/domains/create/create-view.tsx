@@ -23,6 +23,7 @@
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   CREATE_MODES,
   type CreateMode,
@@ -97,6 +98,7 @@ export interface CreateViewProps {
 }
 
 export function CreateView({ onRunPrompt }: CreateViewProps) {
+  const isMobile = useIsMobile();
   const [activeModeId, setActiveModeId] = useState<string>(CREATE_MODES[0].id);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
@@ -147,11 +149,26 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
         </p>
       </header>
 
-      {/* Mode picker — pill tab row. */}
+      {/* Mode picker — pill tab row. On mobile this is a single
+          horizontal-SCROLL row (no wrap) per the mobile S1 design; on desktop
+          it wraps as before. */}
       <div
         role="tablist"
         aria-label="Create mode"
-        className="mb-7 flex flex-wrap gap-2"
+        className={
+          isMobile
+            ? "mb-7 -mx-4 flex flex-nowrap gap-2 overflow-x-auto px-4"
+            : "mb-7 flex flex-wrap gap-2"
+        }
+        style={
+          isMobile
+            ? {
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                WebkitOverflowScrolling: "touch",
+              }
+            : undefined
+        }
       >
         {CREATE_MODES.map((mode) => {
           const Icon = mode.icon;
@@ -166,7 +183,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                 setActiveModeId(mode.id);
                 setActiveTemplateId(null);
               }}
-              className="group flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors"
+              className="group flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-colors"
               style={{
                 borderColor: active ? C.blue : C.line,
                 background: active
@@ -206,17 +223,40 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                 {activeMode.skillLabel}
               </span>
             </div>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4">
-              {formTemplates.map((template) => (
-                <FormTemplateCard
-                  key={template.id}
-                  template={template}
-                  modeId={activeMode.id}
-                  skillLabel={activeMode.skillLabel}
-                  onOpen={() => setActiveTemplateId(template.id)}
-                />
-              ))}
-            </div>
+            {isMobile ? (
+              <div className="flex flex-col gap-3">
+                {formTemplates.map((template, index) =>
+                  index === 0 ? (
+                    <FeaturedTemplateCard
+                      key={template.id}
+                      template={template}
+                      modeId={activeMode.id}
+                      skillLabel={activeMode.skillLabel}
+                      onOpen={() => setActiveTemplateId(template.id)}
+                    />
+                  ) : (
+                    <CompactTemplateRow
+                      key={template.id}
+                      template={template}
+                      skillLabel={activeMode.skillLabel}
+                      onOpen={() => setActiveTemplateId(template.id)}
+                    />
+                  ),
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4">
+                {formTemplates.map((template) => (
+                  <FormTemplateCard
+                    key={template.id}
+                    template={template}
+                    modeId={activeMode.id}
+                    skillLabel={activeMode.skillLabel}
+                    onOpen={() => setActiveTemplateId(template.id)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
 
@@ -316,6 +356,190 @@ function FormTemplateCard({
           <SourceTag label={skillLabel} />
         </div>
       </div>
+    </button>
+  );
+}
+
+/**
+ * Featured template card (mobile S1) — the top structured template rendered
+ * large: preview band, title + field-count chip, description, the ⟡ provenance
+ * chip, and an explicit primary "Fill & build ›" + secondary "Preview" row.
+ * Both buttons open the fill-fields form (which then generates the asset and
+ * files it onto its project); the row simply makes that action explicit and
+ * scannable on the phone, where the whole-card tap alone is ambiguous.
+ */
+function FeaturedTemplateCard({
+  template,
+  modeId,
+  skillLabel,
+  onOpen,
+}: {
+  template: TemplateDefinition;
+  modeId: string;
+  skillLabel: string;
+  onOpen: () => void;
+}) {
+  const { kind, variant } = previewForTemplate(modeId, template.id);
+  return (
+    <div
+      className="flex w-full flex-col overflow-hidden text-left"
+      style={{
+        ...cardChrome,
+        borderColor: C.blue,
+        borderWidth: 1.5,
+        boxShadow: `0 20px 44px -26px color-mix(in srgb, ${C.blue} 55%, transparent)`,
+      }}
+    >
+      <div className="w-full p-3 pb-0">
+        <CreatePreview kind={kind} variant={variant} />
+      </div>
+      <div className="flex w-full flex-col p-4 pt-3">
+        <div className="flex w-full items-start justify-between gap-2">
+          <h3
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              color: C.t1,
+              lineHeight: 1.2,
+            }}
+          >
+            {template.title}
+          </h3>
+          <span
+            style={{
+              flexShrink: 0,
+              fontFamily: mono,
+              fontSize: 9,
+              letterSpacing: "0.04em",
+              color: C.blueS,
+              background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+              borderRadius: 6,
+              padding: "3px 7px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {template.inputs.length} FIELDS
+          </span>
+        </div>
+        <p style={{ marginTop: 6, fontSize: 13, lineHeight: 1.4, color: C.t2 }}>
+          {template.description}
+        </p>
+        <div style={{ marginTop: 11 }}>
+          <SourceTag label={`files onto ${skillLabel}`} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+          <button
+            type="button"
+            onClick={onOpen}
+            style={{
+              flex: 1,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              background: C.ink,
+              color: C.surface,
+              border: "none",
+              borderRadius: 10,
+              padding: "10px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Fill &amp; build ›
+          </button>
+          <button
+            type="button"
+            onClick={onOpen}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: C.sunken,
+              color: C.t2,
+              border: `1px solid ${C.line}`,
+              borderRadius: 10,
+              padding: "10px 16px",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: "pointer",
+            }}
+          >
+            Preview
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Compact structured-template row (mobile S1) — icon tile · title · fields. */
+function CompactTemplateRow({
+  template,
+  skillLabel,
+  onOpen,
+}: {
+  template: TemplateDefinition;
+  skillLabel: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex w-full items-center gap-3 text-left transition-colors"
+      style={{ ...cardChrome, padding: "12px 13px" }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          display: "grid",
+          placeItems: "center",
+          fontSize: 16,
+          color: C.blueS,
+          background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+          flexShrink: 0,
+        }}
+      >
+        ▤
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            display: "block",
+            fontSize: 14,
+            fontWeight: 600,
+            color: C.t1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {template.title}
+        </span>
+        <span
+          style={{
+            display: "block",
+            fontSize: 11.5,
+            color: C.t2,
+            marginTop: 2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {skillLabel} · {template.inputs.length} fields
+        </span>
+      </span>
+      <ArrowUpRight
+        className="size-4 shrink-0"
+        aria-hidden="true"
+        style={{ color: C.t3 }}
+      />
     </button>
   );
 }

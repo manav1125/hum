@@ -137,6 +137,10 @@ export function ProjectCard({
   const counts = project.stats?.counts;
   const tone = nextTone(project, refNow);
   const urgent = tone === C.danger;
+  // Highlight the active/priority card: an urgent due-date, or a pinned
+  // (priority) project. On the mobile list this makes the card the eye lands on.
+  const highlight = urgent || project.pinned;
+  const reviewCount = counts?.awaiting_review ?? 0;
   const chips = tallyChips(project);
   const category = project.category
     ? categoryLabel(project.category).toUpperCase()
@@ -171,10 +175,10 @@ export function ProjectCard({
       style={{
         position: "relative",
         padding: compact ? "13px 14px" : "16px 17px",
-        border: urgent ? `1.5px solid ${C.blue}` : `1px solid ${C.line}`,
+        border: highlight ? `1.5px solid ${C.blue}` : `1px solid ${C.line}`,
         borderRadius: compact ? 14 : 15,
         background: C.surface,
-        boxShadow: urgent
+        boxShadow: highlight
           ? `0 20px 44px -28px color-mix(in srgb, ${C.blue} 50%, transparent)`
           : "none",
         cursor: "pointer",
@@ -215,7 +219,24 @@ export function ProjectCard({
             {project.title}
           </div>
           {compact ? (
-            <div style={{ marginTop: 3 }}>{tagRow}</div>
+            <div
+              style={{
+                marginTop: 3,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flexWrap: "wrap",
+              }}
+            >
+              {tagRow}
+              {reviewCount > 0 ? (
+                <TallyChip
+                  label={`${reviewCount} REVIEW`}
+                  color={C.amber}
+                  wash
+                />
+              ) : null}
+            </div>
           ) : category ? (
             <div
               style={{
@@ -323,23 +344,17 @@ export function ProjectCard({
             "Nothing filed yet"
           )}
         </span>
-        {compact && counts ? (
-          <span style={{ fontFamily: mono, fontSize: 8.5, color: C.t3 }}>
-            {counts.queued + counts.running}·{counts.awaiting_review}·
-            {counts.done}
-          </span>
-        ) : (
-          <span
-            style={{
-              color: C.blueS,
-              fontWeight: 500,
-              whiteSpace: "nowrap",
-              fontSize: 12,
-            }}
-          >
-            Open ›
-          </span>
-        )}
+        <span
+          style={{
+            color: C.blueS,
+            fontWeight: 500,
+            whiteSpace: "nowrap",
+            fontSize: compact ? 11.5 : 12,
+            flexShrink: 0,
+          }}
+        >
+          Open ›
+        </span>
       </div>
     </div>
   );

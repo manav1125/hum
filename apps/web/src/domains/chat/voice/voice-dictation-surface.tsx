@@ -38,10 +38,11 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { Keyboard } from "lucide-react";
+import { ArrowUp, Keyboard, Settings, Square, X } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   postVoiceIntake,
   type VoiceIntakeResponse,
@@ -87,6 +88,10 @@ const APERTURE_KEYFRAMES = `
 @keyframes cueApBreathe { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(1.06); opacity: 1 } }
 @keyframes cueApRing { 0% { transform: scale(.6); opacity: .5 } 100% { transform: scale(1.9); opacity: 0 } }
 @keyframes cueApBar { 0%,100% { height: 8px } 50% { height: 26px } }
+/* m6-tuned mobile aperture (spec §2): rings .55→1.9, bars 9→30px. */
+@keyframes cueApBreatheM { 0%,100% { transform: scale(1); opacity: .92 } 50% { transform: scale(1.06); opacity: 1 } }
+@keyframes cueApRingM { 0% { transform: scale(.55); opacity: .55 } 100% { transform: scale(1.9); opacity: 0 } }
+@keyframes cueApBarM { 0%,100% { height: 9px } 50% { height: 30px } }
 @media (prefers-reduced-motion: reduce) {
   .cue-ap-core, .cue-ap-ring, .cue-ap-bar { animation: none !important }
 }
@@ -99,13 +104,31 @@ const BAR_DELAYS = [0, 0.12, 0.24, 0.36, 0.48];
  * gradient core that breathes and shows a five-bar waveform while listening. At
  * rest the rings and waveform are stilled and the core dims.
  */
-function ApertureOrb({ active }: { active: boolean }) {
+function ApertureOrb({
+  active,
+  mobile = false,
+}: {
+  active: boolean;
+  mobile?: boolean;
+}) {
+  // Mobile uses the m6-tuned dimensions from the standalone mock (§2): a 210pt
+  // zone, 170pt rings on the m6Ring curve, a 116pt core, and a 34pt-tall
+  // 5-bar waveform on the m6Bar curve. Desktop keeps its established sizes.
+  const zone = mobile ? 210 : 220;
+  const ring = mobile ? 170 : 180;
+  const glow = mobile ? 150 : 150;
+  const core = mobile ? 116 : 104;
+  const barW = mobile ? 4 : 3.5;
+  const waveH = mobile ? 34 : 30;
+  const ringKf = mobile ? "cueApRingM" : "cueApRing";
+  const breatheKf = mobile ? "cueApBreatheM" : "cueApBreathe";
+  const barKf = mobile ? "cueApBarM" : "cueApBar";
   return (
     <div
       style={{
         position: "relative",
-        width: 220,
-        height: 220,
+        width: zone,
+        height: zone,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -118,11 +141,11 @@ function ApertureOrb({ active }: { active: boolean }) {
             aria-hidden
             style={{
               position: "absolute",
-              width: 180,
-              height: 180,
+              width: ring,
+              height: ring,
               borderRadius: "50%",
               border: "1px solid rgba(91,134,240,.35)",
-              animation: "cueApRing 3s ease-out infinite",
+              animation: `${ringKf} 3s ease-out infinite`,
             }}
           />
           <span
@@ -130,11 +153,11 @@ function ApertureOrb({ active }: { active: boolean }) {
             aria-hidden
             style={{
               position: "absolute",
-              width: 180,
-              height: 180,
+              width: ring,
+              height: ring,
               borderRadius: "50%",
-              border: "1px solid rgba(91,134,240,.25)",
-              animation: "cueApRing 3s ease-out 1.5s infinite",
+              border: `1px solid rgba(91,134,240,${mobile ? ".22" : ".25"})`,
+              animation: `${ringKf} 3s ease-out 1.5s infinite`,
             }}
           />
         </>
@@ -143,8 +166,8 @@ function ApertureOrb({ active }: { active: boolean }) {
         aria-hidden
         style={{
           position: "absolute",
-          width: 150,
-          height: 150,
+          width: glow,
+          height: glow,
           borderRadius: "50%",
           background:
             "radial-gradient(circle at 50% 40%, rgba(91,134,240,.28), transparent 70%)",
@@ -155,23 +178,29 @@ function ApertureOrb({ active }: { active: boolean }) {
       <div
         className="cue-ap-core"
         style={{
-          width: 104,
-          height: 104,
+          width: core,
+          height: core,
           borderRadius: "50%",
           background: "linear-gradient(155deg, #5B86F0, #2B53C4)",
-          boxShadow:
-            "0 20px 50px -12px rgba(61,110,232,.7), inset 0 2px 6px rgba(255,255,255,.35)",
+          boxShadow: mobile
+            ? "0 22px 54px -12px rgba(61,110,232,.75), inset 0 2px 7px rgba(255,255,255,.35)"
+            : "0 20px 50px -12px rgba(61,110,232,.7), inset 0 2px 6px rgba(255,255,255,.35)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           opacity: active ? 1 : 0.72,
           filter: active ? "none" : "saturate(.7)",
-          animation: active ? "cueApBreathe 3.4s ease-in-out infinite" : "none",
+          animation: active ? `${breatheKf} 3.4s ease-in-out infinite` : "none",
           transition: "opacity 200ms ease, filter 200ms ease",
         }}
       >
         <div
-          style={{ display: "flex", alignItems: "center", gap: 4, height: 30 }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: mobile ? 4.5 : 4,
+            height: waveH,
+          }}
         >
           {BAR_DELAYS.map((delay, i) => (
             <span
@@ -179,17 +208,382 @@ function ApertureOrb({ active }: { active: boolean }) {
               className="cue-ap-bar"
               aria-hidden
               style={{
-                width: 3.5,
-                height: active ? 8 : 8,
+                width: barW,
+                height: mobile ? 9 : 8,
                 background: "rgba(255,255,255,.92)",
                 borderRadius: 3,
                 animation: active
-                  ? `cueApBar 1s ${delay}s ease-in-out infinite`
+                  ? `${barKf} 1s ${delay}s ease-in-out infinite`
                   : "none",
               }}
             />
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** A round dock button (mic dock, spec §2). */
+function DockButton({
+  label,
+  size,
+  onClick,
+  disabled,
+  primary = false,
+  children,
+}: {
+  label: string;
+  size: number;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        border: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#FFFFFF",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.55 : 1,
+        flexShrink: 0,
+        // Primary is the red stop/record button (spec: #F0603E→#DA491A + glow).
+        background: primary
+          ? "linear-gradient(155deg, #F0603E, #DA491A)"
+          : "rgba(255,255,255,.08)",
+        boxShadow: primary ? "0 16px 36px -10px rgba(218,73,26,.7)" : "none",
+        WebkitBackdropFilter: primary ? "none" : "blur(8px)",
+        backdropFilter: primary ? "none" : "blur(8px)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface MobileVoiceTakeoverProps {
+  orbActive: boolean;
+  recording: boolean;
+  processing: boolean;
+  submitting: boolean;
+  showResults: boolean;
+  denied: boolean;
+  interim: string;
+  monoState: string;
+  errorMessage: string | null;
+  intake: VoiceIntakeResponse | null;
+  transcript: string;
+  tag: string;
+  voiceInputRef: React.RefObject<VoiceInputButtonHandle | null>;
+  assistantId: string | null;
+  onTranscript: (text: string) => void;
+  onError: (code: string | null) => void;
+  onToggle: () => void;
+  onClose: () => void;
+  onKeyboard: () => void;
+  onOpenThread: () => void;
+  onOpenActivity: () => void;
+}
+
+/**
+ * The mobile Voice takeover (spec §2) — a dark, full-bleed `fixed inset:0`
+ * surface that covers the app's chat header. Layout: a 44pt top bar (`✕` / mono
+ * state / `⚙`), a scrollable body (serif hero → aperture orb → transcript card
+ * + captured-context chips), a three-circle mic dock, and a home-indicator
+ * gutter. Reuses {@link ApertureOrb} (mobile-tuned) and {@link
+ * VoiceIntakeResults}; all session state/handlers are owned by the parent.
+ */
+function MobileVoiceTakeover({
+  orbActive,
+  recording,
+  processing,
+  submitting,
+  showResults,
+  denied,
+  interim,
+  monoState,
+  errorMessage,
+  intake,
+  transcript,
+  tag,
+  voiceInputRef,
+  assistantId,
+  onTranscript,
+  onError,
+  onToggle,
+  onClose,
+  onKeyboard,
+  onOpenThread,
+  onOpenActivity,
+}: MobileVoiceTakeoverProps) {
+  const busy = processing || submitting;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Voice"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 60,
+        background: INK_GRADIENT,
+        color: "#FFFFFF",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        paddingTop: safeInset("top"),
+        paddingBottom: safeInset("bottom"),
+        paddingLeft: safeInset("left"),
+        paddingRight: safeInset("right"),
+      }}
+    >
+      <style>{APERTURE_KEYFRAMES}</style>
+
+      {/* The VoiceInputButton owns the MediaRecorder + STT lifecycle; we drive
+          it imperatively via the ref and render our own chrome. */}
+      <VoiceInputButton
+        ref={voiceInputRef}
+        assistantId={assistantId}
+        onTranscript={onTranscript}
+        onError={onError}
+        renderButton={false}
+      />
+
+      {/* Top bar: ✕ / mono state / ⚙ */}
+      <div
+        style={{
+          height: 44,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 18px",
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Close voice"
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "rgba(255,255,255,.7)",
+            cursor: "pointer",
+            display: "inline-flex",
+            padding: 6,
+            margin: -6,
+          }}
+        >
+          <X size={22} aria-hidden />
+        </button>
+        <span
+          style={{
+            fontFamily: mono,
+            fontSize: 10,
+            letterSpacing: "0.24em",
+            textTransform: "uppercase",
+            color: recording ? HERO_ACCENT : "rgba(255,255,255,.45)",
+          }}
+        >
+          {monoState}
+        </span>
+        <span
+          aria-hidden
+          style={{
+            display: "inline-flex",
+            color: "rgba(255,255,255,.7)",
+            padding: 6,
+            margin: -6,
+          }}
+        >
+          <Settings size={18} />
+        </span>
+      </div>
+
+      {/* Body */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          padding: "8px 26px 0",
+          overflowY: "auto",
+        }}
+      >
+        {/* Serif hero — idle; swapped for the interim transcript while speaking,
+            hidden once the results card takes over. */}
+        {!showResults ? (
+          <div
+            style={{
+              fontFamily: interim ? "'DM Sans', sans-serif" : serif,
+              fontSize: interim ? 20 : 25,
+              fontWeight: interim ? 600 : 400,
+              lineHeight: 1.28,
+              color: interim ? HERO_ACCENT : HERO,
+              textAlign: "center",
+              marginTop: 16,
+              minHeight: 36,
+            }}
+          >
+            {interim ? (
+              interim
+            ) : recording ? (
+              "Listening — say what's on your mind."
+            ) : (
+              <>
+                Talk. Cue opens a thread with your action items —{" "}
+                <span style={{ fontStyle: "italic", color: HERO_ACCENT }}>
+                  ready to run.
+                </span>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {/* Aperture orb — tappable. */}
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={recording ? "Stop dictation" : "Start dictation"}
+          disabled={busy}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            margin: showResults ? "12px 0" : "38px 0",
+            flexShrink: 0,
+            cursor: busy ? "default" : "pointer",
+          }}
+        >
+          <ApertureOrb active={orbActive} mobile />
+        </button>
+
+        {/* Results — transcript card + captured-context chips. */}
+        {showResults && intake ? (
+          <div style={{ width: "100%" }}>
+            <VoiceIntakeResults
+              result={intake}
+              transcript={transcript}
+              tag={tag}
+              onOpenThread={onOpenThread}
+              onOpenActivity={onOpenActivity}
+            />
+          </div>
+        ) : null}
+
+        {/* Mic-denied recovery / STT error. */}
+        {denied ? (
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                window.location.href = "app-settings:";
+              } catch {
+                /* ignore — unsupported host */
+              }
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: mono,
+              fontSize: 12,
+              color: "#FFFFFF",
+              background: BLUE,
+              border: "none",
+              borderRadius: 999,
+              padding: "11px 20px",
+              minHeight: 44,
+              marginTop: 16,
+              cursor: "pointer",
+            }}
+          >
+            Enable microphone in Settings
+          </button>
+        ) : errorMessage ? (
+          <div style={{ fontSize: 13, color: DANGER, marginTop: 16 }}>
+            {errorMessage}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Mic dock: ⌨ (52) / stop ◼ or record ⏺ (74, red) / send ↑ (52). */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 26,
+          padding: "14px 0 8px",
+        }}
+      >
+        <DockButton label="Type instead" size={52} onClick={onKeyboard}>
+          <Keyboard size={19} aria-hidden />
+        </DockButton>
+        <DockButton
+          label={recording ? "Stop dictation" : "Start dictation"}
+          size={74}
+          primary
+          disabled={busy}
+          onClick={onToggle}
+        >
+          {recording ? (
+            <Square size={26} fill="#FFFFFF" aria-hidden />
+          ) : (
+            <span
+              aria-hidden
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: "#FFFFFF",
+              }}
+            />
+          )}
+        </DockButton>
+        <DockButton
+          label="Send"
+          size={52}
+          disabled={!recording}
+          onClick={onToggle}
+        >
+          <ArrowUp size={19} aria-hidden />
+        </DockButton>
+      </div>
+
+      {/* Home-indicator gutter. */}
+      <div
+        style={{
+          flexShrink: 0,
+          height: 24,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 134,
+            height: 5,
+            borderRadius: 3,
+            background: "rgba(255,255,255,.3)",
+          }}
+        />
       </div>
     </div>
   );
@@ -203,6 +597,7 @@ export interface VoiceDictationSurfaceProps {
 export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const voiceInputRef = useRef<VoiceInputButtonHandle | null>(null);
   const [voiceErrorCode, setVoiceErrorCode] = useState<string | null>(null);
   const [transcript, setTranscript] = useState("");
@@ -273,6 +668,13 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
     navigate(routes.activity);
   }, [navigate]);
 
+  // Mobile ✕ closes the takeover: return to the composer when we're an in-chat
+  // overlay (onExit), otherwise step back out of the /voice route.
+  const handleClose = useCallback(() => {
+    if (onExit) onExit();
+    else navigate(-1);
+  }, [onExit, navigate]);
+
   const errorMessage = voiceErrorCode
     ? formatVoiceError(voiceErrorCode)
     : sendError;
@@ -306,6 +708,52 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
     const words = src.split(" ").slice(0, 3).join(" ");
     return words.length > 24 ? `${words.slice(0, 24).trimEnd()}…` : words;
   }, [intake, transcript]);
+
+  // Mono top-bar state label for the mobile takeover (spec §2: "LISTENING" /
+  // "TAP TO TALK"), extended to cover the transcribe/organize/results states.
+  const monoState = recording
+    ? "LISTENING"
+    : processing
+      ? "TRANSCRIBING"
+      : submitting
+        ? "ORGANIZING"
+        : showResults
+          ? "READY TO RUN"
+          : denied
+            ? "MIC BLOCKED"
+            : "TAP TO TALK";
+
+  // ── Mobile: dark full-screen takeover (spec §2) ──────────────────────────
+  // Fixed inset:0 so it covers the app's light chat header (the tab bar is
+  // hidden separately). Vertical stack: top bar → body (hero · orb · transcript)
+  // → mic dock → home-indicator gutter. Desktop keeps the centred panel below.
+  if (isMobile) {
+    return (
+      <MobileVoiceTakeover
+        orbActive={orbActive}
+        recording={recording}
+        processing={processing}
+        submitting={submitting}
+        showResults={showResults}
+        denied={denied}
+        interim={interim}
+        monoState={monoState}
+        errorMessage={errorMessage}
+        intake={intake}
+        transcript={transcript}
+        tag={tag}
+        voiceInputRef={voiceInputRef}
+        assistantId={assistantId}
+        onTranscript={handleTranscript}
+        onError={setVoiceErrorCode}
+        onToggle={toggle}
+        onClose={handleClose}
+        onKeyboard={handleClose}
+        onOpenThread={openThread}
+        onOpenActivity={openActivity}
+      />
+    );
+  }
 
   return (
     <div

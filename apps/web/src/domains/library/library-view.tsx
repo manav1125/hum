@@ -19,11 +19,17 @@ import {
 } from "react";
 
 import { DeployDialogs } from "@/components/deploy-dialogs";
+import {
+  type CoverKind,
+  LibraryCoverCard,
+} from "@/domains/library/components/library-cover-card";
 import { DeleteAppDialog } from "@/domains/library/components/delete-app-dialog";
 import { LibraryDocumentCard } from "@/domains/library/components/library-document-card";
 import { LibraryEmptyState } from "@/domains/library/components/library-empty-state";
 import { LibraryGridSection } from "@/domains/library/components/library-grid-section";
 import { useLibraryData } from "@/domains/library/use-library-data";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { formatFriendlyDate } from "@/utils/format-date";
 import { appsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import { appsByIdDeletePost } from "@/generated/daemon/sdk.gen";
 import { useDeployStore } from "@/stores/deploy-store";
@@ -80,13 +86,24 @@ function inferAppType(
 ): {
   label: string;
   filter: Exclude<LibraryFilter, "All" | "Docs">;
+  /** Cover treatment for the mobile branded-cover card. */
+  kind: CoverKind;
 } {
   const hay = `${name} ${icon ?? ""}`.toLowerCase();
   if (/deck|slide|pitch|presentation/.test(hay))
-    return { label: "Deck", filter: "Decks" };
+    return { label: "Deck", filter: "Decks", kind: "Deck" };
   if (/site|landing|page|web/.test(hay))
-    return { label: "Site", filter: "Sites" };
-  return { label: "App", filter: "Dashboards" };
+    return { label: "Site", filter: "Sites", kind: "Site" };
+  if (/video|sizzle|reel|clip/.test(hay))
+    return { label: "Video", filter: "Dashboards", kind: "Video" };
+  if (/dashboard|dash|metrics|analytics|report/.test(hay))
+    return { label: "Dash", filter: "Dashboards", kind: "Dash" };
+  return { label: "App", filter: "Dashboards", kind: "App" };
+}
+
+/** Upper-cased mono date, e.g. "4 JUL" — matches the S3 cover-card meta row. */
+function monoDate(ms: number): string {
+  return formatFriendlyDate(new Date(ms)).toUpperCase();
 }
 
 export interface LibraryViewProps {
@@ -110,6 +127,7 @@ export function LibraryView({
   const togglePin = usePinnedAppsStore.use.togglePin();
   const pinnedAppIds = usePinnedAppsStore.use.pinnedAppIds();
   const isDeploying = useDeployStore.use.isDeploying();
+  const isMobile = useIsMobile();
 
   const {
     apps,
@@ -427,6 +445,35 @@ export function LibraryView({
                 ? `No apps or documents matched “${searchText}”`
                 : "Nothing here yet in this filter."}
             </p>
+          </div>
+        ) : isMobile ? (
+          /* MOBILE — 2-col branded-cover grid (no live-preview iframes). */
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 12,
+              paddingBottom: 16,
+            }}
+          >
+            {[...tabPinnedApps, ...tabRecentApps].map((app) => (
+              <LibraryCoverCard
+                key={app.id}
+                kind={inferAppType(app.name, app.icon).kind}
+                title={app.name}
+                dateLabel={monoDate(app.createdAt)}
+                onOpen={() => onOpenApp(app.id)}
+              />
+            ))}
+            {tabDocuments.map((doc) => (
+              <LibraryCoverCard
+                key={doc.surfaceId}
+                kind="Doc"
+                title={doc.title}
+                dateLabel={monoDate(doc.updatedAt)}
+                onOpen={() => onOpenDocument?.(doc.surfaceId)}
+              />
+            ))}
           </div>
         ) : (
           <div className="flex flex-col gap-8">
