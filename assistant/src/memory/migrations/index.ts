@@ -291,6 +291,7 @@ export { migrateCreateAgentActs } from "./293-agent-acts.js";
 export { migrateCreateContactMemory } from "./294-contact-memory.js";
 export { migrateContactInteractionIndexes } from "./295-contact-interaction-indexes.js";
 export { migrateCreateAgents } from "./296-agents.js";
+export { migrateCreateBrandProfiles } from "./297-brand-profiles.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

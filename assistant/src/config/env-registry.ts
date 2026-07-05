@@ -297,6 +297,20 @@ export function getDisableContactMemory(): boolean {
 }
 
 /**
+ * CUE_DISABLE_BRAND_EXTRACT — boolean, default: false
+ * Kill-switch for Brand Kit auto-extraction (brand/brand-extract-job.ts).
+ * When set, both `extractFromDocument` and `extractFromWebsite` short-circuit
+ * before the flash-LLM pass and return an empty draft, so the Create-Studio
+ * "extract my brand" paths degrade to a manual/guided kit only. CRUD on stored
+ * brand profiles is unaffected. Read at extraction time so the switch takes
+ * effect without a daemon restart. A pure env flag so it can be cut without a
+ * per-workspace config migration, matching {@link getDisableContactMemory}.
+ */
+export function getDisableBrandExtract(): boolean {
+  return flag("CUE_DISABLE_BRAND_EXTRACT");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.

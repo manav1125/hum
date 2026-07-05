@@ -10,3 +10,7 @@ src/prompts/templates/**/*.md
 # Prettier's markdown formatting (blank lines between headers, trailing
 # newlines) would change the prompt content, so we skip formatting here.
 src/context/prompts/**/*.md
+
+# Create Studio deck templates — vendored HTML/JSON reference assets (lifted
+# from the Mira fork) consumed verbatim by app-builder. Not source we format.
+src/config/bundled-skills/app-builder/templates/**

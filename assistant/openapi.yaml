@@ -2121,6 +2121,918 @@ paths:
                 required:
                   - message
                 additionalProperties: false
+  /v1/assistants/{id}/brand-profiles:
+    get:
+      operationId: assistants_by_id_brandprofiles_get
+      summary: List brand profiles
+      description:
+        Every saved Brand Kit for the assistant (palette, fonts, logo, voice, assets, source), oldest first. At
+        most one carries isActive=1 — the kit applied to every Create output.
+      tags:
+        - brand
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brandProfiles:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        assistantId:
+                          type: string
+                        name:
+                          type: string
+                        palette:
+                          type: object
+                          properties:
+                            primary:
+                              type: string
+                            accent:
+                              type: string
+                            bg:
+                              type: string
+                            surface:
+                              type: string
+                            text:
+                              type: string
+                          additionalProperties: {}
+                        fonts:
+                          type: object
+                          properties:
+                            heading:
+                              type: string
+                            body:
+                              type: string
+                          additionalProperties: false
+                        logo:
+                          type: object
+                          properties:
+                            light:
+                              type: string
+                            dark:
+                              type: string
+                            mark:
+                              type: string
+                          additionalProperties: false
+                        voice:
+                          type: object
+                          properties:
+                            tone:
+                              type: string
+                            doList:
+                              type: array
+                              items:
+                                type: string
+                            dontList:
+                              type: array
+                              items:
+                                type: string
+                            boilerplate:
+                              type: string
+                          additionalProperties: false
+                        assets:
+                          type: array
+                          items:
+                            type: string
+                        source:
+                          type: string
+                          enum:
+                            - upload
+                            - website
+                            - guided
+                        isActive:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — the kit applied everywhere
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - assistantId
+                        - name
+                        - palette
+                        - fonts
+                        - logo
+                        - voice
+                        - assets
+                        - source
+                        - isActive
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - brandProfiles
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    post:
+      operationId: assistants_by_id_brandprofiles_post
+      summary: Save a brand profile
+      description:
+        Persist a Brand Kit for the assistant. The assistant's first profile is made active automatically; later
+        ones start inactive.
+      tags:
+        - brand
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brandProfile:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      name:
+                        type: string
+                      palette:
+                        type: object
+                        properties:
+                          primary:
+                            type: string
+                          accent:
+                            type: string
+                          bg:
+                            type: string
+                          surface:
+                            type: string
+                          text:
+                            type: string
+                        additionalProperties: {}
+                      fonts:
+                        type: object
+                        properties:
+                          heading:
+                            type: string
+                          body:
+                            type: string
+                        additionalProperties: false
+                      logo:
+                        type: object
+                        properties:
+                          light:
+                            type: string
+                          dark:
+                            type: string
+                          mark:
+                            type: string
+                        additionalProperties: false
+                      voice:
+                        type: object
+                        properties:
+                          tone:
+                            type: string
+                          doList:
+                            type: array
+                            items:
+                              type: string
+                          dontList:
+                            type: array
+                            items:
+                              type: string
+                          boilerplate:
+                            type: string
+                        additionalProperties: false
+                      assets:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                        enum:
+                          - upload
+                          - website
+                          - guided
+                      isActive:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the kit applied everywhere
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - assistantId
+                      - name
+                      - palette
+                      - fonts
+                      - logo
+                      - voice
+                      - assets
+                      - source
+                      - isActive
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - brandProfile
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                palette:
+                  type: object
+                  properties:
+                    primary:
+                      type: string
+                    accent:
+                      type: string
+                    bg:
+                      type: string
+                    surface:
+                      type: string
+                    text:
+                      type: string
+                  additionalProperties: {}
+                fonts:
+                  type: object
+                  properties:
+                    heading:
+                      type: string
+                    body:
+                      type: string
+                  additionalProperties: false
+                logo:
+                  type: object
+                  properties:
+                    light:
+                      type: string
+                    dark:
+                      type: string
+                    mark:
+                      type: string
+                  additionalProperties: false
+                voice:
+                  type: object
+                  properties:
+                    tone:
+                      type: string
+                    doList:
+                      type: array
+                      items:
+                        type: string
+                    dontList:
+                      type: array
+                      items:
+                        type: string
+                    boilerplate:
+                      type: string
+                  additionalProperties: false
+                assets:
+                  type: array
+                  items:
+                    type: string
+                source:
+                  type: string
+                  enum:
+                    - upload
+                    - website
+                    - guided
+              required:
+                - name
+              additionalProperties: false
+  /v1/assistants/{id}/brand-profiles/{bid}:
+    delete:
+      operationId: assistants_by_id_brandprofiles_by_bid_delete
+      summary: Delete a brand profile
+      tags:
+        - brand
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bid
+          in: path
+          required: true
+          schema:
+            type: string
+    get:
+      operationId: assistants_by_id_brandprofiles_by_bid_get
+      summary: Get a brand profile
+      tags:
+        - brand
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brandProfile:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      name:
+                        type: string
+                      palette:
+                        type: object
+                        properties:
+                          primary:
+                            type: string
+                          accent:
+                            type: string
+                          bg:
+                            type: string
+                          surface:
+                            type: string
+                          text:
+                            type: string
+                        additionalProperties: {}
+                      fonts:
+                        type: object
+                        properties:
+                          heading:
+                            type: string
+                          body:
+                            type: string
+                        additionalProperties: false
+                      logo:
+                        type: object
+                        properties:
+                          light:
+                            type: string
+                          dark:
+                            type: string
+                          mark:
+                            type: string
+                        additionalProperties: false
+                      voice:
+                        type: object
+                        properties:
+                          tone:
+                            type: string
+                          doList:
+                            type: array
+                            items:
+                              type: string
+                          dontList:
+                            type: array
+                            items:
+                              type: string
+                          boilerplate:
+                            type: string
+                        additionalProperties: false
+                      assets:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                        enum:
+                          - upload
+                          - website
+                          - guided
+                      isActive:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the kit applied everywhere
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - assistantId
+                      - name
+                      - palette
+                      - fonts
+                      - logo
+                      - voice
+                      - assets
+                      - source
+                      - isActive
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - brandProfile
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bid
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: assistants_by_id_brandprofiles_by_bid_patch
+      summary: Update a brand profile
+      description:
+        Patch name / palette / fonts / logo / voice / assets / source. To change which kit is active use the
+        activate endpoint (single-active invariant).
+      tags:
+        - brand
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brandProfile:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      name:
+                        type: string
+                      palette:
+                        type: object
+                        properties:
+                          primary:
+                            type: string
+                          accent:
+                            type: string
+                          bg:
+                            type: string
+                          surface:
+                            type: string
+                          text:
+                            type: string
+                        additionalProperties: {}
+                      fonts:
+                        type: object
+                        properties:
+                          heading:
+                            type: string
+                          body:
+                            type: string
+                        additionalProperties: false
+                      logo:
+                        type: object
+                        properties:
+                          light:
+                            type: string
+                          dark:
+                            type: string
+                          mark:
+                            type: string
+                        additionalProperties: false
+                      voice:
+                        type: object
+                        properties:
+                          tone:
+                            type: string
+                          doList:
+                            type: array
+                            items:
+                              type: string
+                          dontList:
+                            type: array
+                            items:
+                              type: string
+                          boilerplate:
+                            type: string
+                        additionalProperties: false
+                      assets:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                        enum:
+                          - upload
+                          - website
+                          - guided
+                      isActive:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the kit applied everywhere
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - assistantId
+                      - name
+                      - palette
+                      - fonts
+                      - logo
+                      - voice
+                      - assets
+                      - source
+                      - isActive
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - brandProfile
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                palette:
+                  type: object
+                  properties:
+                    primary:
+                      type: string
+                    accent:
+                      type: string
+                    bg:
+                      type: string
+                    surface:
+                      type: string
+                    text:
+                      type: string
+                  additionalProperties: {}
+                fonts:
+                  type: object
+                  properties:
+                    heading:
+                      type: string
+                    body:
+                      type: string
+                  additionalProperties: false
+                logo:
+                  type: object
+                  properties:
+                    light:
+                      type: string
+                    dark:
+                      type: string
+                    mark:
+                      type: string
+                  additionalProperties: false
+                voice:
+                  type: object
+                  properties:
+                    tone:
+                      type: string
+                    doList:
+                      type: array
+                      items:
+                        type: string
+                    dontList:
+                      type: array
+                      items:
+                        type: string
+                    boilerplate:
+                      type: string
+                  additionalProperties: false
+                assets:
+                  type: array
+                  items:
+                    type: string
+                source:
+                  type: string
+                  enum:
+                    - upload
+                    - website
+                    - guided
+              additionalProperties: false
+  /v1/assistants/{id}/brand-profiles/{bid}/activate:
+    patch:
+      operationId: assistants_by_id_brandprofiles_by_bid_activate_patch
+      summary: Activate a brand profile
+      description:
+        Make this the assistant's active Brand Kit (applied to every Create output), clearing the flag on the
+        assistant's other profiles in the same transaction.
+      tags:
+        - brand
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brandProfile:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      name:
+                        type: string
+                      palette:
+                        type: object
+                        properties:
+                          primary:
+                            type: string
+                          accent:
+                            type: string
+                          bg:
+                            type: string
+                          surface:
+                            type: string
+                          text:
+                            type: string
+                        additionalProperties: {}
+                      fonts:
+                        type: object
+                        properties:
+                          heading:
+                            type: string
+                          body:
+                            type: string
+                        additionalProperties: false
+                      logo:
+                        type: object
+                        properties:
+                          light:
+                            type: string
+                          dark:
+                            type: string
+                          mark:
+                            type: string
+                        additionalProperties: false
+                      voice:
+                        type: object
+                        properties:
+                          tone:
+                            type: string
+                          doList:
+                            type: array
+                            items:
+                              type: string
+                          dontList:
+                            type: array
+                            items:
+                              type: string
+                          boilerplate:
+                            type: string
+                        additionalProperties: false
+                      assets:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                        enum:
+                          - upload
+                          - website
+                          - guided
+                      isActive:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the kit applied everywhere
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - assistantId
+                      - name
+                      - palette
+                      - fonts
+                      - logo
+                      - voice
+                      - assets
+                      - source
+                      - isActive
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - brandProfile
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: bid
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/assistants/{id}/brand-profiles/extract:
+    post:
+      operationId: assistants_by_id_brandprofiles_extract_post
+      summary: Extract a draft brand profile
+      description:
+        "Turn an upload (attachment id) or website (url) into a DRAFT brand profile via a flash-LLM pass — palette,
+        fonts, logo, voice. The draft is NOT persisted; POST it back to create once reviewed. Honest limits: binary
+        PDF/PPTX text isn't parsed, and website extraction is static-HTML-only (no headless browser)."
+      tags:
+        - brand
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      name:
+                        type: string
+                      palette:
+                        type: object
+                        properties:
+                          primary:
+                            type: string
+                          accent:
+                            type: string
+                          bg:
+                            type: string
+                          surface:
+                            type: string
+                          text:
+                            type: string
+                        additionalProperties: {}
+                      fonts:
+                        type: object
+                        properties:
+                          heading:
+                            type: string
+                          body:
+                            type: string
+                        additionalProperties: false
+                      logo:
+                        type: object
+                        properties:
+                          light:
+                            type: string
+                          dark:
+                            type: string
+                          mark:
+                            type: string
+                        additionalProperties: false
+                      voice:
+                        type: object
+                        properties:
+                          tone:
+                            type: string
+                          doList:
+                            type: array
+                            items:
+                              type: string
+                          dontList:
+                            type: array
+                            items:
+                              type: string
+                          boilerplate:
+                            type: string
+                        additionalProperties: false
+                      assets:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                        enum:
+                          - upload
+                          - website
+                          - guided
+                      isActive:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the kit applied everywhere
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    additionalProperties: false
+                required:
+                  - draft
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source:
+                  type: string
+                  enum:
+                    - upload
+                    - website
+                ref:
+                  type: string
+                  minLength: 1
+                  description: Attachment id (upload) or page URL (website)
+              required:
+                - source
+                - ref
+              additionalProperties: false
   /v1/attachments:
     delete:
       operationId: attachments_delete

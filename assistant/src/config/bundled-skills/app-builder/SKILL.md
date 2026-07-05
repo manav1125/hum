@@ -331,7 +331,7 @@ For triage/bulk-action UIs: render a `dynamic_page` with selectable items + acti
 
 ## Slides
 
-Slide decks are a different domain — skip app patterns (contextual headers, search/filter, toasts, form validation, custom routes). Build navigation and layouts with custom HTML/CSS. Templates and principles in `{baseDir}/references/SLIDES.md`.
+Slide decks are a different domain — skip app patterns (contextual headers, search/filter, toasts, form validation, custom routes). Build navigation and layouts with custom HTML/CSS. Templates and principles in `{baseDir}/references/SLIDES.md`. If the request is prefixed with a `DESIGN CONTRACT` / `BRAND` / `STYLE` / `CHARTS` block (from Create Studio), honor it — see `{baseDir}/references/TEMPLATES.md` for the deck catalog and how to apply the contract.
 
 ---
 

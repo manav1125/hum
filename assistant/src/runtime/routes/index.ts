@@ -25,6 +25,7 @@ import { ROUTES as BACKGROUND_WAKE_ROUTES } from "./background-wake-routes.js";
 import { ROUTES as BACKUP_ROUTES } from "./backup-routes.js";
 import { ROUTES as BOOKMARK_ROUTES } from "./bookmark-routes.js";
 import { ROUTES as BRAIN_GRAPH_ROUTES } from "./brain-graph-routes.js";
+import { ROUTES as BRAND_ROUTES } from "./brand-routes.js";
 import { ROUTES as BROWSER_ROUTES } from "./browser-routes.js";
 import { ROUTES as BROWSER_TABS_ROUTES } from "./browser-tabs-routes.js";
 import { ROUTES as BTW_ROUTES } from "./btw-routes.js";
@@ -185,6 +186,7 @@ export const ROUTES: RouteDefinition[] = [
   ...BROWSER_TABS_ROUTES,
   ...BTW_ROUTES,
   ...BRAIN_GRAPH_ROUTES,
+  ...BRAND_ROUTES,
   ...CLIENT_ROUTES,
   ...CONTENT_SOURCE_ROUTES,
   ...CONTACT_PROMPT_ROUTES,

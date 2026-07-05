@@ -1,6 +1,7 @@
 export * from "./a2a.js";
 export * from "./acp.js";
 export * from "./bookmarks.js";
+export * from "./brand.js";
 export * from "./calls.js";
 export * from "./contacts.js";
 export * from "./conversations.js";
