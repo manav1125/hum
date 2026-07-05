@@ -108,6 +108,7 @@ import { ROUTES as OAUTH_COMMANDS_ROUTES } from "./oauth-commands-routes.js";
 import { ROUTES as OAUTH_CONNECT_ROUTES } from "./oauth-connect-routes.js";
 import { ROUTES as OAUTH_LIFECYCLE_ROUTES } from "./oauth-lifecycle-routes.js";
 import { ROUTES as OAUTH_PROVIDERS_ROUTES } from "./oauth-providers.js";
+import { ROUTES as PEOPLE_ROUTES } from "./people-routes.js";
 import { ROUTES as PLATFORM_ROUTES } from "./platform-routes.js";
 import { ROUTES as PLAYGROUND_ROUTES } from "./playground/index.js";
 import { ROUTES as PLUGINS_ROUTES } from "./plugins-routes.js";
@@ -255,6 +256,7 @@ export const ROUTES: RouteDefinition[] = [
   ...PLAYGROUND_ROUTES,
   ...PLUGINS_ROUTES,
   ...PROFILER_ROUTES,
+  ...PEOPLE_ROUTES,
   ...PS_ROUTES,
   ...PUBLISH_ROUTES,
   ...PUSH_DEVICE_ROUTES,

@@ -288,6 +288,7 @@ export { migrateCreateProjectKnowledge } from "./290-project-knowledge.js";
 export { migrateCreateMissions } from "./291-missions.js";
 export { migrateCreateWorkOutputs } from "./292-work-outputs.js";
 export { migrateCreateAgentActs } from "./293-agent-acts.js";
+export { migrateCreateContactMemory } from "./294-contact-memory.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

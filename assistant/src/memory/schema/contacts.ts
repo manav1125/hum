@@ -1,4 +1,10 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+} from "drizzle-orm/sqlite-core";
 
 import { conversations } from "./conversations.js";
 
@@ -92,6 +98,61 @@ export const assistantIngressInvites = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
+);
+
+/**
+ * contact_memory — the "WHAT CUE REMEMBERS" store. One row is one durable fact
+ * Cue knows about a person, with provenance and confidence. See migration 294.
+ */
+export const contactMemory = sqliteTable(
+  "contact_memory",
+  {
+    id: text("id").primaryKey(),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    /** The remembered statement ("Prefers async updates", "Based in Berlin"). */
+    statement: text("statement").notNull(),
+    /** 'fact' | 'preference' | 'relationship' | 'context'. */
+    kind: text("kind").notNull().default("fact"),
+    /** 'told' | 'inferred' | 'from_conversation'. */
+    source: text("source").notNull().default("told"),
+    /** Conversation/message id the fact was extracted from (nullable). */
+    sourceRef: text("source_ref"),
+    /** 0..1 confidence. Manual/told facts default to 1.0. */
+    confidence: real("confidence").notNull().default(1.0),
+    createdAt: integer("created_at").notNull(),
+    lastSeenAt: integer("last_seen_at").notNull(),
+  },
+  (table) => [
+    index("contact_memory_contact_seen_idx").on(
+      table.contactId,
+      table.lastSeenAt,
+    ),
+  ],
+);
+
+/**
+ * contact_relationship — materialized relationship signal per contact
+ * (score 0..100 + tier weak|building|strong). A recompute-on-write cache
+ * derived from live channel interaction stats; a missing/stale row self-heals
+ * on the next dossier read. See migration 294 + contact-relationship-store.
+ */
+export const contactRelationship = sqliteTable(
+  "contact_relationship",
+  {
+    contactId: text("contact_id")
+      .primaryKey()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    score: integer("score").notNull().default(0),
+    tier: text("tier").notNull().default("weak"),
+    lastInteractionAt: integer("last_interaction_at"),
+    interactionCount: integer("interaction_count").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("contact_relationship_tier_score_idx").on(table.tier, table.score),
+  ],
 );
 
 export const assistantInboxConversationState = sqliteTable(

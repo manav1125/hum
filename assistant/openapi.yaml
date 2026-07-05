@@ -7001,6 +7001,449 @@ paths:
           required: true
           schema:
             type: string
+  /v1/contacts/{id}/dossier:
+    get:
+      operationId: contacts_by_id_dossier_get
+      summary: Get a contact's relationship dossier
+      description:
+        "Return the full dossier for a contact: relationship score/tier, remembered facts (WHAT CUE REMEMBERS),
+        reachable channels (REACHABLE ON), and a time-ordered interactions timeline."
+      tags:
+        - people
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  dossier:
+                    type: object
+                    properties:
+                      contactId:
+                        type: string
+                      displayName:
+                        type: string
+                      contactType:
+                        type: string
+                      role:
+                        type: string
+                      relationship:
+                        type: object
+                        properties:
+                          contactId:
+                            type: string
+                          score:
+                            type: number
+                            description: 0..100 blended relationship strength
+                          tier:
+                            type: string
+                            description: weak | building | strong
+                          lastInteractionAt:
+                            anyOf:
+                              - type: number
+                              - type: "null"
+                          interactionCount:
+                            type: number
+                          updatedAt:
+                            type: number
+                        required:
+                          - contactId
+                          - score
+                          - tier
+                          - lastInteractionAt
+                          - interactionCount
+                          - updatedAt
+                        additionalProperties: false
+                      memory:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            contactId:
+                              type: string
+                            statement:
+                              type: string
+                            kind:
+                              type: string
+                            source:
+                              type: string
+                            sourceRef:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            confidence:
+                              type: number
+                            createdAt:
+                              type: number
+                            lastSeenAt:
+                              type: number
+                          required:
+                            - id
+                            - contactId
+                            - statement
+                            - kind
+                            - source
+                            - sourceRef
+                            - confidence
+                            - createdAt
+                            - lastSeenAt
+                          additionalProperties: false
+                      reachability:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            channelId:
+                              type: string
+                            type:
+                              type: string
+                            address:
+                              type: string
+                            isPrimary:
+                              type: boolean
+                            status:
+                              type: string
+                            reachable:
+                              type: boolean
+                            lastSeenAt:
+                              anyOf:
+                                - type: number
+                                - type: "null"
+                          required:
+                            - channelId
+                            - type
+                            - address
+                            - isPrimary
+                            - status
+                            - reachable
+                            - lastSeenAt
+                          additionalProperties: false
+                      interactions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                              description: conversation | call
+                            conversationId:
+                              type: string
+                            channel:
+                              type: string
+                            title:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            at:
+                              type: number
+                          required:
+                            - kind
+                            - conversationId
+                            - channel
+                            - title
+                            - at
+                          additionalProperties: false
+                    required:
+                      - contactId
+                      - displayName
+                      - contactType
+                      - role
+                      - relationship
+                      - memory
+                      - reachability
+                      - interactions
+                    additionalProperties: false
+                required:
+                  - ok
+                  - dossier
+                additionalProperties: false
+        "404":
+          description: Contact not found
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: interactionLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max interactions to return (default 50, max 200)
+  /v1/contacts/{id}/memory:
+    get:
+      operationId: contacts_by_id_memory_get
+      summary: List what Cue remembers about a contact
+      description: Return the remembered facts for a contact, newest-seen first.
+      tags:
+        - people
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  memory:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        contactId:
+                          type: string
+                        statement:
+                          type: string
+                        kind:
+                          type: string
+                        source:
+                          type: string
+                        sourceRef:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        confidence:
+                          type: number
+                        createdAt:
+                          type: number
+                        lastSeenAt:
+                          type: number
+                      required:
+                        - id
+                        - contactId
+                        - statement
+                        - kind
+                        - source
+                        - sourceRef
+                        - confidence
+                        - createdAt
+                        - lastSeenAt
+                      additionalProperties: false
+                required:
+                  - ok
+                  - memory
+                additionalProperties: false
+        "404":
+          description: Contact not found
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    post:
+      operationId: contacts_by_id_memory_post
+      summary: Remember a fact about a contact
+      description: Add a durable fact Cue should remember about a contact (the manual 'remember about X' path).
+      tags:
+        - people
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  memory:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      contactId:
+                        type: string
+                      statement:
+                        type: string
+                      kind:
+                        type: string
+                      source:
+                        type: string
+                      sourceRef:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      confidence:
+                        type: number
+                      createdAt:
+                        type: number
+                      lastSeenAt:
+                        type: number
+                    required:
+                      - id
+                      - contactId
+                      - statement
+                      - kind
+                      - source
+                      - sourceRef
+                      - confidence
+                      - createdAt
+                      - lastSeenAt
+                    additionalProperties: false
+                required:
+                  - ok
+                  - memory
+                additionalProperties: false
+        "400":
+          description: Missing/invalid statement or kind
+        "404":
+          description: Contact not found
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                statement:
+                  type: string
+                  description: The fact to remember
+                kind:
+                  description: fact | preference | relationship | context (default fact)
+                  type: string
+                confidence:
+                  description: 0..1 confidence (default 1.0)
+                  type: number
+              required:
+                - statement
+              additionalProperties: false
+  /v1/contacts/{id}/memory/{mid}:
+    delete:
+      operationId: contacts_by_id_memory_by_mid_delete
+      summary: Forget a fact about a contact
+      description: Delete a fact Cue remembers about a contact.
+      tags:
+        - people
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  id:
+                    type: string
+                required:
+                  - ok
+                  - id
+                additionalProperties: false
+        "404":
+          description: Contact or memory not found
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: mid
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: contacts_by_id_memory_by_mid_patch
+      summary: Correct a remembered fact
+      description: Correct the statement, kind, or confidence of a fact Cue remembers about a contact.
+      tags:
+        - people
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  memory:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      contactId:
+                        type: string
+                      statement:
+                        type: string
+                      kind:
+                        type: string
+                      source:
+                        type: string
+                      sourceRef:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      confidence:
+                        type: number
+                      createdAt:
+                        type: number
+                      lastSeenAt:
+                        type: number
+                    required:
+                      - id
+                      - contactId
+                      - statement
+                      - kind
+                      - source
+                      - sourceRef
+                      - confidence
+                      - createdAt
+                      - lastSeenAt
+                    additionalProperties: false
+                required:
+                  - ok
+                  - memory
+                additionalProperties: false
+        "400":
+          description: Invalid statement or kind
+        "404":
+          description: Contact or memory not found
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: mid
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                statement:
+                  type: string
+                kind:
+                  type: string
+                confidence:
+                  type: number
+              additionalProperties: false
   /v1/contacts/invites:
     get:
       operationId: contacts_invites_get
