@@ -167,7 +167,21 @@ export function resolveCallSiteConfig(
   // mainAgent runs a strong tool-calling model; other call sites run a faster
   // one. Defaults to Claude via OpenRouter (fast + reliable tool use);
   // overridable per-env via CUE_OPENROUTER_MODEL / CUE_OPENROUTER_FLASH_MODEL.
-  if (FORCE_OPENROUTER_DEEPSEEK && resolved.provider !== "openrouter") {
+  //
+  // The override also fires when the profile is ALREADY on OpenRouter but its
+  // model is a stale seeded `deepseek/*` string: earlier seeds wrote DeepSeek
+  // models into the managed profiles, and because those rows satisfied
+  // `provider === "openrouter"` they slipped past this force and served real
+  // turns on DeepSeek — which has no vision endpoint, so every
+  // generated-image round-trip failed with "no endpoints found that support
+  // image input". Matching the stale model family here retires those rows at
+  // call time; models a user deliberately picked via the conversation model
+  // picker are untouched unless they are that same stale family.
+  const staleSeededModel = /^deepseek\//i.test(String(resolved.model ?? ""));
+  if (
+    FORCE_OPENROUTER_DEEPSEEK &&
+    (resolved.provider !== "openrouter" || staleSeededModel)
+  ) {
     resolved.provider = "openrouter";
     resolved.provider_connection = "openrouter";
     resolved.model =

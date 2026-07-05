@@ -263,16 +263,21 @@ export function seedInferenceProfiles(
     // Self-host on OpenRouter: when `OPENROUTER_API_KEY` is set the platform
     // "...-managed" proxy is unavailable, so route the managed profiles through
     // the user's OpenRouter key (seeded into the store by the entrypoint, via
-    // the canonical `openrouter` connection) using DeepSeek models — Pro for
-    // balanced/quality, Flash for cost. Leaves the open-weight economy profile
-    // alone. Local/platform installs (no env var) are unaffected.
+    // the canonical `openrouter` connection) using Claude models — strong
+    // tool-calling AND vision-capable (generated images are fed back into the
+    // turn, so a non-vision model here breaks every image flow). Uses the same
+    // env overrides as the resolver's self-host force (`llm-resolver.ts`) so
+    // the seeded profiles and the per-call override can never disagree. Leaves
+    // the open-weight economy profile alone. Local/platform installs (no env
+    // var) are unaffected.
     if (process.env.OPENROUTER_API_KEY && name !== "balanced-economy") {
       next.provider = "openrouter";
       next.provider_connection = "openrouter";
       next.model =
         name === "cost-optimized"
-          ? "deepseek/deepseek-v4-flash"
-          : "deepseek/deepseek-v4-pro";
+          ? (process.env.CUE_OPENROUTER_FLASH_MODEL ??
+            "anthropic/claude-haiku-4.5")
+          : (process.env.CUE_OPENROUTER_MODEL ?? "anthropic/claude-sonnet-4.5");
     }
     if (
       isByokMode &&
