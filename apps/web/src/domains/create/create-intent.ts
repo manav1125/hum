@@ -22,6 +22,23 @@ import {
   type TemplateSpec,
 } from "./studio-specs";
 
+/**
+ * A per-generation style reference — "make it look like this". The user drops
+ * ONE image or pastes a URL to borrow its look for a single generation. This is
+ * DISTINCT from the saved Brand Kit (`brandKitId`): the reference styles this
+ * one output only and never mutates the stored brand.
+ */
+export interface CreateReference {
+  /** Whether the reference is a dropped/uploaded image or a pasted URL. */
+  kind: "image" | "url";
+  /**
+   * The reference itself — an image URL / data-URI / object-URL for `image`,
+   * or the pasted page/asset URL for `url`. The compiler names it verbatim in
+   * the REFERENCE contract line so the skill can fetch or attach it.
+   */
+  ref: string;
+}
+
 /** The structured selection carried with a Create generation. */
 export interface CreateIntent {
   /** slides | image | video | data | docs | … */
@@ -34,6 +51,11 @@ export interface CreateIntent {
   chartTypes?: string[];
   /** Active brand kit id, or null to generate un-branded. */
   brandKitId?: string | null;
+  /**
+   * A per-generation style reference to match ("make it look like this"). One
+   * image or URL, applied to THIS output only — separate from `brandKitId`.
+   */
+  reference?: CreateReference;
 }
 
 /**
@@ -115,6 +137,14 @@ function styleContract(s: StyleSpec): string {
   }.`;
 }
 
+function referenceContract(r: CreateReference): string {
+  const source =
+    r.kind === "url"
+      ? `the reference at this URL: ${r.ref}`
+      : `the attached reference: ${r.ref}`;
+  return `REFERENCE — match the look of ${source} (borrow its palette, composition, and mood for THIS generation only; it does not change the saved brand).`;
+}
+
 /**
  * Compile a `CreateIntent` (+ the active brand) into the design-contract
  * preamble to prepend to the user's prompt. Returns "" when nothing is
@@ -138,6 +168,8 @@ export function compileCreateIntent(
   if (intent.chartTypes?.length) {
     blocks.push(`CHARTS — include these chart types: ${intent.chartTypes.join(", ")}.`);
   }
+
+  if (intent.reference?.ref) blocks.push(referenceContract(intent.reference));
 
   if (intent.brandKitId && brand) blocks.push(brandContract(brand));
 

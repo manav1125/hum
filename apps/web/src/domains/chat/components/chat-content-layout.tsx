@@ -22,6 +22,7 @@ import {
   ChatMainPanel,
   type ChatMainPanelProps,
 } from "@/domains/chat/components/chat-route-content";
+import type { AppViewerRemix } from "@/components/app-viewer-container";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useDeployStore } from "@/stores/deploy-store";
@@ -103,6 +104,67 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   const handleCloseDocument = useCallback(() => {
     useViewerStore.getState().closeDocument();
   }, []);
+
+  // -------------------------------------------------------------------------
+  // Create Studio — remix cluster (SET 3) wiring for the app viewer.
+  //
+  // A generated app (deck / one-pager) can be remixed in place. Each action
+  // re-seeds the SOURCE conversation via the same `?prompt=` navigation path
+  // the document-feedback flow uses, so the backing skill re-renders in
+  // context. We seed into the app's source chat (editingConversationId links an
+  // opened app back to its conversation) and fall back to the active id.
+  // -------------------------------------------------------------------------
+
+  const reseedConversation = useCallback(
+    (prompt: string) => {
+      const cid =
+        useConversationStore.getState().editingConversationId ??
+        useConversationStore.getState().activeConversationId;
+      if (!cid) return;
+      void navigate(
+        `${routes.conversation(cid)}?prompt=${encodeURIComponent(prompt)}`,
+      );
+    },
+    [navigate],
+  );
+
+  // Restyle: the gallery lives on the Create surface (owned by another
+  // workstream) and can't be summoned over the chat viewer yet, so the
+  // tractable path re-seeds a "restyle" instruction into the thread — the user
+  // names the new look in chat. TODO(restyle-gallery): when the gallery can be
+  // invoked as a modal from anywhere, open it here pre-scoped to the asset's
+  // mode and re-seed with buildRestylePrompt(asset, chosenTemplateId).
+  const handleRestyle = useCallback(() => {
+    reseedConversation(
+      "Restyle this deck into a different template — keep all the content and " +
+        "copy exactly, just change the visual template (layout, palette, type, " +
+        "cover). Tell me a few template directions I can pick from.",
+    );
+  }, [reseedConversation]);
+
+  const handleNewBrandKit = useCallback(() => {
+    void navigate(routes.settings.brand);
+  }, [navigate]);
+
+  // The remix descriptor for the open app. Template/style provenance isn't
+  // stamped on OpenedAppState yet (the app-builder doesn't record the
+  // CreateIntent), so we key off the app name; the cluster resolves the active
+  // brand itself. TODO(remix-provenance): thread the originating CreateIntent
+  // (templateId/styleId/brandKitId) onto OpenedAppState so restyle can reopen
+  // the gallery pre-selected and rebrand knows the current kit.
+  const remix: AppViewerRemix | undefined = openedAppState
+    ? {
+        asset: {
+          name: openedAppState.name,
+          mode: "slides",
+          noun: "deck",
+        },
+        onReseed: reseedConversation,
+        onRestyle: handleRestyle,
+        onNewBrandKit: handleNewBrandKit,
+        enableFanout: true,
+      }
+    : undefined;
 
   const onCloseSubagentDetail = useCallback(() => {
     useViewerStore.getState().closeSubagentDetail();
@@ -215,6 +277,7 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
         isSharing={isSharing}
         onDeploy={handleDeployApp}
         isDeploying={isDeploying}
+        remix={remix}
       />
     );
   }

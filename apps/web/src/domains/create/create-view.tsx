@@ -20,8 +20,8 @@
  * so light + dark both render from the shared `--mv1-*` system.
  */
 
-import { ArrowUpRight, LayoutGrid, Send, X } from "lucide-react";
-import { useState } from "react";
+import { ArrowUpRight, ImagePlus, LayoutGrid, Link2, Send, X } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
@@ -46,6 +46,7 @@ import {
 import {
   applyCreateIntent,
   type CreateIntent,
+  type CreateReference,
 } from "@/domains/create/create-intent";
 import { getCanvasActionSpec } from "@/domains/create/studio-specs";
 import { useActiveBrand } from "@/domains/create/use-active-brand";
@@ -89,6 +90,7 @@ function selectionChipText(sel: GallerySelection): string {
 function selectionToIntent(
   sel: GallerySelection,
   brandKitId: string | null,
+  reference: CreateReference | null,
 ): CreateIntent {
   return {
     mode: sel.mode,
@@ -96,6 +98,7 @@ function selectionToIntent(
     styleId: sel.styleId,
     chartTypes: sel.chartTypes,
     brandKitId: sel.inBrand ? brandKitId : null,
+    reference: reference ?? undefined,
   };
 }
 
@@ -299,6 +302,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const { brand } = useActiveBrand();
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [selection, setSelection] = useState<GallerySelection | null>(null);
+  const [reference, setReference] = useState<CreateReference | null>(null);
   const [prompt, setPrompt] = useState("");
 
   const activeMode: CreateMode =
@@ -310,21 +314,25 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
 
   const hasGallery = GALLERY_MODES.has(activeMode.id);
 
-  // Selecting a new mode clears a stale selection (it was mode-scoped).
+  // Selecting a new mode clears a stale selection (it was mode-scoped). The
+  // reference chip is generation-scoped, not mode-scoped, so it persists.
   const switchMode = (id: string) => {
     setActiveModeId(id);
     setActiveTemplateId(null);
     setSelection((prev) => (prev && prev.mode === id ? prev : null));
   };
 
-  // Submit the composer: compile the selection into a design contract and
-  // prepend it to the typed prompt before seeding the thread.
+  // Submit the composer: compile the selection + per-generation reference into
+  // a design contract and prepend it to the typed prompt before seeding.
   const submitComposer = () => {
     const text = prompt.trim();
     if (!text) return;
-    if (selection) {
-      const intent = selectionToIntent(selection, brand?.id ?? null);
-      onRunPrompt(applyCreateIntent(text, intent, selection.inBrand ? brand : null));
+    if (selection || reference) {
+      const intent = selection
+        ? selectionToIntent(selection, brand?.id ?? null, reference)
+        : { mode: activeMode.id, reference: reference ?? undefined };
+      const applyBrand = selection?.inBrand ? brand : null;
+      onRunPrompt(applyCreateIntent(text, intent, applyBrand));
     } else {
       onRunPrompt(text);
     }
@@ -334,7 +342,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const runCanvasAction = (sel: GallerySelection) => {
     const action = sel.actionId ? getCanvasActionSpec(sel.actionId) : undefined;
     if (!action) return;
-    const intent = selectionToIntent(sel, brand?.id ?? null);
+    const intent = selectionToIntent(sel, brand?.id ?? null, reference);
     onRunPrompt(
       applyCreateIntent(action.promptSeed, intent, sel.inBrand ? brand : null),
     );
@@ -483,6 +491,9 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                   )
               : undefined
           }
+          reference={reference}
+          onReference={setReference}
+          onClearReference={() => setReference(null)}
           brandName={brand?.name ?? null}
           onSubmit={submitComposer}
         />
@@ -495,6 +506,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
         <CreateGalleryOverlay
           mode={activeMode.id}
           hasBrand={Boolean(brand)}
+          brandName={brand?.name ?? null}
           initialInBrand={selection?.inBrand ?? true}
           onConfirm={handleGalleryConfirm}
           onTakeAiDirection={() => {
@@ -600,6 +612,9 @@ function StudioComposer({
   selection,
   onClearSelection,
   onToggleBrand,
+  reference,
+  onReference,
+  onClearReference,
   brandName,
   onSubmit,
 }: {
@@ -609,6 +624,9 @@ function StudioComposer({
   selection: GallerySelection | null;
   onClearSelection: () => void;
   onToggleBrand?: () => void;
+  reference: CreateReference | null;
+  onReference: (r: CreateReference) => void;
+  onClearReference: () => void;
   brandName: string | null;
   onSubmit: () => void;
 }) {
@@ -625,46 +643,52 @@ function StudioComposer({
         gap: 10,
       }}
     >
-      {/* Selection + brand chips */}
-      {selection ? (
+      {/* Selection + reference + brand chips */}
+      {selection || reference ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              fontSize: 12.5,
-              fontWeight: 600,
-              color: C.blueS,
-              background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
-              border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
-              borderRadius: 999,
-              padding: "5px 6px 5px 11px",
-            }}
-          >
-            <span aria-hidden>▣</span>
-            {selectionChipText(selection)}
-            <button
-              type="button"
-              onClick={onClearSelection}
-              aria-label="Clear selection"
+          {selection ? (
+            <span
               style={{
-                display: "grid",
-                placeItems: "center",
-                width: 18,
-                height: 18,
-                borderRadius: 999,
-                border: "none",
-                background: "transparent",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                fontSize: 12.5,
+                fontWeight: 600,
                 color: C.blueS,
-                cursor: "pointer",
+                background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+                border: `1px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
+                borderRadius: 999,
+                padding: "5px 6px 5px 11px",
               }}
             >
-              <X size={13} />
-            </button>
-          </span>
+              <span aria-hidden>▣</span>
+              {selectionChipText(selection)}
+              <button
+                type="button"
+                onClick={onClearSelection}
+                aria-label="Clear selection"
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  border: "none",
+                  background: "transparent",
+                  color: C.blueS,
+                  cursor: "pointer",
+                }}
+              >
+                <X size={13} />
+              </button>
+            </span>
+          ) : null}
 
-          {onToggleBrand ? (
+          {reference ? (
+            <ReferenceChip reference={reference} onClear={onClearReference} />
+          ) : null}
+
+          {onToggleBrand && selection ? (
             <button
               type="button"
               onClick={onToggleBrand}
@@ -690,6 +714,11 @@ function StudioComposer({
         </div>
       ) : null}
 
+      {/* Reference drop — "make it look like this" (per-generation style). */}
+      {reference ? null : (
+        <ReferenceDrop onReference={onReference} />
+      )}
+
       {/* Prompt row */}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
         <textarea
@@ -703,8 +732,8 @@ function StudioComposer({
           }}
           rows={isMobile ? 2 : 1}
           placeholder={
-            selection
-              ? "Describe what you want — your pick rides along…"
+            selection || reference
+              ? "Describe what you want — your picks ride along…"
               : "Describe what you want to create…"
           }
           style={{
@@ -743,6 +772,282 @@ function StudioComposer({
           <Send size={16} />
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Reference chip (4c) — the confirmed per-generation reference, shown alongside
+ * the Template/Style chip. Carries a tiny thumbnail (image refs) or a link
+ * glyph (URL refs) + a dismiss ✕. Distinct wash from the blue selection chip so
+ * "borrowed look" reads apart from "picked template".
+ */
+function ReferenceChip({
+  reference,
+  onClear,
+}: {
+  reference: CreateReference;
+  onClear: () => void;
+}) {
+  const name =
+    reference.kind === "image"
+      ? referenceImageName(reference.ref)
+      : referenceUrlHost(reference.ref);
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        fontSize: 12.5,
+        fontWeight: 600,
+        color: C.t1,
+        background: C.sunken,
+        border: `1px solid ${C.line}`,
+        borderRadius: 999,
+        padding: "4px 6px 4px 5px",
+        maxWidth: 240,
+      }}
+    >
+      {reference.kind === "image" ? (
+        <span
+          aria-hidden
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 6,
+            flexShrink: 0,
+            background: `center / cover no-repeat url("${reference.ref}"), ${C.line}`,
+          }}
+        />
+      ) : (
+        <span
+          aria-hidden
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 6,
+            flexShrink: 0,
+            display: "grid",
+            placeItems: "center",
+            background: C.surface,
+            color: C.t2,
+          }}
+        >
+          <Link2 size={12} />
+        </span>
+      )}
+      <span
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Reference: {name}
+      </span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Remove reference"
+        style={{
+          display: "grid",
+          placeItems: "center",
+          width: 18,
+          height: 18,
+          borderRadius: 999,
+          border: "none",
+          background: "transparent",
+          color: C.t2,
+          cursor: "pointer",
+        }}
+      >
+        <X size={13} />
+      </button>
+    </span>
+  );
+}
+
+/** Short display name for an image reference (strip object-URL / path noise). */
+function referenceImageName(ref: string): string {
+  if (ref.startsWith("blob:") || ref.startsWith("data:")) return "uploaded image";
+  const tail = ref.split("/").pop() ?? ref;
+  return tail.length > 28 ? `${tail.slice(0, 25)}…` : tail;
+}
+
+/** Short display name for a URL reference (host, sans scheme/www). */
+function referenceUrlHost(ref: string): string {
+  try {
+    return new URL(ref).hostname.replace(/^www\./, "");
+  } catch {
+    return ref.length > 28 ? `${ref.slice(0, 25)}…` : ref;
+  }
+}
+
+/** True for strings that look like an http(s) URL a user might paste. */
+function looksLikeUrl(v: string): boolean {
+  return /^https?:\/\/\S+$/i.test(v.trim());
+}
+
+/**
+ * Reference drop target (4c) — "make it look like this". Drag an image or
+ * paste a URL to borrow its look for ONE generation (distinct from the saved
+ * Brand Kit). On drop/paste it runs a brief "extracting the look…" state, then
+ * confirms the reference (which parks as a chip in the composer). The
+ * extraction is cosmetic — we don't run real vision here; the ref rides into
+ * the CreateIntent and the skill does the extraction at generation time.
+ */
+function ReferenceDrop({
+  onReference,
+}: {
+  onReference: (r: CreateReference) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const [extracting, setExtracting] = useState<CreateReference | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const beginExtract = (ref: CreateReference) => {
+    setExtracting(ref);
+    if (timer.current) clearTimeout(timer.current);
+    // Brief "extracting the look…" beat, then hand the ref to the composer.
+    timer.current = setTimeout(() => {
+      setExtracting(null);
+      onReference(ref);
+    }, 900);
+  };
+
+  const takeFile = (file: File | null | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    beginExtract({ kind: "image", ref: URL.createObjectURL(file) });
+  };
+
+  if (extracting) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          borderRadius: 12,
+          border: `1px dashed ${C.blue}`,
+          background: `color-mix(in srgb, ${C.blue} 7%, transparent)`,
+          padding: "12px 14px",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 999,
+            border: `2px solid color-mix(in srgb, ${C.blue} 30%, transparent)`,
+            borderTopColor: C.blueS,
+            animation: "spin 0.7s linear infinite",
+          }}
+        />
+        <span style={{ fontSize: 13, color: C.t2 }}>
+          Extracting the look…{" "}
+          <span style={{ color: C.t3 }}>
+            palette · composition · mood
+          </span>
+        </span>
+        <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) {
+          takeFile(file);
+          return;
+        }
+        const text = e.dataTransfer.getData("text/uri-list") ||
+          e.dataTransfer.getData("text/plain");
+        if (looksLikeUrl(text)) beginExtract({ kind: "url", ref: text.trim() });
+      }}
+      onPaste={(e) => {
+        const text = e.clipboardData.getData("text/plain");
+        if (looksLikeUrl(text)) {
+          e.preventDefault();
+          beginExtract({ kind: "url", ref: text.trim() });
+        }
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        borderRadius: 12,
+        border: `1px dashed ${dragOver ? C.blue : C.line}`,
+        background: dragOver
+          ? `color-mix(in srgb, ${C.blue} 8%, transparent)`
+          : C.sunken,
+        padding: "10px 12px",
+        cursor: "pointer",
+        transition: "border-color 120ms, background 120ms",
+      }}
+      onClick={() => fileInput.current?.click()}
+      role="button"
+      tabIndex={0}
+      aria-label="Add a style reference — drop an image or paste a URL"
+    >
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          takeFile(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+      <span
+        aria-hidden
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 9,
+          flexShrink: 0,
+          display: "grid",
+          placeItems: "center",
+          color: C.blueS,
+          background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+        }}
+      >
+        <ImagePlus size={17} />
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span
+          style={{
+            display: "block",
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: C.t1,
+          }}
+        >
+          Drop an image or paste a URL to borrow its look
+        </span>
+        <span
+          style={{
+            display: "block",
+            marginTop: 1,
+            fontSize: 11,
+            color: C.t3,
+          }}
+        >
+          palette · composition · mood — for this one generation only
+        </span>
+      </span>
     </div>
   );
 }

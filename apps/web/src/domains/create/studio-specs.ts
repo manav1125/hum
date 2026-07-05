@@ -666,6 +666,14 @@ export function getTemplateSpec(id: string): TemplateSpec | undefined {
 
 export type StyleKind = "image" | "video";
 
+/**
+ * Video style sub-grouping — powers the "All 6 / Live-action / Animated" tabs
+ * in the Video gallery variant. Live-action styles read as captured footage;
+ * animated styles read as rendered / illustrated motion. Only set on video
+ * specs; image specs leave it undefined.
+ */
+export type VideoStyleKind = "live" | "animated";
+
 export interface StyleSpec {
   /** Stable id used in CreateIntent.styleId. */
   id: string;
@@ -679,6 +687,8 @@ export interface StyleSpec {
   promptFragment: string;
   /** Optional model hint (a Replicate slug or family) the style suits best. */
   model?: string;
+  /** Video-only: which "Live-action | Animated" tab this style belongs to. */
+  videoKind?: VideoStyleKind;
 }
 
 const IMAGE_THUMB = (file: string) =>
@@ -810,20 +820,36 @@ export const IMAGE_STYLE_SPECS: StyleSpec[] = [
   },
 ];
 
-/** 6 video StyleSpecs. */
+/**
+ * 6 video StyleSpecs. Ordered + grouped to the SET-4 mock: the Video gallery
+ * shows "All 6 / Live-action / Animated" tabs, so each spec declares a
+ * `videoKind` — Cinematic / Product / Nature / Adventure read as captured
+ * footage ("live"); Animation / Abstract read as rendered motion ("animated").
+ */
 export const VIDEO_STYLE_SPECS: StyleSpec[] = [
   {
     id: "cinematic",
     label: "Cinematic",
     kind: "video",
+    videoKind: "live",
     thumbnail: VIDEO_THUMB("cinematic.png"),
     promptFragment:
       "cinematic footage, anamorphic lens, shallow depth of field, dramatic film lighting, graded color, smooth dolly motion, 24fps film look",
   },
   {
+    id: "product",
+    label: "Product",
+    kind: "video",
+    videoKind: "live",
+    thumbnail: VIDEO_THUMB("product.png"),
+    promptFragment:
+      "clean product showcase, seamless studio backdrop, soft key + rim lighting, slow rotating hero shots, crisp reflections, premium commercial polish",
+  },
+  {
     id: "animation",
     label: "Animation",
     kind: "video",
+    videoKind: "animated",
     thumbnail: VIDEO_THUMB("animation.png"),
     promptFragment:
       "stylized 2D/3D animation, fluid motion, bold shapes, vibrant palette, expressive character movement, clean motion-graphics timing",
@@ -832,33 +858,28 @@ export const VIDEO_STYLE_SPECS: StyleSpec[] = [
     id: "nature",
     label: "Nature",
     kind: "video",
+    videoKind: "live",
     thumbnail: VIDEO_THUMB("nature.png"),
     promptFragment:
       "nature documentary footage, sweeping aerial and macro shots, golden-hour light, lush natural color, serene slow pacing, David Attenborough mood",
   },
   {
-    id: "product",
-    label: "Product",
-    kind: "video",
-    thumbnail: VIDEO_THUMB("product.png"),
-    promptFragment:
-      "clean product showcase, seamless studio backdrop, soft key + rim lighting, slow rotating hero shots, crisp reflections, premium commercial polish",
-  },
-  {
-    id: "person",
-    label: "Person",
-    kind: "video",
-    thumbnail: VIDEO_THUMB("person.png"),
-    promptFragment:
-      "natural portrait footage, flattering soft light, shallow depth of field, authentic expression, subtle handheld motion, warm skin tones",
-  },
-  {
     id: "abstract",
     label: "Abstract",
     kind: "video",
+    videoKind: "animated",
     thumbnail: VIDEO_THUMB("abstract.png"),
     promptFragment:
       "abstract motion, flowing fluid gradients, particle systems, hypnotic looping movement, luminous color transitions, dreamlike non-representational visuals",
+  },
+  {
+    id: "adventure",
+    label: "Adventure",
+    kind: "video",
+    videoKind: "live",
+    thumbnail: VIDEO_THUMB("person.png"),
+    promptFragment:
+      "adventurous action footage, dynamic handheld and drone motion, wide natural vistas, energetic pacing, sun-flared golden light, immersive first-person energy",
   },
 ];
 
@@ -1028,6 +1049,9 @@ export const CHART_TYPE_SPECS: ChartTypeSpec[] = [
 // kicks off with.
 // ---------------------------------------------------------------------------
 
+/** Which small illustration a canvas action tile renders. */
+export type CanvasActionGlyph = "plus" | "edit" | "upscale" | "cutout";
+
 export interface CanvasActionSpec {
   /** Stable id used in CreateIntent (canvas action). */
   id: string;
@@ -1035,37 +1059,49 @@ export interface CanvasActionSpec {
   label: string;
   /** One-line description of what the action does. */
   description: string;
+  /** Illustration hint for the gallery tile. */
+  glyph: CanvasActionGlyph;
   /** The prompt this action seeds the thread with. */
   promptSeed: string;
 }
 
-/** 4 canvas actions. */
+/**
+ * 4 canvas actions, matched to the SET-4 mock: Create new · Edit image ·
+ * Upscale · Remove background. Each seeds the thread with its own directive
+ * (rather than a design contract), and the gallery renders them as a 2×2 grid
+ * of illustrative action tiles. `glyph` drives the tile's small illustration.
+ */
 export const CANVAS_ACTION_SPECS: CanvasActionSpec[] = [
   {
-    id: "blank",
-    label: "Blank canvas",
-    description: "Start a fresh interactive canvas from scratch.",
-    promptSeed: "Open a new blank canvas I can build on.",
+    id: "create_new",
+    label: "Create new",
+    description: "Start from a blank canvas or a prompt.",
+    glyph: "plus",
+    promptSeed: "Open a new blank image canvas — I'll describe what to create.",
   },
   {
-    id: "diagram",
-    label: "Diagram",
-    description: "Sketch a flow, architecture, or mind map.",
+    id: "edit_image",
+    label: "Edit image",
+    description: "Inpaint, extend or restyle an upload.",
+    glyph: "edit",
     promptSeed:
-      "Create a diagram canvas — help me map out a flow / architecture.",
+      "I want to edit an image — help me inpaint, extend, or restyle an upload.",
   },
   {
-    id: "whiteboard",
-    label: "Whiteboard",
-    description: "A freeform whiteboard for notes and shapes.",
-    promptSeed: "Open a freeform whiteboard canvas for notes and shapes.",
-  },
-  {
-    id: "moodboard",
-    label: "Moodboard",
-    description: "Collect images and references into a visual board.",
+    id: "upscale",
+    label: "Upscale",
+    description: "2× / 4× resolution, sharpen detail.",
+    glyph: "upscale",
     promptSeed:
-      "Create a moodboard canvas — collect images and references into a visual board.",
+      "Upscale an image for me — 2× / 4× resolution and sharpen the detail.",
+  },
+  {
+    id: "remove_background",
+    label: "Remove background",
+    description: "Cut the subject onto transparency.",
+    glyph: "cutout",
+    promptSeed:
+      "Remove the background from an image — cut the subject onto transparency.",
   },
 ];
 

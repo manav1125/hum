@@ -22,7 +22,7 @@
  */
 
 import { Check, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
@@ -33,9 +33,11 @@ import {
   IMAGE_STYLE_SPECS,
   TEMPLATE_SPECS,
   VIDEO_STYLE_SPECS,
+  type CanvasActionGlyph,
   type StyleSpec,
   type TemplateFidelity,
   type TemplateSpec,
+  type VideoStyleKind,
 } from "@/domains/create/studio-specs";
 import { publicAsset } from "@/utils/public-asset";
 
@@ -145,6 +147,13 @@ const SLIDE_CATEGORIES: {
   { id: "bold", label: "Bold" },
 ];
 
+/** Video style tabs (SET-4 mock): All 6 / Live-action / Animated. */
+const VIDEO_TABS: { id: VideoStyleKind | "all"; label: string }[] = [
+  { id: "all", label: `All ${VIDEO_STYLE_SPECS.length}` },
+  { id: "live", label: "Live-action" },
+  { id: "animated", label: "Animated" },
+];
+
 // -- Small shared bits ------------------------------------------------------
 
 /** Selected ✓ badge, top-right of a card. */
@@ -226,6 +235,11 @@ export interface CreateGalleryOverlayProps {
   mode: string;
   /** Whether an active Brand Kit exists (enables the "In your brand" toggle). */
   hasBrand: boolean;
+  /**
+   * The active brand's display name — labels the in-gallery live preview
+   * ("previewing your content"). Optional; falls back to a neutral sample.
+   */
+  brandName?: string | null;
   /** Initial brand-toggle state. */
   initialInBrand?: boolean;
   /** Confirm — the picked selection rides back to the composer. */
@@ -239,6 +253,7 @@ export interface CreateGalleryOverlayProps {
 export function CreateGalleryOverlay({
   mode,
   hasBrand,
+  brandName,
   initialInBrand = true,
   onConfirm,
   onTakeAiDirection,
@@ -260,6 +275,9 @@ export function CreateGalleryOverlay({
   const [category, setCategory] =
     useState<(typeof SLIDE_CATEGORIES)[number]["id"]>("all");
   const [search, setSearch] = useState("");
+  // video — style sub-tab (All / Live-action / Animated).
+  const [videoTab, setVideoTab] =
+    useState<(typeof VIDEO_TABS)[number]["id"]>("all");
   // data — output format + multi-select charts.
   const [formatId, setFormatId] = useState<string>(DATA_FORMAT_SPECS[0].id);
   const [chartIds, setChartIds] = useState<string[]>(["bar", "line"]);
@@ -477,6 +495,41 @@ export function CreateGalleryOverlay({
           </div>
         ) : null}
 
+        {/* Video: style sub-tabs (All 6 / Live-action / Animated) */}
+        {kind === "style" && mode === "video" ? (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              padding: isMobile ? "10px 16px" : "0 20px 12px",
+            }}
+          >
+            {VIDEO_TABS.map((tab) => {
+              const active = tab.id === videoTab;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setVideoTab(tab.id)}
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    borderRadius: 999,
+                    padding: "5px 12px",
+                    cursor: "pointer",
+                    border: `1px solid ${active ? "transparent" : C.line}`,
+                    background: active ? C.t1 : "transparent",
+                    color: active ? C.surface : C.t2,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
         {/* Body (scroll region) */}
         <div
           style={{
@@ -493,6 +546,8 @@ export function CreateGalleryOverlay({
               search={search}
               selectedId={selectedId}
               fidelityMode={fidelityMode}
+              previewInBrand={inBrand}
+              brandName={brandName ?? null}
               onSelect={setSelectedId}
               onFidelity={setFidelityMode}
             />
@@ -501,7 +556,13 @@ export function CreateGalleryOverlay({
           {kind === "style" ? (
             <StyleGrid
               isMobile={isMobile}
-              styles={mode === "video" ? VIDEO_STYLE_SPECS : IMAGE_STYLE_SPECS}
+              styles={
+                mode === "video"
+                  ? VIDEO_STYLE_SPECS.filter(
+                      (s) => videoTab === "all" || s.videoKind === videoTab,
+                    )
+                  : IMAGE_STYLE_SPECS
+              }
               selectedId={selectedId}
               onSelect={setSelectedId}
             />
@@ -723,6 +784,8 @@ function SlidesGrid({
   search,
   selectedId,
   fidelityMode,
+  previewInBrand,
+  brandName,
   onSelect,
   onFidelity,
 }: {
@@ -731,6 +794,8 @@ function SlidesGrid({
   search: string;
   selectedId: string | null;
   fidelityMode: "exact" | "inspired";
+  previewInBrand: boolean;
+  brandName: string | null;
   onSelect: (id: string) => void;
   onFidelity: (m: "exact" | "inspired") => void;
 }) {
@@ -748,55 +813,213 @@ function SlidesGrid({
 
   return (
     <div style={gridStyle(isMobile)}>
-      {items.map((t) => {
-        const selected = t.id === selectedId;
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onSelect(t.id)}
-            style={cardFrame(selected)}
-          >
-            {selected ? <SelectedBadge /> : null}
-            <span
-              style={{
-                display: "block",
-                width: "100%",
-                aspectRatio: "4 / 3",
-                background: `center / cover no-repeat url("${publicAsset(t.thumbnail)}")`,
-              }}
-            />
-            <span
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 6,
-                padding: "8px 10px",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  color: C.t1,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {t.name}
-              </span>
-              <FidelityBadge
-                fidelity={t.fidelity}
-                mode={fidelityMode}
-                onChange={onFidelity}
-              />
-            </span>
-          </button>
-        );
-      })}
+      {items.map((t) => (
+        <SlideCard
+          key={t.id}
+          template={t}
+          isMobile={isMobile}
+          selected={t.id === selectedId}
+          fidelityMode={fidelityMode}
+          previewInBrand={previewInBrand}
+          brandName={brandName}
+          onSelect={() => onSelect(t.id)}
+          onFidelity={onFidelity}
+        />
+      ))}
     </div>
+  );
+}
+
+/**
+ * A single slides template card with the SET-4 live-preview interaction:
+ * hover (desktop) / long-press (mobile) swaps the demo thumbnail for a
+ * "your content in this template" preview — a representative in-brand slide
+ * with a "previewing your content" pill — then swaps back on leave/release.
+ * The swap is a cross-fade over a fixed-aspect frame, so there's no layout
+ * shift and no per-user render is required.
+ */
+function SlideCard({
+  template: t,
+  isMobile,
+  selected,
+  fidelityMode,
+  previewInBrand,
+  brandName,
+  onSelect,
+  onFidelity,
+}: {
+  template: TemplateSpec;
+  isMobile: boolean;
+  selected: boolean;
+  fidelityMode: "exact" | "inspired";
+  previewInBrand: boolean;
+  brandName: string | null;
+  onSelect: () => void;
+  onFidelity: (m: "exact" | "inspired") => void;
+}) {
+  const [preview, setPreview] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  // Mobile: a ~350ms press arms the preview; releasing/scrolling clears it.
+  const onTouchStart = () => {
+    clearPress();
+    pressTimer.current = setTimeout(() => setPreview(true), 350);
+  };
+  const onTouchEnd = () => {
+    clearPress();
+    setPreview(false);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onMouseEnter={isMobile ? undefined : () => setPreview(true)}
+      onMouseLeave={isMobile ? undefined : () => setPreview(false)}
+      onTouchStart={isMobile ? onTouchStart : undefined}
+      onTouchEnd={isMobile ? onTouchEnd : undefined}
+      onTouchCancel={isMobile ? onTouchEnd : undefined}
+      style={cardFrame(selected)}
+    >
+      {selected ? <SelectedBadge /> : null}
+      {/* Fixed-aspect media frame: demo thumb + preview cross-fade layered. */}
+      <span
+        style={{
+          position: "relative",
+          display: "block",
+          width: "100%",
+          aspectRatio: "4 / 3",
+          overflow: "hidden",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: `center / cover no-repeat url("${publicAsset(t.thumbnail)}")`,
+            opacity: preview ? 0 : 1,
+            transition: "opacity 160ms ease",
+          }}
+        />
+        <SlidePreview
+          template={t}
+          brandName={brandName}
+          inBrand={previewInBrand}
+          visible={preview}
+        />
+      </span>
+      <span
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 6,
+          padding: "8px 10px",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: C.t1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {t.name}
+        </span>
+        <FidelityBadge
+          fidelity={t.fidelity}
+          mode={fidelityMode}
+          onChange={onFidelity}
+        />
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The live-preview overlay — a lightweight "your content in this template"
+ * mock rendered from the template's own palette/fonts (a representative
+ * in-brand slide, not a real per-user render), with the "previewing your
+ * content" pill. Cross-fades in over the demo thumbnail.
+ */
+function SlidePreview({
+  template: t,
+  brandName,
+  inBrand,
+  visible,
+}: {
+  template: TemplateSpec;
+  brandName: string | null;
+  inBrand: boolean;
+  visible: boolean;
+}) {
+  const p = t.palette;
+  return (
+    <span
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "flex-end",
+        padding: 12,
+        background: p.bg,
+        color: p.text,
+        fontFamily: t.fonts.heading,
+        opacity: visible ? 1 : 0,
+        transition: "opacity 160ms ease",
+        pointerEvents: "none",
+      }}
+    >
+      {/* "previewing your content" pill, top-left. */}
+      <span
+        style={{
+          position: "absolute",
+          top: 8,
+          left: 8,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          fontFamily: mono,
+          fontSize: 8.5,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "#fff",
+          background: "rgba(0,0,0,0.62)",
+          borderRadius: 5,
+          padding: "3px 6px",
+        }}
+      >
+        ● Previewing your content
+      </span>
+      {/* Accent bar + a representative headline in the template's type. */}
+      <span
+        style={{
+          display: "block",
+          width: 26,
+          height: 4,
+          borderRadius: 999,
+          background: p.accent,
+          marginBottom: 8,
+        }}
+      />
+      <span style={{ fontSize: 15, lineHeight: 1.1 }}>
+        {inBrand && brandName ? `${brandName}: ` : ""}
+        Raising our{" "}
+        <span style={{ fontStyle: "italic", color: p.primary }}>Series A</span>
+      </span>
+    </span>
   );
 }
 
@@ -937,6 +1160,79 @@ function DocsGrid({
   );
 }
 
+/** Small illustration for a canvas action tile (matches the SET-4 mock). */
+function CanvasGlyph({ glyph }: { glyph: CanvasActionGlyph }) {
+  const chip = (extra: React.CSSProperties) => ({
+    display: "block",
+    borderRadius: 5,
+    ...extra,
+  });
+  if (glyph === "plus") {
+    return (
+      <span style={{ fontSize: 22, lineHeight: 1, color: C.blueS }} aria-hidden>
+        +
+      </span>
+    );
+  }
+  if (glyph === "edit") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} aria-hidden>
+        <span
+          style={chip({
+            width: 18,
+            height: 14,
+            border: `1.5px dashed ${C.t3}`,
+            background: "transparent",
+          })}
+        />
+        <span style={chip({ width: 18, height: 14, background: C.blue })} />
+      </span>
+    );
+  }
+  if (glyph === "upscale") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} aria-hidden>
+        <span style={chip({ width: 12, height: 10, background: C.line })} />
+        <span
+          style={{ fontSize: 12, color: C.t3, fontFamily: mono }}
+        >
+          →
+        </span>
+        <span style={chip({ width: 20, height: 16, background: C.blue })} />
+      </span>
+    );
+  }
+  // cutout — subject onto transparency (checkerboard hint + orange subject)
+  return (
+    <span
+      style={{
+        display: "block",
+        width: 30,
+        height: 20,
+        borderRadius: 5,
+        position: "relative",
+        background:
+          "repeating-conic-gradient(color-mix(in srgb, currentColor 12%, transparent) 0% 25%, transparent 0% 50%) 0 / 8px 8px",
+        color: C.t3,
+      }}
+      aria-hidden
+    >
+      <span
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 12,
+          height: 12,
+          borderRadius: 999,
+          background: "#e08a3c",
+        }}
+      />
+    </span>
+  );
+}
+
 function CanvasGrid({
   isMobile,
   selectedId,
@@ -946,6 +1242,7 @@ function CanvasGrid({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const [first, ...rest] = CANVAS_ACTION_SPECS;
   return (
     <div
       style={{
@@ -954,40 +1251,102 @@ function CanvasGrid({
         gap: 12,
       }}
     >
-      {CANVAS_ACTION_SPECS.map((a) => {
-        const selected = a.id === selectedId;
-        return (
-          <button
-            key={a.id}
-            type="button"
-            onClick={() => onSelect(a.id)}
-            style={{ ...cardFrame(selected), padding: 14 }}
-          >
-            {selected ? <SelectedBadge /> : null}
-            <span
+      {/* "Create new" — featured tile: centered glyph, primary path. */}
+      <button
+        key={first.id}
+        type="button"
+        onClick={() => onSelect(first.id)}
+        style={{
+          ...cardFrame(first.id === selectedId),
+          padding: 16,
+          minHeight: isMobile ? 120 : 172,
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
+          gap: 6,
+          background:
+            first.id === selectedId
+              ? `color-mix(in srgb, ${C.blue} 8%, ${C.sunken})`
+              : C.sunken,
+        }}
+      >
+        {first.id === selectedId ? <SelectedBadge /> : null}
+        <CanvasGlyph glyph={first.glyph} />
+        <span style={{ fontSize: 14, fontWeight: 600, color: C.t1, marginTop: 6 }}>
+          {first.label}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            color: C.t2,
+            lineHeight: 1.4,
+            maxWidth: 180,
+          }}
+        >
+          {first.description}
+        </span>
+      </button>
+
+      {/* The three secondary actions, stacked in the right column. */}
+      <div style={{ display: "grid", gap: 12, gridTemplateRows: "repeat(3, 1fr)" }}>
+        {rest.map((a) => {
+          const selected = a.id === selectedId;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onSelect(a.id)}
               style={{
-                display: "block",
-                fontSize: 14,
-                fontWeight: 600,
-                color: C.t1,
+                ...cardFrame(selected),
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                padding: 12,
               }}
             >
-              {a.label}
-            </span>
-            <span
-              style={{
-                display: "block",
-                marginTop: 4,
-                fontSize: 12,
-                color: C.t2,
-                lineHeight: 1.4,
-              }}
-            >
-              {a.description}
-            </span>
-          </button>
-        );
-      })}
+              {selected ? <SelectedBadge /> : null}
+              <span
+                aria-hidden
+                style={{
+                  flexShrink: 0,
+                  width: 46,
+                  height: 40,
+                  borderRadius: 8,
+                  background: C.surface,
+                  border: `1px solid ${C.line}`,
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                <CanvasGlyph glyph={a.glyph} />
+              </span>
+              <span style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    color: C.t1,
+                  }}
+                >
+                  {a.label}
+                </span>
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 2,
+                    fontSize: 11.5,
+                    color: C.t2,
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {a.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

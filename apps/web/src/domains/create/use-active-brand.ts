@@ -32,11 +32,19 @@ import type { BrandProfileLike } from "@/domains/create/create-intent";
 export interface ActiveBrand extends BrandProfileLike {
   /** The active brand profile's id (→ CreateIntent.brandKitId). */
   id: string;
+  /** Whether this is the assistant's active (applied-everywhere) kit. */
+  isActive?: boolean;
 }
 
 export interface UseActiveBrandResult {
   /** The active Brand Kit, or null when none is active / not loaded. */
   brand: ActiveBrand | null;
+  isLoading: boolean;
+}
+
+export interface UseBrandKitsResult {
+  /** All saved Brand Kits (active flagged), or [] when none / not loaded. */
+  kits: ActiveBrand[];
   isLoading: boolean;
 }
 
@@ -69,8 +77,42 @@ export function useActiveBrand(): UseActiveBrandResult {
       fonts: active.fonts,
       logo: active.logo,
       voice: active.voice,
+      isActive: true,
     };
   }, [query.data]);
 
   return { brand, isLoading: query.isLoading };
+}
+
+/**
+ * Returns ALL of the assistant's saved Brand Kits, mapped to the CreateIntent
+ * shape. Used by the OUTPUT-side Rebrand menu (re-render a generated asset in a
+ * different kit). Read-only — the Brand Kit pages own creation / editing.
+ */
+export function useBrandKits(): UseBrandKitsResult {
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+
+  const query = useQuery({
+    ...brandprofilesGetOptions({
+      path: { assistant_id: assistantId ?? "" },
+    }),
+    enabled: Boolean(assistantId),
+    staleTime: 60_000,
+  });
+
+  const kits = useMemo<ActiveBrand[]>(() => {
+    const profiles = query.data?.brandProfiles;
+    if (!profiles?.length) return [];
+    return profiles.map((p) => ({
+      id: p.id,
+      name: p.name,
+      palette: p.palette,
+      fonts: p.fonts,
+      logo: p.logo,
+      voice: p.voice,
+      isActive: p.isActive === 1,
+    }));
+  }, [query.data]);
+
+  return { kits, isLoading: query.isLoading };
 }

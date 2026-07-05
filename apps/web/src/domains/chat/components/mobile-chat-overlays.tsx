@@ -17,6 +17,7 @@ import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import { routes } from "@/utils/routes";
 
+import type { AppViewerRemix } from "@/components/app-viewer-container";
 import { MobileAppOverlay } from "@/domains/chat/components/mobile-app-overlay";
 import { MobileDocumentOverlay } from "@/domains/chat/components/mobile-document-overlay";
 import { MobileSubagentDetailOverlay } from "@/domains/chat/components/mobile-subagent-detail-overlay";
@@ -95,6 +96,45 @@ export function MobileChatOverlays() {
     useViewerStore.getState().requestRuleEditorForActiveTool();
   }, []);
 
+  // Create Studio remix (SET 3 · mobile). Re-seeds the source conversation via
+  // the same `?prompt=` path as the desktop layout (see chat-content-layout).
+  const reseedConversation = useCallback(
+    (prompt: string) => {
+      const cid =
+        useConversationStore.getState().editingConversationId ??
+        useConversationStore.getState().activeConversationId;
+      if (!cid) return;
+      navigate(
+        `${routes.conversation(cid)}?prompt=${encodeURIComponent(prompt)}`,
+      );
+    },
+    [navigate],
+  );
+
+  const handleRestyle = useCallback(() => {
+    reseedConversation(
+      "Restyle this deck into a different template — keep all the content and " +
+        "copy exactly, just change the visual template. Suggest a few directions.",
+    );
+  }, [reseedConversation]);
+
+  const handleNewBrandKit = useCallback(() => {
+    navigate(routes.settings.brand);
+  }, [navigate]);
+
+  // See chat-content-layout for the TODO(remix-provenance) note — template/
+  // style aren't stamped on OpenedAppState yet, so we key off name; the cluster
+  // resolves the active brand itself.
+  const remix: AppViewerRemix | undefined = openedAppState
+    ? {
+        asset: { name: openedAppState.name, mode: "slides", noun: "deck" },
+        onReseed: reseedConversation,
+        onRestyle: handleRestyle,
+        onNewBrandKit: handleNewBrandKit,
+        enableFanout: true,
+      }
+    : undefined;
+
   if (!overlayTarget) return null;
 
   return createPortal(
@@ -111,6 +151,7 @@ export function MobileChatOverlays() {
         isSharing={isSharing}
         onDeploy={handleDeployApp}
         isDeploying={isDeploying}
+        remix={remix}
       />
       <MobileDocumentOverlay
         openedDocumentState={

@@ -1,4 +1,7 @@
-import { AppViewerContainer } from "@/components/app-viewer-container";
+import {
+  AppViewerContainer,
+  type AppViewerRemix,
+} from "@/components/app-viewer-container";
 import type { OpenedAppState } from "@/stores/viewer-store";
 
 interface MobileAppOverlayProps {
@@ -24,6 +27,8 @@ interface MobileAppOverlayProps {
   isDeploying: boolean;
   /** Deep-link route to forward to the iframe (`window.vellum.route`). */
   route?: string;
+  /** Create Studio remix cluster (SET 3 · mobile bottom sheet). */
+  remix?: AppViewerRemix;
 }
 
 /**
@@ -46,6 +51,7 @@ export function MobileAppOverlay({
   onDeploy,
   isDeploying,
   route,
+  remix,
 }: MobileAppOverlayProps) {
   if (!openedAppState) return null;
 
@@ -78,6 +84,7 @@ export function MobileAppOverlay({
         isDeploying={isDeploying}
         isEditing={isAppMinimized}
         route={route}
+        remix={remix}
       />
     </div>
   );
