@@ -30,6 +30,7 @@ import {
   workOutputs,
 } from "../memory/schema/index.js";
 import { getLogger } from "../util/logger.js";
+import { reverseLatestActForWorkItem } from "./agent-act-store.js";
 
 const log = getLogger("work-output-store");
 
@@ -217,11 +218,24 @@ export function setWorkOutputReviewState(
   reviewState: WorkOutputReviewState,
 ): WorkOutput | undefined {
   const db = getDb();
+  const previous = getWorkOutput(id);
   db.update(workOutputs)
     .set({ reviewState })
     .where(eq(workOutputs.id, id))
     .run();
-  return getWorkOutput(id);
+  const updated = getWorkOutput(id);
+
+  // Act-ledger reversal signal: flipping a reviewed output back off
+  // "approved" is the review-rejection gesture the outputs PATCH exposes —
+  // the deliverable wasn't accepted, so the run that produced it no longer
+  // counts as a clean act. Hooked here at the store (the routes layer stays
+  // untouched) and observation-only: reverseLatestActForWorkItem never
+  // throws, and it no-ops when the item's act was already reversed (e.g. by
+  // a redo).
+  if (previous?.reviewState === "approved" && reviewState !== "approved") {
+    reverseLatestActForWorkItem(previous.workItemId);
+  }
+  return updated;
 }
 
 // ── Attachment enrichment ────────────────────────────────────────────

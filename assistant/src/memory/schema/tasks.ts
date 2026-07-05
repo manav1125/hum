@@ -119,6 +119,27 @@ export const workOutputs = sqliteTable("work_outputs", {
   createdAt: integer("created_at").notNull(),
 });
 
+/**
+ * Act/reversal ledger — one row per autonomous act the agent completed on
+ * the owner's behalf (today: completed background work-item runs). Powers
+ * the "N acts · M reversed" trust evidence and the TIME BACK "~N hrs" chip.
+ * `reversed` flips to 1 when the owner undoes the act (work-item redo or
+ * output-review rejection). No backfill by design — honest zero-start.
+ * References are by convention (store-enforced, no FKs), matching
+ * work_outputs.
+ */
+export const agentActs = sqliteTable("agent_acts", {
+  id: text("id").primaryKey(),
+  agent: text("agent").notNull().default("cue"), // the assignee that acted
+  workItemId: text("work_item_id"), // reference-by-convention to work_items.id
+  missionId: text("mission_id"), // denormalized from the work item's project at write time
+  kind: text("kind").notNull(), // 'run_completed' | 'output_produced' | 'message_drafted' | 'schedule_fired' | 'other'
+  reversed: integer("reversed").notNull().default(0), // 0/1 — the owner undid this act
+  reversedAt: integer("reversed_at"), // epoch ms, set when reversed flips to 1
+  estMinutesSaved: integer("est_minutes_saved"), // conservative heuristic estimate (see agent-act-store)
+  createdAt: integer("created_at").notNull(),
+});
+
 export const workItemEvents = sqliteTable("work_item_events", {
   id: text("id").primaryKey(),
   workItemId: text("work_item_id")

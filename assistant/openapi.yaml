@@ -338,6 +338,172 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/acts:
+    get:
+      operationId: acts_get
+      summary: List recent acts
+      description: Newest-first rows from the act/reversal ledger — the evidence behind the summary numbers.
+      tags:
+        - acts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        agent:
+                          type: string
+                          description: The assignee that acted; defaults to "cue"
+                        workItemId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Denormalized at capture from the work item's project
+                        kind:
+                          type: string
+                          enum:
+                            - run_completed
+                            - output_produced
+                            - message_drafted
+                            - schedule_fired
+                            - other
+                        reversed:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — the owner undid this act (redo or output rejection)
+                        reversedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        estMinutesSaved:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Conservative heuristic estimate captured with the act
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - agent
+                        - workItemId
+                        - missionId
+                        - kind
+                        - reversed
+                        - reversedAt
+                        - estMinutesSaved
+                        - createdAt
+                      additionalProperties: false
+                required:
+                  - acts
+                additionalProperties: false
+      parameters:
+        - name: agent
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to one agent (work-item assignee)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max acts to return (default 50, cap 200)
+  /v1/acts/summary:
+    get:
+      operationId: acts_summary_get
+      summary: Act/reversal ledger summary
+      description:
+        Totals + per-agent breakdown of the act ledger — powers the "N acts · M reversed" trust evidence and the
+        TIME BACK "~N hrs" chip. All-zero totals mean the ledger is still measuring (honest zero-start, no backfill).
+      tags:
+        - acts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acts:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  reversed:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  estMinutesSaved:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Sum over non-reversed acts only — a reversed act saved nothing
+                  byAgent:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        agent:
+                          type: string
+                        acts:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        reversed:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        estMinutesSaved:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Sum over non-reversed acts only — a reversed act saved nothing
+                      required:
+                        - agent
+                        - acts
+                        - reversed
+                        - estMinutesSaved
+                      additionalProperties: false
+                required:
+                  - acts
+                  - reversed
+                  - estMinutesSaved
+                  - byAgent
+                additionalProperties: false
+      parameters:
+        - name: agent
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to one agent (work-item assignee)
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: "Only count acts from the trailing N days (default: all time)"
   /v1/admin/rollback-migrations:
     post:
       operationId: admin_rollbackmigrations_post

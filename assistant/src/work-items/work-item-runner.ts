@@ -22,6 +22,10 @@ import {
 } from "../tasks/tool-sanitizer.js";
 import { getLogger } from "../util/logger.js";
 import {
+  recordActForCompletedRun,
+  reverseLatestActForWorkItem,
+} from "./agent-act-store.js";
+import {
   ensureProjectKnowledgeFiles,
   type MaterializedProjectKnowledge,
 } from "./project-knowledge-store.js";
@@ -346,6 +350,15 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // The user explicitly asked to run the task, so we treat that as consent.
   const approvedTools = requiredTools;
 
+  // Act-ledger redo signal: re-running an item that already reached
+  // awaiting_review/done means the earlier completed act wasn't accepted —
+  // mark that act reversed before this run overwrites the item's state.
+  // Sits in the runner (not the HTTP route) so chat-tool and CLI redos count
+  // too. Observation-only: reverseLatestActForWorkItem never throws.
+  if (workItem.status === "awaiting_review" || workItem.status === "done") {
+    reverseLatestActForWorkItem(workItem.id);
+  }
+
   // Cowork context: the parent project's brief + the task's own context,
   // computed once up front and prepended to the run message so the agent reads
   // per-project/per-task instructions before executing.
@@ -370,6 +383,9 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // Latest stamped progress note, so identical consecutive tool starts don't
   // trigger redundant DB writes/broadcasts.
   const lastProgressNote: { current: string | null } = { current: null };
+  // Distinct tool names the run's agent loop started — the tool-mix signal
+  // the act ledger's minutes-saved heuristic reads at completion.
+  const toolsUsed = new Set<string>();
   void (async () => {
     try {
       const result = await runTask(
@@ -419,6 +435,7 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
                 e.type === "tool_use_start" &&
                 typeof e.toolName === "string"
               ) {
+                toolsUsed.add(e.toolName);
                 stampProgressNote(
                   workItemId,
                   progressNoteForToolStart(e.toolName, e.input ?? {}),
@@ -470,17 +487,31 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
         // status. Failed runs are skipped (half-baked artifacts aren't
         // deliverables). registerOutputsForCompletedRun never throws and is
         // idempotent per (work item, attachment).
+        let outputCount = 0;
         if (finalStatus !== "failed" && result.conversationId) {
           const outputs = registerOutputsForCompletedRun(
             current ?? workItem,
             result.conversationId,
           );
+          outputCount = outputs.length;
           if (outputs.length > 0) {
             log.info(
               { workItemId, outputCount: outputs.length },
               "registered work outputs for completed run",
             );
           }
+        }
+
+        // Act ledger: a non-failed terminal run is one completed autonomous
+        // act — record it beside the outputs registration with a conservative
+        // minutes-saved estimate from the run's tool-mix + deliverables.
+        // Failed runs are not acts (nothing was accomplished to reverse).
+        // Observation-only: recordActForCompletedRun never throws.
+        if (finalStatus !== "failed") {
+          recordActForCompletedRun(current ?? workItem, {
+            toolsUsed,
+            outputCount,
+          });
         }
       }
 

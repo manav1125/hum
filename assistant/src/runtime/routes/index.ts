@@ -10,6 +10,7 @@
 
 import { ROUTES as ACP_ROUTES } from "./acp-routes.js";
 import { ROUTES as ACTIVITY_ROUTES } from "./activity-routes.js";
+import { ROUTES as ACTS_ROUTES } from "./acts-routes.js";
 import { ROUTES as APP_MANAGEMENT_ROUTES } from "./app-management-routes.js";
 import { ROUTES as APP_ROUTES } from "./app-routes.js";
 import { ROUTES as APPROVAL_ROUTES } from "./approval-routes.js";
@@ -157,6 +158,7 @@ import { ROUTES as WORKSPACE_ROUTES } from "./workspace-routes.js";
 export const ROUTES: RouteDefinition[] = [
   ...ATTACHMENT_ROUTES,
   ...ACP_ROUTES,
+  ...ACTS_ROUTES,
   ...ACTIVITY_ROUTES,
   ...APP_MANAGEMENT_ROUTES,
   ...APP_ROUTES,
