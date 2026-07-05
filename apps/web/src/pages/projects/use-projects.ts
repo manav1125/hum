@@ -234,6 +234,25 @@ export function useMissionTitles(assistantId: string): Map<string, string> {
 }
 
 /**
+ * missionId → outcome ("the goal it drives toward") lookup for the green goal
+ * tag on project cards. Only missions with a non-empty outcome are included, so
+ * a card renders the goal tag only when there's a real destination to show.
+ * Reads the same missions list as {@link useMissionTitles}.
+ */
+export function useMissionGoals(assistantId: string): Map<string, string> {
+  const query = useQuery({
+    ...missionsGetOptions({ path: { assistant_id: assistantId } }),
+    staleTime: 30_000,
+  });
+  const map = new Map<string, string>();
+  for (const m of query.data?.missions ?? []) {
+    const outcome = m.outcome?.trim();
+    if (outcome) map.set(m.id, outcome);
+  }
+  return map;
+}
+
+/**
  * Every work item (all statuses, full records) — used by the "Add existing"
  * picker to file already-captured items into a project. Same row shape the
  * board renders, so a full-record PATCH can move it cleanly.

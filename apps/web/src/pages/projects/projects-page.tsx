@@ -20,7 +20,7 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import { HqStyle, MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
-import { MissionTag } from "./item-card";
+import { GoalTag, MissionTag } from "./item-card";
 import { NewProjectModal } from "./new-project-modal";
 import {
   CATEGORY_LABEL,
@@ -30,6 +30,7 @@ import {
   type CategoryKey,
 } from "./project-kit";
 import {
+  useMissionGoals,
   useMissionTitles,
   usePatchProject,
   useProjects,
@@ -119,6 +120,7 @@ export function ProjectCard({
   onTogglePin,
   pinBusy = false,
   missionTitle,
+  missionGoal,
   onOpenMission,
   now,
 }: {
@@ -127,6 +129,8 @@ export function ProjectCard({
   onTogglePin?: () => void;
   pinBusy?: boolean;
   missionTitle?: string | null;
+  /** The linked mission's outcome — renders the green ◎ goal tag when present. */
+  missionGoal?: string | null;
   onOpenMission?: () => void;
   /** Stable reference time (no Date.now() in render); defaults to createdAt. */
   now?: number;
@@ -146,20 +150,29 @@ export function ProjectCard({
     ? categoryLabel(project.category).toUpperCase()
     : null;
 
-  const tagRow =
+  const goalTag =
+    project.missionId && missionGoal ? (
+      <GoalTag label={missionGoal} onClick={onOpenMission} />
+    ) : null;
+  const nameTag =
     project.missionId && missionTitle ? (
-      <MissionTag
-        label={missionTitle}
-        onClick={onOpenMission}
-        style={{ marginTop: compact ? 0 : 11 }}
-      />
+      <MissionTag label={missionTitle} onClick={onOpenMission} />
     ) : project.missionId ? null : (
-      <MissionTag
-        label="Standalone"
-        linked={false}
-        style={{ marginTop: compact ? 0 : 11 }}
-      />
+      <MissionTag label="Standalone" linked={false} />
     );
+  // Goal (green ◎ outcome) + the blue ⟡ mission-name tag share a wrapping row
+  // when the linked mission declares an outcome; both, either, or neither may
+  // render. The row owns the top spacing so the tags themselves stay flush.
+  const tagRow =
+    goalTag || nameTag ? (
+      <div
+        className="flex flex-wrap items-center gap-1.5"
+        style={{ marginTop: compact ? 0 : 11 }}
+      >
+        {goalTag}
+        {nameTag}
+      </div>
+    ) : null;
 
   return (
     <div
@@ -366,6 +379,7 @@ export function ProjectsPage() {
   const isNarrow = useIsMobile();
   const { projects, isLoading, isError } = useProjects(assistantId);
   const missionTitles = useMissionTitles(assistantId);
+  const missionGoals = useMissionGoals(assistantId);
   const patch = usePatchProject(assistantId);
   const [showNew, setShowNew] = useState(false);
   const [pinBusyId, setPinBusyId] = useState<string | null>(null);
@@ -429,6 +443,9 @@ export function ProjectsPage() {
           now={now}
           missionTitle={
             p.missionId ? (missionTitles.get(p.missionId) ?? null) : null
+          }
+          missionGoal={
+            p.missionId ? (missionGoals.get(p.missionId) ?? null) : null
           }
           onOpenMission={
             p.missionId

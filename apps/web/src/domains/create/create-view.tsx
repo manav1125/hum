@@ -20,7 +20,7 @@
  * so light + dark both render from the shared `--mv1-*` system.
  */
 
-import { ArrowUpRight, ChevronRight, type LucideIcon } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
@@ -395,37 +395,25 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
           </div>
         ) : null}
 
-        {/* Quick-start prompts. Desktop (S1) renders these as compact
-            icon · title · description · chevron rows; mobile keeps the richer
-            preview cards it was designed with. */}
+        {/* Quick-start prompts — the richer preview cards (kept as the current
+            setup per product direction; the design's compact icon rows were
+            reverted). Same treatment on desktop and mobile: a thumbnail-led
+            preview card with title, description, and provenance chip. */}
         <div className="pb-6">
           <h2 className="mb-4" style={microLabel}>
             Quick start · {activeMode.tagline}
           </h2>
-          {isMobile ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4">
-              {activeMode.templates.map((template) => (
-                <QuickTemplateCard
-                  key={template.id}
-                  template={template}
-                  modeId={activeMode.id}
-                  skillLabel={activeMode.skillLabel}
-                  onSelect={() => onRunPrompt(template.prompt)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(max(280px,calc((100%-2rem)/3)),1fr))] gap-4">
-              {activeMode.templates.map((template) => (
-                <QuickStartRow
-                  key={template.id}
-                  template={template}
-                  icon={activeMode.icon}
-                  onSelect={() => onRunPrompt(template.prompt)}
-                />
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(max(240px,calc((100%-3rem)/3)),1fr))] gap-4">
+            {activeMode.templates.map((template) => (
+              <QuickTemplateCard
+                key={template.id}
+                template={template}
+                modeId={activeMode.id}
+                skillLabel={activeMode.skillLabel}
+                onSelect={() => onRunPrompt(template.prompt)}
+              />
+            ))}
+          </div>
         </div>
       </section>
     </div>
@@ -703,75 +691,6 @@ function CompactTemplateRow({
         className="size-4 shrink-0"
         aria-hidden="true"
         style={{ color: C.t3 }}
-      />
-    </button>
-  );
-}
-
-/**
- * Quick-start row (desktop S1) — a compact icon · title · description · chevron
- * row that seeds the thread directly with the prefilled prompt. Lighter-weight
- * than a template card because a quick start is a one-tap action, not a form.
- */
-function QuickStartRow({
-  template,
-  icon: Icon,
-  onSelect,
-}: {
-  template: CreateTemplate;
-  icon: LucideIcon;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="group flex w-full items-start gap-3 text-left transition-all hover:-translate-y-0.5 focus-visible:outline-none"
-      style={{ ...cardChrome, padding: "13px 14px" }}
-    >
-      <span
-        aria-hidden
-        style={{
-          width: 34,
-          height: 34,
-          borderRadius: 9,
-          display: "grid",
-          placeItems: "center",
-          color: C.t2,
-          background: C.sunken,
-          flexShrink: 0,
-        }}
-      >
-        <Icon className="size-4" strokeWidth={2} />
-      </span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span
-          style={{
-            display: "block",
-            fontSize: 14,
-            fontWeight: 600,
-            color: C.t1,
-            lineHeight: 1.2,
-          }}
-        >
-          {template.title}
-        </span>
-        <span
-          style={{
-            display: "block",
-            fontSize: 12.5,
-            lineHeight: 1.4,
-            color: C.t2,
-            marginTop: 3,
-          }}
-        >
-          {template.description}
-        </span>
-      </span>
-      <ChevronRight
-        className="size-4 shrink-0 translate-x-0 opacity-40 transition-all group-hover:translate-x-0.5 group-hover:opacity-100"
-        aria-hidden="true"
-        style={{ color: C.t3, marginTop: 2 }}
       />
     </button>
   );

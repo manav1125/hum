@@ -334,6 +334,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     mode: "data",
     title: "KPI dashboard",
     description: "A live metrics dashboard built around your KPIs.",
+    sampleContext: "Growth — Q3",
+    provenance: { source: "Pulls from connected Sheets" },
     skill: "app-builder",
     inputs: [
       {
@@ -497,6 +499,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     mode: "docs",
     title: "Product requirements doc",
     description: "A PRD structured around your feature.",
+    sampleContext: "PRD — v2 launch",
+    provenance: { files: "Ship v2" },
     skill: "document-editor",
     inputs: [
       {
@@ -680,6 +684,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     mode: "research",
     title: "Competitor brief",
     description: "A researched comparison of named competitors.",
+    sampleContext: "Landscape — Q3",
+    provenance: { source: "Researched from the live web" },
     skill: "research",
     inputs: [
       {
@@ -835,6 +841,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     mode: "images",
     title: "Generate image",
     description: "Create an image from a prompt with any Replicate model.",
+    sampleContext: "Hero — brand key art",
+    provenance: { source: "Rendered on Replicate" },
     skill: "replicate",
     inputs: [
       {

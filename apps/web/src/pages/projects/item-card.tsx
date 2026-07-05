@@ -144,6 +144,58 @@ export function MissionTag({
 }
 
 /**
+ * Slot-③ goal tag — the linked mission's outcome ("Close the $500K seed"),
+ * rendered as a green wash to read as the destination the project drives
+ * toward (distinct from the blue ⟡ mission-name tag). Shown only when the
+ * mission actually declares an outcome; absent → the card falls back to the
+ * mission-name / Standalone tag alone. No fabrication.
+ */
+export function GoalTag({
+  label,
+  onClick,
+  style,
+}: {
+  label: string;
+  onClick?: () => void;
+  style?: CSSProperties;
+}) {
+  const inner = (
+    <>
+      <span aria-hidden>◎</span>
+      {label}
+    </>
+  );
+  const base: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 5,
+    fontSize: 11,
+    color: C.green,
+    background: `color-mix(in srgb, ${C.green} 14%, transparent)`,
+    borderRadius: 7,
+    padding: "4px 9px",
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    ...style,
+  };
+  if (!onClick) return <span style={base}>{inner}</span>;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{ ...base, border: "none", cursor: "pointer" }}
+    >
+      {inner}
+    </button>
+  );
+}
+
+/**
  * The card. Board rows pass `onOpen`; the drawer header renders it inert
  * (`flat`) as its identity block.
  */
