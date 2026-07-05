@@ -64,6 +64,19 @@ export interface TemplateDefinition {
   inputs: InputField[];
   /** Composes the filled values into a rich, skill-targeted prompt. */
   composePrompt: (values: TemplateValues) => string;
+  /**
+   * Presentational only (Cue-Surfaces S1): the serif example subject shown in
+   * the card's preview band — the sort of thing this template produces
+   * ("Northwind — Series A"). Purely illustrative; falls back to the template
+   * title when omitted. Never sent to the model.
+   */
+  sampleContext?: string;
+  /**
+   * Presentational provenance chip (S1 ⟡ tag). Either a `{ files: "…" }`
+   * project-filing hint (blue ⟡ tag) or a `{ source: "…" }` connected-source
+   * hint (neutral, no ⟡). Falls back to `files onto {mode skillLabel}`.
+   */
+  provenance?: { files: string } | { source: string };
 }
 
 /* ----------------------------------------------------------------------- */
@@ -113,6 +126,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     title: "Investor pitch deck",
     description: "A fundraising deck built from your company's specifics.",
     skill: "app-builder",
+    sampleContext: "Northwind — Series A",
+    provenance: { files: "Close the $500K seed" },
     inputs: [
       {
         key: "company",
@@ -190,6 +205,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     title: "Quarterly business review",
     description: "A QBR deck from your quarter's numbers and narrative.",
     skill: "app-builder",
+    sampleContext: "Q3 business review",
+    provenance: { source: "Pulls from connected Sheets" },
     inputs: [
       {
         key: "team",
@@ -252,6 +269,8 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
     title: "Product launch deck",
     description: "Positioning, demo flow, and go-to-market in one deck.",
     skill: "app-builder",
+    sampleContext: "v2 goes live",
+    provenance: { files: "Ship v2" },
     inputs: [
       {
         key: "product",

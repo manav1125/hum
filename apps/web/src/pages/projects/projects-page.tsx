@@ -408,7 +408,10 @@ export function ProjectsPage() {
     );
   };
 
-  const cardGrid = (items: ProjectView[]) => (
+  const cardGrid = (
+    items: ProjectView[],
+    addLabel?: { title: string; sub: string },
+  ) => (
     <div
       style={{
         display: "grid",
@@ -436,6 +439,12 @@ export function ProjectsPage() {
           onTogglePin={() => togglePin(p)}
         />
       ))}
+      {/* S5 grid closer: a ghost "Add a project" cell keeps each band a real
+          grid rather than a lone stretched card. Desktop only — on the mobile
+          single-column list it would be redundant with the header + button. */}
+      {!isNarrow && addLabel ? (
+        <AddProjectCard label={addLabel} onClick={() => setShowNew(true)} />
+      ) : null}
     </div>
   );
 
@@ -534,7 +543,7 @@ export function ProjectsPage() {
             {grouped.map((g) => (
               <section key={g.key}>
                 <BandHeader label={g.label.toUpperCase()} />
-                {cardGrid(g.items)}
+                {cardGrid(g.items, ADD_LABEL[g.key])}
               </section>
             ))}
           </div>
@@ -586,6 +595,77 @@ function BandHeader({
       </span>
       <span aria-hidden style={{ height: 1, flex: 1, background: C.line }} />
     </div>
+  );
+}
+
+/** Per-band copy for the ghost "Add a project" grid closer (S5). */
+const ADD_LABEL: Record<CategoryKey, { title: string; sub: string }> = {
+  personal: {
+    title: "Add a personal project",
+    sub: "Trips, home, health, money…",
+  },
+  professional: {
+    title: "Add a work project",
+    sub: "Missions file their work here automatically",
+  },
+  other: { title: "Add a project", sub: "Anything else you're working on" },
+  uncategorized: { title: "Add a project", sub: "Anything else you're working on" },
+};
+
+/**
+ * Ghost "Add a project" card (S5) — the dashed grid closer that lets each band
+ * read as a real grid and offers an in-place create affordance beside the live
+ * cards. Desktop only; opens the same New Project modal as the header button.
+ */
+function AddProjectCard({
+  label,
+  onClick,
+}: {
+  label: { title: string; sub: string };
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        minHeight: 132,
+        padding: "20px 18px",
+        border: `1px dashed ${C.line2}`,
+        borderRadius: 15,
+        background: "transparent",
+        color: C.t3,
+        cursor: "pointer",
+        textAlign: "center",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 10,
+          display: "grid",
+          placeItems: "center",
+          background: C.sunken,
+          color: C.t2,
+          flexShrink: 0,
+        }}
+      >
+        <Plus size={16} />
+      </span>
+      <span style={{ fontSize: 13.5, fontWeight: 600, color: C.t2 }}>
+        {label.title}
+      </span>
+      <span style={{ fontSize: 12, color: C.t3, lineHeight: 1.4 }}>
+        {label.sub}
+      </span>
+    </button>
   );
 }
 
