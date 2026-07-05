@@ -21,16 +21,30 @@
  * LLM call, returning an empty draft so the feature degrades to a guided/manual
  * kit. Read at extraction time so it takes effect without a daemon restart.
  *
+ * STRUCTURED EXTRACTION (preferred over LLM guesses):
+ *   - PDF decks are parsed for real text via `unpdf` (a serverless pdf.js build
+ *     with no native deps). Any `#rrggbb` mentioned in that text is captured.
+ *   - PPTX decks (a ZIP of XML) are unzipped with `jszip`: `ppt/theme/theme*.xml`
+ *     yields the high-signal brand palette (`<a:srgbClr val>`) + theme fonts
+ *     (`<a:latin typeface>`); `ppt/slides/slide*.xml` yields the text runs.
+ *   - `extractFromWebsite` drives the daemon's headless Chromium (Playwright) to
+ *     read *computed* CSS — dominant colours + body/heading `font-family` — plus
+ *     the favicon/og:image logo and meta copy. This observes JS-rendered SPAs
+ *     the static fetch cannot. It falls back to the static web_fetch path (never
+ *     throws) when the browser runtime is unavailable.
+ *
+ * Structurally-extracted colours/fonts take precedence over anything the flash
+ * LLM guesses; the LLM only fills the gaps the parsers leave.
+ *
  * LIMITATIONS (honest, not hidden):
- *   - No PDF/PPTX byte-level parsing. Uploaded documents are read as text: a
- *     text-like attachment (markdown/plaintext/HTML export of a deck) yields a
- *     usable transcript; a binary PDF/PPTX yields little extractable UTF-8 text,
- *     so the flash pass sees mostly noise. A dedicated PDF-text extractor is the
- *     follow-up to make binary decks first-class.
- *   - `extractFromWebsite` uses a static web_fetch (no headless browser), so a
- *     JS-rendered SPA's real colours/fonts (which live in computed CSS) are not
- *     observed — only what's present in the served HTML/inline styles + meta
- *     copy. Full browser-use CSS scraping is the follow-up.
+ *   - PDF colour extraction is text-mention-only: brand hexes stated in the copy
+ *     are captured, but colours that live purely in vector fills / embedded
+ *     images are not decoded.
+ *   - Legacy binary `.ppt` (pre-2007, OLE compound-file) is not a ZIP and is not
+ *     parsed structurally — it degrades to the UTF-8 text fallback.
+ *   - The headless scrape samples computed styles from a fixed set of DOM anchors
+ *     (body + headings + a few prominent elements); it does not cluster every
+ *     painted pixel, so an unusual colour hidden deep in the layout may be missed.
  */
 
 import { getDisableBrandExtract } from "../config/env-registry.js";
@@ -42,6 +56,12 @@ import {
 } from "../memory/attachments-store.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
+import {
+  isPrivateOrLocalHost,
+  parseUrl,
+  resolveHostAddresses,
+  resolveRequestAddress,
+} from "../tools/network/url-safety.js";
 import { executeWebFetch } from "../tools/network/web-fetch.js";
 import { getLogger } from "../util/logger.js";
 import type {
@@ -63,6 +83,27 @@ const MAX_SOURCE_CHARS = 16_000;
 
 /** Cap the number of extracted assets/palette entries the model can return. */
 const MAX_PALETTE_HEX = 8;
+
+/** Headless page navigation must not hang the flash job. */
+const BROWSER_NAV_TIMEOUT_MS = 20_000;
+
+/** Overall budget for the headless scrape (launch + nav + evaluate). */
+const BROWSER_TOTAL_TIMEOUT_MS = 30_000;
+
+/**
+ * Colours/fonts pulled directly out of a document's bytes (PPTX theme, PDF
+ * text) or a page's computed CSS. These are trusted over the flash LLM's
+ * guesses — the LLM only fills gaps these leave behind.
+ */
+interface StructuredBrandHints {
+  /** Ordered by dominance/appearance. `#rrggbb` lowercase. */
+  colors: string[];
+  headingFont?: string;
+  bodyFont?: string;
+  logo?: string;
+  /** A short brand name if a structural source made it obvious. */
+  name?: string;
+}
 
 /**
  * A draft brand profile the extractor returns — a `BrandProfileInput` (the
@@ -212,6 +253,66 @@ export function parseBrandExtractionResponse(text: string): {
 }
 
 // ---------------------------------------------------------------------------
+// Structured-hint merge
+// ---------------------------------------------------------------------------
+
+/** The five named palette slots, in the order we assign leftover hex colours. */
+const PALETTE_SLOTS = ["primary", "accent", "bg", "surface", "text"] as const;
+
+/**
+ * Overlay structurally-extracted colours/fonts/logo onto the flash result,
+ * with the structural values taking precedence. Structural colours fill the
+ * named palette slots first (respecting any the LLM already placed correctly),
+ * then spill into `extraN` keys — never dropping a high-signal brand colour.
+ */
+function mergeStructuredHints(
+  base: Omit<DraftBrandProfile, "source">,
+  hints: StructuredBrandHints,
+): Omit<DraftBrandProfile, "source"> {
+  const palette: BrandPalette = { ...(base.palette ?? {}) };
+
+  // Which hex values does the LLM already have? Avoid duplicating them.
+  const seen = new Set(
+    Object.values(palette).filter((v): v is string => typeof v === "string"),
+  );
+
+  let extraIdx = 1;
+  for (const hex of hints.colors) {
+    if (seen.has(hex)) continue;
+    // Fill the first empty named slot; otherwise spill to extraN.
+    const openSlot = PALETTE_SLOTS.find((s) => !palette[s]);
+    if (openSlot) {
+      palette[openSlot] = hex;
+    } else {
+      let key = `extra${extraIdx++}`;
+      while (palette[key]) key = `extra${extraIdx++}`;
+      palette[key] = hex;
+    }
+    seen.add(hex);
+    if (seen.size >= MAX_PALETTE_HEX) break;
+  }
+
+  const fonts: BrandFonts = { ...(base.fonts ?? {}) };
+  // Structural fonts win over LLM guesses.
+  if (hints.headingFont) fonts.heading = hints.headingFont;
+  if (hints.bodyFont) fonts.body = hints.bodyFont;
+
+  const logo: BrandLogo = { ...(base.logo ?? {}) };
+  if (hints.logo && !logo.mark && !logo.light && !logo.dark) {
+    logo.mark = hints.logo;
+  }
+
+  return {
+    ...base,
+    // A structurally-obvious name only wins when the LLM didn't find one.
+    name: base.name && base.name.trim() ? base.name : (hints.name ?? base.name),
+    palette,
+    fonts,
+    logo,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Shared flash pass
 // ---------------------------------------------------------------------------
 
@@ -219,11 +320,22 @@ async function runFlashExtraction(args: {
   kind: "document" | "website";
   label: string;
   source: string;
+  /** Structural colours/fonts/logo to overlay on (and prefer over) the LLM. */
+  hints?: StructuredBrandHints;
 }): Promise<Omit<DraftBrandProfile, "source">> {
   const provider = await getConfiguredProvider("conversationTitle");
   if (!provider) {
     log.debug({ kind: args.kind }, "no provider for flash brand extraction");
-    return { name: args.label };
+    // No LLM — still surface whatever the parsers found structurally.
+    const fallback: Omit<DraftBrandProfile, "source"> = {
+      name: args.label,
+      palette: {},
+      fonts: {},
+      logo: {},
+      voice: {},
+      assets: [],
+    };
+    return args.hints ? mergeStructuredHints(fallback, args.hints) : fallback;
   }
 
   const config = getConfig();
@@ -241,7 +353,7 @@ async function runFlashExtraction(args: {
   });
 
   const parsed = parseBrandExtractionResponse(result.text);
-  return {
+  const base: Omit<DraftBrandProfile, "source"> = {
     name: parsed.name?.trim() || args.label,
     palette: parsed.palette,
     fonts: parsed.fonts,
@@ -249,29 +361,207 @@ async function runFlashExtraction(args: {
     voice: parsed.voice,
     assets: [],
   };
+  return args.hints ? mergeStructuredHints(base, args.hints) : base;
 }
 
 // ---------------------------------------------------------------------------
 // Path 1 — from an uploaded document
 // ---------------------------------------------------------------------------
 
+/** Collect unique `#rrggbb` (lowercased) mentioned in free text, in order. */
+function collectHexFromText(text: string, limit = MAX_PALETTE_HEX): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const re = /#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const hex = m[0].toLowerCase();
+    if (seen.has(hex)) continue;
+    seen.add(hex);
+    out.push(hex);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Detect the document format from mime type first, then filename extension. */
+function detectDocKind(
+  mimeType: string | undefined,
+  filename: string,
+): "pdf" | "pptx" | "text" {
+  const mime = (mimeType ?? "").toLowerCase();
+  const name = filename.toLowerCase();
+  if (mime.includes("pdf") || name.endsWith(".pdf")) return "pdf";
+  if (
+    mime.includes("presentationml") ||
+    mime.includes("powerpoint") ||
+    name.endsWith(".pptx")
+  ) {
+    return "pptx";
+  }
+  return "text";
+}
+
 /**
- * Read a text-like slice out of an attachment's bytes. Binary formats (PDF,
- * PPTX) have no dedicated parser here, so this returns whatever UTF-8 text is
- * recoverable — see the file-level LIMITATIONS note.
+ * Extract real text from a PDF via `unpdf` (serverless pdf.js, no native deps).
+ * Returns the concatenated page text plus any `#rrggbb` mentioned in it.
+ * Never throws — a corrupt/encrypted PDF degrades to `null` so the caller can
+ * fall back to the UTF-8 path.
  */
-function readAttachmentText(fileRef: string): {
+async function parsePdf(
+  bytes: Buffer,
+): Promise<{ text: string; hints: StructuredBrandHints } | null> {
+  try {
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const doc = await getDocumentProxy(new Uint8Array(bytes));
+    const { text } = await extractText(doc, { mergePages: true });
+    const merged = Array.isArray(text) ? text.join("\n") : text;
+    if (!merged || !merged.trim()) return null;
+    return {
+      text: merged.slice(0, MAX_SOURCE_CHARS),
+      hints: { colors: collectHexFromText(merged) },
+    };
+  } catch (err) {
+    log.debug({ err: String(err) }, "unpdf parse failed; falling back to text");
+    return null;
+  }
+}
+
+/** Decode `<a:...>` XML entities enough for plain text runs. */
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_m, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * Parse a `.pptx` (a ZIP of Open-XML) with `jszip`. Pulls the theme palette +
+ * fonts (`ppt/theme/theme*.xml`) and the slide text runs (`ppt/slides/*.xml`).
+ * Theme `<a:srgbClr>` values are the brand's real palette — high signal. Never
+ * throws — a non-ZIP payload (e.g. legacy binary .ppt) yields `null`.
+ */
+async function parsePptx(
+  bytes: Buffer,
+): Promise<{ text: string; hints: StructuredBrandHints } | null> {
+  try {
+    const { default: JSZip } = await import("jszip");
+    const zip = await JSZip.loadAsync(bytes);
+    const names = Object.keys(zip.files);
+
+    const themeNames = names
+      .filter((n) => /^ppt\/theme\/theme\d+\.xml$/i.test(n))
+      .sort();
+    const slideNames = names
+      .filter((n) => /^ppt\/slides\/slide\d+\.xml$/i.test(n))
+      .sort((a, b) => {
+        const na = Number(a.match(/slide(\d+)/i)?.[1] ?? 0);
+        const nb = Number(b.match(/slide(\d+)/i)?.[1] ?? 0);
+        return na - nb;
+      });
+
+    // Theme colours: the clrScheme's srgbClr values are the brand palette.
+    const colors: string[] = [];
+    const seenColor = new Set<string>();
+    let headingFont: string | undefined;
+    let bodyFont: string | undefined;
+    for (const themeName of themeNames) {
+      const xml = await zip.files[themeName].async("string");
+      for (const m of xml.matchAll(/<a:srgbClr\s+val="([0-9A-Fa-f]{6})"/g)) {
+        const hex = `#${m[1].toLowerCase()}`;
+        if (seenColor.has(hex)) continue;
+        seenColor.add(hex);
+        colors.push(hex);
+        if (colors.length >= MAX_PALETTE_HEX) break;
+      }
+      // majorFont → headings, minorFont → body. Fall back to first two latins.
+      const major = xml.match(
+        /<a:majorFont>[\s\S]*?<a:latin\s+typeface="([^"]+)"/,
+      );
+      const minor = xml.match(
+        /<a:minorFont>[\s\S]*?<a:latin\s+typeface="([^"]+)"/,
+      );
+      if (!headingFont && major?.[1]) headingFont = major[1];
+      if (!bodyFont && minor?.[1]) bodyFont = minor[1];
+      if (colors.length >= MAX_PALETTE_HEX) break;
+    }
+
+    // Slide text runs, in slide order, capped to the source budget.
+    const runs: string[] = [];
+    let acc = 0;
+    for (const slideName of slideNames) {
+      const xml = await zip.files[slideName].async("string");
+      for (const m of xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)) {
+        const run = decodeXmlEntities(m[1]).trim();
+        if (!run) continue;
+        runs.push(run);
+        acc += run.length + 1;
+      }
+      if (acc >= MAX_SOURCE_CHARS) break;
+    }
+
+    const text = runs.join("\n").slice(0, MAX_SOURCE_CHARS);
+    // A PPTX with neither text nor a theme colour is not usefully parsed.
+    if (!text.trim() && colors.length === 0) return null;
+
+    return {
+      text,
+      hints: {
+        colors,
+        ...(headingFont ? { headingFont } : {}),
+        ...(bodyFont ? { bodyFont } : {}),
+      },
+    };
+  } catch (err) {
+    log.debug({ err: String(err) }, "pptx parse failed; falling back to text");
+    return null;
+  }
+}
+
+/**
+ * Recover a UTF-8 text slice from an attachment's bytes — the fallback when a
+ * binary parser is unavailable or fails. Strips NULs so a binary payload at
+ * least degrades to whatever readable strings it contains rather than aborting.
+ */
+function readAttachmentTextFallback(bytes: Buffer): string {
+  return bytes.toString("utf-8").replace(/\0/g, "").slice(0, MAX_SOURCE_CHARS);
+}
+
+/**
+ * Read an attachment and produce the text + structural hints to feed the flash
+ * pass. Branches on detected format (PDF / PPTX) and falls back to raw UTF-8
+ * text when a parser is unavailable or the bytes aren't the expected format.
+ */
+async function readDocumentSource(fileRef: string): Promise<{
   label: string;
   text: string;
-} | null {
+  hints?: StructuredBrandHints;
+} | null> {
   const meta = getAttachmentById(fileRef);
   const content = getAttachmentContent(fileRef);
   if (!content) return null;
   const label = meta?.originalFilename ?? "brand document";
-  // Recover printable text; strip NULs so a binary payload (PDF/PPTX) at least
-  // degrades to whatever readable strings it contains rather than aborting.
-  const decoded = content.toString("utf-8").replace(/\0/g, "");
-  return { label, text: decoded.slice(0, MAX_SOURCE_CHARS) };
+  const kind = detectDocKind(meta?.mimeType, label);
+
+  if (kind === "pdf") {
+    const parsed = await parsePdf(content);
+    if (parsed) return { label, text: parsed.text, hints: parsed.hints };
+  } else if (kind === "pptx") {
+    const parsed = await parsePptx(content);
+    if (parsed) return { label, text: parsed.text, hints: parsed.hints };
+  }
+
+  // Fallback: whatever UTF-8 text is recoverable, plus any hex mentioned in it.
+  const text = readAttachmentTextFallback(content);
+  const colors = collectHexFromText(text);
+  return {
+    label,
+    text,
+    ...(colors.length > 0 ? { hints: { colors } } : {}),
+  };
 }
 
 /**
@@ -287,8 +577,10 @@ export async function extractFromDocument(
     return emptyDraft("upload", "brand document");
   }
 
-  const read = readAttachmentText(fileRef);
-  if (!read || !read.text.trim()) {
+  const read = await readDocumentSource(fileRef);
+  const hasText = !!read?.text.trim();
+  const hasHints = !!read?.hints && read.hints.colors.length > 0;
+  if (!read || (!hasText && !hasHints)) {
     log.debug({ fileRef }, "attachment missing or unreadable; empty draft");
     return emptyDraft("upload", read?.label ?? "brand document");
   }
@@ -297,6 +589,7 @@ export async function extractFromDocument(
     kind: "document",
     label: read.label,
     source: read.text,
+    hints: read.hints,
   });
   return { ...extracted, source: "upload" };
 }
@@ -305,11 +598,240 @@ export async function extractFromDocument(
 // Path 2 — from a website
 // ---------------------------------------------------------------------------
 
+/** Convert a CSS colour string (rgb/rgba) to `#rrggbb`, or `null` if opaque-0/unknown. */
+function cssColorToHex(css: string): string | null {
+  const s = css.trim().toLowerCase();
+  if (!s || s === "transparent") return null;
+  const m = s.match(
+    /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/,
+  );
+  if (!m) return null;
+  const a = m[4] !== undefined ? Number(m[4]) : 1;
+  if (a === 0) return null; // Fully transparent — carries no brand colour.
+  const to2 = (n: string) =>
+    Math.max(0, Math.min(255, Number(n)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${to2(m[1])}${to2(m[2])}${to2(m[3])}`;
+}
+
+/** First named font family out of a computed `font-family` list. */
+function firstFontFamily(css: string | undefined): string | undefined {
+  if (!css) return undefined;
+  const first = css
+    .split(",")[0]
+    ?.trim()
+    .replace(/^["']|["']$/g, "");
+  return first && first.length > 0 ? first : undefined;
+}
+
 /**
- * Extract a draft brand profile from a website URL. Uses the SSRF-guarded
- * `web_fetch` capability in `raw` mode so inline `<style>` / `style=` colour
- * declarations survive into the flash pass (the extracted-text mode would strip
- * them). See the file-level LIMITATIONS note re: JS-rendered SPAs.
+ * The DOM script run inside the headless page. Reads computed CSS from a fixed
+ * set of anchors (body + headings + a few prominent blocks), the favicon /
+ * og:image logo, and the page's raw HTML for the flash pass. Returns a plain
+ * JSON-serialisable object. Kept as a string so it can be `page.evaluate`'d.
+ */
+const BROWSER_SCRAPE_SCRIPT = `(() => {
+  const bodyStyle = getComputedStyle(document.body);
+  const pick = (sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { color: cs.color, background: cs.backgroundColor, fontFamily: cs.fontFamily };
+  };
+  const heading = pick("h1") || pick("h2") || pick("header");
+  const accents = ["a", "button", "[class*=btn]", "[class*=primary]", "[class*=cta]"]
+    .map(pick).filter(Boolean);
+  const linkEls = Array.from(document.querySelectorAll("link[rel~='icon'], link[rel='shortcut icon'], link[rel='apple-touch-icon']"));
+  const favicon = linkEls.map((l) => l.href).find(Boolean) || null;
+  const ogImage = (document.querySelector("meta[property='og:image']") || {}).content || null;
+  const ogTitle = (document.querySelector("meta[property='og:title']") || {}).content || null;
+  const metaDesc = (document.querySelector("meta[name='description']") || document.querySelector("meta[property='og:description']") || {}).content || null;
+  const siteName = (document.querySelector("meta[property='og:site_name']") || {}).content || null;
+  return {
+    title: document.title || null,
+    bodyBg: bodyStyle.backgroundColor,
+    bodyColor: bodyStyle.color,
+    bodyFont: bodyStyle.fontFamily,
+    heading,
+    accents,
+    favicon,
+    ogImage,
+    ogTitle,
+    metaDesc,
+    siteName,
+    html: document.documentElement.outerHTML.slice(0, ${MAX_SOURCE_CHARS}),
+  };
+})()`;
+
+type BrowserScrapeResult = {
+  title: string | null;
+  bodyBg: string;
+  bodyColor: string;
+  bodyFont: string;
+  heading: { color: string; background: string; fontFamily: string } | null;
+  accents: { color: string; background: string; fontFamily: string }[];
+  favicon: string | null;
+  ogImage: string | null;
+  ogTitle: string | null;
+  metaDesc: string | null;
+  siteName: string | null;
+  html: string;
+};
+
+/** Reject SSRF targets before we hand a URL to the browser (mirrors web_fetch). */
+async function isWebsiteTargetAllowed(url: string): Promise<boolean> {
+  const parsed = parseUrl(url);
+  if (!parsed) return false;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (isPrivateOrLocalHost(parsed.hostname)) return false;
+  try {
+    const resolution = await resolveRequestAddress(
+      parsed.hostname,
+      resolveHostAddresses,
+      false,
+    );
+    if (resolution.blockedAddress) return false;
+    if (resolution.addresses.length === 0) return false;
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Drive the daemon's headless Chromium to read a page's computed CSS + logo +
+ * meta copy. Returns `null` (never throws) when the browser runtime is
+ * unavailable or the page fails to load, so the caller can fall back to the
+ * static web_fetch path. The URL is SSRF-checked by the caller.
+ */
+async function scrapeWebsiteHeadless(url: string): Promise<{
+  source: string;
+  hints: StructuredBrandHints;
+} | null> {
+  const { importPlaywright, ensureChromiumHeadlessShell } =
+    await import("../tools/browser/runtime-check.js");
+  let pw: Awaited<ReturnType<typeof importPlaywright>>;
+  try {
+    pw = await importPlaywright();
+    await ensureChromiumHeadlessShell(pw);
+  } catch (err) {
+    log.debug(
+      { err: String(err), url },
+      "headless browser unavailable; static fallback",
+    );
+    return null;
+  }
+
+  let browser: Awaited<ReturnType<typeof pw.chromium.launch>> | null = null;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineTimer = setTimeout(
+      () => reject(new Error("headless scrape timed out")),
+      BROWSER_TOTAL_TIMEOUT_MS,
+    );
+    // Don't let a pending deadline keep the daemon event loop alive.
+    deadlineTimer.unref?.();
+  });
+  try {
+    const scrape = (async (): Promise<BrowserScrapeResult> => {
+      browser = await pw.chromium.launch({ headless: true });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(url, {
+        waitUntil: "domcontentloaded",
+        timeout: BROWSER_NAV_TIMEOUT_MS,
+      });
+      return (await page.evaluate(
+        BROWSER_SCRAPE_SCRIPT,
+      )) as BrowserScrapeResult;
+    })();
+
+    const result = await Promise.race([scrape, deadline]);
+
+    // Build structural colour/font/logo hints from computed CSS.
+    const colors: string[] = [];
+    const seen = new Set<string>();
+    const push = (css: string | null | undefined) => {
+      if (!css) return;
+      const hex = cssColorToHex(css);
+      if (hex && !seen.has(hex)) {
+        seen.add(hex);
+        colors.push(hex);
+      }
+    };
+    push(result.heading?.color);
+    for (const a of result.accents) push(a.color);
+    push(result.bodyColor);
+    push(result.bodyBg);
+    push(result.heading?.background);
+
+    const hints: StructuredBrandHints = {
+      colors: colors.slice(0, MAX_PALETTE_HEX),
+      headingFont: firstFontFamily(result.heading?.fontFamily),
+      bodyFont: firstFontFamily(result.bodyFont),
+      logo: result.ogImage ?? result.favicon ?? undefined,
+      name:
+        result.siteName?.trim() ||
+        result.ogTitle?.trim() ||
+        result.title?.trim() ||
+        undefined,
+    };
+
+    // The source text the flash pass reads: meta copy + raw HTML.
+    const metaLines = [
+      result.title ? `Title: ${result.title}` : "",
+      result.siteName ? `Site: ${result.siteName}` : "",
+      result.metaDesc ? `Description: ${result.metaDesc}` : "",
+    ].filter(Boolean);
+    const source = `${metaLines.join("\n")}\n\n${result.html}`.slice(
+      0,
+      MAX_SOURCE_CHARS,
+    );
+
+    return { source, hints };
+  } catch (err) {
+    log.debug(
+      { err: String(err), url },
+      "headless scrape failed; static fallback",
+    );
+    return null;
+  } finally {
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    if (browser) {
+      try {
+        await (browser as { close: () => Promise<void> }).close();
+      } catch {
+        // Best-effort close; a leaked browser is worse than a swallowed error.
+      }
+    }
+  }
+}
+
+/** Static web_fetch fallback: raw-mode HTML so inline styles survive. */
+async function fetchWebsiteStatic(url: string): Promise<string> {
+  try {
+    const fetched = await executeWebFetch({
+      url,
+      raw: true,
+      max_chars: MAX_SOURCE_CHARS,
+    });
+    if (!fetched.isError && typeof fetched.content === "string") {
+      return fetched.content;
+    }
+    log.debug({ url }, "web_fetch returned an error; empty draft");
+  } catch (err) {
+    log.warn({ err: String(err), url }, "web_fetch threw during brand extract");
+  }
+  return "";
+}
+
+/**
+ * Extract a draft brand profile from a website URL. Prefers the daemon's
+ * headless Chromium (reads computed CSS + logo + meta copy — observes
+ * JS-rendered SPAs) and falls back to the SSRF-guarded static `web_fetch` (raw
+ * mode, so inline `<style>` / `style=` colour declarations survive). Never
+ * throws — degrades to an empty draft.
  */
 export async function extractFromWebsite(
   url: string,
@@ -319,30 +841,33 @@ export async function extractFromWebsite(
     return emptyDraft("website", url);
   }
 
-  let html = "";
-  try {
-    const fetched = await executeWebFetch({
-      url,
-      raw: true,
-      max_chars: MAX_SOURCE_CHARS,
-    });
-    if (!fetched.isError && typeof fetched.content === "string") {
-      html = fetched.content;
-    } else {
-      log.debug({ url }, "web_fetch returned an error; empty draft");
-    }
-  } catch (err) {
-    log.warn({ err: String(err), url }, "web_fetch threw during brand extract");
-  }
-
-  if (!html.trim()) {
+  if (!(await isWebsiteTargetAllowed(url))) {
+    log.debug({ url }, "website target blocked/unresolvable; empty draft");
     return emptyDraft("website", url);
   }
 
+  // Preferred path: headless browser with computed-CSS hints.
+  const scraped = await scrapeWebsiteHeadless(url);
+  if (scraped && scraped.source.trim()) {
+    const extracted = await runFlashExtraction({
+      kind: "website",
+      label: url,
+      source: scraped.source,
+      hints: scraped.hints,
+    });
+    return { ...extracted, source: "website" };
+  }
+
+  // Fallback path: static raw-HTML fetch (no computed CSS).
+  const html = await fetchWebsiteStatic(url);
+  if (!html.trim()) {
+    return emptyDraft("website", url);
+  }
   const extracted = await runFlashExtraction({
     kind: "website",
     label: url,
     source: html,
+    hints: { colors: collectHexFromText(html) },
   });
   return { ...extracted, source: "website" };
 }

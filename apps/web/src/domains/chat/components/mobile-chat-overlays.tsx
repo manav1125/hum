@@ -23,12 +23,15 @@ import { MobileDocumentOverlay } from "@/domains/chat/components/mobile-document
 import { MobileSubagentDetailOverlay } from "@/domains/chat/components/mobile-subagent-detail-overlay";
 import { MobileToolDetailOverlay } from "@/domains/chat/components/mobile-tool-detail-overlay";
 import { useMobileOverlayTarget } from "@/domains/chat/hooks/use-mobile-overlay-target";
+import { useRemixDescriptor } from "@/hooks/use-remix-descriptor";
 
 export function MobileChatOverlays() {
   const overlayTarget = useMobileOverlayTarget();
   const navigate = useNavigate();
 
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const editingConversationId =
+    useConversationStore.use.editingConversationId();
   const mainView = useViewerStore.use.mainView();
   const openedAppState = useViewerStore.use.openedAppState();
   const openedDocumentState = useViewerStore.use.openedDocumentState();
@@ -111,29 +114,23 @@ export function MobileChatOverlays() {
     [navigate],
   );
 
-  const handleRestyle = useCallback(() => {
-    reseedConversation(
-      "Restyle this deck into a different template — keep all the content and " +
-        "copy exactly, just change the visual template. Suggest a few directions.",
-    );
-  }, [reseedConversation]);
-
   const handleNewBrandKit = useCallback(() => {
     navigate(routes.settings.brand);
   }, [navigate]);
 
-  // See chat-content-layout for the TODO(remix-provenance) note — template/
-  // style aren't stamped on OpenedAppState yet, so we key off name; the cluster
-  // resolves the active brand itself.
-  const remix: AppViewerRemix | undefined = openedAppState
-    ? {
-        asset: { name: openedAppState.name, mode: "slides", noun: "deck" },
-        onReseed: reseedConversation,
-        onRestyle: handleRestyle,
-        onNewBrandKit: handleNewBrandKit,
-        enableFanout: true,
-      }
-    : undefined;
+  // Remix descriptor from the shared hook — reads real origin provenance and
+  // wires Restyle to summon the gallery over the chat asset (see the desktop
+  // chat-content-layout wiring for the full note).
+  const remixSourceConversationId =
+    editingConversationId ??
+    useConversationStore.getState().activeConversationId;
+  const remix: AppViewerRemix | undefined = useRemixDescriptor({
+    assetName: openedAppState?.name ?? null,
+    sourceConversationId: openedAppState ? remixSourceConversationId : null,
+    onReseed: reseedConversation,
+    onNewBrandKit: handleNewBrandKit,
+    enableFanout: true,
+  });
 
   if (!overlayTarget) return null;
 

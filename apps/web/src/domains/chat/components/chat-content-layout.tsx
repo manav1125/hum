@@ -30,6 +30,7 @@ import { useViewerStore } from "@/stores/viewer-store";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import { useEditApp } from "@/hooks/use-edit-app";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useRemixDescriptor } from "@/hooks/use-remix-descriptor";
 import { routes } from "@/utils/routes";
 
 const SubagentDetailPanel = lazy(() =>
@@ -128,43 +129,25 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
     [navigate],
   );
 
-  // Restyle: the gallery lives on the Create surface (owned by another
-  // workstream) and can't be summoned over the chat viewer yet, so the
-  // tractable path re-seeds a "restyle" instruction into the thread — the user
-  // names the new look in chat. TODO(restyle-gallery): when the gallery can be
-  // invoked as a modal from anywhere, open it here pre-scoped to the asset's
-  // mode and re-seed with buildRestylePrompt(asset, chosenTemplateId).
-  const handleRestyle = useCallback(() => {
-    reseedConversation(
-      "Restyle this deck into a different template — keep all the content and " +
-        "copy exactly, just change the visual template (layout, palette, type, " +
-        "cover). Tell me a few template directions I can pick from.",
-    );
-  }, [reseedConversation]);
-
   const handleNewBrandKit = useCallback(() => {
     void navigate(routes.settings.brand);
   }, [navigate]);
 
-  // The remix descriptor for the open app. Template/style provenance isn't
-  // stamped on OpenedAppState yet (the app-builder doesn't record the
-  // CreateIntent), so we key off the app name; the cluster resolves the active
-  // brand itself. TODO(remix-provenance): thread the originating CreateIntent
-  // (templateId/styleId/brandKitId) onto OpenedAppState so restyle can reopen
-  // the gallery pre-selected and rebrand knows the current kit.
-  const remix: AppViewerRemix | undefined = openedAppState
-    ? {
-        asset: {
-          name: openedAppState.name,
-          mode: "slides",
-          noun: "deck",
-        },
-        onReseed: reseedConversation,
-        onRestyle: handleRestyle,
-        onNewBrandKit: handleNewBrandKit,
-        enableFanout: true,
-      }
-    : undefined;
+  // The remix descriptor for the open app. The shared hook reads the asset's
+  // origin CreateIntent (stamped at seed time, keyed by the source conversation
+  // — an opened app links back via editingConversationId / activeConversationId)
+  // so Restyle/Rebrand start from the real prior template/style/brand-kit, and
+  // wires Restyle to summon the gallery pre-scoped over this chat asset.
+  const remixSourceConversationId =
+    editingConversationId ??
+    useConversationStore.getState().activeConversationId;
+  const remix: AppViewerRemix | undefined = useRemixDescriptor({
+    assetName: openedAppState?.name ?? null,
+    sourceConversationId: openedAppState ? remixSourceConversationId : null,
+    onReseed: reseedConversation,
+    onNewBrandKit: handleNewBrandKit,
+    enableFanout: true,
+  });
 
   const onCloseSubagentDetail = useCallback(() => {
     useViewerStore.getState().closeSubagentDetail();

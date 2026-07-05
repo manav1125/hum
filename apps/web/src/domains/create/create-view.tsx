@@ -289,8 +289,14 @@ function CardActions({ onOpen }: { onOpen: () => void }) {
 }
 
 export interface CreateViewProps {
-  /** Seeds a new chat thread with a prompt and runs it. */
-  onRunPrompt: (prompt: string) => void;
+  /**
+   * Seeds a new chat thread with a prompt and runs it. When the run carries a
+   * gallery/composer selection, its compiled `CreateIntent` is passed as the
+   * second arg so the host can stamp it as the resulting asset's remix
+   * provenance (see create-provenance-store). Plain quick-start / form runs
+   * omit it.
+   */
+  onRunPrompt: (prompt: string, intent?: CreateIntent | null) => void;
 }
 
 export function CreateView({ onRunPrompt }: CreateViewProps) {
@@ -332,7 +338,10 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
         ? selectionToIntent(selection, brand?.id ?? null, reference)
         : { mode: activeMode.id, reference: reference ?? undefined };
       const applyBrand = selection?.inBrand ? brand : null;
-      onRunPrompt(applyCreateIntent(text, intent, applyBrand));
+      // Stamp the intent as the asset's origin provenance (the reference is
+      // per-generation, not part of the reusable remix origin, so drop it).
+      const provenance: CreateIntent = { ...intent, reference: undefined };
+      onRunPrompt(applyCreateIntent(text, intent, applyBrand), provenance);
     } else {
       onRunPrompt(text);
     }
@@ -345,6 +354,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
     const intent = selectionToIntent(sel, brand?.id ?? null, reference);
     onRunPrompt(
       applyCreateIntent(action.promptSeed, intent, sel.inBrand ? brand : null),
+      { ...intent, reference: undefined },
     );
   };
 

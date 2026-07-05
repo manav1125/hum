@@ -89,6 +89,7 @@ import {
   migrateCreateConversationGraphMemoryState,
   migrateCreateDocumentComments,
   migrateCreateDocumentConversations,
+  migrateCreateKits,
   migrateCreateMemoryGraphNodeEdits,
   migrateCreateMemoryGraphTables,
   migrateCreateMemoryRecallLogs,
@@ -532,6 +533,7 @@ export function initializeDb(): void {
     migrateContactInteractionIndexes,
     migrateCreateAgents,
     migrateCreateBrandProfiles,
+    migrateCreateKits,
   ];
 
   // Run each migration step, catching and logging individual failures so one

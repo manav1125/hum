@@ -19543,6 +19543,357 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/kits:
+    post:
+      operationId: kits_post
+      summary: Launch a fan-out kit
+      description:
+        "Create + launch a coordinated asset kit: one background generation per format, each seeded with the SAME
+        brief + compiled design-contract + active brand so the whole set reads as one launch. Fire-and-forget — returns
+        the tracked set immediately; poll GET kits/{kid} for per-asset status. Each format maps to a Create mode/skill
+        (deck→app-builder, one-pager/email/doc→document-editor, social→image, landing→canvas)."
+      tags:
+        - create
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kit:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      brief:
+                        type: string
+                      brandKitId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      contractPreamble:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      title:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      assets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kitId:
+                              type: string
+                            format:
+                              type: string
+                            mode:
+                              type: string
+                            conversationId:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            status:
+                              type: string
+                              enum:
+                                - pending
+                                - running
+                                - done
+                                - failed
+                            outputRef:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            error:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            createdAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            updatedAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                          required:
+                            - id
+                            - kitId
+                            - format
+                            - mode
+                            - conversationId
+                            - status
+                            - outputRef
+                            - error
+                            - createdAt
+                            - updatedAt
+                          additionalProperties: false
+                    required:
+                      - id
+                      - assistantId
+                      - brief
+                      - brandKitId
+                      - contractPreamble
+                      - title
+                      - createdAt
+                      - updatedAt
+                      - assets
+                    additionalProperties: false
+                required:
+                  - kit
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                brief:
+                  type: string
+                  minLength: 1
+                  description: The shared source brief for every asset
+                formats:
+                  minItems: 1
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                  description:
+                    "Fan-out format ids: 'slides' | 'one_pager' | 'social' | 'email' | 'landing'. Each becomes one tracked
+                    asset."
+                brandKitId:
+                  description: Brand profile id applied to every asset; null = un-branded
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                contractPreamble:
+                  description: The compiled design-contract block prepended to every asset's seed (from create-intent.ts).
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+              required:
+                - brief
+                - formats
+              additionalProperties: false
+  /v1/kits/{kid}:
+    get:
+      operationId: kits_by_kid_get
+      summary: Get a kit + all asset statuses
+      description:
+        The kit and every asset in it, with each asset's current status (pending | running | done | failed), run
+        conversation, and produced output ref.
+      tags:
+        - create
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kit:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      assistantId:
+                        type: string
+                      brief:
+                        type: string
+                      brandKitId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      contractPreamble:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      title:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      assets:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kitId:
+                              type: string
+                            format:
+                              type: string
+                            mode:
+                              type: string
+                            conversationId:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            status:
+                              type: string
+                              enum:
+                                - pending
+                                - running
+                                - done
+                                - failed
+                            outputRef:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            error:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            createdAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            updatedAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                          required:
+                            - id
+                            - kitId
+                            - format
+                            - mode
+                            - conversationId
+                            - status
+                            - outputRef
+                            - error
+                            - createdAt
+                            - updatedAt
+                          additionalProperties: false
+                    required:
+                      - id
+                      - assistantId
+                      - brief
+                      - brandKitId
+                      - contractPreamble
+                      - title
+                      - createdAt
+                      - updatedAt
+                      - assets
+                    additionalProperties: false
+                required:
+                  - kit
+                additionalProperties: false
+      parameters:
+        - name: kid
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/kits/{kid}/assets/{aid}/regenerate:
+    post:
+      operationId: kits_by_kid_assets_by_aid_regenerate_post
+      summary: Regenerate one kit asset
+      description:
+        Re-run a single asset in a fresh background generation without touching the rest of the kit.
+        Fire-and-forget — the asset resets to `pending` and transitions as the new run progresses.
+      tags:
+        - create
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      kitId:
+                        type: string
+                      format:
+                        type: string
+                      mode:
+                        type: string
+                      conversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                        enum:
+                          - pending
+                          - running
+                          - done
+                          - failed
+                      outputRef:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      error:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - kitId
+                      - format
+                      - mode
+                      - conversationId
+                      - status
+                      - outputRef
+                      - error
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - asset
+                additionalProperties: false
+      parameters:
+        - name: kid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: aid
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/llm-request-logs/{id}/context:
     get:
       operationId: llmrequestlogs_by_id_context_get

@@ -22,20 +22,24 @@ import { Copy, Palette, RefreshCw, X } from "lucide-react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
-  buildFanoutPrompts,
   buildMergePrompt,
   buildRebrandPrompt,
   buildVariationPrompts,
   DEFAULT_VARIATIONS,
+  FANOUT_FORMATS,
   type RemixAsset,
 } from "@/domains/create/create-remix";
-import type { BrandProfileLike } from "@/domains/create/create-intent";
+import {
+  type BrandProfileLike,
+  compileCreateIntent,
+} from "@/domains/create/create-intent";
 import {
   AlsoMakeChooser,
   KitResultView,
   LaterPhaseBadge,
   type KitAsset,
 } from "@/domains/create/create-fanout";
+import { useKit, useKitLauncher } from "@/domains/create/use-kit";
 import {
   VariationsResult,
   type VariationResult,
@@ -257,8 +261,30 @@ export function RemixCluster({
   const brand = brandProp ?? activeBrand;
   const [rebrandOpen, setRebrandOpen] = useState(false);
   const [panel, setPanel] = useState<RemixPanel>("none");
-  // The kit assets produced by a fan-out, shown in the 4g result view.
-  const [kitAssets, setKitAssets] = useState<KitAsset[]>([]);
+  // The launched fan-out kit — polled server-side for per-asset status.
+  const kitLauncher = useKitLauncher();
+  const [kitId, setKitId] = useState<string | null>(null);
+  const kitQuery = useKit(kitId);
+  const kitTitle = kitQuery.data?.kit?.title ?? `${asset.name} launch kit`;
+  // Map the live kit rows → the presentational KitAsset[] the result view
+  // renders, with a status-aware label so "queued / generating… / failed" shows.
+  const kitAssets: KitAsset[] = (kitQuery.data?.kit?.assets ?? []).map((a) => {
+    const fmt = FANOUT_FORMATS.find((f) => f.id === a.format);
+    const suffix =
+      a.status === "running"
+        ? " · generating…"
+        : a.status === "pending"
+          ? " · queued"
+          : a.status === "failed"
+            ? " · failed"
+            : "";
+    return {
+      id: a.id,
+      label: `${fmt?.label ?? a.format}${suffix}`,
+      isSet: a.format === "social",
+      setSize: 3,
+    };
+  });
 
   const pickBrand = (kit: ActiveBrand) => {
     setRebrandOpen(false);
@@ -278,23 +304,38 @@ export function RemixCluster({
     setPanel("variations");
   };
 
-  // Fan-out (4g): fire one seeded generation per picked format, then show the
-  // kit result shell. NOTE: coordinated-by-brand only — true single-pass kit
-  // orchestration is a backend TODO (see create-fanout / create-remix).
-  const generateFanout = (formatIds: string[]) => {
-    const built = buildFanoutPrompts(asset, formatIds, brand ?? null);
-    built.forEach((b) => onReseed(b.prompt));
-    const assets: KitAsset[] = [
-      { id: "source", label: `${asset.noun ?? "Deck"} · source` },
-      ...built.map((b) => ({
-        id: b.format.id,
-        label: b.format.label,
-        isSet: b.format.id === "social",
-        setSize: 3,
-      })),
-    ];
-    setKitAssets(assets);
+  // Fan-out (4g): launch ONE coordinated kit server-side — the /v1/kits endpoint
+  // fans the shared brief + brand contract across the picked formats, each
+  // produced in its own guardian-trusted background run and tracked together.
+  // The result shell then polls per-asset status via useKit.
+  const generateFanout = async (formatIds: string[]) => {
     setPanel("kit");
+    setKitId(null);
+    const contractPreamble = compileCreateIntent(
+      {
+        mode: asset.mode,
+        templateId: asset.templateId,
+        styleId: asset.styleId,
+        brandKitId: asset.brandKitId ?? null,
+      },
+      brand ?? null,
+    );
+    const brief =
+      `Produce a coordinated launch kit from this ${asset.noun ?? "deck"}: ` +
+      `"${asset.name}". Keep the headline, key messaging and numbers consistent ` +
+      `across every format.`;
+    try {
+      const id = await kitLauncher.launchKit({
+        brief,
+        formats: formatIds,
+        ...(asset.brandKitId ? { brandKitId: asset.brandKitId } : {}),
+        ...(contractPreamble ? { contractPreamble } : {}),
+        title: `${asset.name} launch kit`,
+      });
+      setKitId(id);
+    } catch {
+      // Launch failed — the shell stays open; retry from the chooser.
+    }
   };
 
   const variationResults: VariationResult[] =
@@ -329,15 +370,18 @@ export function RemixCluster({
           />
         ) : (
           <KitResultView
-            title={`${asset.name} launch kit`}
+            title={kitTitle}
             assets={kitAssets}
-            onRegenerateAsset={(id) =>
-              onReseed(
-                `Regenerate just the "${id}" asset of the kit — leave the ` +
-                  `others untouched.`,
-              )
-            }
+            onRegenerateAsset={(id) => {
+              if (kitId)
+                void kitLauncher
+                  .regenerateAsset(kitId, id)
+                  .then(() => kitQuery.refetch());
+            }}
             onDownloadAll={() =>
+              // No bundle endpoint yet — approximate via a re-seed that asks the
+              // assistant to zip the kit. TODO(kit-bundle): a real /v1/kits
+              // download endpoint that streams the produced artifacts together.
               onReseed("Bundle the whole kit and give me a download link.")
             }
           />

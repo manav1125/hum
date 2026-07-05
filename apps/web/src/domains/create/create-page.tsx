@@ -3,7 +3,9 @@ import { useNavigate } from "react-router";
 
 import { PageShell } from "@/components/page-shell";
 import { CreateView } from "@/domains/create/create-view";
+import type { CreateIntent } from "@/domains/create/create-intent";
 import { useConversationStore } from "@/stores/conversation-store";
+import { useCreateProvenanceStore } from "@/stores/create-provenance-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import { routes } from "@/utils/routes";
 
@@ -32,10 +34,17 @@ export function CreatePage() {
   const navigate = useNavigate();
 
   const handleRunPrompt = useCallback(
-    (prompt: string) => {
+    (prompt: string, intent?: CreateIntent | null) => {
       useViewerStore.getState().setMainView("chat");
       const id = newDraftConversationId();
       useConversationStore.getState().setActiveConversationId(id);
+      // Stamp the origin CreateIntent against the seeding conversation so the
+      // remix cluster can read real provenance once the asset is opened (the
+      // opened app links back to this conversation id). Skipped for plain
+      // quick-start / form runs that carry no selection.
+      if (intent) {
+        useCreateProvenanceStore.getState().stampIntent(id, intent);
+      }
       void navigate(
         `${routes.conversation(id)}?prompt=${encodeURIComponent(prompt)}`,
       );
