@@ -62,6 +62,15 @@ export function LibraryAppCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const isMobile = useIsMobile();
 
+  // Coarse artifact type for the S3 corner badge — apps carry no explicit
+  // type, so infer one from the name/icon keywords (Deck / Site / App).
+  const hay = `${app.name} ${app.icon ?? ""}`.toLowerCase();
+  const typeLabel = /deck|slide|pitch|presentation/.test(hay)
+    ? "Deck"
+    : /site|landing|page|web/.test(hay)
+      ? "Site"
+      : "App";
+
   return (
     <div
       className={cn(
@@ -83,6 +92,23 @@ export function LibraryAppCard({
           icon={app.icon}
           loadHtml={loadHtml}
         />
+        {/* S3 type badge — mono glyph pinned to the thumbnail corner. */}
+        <span
+          className="pointer-events-none absolute left-2 top-2 z-10"
+          style={{
+            fontFamily: "'DM Mono', ui-monospace, monospace",
+            fontSize: 9,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "#fff",
+            background: "color-mix(in srgb, #0C121B 62%, transparent)",
+            backdropFilter: "blur(4px)",
+            borderRadius: 6,
+            padding: "2px 7px",
+          }}
+        >
+          {typeLabel}
+        </span>
       </button>
 
       <div

@@ -10,7 +10,13 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Search, Upload } from "lucide-react";
-import { type ChangeEvent, useCallback, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { DeployDialogs } from "@/components/deploy-dialogs";
 import { DeleteAppDialog } from "@/domains/library/components/delete-app-dialog";
@@ -27,17 +33,61 @@ import { clearAppHtmlCache, getCachedAppHtml } from "@/utils/app-html-cache";
 import { importBundle } from "@/utils/import-bundle";
 import { ApertureAvatar, Input, toast } from "@vellumai/design-library";
 
-// Editorial tokens (design/HANDOFF.md) — Library mirrors the inline-hex
-// convention of the other v0.3 catalog surfaces (Connectors, Impact).
-const SERIF = "'Instrument Serif', Georgia, serif";
-const MONO = "'DM Mono', ui-monospace, monospace";
+// Editorial tokens — restyled to the shipped HQ design language (Cue-Surfaces
+// S3). These point at the theme-aware `--mv1-*` CSS-variable system so light +
+// dark both render correctly instead of pasting a fixed light canvas onto dark
+// chrome. Defined locally (not imported from domains/activity) to respect the
+// cross-domain-import boundary; the CSS-var contract is the shared surface.
+const C = {
+  ink: "var(--mv1-t1)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  blue: "var(--mv1-blue)",
+  blueS: "var(--mv1-blue-strong)",
+  line: "var(--mv1-line)",
+  bg: "var(--mv1-canvas)",
+} as const;
+const mono = "'DM Mono', ui-monospace, monospace";
+const serif = "'Instrument Serif', Georgia, serif";
+
 const sectionLabel = {
-  fontFamily: MONO,
+  fontFamily: mono,
   fontSize: 11,
   letterSpacing: ".1em",
   textTransform: "uppercase" as const,
-  color: "#8D99A5",
+  color: C.t3,
 };
+
+/** The S3 filter tabs — RECENTS · All / Decks / Docs / Dashboards / Sites. */
+const LIBRARY_FILTERS = [
+  "All",
+  "Decks",
+  "Docs",
+  "Dashboards",
+  "Sites",
+] as const;
+type LibraryFilter = (typeof LIBRARY_FILTERS)[number];
+
+/**
+ * Coarse artifact type inferred from an app's name/icon — apps carry no
+ * explicit type in the daemon response, so we bucket by keyword for the
+ * type badge + filter. Everything else falls back to "App".
+ */
+function inferAppType(
+  name: string,
+  icon?: string,
+): {
+  label: string;
+  filter: Exclude<LibraryFilter, "All" | "Docs">;
+} {
+  const hay = `${name} ${icon ?? ""}`.toLowerCase();
+  if (/deck|slide|pitch|presentation/.test(hay))
+    return { label: "Deck", filter: "Decks" };
+  if (/site|landing|page|web/.test(hay))
+    return { label: "Site", filter: "Sites" };
+  return { label: "App", filter: "Dashboards" };
+}
 
 export interface LibraryViewProps {
   assistantId: string;
@@ -65,14 +115,15 @@ export function LibraryView({
     apps,
     documents,
     filteredApps,
-    pinnedApps,
-    recentApps,
     filteredDocuments,
     searchText,
     setSearchText,
     loading,
     error,
   } = useLibraryData(assistantId);
+
+  // --- Filter tabs (All / Decks / Docs / Dashboards / Sites) ---
+  const [activeFilter, setActiveFilter] = useState<LibraryFilter>("All");
 
   // --- Delete state ---
   const [appPendingDelete, setAppPendingDelete] = useState<AppSummary | null>(
@@ -168,14 +219,43 @@ export function LibraryView({
     [togglePin],
   );
 
+  // --- Tab filtering: narrow the search-filtered lists by the active tab. ---
+  const tabApps = useMemo(() => {
+    if (activeFilter === "All") return filteredApps;
+    if (activeFilter === "Docs") return [];
+    return filteredApps.filter(
+      (a) => inferAppType(a.name, a.icon).filter === activeFilter,
+    );
+  }, [filteredApps, activeFilter]);
+
+  const tabDocuments = useMemo(() => {
+    if (activeFilter === "All" || activeFilter === "Docs")
+      return filteredDocuments;
+    return [];
+  }, [filteredDocuments, activeFilter]);
+
+  const byRecent = (
+    a: { updatedAt: number; createdAt: number },
+    b: { updatedAt: number; createdAt: number },
+  ) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt;
+  const tabPinnedApps = useMemo(
+    () => tabApps.filter((a) => pinnedAppIds.has(a.id)).sort(byRecent),
+    [tabApps, pinnedAppIds],
+  );
+  const tabRecentApps = useMemo(
+    () => tabApps.filter((a) => !pinnedAppIds.has(a.id)).sort(byRecent),
+    [tabApps, pinnedAppIds],
+  );
+
   // --- Render: loading ---
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div
-          className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--border-base)] border-t-[var(--primary-base)]"
+          className="h-6 w-6 animate-spin rounded-full border-2"
           role="status"
           aria-label="Loading apps"
+          style={{ borderColor: C.line, borderTopColor: C.blue }}
         />
       </div>
     );
@@ -214,15 +294,16 @@ export function LibraryView({
   }
 
   // --- Render: main library grid ---
+  const noResults = tabApps.length === 0 && tabDocuments.length === 0;
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
       style={{
         fontFamily: "'DM Sans', system-ui, sans-serif",
-        color: "#1A2230",
+        color: C.ink,
       }}
     >
-      {/* Editorial hero — "Everything you and Cue have made together." */}
+      {/* Editorial hero — "Everything you and Cue have made together." (S3) */}
       <div className="mb-5 flex shrink-0 items-center gap-4">
         <ApertureAvatar
           state="listening"
@@ -230,20 +311,23 @@ export function LibraryView({
           className="rounded-[12px]"
         />
         <div className="flex-1 min-w-0">
+          <div style={sectionLabel}>Library</div>
           <div
             style={{
-              fontFamily: SERIF,
-              fontSize: 26,
+              fontFamily: serif,
+              fontSize: 27,
               letterSpacing: "-.2px",
-              lineHeight: 1.18,
+              lineHeight: 1.14,
+              color: C.ink,
+              marginTop: 2,
             }}
           >
             Everything you and Cue have{" "}
-            <span style={{ fontStyle: "italic", color: "#2B53C4" }}>
+            <span style={{ fontStyle: "italic", color: C.blueS }}>
               made together.
             </span>
           </div>
-          <div style={{ fontSize: 12.5, color: "#5A6672", marginTop: 3 }}>
+          <div style={{ fontSize: 12.5, color: C.t2, marginTop: 3 }}>
             Decks, docs, sites, and artifacts — pick up where you left off, or
             import your own.
           </div>
@@ -264,8 +348,8 @@ export function LibraryView({
             alignItems: "center",
             gap: 8,
             fontSize: 13.5,
-            background: "#1A2230",
-            color: "#fff",
+            background: C.ink,
+            color: C.bg,
             border: "none",
             borderRadius: 10,
             padding: "10px 18px",
@@ -274,7 +358,14 @@ export function LibraryView({
           }}
         >
           {isImporting ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            <span
+              className="h-4 w-4 animate-spin rounded-full border-2"
+              style={{
+                borderColor:
+                  "color-mix(in srgb, currentColor 40%, transparent)",
+                borderTopColor: "currentColor",
+              }}
+            />
           ) : (
             <Upload size={14} />
           )}
@@ -282,7 +373,7 @@ export function LibraryView({
         </button>
       </div>
 
-      <div className="mb-6 shrink-0">
+      <div className="mb-4 shrink-0">
         <Input
           fullWidth
           type="text"
@@ -295,19 +386,53 @@ export function LibraryView({
         />
       </div>
 
+      {/* Filter tabs — RECENTS · All / Decks / Docs / Dashboards / Sites. */}
+      <div className="mb-5 flex shrink-0 items-center gap-2.5 overflow-x-auto">
+        <span style={{ ...sectionLabel, flexShrink: 0 }}>Recents</span>
+        <div className="flex items-center gap-1.5">
+          {LIBRARY_FILTERS.map((f) => {
+            const active = f === activeFilter;
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setActiveFilter(f)}
+                aria-pressed={active}
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: active ? 600 : 500,
+                  padding: "5px 12px",
+                  borderRadius: 999,
+                  border: `1px solid ${active ? "transparent" : C.line}`,
+                  background: active ? C.ink : "transparent",
+                  color: active ? C.bg : C.t2,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                {f}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
-        {filteredApps.length === 0 && filteredDocuments.length === 0 ? (
+        {noResults ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <Search size={32} className="mb-4 text-[var(--content-tertiary)]" />
-            <p className="text-body-medium-lighter text-[var(--content-tertiary)]">
-              No apps or documents matched &ldquo;{searchText}&rdquo;
+            <Search size={32} className="mb-4" style={{ color: C.t3 }} />
+            <p style={{ fontSize: 13.5, color: C.t3 }}>
+              {searchText
+                ? `No apps or documents matched “${searchText}”`
+                : "Nothing here yet in this filter."}
             </p>
           </div>
         ) : (
           <div className="flex flex-col gap-8">
             <LibraryGridSection
               title="Pinned"
-              apps={pinnedApps}
+              apps={tabPinnedApps}
               assistantId={assistantId}
               pinnedAppIds={pinnedAppIds}
               onOpen={onOpenApp}
@@ -317,7 +442,7 @@ export function LibraryView({
             />
             <LibraryGridSection
               title="Recents"
-              apps={recentApps}
+              apps={tabRecentApps}
               assistantId={assistantId}
               pinnedAppIds={pinnedAppIds}
               onOpen={onOpenApp}
@@ -325,13 +450,13 @@ export function LibraryView({
               onDelete={setAppPendingDelete}
               onDeploy={handleDeploy}
             />
-            {filteredDocuments.length > 0 ? (
+            {tabDocuments.length > 0 ? (
               <section>
                 <h2 className="mb-4" style={sectionLabel}>
                   Documents
                 </h2>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">
-                  {filteredDocuments.map((doc) => (
+                  {tabDocuments.map((doc) => (
                     <LibraryDocumentCard
                       key={doc.surfaceId}
                       document={doc}

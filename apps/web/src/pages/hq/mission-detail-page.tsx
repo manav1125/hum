@@ -33,7 +33,14 @@ import {
   mono,
   serif,
 } from "./hq-kit";
+import { DriftNudge, driftFromEvents } from "./drift-nudge";
 import { MissionDetailSkeleton } from "./hq-modules";
+import {
+  AchievedCelebration,
+  buildAchievedShareText,
+  PausedState,
+} from "./mission-lifecycle";
+import { useMissionAchievedSummary } from "./use-mission-lifecycle";
 import {
   humanizeEvent,
   ringStatusFor,
@@ -64,6 +71,13 @@ export function MissionDetailPage() {
 
   const [showLinkPicker, setShowLinkPicker] = useState(false);
   const [cycleNote, setCycleNote] = useState<string | null>(null);
+  const [shared, setShared] = useState(false);
+
+  const achieved = useMissionAchievedSummary(
+    assistantId,
+    id,
+    mission?.status === "achieved",
+  );
 
   const linkedIds = useMemo(
     () => new Set((mission?.rollup.projects ?? []).map((p) => p.id)),
@@ -98,6 +112,89 @@ export function MissionDetailPage() {
     );
   }
 
+  const backLink = (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        fontSize: 12.5,
+        color: C.t2,
+        marginBottom: 16,
+      }}
+    >
+      <Link to={routes.hq} style={{ color: C.t2, textDecoration: "none" }}>
+        ‹ HQ
+      </Link>
+      <span aria-hidden style={{ color: C.line2 }}>
+        /
+      </span>
+      <span style={{ color: C.ink, fontWeight: 500 }}>{mission.title}</span>
+    </div>
+  );
+
+  // ── §6 · ACHIEVED — the celebration receipt, made to share ─────────────
+  if (mission.status === "achieved") {
+    const doShare = () => {
+      const text = buildAchievedShareText({
+        title: mission.title,
+        outcome: mission.outcome,
+        summary: achieved.summary,
+        spentCents: mission.spentCents,
+      });
+      void navigator.clipboard?.writeText(text).catch(() => {});
+      setShared(true);
+      setTimeout(() => setShared(false), 2500);
+    };
+    return (
+      <Shell>
+        {backLink}
+        <AchievedCelebration
+          title={mission.title}
+          outcome={mission.outcome}
+          summary={achieved.summary}
+          spentCents={mission.spentCents}
+          onShare={doShare}
+          shared={shared}
+        />
+      </Shell>
+    );
+  }
+
+  // ── §6 · PAUSED — calm & reversible ────────────────────────────────────
+  if (mission.status === "paused") {
+    const budgetStopped =
+      mission.budgetCents != null &&
+      mission.budgetCents > 0 &&
+      mission.spentCents >= mission.budgetCents;
+    return (
+      <Shell>
+        {backLink}
+        <PausedState
+          title={mission.title}
+          pausedAt={mission.updatedAt}
+          reason={
+            budgetStopped ? "paused at the budget ceiling" : "paused by you"
+          }
+          busy={patch.isPending}
+          onResume={() =>
+            patch.mutate({
+              path: { assistant_id: assistantId, id: mission.id },
+              body: { status: "active" },
+            })
+          }
+          onArchive={() =>
+            patch.mutate({
+              path: { assistant_id: assistantId, id: mission.id },
+              body: { status: "abandoned" },
+            })
+          }
+        />
+      </Shell>
+    );
+  }
+
+  const drift = driftFromEvents(events);
   const status = ringStatusFor(mission);
   const horizon = horizonLabel(mission.horizon);
   const workspaceMode: WorkspaceMode = profile?.workspaceMode ?? "assist";
@@ -129,25 +226,7 @@ export function MissionDetailPage() {
 
   return (
     <Shell>
-      {/* Breadcrumb */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          fontSize: 12.5,
-          color: C.t2,
-          marginBottom: 16,
-        }}
-      >
-        <Link to={routes.hq} style={{ color: C.t2, textDecoration: "none" }}>
-          ‹ HQ
-        </Link>
-        <span aria-hidden style={{ color: C.line2 }}>
-          /
-        </span>
-        <span style={{ color: C.ink, fontWeight: 500 }}>{mission.title}</span>
-      </div>
+      {backLink}
 
       {/* HERO */}
       <div
@@ -178,7 +257,6 @@ export function MissionDetailPage() {
           >
             {horizon ? `Target: ${horizon} · ` : ""}
             {RING_META[status].label}
-            {mission.status === "paused" ? " · paused" : ""}
           </div>
           <div
             style={{
@@ -415,6 +493,30 @@ export function MissionDetailPage() {
 
         {/* RIGHT RAIL */}
         <div style={{ minWidth: 0 }}>
+          {/* §6 · Drifting nudge — idling with nothing to run */}
+          {drift ? (
+            <div style={{ marginBottom: 14 }}>
+              <DriftNudge
+                title={mission.title}
+                metric={mission.metric ?? mission.title}
+                idleCycles={drift.idleCycles}
+                busy={runCycle.isPending || patch.isPending}
+                onReplan={doRunCycle}
+                onStepIn={() =>
+                  navigate(
+                    `${routes.home}?focus=${encodeURIComponent(mission.id)}`,
+                  )
+                }
+                onPause={() =>
+                  patch.mutate({
+                    path: { assistant_id: assistantId, id: mission.id },
+                    body: { status: "paused" },
+                  })
+                }
+              />
+            </div>
+          ) : null}
+
           {/* Mission-scoped needs-you */}
           {missionReview.length > 0 ? (
             <div

@@ -739,6 +739,30 @@ export const routeTree = [
                         },
                       },
                       {
+                        // HQ first-run setup — the Step-0 fork + five-step
+                        // founding flow. MUST precede `hq/:id` so "setup"
+                        // isn't captured as a mission id.
+                        path: "hq/setup",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/hq-onboarding/setup-page").then(
+                              (m) => m.HqSetupPage,
+                            ),
+                        },
+                      },
+                      {
+                        // Agents · the org — the roster/org-chart surface.
+                        // MUST precede `hq/:id` so "agents" isn't captured as
+                        // a mission id.
+                        path: "hq/agents",
+                        lazy: {
+                          Component: () =>
+                            import("@/pages/hq-agents/agents-org-page").then(
+                              (m) => m.AgentsOrgPage,
+                            ),
+                        },
+                      },
+                      {
                         path: "hq/:id",
                         lazy: {
                           Component: () =>

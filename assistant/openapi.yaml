@@ -21568,6 +21568,70 @@ paths:
                       maximum: 9007199254740991
                     - type: "null"
               additionalProperties: false
+  /v1/missions/{id}/achieved-summary:
+    get:
+      operationId: missions_by_id_achievedsummary_get
+      summary: Mission achieved-celebration stats
+      description:
+        Roll a mission's life up into the §6 celebration stats — cycles run, outputs, items enqueued, spend,
+        duration, and a conservative hours-back estimate — derived from its events + stored spend. Read-only; the UI
+        shows it on the Achieved state.
+      tags:
+        - missions
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      cycles:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      outputs:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      itemsEnqueued:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      spentCents:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      durationMs:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      hoursSaved:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - cycles
+                      - outputs
+                      - itemsEnqueued
+                      - spentCents
+                      - durationMs
+                      - hoursSaved
+                    additionalProperties: false
+                required:
+                  - summary
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/missions/{id}/events:
     get:
       operationId: missions_by_id_events_get

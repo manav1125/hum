@@ -15,6 +15,7 @@ import {
   deleteMission,
   getCompanyProfile,
   getMission,
+  getMissionAchievedSummary,
   getMissionWithRollup,
   listMissionEvents,
   listMissionsWithRollups,
@@ -335,6 +336,36 @@ export const ROUTES: RouteDefinition[] = [
       return {
         events: listMissionEvents(id, limit ? { limit } : undefined),
       };
+    },
+  },
+
+  {
+    operationId: "getMissionAchievedSummary",
+    endpoint: "missions/:id/achieved-summary",
+    method: "GET",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Mission achieved-celebration stats",
+    description:
+      "Roll a mission's life up into the §6 celebration stats — cycles run, outputs, items enqueued, spend, duration, and a conservative hours-back estimate — derived from its events + stored spend. Read-only; the UI shows it on the Achieved state.",
+    tags: ["missions"],
+    responseBody: z.object({
+      summary: z.object({
+        cycles: z.number().int(),
+        outputs: z.number().int(),
+        itemsEnqueued: z.number().int(),
+        spentCents: z.number().int(),
+        durationMs: z.number().int().nullable(),
+        hoursSaved: z.number().int(),
+      }),
+    }),
+    handler: ({ pathParams }) => {
+      const id = pathParams!.id;
+      const summary = getMissionAchievedSummary(id);
+      if (!summary) throw new NotFoundError(`Mission not found: ${id}`);
+      return { summary };
     },
   },
 

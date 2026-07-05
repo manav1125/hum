@@ -95,7 +95,13 @@ export const routes = {
   home: r("/assistant/home"),
   // HQ — THE landing surface: the rings deck with the folded Home modules.
   hq: r("/assistant/hq"),
+  // HQ first-run setup — the Step-0 fork + five-step founding flow. Progress
+  // persists to localStorage so the HQ setup meter can read N-of-5.
+  hqSetup: r("/assistant/hq/setup"),
   hqMission: (id: string) => dyn(r("/assistant/hq"), id),
+  // Agents · the org — the company view of the agent roster ("Your company,
+  // staffed by agents."). Reached from the HQ rail's "Agents ›" link.
+  hqAgents: r("/assistant/hq/agents"),
   projects: r("/assistant/projects"),
   project: (id: string) => dyn(r("/assistant/projects"), id),
   allWork: r("/assistant/work"),

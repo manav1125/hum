@@ -28,6 +28,11 @@ import {
   workitemsByIdRunPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { MicroLabel } from "@/pages/hq/hq-kit";
+import {
+  ReassignMenu,
+  ReassignTeachToast,
+  type ReassignTarget,
+} from "@/pages/hq/reassign-menu";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ItemCard, statusChip } from "./item-card";
@@ -88,9 +93,6 @@ function fullBody(
   };
 }
 
-/** How many sibling projects show before the "Move to another…" expander. */
-const FILED_TO_PREVIEW = 3;
-
 export function TaskDrawer({
   assistantId,
   item,
@@ -110,7 +112,7 @@ export function TaskDrawer({
 
   const [context, setContext] = useState(item.context ?? "");
   const [contextDirty, setContextDirty] = useState(false);
-  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [taught, setTaught] = useState<{ to: string } | null>(null);
 
   useEffect(() => {
     setContext(item.context ?? "");
@@ -161,22 +163,22 @@ export function TaskDrawer({
     setContextDirty(false);
   };
 
-  const moveTo = (projectId: string | null) => {
+  const moveTo = (projectId: string) => {
+    const dest = projects.find((p) => p.id === projectId);
     patch.mutate(
       { ...pathOpts, body: fullBody(item, { projectId }) },
-      { onSuccess: () => setShowAllProjects(false) },
+      {
+        onSuccess: () => setTaught(dest ? { to: dest.title } : null),
+      },
     );
   };
 
-  const currentProject =
-    projects.find((p) => p.id === currentProjectId) ?? null;
-  const otherProjects = projects.filter(
-    (p) => p.id !== currentProjectId && p.status === "active",
-  );
-  const visibleOthers = showAllProjects
-    ? otherProjects
-    : otherProjects.slice(0, FILED_TO_PREVIEW);
-  const hiddenCount = otherProjects.length - visibleOthers.length;
+  // §4 reassign targets: every active project, current one highlighted inside
+  // the menu. The drawer moves a *filed* task, so no "dismiss" door here — that
+  // door belongs on HQ's came-in rows (ReassignMenu supports it via onDismiss).
+  const reassignTargets: ReassignTarget[] = projects
+    .filter((p) => p.status === "active" || p.id === currentProjectId)
+    .map((p) => ({ id: p.id, title: p.title, emoji: p.emoji }));
 
   return (
     <div
@@ -338,125 +340,39 @@ export function TaskDrawer({
           ) : null}
         </div>
 
-        {/* FILED TO — the §4 reassign-menu language: tap a row to re-file */}
+        {/* FILED TO — the §4 reassign menu: tap a row to re-file, and the
+            move is confirmed as a lesson (ReassignTeachToast). */}
         <Section label="Filed to">
-          <div
-            style={{
-              border: `1px solid ${C.line}`,
-              borderRadius: 11,
-              overflow: "hidden",
-              opacity: patch.isPending ? 0.6 : 1,
-            }}
-          >
+          {taught ? (
+            <div style={{ marginBottom: 10 }}>
+              <ReassignTeachToast
+                destinationTitle={taught.to}
+                onDismiss={() => setTaught(null)}
+              />
+            </div>
+          ) : null}
+          {reassignTargets.length <= 1 ? (
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                padding: "10px 12px",
-                background: `color-mix(in srgb, ${C.blue} 13%, transparent)`,
+                padding: "9px 12px",
+                border: `1px solid ${C.line}`,
+                borderRadius: 11,
+                background: C.sunken,
+                fontSize: 11,
+                color: C.t3,
               }}
             >
-              <span aria-hidden style={{ fontSize: 14 }}>
-                {currentProject?.emoji ?? "📁"}
-              </span>
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: C.t1,
-                  flex: 1,
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {currentProject?.title ?? "This project"}
-              </span>
-              <span aria-hidden style={{ fontSize: 11, color: C.blueS }}>
-                ✓
-              </span>
+              No other projects to move to.
             </div>
-            {visibleOthers.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                disabled={patch.isPending}
-                onClick={() => moveTo(p.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderTop: `1px solid ${C.line}`,
-                  borderLeft: "none",
-                  borderRight: "none",
-                  borderBottom: "none",
-                  background: "transparent",
-                  color: C.t2,
-                  fontSize: 12,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span aria-hidden style={{ fontSize: 14 }}>
-                  {p.emoji ?? "📁"}
-                </span>
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {p.title}
-                </span>
-              </button>
-            ))}
-            {otherProjects.length === 0 ? (
-              <div
-                style={{
-                  padding: "9px 12px",
-                  borderTop: `1px solid ${C.line}`,
-                  background: C.sunken,
-                  fontSize: 11,
-                  color: C.t3,
-                }}
-              >
-                No other projects to move to.
-              </div>
-            ) : hiddenCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowAllProjects(true)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  width: "100%",
-                  padding: "9px 12px",
-                  borderTop: `1px solid ${C.line}`,
-                  borderLeft: "none",
-                  borderRight: "none",
-                  borderBottom: "none",
-                  background: C.sunken,
-                  color: C.t3,
-                  fontSize: 11,
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ flex: 1 }}>
-                  Move to another project… ({hiddenCount} more)
-                </span>
-                <span aria-hidden>›</span>
-              </button>
-            ) : null}
-          </div>
+          ) : (
+            <ReassignMenu
+              targets={reassignTargets}
+              currentId={currentProjectId}
+              busy={patch.isPending}
+              label="Filed to"
+              onPick={moveTo}
+            />
+          )}
           <div
             style={{
               fontSize: 10.5,

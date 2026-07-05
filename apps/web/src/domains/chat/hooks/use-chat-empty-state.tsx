@@ -13,6 +13,7 @@ import { type ReactNode, useMemo } from "react";
 import { ChatAvatar } from "@/components/avatar/chat-avatar";
 import type { ChatEmptyStateProps } from "@/domains/chat/components/chat-empty-state";
 import { ConversationStarterGrid } from "@/domains/chat/components/conversation-starter-grid";
+import { RecentThreadsStrip } from "@/domains/chat/components/recent-threads-strip";
 import { useConversationStarters } from "@/domains/chat/hooks/use-conversation-starters";
 import { useEmptyStateGreeting } from "@/domains/chat/hooks/use-empty-state-greeting";
 import {
@@ -22,6 +23,7 @@ import {
 import { pickRandomPlaceholder } from "@/domains/chat/utils/empty-state-constants";
 import type { ConversationStarter } from "@/domains/chat/utils/conversation-starters";
 import type { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
+import { useConversationStore } from "@/stores/conversation-store";
 
 // ---------------------------------------------------------------------------
 // Params & return type
@@ -102,13 +104,28 @@ export function useChatEmptyState({
     ? buildEditAppStarters(editingApp)
     : conversationStarters;
 
+  const activeConversationId = useConversationStore.use.activeConversationId();
+
+  // The S6 empty state below the composer: suggestion pills, then the
+  // "PICK UP WHERE YOU LEFT OFF" recent-thread strip. The strip is suppressed
+  // while editing an app (its recents belong to the app context, not chat).
+  const hasChips = isEmptyConversation && emptyStateStarters.length > 0;
+  const showRecents = isEmptyConversation && !editingApp;
   const startersSlot =
-    isEmptyConversation && emptyStateStarters.length > 0 ? (
+    hasChips || showRecents ? (
       <div className="mt-4">
-        <ConversationStarterGrid
-          starters={emptyStateStarters}
-          onSelect={onSelectStarter}
-        />
+        {hasChips ? (
+          <ConversationStarterGrid
+            starters={emptyStateStarters}
+            onSelect={onSelectStarter}
+          />
+        ) : null}
+        {showRecents ? (
+          <RecentThreadsStrip
+            assistantId={assistantId}
+            activeConversationId={activeConversationId}
+          />
+        ) : null}
       </div>
     ) : undefined;
 

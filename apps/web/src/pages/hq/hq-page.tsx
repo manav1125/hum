@@ -40,10 +40,27 @@ import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { getBudgetConfig } from "@/lib/budget-api";
 import { relativeTime } from "@/domains/activity/theme";
+import {
+  dismissMeter,
+  readSetupState,
+  useSetupProgress,
+} from "@/pages/hq-onboarding/setup-state";
+import {
+  useProjects,
+  usePatchWorkItem,
+  type ProjectView,
+} from "@/pages/projects/use-projects";
 import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { CaptureBar } from "./capture-bar";
+import { DriftNudge, driftFromEvents } from "./drift-nudge";
+import {
+  LowConfidenceFilePrompt,
+  ReassignMenu,
+  ReassignTeachToast,
+  type ReassignTarget,
+} from "./reassign-menu";
 import { CompanyPanel } from "./company-panel";
 import {
   CameInErrorStrip,
@@ -84,7 +101,10 @@ import {
   useCompanyProfile,
   useHqSchedules,
   useHqWorkItems,
+  useMissionEvents,
   useMissions,
+  usePatchMission,
+  useRunCycle,
   type HqWorkItem,
   type Mission,
 } from "./use-missions";
@@ -274,102 +294,6 @@ function RingsHeroCard({
         </div>
       </div>
     </div>
-  );
-}
-
-/** "Came in · N" — the newest captured items, with source badges. */
-function CameInStrip({ items }: { items: HqWorkItem[] }) {
-  const recent = useMemo(
-    () => [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3),
-    [items],
-  );
-  if (recent.length === 0) return null;
-  return (
-    <Link
-      to={routes.allWork}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 13,
-        background: C.sunken,
-        borderRadius: 12,
-        padding: "11px 15px",
-        textDecoration: "none",
-        color: C.t2,
-      }}
-    >
-      <MicroLabel style={{ whiteSpace: "nowrap" }}>
-        Came in · {items.length}
-      </MicroLabel>
-      <span
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          fontSize: 12,
-          flex: 1,
-          overflow: "hidden",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {recent.map((item, i) => {
-          const badge = sourceBadge(item.sourceType);
-          return (
-            <span
-              key={item.id}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                overflow: "hidden",
-              }}
-            >
-              {i > 0 ? (
-                <span aria-hidden style={{ color: C.line2, marginRight: 5 }}>
-                  ·
-                </span>
-              ) : null}
-              <span
-                aria-hidden
-                style={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: 4,
-                  background: badge.tint,
-                  color: "#fff",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 8,
-                  flexShrink: 0,
-                }}
-              >
-                {badge.glyph}
-              </span>
-              <span
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: 180,
-                }}
-              >
-                {item.title}
-              </span>
-            </span>
-          );
-        })}
-      </span>
-      <span
-        style={{
-          fontSize: 12,
-          color: C.blueS,
-          fontWeight: 500,
-          whiteSpace: "nowrap",
-        }}
-      >
-        See what arrived ›
-      </span>
-    </Link>
   );
 }
 
@@ -587,9 +511,25 @@ function WorkRail({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          gap: 8,
         }}
       >
-        <MicroLabel>Agents at work</MicroLabel>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <MicroLabel>Agents at work</MicroLabel>
+          {/* → the org / roster surface. */}
+          <Link
+            to={routes.hqAgents}
+            style={{
+              fontSize: 10.5,
+              color: C.blueS,
+              fontWeight: 500,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Agents ›
+          </Link>
+        </div>
         <span
           style={{
             display: "inline-flex",
@@ -1064,12 +1004,436 @@ function dayPart(): string {
   return "evening";
 }
 
+/**
+ * SETTING UP · N OF M — the slim, non-shaming first-run meter. Sits at the top
+ * of the deck (and the pulse) until every tracked step is done, or until the
+ * user dismisses it ("this never nags"). Mono microlabel + a subtle progress
+ * rail; the × calls `dismissMeter` (forever). Hidden when done===total.
+ */
+function SetupMeter() {
+  const { done, total, nextStep, nextLabel } = useSetupProgress();
+  const dismissed = readSetupState().meterDismissed;
+  if (done >= total || dismissed || !nextStep) return null;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+        background: C.blueW,
+        border: `1px solid color-mix(in srgb, ${C.blue} 22%, transparent)`,
+        borderRadius: 12,
+        padding: "10px 15px",
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              fontFamily: mono,
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              color: C.blueS,
+              whiteSpace: "nowrap",
+            }}
+          >
+            SETTING UP · {done} OF {total}
+          </span>
+          {nextLabel ? (
+            <span
+              style={{
+                fontSize: 12,
+                color: C.t2,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {nextLabel}
+            </span>
+          ) : null}
+        </div>
+        <div
+          style={{
+            height: 5,
+            borderRadius: 3,
+            background: C.surface,
+            marginTop: 6,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${pct}%`,
+              background: C.blue,
+              borderRadius: 3,
+            }}
+          />
+        </div>
+      </div>
+      <Link
+        to={routes.hqSetup}
+        style={{
+          fontSize: 11.5,
+          color: C.blueS,
+          fontWeight: 500,
+          whiteSpace: "nowrap",
+          textDecoration: "none",
+        }}
+      >
+        Finish setup ›
+      </Link>
+      <button
+        type="button"
+        aria-label="Dismiss setup meter"
+        title="Dismiss — this never nags"
+        onClick={dismissMeter}
+        style={{
+          border: "none",
+          background: "none",
+          padding: 0,
+          fontSize: 14,
+          lineHeight: 1,
+          color: C.t3,
+          cursor: "pointer",
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
+/** Project list → the reassign menu's target chips (id/title/emoji). */
+function reassignTargets(
+  projects: Array<{ id: string; title: string; emoji: string | null }>,
+): ReassignTarget[] {
+  return projects.map((p) => ({
+    id: p.id,
+    title: p.title,
+    emoji: p.emoji,
+  }));
+}
+
+/** Full-record PATCH body for a work-item move (mirrors the task-drawer path). */
+function moveBody(item: HqWorkItem, projectId: string | null) {
+  let labels: string[] = [];
+  if (item.labels) {
+    try {
+      const parsed = JSON.parse(item.labels) as unknown;
+      if (Array.isArray(parsed))
+        labels = parsed.filter((l): l is string => typeof l === "string");
+    } catch {
+      // ignore malformed labels
+    }
+  }
+  return {
+    title: item.title,
+    notes: item.notes ?? "",
+    status: item.status,
+    priorityTier: item.priorityTier,
+    sortIndex: item.sortIndex ?? 0,
+    projectId,
+    dueAt: item.dueAt,
+    labels,
+    assignee: item.assignee ?? "cue",
+    context: item.context ?? null,
+  };
+}
+
+/**
+ * §4 · The came-in strip, re-filable. Each newest captured item shows its
+ * mission/project tag; tapping the tag opens {@link ReassignMenu} (one row's
+ * menu open at a time). Items with NO projectId get the honest
+ * {@link LowConfidenceFilePrompt} instead of a guessed tag. A successful move
+ * confirms out loud via {@link ReassignTeachToast} — the correction teaches.
+ */
+function CameInReassignStrip({
+  items,
+  projects,
+  missionsByProjectId,
+  assistantId,
+  onNewMission,
+}: {
+  items: HqWorkItem[];
+  projects: ProjectView[];
+  missionsByProjectId: Map<string, Mission>;
+  assistantId: string;
+  onNewMission: () => void;
+}) {
+  const patch = usePatchWorkItem(assistantId);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [taught, setTaught] = useState<{ from: string; to: string } | null>(
+    null,
+  );
+  const targets = useMemo(() => reassignTargets(projects), [projects]);
+
+  const recent = useMemo(
+    () => [...items].sort((a, b) => b.createdAt - a.createdAt).slice(0, 4),
+    [items],
+  );
+  if (recent.length === 0) return null;
+
+  const move = (item: HqWorkItem, projectId: string | null) => {
+    const dest = projectId
+      ? (projects.find((p) => p.id === projectId) ?? null)
+      : null;
+    patch.mutate(
+      {
+        path: { assistant_id: assistantId, id: item.id },
+        body: moveBody(item, projectId),
+      },
+      {
+        onSuccess: () => {
+          setOpenId(null);
+          setTaught(dest ? { from: item.title, to: dest.title } : null);
+        },
+      },
+    );
+  };
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 12,
+        background: C.sunken,
+        padding: "11px 15px",
+        marginTop: 10,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <MicroLabel>Came in · {items.length}</MicroLabel>
+        <Link
+          to={routes.allWork}
+          style={{
+            fontSize: 11.5,
+            color: C.blueS,
+            fontWeight: 500,
+            textDecoration: "none",
+          }}
+        >
+          See what arrived ›
+        </Link>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          marginTop: 10,
+        }}
+      >
+        {recent.map((item) => {
+          const badge = sourceBadge(item.sourceType);
+          const mission = item.projectId
+            ? (missionsByProjectId.get(item.projectId) ?? null)
+            : null;
+          const project = item.projectId
+            ? (projects.find((p) => p.id === item.projectId) ?? null)
+            : null;
+          const tagLabel = mission?.title ?? project?.title ?? null;
+          const isOpen = openId === item.id;
+          const unfiled = !item.projectId;
+          return (
+            <div key={item.id} style={{ position: "relative" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  fontSize: 12.5,
+                  color: C.t2,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 5,
+                    background: badge.tint,
+                    color: "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 9,
+                    flexShrink: 0,
+                  }}
+                >
+                  {badge.glyph}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: C.ink,
+                  }}
+                >
+                  {item.title}
+                </span>
+                {unfiled ? null : (
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(isOpen ? null : item.id)}
+                    aria-haspopup="menu"
+                    aria-expanded={isOpen}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                      fontFamily: mono,
+                      fontSize: 9.5,
+                      letterSpacing: "0.04em",
+                      color: C.blueS,
+                      background: C.blueW,
+                      border: `1px solid color-mix(in srgb, ${C.blue} 24%, transparent)`,
+                      borderRadius: 999,
+                      padding: "3px 9px",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {tagLabel ? tagLabel.toUpperCase() : "FILED"}
+                    <span aria-hidden style={{ opacity: 0.7 }}>
+                      ⌄
+                    </span>
+                  </button>
+                )}
+              </div>
+              {/* Low-confidence unfiled item — asks, doesn't guess. */}
+              {unfiled ? (
+                <div style={{ marginTop: 8 }}>
+                  <LowConfidenceFilePrompt
+                    sourceLabel={item.sourceType?.toUpperCase() ?? null}
+                    targets={targets}
+                    busy={patch.isPending}
+                    onPick={(pid) => move(item, pid)}
+                    onSomethingElse={onNewMission}
+                  />
+                </div>
+              ) : null}
+              {isOpen ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 0,
+                    top: "calc(100% + 6px)",
+                    zIndex: 20,
+                  }}
+                >
+                  <ReassignMenu
+                    targets={targets}
+                    currentId={item.projectId}
+                    busy={patch.isPending}
+                    onPick={(pid) => move(item, pid)}
+                    onNew={onNewMission}
+                  />
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {/* §4·B — the correction teaches. */}
+      {taught ? (
+        <div style={{ marginTop: 10 }}>
+          <ReassignTeachToast
+            destinationTitle={taught.to}
+            fromTitle={null}
+            onDismiss={() => setTaught(null)}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * §6 · Drift nudges for the deck. Each mission's events are watched for the
+ * orchestrator's drift checkpoint; a real marker renders a {@link DriftNudge}
+ * in the needs-you area. One watcher per mission keeps the event fetch scoped
+ * (hooks can't run in a loop, so each mission gets its own tiny watcher).
+ */
+function MissionDriftNudges({
+  assistantId,
+  missions,
+}: {
+  assistantId: string;
+  missions: Mission[];
+}) {
+  return (
+    <>
+      {missions.map((m) => (
+        <MissionDriftWatcher key={m.id} assistantId={assistantId} mission={m} />
+      ))}
+    </>
+  );
+}
+
+function MissionDriftWatcher({
+  assistantId,
+  mission,
+}: {
+  assistantId: string;
+  mission: Mission;
+}) {
+  const navigate = useNavigate();
+  const { events } = useMissionEvents(assistantId, mission.id);
+  const drift = useMemo(
+    () =>
+      driftFromEvents(
+        events.map((e) => ({ kind: e.kind, payload: e.payload, at: e.at })),
+      ),
+    [events],
+  );
+  const patch = usePatchMission(assistantId);
+  const runCycle = useRunCycle(assistantId);
+  if (!drift) return null;
+  return (
+    <div style={{ marginTop: 9 }}>
+      <DriftNudge
+        title={mission.title}
+        idleCycles={drift.idleCycles}
+        busy={patch.isPending || runCycle.isPending}
+        onReplan={() =>
+          runCycle.mutate({
+            path: { assistant_id: assistantId, id: mission.id },
+          })
+        }
+        onStepIn={() => navigate(routes.hqMission(mission.id))}
+        onPause={() =>
+          patch.mutate({
+            path: { assistant_id: assistantId, id: mission.id },
+            body: { status: "paused" },
+          })
+        }
+      />
+    </div>
+  );
+}
+
 export function HqPage() {
   const assistantId = useActiveAssistantId();
   // SSE keeps every lane current; polls below are 60s safety-nets.
   useActivitySync(assistantId, true);
 
   const { missions, isLoading } = useMissions(assistantId);
+  const { projects } = useProjects(assistantId);
   const review = useHqWorkItems(assistantId, "awaiting_review");
   const running = useHqWorkItems(assistantId, "running");
   const queued = useHqWorkItems(assistantId, "pending");
@@ -1215,6 +1579,9 @@ export function HqPage() {
           </div>
         </header>
 
+        {/* SETTING UP · N OF M — non-shaming first-run meter (self-hides). */}
+        {!isLoading ? <SetupMeter /> : null}
+
         {isLoading ? (
           <HqDeckSkeleton />
         ) : !hasMissions ? (
@@ -1250,13 +1617,27 @@ export function HqPage() {
                 dayLabel={dayLabel}
               />
 
-              {/* Watching line + came-in strip (error stays inside it). */}
+              {/* Watching line + came-in strip (error stays inside it). §4:
+                  each item's tag re-files via ReassignMenu; unfiled items get
+                  the honest LowConfidenceFilePrompt instead of a guessed tag. */}
               <WatchingLine assistantId={assistantId} />
               {queued.isError ? (
                 <CameInErrorStrip onRetry={() => void queued.refetch()} />
               ) : (
-                <CameInStrip items={cameIn} />
+                <CameInReassignStrip
+                  items={cameIn}
+                  projects={projects}
+                  missionsByProjectId={byProject}
+                  assistantId={assistantId}
+                  onNewMission={() => setShowNewMission({ open: true })}
+                />
               )}
+
+              {/* §6 · Drifting — honest nudge on any mission that's idling. */}
+              <MissionDriftNudges
+                assistantId={assistantId}
+                missions={missions}
+              />
 
               {reviewItems.length > 0 || move.hasMove ? (
                 <>

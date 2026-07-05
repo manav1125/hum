@@ -15,15 +15,18 @@ import {
 } from "../work-items/work-item-store.js";
 import {
   claimMissionPlanFingerprint,
+  computeMissionDrift,
   CONTINUATION_SUMMARY_MAX_CHARS,
   createMission,
   deleteMission,
   getCompanyProfile,
   getMission,
+  getMissionAchievedSummary,
   getMissionWithRollup,
   listMissionEvents,
   listMissions,
   listMissionsWithRollups,
+  maybeEmitMissionDrift,
   recordMissionEvent,
   updateCompanyProfile,
   updateMission,
@@ -242,6 +245,148 @@ describe("mission events", () => {
     expect(JSON.parse(events[1]!.payload!)).toEqual({
       items: [{ title: "do it" }],
     });
+  });
+});
+
+describe("drift detection", () => {
+  /** Record a full cycle window with the given kinds under one cycleId. */
+  function cycle(missionId: string, cycleId: string, kinds: string[]): void {
+    for (const kind of kinds) {
+      recordMissionEvent({
+        missionId,
+        kind: kind as Parameters<typeof recordMissionEvent>[0]["kind"],
+        cycleId,
+      });
+    }
+  }
+
+  test("three idle cycles → drifting; a progress cycle resets the streak", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    cycle(m.id, "c1", ["cycle_started", "planned", "reported"]);
+    cycle(m.id, "c2", ["cycle_started", "planned", "reported"]);
+    let drift = computeMissionDrift(m.id);
+    expect(drift.idleCycles).toBe(2);
+    expect(drift.drifting).toBe(false);
+
+    cycle(m.id, "c3", ["cycle_started", "planned", "reported"]);
+    drift = computeMissionDrift(m.id);
+    expect(drift.cyclesObserved).toBe(3);
+    expect(drift.idleCycles).toBe(3);
+    expect(drift.drifting).toBe(true);
+    expect(drift.latestCycleId).toBe("c3");
+
+    // A cycle that enqueues work is real progress — streak resets to zero.
+    cycle(m.id, "c4", [
+      "cycle_started",
+      "planned",
+      "item_enqueued",
+      "reported",
+    ]);
+    drift = computeMissionDrift(m.id);
+    expect(drift.idleCycles).toBe(0);
+    expect(drift.drifting).toBe(false);
+  });
+
+  test("output_ready also counts as progress", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    cycle(m.id, "c1", ["cycle_started", "output_ready"]);
+    cycle(m.id, "c2", ["cycle_started", "reported"]);
+    cycle(m.id, "c3", ["cycle_started", "reported"]);
+    const drift = computeMissionDrift(m.id);
+    // Only 2 trailing idle cycles — the output_ready cycle breaks the streak.
+    expect(drift.idleCycles).toBe(2);
+    expect(drift.drifting).toBe(false);
+  });
+
+  test("maybeEmitMissionDrift emits one checkpoint per window (idempotent)", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    cycle(m.id, "c1", ["cycle_started", "planned", "reported"]);
+    cycle(m.id, "c2", ["cycle_started", "planned", "reported"]);
+    cycle(m.id, "c3", ["cycle_started", "planned", "reported"]);
+
+    expect(maybeEmitMissionDrift(m.id)).toBe(true);
+    // Second call within the same cycle window is a no-op.
+    expect(maybeEmitMissionDrift(m.id)).toBe(false);
+
+    const driftEvents = listMissionEvents(m.id).filter((e) => {
+      if (e.kind !== "checkpoint" || !e.payload) return false;
+      return (JSON.parse(e.payload) as { drift?: boolean }).drift === true;
+    });
+    expect(driftEvents).toHaveLength(1);
+    expect(driftEvents[0]!.cycleId).toBe("c3");
+  });
+
+  test("a new idle cycle window re-arms the nudge", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    cycle(m.id, "c1", ["cycle_started", "reported"]);
+    cycle(m.id, "c2", ["cycle_started", "reported"]);
+    cycle(m.id, "c3", ["cycle_started", "reported"]);
+    expect(maybeEmitMissionDrift(m.id)).toBe(true);
+    // Another idle cycle later — new latestCycleId, so the nudge fires again.
+    cycle(m.id, "c4", ["cycle_started", "reported"]);
+    expect(maybeEmitMissionDrift(m.id)).toBe(true);
+  });
+
+  test("paused missions never drift-nudge", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    cycle(m.id, "c1", ["cycle_started", "reported"]);
+    cycle(m.id, "c2", ["cycle_started", "reported"]);
+    cycle(m.id, "c3", ["cycle_started", "reported"]);
+    updateMission(m.id, { status: "paused" });
+    expect(maybeEmitMissionDrift(m.id)).toBe(false);
+  });
+
+  test("fewer than three cycles never drifts", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    cycle(m.id, "c1", ["cycle_started", "reported"]);
+    cycle(m.id, "c2", ["cycle_started", "reported"]);
+    expect(computeMissionDrift(m.id).drifting).toBe(false);
+    expect(maybeEmitMissionDrift(m.id)).toBe(false);
+  });
+});
+
+describe("achieved summary", () => {
+  test("rolls cycles, outputs, items, spend, and hours-back from the trail", () => {
+    const m = createMission({ title: "M", outcome: "x" });
+    updateMission(m.id, { spentCents: 1234 });
+    recordMissionEvent({
+      missionId: m.id,
+      kind: "cycle_started",
+      cycleId: "c1",
+    });
+    recordMissionEvent({
+      missionId: m.id,
+      kind: "item_enqueued",
+      cycleId: "c1",
+    });
+    recordMissionEvent({
+      missionId: m.id,
+      kind: "output_ready",
+      cycleId: "c1",
+    });
+    recordMissionEvent({
+      missionId: m.id,
+      kind: "output_ready",
+      cycleId: "c1",
+    });
+    recordMissionEvent({
+      missionId: m.id,
+      kind: "cycle_started",
+      cycleId: "c2",
+    });
+    recordMissionEvent({ missionId: m.id, kind: "reported", cycleId: "c2" });
+
+    const summary = getMissionAchievedSummary(m.id)!;
+    expect(summary.cycles).toBe(2);
+    expect(summary.outputs).toBe(2);
+    expect(summary.itemsEnqueued).toBe(1);
+    expect(summary.spentCents).toBe(1234);
+    // 2 outputs × 30 min = 60 min → 1 hour back.
+    expect(summary.hoursSaved).toBe(1);
+  });
+
+  test("missing mission returns undefined", () => {
+    expect(getMissionAchievedSummary("nope")).toBeUndefined();
   });
 });
 

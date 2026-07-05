@@ -18,10 +18,11 @@ export interface ConversationStarterGridProps {
 }
 
 /**
- * 2-column grid wrapper that renders up to `maxVisible` conversation-starter
- * chips for the chat empty state. Empty input renders nothing (returns
- * `null`) so callers can drop the wrapper unconditionally without producing
- * an empty grid box.
+ * Centered flex-wrap row of up to `maxVisible` conversation-starter pills for
+ * the chat empty state (Cue-Surfaces S6). The strongest starter (server
+ * returns these first) is emphasized as the filled "primary suggestion" pill.
+ * Empty input renders nothing (returns `null`) so callers can drop the wrapper
+ * unconditionally without producing an empty box.
  */
 export function ConversationStarterGrid({
   starters,
@@ -33,11 +34,12 @@ export function ConversationStarterGrid({
     return null;
   }
   return (
-    <div className="grid grid-cols-2 gap-3">
-      {visible.map((starter) => (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      {visible.map((starter, i) => (
         <ConversationStarterChip
           key={starter.id}
           label={starter.label}
+          emphasized={i === 0}
           onSelect={() => onSelect(starter)}
           aria-label={`Send: ${starter.label}`}
         />

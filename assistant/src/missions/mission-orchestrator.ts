@@ -68,6 +68,7 @@ import {
   getMission,
   listMissionProjects,
   listMissions,
+  maybeEmitMissionDrift,
   type Mission,
   type MissionMode,
   recordMissionEvent,
@@ -557,9 +558,8 @@ export class MissionOrchestrator {
     // Read the kill switch at sweep time so a supervisor env change takes
     // effect without a daemon restart (same contract as work-item auto-run).
     if (getDisableMissionOrchestrator()) return;
-    const due = listMissions({ status: "active" }).filter((m) =>
-      isMissionCycleDue(m),
-    );
+    const active = listMissions({ status: "active" });
+    const due = active.filter((m) => isMissionCycleDue(m));
     for (const mission of due) {
       try {
         await this.runCycle(mission.id);
@@ -567,6 +567,20 @@ export class MissionOrchestrator {
         log.error(
           { missionId: mission.id, err: String(err) },
           "Mission cycle threw",
+        );
+      }
+    }
+    // Drift pass (§6 lifecycle): after cycles run this sweep, nudge any active
+    // mission that has idled for DRIFT_STALE_CYCLES cycles with nothing to run.
+    // Derived from the event trail, idempotent per cycle window, and never
+    // touches a paused/achieved mission — a best-effort observation only.
+    for (const mission of active) {
+      try {
+        maybeEmitMissionDrift(mission.id);
+      } catch (err) {
+        log.warn(
+          { missionId: mission.id, err: String(err) },
+          "mission drift check failed (ignored)",
         );
       }
     }

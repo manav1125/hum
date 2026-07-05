@@ -376,6 +376,32 @@ describe("guards", () => {
     expect(result.reason).toBe("not_active");
   });
 
+  test("the sweep emits a drift nudge after three idle cycles", async () => {
+    // A planner that plans nothing every cycle: cycles run, but no item is ever
+    // enqueued — the exact "idling with nothing to run" shape §6 nudges.
+    const { mission } = makeMissionWithProject({ mode: "assist" });
+    const orchestrator = new MissionOrchestrator({
+      planner: plannerReturning({
+        assessment: "stuck",
+        items: [],
+        report: "r",
+      }),
+    });
+    // Force cadence to hourly-ish is unnecessary — run cycles directly, then
+    // sweep once to run the drift pass over the (now idle) trail.
+    await orchestrator.runCycle(mission.id, { force: true });
+    await orchestrator.runCycle(mission.id, { force: true });
+    await orchestrator.runCycle(mission.id, { force: true });
+
+    await orchestrator.sweepOnce();
+
+    const driftEvents = listMissionEvents(mission.id).filter((e) => {
+      if (e.kind !== "checkpoint" || !e.payload) return false;
+      return (JSON.parse(e.payload) as { drift?: boolean }).drift === true;
+    });
+    expect(driftEvents).toHaveLength(1);
+  });
+
   test("isMissionCycleDue respects cadence and status", () => {
     const now = Date.now();
     const base = createMission({ title: "M", outcome: "x" });
