@@ -289,6 +289,8 @@ export { migrateCreateMissions } from "./291-missions.js";
 export { migrateCreateWorkOutputs } from "./292-work-outputs.js";
 export { migrateCreateAgentActs } from "./293-agent-acts.js";
 export { migrateCreateContactMemory } from "./294-contact-memory.js";
+export { migrateContactInteractionIndexes } from "./295-contact-interaction-indexes.js";
+export { migrateCreateAgents } from "./296-agents.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

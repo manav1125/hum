@@ -36,7 +36,7 @@
  * reads on either theme.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { ArrowUp, Keyboard, Settings, Square, X } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -285,7 +285,6 @@ interface MobileVoiceTakeoverProps {
   errorMessage: string | null;
   intake: VoiceIntakeResponse | null;
   transcript: string;
-  tag: string;
   voiceInputRef: React.RefObject<VoiceInputButtonHandle | null>;
   assistantId: string | null;
   onTranscript: (text: string) => void;
@@ -317,7 +316,6 @@ function MobileVoiceTakeover({
   errorMessage,
   intake,
   transcript,
-  tag,
   voiceInputRef,
   assistantId,
   onTranscript,
@@ -477,7 +475,6 @@ function MobileVoiceTakeover({
             <VoiceIntakeResults
               result={intake}
               transcript={transcript}
-              tag={tag}
               onOpenThread={onOpenThread}
               onOpenActivity={onOpenActivity}
             />
@@ -699,16 +696,6 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
           ? "ready to run"
           : "tap to talk";
 
-  // A short ⟡ tag for the chips — the derived thread title (the closest real
-  // handle the intake carries; see VoiceIntakeResults docblock on the mission
-  // linkage gap).
-  const tag = useMemo(() => {
-    const src = (intake?.summary || transcript).replace(/\s+/g, " ").trim();
-    if (!src) return "voice note";
-    const words = src.split(" ").slice(0, 3).join(" ");
-    return words.length > 24 ? `${words.slice(0, 24).trimEnd()}…` : words;
-  }, [intake, transcript]);
-
   // Mono top-bar state label for the mobile takeover (spec §2: "LISTENING" /
   // "TAP TO TALK"), extended to cover the transcribe/organize/results states.
   const monoState = recording
@@ -741,7 +728,6 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
         errorMessage={errorMessage}
         intake={intake}
         transcript={transcript}
-        tag={tag}
         voiceInputRef={voiceInputRef}
         assistantId={assistantId}
         onTranscript={handleTranscript}
@@ -885,7 +871,6 @@ export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
         <VoiceIntakeResults
           result={intake}
           transcript={transcript}
-          tag={tag}
           onOpenThread={openThread}
           onOpenActivity={openActivity}
         />

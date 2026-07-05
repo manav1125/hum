@@ -49,7 +49,8 @@ export type MemoryJobType =
   | "memory_v3_consolidate"
   | "memory_v3_index_maintenance"
   | "memory_v3_edge_learning"
-  | "memory_retrospective";
+  | "memory_retrospective"
+  | "contact_memory_extract";
 
 export const EMBED_JOB_TYPES: MemoryJobType[] = [
   "embed_segment",
@@ -75,6 +76,7 @@ export const SLOW_LLM_JOB_TYPES: MemoryJobType[] = [
   "memory_v3_maintain",
   "memory_v2_migrate",
   "memory_retrospective",
+  "contact_memory_extract",
   "backfill",
   "graph_bootstrap",
 ];
@@ -320,6 +322,47 @@ export function upsertMemoryRetrospectiveJob(
     return;
   }
   enqueueMemoryJob("memory_retrospective", payload, runAfter, dbOverride);
+}
+
+/**
+ * Upsert a pending `contact_memory_extract` job keyed by `conversationId`.
+ * Rapid post-conversation triggers coalesce into a single pending row per
+ * conversation instead of double-running the flash extraction. A follow-up
+ * enqueue pulls the run earlier (takes the minimum `runAfter`) but never
+ * pushes it later, mirroring `upsertMemoryRetrospectiveJob`.
+ */
+export function upsertContactMemoryExtractJob(
+  payload: { conversationId: string },
+  runAfter: number = Date.now(),
+  dbOverride?: Parameters<ReturnType<typeof getDb>["transaction"]>[0] extends (
+    tx: infer T,
+  ) => unknown
+    ? T
+    : never,
+): void {
+  const db = dbOverride ?? getDb();
+  const existing = db
+    .select()
+    .from(memoryJobs)
+    .where(
+      and(
+        eq(memoryJobs.type, "contact_memory_extract"),
+        eq(memoryJobs.status, "pending"),
+        sql`json_extract(${memoryJobs.payload}, '$.conversationId') = ${payload.conversationId}`,
+      ),
+    )
+    .get();
+  if (existing) {
+    const nextRunAfter = Math.min(existing.runAfter, runAfter);
+    if (nextRunAfter !== existing.runAfter) {
+      db.update(memoryJobs)
+        .set({ runAfter: nextRunAfter, updatedAt: Date.now() })
+        .where(eq(memoryJobs.id, existing.id))
+        .run();
+    }
+    return;
+  }
+  enqueueMemoryJob("contact_memory_extract", payload, runAfter, dbOverride);
 }
 
 /**

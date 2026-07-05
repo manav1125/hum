@@ -286,8 +286,12 @@ export async function generateVoiceIntake(
     parsed = { summary: "", actionItems: [] };
   }
 
-  // 4. Bridge open action items into executable work items (idempotent).
-  const workItems = actionItemsToWorkItems(
+  // 4. Bridge open action items into executable work items (idempotent). Each
+  //    item is triaged (filed onto its best-matching project → mission, ranked,
+  //    and — per the autonomy guard — auto-run or left for review), and the
+  //    resolved filing is folded into the refs so the client can show the real
+  //    ⟡ project/mission tag.
+  const workItems = await actionItemsToWorkItems(
     parsed.actionItems,
     VOICE_SOURCE_TYPE,
     conversationId,

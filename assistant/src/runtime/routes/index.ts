@@ -11,6 +11,7 @@
 import { ROUTES as ACP_ROUTES } from "./acp-routes.js";
 import { ROUTES as ACTIVITY_ROUTES } from "./activity-routes.js";
 import { ROUTES as ACTS_ROUTES } from "./acts-routes.js";
+import { ROUTES as AGENTS_ROUTES } from "./agents-routes.js";
 import { ROUTES as APP_MANAGEMENT_ROUTES } from "./app-management-routes.js";
 import { ROUTES as APP_ROUTES } from "./app-routes.js";
 import { ROUTES as APPROVAL_ROUTES } from "./approval-routes.js";
@@ -161,6 +162,7 @@ export const ROUTES: RouteDefinition[] = [
   ...ACP_ROUTES,
   ...ACTS_ROUTES,
   ...ACTIVITY_ROUTES,
+  ...AGENTS_ROUTES,
   ...APP_MANAGEMENT_ROUTES,
   ...APP_ROUTES,
   ...APPROVAL_ROUTES,

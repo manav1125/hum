@@ -29,6 +29,16 @@ export interface VoiceIntakeWorkItem {
   id: string;
   title: string;
   created: boolean;
+  /**
+   * The project triage filed this item onto (and, via project.missionId, the
+   * mission), or null when triage wasn't confident about any project. Drives the
+   * real ⟡ project/mission tag on the captured-context chips; null → the neutral
+   * "Filed to Activity" state.
+   */
+  projectId: string | null;
+  projectTitle: string | null;
+  missionId: string | null;
+  missionTitle: string | null;
 }
 
 export interface VoiceIntakeResponse {

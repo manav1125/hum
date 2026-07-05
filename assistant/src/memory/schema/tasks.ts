@@ -140,6 +140,27 @@ export const agentActs = sqliteTable("agent_acts", {
   createdAt: integer("created_at").notNull(),
 });
 
+/**
+ * Agent registry — one row per standing role the owner staffs their company
+ * with (Ops / Builder / Growth / …). The server-side home for the Agents · org
+ * page charters (replacing the Phase-1 localStorage config). `name` is both the
+ * display name and the work-item `assignee` match key (matched case-insensitively);
+ * `cue` is the implicit house agent and is not a row. References are by
+ * convention (store-enforced, no FKs), matching the sibling HQ tables.
+ */
+export const agents = sqliteTable("agents", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(), // display + work-item assignee match key (case-insensitive)
+  emoji: text("emoji"), // single glyph for the role tile
+  domain: text("domain"), // short domain blurb ("Operations")
+  charter: text("charter"), // the standing mandate
+  tier: text("tier").notNull().default("1"), // autonomy tier '1'..'4' (text for headroom)
+  capCents: integer("cap_cents"), // weekly spend cap in cents; null = uncapped
+  paused: integer("paused").notNull().default(0), // 0/1
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const workItemEvents = sqliteTable("work_item_events", {
   id: text("id").primaryKey(),
   workItemId: text("work_item_id")

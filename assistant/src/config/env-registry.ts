@@ -282,6 +282,21 @@ export function getDisableMissionOrchestrator(): boolean {
 }
 
 /**
+ * CUE_DISABLE_CONTACT_MEMORY — boolean, default: false
+ * Kill-switch for from-conversation contact-memory auto-extraction
+ * (contacts/contact-memory-extract-job.ts). When set, the post-conversation
+ * `contact_memory_extract` background job short-circuits without running the
+ * flash-LLM pass, so the People dossier's "WHAT CUE REMEMBERS" section only
+ * shows manual/told facts — never auto-extracted ones. The manual "remember
+ * about X" path is unaffected. Read at job time so the switch takes effect
+ * without a daemon restart. A pure env flag so it can be cut without a
+ * per-workspace config migration, matching {@link getDisableWorkItemAutoRun}.
+ */
+export function getDisableContactMemory(): boolean {
+  return flag("CUE_DISABLE_CONTACT_MEMORY");
+}
+
+/**
  * VELLUM_PROFILER_RUN_ID — string, default: undefined
  * Unique identifier for the current profiler run. When set, the profiler
  * run store treats this run as "active" and will never prune its directory.

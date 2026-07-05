@@ -4,6 +4,7 @@
  * can delegate without exposing its full surface.
  */
 
+import { enqueueContactMemoryExtractIfEnabled } from "../contacts/contact-memory-extract-job.js";
 import type { EventBus } from "../events/bus.js";
 import type { AssistantDomainEvents } from "../events/domain-events.js";
 import type { ToolProfiler } from "../events/tool-profiling-listener.js";
@@ -195,6 +196,18 @@ export function disposeConversation(ctx: DisposeContext): void {
         enqueueMemoryRetrospectiveIfEnabled({
           conversationId: ctx.conversationId,
           trigger: "lifecycle",
+        });
+      } catch {
+        // Best-effort — don't block conversation disposal
+      }
+
+      try {
+        // Contact-memory auto-extraction safety-net. Enqueued only for
+        // non-auto-analysis conversations (mirrors the retrospective gate):
+        // the job re-checks the kill-switch and confidently resolves the
+        // conversation → contact binding, extracting nothing when it can't.
+        enqueueContactMemoryExtractIfEnabled({
+          conversationId: ctx.conversationId,
         });
       } catch {
         // Best-effort — don't block conversation disposal

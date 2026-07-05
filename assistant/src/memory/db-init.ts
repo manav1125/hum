@@ -68,6 +68,7 @@ import {
   migrateChannelInteractionColumns,
   migrateContactChannelsAccessFields,
   migrateContactChannelsTypeChatIdIndex,
+  migrateContactInteractionIndexes,
   migrateContactsAssistantId,
   migrateContactsNotesColumn,
   migrateContactsRolePrincipal,
@@ -82,6 +83,7 @@ import {
   migrateConversationsSurfacedAt,
   migrateConversationsThreadTypeIndex,
   migrateCreateAgentActs,
+  migrateCreateAgents,
   migrateCreateContactMemory,
   migrateCreateConversationGraphMemoryState,
   migrateCreateDocumentComments,
@@ -526,6 +528,8 @@ export function initializeDb(): void {
     migrateCreateWorkOutputs,
     migrateCreateAgentActs,
     migrateCreateContactMemory,
+    migrateContactInteractionIndexes,
+    migrateCreateAgents,
   ];
 
   // Run each migration step, catching and logging individual failures so one

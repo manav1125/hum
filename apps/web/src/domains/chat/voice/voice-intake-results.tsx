@@ -19,11 +19,12 @@
  *  - The "Task queued" chips open Activity (the queued work items live there,
  *    tagged `voice`), the same surface the assistant message points at.
  *
- * ⟡ tag: the daemon tags every minted work item `voice` but does not yet file
- * them onto a specific mission/project, so there is no per-item mission id to
- * show. We use the derived thread title as the ⟡ tag (the closest real handle
- * the response carries). When action-item → mission linkage lands server-side,
- * swap `tag` for the returned mission/project name with no layout churn.
+ * ⟡ tag: the daemon now files each minted voice work item onto its best-matching
+ * project (and, via `project.missionId`, a mission) at triage time and returns
+ * the resolved `projectTitle` / `missionTitle` per work item. Each chip shows
+ * that real mission/project name as its ⟡ tag. When triage wasn't confident and
+ * filed the item onto no project, the chip shows the neutral "Filed to Activity"
+ * state instead of a fabricated tag.
  *
  * Presentational only — it owns no session state and issues no network calls;
  * navigation is delegated to the caller so the surface keeps the single
@@ -32,7 +33,10 @@
 
 import { CalendarClock, Mail } from "lucide-react";
 
-import type { VoiceIntakeResponse } from "@/domains/chat/voice/voice-intake-api";
+import type {
+  VoiceIntakeResponse,
+  VoiceIntakeWorkItem,
+} from "@/domains/chat/voice/voice-intake-api";
 
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -50,7 +54,20 @@ const TEAL_CHIP_FG = "#8FD0C8";
 const TEAL_CHIP_BG = "rgba(14,140,140,.16)";
 const TEAL_BADGE = "#0E8C8C";
 
-/** A single captured-action chip: icon · label · "→ ⟡ tag". */
+/**
+ * The real ⟡ tag for a chip: the mission name when the filed project is linked
+ * to one, else the project name, else null. Null means triage filed the item
+ * onto no project — the chip then shows the neutral "Filed to Activity" state.
+ */
+function fileTag(item: VoiceIntakeWorkItem | undefined): string | null {
+  return item?.missionTitle ?? item?.projectTitle ?? null;
+}
+
+/**
+ * A single captured-action chip: icon · label · destination. When `tag` is a
+ * real project/mission name it renders "→ ⟡ <tag>"; when null it renders the
+ * neutral "→ Filed to Activity" (no fabricated tag).
+ */
 function ActionChip({
   icon,
   label,
@@ -60,7 +77,7 @@ function ActionChip({
 }: {
   icon: React.ReactNode;
   label: string;
-  tag: string;
+  tag: string | null;
   tone: "blue" | "teal";
   onClick: () => void;
 }) {
@@ -91,7 +108,11 @@ function ActionChip({
       </span>
       {label}
       {" → "}
-      <b style={{ fontWeight: 600 }}>⟡ {tag}</b>
+      {tag ? (
+        <b style={{ fontWeight: 600 }}>⟡ {tag}</b>
+      ) : (
+        <span style={{ opacity: 0.7 }}>Filed to Activity</span>
+      )}
     </button>
   );
 }
@@ -122,8 +143,6 @@ export interface VoiceIntakeResultsProps {
   result: VoiceIntakeResponse;
   /** What the user actually said (the local transcript we captured). */
   transcript: string;
-  /** A short ⟡ tag for the chips (the derived thread title). */
-  tag: string;
   /** Open the created voice thread (Cue's read-back + queued action items). */
   onOpenThread: () => void;
   /** Open Activity, where the queued work items live (tagged `voice`). */
@@ -133,17 +152,18 @@ export interface VoiceIntakeResultsProps {
 export function VoiceIntakeResults({
   result,
   transcript,
-  tag,
   onOpenThread,
   onOpenActivity,
 }: VoiceIntakeResultsProps) {
-  const items = result.actionItems ?? [];
-  // Work items the daemon actually minted (Activity → Cued). The first item is
-  // typically the reply/first-move; the rest are queued tasks. We render one
-  // "Reply drafted" chip for the lead action and "Task queued" chips for the
-  // remainder — the shape the S2 mock shows. When nothing was extracted we still
-  // show the card with the transcript so the surface never reads as empty.
-  const [lead, ...rest] = items;
+  // Work items the daemon actually minted and filed (Activity → Cued), each
+  // carrying the project/mission triage filed it onto. The first is typically
+  // the reply/first-move; the rest are queued tasks. We render one "Reply
+  // drafted" chip for the lead and "Task queued" chips for the remainder — the
+  // shape the S2 mock shows — and take each chip's ⟡ tag from that work item's
+  // resolved filing. When nothing was extracted we still show the card with the
+  // transcript so the surface never reads as empty.
+  const workItems = result.workItems ?? [];
+  const [lead, ...rest] = workItems;
 
   return (
     <div
@@ -194,17 +214,17 @@ export function VoiceIntakeResults({
               tone="blue"
               icon={<Mail size={12} />}
               label="Reply drafted"
-              tag={tag}
+              tag={fileTag(lead)}
               onClick={onOpenThread}
             />
           ) : null}
           {rest.map((item, i) => (
             <ActionChip
-              key={`${item.text}-${i}`}
+              key={item.id || `${item.title}-${i}`}
               tone="teal"
               icon={<QueuedBadge />}
               label="Task queued"
-              tag={tag}
+              tag={fileTag(item)}
               onClick={onOpenActivity}
             />
           ))}

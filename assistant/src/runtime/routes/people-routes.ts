@@ -86,6 +86,11 @@ const dossierSchema = z.object({
     memory: z.array(contactMemorySchema),
     reachability: z.array(reachabilitySchema),
     interactions: z.array(interactionSchema),
+    interactionsDegraded: z
+      .boolean()
+      .describe(
+        "True when the interactions history couldn't fully load (query error or budget); interactions is then partial/empty",
+      ),
   }),
 });
 
@@ -330,4 +335,4 @@ export const ROUTES: RouteDefinition[] = [
 
 // Re-export the reachability/interactions helpers so IPC/tooling callers that
 // only need a slice of the dossier don't have to assemble the whole thing.
-export { getContactInteractions,getContactReachability };
+export { getContactInteractions, getContactReachability };

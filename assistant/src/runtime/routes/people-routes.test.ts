@@ -9,9 +9,10 @@
  */
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { upsertContact } from "../../contacts/contact-store.js";
-import { computeRelationshipScore } from "../../contacts/contact-relationship-store.js";
+import { getContactInteractionsBounded } from "../../contacts/contact-dossier-store.js";
 import { extractContactMemoryFromConversation } from "../../contacts/contact-memory-store.js";
+import { computeRelationshipScore } from "../../contacts/contact-relationship-store.js";
+import { upsertContact } from "../../contacts/contact-store.js";
 import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import { ROUTES } from "./people-routes.js";
@@ -51,10 +52,9 @@ function makeContact(overrides?: {
 
 describe("migration 294", () => {
   test("created contact_memory and contact_relationship tables", () => {
-    const rows = getDb()
-      .all(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('contact_memory','contact_relationship')`,
-      ) as Array<{ name: string }>;
+    const rows = getDb().all(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('contact_memory','contact_relationship')`,
+    ) as Array<{ name: string }>;
     const names = rows.map((r) => r.name).sort();
     expect(names).toEqual(["contact_memory", "contact_relationship"]);
   });
@@ -275,6 +275,70 @@ describe("dossier assembly", () => {
         headers: {},
       }),
     ).toThrow();
+  });
+});
+
+// ── Interactions bounding + degradation ───────────────────────────────────
+
+describe("interactions bounding", () => {
+  /**
+   * Seed `count` slack channels on the contact (distinct chat ids) plus one
+   * bound conversation per channel. The interactions query matches each
+   * channel identity against external_conversation_bindings on
+   * (source_channel, external_chat_id) — which is UNIQUE — so one binding per
+   * chat id. `now` fixes ordering: channel i's conversation is `i` seconds old.
+   */
+  function seedContactWithInteractions(contactId: string, count: number) {
+    const base = Date.now();
+    for (let i = 0; i < count; i++) {
+      const chatId = `C-DM-${i}`;
+      const convId = `conv-${i}`;
+      const at = base - i * 1000; // strictly decreasing → deterministic order
+      getDb().run(
+        `INSERT INTO contact_channels (id, contact_id, type, address, external_user_id, external_chat_id, status, created_at) VALUES ('ch-${i}', '${contactId}', 'slack', 'addr-${i}', 'U${i}', '${chatId}', 'active', ${at})`,
+      );
+      getDb().run(
+        `INSERT INTO conversations (id, title, created_at, updated_at, last_message_at) VALUES ('${convId}', 'Thread ${i}', ${at}, ${at}, ${at})`,
+      );
+      getDb().run(
+        `INSERT INTO external_conversation_bindings (conversation_id, source_channel, external_chat_id, created_at, updated_at, last_inbound_at) VALUES ('${convId}', 'slack', '${chatId}', ${at}, ${at}, ${at})`,
+      );
+    }
+  }
+
+  test("caps interactions at the requested limit (LIMIT pushed into SQL)", () => {
+    const contact = makeContact();
+    seedContactWithInteractions(contact.id, 25);
+
+    const bounded = getContactInteractionsBounded(contact.id, 10);
+    expect(bounded.degraded).toBe(false);
+    expect(bounded.interactions).toHaveLength(10);
+    // Most-recent first (i=0 is newest).
+    expect(bounded.interactions[0].conversationId).toBe("conv-0");
+
+    // The route also honors the limit end-to-end and reports not-degraded.
+    const result = route("contacts/:id/dossier", "GET").handler({
+      pathParams: { id: contact.id },
+      queryParams: { interactionLimit: "5" },
+      headers: {},
+    }) as {
+      dossier: { interactions: unknown[]; interactionsDegraded: boolean };
+    };
+    expect(result.dossier.interactions).toHaveLength(5);
+    expect(result.dossier.interactionsDegraded).toBe(false);
+  });
+
+  test("degrades (empty interactions + flag) when the budget is exceeded", () => {
+    const contact = makeContact();
+    seedContactWithInteractions(contact.id, 5);
+
+    // A negative budget makes the pre-source budget check fire immediately, so
+    // the stitch degrades before scanning any binding.
+    const bounded = getContactInteractionsBounded(contact.id, 50, {
+      budgetMs: -1,
+    });
+    expect(bounded.degraded).toBe(true);
+    expect(bounded.interactions).toEqual([]);
   });
 });
 

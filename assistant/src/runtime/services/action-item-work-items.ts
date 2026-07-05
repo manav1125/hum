@@ -19,11 +19,14 @@
  */
 
 import type { ServerMessage } from "../../daemon/message-protocol.js";
+import { getMission } from "../../missions/mission-store.js";
 import { createTask } from "../../tasks/task-store.js";
 import { getLogger } from "../../util/logger.js";
+import { getProject } from "../../work-items/project-store.js";
 import {
   createWorkItemWithPermissions,
   findActiveWorkItemBySource,
+  getWorkItem,
 } from "../../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import { broadcastMessage } from "../assistant-event-hub.js";
@@ -45,6 +48,60 @@ export interface ActionItemWorkItemRef {
   title: string;
   /** True when this run minted the row; false when an active match was reused. */
   created: boolean;
+  /**
+   * The project triage filed this item onto (its best-matching existing
+   * project), or null when triage was not confident about any project. Lets a
+   * client show the real "filed to <project>" target instead of a placeholder.
+   */
+  projectId: string | null;
+  /** The filed project's title — display handle for the ⟡ tag. Null when unfiled. */
+  projectTitle: string | null;
+  /**
+   * The mission the filed project serves (via `project.missionId`), or null
+   * when the project isn't linked to a mission (or the item is unfiled).
+   */
+  missionId: string | null;
+  /** The linked mission's title — display handle. Null when no mission. */
+  missionTitle: string | null;
+}
+
+/**
+ * Resolve the filing (project + mission) triage stamped onto a work item, so a
+ * caller can show the real target. Reads the freshly-triaged row's `projectId`,
+ * then the project's title and — via `project.missionId` — the mission title.
+ * Every lookup degrades to null independently, so a missing/deleted project or
+ * mission never throws.
+ */
+function resolveWorkItemFiling(workItemId: string): {
+  projectId: string | null;
+  projectTitle: string | null;
+  missionId: string | null;
+  missionTitle: string | null;
+} {
+  const none = {
+    projectId: null,
+    projectTitle: null,
+    missionId: null,
+    missionTitle: null,
+  };
+  try {
+    const fresh = getWorkItem(workItemId);
+    const projectId = fresh?.projectId ?? null;
+    if (!projectId) return none;
+    const project = getProject(projectId);
+    if (!project) return { ...none, projectId };
+    const missionId = project.missionId ?? null;
+    const mission = missionId ? getMission(missionId) : undefined;
+    return {
+      projectId,
+      projectTitle: project.title,
+      missionId: mission ? missionId : null,
+      missionTitle: mission?.title ?? null,
+    };
+  } catch (err) {
+    log.warn({ err, workItemId }, "Failed to resolve work-item filing");
+    return none;
+  }
 }
 
 /**
@@ -57,11 +114,11 @@ export interface ActionItemWorkItemRef {
  * @param conversationId The source conversation; becomes each work item's
  *                      `sourceId` and the task's `createdFromConversationId`.
  */
-export function actionItemsToWorkItems(
+export async function actionItemsToWorkItems(
   actionItems: ActionItemInput[],
   sourceType: string,
   conversationId: string,
-): ActionItemWorkItemRef[] {
+): Promise<ActionItemWorkItemRef[]> {
   const refs: ActionItemWorkItemRef[] = [];
   const seenTitles = new Set<string>();
 
@@ -84,7 +141,12 @@ export function actionItemsToWorkItems(
         sourceId: conversationId,
       });
       if (existing) {
-        refs.push({ id: existing.id, title: existing.title, created: false });
+        refs.push({
+          id: existing.id,
+          title: existing.title,
+          created: false,
+          ...resolveWorkItemFiling(existing.id),
+        });
         continue;
       }
 
@@ -102,10 +164,19 @@ export function actionItemsToWorkItems(
         sourceType,
         sourceId: conversationId,
       });
-      // Rank the fresh capture and, when the autonomy policy allows, hand it
-      // straight to the background runner instead of parking it in the queue.
-      void triageAndMaybeAutoRunWorkItem(workItem.id);
-      refs.push({ id: workItem.id, title: workItem.title, created: true });
+      // Rank the fresh capture, file it onto its best-matching project (and thus
+      // mission, via project.missionId), and — when the autonomy policy allows —
+      // hand it straight to the background runner. Awaited (not fire-and-forget)
+      // so the project the item is filed onto is stamped before we read it back
+      // for the caller's response. The autonomy guard inside still governs
+      // whether it auto-runs or lands for review.
+      await triageAndMaybeAutoRunWorkItem(workItem.id);
+      refs.push({
+        id: workItem.id,
+        title: workItem.title,
+        created: true,
+        ...resolveWorkItemFiling(workItem.id),
+      });
     } catch (err) {
       log.warn(
         { err, conversationId, title, sourceType },

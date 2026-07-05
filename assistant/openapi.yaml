@@ -637,6 +637,505 @@ paths:
               required:
                 - message
               additionalProperties: false
+  /v1/agents:
+    get:
+      operationId: agents_get
+      summary: List agents
+      description:
+        The org roster — every staffed role (name, emoji, domain, charter, tier, cap, paused), name-ordered. The
+        three defaults (Ops/Builder/Growth) are seeded on first init; `cue` is the implicit house agent and is not a
+        row.
+      tags:
+        - agents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                          description: Display name + work-item assignee match key (case-insensitive)
+                        emoji:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        domain:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        charter:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The standing mandate
+                        tier:
+                          type: string
+                          enum:
+                            - "1"
+                            - "2"
+                            - "3"
+                            - "4"
+                          description: Autonomy tier '1'..'4'
+                        capCents:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Weekly spend cap in cents; null = uncapped
+                        paused:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — the role is paused
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - name
+                        - emoji
+                        - domain
+                        - charter
+                        - tier
+                        - capCents
+                        - paused
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - agents
+                additionalProperties: false
+    post:
+      operationId: agents_post
+      summary: Hire an agent
+      description: Add a new role to the org.
+      tags:
+        - agents
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        description: Display name + work-item assignee match key (case-insensitive)
+                      emoji:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      domain:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      charter:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The standing mandate
+                      tier:
+                        type: string
+                        enum:
+                          - "1"
+                          - "2"
+                          - "3"
+                          - "4"
+                        description: Autonomy tier '1'..'4'
+                      capCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Weekly spend cap in cents; null = uncapped
+                      paused:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the role is paused
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - name
+                      - emoji
+                      - domain
+                      - charter
+                      - tier
+                      - capCents
+                      - paused
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - agent
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                emoji:
+                  type: string
+                domain:
+                  type: string
+                charter:
+                  type: string
+                tier:
+                  type: string
+                  enum:
+                    - "1"
+                    - "2"
+                    - "3"
+                    - "4"
+                  description: Autonomy tier '1'..'4'
+                capCents:
+                  type: integer
+                  minimum: 0
+                  maximum: 9007199254740991
+                paused:
+                  type: boolean
+              required:
+                - name
+              additionalProperties: false
+  /v1/agents/{id}:
+    delete:
+      operationId: agents_by_id_delete
+      summary: Retire an agent
+      description:
+        Hard-delete a role. Work items keep their `assignee` string (they fall back to the 'cue' house agent in the
+        roster views).
+      tags:
+        - agents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    get:
+      operationId: agents_by_id_get
+      summary: Get an agent
+      tags:
+        - agents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        description: Display name + work-item assignee match key (case-insensitive)
+                      emoji:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      domain:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      charter:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The standing mandate
+                      tier:
+                        type: string
+                        enum:
+                          - "1"
+                          - "2"
+                          - "3"
+                          - "4"
+                        description: Autonomy tier '1'..'4'
+                      capCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Weekly spend cap in cents; null = uncapped
+                      paused:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the role is paused
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - name
+                      - emoji
+                      - domain
+                      - charter
+                      - tier
+                      - capCents
+                      - paused
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - agent
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: agents_by_id_patch
+      summary: Update an agent
+      description: Rename, re-charter, change tier, set/clear the spend cap, or pause/resume a role.
+      tags:
+        - agents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                        description: Display name + work-item assignee match key (case-insensitive)
+                      emoji:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      domain:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      charter:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The standing mandate
+                      tier:
+                        type: string
+                        enum:
+                          - "1"
+                          - "2"
+                          - "3"
+                          - "4"
+                        description: Autonomy tier '1'..'4'
+                      capCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Weekly spend cap in cents; null = uncapped
+                      paused:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the role is paused
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - name
+                      - emoji
+                      - domain
+                      - charter
+                      - tier
+                      - capCents
+                      - paused
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - agent
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                emoji:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                domain:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                charter:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                tier:
+                  type: string
+                  enum:
+                    - "1"
+                    - "2"
+                    - "3"
+                    - "4"
+                  description: Autonomy tier '1'..'4'
+                capCents:
+                  anyOf:
+                    - type: integer
+                      minimum: 0
+                      maximum: 9007199254740991
+                    - type: "null"
+                paused:
+                  type: boolean
+              additionalProperties: false
+  /v1/agents/spend:
+    get:
+      operationId: agents_spend_get
+      summary: Per-agent attributed spend
+      description:
+        "Real per-agent $ spend over the trailing window, attributed by joining LLM usage → the work item's run
+        conversation → its assignee (null assignee reads as 'cue'). `attributedCents` is the sum of the per-agent rows —
+        the work-item-run slice of usage, NOT the workspace usage total. Honest limit: only the latest run conversation
+        per item is tracked, so a re-run's superseded prior-run cost is not counted."
+      tags:
+        - agents
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  byAgent:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        agent:
+                          type: string
+                        spentCents:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Real attributed spend in cents over the window
+                        runs:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Run conversations that contributed to the spend
+                      required:
+                        - agent
+                        - spentCents
+                        - runs
+                      additionalProperties: false
+                  attributedCents:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Sum of per-agent rows — the attributable work-item-run slice
+                  from:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  to:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - byAgent
+                  - attributedCents
+                  - from
+                  - to
+                additionalProperties: false
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Trailing window in days (default 7)
   /v1/apps:
     get:
       operationId: apps_get
@@ -7149,6 +7648,11 @@ paths:
                             - title
                             - at
                           additionalProperties: false
+                      interactionsDegraded:
+                        type: boolean
+                        description:
+                          True when the interactions history couldn't fully load (query error or budget); interactions is then
+                          partial/empty
                     required:
                       - contactId
                       - displayName
@@ -7158,6 +7662,7 @@ paths:
                       - memory
                       - reachability
                       - interactions
+                      - interactionsDegraded
                     additionalProperties: false
                 required:
                   - ok
@@ -32869,10 +33374,30 @@ paths:
                           type: string
                         created:
                           type: boolean
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        projectTitle:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        missionId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        missionTitle:
+                          anyOf:
+                            - type: string
+                            - type: "null"
                       required:
                         - id
                         - title
                         - created
+                        - projectId
+                        - projectTitle
+                        - missionId
+                        - missionTitle
                       additionalProperties: false
                 required:
                   - conversationId

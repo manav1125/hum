@@ -1,7 +1,7 @@
 /**
  * The Agents-org editors — the surfaces the ⋯ menu and the Hire card open.
- * All edits write the localStorage charter config (see `charters.ts`); the
- * server registry is future work, so these are honest client-side edits.
+ * All edits persist to the server-side agent registry via `useCharterActions`
+ * (see `charters.ts`), so a re-charter or hire is shared across devices.
  *
  *  · CharterEditor — one modal covering Rename / Edit charter / Change tier /
  *    Set spend cap (the ⋯ menu actions collapse into a single edit sheet so a
@@ -18,9 +18,8 @@ import { useState } from "react";
 import { C, mono, serif } from "@/domains/activity/theme";
 
 import {
-  hireCharter,
   TIER_META,
-  updateCharter,
+  useCharterActions,
   type AgentCharter,
   type AgentTier,
 } from "./charters";
@@ -201,13 +200,14 @@ export function CharterEditor({
   const [cap, setCap] = useState<string>(
     charter.capUsd != null ? String(charter.capUsd) : "",
   );
+  const { update } = useCharterActions(assistantId);
 
   const canSave = name.trim().length > 0;
 
   const save = () => {
     if (!canSave) return;
     const parsedCap = Number(cap.trim());
-    updateCharter(assistantId, charter.id, {
+    update(charter.id, {
       name: name.trim(),
       emoji,
       domain: domain.trim(),
@@ -339,26 +339,27 @@ export function HireModal({
 }: {
   assistantId: string;
   onClose: () => void;
-  onHired: (charter: AgentCharter) => void;
+  onHired: () => void;
 }) {
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState(EMOJI_CHOICES[3]);
   const [domain, setDomain] = useState("");
   const [mandate, setMandate] = useState("");
   const [tier, setTier] = useState<AgentTier>(2);
+  const { hire: hireAgent } = useCharterActions(assistantId);
 
   const canHire = name.trim().length > 0;
 
   const hire = () => {
     if (!canHire) return;
-    const created = hireCharter(assistantId, {
+    hireAgent({
       name: name.trim(),
       emoji,
       domain: domain.trim(),
       charter: mandate.trim(),
       tier,
     });
-    onHired(created);
+    onHired();
   };
 
   return (

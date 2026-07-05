@@ -89,15 +89,27 @@ interface BridgeCall {
 }
 let bridgeCalls: BridgeCall[] = [];
 const mockActionItemsToWorkItems = mock(
-  (
+  async (
     actionItems: BridgeCall["actionItems"],
     sourceType: string,
     conversationId: string,
   ) => {
     bridgeCalls.push({ actionItems, sourceType, conversationId });
+    // The real bridge triages each item and folds the resolved project/mission
+    // filing into the ref. Here we stamp deterministic filing so the service's
+    // pass-through of the filing fields is covered: the first item lands on a
+    // mission-linked project, the rest file onto nothing (neutral state).
     return actionItems
       .filter((i) => !i.done)
-      .map((i, idx) => ({ id: `wi-${idx}`, title: i.text, created: true }));
+      .map((i, idx) => ({
+        id: `wi-${idx}`,
+        title: i.text,
+        created: true,
+        projectId: idx === 0 ? "proj-1" : null,
+        projectTitle: idx === 0 ? "Q3 planning" : null,
+        missionId: idx === 0 ? "mission-1" : null,
+        missionTitle: idx === 0 ? "Hit Q3 targets" : null,
+      }));
   },
 );
 mock.module("../action-item-work-items.js", () => ({
@@ -187,6 +199,16 @@ describe("generateVoiceIntake — live extraction path", () => {
     expect(bridgeCalls[0]?.sourceType).toBe("voice");
     expect(bridgeCalls[0]?.conversationId).toBe(VOICE_CONV_ID);
     expect(result.workItems).toHaveLength(2);
+
+    // The per-item filing the bridge resolved (project + mission it was filed
+    // onto) is carried through in the response so the client shows the real ⟡
+    // tag; an unfiled item reports null (the neutral "Filed to Activity" state).
+    expect(result.workItems[0]?.projectId).toBe("proj-1");
+    expect(result.workItems[0]?.projectTitle).toBe("Q3 planning");
+    expect(result.workItems[0]?.missionId).toBe("mission-1");
+    expect(result.workItems[0]?.missionTitle).toBe("Hit Q3 targets");
+    expect(result.workItems[1]?.projectId).toBeNull();
+    expect(result.workItems[1]?.projectTitle).toBeNull();
 
     // The assistant message (2nd addMessage) lists both action items.
     const assistantCall = addMessageCalls.find((c) => c.role === "assistant");

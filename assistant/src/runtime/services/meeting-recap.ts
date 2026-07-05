@@ -355,10 +355,10 @@ const MEETING_WORK_ITEM_SOURCE_TYPE = "meeting";
  * re-running the recap on the same meeting reuses the active rows. Delegates to
  * the shared {@link actionItemsToWorkItems} (also used by voice intake).
  */
-function createWorkItemsFromActionItems(
+async function createWorkItemsFromActionItems(
   actionItems: RecapActionItem[],
   conversationId: string,
-): RecapWorkItemRef[] {
+): Promise<RecapWorkItemRef[]> {
   return actionItemsToWorkItems(
     actionItems,
     MEETING_WORK_ITEM_SOURCE_TYPE,
@@ -414,7 +414,7 @@ export async function generateMeetingRecap(
       { conversationId, source: "manual" },
     );
     const stubBody = buildStubRecapBody();
-    const stubWorkItems = createWorkItemsFromActionItems(
+    const stubWorkItems = await createWorkItemsFromActionItems(
       stubBody.actionItems,
       conversationId,
     );
@@ -499,7 +499,7 @@ export async function generateMeetingRecap(
   // e. Bridge the recap's open action items into executable work items
   //    (Activity → Cued). Idempotent on re-run; best-effort so it never fails
   //    the recap the user already has.
-  const workItems = createWorkItemsFromActionItems(
+  const workItems = await createWorkItemsFromActionItems(
     recapBody.actionItems,
     conversationId,
   );

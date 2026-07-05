@@ -28,6 +28,13 @@ const workItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   created: z.boolean(),
+  // Filing resolved by triage: the project (and, via project.missionId, the
+  // mission) this item was filed onto, or null when triage wasn't confident.
+  // Lets the client show the real ⟡ project/mission tag instead of a placeholder.
+  projectId: z.string().nullable(),
+  projectTitle: z.string().nullable(),
+  missionId: z.string().nullable(),
+  missionTitle: z.string().nullable(),
 });
 
 const voiceIntakeResponseSchema = z.object({

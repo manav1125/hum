@@ -6,18 +6,16 @@
  * of agent cards reporting up. Each card shows its charter, its autonomy tier
  * with a live ACTING / DRAFTING / WAITING pill (derived from REAL work items),
  * this week's spend against its cap, and its auditable acts line. The ⋯ menu
- * (round 5) renames, re-charters, changes tier, sets a spend cap, or pauses —
- * all editing the local charter config. A dashed "Hire an agent" card adds a
- * role. The tier chip opens the per-agent trust panel.
+ * renames, re-charters, changes tier, sets a spend cap, or pauses — all
+ * persisted to the server-side agent registry. A dashed "Hire an agent" card
+ * adds a role. The tier chip opens the per-agent trust panel.
  *
- * Honesty rules (never fake): per-agent spend has no attribution store yet, so
- * a card with a cap shows "measuring…" (bar hidden) rather than a fabricated
- * split; the header "$N SPENT THIS WEEK" is the real workspace usage total;
- * track record renders "measuring…" until the acts-summary route answers.
- *
- * Backend still owed (see the handoff report): (1) an agent registry so
- * charters persist server-side and other surfaces can read them, and (2)
- * per-agent spend attribution so the per-card bars stop measuring.
+ * Honesty rules (never fake): per-agent spend is REAL — attributed from the
+ * agents/spend endpoint (usage → the work item's run conversation → assignee).
+ * An agent with no attributable runs this week still shows "measuring…" (never
+ * a fabricated split); the header "$N SPENT THIS WEEK" is the real workspace
+ * usage total; track record renders "measuring…" until the acts-summary route
+ * answers.
  */
 
 import { useMemo, useState } from "react";
@@ -31,7 +29,7 @@ import { routes } from "@/utils/routes";
 
 import {
   TIER_META,
-  updateCharter,
+  useCharterActions,
   useCharters,
   type AgentCharter,
 } from "./charters";
@@ -39,11 +37,14 @@ import { CharterEditor, HireModal } from "./agent-modals";
 import { TrustPanel } from "./trust-panel";
 import {
   actsForCharter,
+  spendForCharter,
   useAgentActs,
+  useAgentSpend,
   useAgentWork,
   useWeekSpend,
   workForCharter,
   type AgentActs,
+  type AgentSpend,
   type AgentWork,
 } from "./use-agent-data";
 
@@ -91,20 +92,22 @@ function statePill(
 // ---------------------------------------------------------------------------
 
 function AgentCard({
-  assistantId,
   charter,
   work,
   acts,
+  spend,
   measuringActs,
   onEdit,
+  onTogglePause,
   onOpenTrust,
 }: {
-  assistantId: string;
   charter: AgentCharter;
   work: AgentWork | null;
   acts: AgentActs | null;
+  spend: AgentSpend | null;
   measuringActs: boolean;
   onEdit: () => void;
+  onTogglePause: () => void;
   onOpenTrust: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -241,10 +244,7 @@ function AgentCard({
             {menuItem(
               charter.paused ? "▶" : "⏸",
               charter.paused ? "Resume agent" : "Pause agent",
-              () =>
-                updateCharter(assistantId, charter.id, {
-                  paused: !charter.paused,
-                }),
+              onTogglePause,
               C.amber,
             )}
           </div>
@@ -344,7 +344,7 @@ function AgentCard({
 
       {/* Spend + acts footer */}
       <div style={{ marginTop: "auto", paddingTop: 13 }}>
-        <SpendRow charter={charter} />
+        <SpendRow charter={charter} spend={spend} />
         <div
           style={{
             fontFamily: mono,
@@ -363,13 +363,26 @@ function AgentCard({
 }
 
 /**
- * Per-agent spend — honest "measuring…" until attribution lands. When a cap is
- * set we still surface it ("of $N cap"); the bar shows only once real spend
- * can be attributed (never a fabricated fill).
+ * Per-agent spend — REAL, attributed from the agents/spend endpoint. When the
+ * agent has attributable runs this week we show the dollar figure (and, if a
+ * cap is set, a fill against it). With no attributable runs yet we fall back to
+ * "measuring…" — an honest empty state, never a fabricated split.
  */
-function SpendRow({ charter }: { charter: AgentCharter }) {
-  // No per-agent attribution store exists yet → spend is unknown. We never
-  // fabricate a split of the workspace total across agents.
+function SpendRow({
+  charter,
+  spend,
+}: {
+  charter: AgentCharter;
+  spend: AgentSpend | null;
+}) {
+  const hasSpend = spend != null && spend.usd > 0;
+  const pct =
+    hasSpend && charter.capUsd != null && charter.capUsd > 0
+      ? Math.min(100, Math.round((spend.usd / charter.capUsd) * 100))
+      : null;
+  // Over-cap runs the fill amber, matching the mission budget-stop treatment.
+  const overCap = charter.capUsd != null && hasSpend && spend.usd >= charter.capUsd;
+
   return (
     <div>
       <div
@@ -381,13 +394,12 @@ function SpendRow({ charter }: { charter: AgentCharter }) {
         }}
       >
         <span style={{ fontFamily: mono, fontSize: 10, color: C.t2 }}>
-          measuring…
+          {hasSpend ? fmtUsd(spend.usd) : "measuring…"}
         </span>
         <span style={{ fontFamily: mono, fontSize: 9.5, color: C.t3 }}>
           {charter.capUsd != null ? `of $${charter.capUsd} cap` : "no cap"}
         </span>
       </div>
-      {/* Empty track — no fabricated fill until spend is attributable. */}
       <div
         style={{
           height: 5,
@@ -395,7 +407,20 @@ function SpendRow({ charter }: { charter: AgentCharter }) {
           background: C.sunken,
           overflow: "hidden",
         }}
-      />
+      >
+        {/* Fill only when there's a cap to measure against AND real spend —
+            never a fabricated fill. */}
+        {pct != null ? (
+          <div
+            style={{
+              width: `${pct}%`,
+              height: "100%",
+              borderRadius: 3,
+              background: overCap ? C.amber : C.green,
+            }}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -462,11 +487,13 @@ export function AgentsOrgPage() {
   const navigate = useNavigate();
   const isNarrow = useIsMobile();
   const charters = useCharters(assistantId);
+  const charterActions = useCharterActions(assistantId);
   const { byName: workByName } = useAgentWork(assistantId);
   const { byName: actsByName, measuring: measuringActs } = useAgentActs(
     assistantId,
     charters,
   );
+  const { byName: spendByName } = useAgentSpend(assistantId);
   const weekSpend = useWeekSpend(assistantId);
 
   const [now] = useState(() => Date.now());
@@ -609,12 +636,15 @@ export function AgentsOrgPage() {
           {charters.map((c) => (
             <AgentCard
               key={c.id}
-              assistantId={assistantId}
               charter={c}
               work={workForCharter(c, workByName)}
               acts={actsForCharter(c, actsByName)}
+              spend={spendForCharter(c, spendByName)}
               measuringActs={measuringActs}
               onEdit={() => setEditing(c)}
+              onTogglePause={() =>
+                charterActions.update(c.id, { paused: !c.paused })
+              }
               onOpenTrust={() => setTrustFor(c)}
             />
           ))}
@@ -630,7 +660,7 @@ export function AgentsOrgPage() {
             letterSpacing: "0.04em",
           }}
         >
-          {activeCount} ACTIVE · CHARTERS SAVED LOCALLY — SERVER REGISTRY COMING
+          {activeCount} ACTIVE · CHARTERS SAVED TO THE SERVER REGISTRY
         </div>
       </div>
 

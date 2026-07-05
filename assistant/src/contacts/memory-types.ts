@@ -73,4 +73,10 @@ export interface ContactDossier {
   memory: ContactMemory[];
   reachability: ReachabilityChannel[];
   interactions: ContactInteraction[];
+  /**
+   * True when the interactions stitch was cut short (query error or wall-clock
+   * budget). `interactions` is then a partial/empty prefix and the UI should
+   * show a "couldn't load full history" hint rather than "no interactions".
+   */
+  interactionsDegraded: boolean;
 }

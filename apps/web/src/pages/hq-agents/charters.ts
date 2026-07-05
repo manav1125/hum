@@ -1,23 +1,37 @@
 /**
- * Agent charters — the client-side registry behind the Agents · org page.
+ * Agent charters — the registry behind the Agents · org page, now backed by
+ * the daemon's server-side agent registry (GET/POST/PATCH/DELETE
+ * /v1/assistants/{id}/agents). Rename / re-charter / change tier / set spend
+ * cap / pause / hire / retire all persist server-side and are shared across
+ * devices and surfaces.
  *
- * Phase 1 has NO server-side agent registry yet: charters (name, emoji,
- * domain, mandate, autonomy tier, spend cap, paused) are a local, per-assistant
- * config persisted in localStorage. The full ⋯-menu contract from the design
- * doc (rename / re-charter / change tier / set spend cap / pause / hire) edits
- * this config, so the UI contract is fixed NOW and the storage swaps to the
- * daemon's agent registry later without call-site churn.
+ * The UI contract is preserved: `useCharters` returns a reactive `AgentCharter[]`
+ * and `useCharterActions` returns the same update / hire / retire verbs the ⋯
+ * menu and modals have always called — only the storage moved from localStorage
+ * to the registry. `tier`/`capCents` translate between the wire shape (tier as
+ * a '1'..'4' string, cap in cents) and the UI shape (numeric tier, cap in USD).
  *
  * What stays honest: nothing here fabricates work, spend, or track record —
- * those come from real stores (work items by assignee, the usage API, the
- * acts-summary probe) in `use-agent-data.ts`, or render the "measuring"
- * treatment when unattributed.
+ * live work comes from real work items by assignee, per-agent spend from the
+ * new attribution endpoint, and the track record from the acts ledger (see
+ * `use-agent-data.ts`), each with its own "measuring…" fallback.
  */
 
-import { useSyncExternalStore } from "react";
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  agentsByIdDeleteMutation,
+  agentsByIdPatchMutation,
+  agentsGetOptions,
+  agentsGetQueryKey,
+  agentsPostMutation,
+} from "@/generated/daemon/@tanstack/react-query.gen";
+import type { AgentsGetResponses } from "@/generated/daemon/types.gen";
 
 export type AgentTier = 1 | 2 | 3 | 4;
 
+/** One registry row, shaped for the org UI (numeric tier, cap in USD). */
 export interface AgentCharter {
   id: string;
   /** Display + work-item assignee match key (case-insensitive). */
@@ -29,12 +43,14 @@ export interface AgentCharter {
   /** The standing mandate shown in the CHARTER box. */
   charter: string;
   tier: AgentTier;
-  /** Weekly spend cap in USD the user intends for this role; null = no cap. */
+  /** Weekly spend cap in USD; null = no cap. */
   capUsd: number | null;
   paused: boolean;
-  /** Epoch ms when this charter was added locally ("since March"). */
+  /** Epoch ms the role was hired ("since March"). */
   hiredAt: number;
 }
+
+type ApiAgent = AgentsGetResponses[200]["agents"][number];
 
 /** Tier chip label + the static may-do / always-asks trust copy. */
 export const TIER_META: Record<
@@ -84,173 +100,130 @@ export const TIER_META: Record<
   },
 };
 
-/** The three default charters every org starts with (design doc). */
-function defaultCharters(now: number): AgentCharter[] {
-  return [
-    {
-      id: "ops",
-      name: "Ops",
-      emoji: "⚙",
-      domain: "Operations",
-      charter: "Keep the raise & ops moving — never let a thread go cold.",
-      tier: 3,
-      capUsd: null,
-      paused: false,
-      hiredAt: now,
-    },
-    {
-      id: "builder",
-      name: "Builder",
-      emoji: "▲",
-      domain: "Product",
-      charter: "Ship product on cadence — quality over speed.",
-      tier: 2,
-      capUsd: null,
-      paused: false,
-      hiredAt: now,
-    },
-    {
-      id: "growth",
-      name: "Growth",
-      emoji: "✦",
-      domain: "Marketing",
-      charter: "Grow pipeline & MRR — protect the brand voice.",
-      tier: 2,
-      capUsd: null,
-      paused: false,
-      hiredAt: now,
-    },
-  ];
+// ---------------------------------------------------------------------------
+// Wire ⇄ UI mapping
+// ---------------------------------------------------------------------------
+
+function toTier(v: string): AgentTier {
+  const n = Number(v);
+  return n === 2 || n === 3 || n === 4 ? (n as AgentTier) : 1;
 }
 
-const VERSION = 1;
-
-function storageKey(assistantId: string): string {
-  return `cue.hqAgents.charters.v${VERSION}:${assistantId}`;
-}
-
-function isTier(v: unknown): v is AgentTier {
-  return v === 1 || v === 2 || v === 3 || v === 4;
-}
-
-function narrowCharter(raw: unknown): AgentCharter | null {
-  if (!raw || typeof raw !== "object") return null;
-  const r = raw as Record<string, unknown>;
-  if (typeof r.id !== "string" || typeof r.name !== "string") return null;
+/** Map a registry row to the org-UI charter shape (cents → USD, tier string). */
+function fromApi(a: ApiAgent): AgentCharter {
   return {
-    id: r.id,
-    name: r.name,
-    emoji: typeof r.emoji === "string" && r.emoji.length > 0 ? r.emoji : "◆",
-    domain: typeof r.domain === "string" ? r.domain : "",
-    charter: typeof r.charter === "string" ? r.charter : "",
-    tier: isTier(r.tier) ? r.tier : 1,
+    id: a.id,
+    name: a.name,
+    emoji: a.emoji && a.emoji.length > 0 ? a.emoji : "◆",
+    domain: a.domain ?? "",
+    charter: a.charter ?? "",
+    tier: toTier(a.tier),
     capUsd:
-      typeof r.capUsd === "number" && Number.isFinite(r.capUsd) && r.capUsd > 0
-        ? r.capUsd
+      a.capCents != null && a.capCents > 0
+        ? Math.round(a.capCents / 100)
         : null,
-    paused: r.paused === true,
-    hiredAt:
-      typeof r.hiredAt === "number" && Number.isFinite(r.hiredAt)
-        ? r.hiredAt
-        : 0,
+    paused: a.paused === 1,
+    hiredAt: a.createdAt,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Store — one cached snapshot per assistant, useSyncExternalStore-compatible.
+// Reads
 // ---------------------------------------------------------------------------
 
-const cache = new Map<string, AgentCharter[]>();
-const listeners = new Set<() => void>();
+const SAFETY_NET_MS = 60_000;
 
-function load(assistantId: string): AgentCharter[] {
-  const cached = cache.get(assistantId);
-  if (cached) return cached;
-  let charters: AgentCharter[] | null = null;
-  try {
-    const raw = localStorage.getItem(storageKey(assistantId));
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        const narrowed = parsed
-          .map(narrowCharter)
-          .filter((c): c is AgentCharter => c !== null);
-        if (narrowed.length > 0) charters = narrowed;
-      }
-    }
-  } catch {
-    // Corrupt/blocked storage — fall through to defaults.
-  }
-  if (!charters) {
-    charters = defaultCharters(Date.now());
-    persist(assistantId, charters);
-  }
-  cache.set(assistantId, charters);
-  return charters;
-}
-
-function persist(assistantId: string, charters: AgentCharter[]): void {
-  try {
-    localStorage.setItem(storageKey(assistantId), JSON.stringify(charters));
-  } catch {
-    // Storage full/blocked — the in-memory copy still drives the session.
-  }
-}
-
-function write(assistantId: string, next: AgentCharter[]): void {
-  cache.set(assistantId, next);
-  persist(assistantId, next);
-  for (const fn of listeners) fn();
-}
-
-function subscribe(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-/** Reactive charter list for one assistant. */
+/** Reactive charter list for one assistant, from the server registry. */
 export function useCharters(assistantId: string): AgentCharter[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => load(assistantId),
-    () => load(assistantId),
+  const query = useQuery({
+    ...agentsGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 15_000,
+  });
+  return useMemo(
+    () => (query.data?.agents ?? []).map(fromApi),
+    [query.data],
   );
 }
 
-/** Patch one charter by id (rename / re-charter / tier / cap / pause). */
-export function updateCharter(
-  assistantId: string,
-  id: string,
-  patch: Partial<Omit<AgentCharter, "id">>,
-): void {
-  const next = load(assistantId).map((c) =>
-    c.id === id ? { ...c, ...patch } : c,
-  );
-  write(assistantId, next);
-}
+// ---------------------------------------------------------------------------
+// Writes — the ⋯-menu / modal verbs, now persisted server-side.
+// ---------------------------------------------------------------------------
 
-/** "Hire an agent" — add a new role to the org. */
-export function hireCharter(
-  assistantId: string,
-  draft: Pick<AgentCharter, "name" | "emoji" | "domain" | "charter" | "tier">,
-): AgentCharter {
-  const charter: AgentCharter = {
-    ...draft,
-    id: `agent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    capUsd: null,
-    paused: false,
-    hiredAt: Date.now(),
+/** Patch fields the editor can change (UI shape). */
+export type CharterPatch = Partial<
+  Pick<AgentCharter, "name" | "emoji" | "domain" | "charter" | "tier" | "capUsd" | "paused">
+>;
+
+/** New-role draft for the Hire modal (UI shape). */
+export type CharterDraft = Pick<
+  AgentCharter,
+  "name" | "emoji" | "domain" | "charter" | "tier"
+>;
+
+/**
+ * The charter action verbs, bound to one assistant. Each mutation invalidates
+ * the roster query so the UI reflects the persisted state. The imperative
+ * signatures (`update(id, patch)`, `hire(draft)`, `retire(id)`) mirror the
+ * former localStorage store so call sites barely change.
+ */
+export function useCharterActions(assistantId: string): {
+  update: (id: string, patch: CharterPatch) => void;
+  hire: (draft: CharterDraft) => void;
+  retire: (id: string) => void;
+} {
+  const queryClient = useQueryClient();
+  const invalidate = () =>
+    void queryClient.invalidateQueries({
+      queryKey: agentsGetQueryKey({ path: { assistant_id: assistantId } }),
+    });
+
+  const patch = useMutation({
+    ...agentsByIdPatchMutation(),
+    onSettled: invalidate,
+  });
+  const post = useMutation({
+    ...agentsPostMutation(),
+    onSettled: invalidate,
+  });
+  const del = useMutation({
+    ...agentsByIdDeleteMutation(),
+    onSettled: invalidate,
+  });
+
+  return {
+    update: (id, p) => {
+      const body: Record<string, unknown> = {};
+      if (p.name !== undefined) body.name = p.name;
+      if (p.emoji !== undefined) body.emoji = p.emoji;
+      if (p.domain !== undefined) body.domain = p.domain;
+      if (p.charter !== undefined) body.charter = p.charter;
+      if (p.tier !== undefined) body.tier = String(p.tier);
+      if (p.capUsd !== undefined) {
+        body.capCents = p.capUsd != null ? Math.round(p.capUsd * 100) : null;
+      }
+      if (p.paused !== undefined) body.paused = p.paused;
+      patch.mutate({
+        path: { assistant_id: assistantId, id },
+        body: body as never,
+      });
+    },
+    hire: (draft) => {
+      post.mutate({
+        path: { assistant_id: assistantId },
+        body: {
+          name: draft.name,
+          emoji: draft.emoji,
+          domain: draft.domain,
+          charter: draft.charter,
+          tier: String(draft.tier),
+        } as never,
+      });
+    },
+    retire: (id) => {
+      del.mutate({ path: { assistant_id: assistantId, id } });
+    },
   };
-  write(assistantId, [...load(assistantId), charter]);
-  return charter;
-}
-
-/** Retire a role (kept for the future menu; not surfaced in phase 1). */
-export function retireCharter(assistantId: string, id: string): void {
-  write(
-    assistantId,
-    load(assistantId).filter((c) => c.id !== id),
-  );
 }
 
 /** "since March" / "since Mar 2025" label from the hire stamp. */

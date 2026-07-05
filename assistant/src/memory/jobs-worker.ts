@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
 import { getConfig } from "../config/loader.js";
 import type { AssistantConfig } from "../config/types.js";
+import { runContactMemoryExtraction } from "../contacts/contact-memory-extract-job.js";
 import {
   checkDiskPressureBackgroundGate,
   diskPressureBackgroundSkipLogFields,
@@ -508,6 +509,24 @@ async function graphNarrativeRefineJob(
   );
 }
 
+async function contactMemoryExtractJob(
+  job: MemoryJob<{ conversationId?: string }>,
+): Promise<void> {
+  const { conversationId } = job.payload;
+  if (!conversationId) {
+    log.warn(
+      { jobId: job.id },
+      "contact_memory_extract: missing conversationId",
+    );
+    return;
+  }
+  const outcome = await runContactMemoryExtraction(conversationId);
+  log.debug(
+    { jobId: job.id, conversationId, outcome: outcome.kind },
+    "contact-memory extraction complete",
+  );
+}
+
 // ── Job error handling ─────────────────────────────────────────────
 
 function handleJobError(job: MemoryJob, err: unknown): void {
@@ -673,6 +692,9 @@ async function processJob(
       return;
     case "memory_retrospective":
       await memoryRetrospectiveJob(job, config);
+      return;
+    case "contact_memory_extract":
+      await contactMemoryExtractJob(job);
       return;
 
     default: {
