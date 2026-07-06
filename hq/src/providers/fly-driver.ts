@@ -1,0 +1,436 @@
+/**
+ * Cue HQ — Fly.io driver.
+ *
+ * Implements InstanceDriver against the Fly Machines API
+ * (https://api.machines.dev/v1 — apps/volumes/machines) plus the GraphQL
+ * API (https://api.fly.io/graphql) for the one operation REST doesn't
+ * cover: public IP allocation. One customer = one Fly app containing one
+ * machine (daemon + gateway co-located, mirroring render.yaml's `cue-app`)
+ * with a persistent volume mounted at /workspace.
+ *
+ * Configuration (all via env — no keys in code):
+ *   FLY_API_TOKEN      — org-scoped token; required to make any call
+ *   FLY_ORG_SLUG       — org new apps are created in; required
+ *   CUE_IMAGE_REF      — default image (e.g. registry.fly.io/cue-releases:v9ce28d3;
+ *                        built via hq/scripts/fly-release.sh); per-provision
+ *                        override via spec.image
+ *   FLY_REGION         — default region (default "iad")
+ *   FLY_VM_SIZE        — guest preset, e.g. "shared-cpu-1x" (default)
+ *   FLY_VM_MEMORY_MB   — machine memory (default 1024)
+ *   FLY_VOLUME_SIZE_GB — /workspace volume size (default 10, matching
+ *                        render.yaml's disk block); spec.plan like "20gb"
+ *                        overrides per-provision
+ *
+ * Qdrant: intentionally NOT provisioned and QDRANT_URL is NOT set. The
+ * daemon treats Qdrant as a non-blocking subsystem: without QDRANT_URL,
+ * QdrantManager (assistant/src/memory/qdrant-manager.ts) self-spawns a
+ * local qdrant binary — downloaded on first boot into getDataDir() =
+ * /workspace/data, i.e. onto the persistent volume — and if that fails the
+ * daemon retries 3x then continues with memory features disabled
+ * (assistant/src/daemon/lifecycle.ts). One machine per customer is enough.
+ *
+ * Unlike the Render driver, provision() here is fully synchronous-to-ready:
+ * it waits for the machine to reach `started` and for /healthz to answer,
+ * and tears down everything it created if that never happens — Fly has no
+ * "deploy in progress" state to lean on, so a half-created app would
+ * otherwise leak (and bill) silently.
+ */
+
+import type {
+  InstanceDriver,
+  InstanceSpec,
+  ProvisionResult,
+} from "./driver.js";
+
+const FLY_MACHINES_API_BASE = "https://api.machines.dev/v1";
+const FLY_GRAPHQL_URL = "https://api.fly.io/graphql";
+
+interface FlyMachine {
+  id: string;
+  state?: string;
+}
+
+interface FlyVolume {
+  id: string;
+}
+
+/** Parse "shared-cpu-1x" / "performance-2x" into a Machines guest block. */
+export function parseGuestPreset(
+  preset: string,
+  memoryMb: number,
+): { cpu_kind: string; cpus: number; memory_mb: number } {
+  const match = preset.match(/^(shared|performance)-(?:cpu-)?(\d+)x$/i);
+  if (!match) {
+    throw new Error(
+      `fly-driver: unrecognized FLY_VM_SIZE "${preset}" — expected e.g. shared-cpu-1x or performance-2x`,
+    );
+  }
+  return {
+    cpu_kind: match[1].toLowerCase(),
+    cpus: Number(match[2]),
+    memory_mb: memoryMb,
+  };
+}
+
+/** Volume size: spec.plan like "20gb" wins, then FLY_VOLUME_SIZE_GB, then 10. */
+function volumeSizeGb(spec: InstanceSpec): number {
+  const fromPlan = spec.plan?.match(/^(\d+)\s*gb$/i);
+  if (fromPlan) return Number(fromPlan[1]);
+  const fromEnv = Number(process.env.FLY_VOLUME_SIZE_GB ?? "");
+  return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 10;
+}
+
+export class FlyDriver implements InstanceDriver {
+  readonly id = "fly";
+
+  private readonly apiToken: string;
+  private readonly orgSlug: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly healthTimeoutMs: number;
+  private readonly healthIntervalMs: number;
+
+  constructor(
+    opts: {
+      fetchImpl?: typeof fetch;
+      /** Provision health-poll budget (tests use tiny values). */
+      healthTimeoutMs?: number;
+      healthIntervalMs?: number;
+    } = {},
+  ) {
+    this.apiToken = process.env.FLY_API_TOKEN ?? "";
+    this.orgSlug = process.env.FLY_ORG_SLUG ?? "";
+    this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.healthTimeoutMs =
+      opts.healthTimeoutMs ??
+      Number(process.env.HQ_HEALTH_TIMEOUT_MS ?? 5 * 60_000);
+    this.healthIntervalMs = opts.healthIntervalMs ?? 5_000;
+  }
+
+  get configured(): boolean {
+    return this.apiToken.length > 0 && this.orgSlug.length > 0;
+  }
+
+  // ── HTTP plumbing ────────────────────────────────────────────────────────
+
+  private requireConfigured(): void {
+    if (!this.configured) {
+      throw new Error(
+        "fly-driver not configured: set FLY_API_TOKEN and FLY_ORG_SLUG",
+      );
+    }
+  }
+
+  private async api(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<unknown> {
+    this.requireConfigured();
+    const res = await this.fetchImpl(`${FLY_MACHINES_API_BASE}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.apiToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(90_000),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `Fly API ${method} ${path} → ${res.status}: ${text.slice(0, 500)}`,
+      );
+    }
+    if (res.status === 204) return undefined;
+    return res.json().catch(() => undefined);
+  }
+
+  private async graphql(
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<unknown> {
+    this.requireConfigured();
+    const res = await this.fetchImpl(FLY_GRAPHQL_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `Fly GraphQL → ${res.status}: ${text.slice(0, 500)}`,
+      );
+    }
+    const payload = (await res.json()) as {
+      data?: unknown;
+      errors?: { message?: string }[];
+    };
+    if (payload.errors?.length) {
+      throw new Error(
+        `Fly GraphQL error: ${payload.errors
+          .map((e) => e.message ?? "unknown")
+          .join("; ")
+          .slice(0, 500)}`,
+      );
+    }
+    return payload.data;
+  }
+
+  // ── provision ────────────────────────────────────────────────────────────
+
+  async provision(spec: InstanceSpec): Promise<ProvisionResult> {
+    const image = spec.image ?? process.env.CUE_IMAGE_REF;
+    if (!image) {
+      throw new Error(
+        "fly-driver: no image — set CUE_IMAGE_REF (see hq/scripts/fly-release.sh) or pass spec.image",
+      );
+    }
+    const region = spec.region ?? process.env.FLY_REGION ?? "iad";
+    const guest = parseGuestPreset(
+      process.env.FLY_VM_SIZE ?? "shared-cpu-1x",
+      Number(process.env.FLY_VM_MEMORY_MB ?? 1024),
+    );
+
+    const appName = await this.createAppWithUniqueName(spec.name);
+    const url = `https://${appName}.fly.dev`;
+
+    // Everything after app-create tears the app down on failure so a
+    // half-provisioned customer never leaks machines/volumes/IPs.
+    try {
+      await this.allocatePublicIps(appName);
+
+      const volume = (await this.api("POST", `/apps/${appName}/volumes`, {
+        name: "workspace",
+        region,
+        size_gb: volumeSizeGb(spec),
+      })) as FlyVolume;
+      if (!volume?.id) {
+        throw new Error("Fly volume create returned no id");
+      }
+
+      const machine = (await this.api("POST", `/apps/${appName}/machines`, {
+        region,
+        config: {
+          image,
+          env: spec.env,
+          guest,
+          // Public ingress: Fly's edge proxies 80/443 → the gateway on its
+          // in-container GATEWAY_PORT (10000, per the render.yaml contract).
+          services: [
+            {
+              protocol: "tcp",
+              internal_port: 10000,
+              ports: [
+                { port: 80, handlers: ["http"], force_https: true },
+                { port: 443, handlers: ["http", "tls"] },
+              ],
+            },
+          ],
+          mounts: [{ volume: volume.id, path: "/workspace" }],
+          restart: { policy: "always" },
+        },
+      })) as FlyMachine;
+      if (!machine?.id) {
+        throw new Error("Fly machine create returned no id");
+      }
+
+      await this.waitForMachineState(appName, machine.id, "started");
+
+      if (!(await this.pollHealthy(url))) {
+        throw new Error(
+          `fly-driver: ${url}/healthz not healthy within ${this.healthTimeoutMs}ms`,
+        );
+      }
+    } catch (err) {
+      await this.teardown(appName).catch(() => {});
+      throw err;
+    }
+
+    return { externalId: appName, url };
+  }
+
+  /**
+   * Fly app names are globally unique. Try the requested name first; on a
+   * name-taken rejection retry with a short random suffix.
+   */
+  private async createAppWithUniqueName(baseName: string): Promise<string> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const name =
+        attempt === 0
+          ? baseName
+          : `${baseName}-${Math.random().toString(36).slice(2, 6)}`;
+      try {
+        await this.api("POST", "/apps", {
+          app_name: name,
+          org_slug: this.orgSlug,
+        });
+        return name;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        // "already been taken" is Fly's name-collision message (422).
+        if (!/taken|already exists/i.test(lastError.message)) throw lastError;
+      }
+    }
+    throw new Error(
+      `fly-driver: could not find a free app name for ${baseName}: ${lastError?.message}`,
+    );
+  }
+
+  /**
+   * Allocate a shared IPv4 + dedicated IPv6. The Machines API has no IP
+   * endpoint (flyctl only auto-allocates during `fly deploy`), so this is
+   * the GraphQL mutation flyctl's `fly ips allocate-v4 --shared` /
+   * `fly ips allocate-v6` use (superfly/fly-go resource_ip_addresses.go).
+   */
+  private async allocatePublicIps(appName: string): Promise<void> {
+    await this.graphql(
+      `mutation($input: AllocateIPAddressInput!) {
+        allocateIpAddress(input: $input) { app { sharedIpAddress } }
+      }`,
+      { input: { appId: appName, type: "shared_v4" } },
+    );
+    await this.graphql(
+      `mutation($input: AllocateIPAddressInput!) {
+        allocateIpAddress(input: $input) { ipAddress { id address } }
+      }`,
+      { input: { appId: appName, type: "v6" } },
+    );
+  }
+
+  /** Block until the machine reports the target state (Fly long-polls 60s). */
+  private async waitForMachineState(
+    appName: string,
+    machineId: string,
+    state: "started" | "stopped",
+    attempts = 3,
+  ): Promise<void> {
+    let lastError: Error | null = null;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        await this.api(
+          "GET",
+          `/apps/${appName}/machines/${machineId}/wait?state=${state}&timeout=60`,
+        );
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+    throw new Error(
+      `fly-driver: machine ${machineId} never reached "${state}": ${lastError?.message}`,
+    );
+  }
+
+  private async pollHealthy(url: string): Promise<boolean> {
+    const deadline = Date.now() + this.healthTimeoutMs;
+    do {
+      if (await this.health(url)) return true;
+      if (Date.now() + this.healthIntervalMs > deadline) break;
+      await new Promise((r) => setTimeout(r, this.healthIntervalMs));
+    } while (Date.now() < deadline);
+    return false;
+  }
+
+  // ── lifecycle ────────────────────────────────────────────────────────────
+
+  private async listMachines(appName: string): Promise<FlyMachine[]> {
+    const machines = (await this.api(
+      "GET",
+      `/apps/${appName}/machines`,
+    )) as FlyMachine[] | undefined;
+    return Array.isArray(machines) ? machines : [];
+  }
+
+  async suspend(externalId: string): Promise<void> {
+    for (const machine of await this.listMachines(externalId)) {
+      await this.api(
+        "POST",
+        `/apps/${externalId}/machines/${machine.id}/stop`,
+      );
+    }
+  }
+
+  async resume(externalId: string): Promise<void> {
+    for (const machine of await this.listMachines(externalId)) {
+      await this.api(
+        "POST",
+        `/apps/${externalId}/machines/${machine.id}/start`,
+      );
+    }
+  }
+
+  async destroy(externalId: string): Promise<void> {
+    await this.teardown(externalId);
+  }
+
+  /**
+   * Delete machines → volumes → app, tolerating 404s so the sequence is
+   * idempotent and safe to run against a half-provisioned app. The final
+   * app delete uses ?force=true (stops anything still running); machines
+   * and volumes are still deleted explicitly first because the docs don't
+   * guarantee app deletion cascades to volumes.
+   */
+  private async teardown(appName: string): Promise<void> {
+    const ignore404 = async (p: Promise<unknown>) => {
+      try {
+        await p;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/→ 404/.test(msg)) throw err;
+      }
+    };
+
+    let machines: FlyMachine[] = [];
+    try {
+      machines = await this.listMachines(appName);
+    } catch {
+      // App may not exist (or was never fully created) — fall through to
+      // the app delete, which is itself 404-tolerant.
+    }
+    for (const machine of machines) {
+      await ignore404(
+        this.api(
+          "DELETE",
+          `/apps/${appName}/machines/${machine.id}?force=true`,
+        ),
+      );
+    }
+
+    let volumes: FlyVolume[] = [];
+    try {
+      const listed = (await this.api(
+        "GET",
+        `/apps/${appName}/volumes`,
+      )) as FlyVolume[] | undefined;
+      volumes = Array.isArray(listed) ? listed : [];
+    } catch {
+      // Same tolerance as machines.
+    }
+    for (const volume of volumes) {
+      await ignore404(
+        this.api("DELETE", `/apps/${appName}/volumes/${volume.id}`),
+      );
+    }
+
+    await ignore404(this.api("DELETE", `/apps/${appName}?force=true`));
+  }
+
+  /** GET <url>/healthz — the gateway's health endpoint. Never throws. */
+  async health(url: string): Promise<boolean> {
+    try {
+      const res = await this.fetchImpl(`${url.replace(/\/$/, "")}/healthz`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+}

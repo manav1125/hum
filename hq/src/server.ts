@@ -593,17 +593,22 @@ export function startServer(deps: ServerDeps & { port?: number }) {
 }
 
 if (import.meta.main) {
-  const [{ HqDb }, { MockDriver }, { RenderDriver }] = await Promise.all([
-    import("./db.js"),
-    import("./providers/mock-driver.js"),
-    import("./providers/render-driver.js"),
-  ]);
+  const [{ HqDb }, { MockDriver }, { RenderDriver }, { FlyDriver }] =
+    await Promise.all([
+      import("./db.js"),
+      import("./providers/mock-driver.js"),
+      import("./providers/render-driver.js"),
+      import("./providers/fly-driver.js"),
+    ]);
   const db = new HqDb();
   const render = new RenderDriver();
+  const fly = new FlyDriver();
   const driver: InstanceDriver =
-    process.env.HQ_DRIVER === "render" && render.configured
-      ? render
-      : new MockDriver();
+    process.env.HQ_DRIVER === "fly" && fly.configured
+      ? fly
+      : process.env.HQ_DRIVER === "render" && render.configured
+        ? render
+        : new MockDriver();
   const server = startServer({ db, driver });
   console.log(
     `Cue HQ listening on ${server.url} (driver: ${driver.id}, stripe: ${
