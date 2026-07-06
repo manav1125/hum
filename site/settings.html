@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,follow">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;-webkit-font-smoothing:antialiased}
+  @keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+  @keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+  @keyframes cueBar{0%,100%{height:6px}50%{height:22px}}
+</style>
+</helmet>
+<div style="--ink:#1A2230;font-family:'DM Sans',system-ui,sans-serif;background:#F4F6F9;color:#1A2230;min-height:100vh;padding:32px;display:flex;flex-direction:column;align-items:center;gap:18px;line-height:1.5">
+
+  <div style="width:100%;max-width:1240px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+    <a href="design-book.html" style="font-family:'DM Mono',monospace;font-size:12px;color:#5A6672;text-decoration:none;display:inline-flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:7px 14px">← Design book</a>
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.06em;color:#8D99A5">/assistant/settings · full-screen overlay · one template + bespoke pages</div>
+    <div style="width:96px"></div>
+  </div>
+
+  <div style="width:100%;max-width:1240px;background:#FFFFFF;border:1px solid #D7DDE7;border-radius:14px;overflow:hidden;box-shadow:0 30px 70px -38px rgba(26,34,48,.4)">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;background:#F7F8FB;border-bottom:1px solid #E5E9F0">
+      <span style="width:12px;height:12px;border-radius:50%;background:#ED6A5E"></span><span style="width:12px;height:12px;border-radius:50%;background:#F4BF50"></span><span style="width:12px;height:12px;border-radius:50%;background:#61C554"></span>
+      <span style="margin-left:12px;font-size:12.5px;color:#8D99A5;font-family:'DM Mono',monospace">Cue · Settings</span>
+      <span style="margin-left:auto;font-size:12px;color:#8D99A5">✕ Close</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:236px 1fr;min-height:700px">
+
+      <!-- settings nav -->
+      <aside style="background:#FBFBFD;border-right:1px solid #E5E9F0;padding:18px 12px;display:flex;flex-direction:column;gap:2px;overflow:auto">
+        <div style="font-size:16px;font-weight:500;letter-spacing:-.4px;padding:4px 10px 12px">Settings</div>
+        <div onClick="{{ pGeneral }}" style="{{ navGeneral }}">General</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">AI</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Integrations</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Schedules</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Notifications</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Keyboard shortcuts</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Sounds</div>
+        <div onClick="{{ pVoice }}" style="{{ navVoice }}">Voice</div>
+        <div onClick="{{ pDevices }}" style="{{ navDevices }}">Devices</div>
+        <div onClick="{{ pPrivacy }}" style="{{ navPrivacy }}">Privacy</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Archive</div>
+        <div onClick="{{ pBilling }}" style="{{ navBilling }}">Billing</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Community</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Debug</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Developer</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">Advanced</div>
+        <div onClick="{{ pGeneral }}" style="{{ navStatic }}">System events</div>
+        <div onClick="{{ pGeneral }}" style="margin-top:6px;padding:8px 10px;border-radius:8px;font-size:13px;color:#DA491A;cursor:pointer">Danger zone</div>
+      </aside>
+
+      <div style="background:#FFFFFF;display:flex;flex-direction:column;overflow:auto">
+
+        <!-- GENERAL (the shared template) -->
+        <sc-if value="{{ isGeneral }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:30px 36px;max-width:720px">
+          <div style="font-size:22px;font-weight:500;letter-spacing:-.6px">General</div>
+          <div style="font-size:13.5px;color:#5A6672;margin-top:3px">The shared settings template — header, sections, and rows with Toggle, Select, and Slider.</div>
+
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin:28px 0 10px">Appearance</div>
+          <div style="border:1px solid #E5E9F0;border-radius:13px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #E5E9F0"><div><div style="font-size:13.5px;font-weight:500">Theme</div><div style="font-size:12px;color:#5A6672">Light, dark, or follow system</div></div><span style="display:flex;gap:4px;background:#EEF1F6;border-radius:8px;padding:3px"><span style="font-size:12px;background:#fff;border-radius:6px;padding:5px 11px;box-shadow:0 1px 2px rgba(0,0,0,.08)">Light</span><span style="font-size:12px;color:#5A6672;padding:5px 11px">Dark</span><span style="font-size:12px;color:#5A6672;padding:5px 11px">System</span></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #E5E9F0"><div><div style="font-size:13.5px;font-weight:500">Accent</div><div style="font-size:12px;color:#5A6672">Cue blue, or the Velvet theme</div></div><span style="display:flex;gap:8px"><span style="width:22px;height:22px;border-radius:50%;background:#3D6EE8;box-shadow:0 0 0 2px #fff,0 0 0 4px #3D6EE8"></span><span style="width:22px;height:22px;border-radius:50%;background:#7F77DD"></span></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px"><div><div style="font-size:13.5px;font-weight:500">Reduce motion</div><div style="font-size:12px;color:#5A6672">Avatar & orb fall back to static</div></div><span style="width:38px;height:22px;border-radius:999px;background:#D7DDE7;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px"></span></span></div>
+          </div>
+
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin:24px 0 10px">Behavior</div>
+          <div style="border:1px solid #E5E9F0;border-radius:13px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #E5E9F0"><div><div style="font-size:13.5px;font-weight:500">Default landing</div><div style="font-size:12px;color:#5A6672">Where Cue opens each day</div></div><span style="font-size:12.5px;border:1px solid #D7DDE7;border-radius:8px;padding:6px 12px;display:inline-flex;gap:8px;align-items:center">Home <span style="color:#8D99A5">▾</span></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px"><div><div style="font-size:13.5px;font-weight:500">Proactivity</div><div style="font-size:12px;color:#5A6672">How often Cue nudges you</div></div><span style="width:160px;display:flex;align-items:center;gap:10px"><span style="flex:1;height:6px;border-radius:4px;background:#EEF1F6;position:relative"><span style="display:block;width:60%;height:100%;background:#3D6EE8;border-radius:4px"></span><span style="position:absolute;left:60%;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #3D6EE8"></span></span></span></div>
+          </div>
+          <div style="margin-top:22px;display:flex;gap:8px"><span style="font-size:12.5px;background:#3D6EE8;color:#fff;border-radius:8px;padding:8px 16px">Save changes</span><span style="font-size:12.5px;border:1px solid #D7DDE7;border-radius:8px;padding:8px 16px">Cancel</span></div>
+        </div>
+        </sc-if>
+
+        <!-- VOICE (bespoke) -->
+        <sc-if value="{{ isVoice }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:30px 36px;max-width:760px">
+          <div style="font-size:22px;font-weight:500;letter-spacing:-.6px">Voice</div>
+          <div style="font-size:13.5px;color:#5A6672;margin-top:3px">How Cue sounds, listens, and wakes.</div>
+          <div style="background:#1A2230;border-radius:14px;padding:22px;margin-top:22px;display:flex;align-items:center;gap:20px;color:#fff">
+            <div style="display:flex;gap:4px;align-items:flex-end;height:34px"><b style="width:5px;background:#3D6EE8;border-radius:3px;height:8px;animation:cueBar .9s ease-in-out infinite;display:block"></b><b style="width:5px;background:#3D6EE8;border-radius:3px;height:8px;animation:cueBar .9s ease-in-out .15s infinite;display:block"></b><b style="width:5px;background:#3D6EE8;border-radius:3px;height:8px;animation:cueBar .9s ease-in-out .3s infinite;display:block"></b><b style="width:5px;background:#3D6EE8;border-radius:3px;height:8px;animation:cueBar .9s ease-in-out .45s infinite;display:block"></b><b style="width:5px;background:#3D6EE8;border-radius:3px;height:8px;animation:cueBar .9s ease-in-out .6s infinite;display:block"></b></div>
+            <div style="flex:1"><div style="font-size:15px;font-weight:500">"Even" · warm, low</div><div style="font-size:12.5px;color:#9DB4E6;margin-top:2px">ElevenLabs · the current voice</div></div>
+            <span style="font-size:12.5px;background:rgba(255,255,255,.12);border-radius:8px;padding:8px 14px">Preview</span>
+            <span style="font-size:12.5px;background:#3D6EE8;border-radius:8px;padding:8px 14px">Change voice</span>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin:24px 0 10px">Wake & listening</div>
+          <div style="border:1px solid #E5E9F0;border-radius:13px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #E5E9F0"><div><div style="font-size:13.5px;font-weight:500">Wake style</div><div style="font-size:12px;color:#5A6672">Hold-to-talk or hands-free (VAD)</div></div><span style="display:flex;gap:4px;background:#EEF1F6;border-radius:8px;padding:3px"><span style="font-size:12px;background:#fff;border-radius:6px;padding:5px 11px;box-shadow:0 1px 2px rgba(0,0,0,.08)">Hold</span><span style="font-size:12px;color:#5A6672;padding:5px 11px">Hands-free</span></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 16px"><div><div style="font-size:13.5px;font-weight:500">Speaking rate</div><div style="font-size:12px;color:#5A6672">1.0×</div></div><span style="width:180px;display:flex;align-items:center"><span style="flex:1;height:6px;border-radius:4px;background:#EEF1F6;position:relative"><span style="display:block;width:50%;height:100%;background:#3D6EE8;border-radius:4px"></span><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #3D6EE8"></span></span></span></div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- PRIVACY (bespoke · capture consent) -->
+        <sc-if value="{{ isPrivacy }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:30px 36px;max-width:760px">
+          <div style="font-size:22px;font-weight:500;letter-spacing:-.6px">Privacy & trust</div>
+          <div style="font-size:13.5px;color:#5A6672;margin-top:3px">Consent-first by design. Capture is off until you turn it on.</div>
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin:24px 0 10px">Capture consent</div>
+          <div style="border:1px solid #E5E9F0;border-radius:13px;overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #E5E9F0"><div><div style="font-size:13.5px;font-weight:500">Always-on capture</div><div style="font-size:12px;color:#5A6672">Mic listens in meetings you start</div></div><span style="width:38px;height:22px;border-radius:999px;background:#D7DDE7;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px"></span></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #E5E9F0"><div><div style="font-size:13.5px;font-weight:500">Recording indicator</div><div style="font-size:12px;color:#5A6672">Always show a visible light when listening</div></div><span style="width:38px;height:22px;border-radius:999px;background:#3D6EE8;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px"></span></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px"><div><div style="font-size:13.5px;font-weight:500">Auto-delete raw audio</div><div style="font-size:12px;color:#5A6672">Keep insights, drop the recording after 24h</div></div><span style="width:38px;height:22px;border-radius:999px;background:#3D6EE8;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px"></span></span></div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin:24px 0 10px">Who can reach Cue</div>
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 15px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13.5px;font-weight:500">You — guardian <span style="font-family:'DM Mono',monospace;font-size:10px;background:#E2F0E7;color:#277E41;padding:1px 6px;border-radius:5px">full</span></div><div style="font-size:12px;color:#5A6672">Every capability, every channel</div></div></div>
+            <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 15px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13.5px;font-weight:500">Dana — trusted <span style="font-family:'DM Mono',monospace;font-size:10px;background:#DBE4FB;color:#2B53C4;padding:1px 6px;border-radius:5px">scoped</span></div><div style="font-size:12px;color:#5A6672">Shared projects only</div></div></div>
+            <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 15px;display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:13.5px;font-weight:500">Unknown actors <span style="font-family:'DM Mono',monospace;font-size:10px;background:#FCEBEB;color:#DA491A;padding:1px 6px;border-radius:5px">denied</span></div><div style="font-size:12px;color:#5A6672">No memory read, no tools — fail closed</div></div></div>
+          </div>
+          <div style="background:#fff;border:1px solid #E5E9F0;border-left:3px solid #3D6EE8;border-radius:0 12px 12px 0;padding:12px 15px;font-size:13px;color:#5A6672;margin-top:18px">The trust console is a headline feature — the prerequisite for always-on capture and the wearable.</div>
+        </div>
+        </sc-if>
+
+        <!-- DEVICES (bespoke) -->
+        <sc-if value="{{ isDevices }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:30px 36px;max-width:760px">
+          <div style="font-size:22px;font-weight:500;letter-spacing:-.6px">Devices</div>
+          <div style="font-size:13.5px;color:#5A6672;margin-top:3px">One memory across everywhere Cue runs.</div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:22px">
+            <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px 16px;display:flex;align-items:center;gap:14px"><span style="width:38px;height:38px;border-radius:10px;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-size:17px">💻</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">MacBook Pro <span style="font-family:'DM Mono',monospace;font-size:10px;background:#DBE4FB;color:#2B53C4;padding:1px 6px;border-radius:5px">this device</span></div><div style="font-size:12px;color:#5A6672">Cue Live · always available · synced now</div></div><span style="width:9px;height:9px;border-radius:50%;background:#277E41"></span></div>
+            <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px 16px;display:flex;align-items:center;gap:14px"><span style="width:38px;height:38px;border-radius:10px;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-size:17px">📱</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">iPhone 15 Pro</div><div style="font-size:12px;color:#5A6672">Voice · phone calls · synced 2m ago</div></div><span style="width:9px;height:9px;border-radius:50%;background:#277E41"></span></div>
+            <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px 16px;display:flex;align-items:center;gap:14px"><span style="width:38px;height:38px;border-radius:10px;background:#EEF1F6;display:flex;align-items:center;justify-content:center;font-size:17px">🌐</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">Web · Chrome</div><div style="font-size:12px;color:#5A6672">Last active yesterday</div></div><span style="width:9px;height:9px;border-radius:50%;background:#8D99A5"></span></div>
+            <div style="border:1px dashed #D7DDE7;border-radius:13px;padding:14px 16px;display:flex;align-items:center;gap:14px;color:#8D99A5"><span style="width:38px;height:38px;border-radius:10px;background:#FBFAFF;border:1px solid #E7E4F7;display:flex;align-items:center;justify-content:center;font-size:17px">📍</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500;color:#534AB7">Cue pin <span style="font-family:'DM Mono',monospace;font-size:10px;background:#EEEDFB;color:#534AB7;padding:1px 6px;border-radius:5px">phase 5</span></div><div style="font-size:12px">Wearable companion · same capture pipeline</div></div></div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- BILLING (bespoke) -->
+        <sc-if value="{{ isBilling }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:30px 36px;max-width:760px">
+          <div style="font-size:22px;font-weight:500;letter-spacing:-.6px">Billing</div>
+          <div style="font-size:13.5px;color:#5A6672;margin-top:3px">Plan, usage, and payment.</div>
+          <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-top:22px">
+            <div style="background:#1A2230;border-radius:14px;padding:20px;color:#fff"><div style="font-family:'DM Mono',monospace;font-size:10.5px;color:#9DB4E6;letter-spacing:.06em">CURRENT PLAN</div><div style="font-size:24px;font-weight:500;letter-spacing:-.6px;margin-top:6px">Guardian · self-hosted</div><div style="font-size:13px;color:#9DB4E6;margin-top:4px">Your cloud, your keys · $20/mo platform</div><div style="margin-top:16px;display:flex;gap:8px"><span style="font-size:12.5px;background:#3D6EE8;border-radius:8px;padding:8px 14px">Manage plan</span><span style="font-size:12.5px;background:rgba(255,255,255,.12);border-radius:8px;padding:8px 14px">Invoices</span></div></div>
+            <div style="border:1px solid #E5E9F0;border-radius:14px;padding:20px"><div style="font-family:'DM Mono',monospace;font-size:10.5px;color:#8D99A5;letter-spacing:.06em">THIS MONTH</div><div style="display:flex;align-items:baseline;gap:6px;margin-top:6px"><span style="font-size:28px;font-weight:500;letter-spacing:-1px">$42.18</span><span style="font-size:12px;color:#5A6672">model usage</span></div><div style="margin-top:14px;display:flex;flex-direction:column;gap:9px"><div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:#5A6672">Anthropic</span><span>$31.04</span></div><div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:#5A6672">ElevenLabs voice</span><span>$8.40</span></div><div style="display:flex;justify-content:space-between;font-size:12.5px"><span style="color:#5A6672">Twilio calls</span><span>$2.74</span></div></div></div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin:24px 0 10px">Payment method</div>
+          <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px 16px;display:flex;align-items:center;gap:12px"><span style="width:40px;height:28px;border-radius:6px;background:#1A2230;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-family:'DM Mono',monospace">VISA</span><div style="flex:1"><div style="font-size:13.5px;font-weight:500">•••• 4242</div><div style="font-size:12px;color:#5A6672">expires 09/27</div></div><span style="font-size:12.5px;border:1px solid #D7DDE7;border-radius:8px;padding:6px 12px">Update</span></div>
+        </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1304,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  state = { page: 'general' };
+  navItem(name){const a=this.state.page===name;return{padding:'8px 10px',borderRadius:'8px',fontSize:'13px',cursor:'pointer',userSelect:'none',color:a?'#1A2230':'#5A6672',fontWeight:a?'500':'400',background:a?'#EEF1F6':'transparent'};}
+  renderVals(){
+    const p=this.state.page; const s=(x)=>()=>this.setState({page:x});
+    return {
+      isGeneral:p==='general', isVoice:p==='voice', isPrivacy:p==='privacy', isDevices:p==='devices', isBilling:p==='billing',
+      pGeneral:s('general'), pVoice:s('voice'), pPrivacy:s('privacy'), pDevices:s('devices'), pBilling:s('billing'),
+      navGeneral:this.navItem('general'), navVoice:this.navItem('voice'), navPrivacy:this.navItem('privacy'), navDevices:this.navItem('devices'), navBilling:this.navItem('billing'),
+      navStatic:{padding:'8px 10px',borderRadius:'8px',fontSize:'13px',cursor:'pointer',userSelect:'none',color:'#5A6672'}
+    };
+  }
+}
+</script>
+</body>
+</html>

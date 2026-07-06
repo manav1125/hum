@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./commerce.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Cue — Sign in</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0F1620;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+  .cue-in{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:13px 14px;font-size:14.5px;color:#fff;font-family:inherit;outline:none;transition:border-color .18s ease,box-shadow .18s ease}
+  .cue-in::placeholder{color:#67748A}
+  .cue-in:focus{border-color:#3D6EE8;box-shadow:0 0 0 3px rgba(61,110,232,.25)}
+  @keyframes cueLineIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+
+<div style="padding:22px clamp(20px,5vw,40px)">
+  <a href="index.html" style="display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:#fff"><span style="width:30px;height:30px;border-radius:9px;background:#1A2230;border:1.5px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;position:relative"><span style="font-size:17px;font-weight:600;color:#fff">C</span><span style="position:absolute;width:5px;height:5px;border-radius:50%;background:#3D6EE8;right:6px;bottom:8px"></span></span><b style="font-size:20px;font-weight:500;letter-spacing:-.9px">cue<span style="color:#3D6EE8">.</span></b></a>
+</div>
+
+<div data-screen-label="Sign in" style="display:flex;justify-content:center;padding:clamp(30px,9vh,90px) clamp(20px,5vw,40px) 80px;background:radial-gradient(80% 55% at 50% 0%,rgba(61,110,232,.13),transparent 60%)">
+  <div style="width:100%;max-width:400px">
+
+    <!-- DEFAULT -->
+    <sc-if value="{{ isDefault }}" hint-placeholder-val="{{ true }}">
+      <div id="state-default">
+        <div style="text-align:center;margin-bottom:26px">
+          <h1 style="font-size:clamp(30px,6vw,40px);line-height:1.05;letter-spacing:-.03em;font-weight:600;color:#fff;margin:0">Welcome back.</h1>
+        </div>
+        <form id="signin-form" onSubmit="{{ onSubmit }}" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.11);border-radius:20px;padding:26px 24px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <label for="email" style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">WORK EMAIL</label>
+            <input id="email" name="email" class="cue-in" type="email" placeholder="you@company.com" autocomplete="email">
+          </div>
+          <button type="submit" style="background:#3D6EE8;color:#fff;border:none;border-radius:11px;padding:15px;font-size:14.5px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 14px 30px -12px rgba(61,110,232,.7)">Email me a sign-in link</button>
+          <div style="text-align:center;font-size:11.5px;color:#67748A;line-height:1.55">No passwords. We'll send a secure link that signs you in.</div>
+        </form>
+      </div>
+    </sc-if>
+
+    <!-- SENT -->
+    <sc-if value="{{ isSent }}" hint-placeholder-val="{{ false }}">
+      <div id="state-sent" style="text-align:center;animation:cueLineIn .5s ease both">
+        <div style="width:66px;height:66px;border-radius:50%;background:rgba(61,110,232,.14);border:1px solid rgba(61,110,232,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:26px;color:#9DB4E6">✉</div>
+        <h1 style="font-size:clamp(24px,5vw,30px);line-height:1.1;letter-spacing:-.02em;font-weight:600;color:#fff;margin:0">Check your inbox.</h1>
+        <p style="font-size:14.5px;color:#AEB7C7;margin:14px auto 0;line-height:1.65;max-width:320px">We sent a sign-in link to <b style="color:#E4EAF4">{{ email }}</b>. It's valid for 15 minutes.</p>
+        <button onClick="{{ reset }}" style="margin-top:22px;background:none;border:none;color:#9DB4E6;font-size:12.5px;font-family:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px">use a different email</button>
+      </div>
+    </sc-if>
+
+    <div style="text-align:center;font-size:12.5px;color:#7E8BA3;margin-top:20px">New to Cue? <a href="pricing.html" style="color:#9DB4E6;text-decoration:none">See plans</a></div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+// Wired to Cue HQ via commerce.js: POST /signin (always answers ok — the
+// sent state shows regardless, so account existence never leaks).
+class Component extends DCLogic {
+  state = { view: "default", email: "" }; // default | sent
+
+  async onSubmit(e){
+    e.preventDefault();
+    const input = document.querySelector("#signin-form input[name=email]");
+    const email = input ? input.value.trim() : "";
+    if (!email || email.indexOf("@") === -1) { if (input) input.focus(); return; }
+    try { await CueCommerce.signin(email); } catch (_) { /* sent state anyway */ }
+    this.setState({ view: "sent", email });
+  }
+
+  renderVals() {
+    const v = this.state.view;
+    return {
+      isDefault: v === "default",
+      isSent: v === "sent",
+      email: this.state.email,
+      onSubmit: (e) => this.onSubmit(e),
+      reset: () => this.setState({ view: "default", email: "" }),
+    };
+  }
+}
+</script>
+</body>
+</html>

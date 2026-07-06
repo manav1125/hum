@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./commerce.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Cue — You're invited</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0F1620;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+  .cue-in{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:13px 14px;font-size:14.5px;color:#fff;font-family:inherit;outline:none;transition:border-color .18s ease,box-shadow .18s ease}
+  .cue-in::placeholder{color:#67748A}
+  .cue-in:focus{border-color:#3D6EE8;box-shadow:0 0 0 3px rgba(61,110,232,.25)}
+  .cue-in.err{border-color:#E06B5E;box-shadow:0 0 0 3px rgba(224,107,94,.2)}
+  @keyframes cueSpin{to{transform:rotate(360deg)}}
+</style>
+</helmet>
+
+<!-- ░░ MINIMAL NAV (logo only) ░░ -->
+<div style="padding:22px clamp(20px,5vw,40px)">
+  <a href="index.html" style="display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:#fff"><span style="width:30px;height:30px;border-radius:9px;background:#1A2230;border:1.5px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;position:relative"><span style="font-size:17px;font-weight:600;color:#fff">C</span><span style="position:absolute;width:5px;height:5px;border-radius:50%;background:#3D6EE8;right:6px;bottom:8px"></span></span><b style="font-size:20px;font-weight:500;letter-spacing:-.9px">cue<span style="color:#3D6EE8">.</span></b></a>
+</div>
+
+<!-- ░░ REDEEM ░░ -->
+<div data-screen-label="Redeem" style="display:flex;justify-content:center;padding:clamp(20px,5vh,56px) clamp(20px,5vw,40px) 80px;background:radial-gradient(80% 60% at 50% 0%,rgba(61,110,232,.14),transparent 60%)">
+  <div style="width:100%;max-width:420px">
+    <div style="text-align:center;margin-bottom:26px">
+      <div style="font:400 11px 'DM Mono',monospace;color:#9DB4E6;letter-spacing:.16em">ALPHA · INVITE ONLY</div>
+      <h1 style="font-size:clamp(30px,6vw,40px);line-height:1.05;letter-spacing:-.03em;font-weight:600;color:#fff;margin:14px 0 0">You're invited.</h1>
+      <p style="font-size:14.5px;color:#AEB7C7;margin:12px 0 0;line-height:1.6">Enter your invite code to set up your Cue.</p>
+    </div>
+
+    <form id="redeem-form" onSubmit="{{ onSubmit }}" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.11);border-radius:20px;padding:26px 24px;display:flex;flex-direction:column;gap:16px">
+
+      <!-- Invite code -->
+      <div>
+        <label for="code" style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">INVITE CODE</label>
+        <input id="code" name="code" class="cue-in {{ codeErrCls }}" type="text" placeholder="FOUNDER-7K2M" autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:.18em;font-family:'DM Mono',monospace;font-size:15px" aria-describedby="code-error">
+        <sc-if value="{{ showCodeError }}" hint-placeholder-val="{{ false }}">
+          <div id="code-error" style="font-size:12.5px;color:#E9938A;margin-top:8px;line-height:1.5">{{ codeErrorText }}</div>
+        </sc-if>
+      </div>
+
+      <!-- Name -->
+      <div>
+        <label for="name" style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">NAME</label>
+        <input id="name" name="name" class="cue-in" type="text" placeholder="What should Cue call you?" autocomplete="name">
+      </div>
+
+      <!-- Work email -->
+      <div>
+        <label for="email" style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">WORK EMAIL</label>
+        <input id="email" name="email" class="cue-in" type="email" placeholder="you@company.com" autocomplete="email">
+      </div>
+
+      <!-- Plan indicator (fixed, arrived via ?plan=) -->
+      <sc-if value="{{ planFixed }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <label style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">YOUR PLAN</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(61,110,232,.12);border:1px solid rgba(61,110,232,.4);border-radius:11px;padding:13px 15px">
+            <div><div style="font-size:14px;font-weight:600;color:#fff">{{ selectedPlanName }}</div><div style="font-size:12px;color:#9DB4E6;margin-top:2px">{{ selectedPlanPrice }} · {{ selectedPlanCredits }}</div></div>
+            <a href="pricing.html" style="font-size:12.5px;color:#9DB4E6;text-decoration:none;flex-shrink:0">change</a>
+          </div>
+          <input type="hidden" name="plan" value="{{ selectedPlanId }}">
+        </div>
+      </sc-if>
+
+      <!-- Plan chooser (no ?plan= param) -->
+      <sc-if value="{{ planChoose }}" hint-placeholder-val="{{ false }}">
+        <div>
+          <label style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">CHOOSE YOUR PLAN</label>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:12px 14px;cursor:pointer"><span style="display:flex;align-items:center;gap:10px"><input type="radio" name="plan" value="assistant" style="accent-color:#3D6EE8"><span style="font-size:13.5px;color:#fff;font-weight:500">Assistant</span></span><span style="font-size:12.5px;color:#AEB7C7">$49 · 4,000</span></label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(61,110,232,.12);border:1px solid rgba(61,110,232,.4);border-radius:11px;padding:12px 14px;cursor:pointer"><span style="display:flex;align-items:center;gap:10px"><input type="radio" name="plan" value="chief" checked style="accent-color:#3D6EE8"><span style="font-size:13.5px;color:#fff;font-weight:600">Chief of Staff</span><span style="font:500 8.5px 'DM Mono',monospace;letter-spacing:.08em;background:#3D6EE8;color:#fff;border-radius:999px;padding:2px 7px">FOUNDING</span></span><span style="font-size:12.5px;color:#C7D4EE">$99 · 10,000</span></label>
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:12px 14px;cursor:pointer"><span style="display:flex;align-items:center;gap:10px"><input type="radio" name="plan" value="operator" style="accent-color:#3D6EE8"><span style="font-size:13.5px;color:#fff;font-weight:500">Operator</span></span><span style="font-size:12.5px;color:#AEB7C7">$249 · 30,000</span></label>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- Primary button -->
+      <button type="submit" style="margin-top:4px;background:#3D6EE8;color:#fff;border:none;border-radius:11px;padding:15px;font-size:14.5px;font-weight:600;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 14px 30px -12px rgba(61,110,232,.7)">
+        <sc-if value="{{ submitting }}" hint-placeholder-val="{{ false }}"><span style="width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;animation:cueSpin .7s linear infinite"></span></sc-if>
+        {{ buttonLabel }}
+      </button>
+      <sc-if value="{{ showNotice }}" hint-placeholder-val="{{ false }}">
+        <div style="text-align:center;font-size:12.5px;color:#9DB4E6;line-height:1.55">{{ noticeText }}</div>
+      </sc-if>
+      <div style="text-align:center;font-size:11.5px;color:#67748A">Secure checkout by Stripe. Cancel anytime.</div>
+    </form>
+
+    <div style="text-align:center;font-size:12.5px;color:#7E8BA3;margin-top:18px">No code? <a href="index.html#waitlist" style="color:#9DB4E6;text-decoration:none">Join the waitlist.</a></div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+// Wired to Cue HQ via commerce.js: POST /redeem \u2192 Stripe Checkout redirect.
+// Designed states preserved: default | invalid | expired | submitting | choose.
+class Component extends DCLogic {
+  state = { view: "default", planId: null, notice: "" };
+
+  componentDidMount() {
+    this.setState({ planId: CueCommerce.planFromQuery() });
+    // Live catalog (prices/credits) for the selected-plan row; commerce.js
+    // ships built-in copy for static previews without a backend.
+    CueCommerce.fetchPlans().then((catalog) => {
+      this.catalog = catalog;
+      this.forceUpdate();
+    });
+  }
+
+  async onSubmit(e) {
+    e.preventDefault();
+    if (this.state.view === "submitting") return;
+    const data = new FormData(document.getElementById("redeem-form"));
+    const code = String(data.get("code") || "").trim().toUpperCase();
+    const name = String(data.get("name") || "").trim();
+    const email = String(data.get("email") || "").trim();
+    const plan = CueCommerce.normalizePlan(data.get("plan")) || this.state.planId;
+    if (!code) return this.setState({ view: "invalid", notice: "" });
+    if (!name || !email || email.indexOf("@") === -1) {
+      return this.setState({ notice: "Enter your name and work email to continue." });
+    }
+    this.setState({ view: "submitting", notice: "" });
+    let outcome;
+    try {
+      outcome = await CueCommerce.redeem({ code, email, name, plan });
+    } catch (_) {
+      outcome = { kind: "error", message: "We couldn't reach the server. Try again in a moment." };
+    }
+    if (outcome.kind === "checkout") { location.href = outcome.url; return; }
+    if (outcome.kind === "invalid") return this.setState({ view: "invalid" });
+    if (outcome.kind === "expired") return this.setState({ view: "expired" });
+    if (outcome.kind === "unavailable") {
+      return this.setState({
+        view: "default",
+        notice: "Your invite is confirmed, but checkout isn't open just yet. We'll email " + email + " the moment it is.",
+      });
+    }
+    this.setState({ view: "default", notice: outcome.message || "Something went wrong. Try again." });
+  }
+
+  renderVals() {
+    const v = this.state.view;
+    const sel = this.state.planId
+      ? CueCommerce.planCopy(this.catalog, this.state.planId)
+      : null;
+    return {
+      onSubmit: (e) => this.onSubmit(e),
+      submitting: v === "submitting",
+      buttonLabel: v === "submitting" ? "Preparing checkout\u2026" : "Continue to payment",
+      showCodeError: v === "invalid" || v === "expired",
+      codeErrCls: (v === "invalid" || v === "expired") ? "err" : "",
+      codeErrorText: v === "expired"
+        ? "This code has already been used or expired. Reach out to whoever invited you, or join the waitlist."
+        : "That code isn't valid. Check for typos, or join the waitlist.",
+      planFixed: !!sel,
+      planChoose: !sel,
+      selectedPlanName: sel ? sel.name : "",
+      selectedPlanPrice: sel ? sel.price : "",
+      selectedPlanCredits: sel ? sel.credits : "",
+      selectedPlanId: this.state.planId || "",
+      showNotice: !!this.state.notice,
+      noticeText: this.state.notice,
+    };
+  }
+}
+</script>
+</body>
+</html>

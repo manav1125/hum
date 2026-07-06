@@ -47,6 +47,20 @@ export interface Customer {
   status: CustomerStatus;
   plan: CustomerPlan;
   createdAt: number;
+  /** Stripe Checkout session that activated this customer (welcome page). */
+  checkoutSessionId: string | null;
+  /** When that checkout completed (ms) — drives the "delayed" threshold. */
+  checkoutSessionAt: number | null;
+}
+
+export interface SigninToken {
+  id: string;
+  customerId: string;
+  /** SHA-256 hex of the raw token — the raw value is only ever emailed. */
+  tokenHash: string;
+  createdAt: number;
+  expiresAt: number;
+  consumedAt: number | null;
 }
 
 export interface Invite {
@@ -248,6 +262,28 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       ALTER TABLE subscriptions ADD COLUMN plan TEXT;
     `,
   },
+  {
+    version: 3,
+    name: "site-sessions",
+    // Website integration: link Stripe checkout sessions back to customers
+    // (so /welcome/status can find them) and store hashed one-time sign-in
+    // tokens for the magic-link email flow.
+    sql: `
+      ALTER TABLE customers ADD COLUMN checkoutSessionId TEXT;
+      ALTER TABLE customers ADD COLUMN checkoutSessionAt INTEGER;
+      CREATE INDEX idx_customers_checkout_session ON customers(checkoutSessionId);
+
+      CREATE TABLE signin_tokens (
+        id         TEXT PRIMARY KEY,
+        customerId TEXT NOT NULL REFERENCES customers(id),
+        tokenHash  TEXT NOT NULL UNIQUE,
+        createdAt  INTEGER NOT NULL,
+        expiresAt  INTEGER NOT NULL,
+        consumedAt INTEGER
+      );
+      CREATE INDEX idx_signin_tokens_customer ON signin_tokens(customerId)
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -324,6 +360,17 @@ export class HqDb {
     return event;
   }
 
+  /** Latest event of a kind for a customer (welcome-status failure check). */
+  findLatestEvent(kind: string, customerId: string): HqEvent | null {
+    return (
+      this.db
+        .query<HqEvent, [string, string]>(
+          "SELECT * FROM events WHERE kind = ? AND customerId = ? ORDER BY ts DESC LIMIT 1",
+        )
+        .get(kind, customerId) ?? null
+    );
+  }
+
   listEvents(limit = 100): HqEvent[] {
     return this.db
       .query<HqEvent, [number]>(
@@ -347,6 +394,8 @@ export class HqDb {
       status: params.status ?? "waitlist",
       plan: params.plan ?? "founding",
       createdAt: Date.now(),
+      checkoutSessionId: null,
+      checkoutSessionAt: null,
     };
     this.db.run(
       "INSERT INTO customers (id, email, name, status, plan, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
@@ -415,6 +464,87 @@ export class HqDb {
       to: plan,
     });
     return { ...customer, plan };
+  }
+
+  /** Link the customer to the Stripe Checkout session that activated them. */
+  setCustomerCheckoutSession(
+    id: string,
+    sessionId: string,
+    at: number = Date.now(),
+  ): void {
+    this.db.run(
+      "UPDATE customers SET checkoutSessionId = ?, checkoutSessionAt = ? WHERE id = ?",
+      [sessionId, at, id],
+    );
+  }
+
+  getCustomerByCheckoutSession(sessionId: string): Customer | null {
+    return (
+      this.db
+        .query<Customer, [string]>(
+          "SELECT * FROM customers WHERE checkoutSessionId = ?",
+        )
+        .get(sessionId) ?? null
+    );
+  }
+
+  // ── sign-in tokens (magic-link email flow) ────────────────────────────
+
+  createSigninToken(params: {
+    customerId: string;
+    tokenHash: string;
+    ttlMs: number;
+  }): SigninToken {
+    const token: SigninToken = {
+      id: randomUUID(),
+      customerId: params.customerId,
+      tokenHash: params.tokenHash,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + params.ttlMs,
+      consumedAt: null,
+    };
+    this.db.run(
+      "INSERT INTO signin_tokens (id, customerId, tokenHash, createdAt, expiresAt, consumedAt) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        token.id,
+        token.customerId,
+        token.tokenHash,
+        token.createdAt,
+        token.expiresAt,
+        token.consumedAt,
+      ],
+    );
+    return token;
+  }
+
+  /**
+   * Consume a one-time sign-in token by hash. Atomic: only an unconsumed,
+   * unexpired token flips — a raced or replayed consume returns null.
+   */
+  consumeSigninToken(tokenHash: string, now: number = Date.now()): SigninToken | null {
+    let consumed: SigninToken | null = null;
+    const tx = this.db.transaction(() => {
+      const row = this.db
+        .query<SigninToken, [string]>(
+          "SELECT * FROM signin_tokens WHERE tokenHash = ?",
+        )
+        .get(tokenHash);
+      if (!row || row.consumedAt !== null || row.expiresAt < now) return;
+      this.db.run("UPDATE signin_tokens SET consumedAt = ? WHERE id = ?", [
+        now,
+        row.id,
+      ]);
+      consumed = { ...row, consumedAt: now };
+    });
+    tx();
+    return consumed;
+  }
+
+  /** Housekeeping: drop tokens that expired more than a day ago. */
+  purgeExpiredSigninTokens(now: number = Date.now()): void {
+    this.db.run("DELETE FROM signin_tokens WHERE expiresAt < ?", [
+      now - 86_400_000,
+    ]);
   }
 
   // ── invites ───────────────────────────────────────────────────────────

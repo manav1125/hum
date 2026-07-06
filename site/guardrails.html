@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+<meta name="robots" content="noindex,follow">
+</head>
+<body>
+<x-dc>
+
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  @keyframes gpPulse{0%,100%{opacity:.5}50%{opacity:1}}
+</style>
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" rx="20" fill="#0B0E13"/><path d="M50 22 L74 32 V52 C74 66 63 76 50 80 C37 76 26 66 26 52 V32 Z" fill="none" stroke="#5B86F0" stroke-width="4"/><path d="M41 51 L48 58 L61 43" fill="none" stroke="#6FCF97" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</template>
+</helmet>
+
+<div style="--screen:#0B0E13;--card:#161C26;--card2:#1B2230;--cardline:rgba(255,255,255,.08);--line:rgba(255,255,255,.09);--sunken:rgba(255,255,255,.05);--t1:#EAEEF4;--t2:rgba(234,238,244,.62);--t3:rgba(234,238,244,.40);--accent:#5B86F0;--accent-t:#9DB8F4;--accent-w:rgba(91,134,240,.14);--teal:#5FD0C8;--violet:#A79EE8;--amber:#E0B570;--green:#6FCF97;--red:#E8848D;font-family:'DM Sans',sans-serif;background:#06080C;color:var(--t1);padding:64px 72px 140px;min-height:100vh">
+
+  <!-- ══════════ MASTHEAD ══════════ -->
+  <div style="max-width:1180px;margin:0 auto 8px">
+    <div style="font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent-t);margin-bottom:14px">Cue · Guardrails · rules · scopes · evidence</div>
+    <h1 style="font-family:'Instrument Serif',serif;font-size:56px;line-height:1.0;margin:0;font-weight:400;letter-spacing:-.01em">Cue works autonomously — <span style="font-style:italic;color:var(--accent-t)">inside lines you draw.</span></h1>
+    <p style="font-size:16.5px;color:var(--t2);max-width:840px;margin:16px 0 0;line-height:1.6">Guardrails unifies the Trust console, approval dialogs, per-agent caps, never-lines and the act-ledger into <b style="color:var(--t1);font-weight:600">one authoring surface</b>: named plain-English <b style="color:var(--t1);font-weight:600">checkpoints</b>, per-agent <b style="color:var(--t1);font-weight:600">scopes</b> (tools · spend · model), and the <b style="color:var(--t1);font-weight:600">ledger</b> of what those rules did. It takes the Trust console's nav slot — no new top-level item.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;font-family:'DM Mono',monospace;font-size:11px">
+      <a href="#g1" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">SET 1 · The surface</a>
+      <a href="#g2" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">SET 2 · Rules born in the moment</a>
+      <a href="#g3" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">SET 3 · Usage &amp; spend</a>
+      <a href="#gstates" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">STATES</a>
+    </div>
+  </div>
+
+  <!-- ═══════════ SET 1 · GUARDRAILS SURFACE ═══════════ -->
+  <div id="g1" style="scroll-margin:40px;max-width:1180px;margin:64px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--accent);color:#fff;border-radius:7px;padding:4px 10px">1</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">The Guardrails surface</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">Replaces the Trust console · three bands: checkpoints · agent scopes · ledger</span>
+    </div>
+
+    <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap">
+      <!-- ── DESKTOP ── -->
+      <div style="flex:1;min-width:700px;background:var(--screen);border:1px solid #263041;border-radius:16px;overflow:hidden;box-shadow:0 40px 90px -46px rgba(0,0,0,.7)">
+        <!-- page header -->
+        <div style="padding:30px 34px 24px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:flex-end;gap:20px">
+            <div style="flex:1">
+              <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--t3)">SETTINGS · GUARDRAILS</div>
+              <div style="font-family:'Instrument Serif',serif;font-size:34px;margin-top:8px;line-height:1">Guardrails</div>
+              <div style="font-size:13.5px;color:var(--t2);margin-top:8px">Cue works autonomously — inside lines you draw.</div>
+            </div>
+            <div style="display:flex;gap:22px;font-family:'DM Mono',monospace;text-align:right">
+              <div><div style="font-size:20px;color:var(--t1)">14</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">ACTS THIS WK</div></div>
+              <div><div style="font-size:20px;color:var(--amber)">2</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">HELD FOR YOU</div></div>
+              <div><div style="font-size:20px;color:var(--t1)">$4.12</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">SPENT</div></div>
+              <div><div style="font-size:20px;color:var(--green)">100%</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">REVERSIBLE</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BAND 1 · CHECKPOINTS -->
+        <div style="padding:26px 34px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--accent-t)">CHECKPOINTS</span>
+            <span style="font-size:12.5px;color:var(--t3)">Cue always asks before…</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">✉</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Sending any email or message</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">$</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Spending over $10 in one action</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">◎</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Posting or publishing publicly</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">✕</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Deleting anything</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:rgba(91,134,240,.12);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--accent-t)">☎</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Contacting investors</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--violet);background:rgba(167,158,232,.12);border-radius:6px;padding:4px 9px">✦ GROWTH ONLY</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+
+            <!-- composer OPEN -->
+            <div style="border:1.5px dashed rgba(91,134,240,.4);background:rgba(91,134,240,.06);border-radius:12px;padding:16px">
+              <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--accent-t);margin-bottom:12px">+ ADD A CHECKPOINT</div>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div>
+                  <div style="font-size:11px;color:var(--t3);margin-bottom:7px">1 · Cue should ask before…</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:7px">
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">✉ Sending</span>
+                    <span style="font-size:12px;font-weight:600;background:var(--accent);color:#fff;border-radius:8px;padding:7px 12px">$ Spending</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">◎ Publishing</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">✕ Deleting</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">☎ Contacting</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">⌘ Custom pattern…</span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--t3);margin-bottom:7px">2 · Where does it apply?</div>
+                  <div style="display:inline-flex;background:var(--sunken);border-radius:9px;padding:3px">
+                    <span style="font-size:12px;color:var(--t2);padding:7px 14px">Everywhere</span>
+                    <span style="font-size:12px;font-weight:600;background:var(--card2);border:1px solid var(--cardline);color:var(--t1);border-radius:7px;padding:7px 14px">One agent · ⚙ Ops</span>
+                    <span style="font-size:12px;color:var(--t2);padding:7px 14px">One mission</span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--t3);margin-bottom:7px">3 · Name it</div>
+                  <div style="display:flex;gap:10px;align-items:center">
+                    <span style="flex:1;font-size:13px;color:var(--t1);background:var(--card);border:1px solid var(--cardline);border-radius:9px;padding:10px 13px">Spending over $25 on ads <span style="color:var(--t3)">|</span></span>
+                    <span style="font-size:12.5px;font-weight:600;background:var(--accent);color:#fff;border-radius:9px;padding:10px 17px">Save checkpoint</span>
+                    <span style="font-size:12.5px;color:var(--t3)">Cancel</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BAND 2 · AGENT SCOPES -->
+        <div style="padding:26px 34px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--accent-t)">AGENT SCOPES</span>
+            <span style="font-size:12.5px;color:var(--t3)">What each agent may touch, spend, and run on</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <!-- Ops -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:rgba(95,208,200,.14);display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:14px">⚙</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">Ops</div><div style="font-size:10.5px;color:var(--t3)">Tier 3 · acts in budget</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--green);background:rgba(111,207,151,.12);border-radius:5px;padding:3px 8px">ACTIVE</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">email</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">calendar</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">research</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">files</span>
+                <span style="font-size:11px;color:var(--accent-t);border:1px dashed rgba(91,134,240,.4);border-radius:6px;padding:4px 9px">edit ✎</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$3.10 of $20/wk</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:15.5%;height:100%;background:var(--teal);border-radius:3px"></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Model</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--t1);background:var(--sunken);border:1px solid var(--cardline);border-radius:7px;padding:5px 10px">◆ Sonnet 4.5 · balanced <span style="color:var(--t3)">▾</span></span>
+              </div>
+            </div>
+            <!-- Builder with model picker OPEN -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px;position:relative">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:rgba(91,134,240,.14);display:flex;align-items:center;justify-content:center;color:var(--accent-t);font-size:14px">▲</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">Builder</div><div style="font-size:10.5px;color:var(--t3)">Tier 2 · drafts, you approve</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--green);background:rgba(111,207,151,.12);border-radius:5px;padding:3px 8px">ACTIVE</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">code</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">docs</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">design</span>
+                <span style="font-size:11px;color:var(--accent-t);border:1px dashed rgba(91,134,240,.4);border-radius:6px;padding:4px 9px">edit ✎</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.84 of $15/wk</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:6%;height:100%;background:var(--accent);border-radius:3px"></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Model</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--accent-t);background:var(--accent-w);border:1px solid rgba(91,134,240,.35);border-radius:7px;padding:5px 10px">◆ Best · Sonnet <span>▴</span></span>
+              </div>
+              <!-- picker popover -->
+              <div style="position:absolute;left:18px;right:18px;bottom:-118px;z-index:3;background:var(--card2);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:8px;box-shadow:0 30px 60px -20px rgba(0,0,0,.8)">
+                <div style="display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 11px;background:var(--accent-w);border:1px solid rgba(91,134,240,.3)"><span style="font-size:12px;font-weight:600;color:var(--accent-t)">◆ Best · Sonnet 4.5</span><span style="font-size:10.5px;color:var(--t3);margin-left:auto">highest quality · ~4× cost</span><span style="color:var(--accent);font-size:12px">✓</span></div>
+                <div style="display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 11px"><span style="font-size:12px;color:var(--t2)">▸ Fast · Haiku 4.5</span><span style="font-size:10.5px;color:var(--t3);margin-left:auto">most tasks · cheapest</span></div>
+                <div style="display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 11px"><span style="font-size:12px;color:var(--t2)">⌘ Custom…</span><span style="font-size:10.5px;color:var(--t3);margin-left:auto">route by task type</span></div>
+              </div>
+            </div>
+            <!-- Growth NEAR CAP -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px;margin-top:96px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:rgba(167,158,232,.14);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:14px">✦</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">Growth</div><div style="font-size:10.5px;color:var(--t3)">Tier 2 · drafts, you approve</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--amber);background:rgba(224,181,112,.12);border-radius:5px;padding:3px 8px">NEAR CAP</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">outreach</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">social</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">ads</span>
+                <span style="font-size:11px;color:var(--accent-t);border:1px dashed rgba(91,134,240,.4);border-radius:6px;padding:4px 9px">edit ✎</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 of $10/wk</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber);border-radius:3px"></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Model</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--t1);background:var(--sunken);border:1px solid var(--cardline);border-radius:7px;padding:5px 10px">▸ Fast · Haiku 4.5 <span style="color:var(--t3)">▾</span></span>
+              </div>
+            </div>
+            <!-- cue PAUSED -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px;opacity:.75;margin-top:96px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px;font-family:'Instrument Serif',serif">c</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">cue <span style="font-size:10px;color:var(--t3);font-weight:400">· house agent</span></div><div style="font-size:10.5px;color:var(--t3)">Tier 1 · observes &amp; suggests</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--t3);background:var(--sunken);border-radius:5px;padding:3px 8px">◼ PAUSED</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">triage</span>
+                <span style="font-size:11px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">summaries</span>
+                <span style="font-size:11px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">capture</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--t3)">$0 while paused</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken)"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Paused by you · Jul 2</span>
+                <span style="margin-left:auto;font-size:11.5px;font-weight:600;color:var(--accent-t);background:var(--accent-w);border-radius:7px;padding:6px 12px">▶ Resume</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BAND 3 · LEDGER -->
+        <div style="padding:26px 34px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--accent-t)">THE LEDGER</span>
+            <span style="font-size:12.5px;color:var(--t3)">What your rules did this week</span>
+            <span style="margin-left:auto;font-family:'DM Mono',monospace;font-size:10.5px;color:var(--t2)">14 acts · 2 held · $4.12 · everything reversible</span>
+          </div>
+          <div style="display:flex;flex-direction:column">
+            <!-- held item -->
+            <div style="display:flex;align-items:center;gap:13px;padding:12px 14px;background:rgba(224,181,112,.07);border:1px solid rgba(224,181,112,.25);border-radius:11px;margin-bottom:8px">
+              <span style="width:28px;height:28px;border-radius:8px;background:rgba(224,181,112,.14);display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:12px">⏸</span>
+              <div style="flex:1"><div style="font-size:13px;font-weight:500">Held for your approval — email to J. Chen</div><div style="font-size:11px;color:var(--t3);margin-top:2px">Checkpoint fired: <span style="color:var(--amber)">“Sending any email or message”</span> · ✦ Growth · 22 min ago</div></div>
+              <span style="font-size:11.5px;font-weight:600;background:var(--accent);color:#fff;border-radius:7px;padding:6px 12px">Review</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px;border-bottom:1px solid var(--line)">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:12px">⚙</span>
+              <div style="flex:1"><div style="font-size:13px">Rescheduled 3 conflicting meetings for Thursday</div><div style="font-size:11px;color:var(--t3);margin-top:2px">⚙ Ops · 1 h ago · $0.06 · Haiku</div></div>
+              <span style="font-size:11px;color:var(--accent-t)">↩ Reverse</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px;border-bottom:1px solid var(--line)">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--accent-t);font-size:12px">▲</span>
+              <div style="flex:1"><div style="font-size:13px">Drafted the pricing one-pager v2</div><div style="font-size:11px;color:var(--t3);margin-top:2px">▲ Builder · 3 h ago · $0.42 · Sonnet</div></div>
+              <span style="font-size:11px;color:var(--t3)">draft — nothing sent</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px;border-bottom:1px solid var(--line)">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:12px">✦</span>
+              <div style="flex:1"><div style="font-size:13px">Enriched 12 new leads from the webinar list</div><div style="font-size:11px;color:var(--t3);margin-top:2px">✦ Growth · 5 h ago · $0.18 · Haiku</div></div>
+              <span style="font-size:11px;color:var(--accent-t)">↩ Reverse</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:12px">⚙</span>
+              <div style="flex:1"><div style="font-size:13px">Filed 6 inbound items onto missions</div><div style="font-size:11px;color:var(--t3);margin-top:2px">⚙ Ops · yesterday · $0.03 · Haiku</div></div>
+              <span style="font-size:11px;color:var(--accent-t)">↩ Reverse</span>
+            </div>
+            <div style="text-align:center;font-size:12px;color:var(--t3);padding-top:12px;border-top:1px solid var(--line)">See the full ledger — every act since day one ›</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── MOBILE 390 ── -->
+      <div style="width:390px;flex-shrink:0;background:var(--screen);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 90px -44px rgba(0,0,0,.8);border:1px solid #222B38;height:844px">
+        <div style="flex-shrink:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 20px"><span style="font-size:12px;font-weight:600">9:41</span><span style="font-size:10px;color:var(--t3)">▮▮ ᯤ ▐▋</span></div>
+        <div style="flex-shrink:0;padding:6px 20px 14px;border-bottom:1px solid var(--line)">
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:var(--t3)">SETTINGS</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:27px;margin-top:5px">Guardrails</div>
+          <div style="display:flex;gap:14px;margin-top:10px;font-family:'DM Mono',monospace;font-size:10px;color:var(--t2)"><span>14 acts</span><span style="color:var(--amber)">2 held</span><span>$4.12</span><span style="color:var(--green)">100% reversible</span></div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:14px 16px 0">
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t);margin-bottom:9px">CHECKPOINTS · CUE ALWAYS ASKS BEFORE…</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:12px 13px"><span style="font-size:12px;color:var(--t2)">✉</span><span style="flex:1;font-size:12.5px;font-weight:500">Sending any email or message</span><span style="width:32px;height:19px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span></div>
+            <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:12px 13px"><span style="font-size:12px;color:var(--t2)">$</span><span style="flex:1;font-size:12.5px;font-weight:500">Spending over $10 in one action</span><span style="width:32px;height:19px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span></div>
+            <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:12px 13px"><span style="font-size:12px;color:var(--accent-t)">☎</span><div style="flex:1"><div style="font-size:12.5px;font-weight:500">Contacting investors</div><div style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--violet);margin-top:2px">✦ GROWTH ONLY</div></div><span style="width:32px;height:19px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span></div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px dashed rgba(91,134,240,.4);border-radius:12px;padding:11px;color:var(--accent-t);font-size:12.5px;font-weight:600">+ Add a checkpoint</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t);margin:18px 0 9px">AGENT SCOPES</div>
+          <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:14px 15px">
+            <div style="display:flex;align-items:center;gap:9px"><span style="width:28px;height:28px;border-radius:8px;background:rgba(167,158,232,.14);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:12px">✦</span><div style="flex:1"><div style="font-size:13px;font-weight:600">Growth</div></div><span style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--amber);background:rgba(224,181,112,.12);border-radius:5px;padding:3px 7px">NEAR CAP</span></div>
+            <div style="margin-top:11px"><div style="display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:5px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 of $10/wk</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber)"></div></div></div>
+            <div style="display:flex;gap:6px;margin-top:11px"><span style="font-size:10px;color:var(--t2);background:var(--sunken);border-radius:5px;padding:3px 8px">outreach</span><span style="font-size:10px;color:var(--t2);background:var(--sunken);border-radius:5px;padding:3px 8px">social</span><span style="font-size:10px;color:var(--t2);background:var(--sunken);border-radius:5px;padding:3px 8px">ads</span><span style="font-size:10px;color:var(--t2);margin-left:auto">▸ Haiku</span></div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t);margin:18px 0 9px">THE LEDGER · THIS WEEK</div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:rgba(224,181,112,.07);border:1px solid rgba(224,181,112,.25);border-radius:11px"><span style="color:var(--amber);font-size:12px">⏸</span><div style="flex:1"><div style="font-size:12px;font-weight:500">Held — email to J. Chen</div><div style="font-size:10px;color:var(--t3)">“Sending any email” · 22 min</div></div><span style="font-size:11px;font-weight:600;background:var(--accent);color:#fff;border-radius:6px;padding:5px 10px">Review</span></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid var(--line)"><span style="color:var(--teal);font-size:11px">⚙</span><div style="flex:1"><div style="font-size:12px">Rescheduled 3 meetings</div><div style="font-size:10px;color:var(--t3)">Ops · 1 h · $0.06 · Haiku</div></div><span style="font-size:10px;color:var(--accent-t)">↩</span></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 4px"><span style="color:var(--violet);font-size:11px">✦</span><div style="flex:1"><div style="font-size:12px">Enriched 12 new leads</div><div style="font-size:10px;color:var(--t3)">Growth · 5 h · $0.18 · Haiku</div></div><span style="font-size:10px;color:var(--accent-t)">↩</span></div>
+        </div>
+        <div style="flex-shrink:0;display:flex;border-top:1px solid var(--line);padding:10px 8px 4px;background:var(--screen)">
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">Today</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">Projects</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">＋</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">Voice</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--accent-t);font-weight:600">You</span>
+        </div>
+        <div style="flex-shrink:0;height:22px;display:flex;align-items:center;justify-content:center"><span style="width:130px;height:5px;border-radius:3px;background:rgba(255,255,255,.5)"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SET 2 · RULES BORN IN THE MOMENT ═══════════ -->
+  <div id="g2" style="scroll-margin:40px;max-width:1180px;margin:72px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--accent);color:#fff;border-radius:7px;padding:4px 10px">2</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">Rules born in the moment</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">The approval dialog grows a “Make this a rule →” — how most rules actually get authored</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start">
+      <!-- dialog with new affordance -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">APPROVAL DIALOG · EXISTING PATTERN + NEW AFFORDANCE</div>
+        <div style="background:var(--card2);border:1px solid rgba(255,255,255,.13);border-radius:16px;padding:22px;box-shadow:0 40px 80px -34px rgba(0,0,0,.75);max-width:460px">
+          <div style="display:flex;align-items:center;gap:11px">
+            <span style="width:34px;height:34px;border-radius:9px;background:rgba(224,181,112,.14);display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:15px">⏸</span>
+            <div><div style="font-size:14.5px;font-weight:600">Growth wants to send an email</div><div style="font-size:11.5px;color:var(--t3);margin-top:2px">To j.chen@sequoia.com · re: Series A intro</div></div>
+          </div>
+          <div style="background:var(--sunken);border:1px solid var(--cardline);border-radius:11px;padding:13px 15px;margin-top:15px">
+            <div style="font-size:12px;color:var(--t2);line-height:1.55;font-style:italic">“Hi Jessica — following up on Manav's note. Attaching the updated deck and…”</div>
+            <div style="font-size:10.5px;color:var(--accent-t);margin-top:8px">Read the full draft ›</div>
+          </div>
+          <div style="display:flex;gap:9px;margin-top:16px">
+            <span style="flex:1;text-align:center;font-size:12.5px;font-weight:600;background:var(--accent);color:#fff;border-radius:9px;padding:11px 0">Allow once</span>
+            <span style="flex:1;text-align:center;font-size:12.5px;color:var(--t1);background:var(--card);border:1px solid var(--cardline);border-radius:9px;padding:11px 0">Always allow</span>
+            <span style="flex:1;text-align:center;font-size:12.5px;color:var(--red);background:var(--card);border:1px solid var(--cardline);border-radius:9px;padding:11px 0">Never</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+            <span style="font-size:12.5px;font-weight:600;color:var(--accent-t)">⌁ Make this a rule →</span>
+            <span style="font-size:11px;color:var(--t3)">save it as a named checkpoint</span>
+          </div>
+        </div>
+      </div>
+      <!-- pre-filled mini sheet -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--accent-t);margin-bottom:12px">→ THE PRE-FILLED MINI-SHEET</div>
+        <div style="background:var(--card2);border:1px solid rgba(91,134,240,.3);border-radius:16px;padding:22px;box-shadow:0 40px 80px -34px rgba(0,0,0,.75),0 0 0 4px var(--accent-w);max-width:460px">
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t)">NEW CHECKPOINT · INFERRED FROM THIS ACTION</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:21px;margin-top:9px">Cue will always ask before…</div>
+          <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:11px;padding:12px 14px;margin-top:14px">
+            <span style="font-size:13px;color:var(--t2)">✉</span>
+            <span style="flex:1;font-size:13.5px;font-weight:500">Sending email to external contacts</span>
+            <span style="font-size:11px;color:var(--accent-t)">edit ✎</span>
+          </div>
+          <div style="margin-top:14px">
+            <div style="font-size:11px;color:var(--t3);margin-bottom:7px">Scope</div>
+            <div style="display:inline-flex;background:var(--sunken);border-radius:9px;padding:3px">
+              <span style="font-size:12px;font-weight:600;background:var(--card);border:1px solid var(--cardline);color:var(--t1);border-radius:7px;padding:7px 14px">Everywhere</span>
+              <span style="font-size:12px;color:var(--t2);padding:7px 14px">✦ Growth only</span>
+              <span style="font-size:12px;color:var(--t2);padding:7px 14px">This mission</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:18px">
+            <span style="flex:1;text-align:center;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border-radius:9px;padding:11px 0;box-shadow:0 12px 26px -12px rgba(91,134,240,.7)">Save checkpoint</span>
+            <span style="font-size:12.5px;color:var(--t3);padding:0 8px">Back</span>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:13px;line-height:1.5;text-align:center">It appears in Guardrails → Checkpoints, on for all agents, editable anytime.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SET 3 · USAGE & SPEND ═══════════ -->
+  <div id="g3" style="scroll-margin:40px;max-width:1180px;margin:72px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--accent);color:#fff;border-radius:7px;padding:4px 10px">3</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">Usage &amp; spend — the honest rollup</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">Per-agent · per-mission · model mix · a share-able summary</span>
+    </div>
+    <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap">
+      <!-- desktop panel -->
+      <div style="flex:1;min-width:620px;background:var(--screen);border:1px solid #263041;border-radius:16px;overflow:hidden;box-shadow:0 40px 90px -46px rgba(0,0,0,.7)">
+        <div style="display:flex;align-items:center;gap:12px;padding:18px 26px;border-bottom:1px solid var(--line)">
+          <span style="width:30px;height:30px;border-radius:8px;background:var(--accent-w);display:flex;align-items:center;justify-content:center;color:var(--accent-t);font-size:13px">$</span>
+          <div style="flex:1"><div style="font-size:15px;font-weight:600">Usage &amp; spend</div><div style="font-size:11px;color:var(--t3)">Inside Guardrails · resets Monday</div></div>
+          <span style="display:inline-flex;background:var(--sunken);border-radius:8px;padding:3px"><span style="font-size:11.5px;font-weight:600;background:var(--card2);border:1px solid var(--cardline);border-radius:6px;padding:6px 13px">Week</span><span style="font-size:11.5px;color:var(--t2);padding:6px 13px">Month</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:0">
+          <!-- left: per agent + mission -->
+          <div style="padding:22px 26px;border-right:1px solid var(--line)">
+            <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin-bottom:13px">BY AGENT</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t1)">⚙ Ops</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$3.10 <span style="color:var(--t3)">/ $20</span></span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden;position:relative"><div style="width:15.5%;height:100%;background:var(--teal);border-radius:3px"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t1)">✦ Growth</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 <span style="color:var(--t3)">/ $10</span></span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber);border-radius:3px"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t1)">▲ Builder</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.84 <span style="color:var(--t3)">/ $15</span></span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:5.6%;height:100%;background:var(--accent);border-radius:3px"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t2)">c cue</span><span style="font-family:'DM Mono',monospace;color:var(--t3)">$0 · paused</span></div><div style="height:5px;border-radius:3px;background:var(--sunken)"></div></div>
+            </div>
+            <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin:20px 0 11px">BY MISSION</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Seed round</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$1.92</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">$40K MRR</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$1.44</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Hiring · founding eng</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.58</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">Background / triage</span><span style="font-family:'DM Mono',monospace;color:var(--t3)">$0.18</span></div>
+            </div>
+          </div>
+          <!-- right: model mix + share card -->
+          <div style="padding:22px 26px">
+            <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin-bottom:13px">MODEL MIX</div>
+            <div style="display:flex;height:10px;border-radius:5px;overflow:hidden"><span style="width:82%;background:var(--teal)"></span><span style="width:18%;background:var(--accent)"></span></div>
+            <div style="display:flex;gap:16px;margin-top:9px;font-size:11px"><span style="color:var(--t2)"><span style="color:var(--teal)">●</span> 82% Haiku · fast</span><span style="color:var(--t2)"><span style="color:var(--accent)">●</span> 18% Sonnet · best</span></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:9px;line-height:1.5">Routine acts run on the cheap model; drafting and judgment run on the best one. You set this per agent.</div>
+            <!-- share card -->
+            <div style="margin-top:22px;background:linear-gradient(150deg,#131A28,#0C111B);border:1px solid rgba(91,134,240,.28);border-radius:14px;padding:19px;position:relative;overflow:hidden">
+              <div style="position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(91,134,240,.18),transparent 70%)"></div>
+              <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:var(--accent-t)">THIS WEEK</div>
+              <div style="font-family:'Instrument Serif',serif;font-size:23px;line-height:1.15;margin-top:9px">Cue did <span style="color:var(--accent-t)">14 things</span> for <span style="font-style:italic">$4.12</span></div>
+              <div style="font-size:11px;color:var(--t2);margin-top:8px">2 held for approval · 0 reversed · every act on the ledger</div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px"><span style="font-size:11px;font-weight:600;color:var(--accent-t);background:var(--accent-w);border-radius:7px;padding:6px 12px">↗ Share</span><span style="font-size:11px;color:var(--t3)">image · no private detail</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- mobile -->
+      <div style="width:390px;flex-shrink:0;background:var(--screen);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 90px -44px rgba(0,0,0,.8);border:1px solid #222B38;height:720px">
+        <div style="flex-shrink:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 20px"><span style="font-size:12px;font-weight:600">9:41</span><span style="font-size:10px;color:var(--t3)">▮▮ ᯤ ▐▋</span></div>
+        <div style="flex-shrink:0;display:flex;align-items:center;padding:4px 20px 12px;border-bottom:1px solid var(--line)"><span style="color:var(--accent);font-size:14px">‹ Guardrails</span><span style="margin-left:auto;font-size:14px;font-weight:600">Usage &amp; spend</span></div>
+        <div style="flex:1;overflow:hidden;padding:16px 18px 0">
+          <div style="background:linear-gradient(150deg,#131A28,#0C111B);border:1px solid rgba(91,134,240,.28);border-radius:14px;padding:17px">
+            <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.16em;color:var(--accent-t)">THIS WEEK</div>
+            <div style="font-family:'Instrument Serif',serif;font-size:21px;margin-top:7px">14 things for <span style="font-style:italic;color:var(--accent-t)">$4.12</span></div>
+            <div style="font-size:10.5px;color:var(--t2);margin-top:6px">2 held · 0 reversed · all on the ledger</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--t3);margin:16px 0 10px">BY AGENT</div>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px"><span>⚙ Ops</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$3.10 / $20</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:15.5%;height:100%;background:var(--teal)"></div></div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px"><span>✦ Growth</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 / $10</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber)"></div></div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px"><span>▲ Builder</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.84 / $15</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:5.6%;height:100%;background:var(--accent)"></div></div></div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--t3);margin:16px 0 10px">MODEL MIX</div>
+          <div style="display:flex;height:8px;border-radius:4px;overflow:hidden"><span style="width:82%;background:var(--teal)"></span><span style="width:18%;background:var(--accent)"></span></div>
+          <div style="display:flex;gap:13px;margin-top:8px;font-size:10.5px;color:var(--t2)"><span><span style="color:var(--teal)">●</span> 82% Haiku</span><span><span style="color:var(--accent)">●</span> 18% Sonnet</span></div>
+        </div>
+        <div style="flex-shrink:0;height:22px;display:flex;align-items:center;justify-content:center"><span style="width:130px;height:5px;border-radius:3px;background:rgba(255,255,255,.5)"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STATES ═══════════ -->
+  <div id="gstates" style="scroll-margin:40px;max-width:1180px;margin:72px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--amber);color:#0B0E13;border-radius:7px;padding:4px 10px">S</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">States</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">Fresh user · checkpoint firing in HQ · over-cap decision</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-items:start">
+      <!-- empty / defaults -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">EMPTY · DEFAULTS PRE-SEEDED</div>
+        <div style="background:var(--screen);border:1px solid #263041;border-radius:14px;padding:22px 20px">
+          <div style="font-family:'Instrument Serif',serif;font-size:22px">Guardrails</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:6px;line-height:1.55">You haven't drawn any lines yet — so Cue starts careful. These four defaults are on:</div>
+          <div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">✉</span><span style="flex:1;font-size:12px;font-weight:500">Sending anything</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">$</span><span style="flex:1;font-size:12px;font-weight:500">Spending over $10</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">◎</span><span style="flex:1;font-size:12px;font-weight:500">Publishing publicly</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">✕</span><span style="flex:1;font-size:12px;font-weight:500">Deleting anything</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:12px;line-height:1.5">The ledger is empty — it fills as Cue works. Loosen these anytime; most people do it from the approval dialog.</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px dashed rgba(91,134,240,.4);border-radius:10px;padding:10px;color:var(--accent-t);font-size:12px;font-weight:600;margin-top:12px">+ Add your first checkpoint</div>
+        </div>
+      </div>
+      <!-- firing in HQ -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">A CHECKPOINT FIRING · IN HQ “NEEDS YOU”</div>
+        <div style="background:var(--screen);border:1px solid #263041;border-radius:14px;padding:20px">
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin-bottom:11px">NEEDS YOU · 3</div>
+          <div style="background:rgba(224,181,112,.07);border:1px solid rgba(224,181,112,.28);border-radius:12px;padding:14px 15px">
+            <div style="display:flex;align-items:center;gap:9px"><span style="width:26px;height:26px;border-radius:7px;background:rgba(224,181,112,.16);display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:11px">⏸</span><div style="flex:1"><div style="font-size:13px;font-weight:600">Email to J. Chen — held</div><div style="font-size:10.5px;color:var(--t3);margin-top:2px">✦ Growth · Seed round · 22 min ago</div></div></div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:11px;padding:9px 11px;background:var(--sunken);border-radius:8px"><span style="font-size:10px;color:var(--amber)">⌁</span><span style="font-size:11px;color:var(--t2)">Your rule: <b style="color:var(--t1);font-weight:600">“Sending any email or message”</b></span><span style="margin-left:auto;font-size:10px;color:var(--accent-t)">view rule ›</span></div>
+            <div style="display:flex;gap:8px;margin-top:11px">
+              <span style="flex:1;text-align:center;font-size:12px;font-weight:600;background:var(--accent);color:#fff;border-radius:8px;padding:9px 0">Review &amp; send</span>
+              <span style="flex:1;text-align:center;font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:9px 0">Hold</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:12px 4px 2px;font-size:12px;color:var(--t2)"><span style="color:var(--accent-t)">◆</span> Pricing decision — pick a tier structure<span style="margin-left:auto;color:var(--t3);font-size:11px">2 d</span></div>
+        </div>
+      </div>
+      <!-- over cap -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">OVER CAP · AGENT PAUSED ITSELF</div>
+        <div style="background:var(--screen);border:1px solid #263041;border-radius:14px;padding:20px">
+          <div style="background:var(--card);border:1px solid rgba(232,132,141,.3);border-radius:13px;padding:16px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:30px;height:30px;border-radius:8px;background:rgba(167,158,232,.14);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:13px">✦</span>
+              <div style="flex:1"><div style="font-size:13.5px;font-weight:600">Growth hit its weekly cap</div><div style="font-size:10.5px;color:var(--t3);margin-top:2px">Stopped itself at the line — nothing overran</div></div>
+              <span style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--red);background:rgba(232,132,141,.12);border-radius:5px;padding:3px 7px">◼ AT CAP</span>
+            </div>
+            <div style="margin-top:13px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:5px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--red)">$10.00 of $10/wk</span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:100%;height:100%;background:var(--red)"></div></div></div>
+            <div style="font-size:11px;color:var(--t2);margin-top:11px;line-height:1.5">Mid-task: enriching the last 8 webinar leads (~$0.90 to finish).</div>
+            <div style="display:flex;gap:8px;margin-top:13px">
+              <span style="flex:1.3;text-align:center;font-size:12px;font-weight:600;background:var(--accent);color:#fff;border-radius:8px;padding:10px 0">Raise to $15 &amp; continue</span>
+              <span style="flex:1;text-align:center;font-size:12px;color:var(--t2);background:var(--sunken);border:1px solid var(--cardline);border-radius:8px;padding:10px 0">Keep paused</span>
+            </div>
+            <div style="font-size:10px;color:var(--t3);margin-top:10px;text-align:center">Resumes Monday either way · cap lives in Guardrails</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+
+  <div style="max-width:1360px;margin:8px auto 0;padding:34px 72px;display:flex;align-items:center;gap:20px"><span style="flex:1;height:1px;background:rgba(20,26,36,.15)"></span><span style="font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.22em;color:#6A7280">LIGHT MODE ↓</span><span style="flex:1;height:1px;background:rgba(20,26,36,.15)"></span></div>
+
+<div style="--screen:#FFFFFF;--card:#FBFAF7;--card2:#F1EFE9;--cardline:rgba(20,26,36,.10);--line:rgba(20,26,36,.07);--sunken:rgba(20,26,36,.035);--t1:#161C26;--t2:rgba(22,28,38,.64);--t3:rgba(22,28,38,.42);--accent:#2F63D9;--accent-t:#2F63D9;--accent-w:rgba(47,99,217,.10);--teal:#0E8C8C;--violet:#6E63C8;--amber:#B07C24;--green:#2E9E5B;--red:#C4444F;font-family:'DM Sans',sans-serif;background:#EAE8E2;color:var(--t1);padding:64px 72px 140px;min-height:100vh">
+
+  <!-- ══════════ MASTHEAD ══════════ -->
+  <div style="max-width:1180px;margin:0 auto 8px">
+    <div style="font-family:'DM Mono',monospace;font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent-t);margin-bottom:14px">Cue · Guardrails · LIGHT MODE · rules · scopes · evidence</div>
+    <h1 style="font-family:'Instrument Serif',serif;font-size:56px;line-height:1.0;margin:0;font-weight:400;letter-spacing:-.01em">Cue works autonomously — <span style="font-style:italic;color:var(--accent-t)">inside lines you draw.</span></h1>
+    <p style="font-size:16.5px;color:var(--t2);max-width:840px;margin:16px 0 0;line-height:1.6">Guardrails unifies the Trust console, approval dialogs, per-agent caps, never-lines and the act-ledger into <b style="color:var(--t1);font-weight:600">one authoring surface</b>: named plain-English <b style="color:var(--t1);font-weight:600">checkpoints</b>, per-agent <b style="color:var(--t1);font-weight:600">scopes</b> (tools · spend · model), and the <b style="color:var(--t1);font-weight:600">ledger</b> of what those rules did. It takes the Trust console's nav slot — no new top-level item.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:22px;font-family:'DM Mono',monospace;font-size:11px">
+      <a href="#g1L" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">SET 1 · The surface</a>
+      <a href="#g2L" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">SET 2 · Rules born in the moment</a>
+      <a href="#g3L" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">SET 3 · Usage &amp; spend</a>
+      <a href="#gstatesL" style="text-decoration:none;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">STATES</a>
+    </div>
+  </div>
+
+  <!-- ═══════════ SET 1 · GUARDRAILS SURFACE ═══════════ -->
+  <div id="g1L" style="scroll-margin:40px;max-width:1180px;margin:64px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--accent);color:#fff;border-radius:7px;padding:4px 10px">1</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">The Guardrails surface</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">Replaces the Trust console · three bands: checkpoints · agent scopes · ledger</span>
+    </div>
+
+    <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap">
+      <!-- ── DESKTOP ── -->
+      <div style="flex:1;min-width:700px;background:var(--screen);border:1px solid rgba(20,26,36,.12);border-radius:16px;overflow:hidden;box-shadow:0 40px 90px -46px rgba(30,38,52,.13)">
+        <!-- page header -->
+        <div style="padding:30px 34px 24px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:flex-end;gap:20px">
+            <div style="flex:1">
+              <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--t3)">SETTINGS · GUARDRAILS</div>
+              <div style="font-family:'Instrument Serif',serif;font-size:34px;margin-top:8px;line-height:1">Guardrails</div>
+              <div style="font-size:13.5px;color:var(--t2);margin-top:8px">Cue works autonomously — inside lines you draw.</div>
+            </div>
+            <div style="display:flex;gap:22px;font-family:'DM Mono',monospace;text-align:right">
+              <div><div style="font-size:20px;color:var(--t1)">14</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">ACTS THIS WK</div></div>
+              <div><div style="font-size:20px;color:var(--amber)">2</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">HELD FOR YOU</div></div>
+              <div><div style="font-size:20px;color:var(--t1)">$4.12</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">SPENT</div></div>
+              <div><div style="font-size:20px;color:var(--green)">100%</div><div style="font-size:9.5px;letter-spacing:.1em;color:var(--t3);margin-top:3px">REVERSIBLE</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BAND 1 · CHECKPOINTS -->
+        <div style="padding:26px 34px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--accent-t)">CHECKPOINTS</span>
+            <span style="font-size:12.5px;color:var(--t3)">Cue always asks before…</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">✉</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Sending any email or message</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">$</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Spending over $10 in one action</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">◎</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Posting or publishing publicly</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t2)">✕</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Deleting anything</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">EVERYWHERE</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:13px 16px">
+              <span style="width:30px;height:30px;border-radius:8px;background:rgba(91,134,240,.12);display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--accent-t)">☎</span>
+              <span style="flex:1;font-size:13.5px;font-weight:500">Contacting investors</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--violet);background:rgba(167,158,232,.12);border-radius:6px;padding:4px 9px">✦ GROWTH ONLY</span>
+              <span style="width:34px;height:20px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff"></span></span>
+            </div>
+
+            <!-- composer OPEN -->
+            <div style="border:1.5px dashed rgba(91,134,240,.4);background:rgba(91,134,240,.06);border-radius:12px;padding:16px">
+              <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--accent-t);margin-bottom:12px">+ ADD A CHECKPOINT</div>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div>
+                  <div style="font-size:11px;color:var(--t3);margin-bottom:7px">1 · Cue should ask before…</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:7px">
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">✉ Sending</span>
+                    <span style="font-size:12px;font-weight:600;background:var(--accent);color:#fff;border-radius:8px;padding:7px 12px">$ Spending</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">◎ Publishing</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">✕ Deleting</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">☎ Contacting</span>
+                    <span style="font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:7px 12px">⌘ Custom pattern…</span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--t3);margin-bottom:7px">2 · Where does it apply?</div>
+                  <div style="display:inline-flex;background:var(--sunken);border-radius:9px;padding:3px">
+                    <span style="font-size:12px;color:var(--t2);padding:7px 14px">Everywhere</span>
+                    <span style="font-size:12px;font-weight:600;background:var(--card2);border:1px solid var(--cardline);color:var(--t1);border-radius:7px;padding:7px 14px">One agent · ⚙ Ops</span>
+                    <span style="font-size:12px;color:var(--t2);padding:7px 14px">One mission</span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:11px;color:var(--t3);margin-bottom:7px">3 · Name it</div>
+                  <div style="display:flex;gap:10px;align-items:center">
+                    <span style="flex:1;font-size:13px;color:var(--t1);background:var(--card);border:1px solid var(--cardline);border-radius:9px;padding:10px 13px">Spending over $25 on ads <span style="color:var(--t3)">|</span></span>
+                    <span style="font-size:12.5px;font-weight:600;background:var(--accent);color:#fff;border-radius:9px;padding:10px 17px">Save checkpoint</span>
+                    <span style="font-size:12.5px;color:var(--t3)">Cancel</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BAND 2 · AGENT SCOPES -->
+        <div style="padding:26px 34px;border-bottom:1px solid var(--line)">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--accent-t)">AGENT SCOPES</span>
+            <span style="font-size:12.5px;color:var(--t3)">What each agent may touch, spend, and run on</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <!-- Ops -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:rgba(95,208,200,.14);display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:14px">⚙</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">Ops</div><div style="font-size:10.5px;color:var(--t3)">Tier 3 · acts in budget</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--green);background:rgba(111,207,151,.12);border-radius:5px;padding:3px 8px">ACTIVE</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">email</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">calendar</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">research</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">files</span>
+                <span style="font-size:11px;color:var(--accent-t);border:1px dashed rgba(91,134,240,.4);border-radius:6px;padding:4px 9px">edit ✎</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$3.10 of $20/wk</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:15.5%;height:100%;background:var(--teal);border-radius:3px"></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Model</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--t1);background:var(--sunken);border:1px solid var(--cardline);border-radius:7px;padding:5px 10px">◆ Sonnet 4.5 · balanced <span style="color:var(--t3)">▾</span></span>
+              </div>
+            </div>
+            <!-- Builder with model picker OPEN -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px;position:relative">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:rgba(91,134,240,.14);display:flex;align-items:center;justify-content:center;color:var(--accent-t);font-size:14px">▲</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">Builder</div><div style="font-size:10.5px;color:var(--t3)">Tier 2 · drafts, you approve</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--green);background:rgba(111,207,151,.12);border-radius:5px;padding:3px 8px">ACTIVE</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">code</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">docs</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">design</span>
+                <span style="font-size:11px;color:var(--accent-t);border:1px dashed rgba(91,134,240,.4);border-radius:6px;padding:4px 9px">edit ✎</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.84 of $15/wk</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:6%;height:100%;background:var(--accent);border-radius:3px"></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Model</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--accent-t);background:var(--accent-w);border:1px solid rgba(91,134,240,.35);border-radius:7px;padding:5px 10px">◆ Best · Sonnet <span>▴</span></span>
+              </div>
+              <!-- picker popover -->
+              <div style="position:absolute;left:18px;right:18px;bottom:-118px;z-index:3;background:var(--card2);border:1px solid rgba(20,26,36,.14);border-radius:12px;padding:8px;box-shadow:0 30px 60px -20px rgba(30,38,52,.14)">
+                <div style="display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 11px;background:var(--accent-w);border:1px solid rgba(91,134,240,.3)"><span style="font-size:12px;font-weight:600;color:var(--accent-t)">◆ Best · Sonnet 4.5</span><span style="font-size:10.5px;color:var(--t3);margin-left:auto">highest quality · ~4× cost</span><span style="color:var(--accent);font-size:12px">✓</span></div>
+                <div style="display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 11px"><span style="font-size:12px;color:var(--t2)">▸ Fast · Haiku 4.5</span><span style="font-size:10.5px;color:var(--t3);margin-left:auto">most tasks · cheapest</span></div>
+                <div style="display:flex;align-items:center;gap:10px;border-radius:8px;padding:9px 11px"><span style="font-size:12px;color:var(--t2)">⌘ Custom…</span><span style="font-size:10.5px;color:var(--t3);margin-left:auto">route by task type</span></div>
+              </div>
+            </div>
+            <!-- Growth NEAR CAP -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px;margin-top:96px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:rgba(167,158,232,.14);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:14px">✦</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">Growth</div><div style="font-size:10.5px;color:var(--t3)">Tier 2 · drafts, you approve</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--amber);background:rgba(224,181,112,.12);border-radius:5px;padding:3px 8px">NEAR CAP</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">outreach</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">social</span>
+                <span style="font-size:11px;color:var(--t2);background:var(--sunken);border-radius:6px;padding:4px 9px">ads</span>
+                <span style="font-size:11px;color:var(--accent-t);border:1px dashed rgba(91,134,240,.4);border-radius:6px;padding:4px 9px">edit ✎</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 of $10/wk</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber);border-radius:3px"></div></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Model</span>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--t1);background:var(--sunken);border:1px solid var(--cardline);border-radius:7px;padding:5px 10px">▸ Fast · Haiku 4.5 <span style="color:var(--t3)">▾</span></span>
+              </div>
+            </div>
+            <!-- cue PAUSED -->
+            <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:17px 18px;opacity:.75;margin-top:96px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:32px;height:32px;border-radius:9px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:13px;font-family:'Instrument Serif',serif">c</span>
+                <div style="flex:1"><div style="font-size:14px;font-weight:600">cue <span style="font-size:10px;color:var(--t3);font-weight:400">· house agent</span></div><div style="font-size:10.5px;color:var(--t3)">Tier 1 · observes &amp; suggests</div></div>
+                <span style="font-family:'DM Mono',monospace;font-size:9.5px;color:var(--t3);background:var(--sunken);border-radius:5px;padding:3px 8px">◼ PAUSED</span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:13px">
+                <span style="font-size:11px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">triage</span>
+                <span style="font-size:11px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">summaries</span>
+                <span style="font-size:11px;color:var(--t3);background:var(--sunken);border-radius:6px;padding:4px 9px">capture</span>
+              </div>
+              <div style="margin-top:14px">
+                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--t3)">$0 while paused</span></div>
+                <div style="height:5px;border-radius:3px;background:var(--sunken)"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+                <span style="font-size:11px;color:var(--t3)">Paused by you · Jul 2</span>
+                <span style="margin-left:auto;font-size:11.5px;font-weight:600;color:var(--accent-t);background:var(--accent-w);border-radius:7px;padding:6px 12px">▶ Resume</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BAND 3 · LEDGER -->
+        <div style="padding:26px 34px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--accent-t)">THE LEDGER</span>
+            <span style="font-size:12.5px;color:var(--t3)">What your rules did this week</span>
+            <span style="margin-left:auto;font-family:'DM Mono',monospace;font-size:10.5px;color:var(--t2)">14 acts · 2 held · $4.12 · everything reversible</span>
+          </div>
+          <div style="display:flex;flex-direction:column">
+            <!-- held item -->
+            <div style="display:flex;align-items:center;gap:13px;padding:12px 14px;background:rgba(224,181,112,.07);border:1px solid rgba(224,181,112,.25);border-radius:11px;margin-bottom:8px">
+              <span style="width:28px;height:28px;border-radius:8px;background:rgba(224,181,112,.14);display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:12px">⏸</span>
+              <div style="flex:1"><div style="font-size:13px;font-weight:500">Held for your approval — email to J. Chen</div><div style="font-size:11px;color:var(--t3);margin-top:2px">Checkpoint fired: <span style="color:var(--amber)">“Sending any email or message”</span> · ✦ Growth · 22 min ago</div></div>
+              <span style="font-size:11.5px;font-weight:600;background:var(--accent);color:#fff;border-radius:7px;padding:6px 12px">Review</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px;border-bottom:1px solid var(--line)">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:12px">⚙</span>
+              <div style="flex:1"><div style="font-size:13px">Rescheduled 3 conflicting meetings for Thursday</div><div style="font-size:11px;color:var(--t3);margin-top:2px">⚙ Ops · 1 h ago · $0.06 · Haiku</div></div>
+              <span style="font-size:11px;color:var(--accent-t)">↩ Reverse</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px;border-bottom:1px solid var(--line)">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--accent-t);font-size:12px">▲</span>
+              <div style="flex:1"><div style="font-size:13px">Drafted the pricing one-pager v2</div><div style="font-size:11px;color:var(--t3);margin-top:2px">▲ Builder · 3 h ago · $0.42 · Sonnet</div></div>
+              <span style="font-size:11px;color:var(--t3)">draft — nothing sent</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px;border-bottom:1px solid var(--line)">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:12px">✦</span>
+              <div style="flex:1"><div style="font-size:13px">Enriched 12 new leads from the webinar list</div><div style="font-size:11px;color:var(--t3);margin-top:2px">✦ Growth · 5 h ago · $0.18 · Haiku</div></div>
+              <span style="font-size:11px;color:var(--accent-t)">↩ Reverse</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:13px;padding:11px 14px">
+              <span style="width:28px;height:28px;border-radius:8px;background:var(--sunken);display:flex;align-items:center;justify-content:center;color:var(--teal);font-size:12px">⚙</span>
+              <div style="flex:1"><div style="font-size:13px">Filed 6 inbound items onto missions</div><div style="font-size:11px;color:var(--t3);margin-top:2px">⚙ Ops · yesterday · $0.03 · Haiku</div></div>
+              <span style="font-size:11px;color:var(--accent-t)">↩ Reverse</span>
+            </div>
+            <div style="text-align:center;font-size:12px;color:var(--t3);padding-top:12px;border-top:1px solid var(--line)">See the full ledger — every act since day one ›</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── MOBILE 390 ── -->
+      <div style="width:390px;flex-shrink:0;background:var(--screen);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 90px -44px rgba(30,38,52,.14);border:1px solid rgba(20,26,36,.12);height:844px">
+        <div style="flex-shrink:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 20px"><span style="font-size:12px;font-weight:600">9:41</span><span style="font-size:10px;color:var(--t3)">▮▮ ᯤ ▐▋</span></div>
+        <div style="flex-shrink:0;padding:6px 20px 14px;border-bottom:1px solid var(--line)">
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:var(--t3)">SETTINGS</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:27px;margin-top:5px">Guardrails</div>
+          <div style="display:flex;gap:14px;margin-top:10px;font-family:'DM Mono',monospace;font-size:10px;color:var(--t2)"><span>14 acts</span><span style="color:var(--amber)">2 held</span><span>$4.12</span><span style="color:var(--green)">100% reversible</span></div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:14px 16px 0">
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t);margin-bottom:9px">CHECKPOINTS · CUE ALWAYS ASKS BEFORE…</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:12px 13px"><span style="font-size:12px;color:var(--t2)">✉</span><span style="flex:1;font-size:12.5px;font-weight:500">Sending any email or message</span><span style="width:32px;height:19px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span></div>
+            <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:12px 13px"><span style="font-size:12px;color:var(--t2)">$</span><span style="flex:1;font-size:12.5px;font-weight:500">Spending over $10 in one action</span><span style="width:32px;height:19px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span></div>
+            <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:12px;padding:12px 13px"><span style="font-size:12px;color:var(--accent-t)">☎</span><div style="flex:1"><div style="font-size:12.5px;font-weight:500">Contacting investors</div><div style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--violet);margin-top:2px">✦ GROWTH ONLY</div></div><span style="width:32px;height:19px;border-radius:10px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></span></div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px dashed rgba(91,134,240,.4);border-radius:12px;padding:11px;color:var(--accent-t);font-size:12.5px;font-weight:600">+ Add a checkpoint</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t);margin:18px 0 9px">AGENT SCOPES</div>
+          <div style="background:var(--card);border:1px solid var(--cardline);border-radius:13px;padding:14px 15px">
+            <div style="display:flex;align-items:center;gap:9px"><span style="width:28px;height:28px;border-radius:8px;background:rgba(167,158,232,.14);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:12px">✦</span><div style="flex:1"><div style="font-size:13px;font-weight:600">Growth</div></div><span style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--amber);background:rgba(224,181,112,.12);border-radius:5px;padding:3px 7px">NEAR CAP</span></div>
+            <div style="margin-top:11px"><div style="display:flex;justify-content:space-between;font-size:10.5px;margin-bottom:5px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 of $10/wk</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber)"></div></div></div>
+            <div style="display:flex;gap:6px;margin-top:11px"><span style="font-size:10px;color:var(--t2);background:var(--sunken);border-radius:5px;padding:3px 8px">outreach</span><span style="font-size:10px;color:var(--t2);background:var(--sunken);border-radius:5px;padding:3px 8px">social</span><span style="font-size:10px;color:var(--t2);background:var(--sunken);border-radius:5px;padding:3px 8px">ads</span><span style="font-size:10px;color:var(--t2);margin-left:auto">▸ Haiku</span></div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t);margin:18px 0 9px">THE LEDGER · THIS WEEK</div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 13px;background:rgba(224,181,112,.07);border:1px solid rgba(224,181,112,.25);border-radius:11px"><span style="color:var(--amber);font-size:12px">⏸</span><div style="flex:1"><div style="font-size:12px;font-weight:500">Held — email to J. Chen</div><div style="font-size:10px;color:var(--t3)">“Sending any email” · 22 min</div></div><span style="font-size:11px;font-weight:600;background:var(--accent);color:#fff;border-radius:6px;padding:5px 10px">Review</span></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 4px;border-bottom:1px solid var(--line)"><span style="color:var(--teal);font-size:11px">⚙</span><div style="flex:1"><div style="font-size:12px">Rescheduled 3 meetings</div><div style="font-size:10px;color:var(--t3)">Ops · 1 h · $0.06 · Haiku</div></div><span style="font-size:10px;color:var(--accent-t)">↩</span></div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 4px"><span style="color:var(--violet);font-size:11px">✦</span><div style="flex:1"><div style="font-size:12px">Enriched 12 new leads</div><div style="font-size:10px;color:var(--t3)">Growth · 5 h · $0.18 · Haiku</div></div><span style="font-size:10px;color:var(--accent-t)">↩</span></div>
+        </div>
+        <div style="flex-shrink:0;display:flex;border-top:1px solid var(--line);padding:10px 8px 4px;background:var(--screen)">
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">Today</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">Projects</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">＋</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--t3)">Voice</span>
+          <span style="flex:1;text-align:center;font-size:10px;color:var(--accent-t);font-weight:600">You</span>
+        </div>
+        <div style="flex-shrink:0;height:22px;display:flex;align-items:center;justify-content:center"><span style="width:130px;height:5px;border-radius:3px;background:rgba(30,38,52,.30)"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SET 2 · RULES BORN IN THE MOMENT ═══════════ -->
+  <div id="g2L" style="scroll-margin:40px;max-width:1180px;margin:72px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--accent);color:#fff;border-radius:7px;padding:4px 10px">2</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">Rules born in the moment</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">The approval dialog grows a “Make this a rule →” — how most rules actually get authored</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start">
+      <!-- dialog with new affordance -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">APPROVAL DIALOG · EXISTING PATTERN + NEW AFFORDANCE</div>
+        <div style="background:var(--card2);border:1px solid rgba(20,26,36,.14);border-radius:16px;padding:22px;box-shadow:0 40px 80px -34px rgba(30,38,52,.14);max-width:460px">
+          <div style="display:flex;align-items:center;gap:11px">
+            <span style="width:34px;height:34px;border-radius:9px;background:rgba(224,181,112,.14);display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:15px">⏸</span>
+            <div><div style="font-size:14.5px;font-weight:600">Growth wants to send an email</div><div style="font-size:11.5px;color:var(--t3);margin-top:2px">To j.chen@sequoia.com · re: Series A intro</div></div>
+          </div>
+          <div style="background:var(--sunken);border:1px solid var(--cardline);border-radius:11px;padding:13px 15px;margin-top:15px">
+            <div style="font-size:12px;color:var(--t2);line-height:1.55;font-style:italic">“Hi Jessica — following up on Manav's note. Attaching the updated deck and…”</div>
+            <div style="font-size:10.5px;color:var(--accent-t);margin-top:8px">Read the full draft ›</div>
+          </div>
+          <div style="display:flex;gap:9px;margin-top:16px">
+            <span style="flex:1;text-align:center;font-size:12.5px;font-weight:600;background:var(--accent);color:#fff;border-radius:9px;padding:11px 0">Allow once</span>
+            <span style="flex:1;text-align:center;font-size:12.5px;color:var(--t1);background:var(--card);border:1px solid var(--cardline);border-radius:9px;padding:11px 0">Always allow</span>
+            <span style="flex:1;text-align:center;font-size:12.5px;color:var(--red);background:var(--card);border:1px solid var(--cardline);border-radius:9px;padding:11px 0">Never</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)">
+            <span style="font-size:12.5px;font-weight:600;color:var(--accent-t)">⌁ Make this a rule →</span>
+            <span style="font-size:11px;color:var(--t3)">save it as a named checkpoint</span>
+          </div>
+        </div>
+      </div>
+      <!-- pre-filled mini sheet -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--accent-t);margin-bottom:12px">→ THE PRE-FILLED MINI-SHEET</div>
+        <div style="background:var(--card2);border:1px solid rgba(91,134,240,.3);border-radius:16px;padding:22px;box-shadow:0 40px 80px -34px rgba(30,38,52,.14),0 0 0 4px var(--accent-w);max-width:460px">
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--accent-t)">NEW CHECKPOINT · INFERRED FROM THIS ACTION</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:21px;margin-top:9px">Cue will always ask before…</div>
+          <div style="display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--cardline);border-radius:11px;padding:12px 14px;margin-top:14px">
+            <span style="font-size:13px;color:var(--t2)">✉</span>
+            <span style="flex:1;font-size:13.5px;font-weight:500">Sending email to external contacts</span>
+            <span style="font-size:11px;color:var(--accent-t)">edit ✎</span>
+          </div>
+          <div style="margin-top:14px">
+            <div style="font-size:11px;color:var(--t3);margin-bottom:7px">Scope</div>
+            <div style="display:inline-flex;background:var(--sunken);border-radius:9px;padding:3px">
+              <span style="font-size:12px;font-weight:600;background:var(--card);border:1px solid var(--cardline);color:var(--t1);border-radius:7px;padding:7px 14px">Everywhere</span>
+              <span style="font-size:12px;color:var(--t2);padding:7px 14px">✦ Growth only</span>
+              <span style="font-size:12px;color:var(--t2);padding:7px 14px">This mission</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:18px">
+            <span style="flex:1;text-align:center;font-size:13px;font-weight:600;background:var(--accent);color:#fff;border-radius:9px;padding:11px 0;box-shadow:0 12px 26px -12px rgba(91,134,240,.7)">Save checkpoint</span>
+            <span style="font-size:12.5px;color:var(--t3);padding:0 8px">Back</span>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:13px;line-height:1.5;text-align:center">It appears in Guardrails → Checkpoints, on for all agents, editable anytime.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ SET 3 · USAGE & SPEND ═══════════ -->
+  <div id="g3L" style="scroll-margin:40px;max-width:1180px;margin:72px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--accent);color:#fff;border-radius:7px;padding:4px 10px">3</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">Usage &amp; spend — the honest rollup</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">Per-agent · per-mission · model mix · a share-able summary</span>
+    </div>
+    <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap">
+      <!-- desktop panel -->
+      <div style="flex:1;min-width:620px;background:var(--screen);border:1px solid rgba(20,26,36,.12);border-radius:16px;overflow:hidden;box-shadow:0 40px 90px -46px rgba(30,38,52,.13)">
+        <div style="display:flex;align-items:center;gap:12px;padding:18px 26px;border-bottom:1px solid var(--line)">
+          <span style="width:30px;height:30px;border-radius:8px;background:var(--accent-w);display:flex;align-items:center;justify-content:center;color:var(--accent-t);font-size:13px">$</span>
+          <div style="flex:1"><div style="font-size:15px;font-weight:600">Usage &amp; spend</div><div style="font-size:11px;color:var(--t3)">Inside Guardrails · resets Monday</div></div>
+          <span style="display:inline-flex;background:var(--sunken);border-radius:8px;padding:3px"><span style="font-size:11.5px;font-weight:600;background:var(--card2);border:1px solid var(--cardline);border-radius:6px;padding:6px 13px">Week</span><span style="font-size:11.5px;color:var(--t2);padding:6px 13px">Month</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:0">
+          <!-- left: per agent + mission -->
+          <div style="padding:22px 26px;border-right:1px solid var(--line)">
+            <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin-bottom:13px">BY AGENT</div>
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t1)">⚙ Ops</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$3.10 <span style="color:var(--t3)">/ $20</span></span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden;position:relative"><div style="width:15.5%;height:100%;background:var(--teal);border-radius:3px"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t1)">✦ Growth</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 <span style="color:var(--t3)">/ $10</span></span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber);border-radius:3px"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t1)">▲ Builder</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.84 <span style="color:var(--t3)">/ $15</span></span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:5.6%;height:100%;background:var(--accent);border-radius:3px"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><span style="color:var(--t2)">c cue</span><span style="font-family:'DM Mono',monospace;color:var(--t3)">$0 · paused</span></div><div style="height:5px;border-radius:3px;background:var(--sunken)"></div></div>
+            </div>
+            <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin:20px 0 11px">BY MISSION</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Seed round</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$1.92</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">$40K MRR</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$1.44</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t2)">Hiring · founding eng</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.58</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--t3)">Background / triage</span><span style="font-family:'DM Mono',monospace;color:var(--t3)">$0.18</span></div>
+            </div>
+          </div>
+          <!-- right: model mix + share card -->
+          <div style="padding:22px 26px">
+            <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin-bottom:13px">MODEL MIX</div>
+            <div style="display:flex;height:10px;border-radius:5px;overflow:hidden"><span style="width:82%;background:var(--teal)"></span><span style="width:18%;background:var(--accent)"></span></div>
+            <div style="display:flex;gap:16px;margin-top:9px;font-size:11px"><span style="color:var(--t2)"><span style="color:var(--teal)">●</span> 82% Haiku · fast</span><span style="color:var(--t2)"><span style="color:var(--accent)">●</span> 18% Sonnet · best</span></div>
+            <div style="font-size:11px;color:var(--t3);margin-top:9px;line-height:1.5">Routine acts run on the cheap model; drafting and judgment run on the best one. You set this per agent.</div>
+            <!-- share card -->
+            <div style="margin-top:22px;background:linear-gradient(150deg,#131A28,#0C111B);--t1:#EAEEF4;--t2:rgba(234,238,244,.62);--t3:rgba(234,238,244,.40);--accent-t:#9DB8F4;--accent-w:rgba(91,134,240,.14);color:#EAEEF4;border:1px solid rgba(91,134,240,.28);border-radius:14px;padding:19px;position:relative;overflow:hidden">
+              <div style="position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(91,134,240,.18),transparent 70%)"></div>
+              <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;color:var(--accent-t)">THIS WEEK</div>
+              <div style="font-family:'Instrument Serif',serif;font-size:23px;line-height:1.15;margin-top:9px">Cue did <span style="color:var(--accent-t)">14 things</span> for <span style="font-style:italic">$4.12</span></div>
+              <div style="font-size:11px;color:var(--t2);margin-top:8px">2 held for approval · 0 reversed · every act on the ledger</div>
+              <div style="display:flex;align-items:center;gap:9px;margin-top:14px"><span style="font-size:11px;font-weight:600;color:var(--accent-t);background:var(--accent-w);border-radius:7px;padding:6px 12px">↗ Share</span><span style="font-size:11px;color:var(--t3)">image · no private detail</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- mobile -->
+      <div style="width:390px;flex-shrink:0;background:var(--screen);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 90px -44px rgba(30,38,52,.14);border:1px solid rgba(20,26,36,.12);height:720px">
+        <div style="flex-shrink:0;height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 20px"><span style="font-size:12px;font-weight:600">9:41</span><span style="font-size:10px;color:var(--t3)">▮▮ ᯤ ▐▋</span></div>
+        <div style="flex-shrink:0;display:flex;align-items:center;padding:4px 20px 12px;border-bottom:1px solid var(--line)"><span style="color:var(--accent);font-size:14px">‹ Guardrails</span><span style="margin-left:auto;font-size:14px;font-weight:600">Usage &amp; spend</span></div>
+        <div style="flex:1;overflow:hidden;padding:16px 18px 0">
+          <div style="background:linear-gradient(150deg,#131A28,#0C111B);--t1:#EAEEF4;--t2:rgba(234,238,244,.62);--t3:rgba(234,238,244,.40);--accent-t:#9DB8F4;--accent-w:rgba(91,134,240,.14);color:#EAEEF4;border:1px solid rgba(91,134,240,.28);border-radius:14px;padding:17px">
+            <div style="font-family:'DM Mono',monospace;font-size:8.5px;letter-spacing:.16em;color:var(--accent-t)">THIS WEEK</div>
+            <div style="font-family:'Instrument Serif',serif;font-size:21px;margin-top:7px">14 things for <span style="font-style:italic;color:var(--accent-t)">$4.12</span></div>
+            <div style="font-size:10.5px;color:var(--t2);margin-top:6px">2 held · 0 reversed · all on the ledger</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--t3);margin:16px 0 10px">BY AGENT</div>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px"><span>⚙ Ops</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$3.10 / $20</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:15.5%;height:100%;background:var(--teal)"></div></div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px"><span>✦ Growth</span><span style="font-family:'DM Mono',monospace;color:var(--amber)">$8.60 / $10</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:86%;height:100%;background:var(--amber)"></div></div></div>
+            <div><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px"><span>▲ Builder</span><span style="font-family:'DM Mono',monospace;color:var(--t2)">$0.84 / $15</span></div><div style="height:4px;border-radius:2px;background:var(--sunken);overflow:hidden"><div style="width:5.6%;height:100%;background:var(--accent)"></div></div></div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.14em;color:var(--t3);margin:16px 0 10px">MODEL MIX</div>
+          <div style="display:flex;height:8px;border-radius:4px;overflow:hidden"><span style="width:82%;background:var(--teal)"></span><span style="width:18%;background:var(--accent)"></span></div>
+          <div style="display:flex;gap:13px;margin-top:8px;font-size:10.5px;color:var(--t2)"><span><span style="color:var(--teal)">●</span> 82% Haiku</span><span><span style="color:var(--accent)">●</span> 18% Sonnet</span></div>
+        </div>
+        <div style="flex-shrink:0;height:22px;display:flex;align-items:center;justify-content:center"><span style="width:130px;height:5px;border-radius:3px;background:rgba(30,38,52,.30)"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STATES ═══════════ -->
+  <div id="gstatesL" style="scroll-margin:40px;max-width:1180px;margin:72px auto 0">
+    <div style="display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:30px">
+      <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:500;background:var(--amber);color:#0B0E13;border-radius:7px;padding:4px 10px">S</span>
+      <h2 style="font-family:'Instrument Serif',serif;font-size:30px;font-weight:400;margin:0">States</h2>
+      <span style="font-size:14px;color:var(--t3);margin-left:auto">Fresh user · checkpoint firing in HQ · over-cap decision</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-items:start">
+      <!-- empty / defaults -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">EMPTY · DEFAULTS PRE-SEEDED</div>
+        <div style="background:var(--screen);border:1px solid rgba(20,26,36,.12);border-radius:14px;padding:22px 20px">
+          <div style="font-family:'Instrument Serif',serif;font-size:22px">Guardrails</div>
+          <div style="font-size:12px;color:var(--t2);margin-top:6px;line-height:1.55">You haven't drawn any lines yet — so Cue starts careful. These four defaults are on:</div>
+          <div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">✉</span><span style="flex:1;font-size:12px;font-weight:500">Sending anything</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">$</span><span style="flex:1;font-size:12px;font-weight:500">Spending over $10</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">◎</span><span style="flex:1;font-size:12px;font-weight:500">Publishing publicly</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+            <div style="display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--cardline);border-radius:10px;padding:10px 12px"><span style="font-size:11px;color:var(--t2)">✕</span><span style="flex:1;font-size:12px;font-weight:500">Deleting anything</span><span style="font-family:'DM Mono',monospace;font-size:8px;color:var(--t3);background:var(--sunken);border-radius:4px;padding:3px 7px">DEFAULT</span></div>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:12px;line-height:1.5">The ledger is empty — it fills as Cue works. Loosen these anytime; most people do it from the approval dialog.</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px dashed rgba(91,134,240,.4);border-radius:10px;padding:10px;color:var(--accent-t);font-size:12px;font-weight:600;margin-top:12px">+ Add your first checkpoint</div>
+        </div>
+      </div>
+      <!-- firing in HQ -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">A CHECKPOINT FIRING · IN HQ “NEEDS YOU”</div>
+        <div style="background:var(--screen);border:1px solid rgba(20,26,36,.12);border-radius:14px;padding:20px">
+          <div style="font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.14em;color:var(--t3);margin-bottom:11px">NEEDS YOU · 3</div>
+          <div style="background:rgba(224,181,112,.07);border:1px solid rgba(224,181,112,.28);border-radius:12px;padding:14px 15px">
+            <div style="display:flex;align-items:center;gap:9px"><span style="width:26px;height:26px;border-radius:7px;background:rgba(224,181,112,.16);display:flex;align-items:center;justify-content:center;color:var(--amber);font-size:11px">⏸</span><div style="flex:1"><div style="font-size:13px;font-weight:600">Email to J. Chen — held</div><div style="font-size:10.5px;color:var(--t3);margin-top:2px">✦ Growth · Seed round · 22 min ago</div></div></div>
+            <div style="display:flex;align-items:center;gap:7px;margin-top:11px;padding:9px 11px;background:var(--sunken);border-radius:8px"><span style="font-size:10px;color:var(--amber)">⌁</span><span style="font-size:11px;color:var(--t2)">Your rule: <b style="color:var(--t1);font-weight:600">“Sending any email or message”</b></span><span style="margin-left:auto;font-size:10px;color:var(--accent-t)">view rule ›</span></div>
+            <div style="display:flex;gap:8px;margin-top:11px">
+              <span style="flex:1;text-align:center;font-size:12px;font-weight:600;background:var(--accent);color:#fff;border-radius:8px;padding:9px 0">Review &amp; send</span>
+              <span style="flex:1;text-align:center;font-size:12px;color:var(--t2);background:var(--card);border:1px solid var(--cardline);border-radius:8px;padding:9px 0">Hold</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:12px 4px 2px;font-size:12px;color:var(--t2)"><span style="color:var(--accent-t)">◆</span> Pricing decision — pick a tier structure<span style="margin-left:auto;color:var(--t3);font-size:11px">2 d</span></div>
+        </div>
+      </div>
+      <!-- over cap -->
+      <div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--t3);margin-bottom:12px">OVER CAP · AGENT PAUSED ITSELF</div>
+        <div style="background:var(--screen);border:1px solid rgba(20,26,36,.12);border-radius:14px;padding:20px">
+          <div style="background:var(--card);border:1px solid rgba(232,132,141,.3);border-radius:13px;padding:16px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="width:30px;height:30px;border-radius:8px;background:rgba(167,158,232,.14);display:flex;align-items:center;justify-content:center;color:var(--violet);font-size:13px">✦</span>
+              <div style="flex:1"><div style="font-size:13.5px;font-weight:600">Growth hit its weekly cap</div><div style="font-size:10.5px;color:var(--t3);margin-top:2px">Stopped itself at the line — nothing overran</div></div>
+              <span style="font-family:'DM Mono',monospace;font-size:8.5px;color:var(--red);background:rgba(232,132,141,.12);border-radius:5px;padding:3px 7px">◼ AT CAP</span>
+            </div>
+            <div style="margin-top:13px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:5px"><span style="color:var(--t3)">Spend</span><span style="font-family:'DM Mono',monospace;color:var(--red)">$10.00 of $10/wk</span></div><div style="height:5px;border-radius:3px;background:var(--sunken);overflow:hidden"><div style="width:100%;height:100%;background:var(--red)"></div></div></div>
+            <div style="font-size:11px;color:var(--t2);margin-top:11px;line-height:1.5">Mid-task: enriching the last 8 webinar leads (~$0.90 to finish).</div>
+            <div style="display:flex;gap:8px;margin-top:13px">
+              <span style="flex:1.3;text-align:center;font-size:12px;font-weight:600;background:var(--accent);color:#fff;border-radius:8px;padding:10px 0">Raise to $15 &amp; continue</span>
+              <span style="flex:1;text-align:center;font-size:12px;color:var(--t2);background:var(--sunken);border:1px solid var(--cardline);border-radius:8px;padding:10px 0">Keep paused</span>
+            </div>
+            <div style="font-size:10px;color:var(--t3);margin-top:10px;text-align:center">Resumes Monday either way · cap lives in Guardrails</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+</x-dc>
+</body>
+</html>

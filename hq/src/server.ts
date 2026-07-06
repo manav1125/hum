@@ -8,6 +8,17 @@
  *   POST /waitlist              { email, name, plan? }
  *   POST /redeem                { code, email, name, plan? } → checkout URL
  *   POST /webhooks/stripe       (raw body + Stripe-Signature)
+ *   GET  /welcome/status        ?session_id= → provisioning|ready|delayed|unknown
+ *   POST /signin                { email } → always {ok} (magic-link email)
+ *   GET  /auth                  ?token= → session cookie + 302 /account
+ *
+ * Customer routes (signed session cookie, HQ_SESSION_SECRET):
+ *   GET  /account/summary       — plan + credits + 30-day usage
+ *   POST /account/topup         { pack } → Stripe checkout URL (Origin-checked)
+ *   GET  /account/portal        → 302 to the Stripe billing portal
+ *
+ * Everything else on GET/HEAD falls through to the static marketing site
+ * (site.ts: HQ_SITE_DIR, clean URLs — /pricing → pricing.html etc.).
  *
  * Admin routes (Bearer HQ_ADMIN_TOKEN, or ?token= for the browser page):
  *   GET  /admin                                 — HTML dashboard
@@ -26,29 +37,39 @@
 import { randomUUID } from "node:crypto";
 
 import { adjustCredits, applyTopup, syncKeyLimitsToBalance } from "./credits.js";
-import type { Customer, CustomerPlan, HqDb, Instance } from "./db.js";
+import type { CreditEntry, Customer, CustomerPlan, HqDb, Instance } from "./db.js";
 import { InvalidTransitionError } from "./db.js";
-import { provisionLlmKey } from "./openrouter.js";
+import { sendEmail, signinEmail } from "./email.js";
 import {
   TOPUPS,
-  creditsToCogsUsd,
   isPlanId,
   isTopupId,
   publicCatalog,
   resolvePlan,
+  type TopupId,
 } from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
-import { waitForHealthy } from "./providers/driver.js";
 import {
-  buildInstanceEnv,
-  buildMagicLink,
-  generateInstanceSecrets,
-  guardianInit,
-  mintActorToken,
-  type InstanceSecrets,
-} from "./secrets.js";
+  autoProvisionOnPayment,
+  mintMagicLinkForCustomer,
+  provisionCustomer,
+  publicSiteBase,
+} from "./provisioning.js";
 import {
+  SIGNIN_TOKEN_TTL_MS,
+  customerIdFromRequest,
+  generateSigninToken,
+  hashSigninToken,
+  isSessionConfigured,
+  mintSessionValue,
+  originAllowed,
+  sessionSetCookieHeader,
+} from "./sessions.js";
+import { resolveSiteDir, serveSite } from "./site.js";
+import {
+  createBillingPortalSession,
   createCheckoutSession,
+  createTopupCheckoutSession,
   ensureCatalog,
   handleStripeWebhook,
 } from "./stripe.js";
@@ -87,15 +108,6 @@ function redact(instance: Instance): Omit<Instance, "secretsJson"> {
   return rest;
 }
 
-function parseSecrets(instance: Instance): InstanceSecrets | null {
-  try {
-    const parsed = JSON.parse(instance.secretsJson) as InstanceSecrets;
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 async function readJsonBody(req: Request): Promise<Record<string, unknown>> {
   try {
     const body = (await req.json()) as Record<string, unknown>;
@@ -112,15 +124,20 @@ function parsePlan(raw: unknown, fallback: CustomerPlan): CustomerPlan {
   return fallback;
 }
 
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 30) || "customer"
-  );
+/** Normalize a top-up pack from the website ({pack} body) to a TopupId. */
+function parseTopupPack(raw: unknown): TopupId | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "topup_1000" || s === "1000" || s === "small") return "topup_1000";
+  if (s === "topup_5000" || s === "5000" || s === "large") return "topup_5000";
+  return null;
 }
+
+function firstNameOf(customer: Customer): string {
+  return customer.name.trim().split(/\s+/)[0] || customer.name;
+}
+
+/** How long after checkout we keep saying "provisioning" before "delayed". */
+const WELCOME_DELAYED_AFTER_MS = 10 * 60_000;
 
 // ---------------------------------------------------------------------------
 // Request handler (exported for tests)
@@ -132,6 +149,30 @@ export function createHandler(
   const adminToken = deps.adminToken ?? process.env.HQ_ADMIN_TOKEN ?? "";
   const fetchImpl = deps.fetchImpl ?? fetch;
   const { db, driver } = deps;
+  const siteDir = resolveSiteDir();
+
+  const provisioningDeps = {
+    db,
+    driver,
+    fetchImpl,
+    healthTimeoutMs: deps.healthTimeoutMs,
+    healthIntervalMs: deps.healthIntervalMs,
+  };
+
+  // Fire-and-forget auto-provision after a paid subscription checkout.
+  // Kept on the handler so tests can await the tail via deps.fetchImpl mocks;
+  // failures are recorded as auto_provision_failed events, never thrown.
+  const scheduleAutoProvision = (customerId: string): void => {
+    void autoProvisionOnPayment(provisioningDeps, customerId).catch((err) => {
+      db.recordEvent("auto_provision_failed", customerId, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  };
+
+  // Light rate limit for the polled welcome-status route: one request per
+  // session_id per second (the page polls every 5s).
+  const welcomeLastSeen = new Map<string, number>();
 
   return async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
@@ -172,11 +213,28 @@ export function createHandler(
       if (method === "POST" && path === "/webhooks/stripe") {
         const rawBody = await req.text();
         const outcome = await handleStripeWebhook(
-          { db, driver, fetchImpl },
+          { db, driver, fetchImpl, scheduleAutoProvision },
           rawBody,
           req.headers.get("stripe-signature"),
         );
         return json(outcome.body, outcome.status);
+      }
+
+      if (method === "GET" && path === "/welcome/status") {
+        return handleWelcomeStatus(url);
+      }
+
+      if (method === "POST" && path === "/signin") {
+        return handleSignin(req);
+      }
+
+      if (method === "GET" && path === "/auth") {
+        return handleAuth(url);
+      }
+
+      // ── customer (session-cookie) routes ──────────────────────────────
+      if (path === "/account/summary" || path === "/account/topup" || path === "/account/portal") {
+        return handleAccount(req, path, method);
       }
 
       // ── admin ─────────────────────────────────────────────────────────
@@ -242,6 +300,11 @@ export function createHandler(
         return json({ error: "not found" }, 404);
       }
 
+      // ── static marketing/commerce site (clean URLs) ───────────────────
+      // API routes above always win; anything else on GET/HEAD is a page.
+      const page = await serveSite(siteDir, req, path);
+      if (page) return page;
+
       return json({ error: "not found" }, 404);
     } catch (err) {
       if (err instanceof InvalidTransitionError) {
@@ -279,107 +342,38 @@ export function createHandler(
     customer: Customer,
     req: Request,
   ): Promise<Response> {
-    const existing = db
-      .listInstancesByCustomer(customer.id)
-      .filter((i) => i.state !== "deleted");
-    if (existing.length > 0) {
-      return json(
-        { error: "customer already has an instance", instance: redact(existing[0]) },
-        409,
-      );
-    }
-
     const body = await readJsonBody(req);
-    const secrets = generateInstanceSecrets();
-    const providerEnv =
-      body.providerEnv && typeof body.providerEnv === "object"
-        ? (body.providerEnv as Record<string, string>)
-        : {};
-
-    // Managed LLM: mint a spend-capped OpenRouter child key sized to the
-    // plan's monthly credits. Only the hash is persisted; providerEnv can
-    // still override OPENROUTER_API_KEY explicitly.
-    const planSpec = resolvePlan(customer.plan);
-    const llmKey = await provisionLlmKey(
-      `cue-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
-      creditsToCogsUsd(planSpec.monthlyCredits),
-      fetchImpl,
-    );
-    if (!llmKey.ok) {
-      return json({ error: `llm key provisioning failed: ${llmKey.reason}` }, 502);
-    }
-    db.recordEvent("llm_key_provisioned", customer.id, {
-      mode: llmKey.mode,
-      limitUsd: llmKey.mode === "provisioned"
-        ? creditsToCogsUsd(planSpec.monthlyCredits)
-        : null,
-    });
-
-    const provisioned = await driver.provision({
-      customerId: customer.id,
-      name: `cue-${slugify(customer.name)}-${customer.id.slice(0, 8)}`,
-      env: buildInstanceEnv(secrets, {
-        ...(llmKey.apiKey ? { OPENROUTER_API_KEY: llmKey.apiKey } : {}),
-        ...providerEnv,
-      }),
+    const outcome = await provisionCustomer(provisioningDeps, customer, {
+      providerEnv:
+        body.providerEnv && typeof body.providerEnv === "object"
+          ? (body.providerEnv as Record<string, string>)
+          : {},
       region: typeof body.region === "string" ? body.region : undefined,
       plan: typeof body.plan === "string" ? body.plan : undefined,
       image: typeof body.image === "string" ? body.image : undefined,
     });
-
-    const instance = db.createInstance({
-      customerId: customer.id,
-      driver: driver.id,
-      externalId: provisioned.externalId,
-      url: provisioned.url,
-      secretsJson: JSON.stringify(secrets),
-      state: "provisioning",
-    });
-    if (llmKey.keyHash) {
-      db.setInstanceOpenrouterKeyHash(instance.id, llmKey.keyHash);
-    }
-
-    const healthy = await waitForHealthy(driver, provisioned.url, {
-      timeoutMs:
-        deps.healthTimeoutMs ??
-        Number(process.env.HQ_HEALTH_TIMEOUT_MS ?? 5 * 60_000),
-      intervalMs: deps.healthIntervalMs ?? 5_000,
-    });
-    if (!healthy) {
-      db.recordEvent("instance_health_timeout", customer.id, {
-        instanceId: instance.id,
-        url: provisioned.url,
-      });
+    if (!outcome.ok) {
       return json(
-        { ok: false, instance: redact(instance), error: "instance did not become healthy" },
-        502,
+        {
+          ok: false,
+          error: outcome.error,
+          ...(outcome.instance ? { instance: redact(outcome.instance) } : {}),
+        },
+        outcome.status,
       );
     }
-
-    // One-time guardian bootstrap: creates the guardian principal and gives
-    // us its id, so magic links can be minted offline from now on.
-    // Best-effort — a failure leaves the instance live but unlinked.
-    try {
-      const init = await guardianInit(
-        provisioned.url,
-        secrets.guardianBootstrapSecret,
-        fetchImpl,
+    if (outcome.existing) {
+      // Preserve the admin route's historical contract: provisioning an
+      // already-provisioned customer is a 409, with the instance attached.
+      return json(
+        {
+          error: "customer already has an instance",
+          instance: redact(outcome.instance),
+        },
+        409,
       );
-      secrets.guardianPrincipalId = init.guardianPrincipalId;
-      db.updateInstanceSecrets(instance.id, JSON.stringify(secrets));
-      db.recordEvent("guardian_bootstrapped", customer.id, {
-        instanceId: instance.id,
-        guardianPrincipalId: init.guardianPrincipalId,
-      });
-    } catch (err) {
-      db.recordEvent("guardian_bootstrap_failed", customer.id, {
-        instanceId: instance.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
-
-    const live = db.transitionInstance(instance.id, "live");
-    return json({ ok: true, instance: redact(live) });
+    return json({ ok: true, instance: redact(outcome.instance) });
   }
 
   async function handleCheckout(customer: Customer): Promise<Response> {
@@ -520,65 +514,265 @@ export function createHandler(
   }
 
   async function handleMagicLink(customer: Customer): Promise<Response> {
+    const outcome = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
+    if (!outcome.ok) {
+      const { status, ...body } = outcome;
+      return json(body, status);
+    }
+    return json(outcome);
+  }
+
+  // ── website flow implementations ──────────────────────────────────────
+
+  /**
+   * GET /welcome/status?session_id= — the /welcome page polls this every
+   * 5s after Stripe redirects back. States:
+   *   unknown      — session id we've never seen
+   *   provisioning — paid, instance still coming up (< 10 min)
+   *   ready        — instance live; magicLink minted fresh per response
+   *   delayed      — provisioning failed or exceeded 10 min
+   */
+  async function handleWelcomeStatus(url: URL): Promise<Response> {
+    const sessionId = url.searchParams.get("session_id")?.trim() ?? "";
+    if (!sessionId) return json({ state: "unknown" }, 400);
+
+    const now = Date.now();
+    const last = welcomeLastSeen.get(sessionId) ?? 0;
+    if (now - last < 1_000) {
+      return json({ error: "rate_limited" }, 429);
+    }
+    welcomeLastSeen.set(sessionId, now);
+    if (welcomeLastSeen.size > 10_000) welcomeLastSeen.clear(); // bounded
+
+    const customer = db.getCustomerByCheckoutSession(sessionId);
+    if (!customer) return json({ state: "unknown" });
+
+    const identity = {
+      firstName: firstNameOf(customer),
+      email: customer.email,
+    };
+    const instances = db
+      .listInstancesByCustomer(customer.id)
+      .filter((i) => i.state !== "deleted");
+    const live = instances.find(
+      (i) => i.state === "live" || i.state === "suspended",
+    );
+    if (live) {
+      const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
+      if (magic.ok) {
+        return json({ state: "ready", magicLink: magic.url, ...identity });
+      }
+      // Live but unlinkable (guardian init failing) — treat as delayed;
+      // support gets them their link.
+      return json({ state: "delayed", ...identity });
+    }
+
+    const failed = db.findLatestEvent("auto_provision_failed", customer.id);
+    const startedAt = customer.checkoutSessionAt ?? customer.createdAt;
+    if (failed || now - startedAt > WELCOME_DELAYED_AFTER_MS) {
+      return json({ state: "delayed", ...identity });
+    }
+    return json({ state: "provisioning", ...identity });
+  }
+
+  /**
+   * POST /signin { email } — always answers {ok:true} (never leaks whether
+   * an account exists). Known customers get a one-time link by email.
+   */
+  async function handleSignin(req: Request): Promise<Response> {
+    if (!isSessionConfigured()) {
+      return json({ error: "signin not configured (HQ_SESSION_SECRET)" }, 503);
+    }
+    const body = await readJsonBody(req);
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    if (!email || !email.includes("@")) {
+      return json({ error: "email is required" }, 400);
+    }
+    const customer = db.getCustomerByEmail(email);
+    if (customer) {
+      const raw = generateSigninToken();
+      db.createSigninToken({
+        customerId: customer.id,
+        tokenHash: hashSigninToken(raw),
+        ttlMs: SIGNIN_TOKEN_TTL_MS,
+      });
+      db.purgeExpiredSigninTokens();
+      const link = `${publicSiteBase()}/auth?token=${raw}`;
+      const result = await sendEmail(
+        customer.email,
+        signinEmail({ signinLink: link }),
+        fetchImpl,
+      );
+      db.recordEvent(
+        result.ok ? "signin_email_sent" : "signin_email_failed",
+        customer.id,
+        result.ok ? { sent: result.sent } : { reason: result.reason },
+      );
+    }
+    return json({ ok: true });
+  }
+
+  /**
+   * GET /auth?token= — consume the emailed one-time token, set the signed
+   * session cookie, land on /account. Bad/expired tokens bounce to /signin.
+   */
+  function handleAuth(url: URL): Response {
+    if (!isSessionConfigured()) {
+      return json({ error: "signin not configured (HQ_SESSION_SECRET)" }, 503);
+    }
+    const raw = url.searchParams.get("token")?.trim() ?? "";
+    const redirectTo = (target: string, extra?: Record<string, string>) =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: target, ...(extra ?? {}) },
+      });
+    if (!raw) return redirectTo("/signin");
+    const consumed = db.consumeSigninToken(hashSigninToken(raw));
+    if (!consumed) return redirectTo("/signin?error=link_expired");
+    const customer = db.getCustomer(consumed.customerId);
+    if (!customer) return redirectTo("/signin?error=link_expired");
+    db.recordEvent("site_session_created", customer.id, {});
+    return redirectTo("/account", {
+      "Set-Cookie": sessionSetCookieHeader(mintSessionValue(customer.id), {
+        secure: publicSiteBase().startsWith("https://"),
+      }),
+    });
+  }
+
+  /** Cookie-authed /account/* routes. */
+  async function handleAccount(
+    req: Request,
+    path: string,
+    method: string,
+  ): Promise<Response> {
+    const customerId = customerIdFromRequest(req);
+    const customer = customerId ? db.getCustomer(customerId) : null;
+
+    if (path === "/account/portal" && method === "GET") {
+      // Link-driven route: redirect rather than JSON on every outcome.
+      if (!customer) {
+        return new Response(null, { status: 302, headers: { Location: "/signin" } });
+      }
+      const sub = db.getSubscription(customer.id);
+      if (!sub?.stripeCustomerId) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/account?portal=unavailable" },
+        });
+      }
+      const portal = await createBillingPortalSession(
+        {
+          stripeCustomerId: sub.stripeCustomerId,
+          returnUrl: `${publicSiteBase()}/account`,
+        },
+        fetchImpl,
+      );
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: portal.ok ? portal.url : "/account?portal=unavailable",
+        },
+      });
+    }
+
+    if (!customer) return json({ error: "unauthorized" }, 401);
+
+    if (path === "/account/summary" && method === "GET") {
+      return json(buildAccountSummary(customer));
+    }
+
+    if (path === "/account/topup" && method === "POST") {
+      if (!originAllowed(req)) return json({ error: "bad origin" }, 403);
+      const body = await readJsonBody(req);
+      const topupId = parseTopupPack(body.pack ?? body.topupId);
+      if (!topupId) {
+        return json({ error: "pack must be topup_1000 or topup_5000" }, 400);
+      }
+      const checkout = await createTopupCheckoutSession(
+        {
+          customerId: customer.id,
+          email: customer.email,
+          topupId,
+          successPath: "/account?topup=success",
+          cancelPath: "/account",
+        },
+        fetchImpl,
+      );
+      if (!checkout.ok) {
+        // Mirror /redeem's honest degradation when Stripe isn't configured.
+        return json({ ok: true, checkoutUrl: null, reason: checkout.reason });
+      }
+      db.recordEvent("topup_checkout_created", customer.id, {
+        topupId,
+        sessionId: checkout.sessionId,
+      });
+      return json({ ok: true, checkoutUrl: checkout.url });
+    }
+
+    return json({ error: "not found" }, 404);
+  }
+
+  /** Shape served to the /account page (commerce.js renders this). */
+  function buildAccountSummary(customer: Customer): Record<string, unknown> {
+    const spec = resolvePlan(customer.plan);
+    const sub = db.getSubscription(customer.id);
+    const balance = db.getCreditBalance(customer.id);
+    const ledger = db.listCreditEntries(customer.id, 1000);
+
+    // Cycle window: since the latest monthly grant (or customer creation).
+    const latestGrant = ledger.find((e: CreditEntry) => e.kind === "grant");
+    const cycleStart = latestGrant?.ts ?? customer.createdAt;
+    const grantedThisCycle = latestGrant?.delta ?? 0;
+    const usedThisCycle = ledger
+      .filter((e) => e.kind === "usage_sync" && e.ts >= cycleStart)
+      .reduce((sum, e) => sum + Math.max(0, -e.delta), 0);
+
+    // Daily usage totals, last 30 days (usage_sync only). Top activities
+    // are not derivable from the ledger (cursor-style notes) — omitted;
+    // commerce.js handles the absence.
+    const dayMs = 86_400_000;
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const days: { date: string; credits: number }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const start = today.getTime() - i * dayMs;
+      const credits = ledger
+        .filter(
+          (e) => e.kind === "usage_sync" && e.ts >= start && e.ts < start + dayMs,
+        )
+        .reduce((sum, e) => sum + Math.max(0, -e.delta), 0);
+      days.push({ date: new Date(start).toISOString().slice(0, 10), credits });
+    }
+
     const instance = db
       .listInstancesByCustomer(customer.id)
-      .find((i) => i.state === "live" || i.state === "suspended");
-    if (!instance) {
-      return json({ error: "customer has no instance" }, 404);
-    }
-    const secrets = parseSecrets(instance);
-    if (!secrets?.actorTokenSigningKey) {
-      return json({ error: "instance has no stored signing key" }, 500);
-    }
+      .find((i) => i.state === "live");
 
-    // Learn the guardian principal if provisioning didn't (e.g. the
-    // bootstrap secret is still unconsumed on a manually-created instance).
-    if (!secrets.guardianPrincipalId) {
-      try {
-        const init = await guardianInit(
-          instance.url,
-          secrets.guardianBootstrapSecret,
-          fetchImpl,
-        );
-        secrets.guardianPrincipalId = init.guardianPrincipalId;
-        db.updateInstanceSecrets(instance.id, JSON.stringify(secrets));
-      } catch (err) {
-        // Cannot mint a token bound to an unknown principal: the gateway
-        // verifies the signature fail-open, but the daemon resolves the
-        // actor's trust class from the guardian binding — a made-up
-        // principal id would be rejected as unknown. Hand back instructions
-        // instead.
-        return json(
-          {
-            error: "guardian principal unknown and guardian/init failed",
-            detail: err instanceof Error ? err.message : String(err),
-            instructions:
-              "Run POST " +
-              instance.url +
-              "/v1/guardian/init with header x-bootstrap-secret and body " +
-              '{"platform":"web","deviceId":"<any>"} to mint the first token, ' +
-              "then store guardianPrincipalId in this instance's secretsJson.",
-          },
-          409,
-        );
-      }
-    }
-
-    const token = mintActorToken({
-      signingKeyHex: secrets.actorTokenSigningKey,
-      guardianPrincipalId: secrets.guardianPrincipalId,
-    });
-    db.recordEvent("magic_link_minted", customer.id, {
-      instanceId: instance.id,
-    });
-    // The SPA consumes ?cueToken= on boot (bootstrapCueSelfHost in
-    // apps/web/src/lib/self-hosted/cue-self-host.ts) — this IS the
-    // supported URL bootstrap path; there is no #selfHostToken fragment.
-    return json({
+    return {
       ok: true,
-      url: buildMagicLink(instance.url, token),
-      expiresInDays: 30,
-    });
+      email: customer.email,
+      name: customer.name,
+      plan: {
+        id: spec.id,
+        name: spec.name,
+        priceUsd: spec.priceUsd,
+        monthlyCredits: spec.monthlyCredits,
+      },
+      subscriptionStatus: sub?.status ?? null,
+      renewalDate: sub?.currentPeriodEnd
+        ? new Date(sub.currentPeriodEnd).toISOString()
+        : null,
+      credits: {
+        balance,
+        grantedThisCycle,
+        usedThisCycle,
+        refreshDate: sub?.currentPeriodEnd
+          ? new Date(sub.currentPeriodEnd).toISOString()
+          : null,
+      },
+      usage: { days },
+      instanceUrl: instance?.url ?? null,
+    };
   }
 
   async function handleInstanceAction(

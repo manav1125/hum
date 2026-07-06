@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Cue — Legal</title>
+<meta name="robots" content="index,follow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#0F1620;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .lg-body p{font-size:15px;line-height:1.75;color:#43505F;margin:0 0 16px}
+  .lg-body h2{font-size:20px;font-weight:600;letter-spacing:-.3px;color:#101828;margin:38px 0 12px;scroll-margin-top:90px}
+  .lg-ph{color:#8D99A5;font-style:italic}
+  @media (max-width:860px){ [data-legal-grid]{grid-template-columns:1fr !important} [data-toc]{display:none !important} [data-nav-links]{display:none !important} }
+</style>
+</helmet>
+
+<!-- ░░ NAV ░░ -->
+<div style="position:sticky;top:0;z-index:50;background:rgba(15,22,32,.86);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.07)">
+  <div style="max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:15px clamp(20px,4vw,36px)">
+    <a href="index.html" style="display:flex;align-items:center;gap:9px;text-decoration:none;color:#fff"><span style="width:30px;height:30px;border-radius:9px;background:#1A2230;border:1.5px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;position:relative"><span style="font-size:17px;font-weight:600;color:#fff">C</span><span style="position:absolute;width:5px;height:5px;border-radius:50%;background:#3D6EE8;right:6px;bottom:8px"></span></span><b style="font-size:20px;font-weight:500;letter-spacing:-.9px">cue<span style="color:#3D6EE8">.</span></b></a>
+    <div data-nav-links style="display:flex;align-items:center;gap:24px;font-size:12.5px;color:rgba(255,255,255,.72)">
+      <a href="product.html" style="color:inherit;text-decoration:none">Product</a>
+      <a href="pricing.html" style="color:inherit;text-decoration:none">Pricing</a>
+      <a href="signin.html" style="background:#3D6EE8;color:#fff;border-radius:8px;padding:7px 14px;font-weight:500;text-decoration:none">Sign in</a>
+    </div>
+  </div>
+</div>
+
+<!-- ░░ DOC HEADER + TABS ░░ -->
+<div style="background:#fff;padding:clamp(36px,6vh,60px) clamp(20px,4vw,36px) 0">
+  <div style="max-width:1000px;margin:0 auto">
+    <div style="display:flex;gap:8px;margin-bottom:22px">
+      <button onClick="{{ showTerms }}" style="font-size:13px;font-weight:600;font-family:inherit;border-radius:999px;padding:8px 18px;cursor:pointer;border:1px solid {{ termsBorder }};background:{{ termsBg }};color:{{ termsColor }}">Terms of Service</button>
+      <button onClick="{{ showPrivacy }}" style="font-size:13px;font-weight:600;font-family:inherit;border-radius:999px;padding:8px 18px;cursor:pointer;border:1px solid {{ privacyBorder }};background:{{ privacyBg }};color:{{ privacyColor }}">Privacy Policy</button>
+    </div>
+    <h1 style="font-size:clamp(30px,4.6vw,44px);font-weight:600;letter-spacing:-.03em;color:#101828;margin:0">{{ docTitle }}</h1>
+    <div style="font-size:13px;color:#8D99A5;margin-top:10px;font-family:'DM Mono',monospace;letter-spacing:.04em">LAST UPDATED · JULY 6, 2026</div>
+  </div>
+</div>
+
+<!-- ░░ DOC BODY ░░ -->
+<div style="background:#fff;padding:clamp(28px,4vh,44px) clamp(20px,4vw,36px) clamp(60px,9vh,100px)">
+  <div data-legal-grid style="max-width:1000px;margin:0 auto;display:grid;grid-template-columns:220px 1fr;gap:clamp(28px,5vw,64px);align-items:start">
+
+    <!-- ToC -->
+    <nav data-toc style="position:sticky;top:90px">
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.14em;color:#8D99A5;margin-bottom:14px">ON THIS PAGE</div>
+      <div style="display:flex;flex-direction:column;gap:2px;border-left:1px solid #E5E9F0">
+        <sc-for list="{{ toc }}" as="t" hint-placeholder-count="6">
+          <a href="{{ t.href }}" style="font-size:13px;color:#5A6672;text-decoration:none;padding:7px 0 7px 14px;margin-left:-1px;border-left:1px solid transparent" style-hover="color:#2B53C4;border-left-color:#2B53C4">{{ t.label }}</a>
+        </sc-for>
+      </div>
+    </nav>
+
+    <!-- Prose -->
+    <div class="lg-body" style="max-width:680px">
+      <!-- privacy callout -->
+      <sc-if value="{{ isPrivacy }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#F4F7FC;border:1px solid #D9E2F5;border-left:3px solid #3D6EE8;border-radius:12px;padding:18px 20px;margin-bottom:32px">
+          <div style="font-size:14.5px;line-height:1.65;color:#1A2230"><b>Your Cue runs on its own isolated instance.</b> Your data and memory are yours — we don't train on them, and we can't read them.</div>
+        </div>
+      </sc-if>
+
+      <sc-for list="{{ sections }}" as="s" hint-placeholder-count="6">
+        <h2 id="{{ s.id }}">{{ s.h }}</h2>
+        <p class="lg-ph">{{ s.body }}</p>
+      </sc-for>
+
+      <div style="margin-top:40px;padding-top:20px;border-top:1px solid #E5E9F0;font-size:13px;color:#8D99A5">Questions about this document? <a href="mailto:hello@cue.ai" style="color:#2B53C4;text-decoration:none">hello@cue.ai</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- ░░ FOOTER ░░ -->
+<div style="background:#0B111A;color:#7E8BA3;padding:28px clamp(20px,4vw,36px);border-top:1px solid rgba(255,255,255,.06)">
+  <div style="max-width:1080px;margin:0 auto;display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center;font-size:12px">
+    <span>© 2026 Cue. All rights reserved.</span>
+    <span style="display:flex;gap:18px;flex-wrap:wrap"><a href="index.html" style="color:inherit;text-decoration:none">Home</a><a href="pricing.html" style="color:inherit;text-decoration:none">Pricing</a><a href="legal.html#terms" style="color:inherit;text-decoration:none">Terms</a><a href="legal.html#privacy" style="color:inherit;text-decoration:none">Privacy</a><a href="mailto:hello@cue.ai" style="color:inherit;text-decoration:none">hello@cue.ai</a></span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { doc: "terms" };
+
+  terms = {
+    title: "Terms of Service",
+    toc: [
+      ["Acceptance of terms","acceptance"],["Your account","account"],["Plans, credits & billing","billing"],
+      ["Acceptable use","use"],["Your content & memory","content"],["Availability & support","availability"],
+      ["Termination","termination"],["Changes to these terms","changes"],
+    ],
+    sections: [
+      ["acceptance","Acceptance of terms","[Placeholder — legal to supply. Summary: by using Cue you agree to these terms; if you use Cue on behalf of an organization, you accept on its behalf.]"],
+      ["account","Your account","[Placeholder. Sign-in is via emailed magic link; you're responsible for the email account tied to your Cue and for activity under your access.]"],
+      ["billing","Plans, credits & billing","[Placeholder. Plans include monthly credits; credits measure Cue's work and refresh each cycle. Top-ups are one-time. Upgrades prorate immediately; downgrades apply at period end. Cancel anytime.]"],
+      ["use","Acceptable use","[Placeholder. What Cue may not be used for; limits on abuse, unlawful activity, and interference with the service.]"],
+      ["content","Your content & memory","[Placeholder. You own your content and memory. Cue processes it only to do the work you direct. We do not train on it.]"],
+      ["availability","Availability & support","[Placeholder. Service is provided on an as-available basis during alpha; support channels and response expectations.]"],
+      ["termination","Termination","[Placeholder. How either party may end the relationship and what happens to your data and export rights on termination.]"],
+      ["changes","Changes to these terms","[Placeholder. How we notify you of material changes and when they take effect.]"],
+    ],
+  };
+  privacy = {
+    title: "Privacy Policy",
+    toc: [
+      ["What we collect","collect"],["How your Cue is isolated","isolation"],["How we use data","use"],
+      ["What we never do","never"],["Your controls","controls"],["Security","security"],
+      ["Data retention","retention"],["Contact","contact"],
+    ],
+    sections: [
+      ["collect","What we collect","[Placeholder. Account details (name, email), plan and billing metadata via Stripe, and the content you or your connected tools bring into your Cue.]"],
+      ["isolation","How your Cue is isolated","[Placeholder. Each customer's Cue runs on its own isolated instance; memory and content are scoped to that instance and not commingled across customers.]"],
+      ["use","How we use data","[Placeholder. We use your data solely to operate your Cue and perform the work you direct — never to train models or profile you.]"],
+      ["never","What we never do","[Placeholder. We don't sell your data, we don't train on your data, and staff cannot read your memory except under narrowly-scoped, logged support access you authorize.]"],
+      ["controls","Your controls","[Placeholder. Export or delete everything from one place; manage connected-tool scopes; revoke access at any time.]"],
+      ["security","Security","[Placeholder. Encryption in transit and at rest; SOC 2 Type II underway; incident response commitments.]"],
+      ["retention","Data retention","[Placeholder. How long data is kept while active and after cancellation, and deletion timelines.]"],
+      ["contact","Contact","[Placeholder. How to reach us with privacy questions or requests.]"],
+    ],
+  };
+
+  renderVals() {
+    const d = this.state.doc;
+    const active = d === "terms" ? this.terms : this.privacy;
+    const on = "#2B53C4", off = "transparent";
+    return {
+      docTitle: active.title,
+      isPrivacy: d === "privacy",
+      toc: active.toc.map(([label, id]) => ({ label, href: "#" + id })),
+      sections: active.sections.map(([id, h, body]) => ({ id, h, body })),
+      showTerms: () => this.setState({ doc: "terms" }),
+      showPrivacy: () => this.setState({ doc: "privacy" }),
+      termsBg: d === "terms" ? on : "#fff", termsColor: d === "terms" ? "#fff" : "#5A6672", termsBorder: d === "terms" ? on : "#D7DDE7",
+      privacyBg: d === "privacy" ? on : "#fff", privacyColor: d === "privacy" ? "#fff" : "#5A6672", privacyBorder: d === "privacy" ? on : "#D7DDE7",
+    };
+  }
+}
+</script>
+</body>
+</html>

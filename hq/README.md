@@ -110,7 +110,11 @@ price-id → env-var mapping to paste into the environment.
 | `STRIPE_PRICE_FOUNDING` / `STRIPE_PRICE_FOUNDING_BYO` | Legacy price ids for the founding aliases |
 | `OPENROUTER_PROVISIONING_KEY` | OpenRouter provisioning key — mints/limits/disables per-customer child keys at `api/v1/keys` |
 | `OPENROUTER_SHARED_KEY` | Fallback runtime key when no provisioning key is set (guardrails caps only — logged loudly) |
-| `HQ_PUBLIC_SITE_URL` | Marketing-site base URL; wins over `HQ_PUBLIC_URL` for checkout success/cancel redirects |
+| `HQ_PUBLIC_SITE_URL` | Marketing-site base URL; wins over `HQ_PUBLIC_URL` for checkout success/cancel redirects and emailed links. HQ serves the site itself, so point this at HQ's own origin |
+| `HQ_SITE_DIR` | Directory of the static marketing/commerce site (default: repo-root `site/`) |
+| `HQ_SESSION_SECRET` | HMAC key for the customer `/account` session cookie + enables `/signin`. Unset ⇒ site auth routes answer 503 |
+| `RESEND_API_KEY` | Resend secret for transactional email. Unset ⇒ log-only mode: every would-be email (incl. its action link) is printed at info level |
+| `EMAIL_FROM` | From header for transactional email (default `Cue <hello@cue.ai>`) |
 
 `OPENROUTER_API_KEY` is minted by HQ at provision time (a limit-capped
 child key — see the plans & credits section). Other per-instance provider
@@ -125,7 +129,23 @@ explicitly — HQ generates the instance-internal secrets itself
 ## Routes
 
 Public: `GET /healthz`, `GET /plans`, `POST /waitlist {email,name,plan?}`,
-`POST /redeem {code,email,name,plan?}`, `POST /webhooks/stripe`.
+`POST /redeem {code,email,name,plan?}`, `POST /webhooks/stripe`,
+`GET /welcome/status?session_id=`, `POST /signin {email}`, `GET /auth?token=`.
+
+Customer (signed `cue_hq_session` cookie set by `/auth`; 30-day TTL,
+httpOnly, SameSite=Lax, Origin-checked on POSTs):
+
+- `GET /account/summary` — `{plan, renewalDate, credits: {balance,
+  grantedThisCycle, usedThisCycle, refreshDate}, usage: {days: last-30-days
+  daily credit totals}, instanceUrl}`. Top activities are not derivable
+  from the credit ledger yet and are omitted (the site handles absence).
+- `POST /account/topup {pack}` — `topup_1000 | topup_5000` → payment-mode
+  Stripe Checkout returning to `/account?topup=success` (honest
+  `checkoutUrl: null` + reason when Stripe isn't configured).
+- `GET /account/portal` — 302 to a Stripe Billing Portal session
+  (invoices, payment method, cancel), back to `/account`.
+
+Anything else on GET/HEAD falls through to the **static site** (below).
 
 Admin (Bearer `HQ_ADMIN_TOKEN`, or `?token=` for the browser dashboard):
 
@@ -151,6 +171,39 @@ Admin (Bearer `HQ_ADMIN_TOKEN`, or `?token=` for the browser dashboard):
   instance's signing key and returns
   `<instanceUrl>/assistant/?cueToken=<jwt>`.
 - `POST /admin/instances/:id/suspend|resume|destroy`.
+
+## The website (served by HQ)
+
+HQ is the production origin for the marketing/commerce site: `site/` at
+the repo root (override with `HQ_SITE_DIR`). Static serving lives in
+`src/site.ts` — GET/HEAD only, API routes always win, clean URLs
+(`/pricing` → `pricing.html`, `/` → `index.html`), and the Stripe
+checkout-redirect contract is mapped onto the designed pages
+(`/checkout/success` → `welcome.html`, `/checkout/cancel` →
+`pricing.html`). Set `HQ_PUBLIC_SITE_URL` to HQ's own origin.
+
+The commerce pages call HQ same-origin through `site/commerce.js`. The
+full purchase loop is hands-off:
+
+1. `/redeem` POSTs the invite → Stripe Checkout.
+2. `checkout.session.completed` (subscription mode) marks the customer
+   active, records the checkout session id, and **auto-provisions** the
+   instance asynchronously (same path as the admin provision route —
+   `src/provisioning.ts`; webhook retries no-op once an instance exists).
+3. Stripe redirects to `/checkout/success?session_id=…` (the designed
+   `/welcome` page), which polls `GET /welcome/status` every 5s:
+   `provisioning` → `ready` (response carries a freshly minted magic
+   link) or `delayed` (provision failed or >10 min).
+4. When provisioning completes, HQ emails the **welcome** template with
+   the magic link.
+
+**Emails** (`src/email.ts`, Resend via plain fetch; templates extracted
+from the designed `site/emails.html`): *welcome* fires when
+auto-provisioning completes; *sign-in link* fires from `POST /signin`;
+*payment failed* fires on `invoice.payment_failed`; *credits low* is
+built but not yet wired to the fleet sweep (TODO below). Without
+`RESEND_API_KEY` every send logs the recipient, subject, and action link
+at info level — the whole flow is testable keyless.
 
 ## Website integration contract
 
@@ -248,10 +301,15 @@ the query param is the supported mechanism, and HQ's magic links use it.
   suite (`assistant/qa/prod-smoke.ts` with a per-instance actor token)
   later.
 - **Stripe proration** on plan changes is not handled (upgrades take
-  effect on the next invoice; no mid-cycle credit proration).
-- **Public redemption page** — `POST /redeem` is live (invite `percentOff`
-  becomes a Stripe promotion code), but the site page that calls it is the
-  marketing site's job (see the website integration contract above).
+  effect on the next invoice; no mid-cycle credit proration). The
+  /account page's "Change plan" chooser is visual-only until a
+  plan-change endpoint exists.
+- **Credits-low email** — the designed template is built
+  (`email.ts creditsLowEmail`) but not yet fired by the fleet sweep when
+  a balance crosses 15% of the cycle grant.
+- **Account usage "top activities"** — the credit ledger only stores
+  sync cursors, not per-activity attribution; `/account/summary` omits
+  the field and the site hides the section.
 - **Usage sync trusts the instance's self-reported rollup** (estimated
   cost from `llm_usage_events`); reconcile against OpenRouter's per-key
   `usage` field periodically once real traffic exists.

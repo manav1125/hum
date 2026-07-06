@@ -36,6 +36,7 @@ import {
   syncKeyLimitsToBalance,
 } from "./credits.js";
 import type { CustomerPlan, HqDb } from "./db.js";
+import { paymentFailedEmail, sendEmail } from "./email.js";
 import { disableKey, isOpenRouterConfigured } from "./openrouter.js";
 import {
   PLANS,
@@ -207,7 +208,14 @@ export async function createCheckoutSession(
  * applies the credits idempotently by session id.
  */
 export async function createTopupCheckoutSession(
-  params: { customerId: string; email: string; topupId: TopupId },
+  params: {
+    customerId: string;
+    email: string;
+    topupId: TopupId;
+    /** Optional success/cancel overrides (paths on the public site base). */
+    successPath?: string;
+    cancelPath?: string;
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<CheckoutResult> {
   if (!isStripeConfigured()) {
@@ -223,8 +231,8 @@ export async function createTopupCheckoutSession(
   const form = new URLSearchParams({
     mode: "payment",
     customer_email: params.email,
-    success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/checkout/cancel`,
+    success_url: `${base}${params.successPath ?? "/checkout/success?session_id={CHECKOUT_SESSION_ID}"}`,
+    cancel_url: `${base}${params.cancelPath ?? "/checkout/cancel"}`,
     "line_items[0][price]": price,
     "line_items[0][quantity]": "1",
     "metadata[app]": "cue",
@@ -240,6 +248,29 @@ export async function createTopupCheckoutSession(
   if (!created.ok) return { ok: false, reason: created.reason };
   const session = created.body as { id: string; url: string };
   return { ok: true, url: session.url, sessionId: session.id };
+}
+
+/**
+ * Stripe Billing Portal session (GET /account/portal): invoices, payment
+ * method, cancel — all hosted by Stripe.
+ */
+export async function createBillingPortalSession(
+  params: { stripeCustomerId: string; returnUrl: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; url: string } | { ok: false; reason: string }> {
+  if (!isStripeConfigured()) {
+    return { ok: false, reason: "stripe_not_configured" };
+  }
+  const created = await stripePost(
+    "/v1/billing_portal/sessions",
+    new URLSearchParams({
+      customer: params.stripeCustomerId,
+      return_url: params.returnUrl,
+    }),
+    fetchImpl,
+  );
+  if (!created.ok) return { ok: false, reason: created.reason };
+  return { ok: true, url: String(created.body.url) };
 }
 
 // ── catalog (idempotent product/price provisioning) ──────────────────────
@@ -472,12 +503,25 @@ export interface WebhookOutcome {
  *                                     apply the top-up + raise the key limit
  *   invoice.paid                    → grant monthly credits (idempotent per
  *                                     period) + reset the child-key limit
+ *   invoice.payment_failed          → payment-failed email (grace period)
  *   customer.subscription.updated   → sync status; suspend/resume instances
  *   customer.subscription.deleted   → customer churned + instances suspended
  *                                     + child keys disabled
+ *
+ * `scheduleAutoProvision` is the website-flow hook: on a completed
+ * subscription checkout the webhook records the session id (so
+ * GET /welcome/status can find the customer) and kicks off provisioning
+ * WITHOUT awaiting it — Stripe gets its 200 immediately; provisioning
+ * itself is idempotent (provisioning.ts) so retries are safe.
  */
 export async function handleStripeWebhook(
-  deps: { db: HqDb; driver: InstanceDriver; fetchImpl?: typeof fetch },
+  deps: {
+    db: HqDb;
+    driver: InstanceDriver;
+    fetchImpl?: typeof fetch;
+    /** Fire-and-forget auto-provision kick (server.ts wires this). */
+    scheduleAutoProvision?: (customerId: string) => void;
+  },
   rawBody: string,
   signatureHeader: string | null,
 ): Promise<WebhookOutcome> {
@@ -543,6 +587,11 @@ export async function handleStripeWebhook(
       if (isPlanId(metadata.plan)) {
         db.setCustomerPlan(customerId, metadata.plan);
       }
+      // Remember the checkout session so GET /welcome/status?session_id=…
+      // can resolve this customer while their instance comes up.
+      if (obj.id) {
+        db.setCustomerCheckoutSession(customerId, String(obj.id));
+      }
       db.upsertSubscription({
         customerId,
         stripeCustomerId: String(obj.customer ?? ""),
@@ -555,6 +604,10 @@ export async function handleStripeWebhook(
       db.recordEvent("stripe_checkout_completed", customerId, {
         sessionId: obj.id ?? null,
       });
+      // Website flow: paid customers get their instance without an admin in
+      // the loop. Not awaited — Stripe's delivery timeout is far shorter
+      // than a provision; idempotency lives in provisioning.ts.
+      deps.scheduleAutoProvision?.(customerId);
       // Tag the Stripe customer object too (best-effort) so EVERYTHING on
       // the account carries metadata {app:"cue"}.
       if (isStripeConfigured() && obj.customer) {
@@ -598,6 +651,29 @@ export async function handleStripeWebhook(
         balance: grant.balance,
       });
       return { status: 200, body: { received: true, granted: grant.granted } };
+    }
+
+    case "invoice.payment_failed": {
+      const resolved = resolveCustomerFromInvoice(db, obj);
+      if (!resolved) {
+        db.recordEvent("stripe_webhook_orphan", null, { type: event.type });
+        return { status: 200, body: { received: true, orphan: true } };
+      }
+      const customer = db.getCustomer(resolved.customerId);
+      if (!customer) {
+        return { status: 200, body: { received: true, orphan: true } };
+      }
+      // Grace-period messaging (designed template 04). Best-effort.
+      const result = await sendEmail(
+        customer.email,
+        paymentFailedEmail({ portalUrl: `${publicRedirectBase()}/account` }),
+        fetchImpl,
+      );
+      db.recordEvent("stripe_invoice_payment_failed", customer.id, {
+        invoiceId: obj.id ?? null,
+        emailed: result.ok,
+      });
+      return { status: 200, body: { received: true } };
     }
 
     case "customer.subscription.updated": {

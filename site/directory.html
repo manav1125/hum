@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,follow">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{margin:0;-webkit-font-smoothing:antialiased}</style>
+</helmet>
+<div style="--ink:#1A2230;--blue:#3D6EE8;--blue-s:#2B53C4;--blue-w:#DBE4FB;--violet:#7F77DD;--violet-s:#534AB7;--bg:#F4F6F9;--sunken:#EEF1F6;--line:#E5E9F0;--line2:#D7DDE7;--t1:#1A2230;--t2:#5A6672;--t3:#8D99A5;--green:#277E41;font-family:'DM Sans',system-ui,sans-serif;background:#E7EAF0;color:#1A2230;min-height:100vh;padding:30px;line-height:1.5">
+  <div style="max-width:1180px;margin:0 auto 14px;display:flex;justify-content:space-between;align-items:center">
+    <a href="connectors.html" style="font-family:'DM Mono',monospace;font-size:12px;color:#5A6672;text-decoration:none;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:7px 14px">← Back to Cue</a>
+    <span style="font-family:'DM Mono',monospace;font-size:11.5px;color:#8D99A5">directory · browse & add</span>
+  </div>
+
+  <!-- modal surface -->
+  <div style="max-width:1180px;margin:0 auto;background:#fff;border:1px solid #D7DDE7;border-radius:18px;overflow:hidden;box-shadow:0 40px 90px -40px rgba(26,34,48,.5)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:26px 30px 0"><div style="font-family:'Instrument Serif',serif;font-size:34px;letter-spacing:-.4px">Directory</div><span style="width:30px;height:30px;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:14px">✕</span></div>
+
+    <div style="display:grid;grid-template-columns:210px 1fr;gap:24px;padding:22px 30px 30px">
+      <!-- left nav -->
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <div onClick="{{ showSkills }}" style="{{ navSkills }}"><span>▤</span> Skills</div>
+        <div onClick="{{ showConnectors }}" style="{{ navConnectors }}"><span>◳</span> Connectors</div>
+        <div onClick="{{ showPlugins }}" style="{{ navPlugins }}"><span>⚙</span> Plugins</div>
+        <div style="margin-top:20px;background:var(--sunken);border-radius:12px;padding:14px"><div style="font-size:12.5px;font-weight:600">Make your own</div><div style="font-size:11.5px;color:var(--t2);margin-top:3px">Describe a task in chat and Cue builds a skill for it.</div><div style="margin-top:10px;font-size:12px;background:var(--violet);color:#fff;border-radius:8px;padding:7px 11px;text-align:center">✦ Create</div></div>
+      </div>
+
+      <!-- content -->
+      <div style="min-width:0">
+        <div style="border:1px solid var(--line2);border-radius:11px;padding:11px 15px;font-size:14px;color:var(--t3);display:flex;align-items:center;gap:9px">🔍 {{ searchLabel }}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+          <div style="display:flex;gap:8px"><span style="font-size:13px;background:var(--ink);color:#fff;border-radius:999px;padding:7px 14px">Cue & Partners</span><span style="font-size:13px;border:1px solid var(--line2);border-radius:999px;padding:7px 14px;color:var(--t2)">Community</span></div>
+          <div style="display:flex;gap:8px"><span style="font-size:13px;border:1px solid var(--line2);border-radius:9px;padding:7px 13px;color:var(--t2)">Filter by ▾</span><span style="font-size:13px;border:1px solid var(--line2);border-radius:9px;padding:7px 13px;color:var(--t2)">Sort by ▾</span></div>
+        </div>
+        <div style="font-family:'DM Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin:18px 0 12px">{{ sectionLabel }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <sc-for list="{{ cards }}" as="c" hint-placeholder-count="6">
+            <div style="border:1px solid var(--line);border-radius:14px;padding:16px;background:#fff">
+              <div style="display:flex;align-items:flex-start;gap:11px">
+                <span style="width:36px;height:36px;border-radius:10px;background:{{ c.bg }};color:{{ c.fg }};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0">{{ c.icon }}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14.5px;font-weight:600">{{ c.name }}</span><span style="{{ c.badgeStyle }}">{{ c.badge }}</span></div>
+                  <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--t3);margin-top:3px">{{ c.meta }}</div>
+                </div>
+                <span style="width:28px;height:28px;border-radius:8px;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;color:var(--t2);font-size:15px;flex-shrink:0">{{ c.action }}</span>
+              </div>
+              <div style="font-size:12.5px;color:var(--t2);margin-top:11px;line-height:1.5">{{ c.desc }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:820}}">
+class Component extends DCLogic {
+  state = { tab: 'skills' };
+  nav(name,active){return {display:'flex',alignItems:'center',gap:'10px',padding:'9px 11px',borderRadius:'9px',fontSize:'13.5px',cursor:'pointer',userSelect:'none',color:active?'#1A2230':'#5A6672',fontWeight:active?'600':'400',background:active?'#EEF1F6':'transparent'};}
+  badge(kind){
+    if(kind==='new') return "font-family:'DM Mono',monospace;font-size:9.5px;background:#EEEDFB;color:#534AB7;padding:1px 7px;border-radius:5px";
+    if(kind==='pop') return "font-family:'DM Mono',monospace;font-size:9.5px;background:#EEF1F6;color:#5A6672;padding:1px 7px;border-radius:5px";
+    return "display:none";
+  }
+  data(){
+    const b=(k)=>this.badge(k);
+    const skills=[
+      {icon:'✦',bg:'#EEEDFB',fg:'#534AB7',name:'skill-creator',badge:'',badgeStyle:b('none'),meta:'Cue · ↓98.2K',action:'⚙',desc:'Create, modify, and measure skills — build one from scratch or optimize an existing skill.'},
+      {icon:'◆',bg:'#DBE4FB',fg:'#2B53C4',name:'canvas-design',badge:'',badgeStyle:b('none'),meta:'Cue · ↓1.1M',action:'+',desc:'Create beautiful visual art in PNG and PDF documents using design philosophy.'},
+      {icon:'▤',bg:'#E0F0EF',fg:'#0E8C8C',name:'web-artifacts',badge:'',badgeStyle:b('none'),meta:'Cue · ↓714K',action:'+',desc:'A suite for building elaborate, multi-component HTML artifacts with modern frontend.'},
+      {icon:'⧉',bg:'#EEEDFB',fg:'#534AB7',name:'mcp-builder',badge:'',badgeStyle:b('none'),meta:'Cue · ↓585K',action:'+',desc:'Guide for creating high-quality MCP servers that let agents reach external tools.'},
+      {icon:'✉',bg:'#FBF0DA',fg:'#9A6A14',name:'inbox-triage',badge:'POPULAR',badgeStyle:b('pop'),meta:'Cue · ↓521K',action:'+',desc:'Sorts, drafts, and flags what needs you — the daily email workhorse.'},
+      {icon:'☎',bg:'#FCE9E7',fg:'#B5572B',name:'place-a-call',badge:'',badgeStyle:b('none'),meta:'Cue · ↓304K',action:'+',desc:'Books, confirms, and asks — with a live transcript you can follow.'}
+    ];
+    const connectors=[
+      {icon:'▶',bg:'#FFF1EC',fg:'#E04F2A',name:'Replit',badge:'NEW',badgeStyle:b('new'),meta:'#1 trending',action:'+',desc:'Turn ideas into apps and websites instantly.'},
+      {icon:'♥',bg:'#F3ECFF',fg:'#7F5AF0',name:'Lovable',badge:'NEW',badgeStyle:b('new'),meta:'#2 trending',action:'+',desc:'Build, iterate, inspect, and deploy apps.'},
+      {icon:'C',bg:'#EAF0FE',fg:'#2B53C4',name:'Canva',badge:'POPULAR',badgeStyle:b('pop'),meta:'#4 popular',action:'+',desc:'Search, create, autofill, and export Canva designs.'},
+      {icon:'⊞',bg:'#EAF3FB',fg:'#1B7DC4',name:'Microsoft 365',badge:'POPULAR',badgeStyle:b('pop'),meta:'#8 popular',action:'+',desc:'Reach SharePoint, OneDrive, Outlook, and Teams in Cue.'},
+      {icon:'N',bg:'#F4F4F4',fg:'#1A2230',name:'Notion',badge:'POPULAR',badgeStyle:b('pop'),meta:'#6 popular',action:'+',desc:'Connect your workspace to search, update, and power workflows.'},
+      {icon:'#',bg:'#4A154B',fg:'#fff',name:'Slack',badge:'',badgeStyle:b('none'),meta:'#9 popular',action:'↻',desc:'Send messages, create canvases, and fetch Slack data.'}
+    ];
+    const plugins=[
+      {icon:'◷',bg:'#EEF1F6',fg:'#5A6672',name:'Productivity',badge:'',badgeStyle:b('none'),meta:'Cue',action:'⚙',desc:'Manage tasks, plan your day, and build memory of what matters. Syncs with your calendar.'},
+      {icon:'▦',bg:'#EEF1F6',fg:'#5A6672',name:'Sales',badge:'',badgeStyle:b('none'),meta:'Cue',action:'+',desc:'Prospect, craft outreach, and build deal strategy faster — prep for calls and manage pipeline.'},
+      {icon:'⚖',bg:'#EEF1F6',fg:'#5A6672',name:'Legal',badge:'',badgeStyle:b('none'),meta:'Cue',action:'+',desc:'Speed up contract review, NDA triage, and compliance workflows for in-house teams.'},
+      {icon:'◳',bg:'#EEF1F6',fg:'#5A6672',name:'PDF Viewer',badge:'',badgeStyle:b('none'),meta:'Cue',action:'+',desc:'View, annotate, and sign PDFs in a live viewer. Mark up contracts and fill forms.'}
+    ];
+    return {skills,connectors,plugins};
+  }
+  renderVals(){
+    const t=this.state.tab; const s=(x)=>()=>this.setState({tab:x}); const d=this.data();
+    const cards = t==='skills'?d.skills : t==='connectors'?d.connectors : d.plugins;
+    const section = t==='skills'?'Cue & Partners · most installed' : t==='connectors'?'Available to you' : 'Installed & available';
+    const search = t==='skills'?'Search skills…' : t==='connectors'?'Search connectors…' : 'Search plugins…';
+    return {
+      navSkills:this.nav('skills',t==='skills'), navConnectors:this.nav('connectors',t==='connectors'), navPlugins:this.nav('plugins',t==='plugins'),
+      showSkills:s('skills'), showConnectors:s('connectors'), showPlugins:s('plugins'),
+      cards, sectionLabel:section, searchLabel:search
+    };
+  }
+}
+</script>
+</body>
+</html>

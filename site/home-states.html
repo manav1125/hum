@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,follow">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;-webkit-font-smoothing:antialiased}
+  @keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+  @keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+  @keyframes cuePing{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.35);opacity:0}}
+  @keyframes cueShimmer{0%{background-position:-340px 0}100%{background-position:340px 0}}
+</style>
+</helmet>
+<div style="--ink:#1A2230;--ink2:#24303F;--blue:#3D6EE8;--blue-s:#2B53C4;--blue-w:#DBE4FB;--violet:#7F77DD;--violet-s:#534AB7;--bg:#F4F6F9;--surface:#FFFFFF;--sunken:#EEF1F6;--line:#E5E9F0;--line2:#D7DDE7;--t1:#1A2230;--t2:#5A6672;--t3:#8D99A5;--green:#277E41;--amber:#F1B21E;--danger:#DA491A;font-family:'DM Sans',system-ui,sans-serif;background:#F4F6F9;color:#1A2230;min-height:100vh;padding:32px;display:flex;flex-direction:column;align-items:center;gap:18px;line-height:1.5">
+
+  <div style="width:100%;max-width:1240px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+    <a href="design-book.html" style="font-family:'DM Mono',monospace;font-size:12px;color:#5A6672;text-decoration:none;display:inline-flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:7px 14px">← Design book</a>
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.06em;color:#8D99A5">/assistant/home · desktop · light</div>
+    <div style="display:flex;gap:4px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:4px">
+      <span onClick="{{ showReady }}" style="{{ tabReady }}">Ready</span>
+      <span onClick="{{ showLoading }}" style="{{ tabLoading }}">Loading</span>
+      <span onClick="{{ showEmpty }}" style="{{ tabEmpty }}">Empty</span>
+      <span onClick="{{ showError }}" style="{{ tabError }}">Error</span>
+    </div>
+  </div>
+
+  <div style="width:100%;max-width:1240px;background:#FFFFFF;border:1px solid #D7DDE7;border-radius:14px;overflow:hidden;box-shadow:0 30px 70px -38px rgba(26,34,48,.4)">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;background:#F7F8FB;border-bottom:1px solid #E5E9F0">
+      <span style="width:12px;height:12px;border-radius:50%;background:#ED6A5E"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#F4BF50"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#61C554"></span>
+      <span style="margin-left:12px;font-size:12.5px;color:#8D99A5;font-family:'DM Mono',monospace">Cue</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:240px 1fr 300px;min-height:660px">
+
+      <!-- SIDEBAR -->
+      <aside style="background:#1A2230;color:#fff;padding:18px 13px;display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:10px;padding:4px 8px 16px">
+          <span style="position:relative;width:30px;height:30px;border-radius:26%;background:#0F1620;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <span style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 4px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 6s ease-in-out infinite;position:relative;display:block"><span style="content:'';position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;animation:cueBlink 4s infinite;display:block"></span></span>
+          </span>
+          <b style="font-size:21px;font-weight:500;letter-spacing:-1px">cue<span style="color:#3D6EE8">.</span></b>
+        </div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#fff;background:rgba(255,255,255,.09)"><span style="width:16px;text-align:center;color:#3D6EE8">◉</span> Home</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">▮</span> Chat</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">✦</span> Intelligence</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">▤</span> Library</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">◳</span> Workspace</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">☷</span> Contacts</div>
+        <div style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#6B788C;padding:18px 11px 6px">Channels · one memory</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;font-size:12.5px;color:#AEB7C7"><span style="width:7px;height:7px;border-radius:50%;background:#277E41"></span> Voice</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;font-size:12.5px;color:#AEB7C7"><span style="width:7px;height:7px;border-radius:50%;background:#277E41"></span> Email · Slack</div>
+        <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;font-size:12.5px;color:#AEB7C7"><span style="width:7px;height:7px;border-radius:50%;background:#8D99A5"></span> Phone</div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 8px 2px;border-top:1px solid rgba(255,255,255,.08);font-size:12.5px;color:#C4CCDA"><span style="width:28px;height:28px;border-radius:50%;background:#3D6EE8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:#fff">M</span> Manav · guardian</div>
+      </aside>
+
+      <!-- MAIN -->
+      <div style="background:#FFFFFF;display:flex;flex-direction:column">
+        <div style="padding:16px 24px;border-bottom:1px solid #E5E9F0;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-family:'DM Mono',monospace;font-size:11px;color:#8D99A5">Saturday · 09:41</div>
+            <div style="font-size:19px;font-weight:500;letter-spacing:-.5px;margin-top:2px">Good morning, Manav</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <span style="font-size:12px;background:#1A2230;color:#fff;border-radius:999px;padding:6px 13px">All</span>
+            <span style="font-size:12px;background:#EEF1F6;color:#5A6672;border-radius:999px;padding:6px 13px">Needs you</span>
+            <span style="font-size:12px;background:#EEF1F6;color:#5A6672;border-radius:999px;padding:6px 13px">Done</span>
+          </div>
+        </div>
+
+        <div style="padding:22px 24px;flex:1;display:flex;flex-direction:column;gap:22px">
+
+          <!-- READY -->
+          <sc-if value="{{ isReady }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:22px">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Recap · while you were away</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:13px 15px"><div style="font-size:13.5px;font-weight:500">3 emails handled</div><div style="font-size:12px;color:#5A6672;margin-top:3px">2 drafted, 1 archived</div></div>
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:13px 15px"><div style="font-size:13.5px;font-weight:500">Acme moved to 10:30</div><div style="font-size:12px;color:#5A6672;margin-top:3px">calendar updated</div></div>
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:13px 15px"><div style="font-size:13.5px;font-weight:500">2 action items captured</div><div style="font-size:12px;color:#5A6672;margin-top:3px">from yesterday's call</div></div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Suggested next moves</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <span style="font-size:12.5px;background:#3D6EE8;border:1px solid #3D6EE8;color:#fff;border-radius:8px;padding:7px 12px">Review Acme follow-up</span>
+                <span style="font-size:12.5px;border:1px solid #D7DDE7;background:#FFFFFF;border-radius:8px;padding:7px 12px">Reply to Dana</span>
+                <span style="font-size:12.5px;border:1px solid #D7DDE7;background:#FFFFFF;border-radius:8px;padding:7px 12px">Share Q3 forecast</span>
+                <span style="font-size:12.5px;border:1px solid #D7DDE7;background:#FFFFFF;border-radius:8px;padding:7px 12px">Snooze standup</span>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Feed</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-left:3px solid #3D6EE8;border-radius:0 12px 12px 0;padding:13px 15px;display:flex;align-items:center;gap:12px">
+                  <div style="flex:1"><div style="font-size:13.5px;font-weight:500;display:flex;align-items:center;gap:8px">Dana hasn't replied to Tuesday's thread <span style="font-family:'DM Mono',monospace;font-size:10px;padding:1px 6px;border-radius:5px;background:#DBE4FB;color:#2B53C4">email</span></div><div style="font-size:12px;color:#5A6672;margin-top:3px">Nudge before the renewal call? · 2h ago</div></div>
+                  <span style="font-size:12px;background:#3D6EE8;color:#fff;border-radius:8px;padding:6px 11px">Draft nudge</span>
+                </div>
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-left:3px solid #7F77DD;border-radius:0 12px 12px 0;padding:13px 15px;display:flex;align-items:center;gap:12px">
+                  <div style="flex:1"><div style="font-size:13.5px;font-weight:500;display:flex;align-items:center;gap:8px">You promised Sam the deck "by Friday" <span style="font-family:'DM Mono',monospace;font-size:10px;padding:1px 6px;border-radius:5px;background:#EEEDFB;color:#534AB7">slack</span></div><div style="font-size:12px;color:#5A6672;margin-top:3px">It's Friday · captured commitment</div></div>
+                  <span style="font-size:12px;border:1px solid #D7DDE7;background:#FFFFFF;border-radius:8px;padding:6px 11px">Send deck</span>
+                </div>
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-left:3px solid #277E41;border-radius:0 12px 12px 0;padding:13px 15px;display:flex;align-items:center;gap:12px">
+                  <div style="flex:1"><div style="font-size:13.5px;font-weight:500;display:flex;align-items:center;gap:8px">Standup notes filed · 3 follow-ups created <span style="font-family:'DM Mono',monospace;font-size:10px;padding:1px 6px;border-radius:5px;background:#E2F0E7;color:#277E41">done</span></div><div style="font-size:12px;color:#5A6672;margin-top:3px">Cue handled it · 08:00</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- LOADING -->
+          <sc-if value="{{ isLoading }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:22px">
+            <div>
+              <div style="height:11px;width:200px;border-radius:4px;margin-bottom:13px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+                <div style="height:72px;border-radius:13px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+                <div style="height:72px;border-radius:13px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+                <div style="height:72px;border-radius:13px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+              </div>
+            </div>
+            <div>
+              <div style="height:11px;width:160px;border-radius:4px;margin-bottom:13px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="height:62px;border-radius:12px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+                <div style="height:62px;border-radius:12px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+                <div style="height:62px;border-radius:12px;background:linear-gradient(90deg,#EEF1F6 0%,#E2E7EF 50%,#EEF1F6 100%);background-size:340px 100%;animation:cueShimmer 1.3s linear infinite"></div>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- EMPTY -->
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:16px;padding:50px 20px;min-height:420px">
+            <span style="position:relative;width:64px;height:64px;border-radius:26%;background:#1A2230;display:flex;align-items:center;justify-content:center">
+              <span style="position:absolute;inset:0;border-radius:26%;border:2px solid rgba(61,110,232,.5);animation:cuePing 2.6s ease-out infinite"></span>
+              <span style="width:38px;height:38px;border-radius:50%;box-shadow:0 0 0 5px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 6s ease-in-out infinite;position:relative;display:block"><span style="position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;animation:cueBlink 4s infinite;display:block"></span></span>
+            </span>
+            <div style="font-size:18px;font-weight:500;letter-spacing:-.4px">All clear — nothing needs you right now</div>
+            <p style="font-size:13.5px;color:#5A6672;max-width:380px">Cue is watching your email, calendar, and channels. The moment something needs a decision, it'll surface here.</p>
+            <div style="display:flex;gap:8px;margin-top:4px"><span style="font-size:12.5px;background:#3D6EE8;border:1px solid #3D6EE8;color:#fff;border-radius:8px;padding:8px 14px">Start a conversation</span><span style="font-size:12.5px;border:1px solid #D7DDE7;background:#FFFFFF;border-radius:8px;padding:8px 14px">Connect an inbox</span></div>
+          </div>
+          </sc-if>
+
+          <!-- ERROR -->
+          <sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="background:#FCEBEB;border:1px solid #F0B9AC;border-radius:12px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px">
+              <span style="width:20px;height:20px;border-radius:50%;background:#DA491A;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;margin-top:1px">!</span>
+              <div style="flex:1"><div style="font-size:13.5px;font-weight:500;color:#8A2E12">Couldn't refresh your feed</div><div style="font-size:12.5px;color:#A8492B;margin-top:2px">Cue lost its connection to the Gmail channel. Your data is safe — last synced 09:12.</div></div>
+              <span style="font-size:12px;background:#DA491A;color:#fff;border-radius:8px;padding:6px 12px">Retry</span>
+            </div>
+            <div style="opacity:.5;display:flex;flex-direction:column;gap:12px">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:13px 15px"><div style="font-size:13.5px;font-weight:500;color:#8D99A5">Recap unavailable</div><div style="font-size:12px;color:#8D99A5;margin-top:3px">cached 09:12</div></div>
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:13px 15px"><div style="font-size:13.5px;font-weight:500;color:#8D99A5">Acme moved to 10:30</div><div style="font-size:12px;color:#8D99A5;margin-top:3px">from cache</div></div>
+                <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:13px 15px"><div style="font-size:13.5px;font-weight:500;color:#8D99A5">2 items captured</div><div style="font-size:12px;color:#8D99A5;margin-top:3px">from cache</div></div>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <!-- NOW RAIL -->
+      <aside style="background:#F4F6F9;border-left:1px solid #E5E9F0;padding:18px;display:flex;flex-direction:column;gap:16px">
+        <div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:10px">Next move</div>
+          <div style="background:#1A2230;color:#fff;border-radius:14px;padding:16px;box-shadow:0 16px 32px -20px rgba(26,34,48,.6)">
+            <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px">
+              <span style="position:relative;width:26px;height:26px;border-radius:26%;background:#0F1620;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="width:15px;height:15px;border-radius:50%;box-shadow:0 0 0 3px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 6s ease-in-out infinite;position:relative;display:block"><span style="position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;display:block"></span></span></span>
+              <span style="font-family:'DM Mono',monospace;font-size:10.5px;color:#9DB4E6">due 10:30 · 1 of 3</span>
+            </div>
+            <div style="font-size:16px;font-weight:500;letter-spacing:-.3px">Review Acme follow-up</div>
+            <div style="font-size:12.5px;color:#9DB4E6;margin-top:6px">Cue drafted a reply to Dana with the pricing one-pager attached.</div>
+            <div style="display:flex;gap:7px;margin-top:13px"><span style="font-size:12px;background:#3D6EE8;color:#fff;border-radius:8px;padding:7px 13px">Open</span><span style="font-size:12px;background:rgba(255,255,255,.1);color:#fff;border-radius:8px;padding:7px 13px">Snooze</span></div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:10px">Detail</div>
+          <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:14px 15px">
+            <div style="font-size:13.5px;font-weight:500">Acme follow-up (draft)</div>
+            <div style="font-size:12px;color:#5A6672;margin-top:4px;line-height:1.55">To: Dana Reyes · pricing one-pager attached · 3 action items pulled from the meeting.</div>
+            <div style="margin-top:11px;display:flex;gap:6px"><span style="font-size:12px;background:#3D6EE8;color:#fff;border-radius:8px;padding:6px 12px">Send</span><span style="font-size:12px;border:1px solid #D7DDE7;background:#FFFFFF;border-radius:8px;padding:6px 12px">Edit</span></div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:10px">Nudges</div>
+          <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-left:3px solid #7F77DD;border-radius:0 12px 12px 0;padding:11px 14px;font-size:12.5px;color:#5A6672">Renewal call in 49 min — want a one-line prep from the last sync?</div>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1304,&quot;height&quot;:820}}">
+class Component extends DCLogic {
+  state = { view: 'ready' };
+  tab(name, label) {
+    const active = this.state.view === name;
+    return {
+      cursor:'pointer', userSelect:'none', fontSize:'12px',
+      fontFamily:"'DM Mono',monospace", borderRadius:'999px', padding:'6px 13px',
+      color: active ? '#fff' : '#5A6672',
+      background: active ? '#1A2230' : 'transparent'
+    };
+  }
+  renderVals() {
+    const v = this.state.view;
+    const set = (view) => () => this.setState({ view });
+    return {
+      isReady: v === 'ready', isLoading: v === 'loading', isEmpty: v === 'empty', isError: v === 'error',
+      showReady: set('ready'), showLoading: set('loading'), showEmpty: set('empty'), showError: set('error'),
+      tabReady: this.tab('ready'), tabLoading: this.tab('loading'), tabEmpty: this.tab('empty'), tabError: this.tab('error')
+    };
+  }
+}
+</script>
+</body>
+</html>

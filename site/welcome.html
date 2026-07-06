@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./commerce.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Cue — Preparing your assistant</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0C121C;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  @keyframes cueBreath{0%,100%{transform:scale(1);opacity:.92}50%{transform:scale(1.06);opacity:1}}
+  @keyframes cueHalo{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.18);opacity:.15}}
+  @keyframes cueRing{0%{transform:scale(.85);opacity:.6}100%{transform:scale(1.9);opacity:0}}
+  @keyframes cueLineIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes cueSettle{0%{transform:scale(1.06)}60%{transform:scale(.97)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion:reduce){*{animation:none !important}}
+</style>
+</helmet>
+
+<div data-screen-label="Welcome / provisioning" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;position:relative;background:radial-gradient(70% 60% at 50% 38%,rgba(61,110,232,.16),transparent 62%)">
+
+  <!-- ORB -->
+  <div style="position:relative;width:170px;height:170px;display:flex;align-items:center;justify-content:center;margin-bottom:44px">
+    <div style="position:absolute;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle at 50% 45%,rgba(61,110,232,.45),transparent 70%);animation:cueHalo 4s ease-in-out infinite"></div>
+    <sc-if value="{{ isProvisioning }}" hint-placeholder-val="{{ true }}">
+      <div style="position:absolute;width:110px;height:110px;border-radius:50%;border:1px solid rgba(127,160,240,.5);animation:cueRing 3s ease-out infinite"></div>
+      <div style="position:absolute;width:110px;height:110px;border-radius:50%;border:1px solid rgba(127,160,240,.5);animation:cueRing 3s ease-out infinite 1.5s"></div>
+    </sc-if>
+    <div style="position:relative;width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 38% 32%,#6E9BF5,#3D6EE8 46%,#254a9e 100%);box-shadow:0 20px 50px -14px rgba(61,110,232,.8),inset 0 -8px 20px rgba(11,20,32,.5);animation:{{ orbAnim }}">
+      <span style="position:absolute;top:18px;left:22px;width:26px;height:16px;border-radius:50%;background:rgba(255,255,255,.4);filter:blur(4px)"></span>
+    </div>
+  </div>
+
+  <!-- PROVISIONING -->
+  <sc-if value="{{ isProvisioning }}" hint-placeholder-val="{{ true }}">
+    <div id="state-provisioning" style="width:100%;max-width:400px">
+      <div style="text-align:center;font:400 11px 'DM Mono',monospace;color:#7FA0F0;letter-spacing:.16em;margin-bottom:26px">SETTING UP YOUR CUE</div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ lines }}" as="l" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 4px;opacity:{{ l.opacity }};animation:{{ l.anim }};transition:opacity .5s ease">
+            <span style="width:20px;height:20px;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+              <sc-if value="{{ l.done }}" hint-placeholder-val="{{ false }}"><span style="width:20px;height:20px;border-radius:50%;background:rgba(143,211,182,.16);color:#8FD3B6;display:flex;align-items:center;justify-content:center;font-size:11px">✓</span></sc-if>
+              <sc-if value="{{ l.active }}" hint-placeholder-val="{{ false }}"><span style="width:7px;height:7px;border-radius:50%;background:#7FA0F0;box-shadow:0 0 10px #7FA0F0"></span></sc-if>
+            </span>
+            <span style="font-size:14.5px;color:{{ l.color }};line-height:1.4">{{ l.text }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="text-align:center;font-size:12px;color:#5A6679;margin-top:28px;line-height:1.6">This usually takes about three minutes.<br>You can close this — we'll email your link when it's ready.</div>
+    </div>
+  </sc-if>
+
+  <!-- READY -->
+  <sc-if value="{{ isReady }}" hint-placeholder-val="{{ false }}">
+    <div id="state-ready" style="width:100%;max-width:420px;text-align:center;animation:cueLineIn .6s ease both">
+      <h1 style="font-size:clamp(26px,5vw,34px);line-height:1.1;letter-spacing:-.03em;font-weight:600;color:#fff;margin:0">{{ firstName }}, your Cue is ready.</h1>
+      <p style="font-size:14.5px;color:#AEB7C7;margin:14px 0 0;line-height:1.6">It's already private, already yours. Everything you tell it stays on your own instance.</p>
+      <a id="open-cue" data-magic-link="{{ magicLink }}" href="{{ magicLink }}" style="display:block;margin-top:28px;background:#3D6EE8;color:#fff;border-radius:12px;padding:15px;font-size:15px;font-weight:600;text-decoration:none;box-shadow:0 16px 34px -12px rgba(61,110,232,.7)">Open Cue</a>
+      <div style="font-size:12.5px;color:#67748A;margin-top:16px;line-height:1.6">We also sent a link to <b style="color:#AEB7C7">{{ email }}</b> — it signs you in on any device.</div>
+    </div>
+  </sc-if>
+
+  <!-- DELAYED / FAILURE -->
+  <sc-if value="{{ isDelayed }}" hint-placeholder-val="{{ false }}">
+    <div id="state-delayed" style="width:100%;max-width:420px;text-align:center;animation:cueLineIn .6s ease both">
+      <h1 style="font-size:clamp(22px,4.4vw,28px);line-height:1.15;letter-spacing:-.02em;font-weight:600;color:#fff;margin:0">Setup is taking a little longer.</h1>
+      <p style="font-size:14.5px;color:#AEB7C7;margin:16px 0 0;line-height:1.65">We're on it. You'll get your sign-in link at <b style="color:#E4EAF4">{{ email }}</b> within the hour — no need to wait here.</p>
+      <div style="font-size:12.5px;color:#67748A;margin-top:22px">Questions? <a href="mailto:hello@cue.ai" style="color:#9DB4E6;text-decoration:none">hello@cue.ai</a></div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+// Wired to Cue HQ via commerce.js: reads ?session_id= from the Stripe
+// redirect and polls GET /welcome/status every 5s, toggling the designed
+// provisioning / ready / delayed states. The line sequence is loop-safe:
+// it advances to the last line and breathes there until the poll flips.
+class Component extends DCLogic {
+  state = { view: "provisioning", step: 0, firstName: "", email: "", magicLink: "" };
+
+  baseLines = [
+    "Securing your private space\u2026",
+    "Waking your assistant\u2026",
+    "Preparing memory\u2026",
+    "Learning your name, {firstName}\u2026",
+  ];
+
+  componentDidMount(){
+    this.timer = setInterval(() => {
+      this.setState(s => {
+        if (s.view !== "provisioning") return s;
+        // advance but hold on the last line (loop-safe, never stalls to a bar)
+        return { step: Math.min(s.step + 1, this.baseLines.length - 1) };
+      });
+    }, 2200);
+
+    this.sessionId = CueCommerce.sessionIdFromQuery();
+    if (this.sessionId) {
+      this.checkStatus();
+      this.pollTimer = setInterval(() => this.checkStatus(), 5000);
+    }
+  }
+  componentWillUnmount(){ clearInterval(this.timer); clearInterval(this.pollTimer); }
+
+  async checkStatus(){
+    let status;
+    try { status = await CueCommerce.welcomeStatus(this.sessionId); }
+    catch (_) { return; } // transient network blip \u2014 keep breathing
+    const patch = {};
+    if (status.firstName) patch.firstName = status.firstName;
+    if (status.email) patch.email = status.email;
+    if (status.state === "ready" && status.magicLink) {
+      clearInterval(this.pollTimer);
+      this.setState({ ...patch, view: "ready", magicLink: status.magicLink });
+    } else if (status.state === "delayed") {
+      clearInterval(this.pollTimer);
+      this.setState({ ...patch, view: "delayed" });
+    } else {
+      this.setState(patch); // provisioning / unknown \u2192 keep the sequence
+    }
+  }
+
+  renderVals() {
+    const v = this.state.view;
+    const firstName = this.state.firstName;
+    const step = v === "provisioning" ? this.state.step : this.baseLines.length;
+    const lines = this.baseLines.map((t, i) => {
+      const active = i === step;
+      const done = i < step;
+      return {
+        text: firstName
+          ? t.replace("{firstName}", firstName)
+          : t.replace(", {firstName}", ""),
+        done, active,
+        opacity: i <= step ? 1 : 0.28,
+        color: done ? "#8FD3B6" : active ? "#fff" : "#5A6679",
+        anim: i === step ? "cueLineIn .5s ease both" : "none",
+      };
+    });
+    return {
+      isProvisioning: v === "provisioning",
+      isReady: v === "ready",
+      isDelayed: v === "delayed",
+      orbAnim: v === "ready" ? "cueSettle .8s ease both" : "cueBreath 4s ease-in-out infinite",
+      lines,
+      firstName: firstName || "Founder",
+      email: this.state.email || "your email",
+      magicLink: this.state.magicLink || "#",
+    };
+  }
+}
+</script>
+</body>
+</html>

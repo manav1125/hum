@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./commerce.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Cue — Account</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300..700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0B111A;font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+  @media (max-width:640px){ [data-topups]{grid-template-columns:1fr !important} [data-acct-head]{flex-wrap:wrap;gap:12px !important} }
+</style>
+</helmet>
+
+<!-- ░░ HEADER ░░ -->
+<div style="position:sticky;top:0;z-index:40;background:rgba(11,17,26,.86);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.07)">
+  <div data-acct-head style="max-width:720px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:14px clamp(18px,4vw,28px)">
+    <a href="index.html" style="display:flex;align-items:center;gap:9px;text-decoration:none;color:#fff"><span style="width:28px;height:28px;border-radius:8px;background:#1A2230;border:1.5px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;position:relative"><span style="font-size:15px;font-weight:600;color:#fff">C</span><span style="position:absolute;width:4px;height:4px;border-radius:50%;background:#3D6EE8;right:6px;bottom:7px"></span></span><b style="font-size:18px;font-weight:500;letter-spacing:-.8px">cue<span style="color:#3D6EE8">.</span></b></a>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-size:12.5px;color:#7E8BA3">{{ email }}</span>
+      <sc-if value="{{ hasInstance }}" hint-placeholder-val="{{ true }}">
+        <a href="{{ openCueHref }}" style="font-size:12.5px;font-weight:500;background:#3D6EE8;color:#fff;border-radius:9px;padding:8px 15px;text-decoration:none">Open Cue ↗</a>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+<div data-screen-label="Account" style="max-width:720px;margin:0 auto;padding:clamp(24px,5vw,40px) clamp(18px,4vw,28px) 80px">
+  <h1 style="font-size:clamp(24px,4vw,30px);font-weight:600;letter-spacing:-.02em;color:#fff;margin:0 0 4px">Your account</h1>
+  <p style="font-size:13.5px;color:#7E8BA3;margin:0 0 24px">Everything else lives inside Cue. This is where you manage the plan.</p>
+
+  <!-- payment-failed banner -->
+  <sc-if value="{{ showPayFail }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;align-items:flex-start;gap:12px;background:rgba(224,107,94,.12);border:1px solid rgba(224,107,94,.4);border-radius:14px;padding:15px 17px;margin-bottom:16px">
+      <span style="color:#E9938A;font-size:16px;flex-shrink:0;margin-top:1px">⚠</span>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600;color:#F3C3BC">Your last payment didn't go through.</div>
+        <div style="font-size:13px;color:#D9AAA3;margin-top:3px;line-height:1.5">Update your card to keep Cue running. We'll retry automatically.</div>
+      </div>
+      <a href="{{ portalHref }}" style="flex-shrink:0;font-size:12.5px;font-weight:600;background:#E06B5E;color:#fff;border-radius:9px;padding:9px 14px;text-decoration:none;white-space:nowrap">Update payment</a>
+    </div>
+  </sc-if>
+
+  <!-- ░░ PLAN CARD ░░ -->
+  <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:22px 22px;margin-bottom:14px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div>
+        <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.12em;color:#9DB4E6">CURRENT PLAN</div>
+        <div style="font-size:20px;font-weight:600;color:#fff;margin-top:8px">{{ planName }} <span style="font-size:14px;font-weight:400;color:#7E8BA3">· {{ planPrice }}</span></div>
+        <div style="font-size:12.5px;color:#7E8BA3;margin-top:4px">{{ renewsLine }} · <span style="color:#8FD3B6">Founding member — locked for life</span></div>
+      </div>
+      <button onClick="{{ toggleChange }}" style="flex-shrink:0;font-size:12.5px;font-weight:500;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#fff;border-radius:9px;padding:9px 14px;cursor:pointer;font-family:inherit">{{ changeLabel }}</button>
+    </div>
+
+    <sc-if value="{{ changeOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:18px;border-top:1px solid rgba(255,255,255,.09);padding-top:16px">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:12px 14px;cursor:pointer"><span style="display:flex;align-items:center;gap:10px"><input type="radio" name="plan" value="assistant" style="accent-color:#3D6EE8"><span style="font-size:13.5px;color:#fff;font-weight:500">Assistant</span></span><span style="font-size:12.5px;color:#AEB7C7">$49 · 4,000</span></label>
+          <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(61,110,232,.12);border:1px solid rgba(61,110,232,.4);border-radius:11px;padding:12px 14px;cursor:pointer"><span style="display:flex;align-items:center;gap:10px"><input type="radio" name="plan" value="chief" checked style="accent-color:#3D6EE8"><span style="font-size:13.5px;color:#fff;font-weight:600">Chief of Staff</span><span style="font-size:11px;color:#9DB4E6">current</span></span><span style="font-size:12.5px;color:#C7D4EE">$99 · 10,000</span></label>
+          <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);border-radius:11px;padding:12px 14px;cursor:pointer"><span style="display:flex;align-items:center;gap:10px"><input type="radio" name="plan" value="operator" style="accent-color:#3D6EE8"><span style="font-size:13.5px;color:#fff;font-weight:500">Operator</span></span><span style="font-size:12.5px;color:#AEB7C7">$249 · 30,000</span></label>
+        </div>
+        <div style="font-size:11.5px;color:#67748A;margin-top:12px;line-height:1.5">Upgrades take effect immediately. Downgrades apply at the end of your period.</div>
+      </div>
+    </sc-if>
+
+    <div style="margin-top:16px;border-top:1px solid rgba(255,255,255,.07);padding-top:14px">
+      <a href="{{ portalHref }}" style="font-size:12.5px;color:#9DB4E6;text-decoration:none">Manage billing →</a>
+      <span style="font-size:11.5px;color:#5A6679;margin-left:8px">Invoices, payment method, cancel</span>
+    </div>
+  </div>
+
+  <!-- ░░ CREDITS CARD (centerpiece) ░░ -->
+  <div style="background:linear-gradient(165deg,rgba(61,110,232,.14),rgba(255,255,255,.03));border:1px solid rgba(61,110,232,.3);border-radius:18px;padding:24px 22px;margin-bottom:14px">
+    <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.12em;color:#9DB4E6">CREDITS THIS CYCLE</div>
+
+    <!-- zero banner -->
+    <sc-if value="{{ isZero }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:flex-start;gap:10px;background:rgba(224,107,94,.12);border:1px solid rgba(224,107,94,.36);border-radius:12px;padding:12px 14px;margin-top:14px">
+        <span style="color:#E9938A;font-size:15px;flex-shrink:0">◼</span>
+        <div style="font-size:13px;color:#F0C0B9;line-height:1.5"><b style="color:#F3C3BC">You're out of credits.</b> Top up to keep Cue working — nothing has been lost.</div>
+      </div>
+    </sc-if>
+
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:14px">
+      <span style="font-size:48px;font-weight:600;letter-spacing:-2px;color:{{ balanceColor }}">{{ balance }}</span>
+      <span style="font-size:14px;color:#7E8BA3">of {{ monthlyCredits }} left</span>
+    </div>
+
+    <div style="height:9px;background:rgba(255,255,255,.08);border-radius:5px;overflow:hidden;margin-top:14px">
+      <div style="height:100%;border-radius:5px;width:{{ remainPct }};background:{{ barColor }};transition:width .6s cubic-bezier(.2,.7,.2,1)"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#7E8BA3;margin-top:8px"><span>{{ used }} used</span><span>{{ refreshLine }}</span></div>
+
+    <sc-if value="{{ showLowMsg }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:12.5px;color:#E8B45A;margin-top:12px;line-height:1.5">Running low — Cue will check with you before starting big jobs.</div>
+    </sc-if>
+
+    <div data-topups style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
+      <button onClick="{{ topupSmall }}" style="text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:13px;padding:14px 16px;cursor:pointer;font-family:inherit;color:#fff"><div style="font-size:15px;font-weight:600">+1,000 credits</div><div style="font-size:12.5px;color:#AEB7C7;margin-top:2px">$10</div></button>
+      <button onClick="{{ topupLarge }}" style="position:relative;text-align:left;background:rgba(61,110,232,.16);border:1px solid rgba(61,110,232,.45);border-radius:13px;padding:14px 16px;cursor:pointer;font-family:inherit;color:#fff"><span style="position:absolute;top:-9px;right:12px;background:#3D6EE8;color:#fff;border-radius:999px;padding:3px 9px;font:500 8.5px 'DM Mono',monospace;letter-spacing:.08em">BEST VALUE</span><div style="font-size:15px;font-weight:600">+5,000 credits</div><div style="font-size:12.5px;color:#C7D4EE;margin-top:2px">$40</div></button>
+    </div>
+    <sc-if value="{{ showTopupNotice }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:12.5px;color:#9DB4E6;margin-top:12px;line-height:1.5">{{ topupNotice }}</div>
+    </sc-if>
+  </div>
+
+  <!-- ░░ USAGE CARD ░░ -->
+  <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:22px 22px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.12em;color:#9DB4E6">LAST 30 DAYS</div>
+      <div style="font-size:12.5px;color:#7E8BA3">{{ used }} credits of work</div>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:3px;height:56px;margin-top:16px">
+      <sc-for list="{{ spark }}" as="h" hint-placeholder-count="30">
+        <div style="flex:1;border-radius:2px 2px 0 0;background:{{ h.color }};height:{{ h.h }}"></div>
+      </sc-for>
+    </div>
+    <sc-if value="{{ hasActivities }}" hint-placeholder-val="{{ false }}">
+      <div style="height:1px;background:rgba(255,255,255,.08);margin:18px 0 4px"></div>
+      <div style="font-size:11.5px;color:#7E8BA3;font-family:'DM Mono',monospace;letter-spacing:.08em;margin-bottom:10px">TOP ACTIVITIES</div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <sc-for list="{{ activities }}" as="a" hint-placeholder-count="5">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+            <span style="font-size:13.5px;color:#D7DEEA">{{ a.name }}</span>
+            <span style="font-size:13px;color:#9DB4E6;font-family:'DM Mono',monospace;flex-shrink:0">{{ a.credits }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+// Wired to Cue HQ via commerce.js: GET /account/summary (session cookie) →
+// plan / credits / usage; POST /account/topup → Stripe checkout; GET
+// /account/portal → billing portal. 401 bounces to /signin. The designed
+// healthy / low / zero / payment-failed states derive from real data.
+class Component extends DCLogic {
+  state = { changeOpen: false, loaded: false, topupNotice: "" };
+  summary = null;
+
+  componentDidMount() {
+    CueCommerce.accountSummary()
+      .then((res) => {
+        if (res.status === 401) { location.href = "signin.html"; return; }
+        if (res.ok && res.body && res.body.ok) {
+          this.summary = res.body;
+          this.setState({ loaded: true });
+        }
+      })
+      .catch(() => {});
+  }
+
+  async topup(pack) {
+    this.setState({ topupNotice: "Preparing checkout…" });
+    let outcome;
+    try { outcome = await CueCommerce.topup(pack); }
+    catch (_) { outcome = { kind: "error" }; }
+    if (outcome.kind === "checkout") { location.href = outcome.url; return; }
+    if (outcome.kind === "unauthorized") { location.href = "signin.html"; return; }
+    this.setState({
+      topupNotice: outcome.kind === "unavailable"
+        ? "Top-ups aren't open just yet — email hello@cue.ai and we'll sort you out."
+        : "Something went wrong. Try again in a moment.",
+    });
+  }
+
+  fmtDate(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d) ? null : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  renderVals() {
+    const s = this.summary;
+    const monthly = s ? s.plan.monthlyCredits : 0;
+    const bal = s ? Math.max(0, s.credits.balance) : 0;
+    const granted = s && s.credits.grantedThisCycle > 0 ? s.credits.grantedThisCycle : monthly;
+    const used = s ? s.credits.usedThisCycle : 0;
+    const remainPct = granted > 0 ? Math.max(0, Math.min(100, Math.round((bal / granted) * 100))) : 0;
+    const zero = !!s && bal <= 0;
+    const low = !!s && !zero && remainPct < 15;
+    const payfail = !!s && (s.subscriptionStatus === "past_due" || s.subscriptionStatus === "unpaid");
+
+    // 30-day sparkline from real daily usage (flat baseline when quiet).
+    const days = (s && s.usage && s.usage.days) || [];
+    const maxCredits = Math.max(1, ...days.map((d) => d.credits));
+    const spark = (days.length ? days : Array(30).fill({ credits: 0 })).map((d) => ({
+      h: Math.max(2, Math.round((d.credits / maxCredits) * 52)) + "px",
+      color: d.credits > 0 ? "rgba(127,160,240,.55)" : "rgba(127,160,240,.18)",
+    }));
+
+    const renewDate = this.fmtDate(s && s.renewalDate);
+    const refreshDate = this.fmtDate(s && s.credits.refreshDate);
+    // Top activities aren't derivable from the credit ledger yet — the
+    // section hides itself (hasActivities) until the backend serves them.
+    const activities = (s && s.topActivities) || [];
+
+    return {
+      email: s ? s.email : "",
+      hasInstance: !!(s && s.instanceUrl),
+      openCueHref: (s && s.instanceUrl) || "#",
+      portalHref: CueCommerce.portalHref,
+      planName: s ? s.plan.name : "—",
+      planPrice: s ? "$" + s.plan.priceUsd + "/mo" : "",
+      renewsLine: renewDate ? "Renews " + renewDate : "Renews with your billing cycle",
+      showPayFail: payfail,
+      isZero: zero,
+      showLowMsg: low,
+      balance: this.state.loaded ? bal.toLocaleString() : "—",
+      balanceColor: zero ? "#E9938A" : low ? "#E8B45A" : "#fff",
+      monthlyCredits: monthly.toLocaleString(),
+      used: used.toLocaleString(),
+      remainPct: remainPct + "%",
+      barColor: zero ? "#E06B5E" : low ? "#E8B45A" : "#3D6EE8",
+      refreshLine: refreshDate ? "Refreshes " + refreshDate : "Refreshes monthly",
+      spark,
+      hasActivities: activities.length > 0,
+      activities,
+      showTopupNotice: !!this.state.topupNotice,
+      topupNotice: this.state.topupNotice,
+      topupSmall: () => this.topup("topup_1000"),
+      topupLarge: () => this.topup("topup_5000"),
+      changeOpen: this.state.changeOpen,
+      changeLabel: this.state.changeOpen ? "Close" : "Change plan",
+      toggleChange: () => this.setState((st) => ({ changeOpen: !st.changeOpen })),
+    };
+  }
+}
+</script>
+</body>
+</html>

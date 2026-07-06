@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,follow">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;-webkit-font-smoothing:antialiased}
+  @keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
+  @keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}
+  @keyframes cuePing{0%{transform:scale(1);opacity:.7}100%{transform:scale(1.35);opacity:0}}
+</style>
+</helmet>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#1A2230"/><circle cx="50" cy="46" r="18" fill="none" stroke="#EEF2F7" stroke-width="6"/><circle cx="44" cy="40" r="4.5" fill="#3D6EE8"/></svg></template>
+<div style="--ink:#1A2230;font-family:'DM Sans',system-ui,sans-serif;background:#F4F6F9;color:#1A2230;min-height:100vh;padding:32px;display:flex;flex-direction:column;align-items:center;gap:18px;line-height:1.5">
+
+  <div style="width:100%;max-width:1240px;display:flex;align-items:center;justify-content:space-between;gap:16px">
+    <a href="design-book.html" style="font-family:'DM Mono',monospace;font-size:12px;color:#5A6672;text-decoration:none;display:inline-flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E5E9F0;border-radius:999px;padding:7px 14px">← Design book</a>
+    <div style="font-family:'DM Mono',monospace;font-size:11.5px;letter-spacing:.06em;color:#8D99A5">/assistant/cue-live · the desktop-presence control panel</div>
+    <div style="width:96px"></div>
+  </div>
+
+  <div style="width:100%;max-width:1240px;background:#FFFFFF;border:1px solid #D7DDE7;border-radius:14px;overflow:hidden;box-shadow:0 30px 70px -38px rgba(26,34,48,.4)">
+    <div style="height:44px;display:flex;align-items:center;gap:8px;padding:0 16px;background:#F7F8FB;border-bottom:1px solid #E5E9F0">
+      <span style="width:12px;height:12px;border-radius:50%;background:#ED6A5E"></span><span style="width:12px;height:12px;border-radius:50%;background:#F4BF50"></span><span style="width:12px;height:12px;border-radius:50%;background:#61C554"></span>
+      <span style="margin-left:12px;font-size:12.5px;color:#8D99A5;font-family:'DM Mono',monospace">Cue · Cue Live</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:240px 1fr 280px;min-height:680px">
+
+      <aside style="background:#1A2230;color:#fff;padding:18px 13px;display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:10px;padding:4px 8px 16px">
+          <span style="position:relative;width:30px;height:30px;border-radius:26%;background:#0F1620;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 4px #EEF2F7 inset;-webkit-mask:radial-gradient(circle,transparent 56%,#000 57%);mask:radial-gradient(circle,transparent 56%,#000 57%);transform:rotate(40deg);animation:cueLook 6s ease-in-out infinite;position:relative;display:block"><span style="position:absolute;border-radius:50%;background:#3D6EE8;width:26%;height:26%;top:8%;left:8%;animation:cueBlink 4s infinite;display:block"></span></span></span>
+          <b style="font-size:21px;font-weight:500;letter-spacing:-1px">cue<span style="color:#3D6EE8">.</span></b>
+        </div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">◉</span> Home</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">▮</span> Chat</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#fff;background:rgba(255,255,255,.09)"><span style="width:16px;text-align:center;color:#3D6EE8">✦</span> Intelligence</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">▤</span> Library</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">◳</span> Workspace</div>
+        <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#C4CCDA"><span style="width:16px;text-align:center;opacity:.85">☷</span> Contacts</div>
+        <div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 8px 2px;border-top:1px solid rgba(255,255,255,.08);font-size:12.5px;color:#C4CCDA"><span style="width:28px;height:28px;border-radius:50%;background:#3D6EE8;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:#fff">M</span> Manav · guardian</div>
+      </aside>
+
+      <div style="background:#FFFFFF;display:flex;flex-direction:column">
+        <div style="padding:0 24px;border-bottom:1px solid #E5E9F0;display:flex;gap:18px;align-items:center;height:50px;overflow-x:auto">
+          <a href="identity.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Identity</a>
+          <a href="connectors.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Connectors</a>
+          <a href="channels.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Channels</a>
+          <a href="agents.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Agents</a>
+          <span style="font-size:13.5px;color:#1A2230;font-weight:600;padding:15px 0;border-bottom:2px solid #1A2230;white-space:nowrap">Cue Live</span>
+          <a href="skills.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Skills</a>
+          <a href="memory.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Memory</a>
+          <a href="workspace.html" style="font-size:13.5px;color:#5A6672;text-decoration:none;padding:15px 0;white-space:nowrap">Workspace</a>
+        </div>
+
+        <div style="padding:22px 24px;flex:1;display:flex;flex-direction:column;gap:22px;overflow:auto">
+
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div><div style="font-size:18px;font-weight:500;letter-spacing:-.4px">Cue Live</div><div style="font-size:13px;color:#5A6672;margin-top:2px">The presence that lives on your screen — guides you, or takes the wheel.</div></div>
+              <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(61,110,232,.1);border:1px solid rgba(61,110,232,.4);color:#2B53C4;padding:6px 12px;border-radius:999px;font-family:'DM Mono',monospace;font-size:11px"><span style="width:7px;height:7px;border-radius:50%;background:#3D6EE8;animation:cueBlink 1.6s infinite"></span> running · companion</div>
+            </div>
+          </div>
+
+          <!-- mode selector -->
+          <div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Mode · escalating power + trust</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div style="border:2px solid #3D6EE8;border-radius:13px;padding:14px;background:#FAFBFF"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:13.5px;font-weight:500">Companion</div><span style="font-family:'DM Mono',monospace;font-size:9.5px;background:#DBE4FB;color:#2B53C4;padding:2px 7px;border-radius:5px">ACTIVE</span></div><div style="font-size:12px;color:#5A6672;margin-top:4px">Follows your cursor, passive until summoned. <span style="font-family:'DM Mono',monospace;font-size:10px;color:#8D99A5">AX only · most private</span></div></div>
+              <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px"><div style="font-size:13.5px;font-weight:500">Scoped watch</div><div style="font-size:12px;color:#5A6672;margin-top:4px">Point Cue at one window. Captures actions from just that. <span style="font-family:'DM Mono',monospace;font-size:10px;color:#8D99A5">bounded capture</span></div></div>
+              <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px"><div style="font-size:13.5px;font-weight:500">Always-on</div><div style="font-size:12px;color:#5A6672;margin-top:4px">Whole screen, continuous. Opt-in, visible light + one-tap pause. <span style="font-family:'DM Mono',monospace;font-size:10px;color:#8D99A5">AX + vision on change</span></div></div>
+              <div style="border:1px solid #D9D6F2;border-radius:13px;padding:14px;background:#FBFAFF"><div style="font-size:13.5px;font-weight:500;color:#534AB7">Take control</div><div style="font-size:12px;color:#5A6672;margin-top:4px">State a goal, Cue drives. Guided → autonomous, you approve. <span style="font-family:'DM Mono',monospace;font-size:10px;color:#8D99A5">checkpointed</span></div></div>
+            </div>
+          </div>
+
+          <!-- hotkeys + voice bindings -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Hotkeys</div>
+              <div style="border:1px solid #E5E9F0;border-radius:13px;overflow:hidden">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #E5E9F0"><span style="font-size:13px">Summon Cue</span><span style="font-family:'DM Mono',monospace;font-size:11px;background:#EEF1F6;border:1px solid #D7DDE7;border-radius:6px;padding:3px 8px">⌥ Space</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #E5E9F0"><span style="font-size:13px">Point at element</span><span style="font-family:'DM Mono',monospace;font-size:11px;background:#EEF1F6;border:1px solid #D7DDE7;border-radius:6px;padding:3px 8px">⌥ P</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid #E5E9F0"><span style="font-size:13px">Push-to-talk</span><span style="font-family:'DM Mono',monospace;font-size:11px;background:#EEF1F6;border:1px solid #D7DDE7;border-radius:6px;padding:3px 8px">hold fn</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px"><span style="font-size:13px;color:#DA491A;font-weight:500">Stop everything</span><span style="font-family:'DM Mono',monospace;font-size:11px;background:#FCEBEB;border:1px solid #F0B9AC;color:#DA491A;border-radius:6px;padding:3px 8px">⌥ esc</span></div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Voice bindings</div>
+              <div style="border:1px solid #E5E9F0;border-radius:13px;padding:14px;display:flex;flex-direction:column;gap:13px">
+                <div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500">Hands-free (VAD)</div><div style="font-size:11.5px;color:#5A6672">Wake on voice, no key</div></div><span style="width:38px;height:22px;border-radius:999px;background:#D7DDE7;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;left:2px"></span></span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500">Read selection aloud</div><div style="font-size:11.5px;color:#5A6672">⌥ R on any text</div></div><span style="width:38px;height:22px;border-radius:999px;background:#3D6EE8;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px"></span></span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:500">Voice</div><div style="font-size:11.5px;color:#5A6672">"Even" · warm, low</div></div><span style="font-size:12px;border:1px solid #D7DDE7;border-radius:8px;padding:5px 10px">Change</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- auto-run goals -->
+          <div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:11px">Auto-run goals</div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px"><span style="width:30px;height:30px;border-radius:8px;background:#EEEDFB;display:flex;align-items:center;justify-content:center">✦</span><div style="flex:1"><div style="font-size:13px;font-weight:500">When I open a meeting, offer to capture it</div><div style="font-size:11.5px;color:#5A6672">scoped watch · stops when meeting ends</div></div><span style="width:38px;height:22px;border-radius:999px;background:#3D6EE8;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px"></span></span></div>
+              <div style="border:1px solid #E5E9F0;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px"><span style="width:30px;height:30px;border-radius:8px;background:#DBE4FB;display:flex;align-items:center;justify-content:center">✉</span><div style="flex:1"><div style="font-size:13px;font-weight:500">Surface the next move when I open my inbox</div><div style="font-size:11.5px;color:#5A6672">companion · guide only, never sends</div></div><span style="width:38px;height:22px;border-radius:999px;background:#3D6EE8;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px"></span></span></div>
+              <div style="border:1px dashed #D7DDE7;border-radius:12px;padding:12px 14px;font-size:12.5px;color:#8D99A5;display:flex;align-items:center;gap:8px">+ Add an auto-run goal</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- RIGHT: take-control + trust posture -->
+      <aside style="background:#F4F6F9;border-left:1px solid #E5E9F0;padding:18px;display:flex;flex-direction:column;gap:16px">
+        <div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:10px">Take control</div>
+          <div style="background:#1A2230;color:#fff;border-radius:14px;padding:15px">
+            <div style="display:flex;align-items:center;justify-content:space-between"><div style="font-size:14px;font-weight:500">Allow Cue to act</div><span style="width:38px;height:22px;border-radius:999px;background:#534AB7;position:relative;flex-shrink:0"><span style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:2px;right:2px"></span></span></div>
+            <div style="font-size:12px;color:#9DB4E6;margin-top:7px;line-height:1.55">Cue can drive apps toward a goal you state. Guarded steps pause for approval — <b style="color:#fff">Stop always wins.</b></div>
+            <div style="margin-top:11px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#C4CCDA"><span>Pause before sending</span><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9DB4E6">always</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#C4CCDA"><span>Pause before purchases</span><span style="font-family:'DM Mono',monospace;font-size:10px;color:#9DB4E6">always</span></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:#8D99A5;margin-bottom:10px">How it sees</div>
+          <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-radius:13px;padding:14px">
+            <div style="font-size:13px;font-weight:500">Accessibility-first</div>
+            <div style="font-size:12px;color:#5A6672;margin-top:4px;line-height:1.55">~50ms AX reads. Screenshots only when AX is blind, only on change.</div>
+            <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;font-size:12px"><span>Screen capture</span><span style="font-family:'DM Mono',monospace;font-size:10px;color:#5A6672">on change only</span></div>
+            <div style="margin-top:7px;display:flex;align-items:center;justify-content:space-between;font-size:12px"><span>Password fields</span><span style="font-family:'DM Mono',monospace;font-size:10px;color:#277E41">never captured</span></div>
+          </div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E5E9F0;border-left:3px solid #3D6EE8;border-radius:0 12px 12px 0;padding:11px 14px;font-size:12px;color:#5A6672;margin-top:auto">Every action runs through the approvals model. Manage who can reach Cue in the Trust console.</div>
+      </aside>
+
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1304,&quot;height&quot;:840}}"></script>
+</body>
+</html>
