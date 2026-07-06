@@ -16,6 +16,7 @@ import {
   visibleProfilesForPicker,
   type ProfilePickerEntry,
 } from "@/assistant/profile-pickers";
+import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { useProfileQuickAdd } from "@/components/profile-quick-add-provider";
 import {
   configGetOptions,
@@ -61,6 +62,13 @@ export function ComposerSettingsMenu({ assistantId, conversationId }: Props) {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+
+  // Managed (Cue-hosted) instances never expose the per-conversation model
+  // profile picker — profiles name vendor models, and managed customers must
+  // not see vendor machinery. Hidden until self-host is *confirmed* (see
+  // use-managed-mode flash policy). The Assistant Access (threshold) section
+  // is product functionality and stays in both modes.
+  const showModelProfileSection = !hideVendorUi(useManagedMode());
 
   // ---------------------------------------------------------------------------
   // Server-state queries — replace the old useEffect + async IIFE pattern.
@@ -437,30 +445,34 @@ export function ComposerSettingsMenu({ assistantId, conversationId }: Props) {
                 />
               );
             })}
-            <MenuDivider />
-            <SectionLabel trailingAction={quickAddButton}>
-              Model Profile
-            </SectionLabel>
-            {visibleProfileEntries.map((entry) => {
-              const isActive = entry.name === profileActiveKey;
-              return (
-                <PanelItem
-                  key={entry.name}
-                  icon={Sparkles}
-                  label={profilePickerLabel(entry)}
-                  active={isActive}
-                  trailingAction={
-                    isActive ? (
-                      <Check className="h-3.5 w-3.5 text-[var(--system-positive-strong)]" />
-                    ) : undefined
-                  }
-                  onSelect={() => {
-                    handleProfileSelect(entry.name);
-                    setOpen(false);
-                  }}
-                />
-              );
-            })}
+            {showModelProfileSection && (
+              <>
+                <MenuDivider />
+                <SectionLabel trailingAction={quickAddButton}>
+                  Model Profile
+                </SectionLabel>
+                {visibleProfileEntries.map((entry) => {
+                  const isActive = entry.name === profileActiveKey;
+                  return (
+                    <PanelItem
+                      key={entry.name}
+                      icon={Sparkles}
+                      label={profilePickerLabel(entry)}
+                      active={isActive}
+                      trailingAction={
+                        isActive ? (
+                          <Check className="h-3.5 w-3.5 text-[var(--system-positive-strong)]" />
+                        ) : undefined
+                      }
+                      onSelect={() => {
+                        handleProfileSelect(entry.name);
+                        setOpen(false);
+                      }}
+                    />
+                  );
+                })}
+              </>
+            )}
           </BottomSheet.Body>
         </BottomSheet.Content>
       </BottomSheet.Root>
@@ -507,38 +519,42 @@ export function ComposerSettingsMenu({ assistantId, conversationId }: Props) {
             </Menu.Item>
           );
         })}
-        <Menu.Separator />
-        <Menu.Label className="flex items-center justify-between gap-2 text-label-small-default normal-case tracking-normal">
-          <span>Model Profile</span>
-          {quickAddButton}
-        </Menu.Label>
-        {visibleProfileEntries.map((entry) => {
-          const isActive = entry.name === profileActiveKey;
-          return (
-            <Menu.Item
-              key={entry.name}
-              onSelect={() => handleProfileSelect(entry.name)}
-              leftIcon={<Sparkles className="h-3.5 w-3.5" />}
-              className={
-                isActive
-                  ? "bg-[var(--surface-active)] text-[var(--content-emphasised)]"
-                  : ""
-              }
-              shortcut={
-                isActive ? (
-                  <Check className="h-3.5 w-3.5 text-[var(--system-positive-strong)]" />
-                ) : undefined
-              }
-              title={
-                entry.name === "auto"
-                  ? "Automatically switches profiles based on the query"
-                  : undefined
-              }
-            >
-              {profilePickerLabel(entry)}
-            </Menu.Item>
-          );
-        })}
+        {showModelProfileSection && (
+          <>
+            <Menu.Separator />
+            <Menu.Label className="flex items-center justify-between gap-2 text-label-small-default normal-case tracking-normal">
+              <span>Model Profile</span>
+              {quickAddButton}
+            </Menu.Label>
+            {visibleProfileEntries.map((entry) => {
+              const isActive = entry.name === profileActiveKey;
+              return (
+                <Menu.Item
+                  key={entry.name}
+                  onSelect={() => handleProfileSelect(entry.name)}
+                  leftIcon={<Sparkles className="h-3.5 w-3.5" />}
+                  className={
+                    isActive
+                      ? "bg-[var(--surface-active)] text-[var(--content-emphasised)]"
+                      : ""
+                  }
+                  shortcut={
+                    isActive ? (
+                      <Check className="h-3.5 w-3.5 text-[var(--system-positive-strong)]" />
+                    ) : undefined
+                  }
+                  title={
+                    entry.name === "auto"
+                      ? "Automatically switches profiles based on the query"
+                      : undefined
+                  }
+                >
+                  {profilePickerLabel(entry)}
+                </Menu.Item>
+              );
+            })}
+          </>
+        )}
       </Menu.Content>
     </Menu.Root>
   );

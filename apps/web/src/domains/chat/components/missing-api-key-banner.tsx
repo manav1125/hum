@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { Button } from "@vellumai/design-library";
 
 export interface MissingApiKeyBannerProps {
@@ -11,6 +12,14 @@ export function MissingApiKeyBanner({
   onOpenSettings,
   onDismiss,
 }: MissingApiKeyBannerProps) {
+  // Self-gating: on managed (Cue-hosted) instances keys are provisioned by
+  // HQ — a missing/invalid key is an ops incident, not something the
+  // customer can fix, and the banner would point at a settings page that is
+  // hidden in managed mode. Gated here (rather than in each parent) so every
+  // render path is covered.
+  const managed = useManagedMode();
+  if (hideVendorUi(managed)) return null;
+
   return (
     <div
       className="relative flex flex-col gap-3 bg-[var(--surface-active)] p-4"

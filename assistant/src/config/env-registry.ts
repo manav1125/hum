@@ -257,6 +257,20 @@ export function getDisableBackgroundMemory(): boolean {
 }
 
 /**
+ * CUE_MANAGED — boolean, default: false
+ * Set by the HQ control plane on instances it provisions (Cue-hosted /
+ * "managed" customers). When set, the daemon advertises `capabilities.managed`
+ * on the health endpoints so clients can hide LLM-vendor machinery (API-key
+ * entry, provider/model pickers, BYO settings) — managed customers must never
+ * see that surface area. Self-host deployments leave it unset and keep the
+ * full BYO experience. Display-only: it gates UI, not any daemon behavior.
+ * Already on the safe-env allowlist (tools/terminal/safe-env.ts).
+ */
+export function getManagedInstance(): boolean {
+  return flag("CUE_MANAGED");
+}
+
+/**
  * CUE_DISABLE_WORKITEM_AUTORUN — boolean, default: false
  * Kill-switch for autonomy-policy-gated auto-execution of freshly captured
  * work items (work-items/work-item-triage.ts). When set, captured items stay

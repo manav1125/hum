@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
+import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import {
   DEFAULT_ONBOARDING_PROVIDER,
@@ -23,6 +24,14 @@ export function ApiKeyScreen() {
   const [searchParams] = useSearchParams();
   const hosting = searchParams.get("hosting");
   const electron = isElectron();
+
+  // Managed (Cue-hosted) instances never ask for an LLM key — providers are
+  // provisioned by HQ. This screen is local-mode-only so a managed instance
+  // shouldn't reach it, but gate as defense in depth (renders nothing rather
+  // than vendor key entry; see use-managed-mode flash policy). With no
+  // active assistant selected the hook resolves to `false`, so fresh local
+  // onboarding is unaffected.
+  const managed = useManagedMode();
 
   const [provider, setProvider] = useState<OnboardingProviderId>(
     () => peekPendingProviderKey()?.provider ?? DEFAULT_ONBOARDING_PROVIDER.id,
@@ -51,6 +60,8 @@ export function ApiKeyScreen() {
   const onBack = () => {
     void navigate(routes.onboarding.hosting);
   };
+
+  if (hideVendorUi(managed)) return null;
 
   return (
     <OnboardingLayout>

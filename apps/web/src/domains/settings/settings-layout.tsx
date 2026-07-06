@@ -2,6 +2,7 @@ import { LogOut } from "lucide-react";
 import { useMemo } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
+import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { isLocalMode } from "@/lib/local-mode";
@@ -32,10 +33,18 @@ export function SettingsLayout() {
   // Hide logout in pure local mode unless a platform session exists.
   const hasPlatformSession = useHasPlatformSession();
   const showLogout = !isLocalMode() || hasPlatformSession;
+  const managed = useManagedMode();
 
   const filteredItems = useMemo(
     () =>
       SETTINGS_SIDEBAR.filter((item) => {
+        // Managed (Cue-hosted) instances never expose the BYO Models &
+        // Services page — provider keys and model plumbing are provisioned
+        // by HQ. Hidden until self-host is *confirmed* (see use-managed-mode
+        // flash policy).
+        if (item.id === "model" && hideVendorUi(managed)) {
+          return false;
+        }
         if (
           item.id === "notifications" &&
           (!platformNotifications || platformGate === "gated")
@@ -59,7 +68,7 @@ export function SettingsLayout() {
         }
         return true;
       }),
-    [platformNotifications, platformGate, billingGate],
+    [platformNotifications, platformGate, billingGate, managed],
   );
 
   const bottomItems = useMemo<SidebarItem[]>(() => {

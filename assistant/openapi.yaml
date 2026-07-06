@@ -16280,8 +16280,11 @@ paths:
                     properties:
                       memoryOptOut:
                         type: boolean
+                      managed:
+                        type: boolean
                     required:
                       - memoryOptOut
+                      - managed
                     additionalProperties: false
                   profiler:
                     type: object
@@ -16457,8 +16460,11 @@ paths:
                     properties:
                       memoryOptOut:
                         type: boolean
+                      managed:
+                        type: boolean
                     required:
                       - memoryOptOut
+                      - managed
                     additionalProperties: false
                   profiler:
                     type: object

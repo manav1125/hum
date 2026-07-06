@@ -7,7 +7,11 @@ import { availableParallelism, cpus, totalmem } from "node:os";
 
 import { z } from "zod";
 
-import { getCpuLimit, getIsPlatform } from "../../config/env-registry.js";
+import {
+  getCpuLimit,
+  getIsPlatform,
+  getManagedInstance,
+} from "../../config/env-registry.js";
 import { resolveCallSiteConfig } from "../../config/llm-resolver.js";
 import { getConfig } from "../../config/loader.js";
 import { parseIdentityFields } from "../../daemon/handlers/identity.js";
@@ -355,6 +359,10 @@ function getDetailedHealth() {
     },
     capabilities: {
       memoryOptOut: true,
+      // True on HQ-provisioned (Cue-hosted) instances. Clients hide
+      // LLM-vendor machinery (API-key entry, provider/model pickers)
+      // when set. Read per-request so tests / restarts see env changes.
+      managed: getManagedInstance(),
     },
     ...(profiler ? { profiler } : {}),
   };
@@ -723,6 +731,11 @@ const cesHealthSchema = z.object({
 
 const healthCapabilitiesSchema = z.object({
   memoryOptOut: z.boolean(),
+  /**
+   * True when this instance is provisioned/managed by the HQ control plane
+   * (env CUE_MANAGED=1). Clients hide LLM-vendor machinery in managed mode.
+   */
+  managed: z.boolean(),
 });
 
 const healthDiskSchema = z.object({

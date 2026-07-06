@@ -227,7 +227,7 @@ describe("identity routes — health endpoint", () => {
       expect(body.memory).toBeDefined();
       expect(body.cpu).toBeDefined();
       expect(body.migrations).toBeDefined();
-      expect(body.capabilities).toEqual({ memoryOptOut: true });
+      expect(body.capabilities).toEqual({ memoryOptOut: true, managed: false });
 
       // Profiler should either be absent or show enabled: false
       if ("profiler" in body) {
