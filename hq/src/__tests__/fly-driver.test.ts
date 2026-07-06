@@ -5,10 +5,10 @@ import { FlyDriver, parseGuestPreset } from "../providers/fly-driver.js";
 const ENV_KEYS = [
   "FLY_API_TOKEN",
   "FLY_ORG_SLUG",
-  "FLY_REGION",
-  "FLY_VM_SIZE",
-  "FLY_VM_MEMORY_MB",
-  "FLY_VOLUME_SIZE_GB",
+  "HQ_FLY_REGION",
+  "HQ_FLY_VM_SIZE",
+  "HQ_FLY_VM_MEMORY_MB",
+  "HQ_FLY_VOLUME_SIZE_GB",
   "CUE_IMAGE_REF",
   "HQ_HEALTH_TIMEOUT_MS",
 ] as const;
@@ -163,7 +163,7 @@ describe("guest preset parsing", () => {
   });
 
   test("rejects garbage presets", () => {
-    expect(() => parseGuestPreset("mega-cpu", 1024)).toThrow(/FLY_VM_SIZE/);
+    expect(() => parseGuestPreset("mega-cpu", 1024)).toThrow(/HQ_FLY_VM_SIZE/);
   });
 });
 
@@ -283,8 +283,8 @@ describe("provision happy path", () => {
   });
 
   test("region/size/volume overrides flow through", async () => {
-    process.env.FLY_VM_SIZE = "performance-2x";
-    process.env.FLY_VM_MEMORY_MB = "4096";
+    process.env.HQ_FLY_VM_SIZE = "performance-2x";
+    process.env.HQ_FLY_VM_MEMORY_MB = "4096";
     const { fetchImpl, calls } = fakeFlyFetch({});
     const driver = makeDriver(fetchImpl);
 

@@ -55,3 +55,8 @@ skills/meet-join/node_modules/
 skills/meet-join/contracts/node_modules/
 skills/meet-join/**/__tests__/
 skills/meet-join/**/*.test.ts
+# Cue HQ image (hq/Dockerfile) needs the control plane + the static site
+!hq/
+!hq/**
+!site/
+!site/**

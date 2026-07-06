@@ -14,10 +14,10 @@
  *   CUE_IMAGE_REF      — default image (e.g. registry.fly.io/cue-releases:v9ce28d3;
  *                        built via hq/scripts/fly-release.sh); per-provision
  *                        override via spec.image
- *   FLY_REGION         — default region (default "iad")
- *   FLY_VM_SIZE        — guest preset, e.g. "shared-cpu-1x" (default)
- *   FLY_VM_MEMORY_MB   — machine memory (default 1024)
- *   FLY_VOLUME_SIZE_GB — /workspace volume size (default 10, matching
+ *   HQ_FLY_REGION         — default region (default "iad")
+ *   HQ_FLY_VM_SIZE        — guest preset, e.g. "shared-cpu-1x" (default)
+ *   HQ_FLY_VM_MEMORY_MB   — machine memory (default 1024)
+ *   HQ_FLY_VOLUME_SIZE_GB — /workspace volume size (default 10, matching
  *                        render.yaml's disk block); spec.plan like "20gb"
  *                        overrides per-provision
  *
@@ -68,7 +68,7 @@ export function parseGuestPreset(
   const match = preset.match(/^(shared|performance)-(?:cpu-)?(\d+)x$/i);
   if (!match) {
     throw new Error(
-      `fly-driver: unrecognized FLY_VM_SIZE "${preset}" — expected e.g. shared-cpu-1x or performance-2x`,
+      `fly-driver: unrecognized HQ_FLY_VM_SIZE "${preset}" — expected e.g. shared-cpu-1x or performance-2x`,
     );
   }
   return {
@@ -78,11 +78,11 @@ export function parseGuestPreset(
   };
 }
 
-/** Volume size: spec.plan like "20gb" wins, then FLY_VOLUME_SIZE_GB, then 10. */
+/** Volume size: spec.plan like "20gb" wins, then HQ_FLY_VOLUME_SIZE_GB, then 10. */
 function volumeSizeGb(spec: InstanceSpec): number {
   const fromPlan = spec.plan?.match(/^(\d+)\s*gb$/i);
   if (fromPlan) return Number(fromPlan[1]);
-  const fromEnv = Number(process.env.FLY_VOLUME_SIZE_GB ?? "");
+  const fromEnv = Number(process.env.HQ_FLY_VOLUME_SIZE_GB ?? "");
   return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 10;
 }
 
@@ -197,10 +197,10 @@ export class FlyDriver implements InstanceDriver {
         "fly-driver: no image — set CUE_IMAGE_REF (see hq/scripts/fly-release.sh) or pass spec.image",
       );
     }
-    const region = spec.region ?? process.env.FLY_REGION ?? "iad";
+    const region = spec.region ?? process.env.HQ_FLY_REGION ?? "iad";
     const guest = parseGuestPreset(
-      process.env.FLY_VM_SIZE ?? "shared-cpu-1x",
-      Number(process.env.FLY_VM_MEMORY_MB ?? 1024),
+      process.env.HQ_FLY_VM_SIZE ?? "shared-cpu-1x",
+      Number(process.env.HQ_FLY_VM_MEMORY_MB ?? 1024),
     );
 
     const appName = await this.createAppWithUniqueName(spec.name);

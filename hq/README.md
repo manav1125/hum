@@ -99,9 +99,9 @@ price-id → env-var mapping to paste into the environment.
 | `FLY_API_TOKEN` | Org-scoped Fly token (`flyctl tokens create org <slug>`) |
 | `FLY_ORG_SLUG` | Fly org new apps are created in |
 | `CUE_IMAGE_REF` | Image for new Fly instances, e.g. `registry.fly.io/cue-releases:v<sha>` (built by `scripts/fly-release.sh`; per-provision override: `image` in the POST body) |
-| `FLY_REGION` | Default Fly region (default `iad`) |
-| `FLY_VM_SIZE` / `FLY_VM_MEMORY_MB` | Guest preset (default `shared-cpu-1x` / `1024`) |
-| `FLY_VOLUME_SIZE_GB` | /workspace volume size (default `10`, matching render.yaml) |
+| `HQ_FLY_REGION` | Default Fly region (default `iad`) |
+| `HQ_FLY_VM_SIZE` / `HQ_FLY_VM_MEMORY_MB` | Guest preset (default `shared-cpu-1x` / `1024`) |
+| `HQ_FLY_VOLUME_SIZE_GB` | /workspace volume size (default `10`, matching render.yaml) |
 | `STRIPE_SECRET_KEY` | `sk_…` — checkout session creation |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_…` — webhook HMAC verification |
 | `STRIPE_PRICE_ASSISTANT` | Monthly price id for the `assistant` tier ($49) |

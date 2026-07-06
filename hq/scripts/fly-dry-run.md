@@ -38,7 +38,7 @@ HQ_ADMIN_TOKEN=$(openssl rand -hex 16) \
 HQ_DRIVER=fly \
 FLY_API_TOKEN=<org token> \
 FLY_ORG_SLUG=<org> \
-FLY_REGION=iad \
+HQ_FLY_REGION=iad \
 CUE_IMAGE_REF=registry.fly.io/cue-releases:v<sha> \
 bun run src/server.ts
 ```
