@@ -61,8 +61,43 @@ export interface Agent {
    * wins over profile/call-site resolution in the provider layer.
    */
   model: string | null;
+  /**
+   * Tool-scope allowlist — coarse skill/domain ids (the Guardrails scope
+   * chips: "email", "calendar", "research", "files", "code", "docs",
+   * "design", "outreach", "social", "ads"); null = unrestricted. Enforced on
+   * background work-item runs: the run conversation filters extension-owned
+   * (skill/plugin/MCP) tools whose name/owner matches a known domain outside
+   * these scopes (see guardrails/agent-tool-scopes.ts). Core plumbing tools
+   * are never filtered. Stored as a JSON string array in `tool_scopes`.
+   */
+  toolScopes: string[] | null;
   createdAt: number;
   updatedAt: number;
+}
+
+/** DB row shape: `tool_scopes` is a JSON TEXT column. */
+type AgentRow = Omit<Agent, "toolScopes"> & { toolScopes: string | null };
+
+/** Parse the `tool_scopes` JSON column; malformed content reads as null (unrestricted). */
+function parseToolScopes(raw: string | null): string[] | null {
+  if (raw == null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((s): s is string => typeof s === "string");
+  } catch {
+    return null;
+  }
+}
+
+function rowToAgent(row: AgentRow): Agent {
+  return { ...row, toolScopes: parseToolScopes(row.toolScopes) };
+}
+
+function serializeToolScopes(
+  scopes: string[] | null | undefined,
+): string | null {
+  return scopes == null ? null : JSON.stringify(scopes);
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────
@@ -70,15 +105,21 @@ export interface Agent {
 /** List all agents, name-ordered (stable roster). */
 export function listAgents(): Agent[] {
   const db = getDb();
-  return db.select().from(agents).orderBy(asc(agents.name)).all() as Agent[];
+  const rows = db
+    .select()
+    .from(agents)
+    .orderBy(asc(agents.name))
+    .all() as AgentRow[];
+  return rows.map(rowToAgent);
 }
 
 /** Fetch a single agent by id. */
 export function getAgent(id: string): Agent | undefined {
   const db = getDb();
-  return db.select().from(agents).where(eq(agents.id, id)).get() as
-    | Agent
+  const row = db.select().from(agents).where(eq(agents.id, id)).get() as
+    | AgentRow
     | undefined;
+  return row ? rowToAgent(row) : undefined;
 }
 
 /**
@@ -93,11 +134,12 @@ export function getAgentByAssignee(
   const name = assignee?.trim();
   if (!name) return undefined;
   const db = getDb();
-  return db
+  const row = db
     .select()
     .from(agents)
     .where(sql`lower(${agents.name}) = lower(${name})`)
-    .get() as Agent | undefined;
+    .get() as AgentRow | undefined;
+  return row ? rowToAgent(row) : undefined;
 }
 
 /** "Hire an agent" — add a new role to the org. */
@@ -110,6 +152,7 @@ export function createAgent(opts: {
   capCents?: number | null;
   paused?: boolean;
   model?: string | null;
+  toolScopes?: string[] | null;
 }): Agent {
   const db = getDb();
   const now = Date.now();
@@ -123,16 +166,20 @@ export function createAgent(opts: {
     capCents: opts.capCents ?? null,
     paused: opts.paused ? 1 : 0,
     model: opts.model ?? null,
+    toolScopes: opts.toolScopes ?? null,
     createdAt: now,
     updatedAt: now,
   };
-  db.insert(agents).values(agent).run();
+  db.insert(agents)
+    .values({ ...agent, toolScopes: serializeToolScopes(agent.toolScopes) })
+    .run();
   return agent;
 }
 
 /**
- * Patch one agent (rename / re-charter / tier / cap / pause / model pin).
- * Only provided fields are written; the rest keep their current value.
+ * Patch one agent (rename / re-charter / tier / cap / pause / model pin /
+ * tool scopes). Only provided fields are written; the rest keep their
+ * current value.
  */
 export function updateAgent(
   id: string,
@@ -147,12 +194,20 @@ export function updateAgent(
       | "capCents"
       | "paused"
       | "model"
+      | "toolScopes"
     >
   >,
 ): Agent | undefined {
   const db = getDb();
+  const { toolScopes, ...rest } = updates;
   db.update(agents)
-    .set({ ...updates, updatedAt: Date.now() })
+    .set({
+      ...rest,
+      ...("toolScopes" in updates
+        ? { toolScopes: serializeToolScopes(toolScopes) }
+        : {}),
+      updatedAt: Date.now(),
+    })
     .where(eq(agents.id, id))
     .run();
   return getAgent(id);

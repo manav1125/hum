@@ -97,6 +97,8 @@ mock.module("./autonomy-policy-reader.js", () => ({
     send: "auto",
     money: "auto",
     delete: "auto",
+    publish: "auto",
+    contact: "auto",
     other: "auto",
   }),
   _clearAutonomyPolicyCacheForTesting: () => {},

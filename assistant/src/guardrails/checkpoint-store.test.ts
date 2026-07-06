@@ -163,29 +163,77 @@ describe("checkpoint CRUD", () => {
 });
 
 describe("enforced vs declarative classification", () => {
-  test("autonomy:<class> patterns are enforced; other forms are declarative", () => {
+  test("autonomy:<class> patterns are enforced; unknown forms are declarative", () => {
     expect(enforcedAutonomyClass("autonomy:send")).toBe("send");
     expect(enforcedAutonomyClass("autonomy:money")).toBe("money");
     expect(enforcedAutonomyClass("autonomy:delete")).toBe("delete");
+    expect(enforcedAutonomyClass("autonomy:publish")).toBe("publish");
+    expect(enforcedAutonomyClass("autonomy:contact")).toBe("contact");
     expect(enforcedAutonomyClass("autonomy:bogus")).toBeNull();
-    expect(enforcedAutonomyClass("tool:publish_*")).toBeNull();
-    expect(enforcedAutonomyClass("contact:*")).toBeNull();
+    expect(enforcedAutonomyClass("tool:my_tool_*")).toBeNull();
 
     expect(isCheckpointEnforced({ pattern: "autonomy:send" })).toBe(true);
-    expect(isCheckpointEnforced({ pattern: "tool:publish_*" })).toBe(false);
+    expect(isCheckpointEnforced({ pattern: "tool:my_tool_*" })).toBe(false);
     expect(checkpointEnforcementVia({ pattern: "autonomy:delete" })).toContain(
       "'delete'",
     );
-    expect(checkpointEnforcementVia({ pattern: "contact:*" })).toBeNull();
+    expect(checkpointEnforcementVia({ pattern: "tool:my_tool_*" })).toBeNull();
   });
 
-  test("the seeded defaults split 3 enforced / 1 declarative", () => {
+  test("legacy compiled patterns alias to publish/contact (rows keep working)", () => {
+    expect(enforcedAutonomyClass("tool:publish_*")).toBe("publish");
+    expect(enforcedAutonomyClass("contact:*")).toBe("contact");
+    expect(isCheckpointEnforced({ pattern: "tool:publish_*" })).toBe(true);
+    expect(isCheckpointEnforced({ pattern: "contact:*" })).toBe(true);
+  });
+
+  test("publish/contact enforcedVia is honest about granularity", () => {
+    const publishVia = checkpointEnforcementVia({
+      pattern: "autonomy:publish",
+    });
+    expect(publishVia).toContain("publish/unpublish/deploy");
+    // Legacy pattern gets the same honest text.
+    expect(checkpointEnforcementVia({ pattern: "tool:publish_*" })).toBe(
+      publishVia,
+    );
+
+    const contactVia = checkpointEnforcementVia({
+      pattern: "autonomy:contact",
+    });
+    expect(contactVia).toContain("ALL message/email sends");
+    expect(contactVia).toContain("NEW contacts");
+    expect(checkpointEnforcementVia({ pattern: "contact:*" })).toBe(contactVia);
+  });
+
+  test("publish and contact templates compile to enforced autonomy patterns", () => {
+    const publish = createCheckpoint({
+      template: "publish",
+      label: "Publishing anything",
+    });
+    expect(publish.pattern).toBe("autonomy:publish");
+    expect(isCheckpointEnforced(publish)).toBe(true);
+
+    const contact = createCheckpoint({
+      template: "contact",
+      label: "Contacting someone new",
+    });
+    expect(contact.pattern).toBe("autonomy:contact");
+    expect(isCheckpointEnforced(contact)).toBe(true);
+  });
+
+  test("all four seeded defaults are enforced (publish via the legacy alias)", () => {
     rerunMigration();
     const byTemplate = new Map(listCheckpoints().map((c) => [c.template, c]));
     expect(isCheckpointEnforced(byTemplate.get("send_message")!)).toBe(true);
     expect(isCheckpointEnforced(byTemplate.get("spend_over")!)).toBe(true);
     expect(isCheckpointEnforced(byTemplate.get("delete")!)).toBe(true);
-    expect(isCheckpointEnforced(byTemplate.get("publish")!)).toBe(false);
+    // The 299 seed writes the legacy "tool:publish_*" pattern; the alias
+    // makes the row enforced without a data migration.
+    expect(byTemplate.get("publish")!.pattern).toBe("tool:publish_*");
+    expect(isCheckpointEnforced(byTemplate.get("publish")!)).toBe(true);
+    expect(enforcedAutonomyClass(byTemplate.get("publish")!.pattern)).toBe(
+      "publish",
+    );
   });
 });
 

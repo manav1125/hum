@@ -108,6 +108,67 @@ describe("agent CRUD routes", () => {
     expect(agent.paused).toBe(1);
   });
 
+  test("PATCH agents/:id sets, normalizes, and clears tool scopes", () => {
+    const patch = route("agents/:id", "PATCH");
+
+    // Set — normalized (trim/lowercase) and deduped.
+    const { agent } = patch.handler({
+      pathParams: { id: "ops" },
+      body: { toolScopes: ["  Email ", "calendar", "email", ""] },
+      headers: {},
+    }) as { agent: { toolScopes: string[] | null } };
+    expect(agent.toolScopes).toEqual(["email", "calendar"]);
+
+    // Exposed on reads (flows into GET guardrails via the agents spread).
+    const got = route("agents/:id", "GET").handler({
+      pathParams: { id: "ops" },
+      headers: {},
+    }) as { agent: { toolScopes: string[] | null } };
+    expect(got.agent.toolScopes).toEqual(["email", "calendar"]);
+
+    // Omitting the field leaves scopes untouched.
+    const untouched = patch.handler({
+      pathParams: { id: "ops" },
+      body: { tier: "2" },
+      headers: {},
+    }) as { agent: { toolScopes: string[] | null } };
+    expect(untouched.agent.toolScopes).toEqual(["email", "calendar"]);
+
+    // Null clears the restriction.
+    const cleared = patch.handler({
+      pathParams: { id: "ops" },
+      body: { toolScopes: null },
+      headers: {},
+    }) as { agent: { toolScopes: string[] | null } };
+    expect(cleared.agent.toolScopes).toBeNull();
+  });
+
+  test("PATCH agents/:id rejects malformed tool scopes", () => {
+    const patch = route("agents/:id", "PATCH");
+    expect(() =>
+      patch.handler({
+        pathParams: { id: "ops" },
+        body: { toolScopes: "email" },
+        headers: {},
+      }),
+    ).toThrow(BadRequestError);
+    expect(() =>
+      patch.handler({
+        pathParams: { id: "ops" },
+        body: { toolScopes: [42] },
+        headers: {},
+      }),
+    ).toThrow(BadRequestError);
+  });
+
+  test("POST agents accepts tool scopes at hire", () => {
+    const { agent } = route("agents", "POST").handler({
+      body: { name: "Scout", toolScopes: ["Research"] },
+      headers: {},
+    }) as { agent: { toolScopes: string[] | null } };
+    expect(agent.toolScopes).toEqual(["research"]);
+  });
+
   test("PATCH agents/:id rejects an empty name", () => {
     expect(() =>
       route("agents/:id", "PATCH").handler({

@@ -91,6 +91,12 @@ export interface PendingInteraction {
   metadata?: Record<string, unknown>;
   /** toolUseId associated with a confirmation_request (PermissionPrompter). */
   toolUseId?: string;
+  /**
+   * Epoch ms when the interaction was registered. Stamped by register()
+   * when the caller doesn't supply one — powers "held for Xm" ages on the
+   * Guardrails ledger's held-approvals list.
+   */
+  registeredAt?: number;
 }
 
 const pending = new Map<string, PendingInteraction>();
@@ -99,6 +105,9 @@ export function register(
   requestId: string,
   interaction: PendingInteraction,
 ): void {
+  if (interaction.registeredAt == null) {
+    interaction.registeredAt = Date.now();
+  }
   pending.set(requestId, interaction);
 }
 

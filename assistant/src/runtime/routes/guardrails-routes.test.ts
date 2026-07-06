@@ -1,19 +1,26 @@
 /**
  * Round-trip tests for the Guardrails routes: the composed GET payload
  * (checkpoints with honest enforced flags, agents with real attributed spend
- * + model pin, ledger with acts/usage rollup) and checkpoint CRUD.
+ * + model pin, ledger with acts/usage rollup, per-mission $, and named held
+ * approvals) and checkpoint CRUD.
  */
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { invalidateCheckpointCache } from "../../guardrails/checkpoint-store.js";
 import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
+import { createMission } from "../../missions/mission-store.js";
 import { createTask } from "../../tasks/task-store.js";
 import { recordAgentAct } from "../../work-items/agent-act-store.js";
+import { createProject } from "../../work-items/project-store.js";
 import {
   createWorkItem,
   updateWorkItem,
 } from "../../work-items/work-item-store.js";
+import {
+  clear as clearPendingInteractions,
+  register as registerPendingInteraction,
+} from "../pending-interactions.js";
 import { BadRequestError, NotFoundError } from "./errors.js";
 import { ROUTES } from "./guardrails-routes.js";
 
@@ -26,7 +33,14 @@ beforeEach(() => {
   getDb().run("DELETE FROM work_items");
   getDb().run("DELETE FROM tasks");
   getDb().run("DELETE FROM agents");
+  getDb().run("DELETE FROM projects");
+  getDb().run("DELETE FROM missions");
   invalidateCheckpointCache();
+  clearPendingInteractions();
+});
+
+afterEach(() => {
+  clearPendingInteractions();
 });
 
 function route(endpoint: string, method: string) {
@@ -169,12 +183,175 @@ describe("GET guardrails (composed read)", () => {
     }) as {
       checkpoints: unknown[];
       agents: unknown[];
-      ledger: { summary: { actCount: number; totalCents: number } };
+      ledger: {
+        heldItems: unknown[];
+        summary: {
+          actCount: number;
+          totalCents: number;
+          byMission: unknown[];
+        };
+      };
     };
     expect(result.checkpoints).toEqual([]);
     expect(result.agents).toEqual([]);
     expect(result.ledger.summary.actCount).toBe(0);
     expect(result.ledger.summary.totalCents).toBe(0);
+    expect(result.ledger.summary.byMission).toEqual([]);
+    expect(result.ledger.heldItems).toEqual([]);
+  });
+
+  test("recent acts carry the per-act title/cost/model facts", () => {
+    recordAgentAct({
+      kind: "run_completed",
+      agent: "Growth",
+      title: "Draft the pricing one-pager",
+      costCents: 37,
+      model: "anthropic/claude-haiku-4.5",
+    });
+
+    const result = route("guardrails", "GET").handler({
+      queryParams: {},
+      headers: {},
+    }) as {
+      ledger: {
+        recentActs: Array<{
+          title: string | null;
+          costCents: number | null;
+          model: string | null;
+        }>;
+      };
+    };
+    const [act] = result.ledger.recentActs;
+    expect(act.title).toBe("Draft the pricing one-pager");
+    expect(act.costCents).toBe(37);
+    expect(act.model).toBe("anthropic/claude-haiku-4.5");
+  });
+
+  test("byMission attributes $ through usage → run → item → project → mission", () => {
+    const mission = createMission({ title: "Launch", outcome: "Ship v1" });
+    const project = createProject({ title: "Site" });
+    getDb().run(
+      `UPDATE projects SET mission_id = '${mission.id}' WHERE id = '${project.id}'`,
+    );
+    const task = createTask({ title: "t", template: "do" });
+    const item = createWorkItem({
+      taskId: task.id,
+      title: "Build landing page",
+      projectId: project.id,
+    });
+    updateWorkItem(item.id, { lastRunConversationId: "conv-m1" });
+    seedUsage("conv-m1", "anthropic/claude-haiku-4.5", 0.4); // 40¢ attributed
+
+    // Chat usage and a projectless run don't reach any mission.
+    seedUsage("conv-chat", "anthropic/claude-sonnet-4.5", 2.0);
+    const orphan = createWorkItem({ taskId: task.id, title: "no project" });
+    updateWorkItem(orphan.id, { lastRunConversationId: "conv-m2" });
+    seedUsage("conv-m2", "anthropic/claude-haiku-4.5", 1.0);
+
+    const result = route("guardrails", "GET").handler({
+      queryParams: {},
+      headers: {},
+    }) as {
+      ledger: {
+        summary: {
+          byMission: Array<{
+            missionId: string;
+            missionTitle: string;
+            costCents: number;
+            runs: number;
+          }>;
+        };
+      };
+    };
+    expect(result.ledger.summary.byMission).toEqual([
+      {
+        missionId: mission.id,
+        missionTitle: "Launch",
+        costCents: 40,
+        runs: 1,
+      },
+    ]);
+  });
+
+  test("heldItems names held approvals — most recent first, capped at 5, agent-resolved", () => {
+    // A run conversation binding so the held item resolves its agent.
+    const task = createTask({ title: "t", template: "do" });
+    const item = createWorkItem({ taskId: task.id, title: "Outreach" });
+    updateWorkItem(item.id, {
+      assignee: "Growth",
+      lastRunConversationId: "conv-held",
+    });
+
+    const confirmation = (
+      toolName: string,
+      input: Record<string, unknown>,
+    ) => ({
+      toolName,
+      input,
+      riskLevel: "medium",
+      allowlistOptions: [],
+      scopeOptions: [],
+    });
+
+    // Six held confirmations, staggered so recency ordering is observable.
+    const base = Date.now() - 60_000;
+    for (let i = 0; i < 5; i++) {
+      registerPendingInteraction(`req-${i}`, {
+        conversationId: "conv-chat",
+        kind: "confirmation",
+        confirmationDetails: confirmation("bash", { command: `cmd-${i}` }),
+        registeredAt: base + i * 1000,
+      });
+    }
+    registerPendingInteraction("req-newest", {
+      conversationId: "conv-held",
+      kind: "confirmation",
+      confirmationDetails: confirmation("send_email", {
+        recipient: "vc@example.com",
+      }),
+      registeredAt: base + 10_000,
+    });
+    // Non-confirmation interactions are not "held approvals".
+    registerPendingInteraction("req-bash-proxy", {
+      conversationId: "conv-chat",
+      kind: "host_bash",
+    });
+
+    const result = route("guardrails", "GET").handler({
+      queryParams: {},
+      headers: {},
+    }) as {
+      ledger: {
+        heldItems: Array<{
+          requestId: string;
+          title: string;
+          agent?: string;
+          ageMs: number;
+        }>;
+        summary: { heldCount: number };
+      };
+    };
+
+    // heldCount carries the full total; heldItems is capped at 5.
+    expect(result.ledger.summary.heldCount).toBe(6);
+    expect(result.ledger.heldItems).toHaveLength(5);
+
+    // Most recent first, named after the tool + input hint, agent resolved
+    // through the run-conversation binding.
+    const [newest] = result.ledger.heldItems;
+    expect(newest.requestId).toBe("req-newest");
+    expect(newest.title).toBe("send email — vc@example.com");
+    expect(newest.agent).toBe("Growth");
+    expect(newest.ageMs).toBeGreaterThanOrEqual(0);
+
+    // Owner-chat confirmations carry no agent; the oldest fell off the cap.
+    const second = result.ledger.heldItems[1];
+    expect(second.requestId).toBe("req-4");
+    expect(second.title).toBe("bash — cmd-4");
+    expect(second.agent).toBeUndefined();
+    expect(result.ledger.heldItems.map((h) => h.requestId)).not.toContain(
+      "req-0",
+    );
   });
 });
 

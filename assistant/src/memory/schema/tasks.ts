@@ -134,9 +134,12 @@ export const agentActs = sqliteTable("agent_acts", {
   workItemId: text("work_item_id"), // reference-by-convention to work_items.id
   missionId: text("mission_id"), // denormalized from the work item's project at write time
   kind: text("kind").notNull(), // 'run_completed' | 'output_produced' | 'message_drafted' | 'schedule_fired' | 'other'
+  title: text("title"), // human title of what the act did (the work item's title); null = no natural source
   reversed: integer("reversed").notNull().default(0), // 0/1 — the owner undid this act
   reversedAt: integer("reversed_at"), // epoch ms, set when reversed flips to 1
   estMinutesSaved: integer("est_minutes_saved"), // conservative heuristic estimate (see agent-act-store)
+  costCents: integer("cost_cents"), // the run's real attributable LLM cost in cents; null = unknown, NOT zero
+  model: text("model"), // dominant model of the run (highest summed cost); null = unknown
   createdAt: integer("created_at").notNull(),
 });
 
@@ -158,6 +161,7 @@ export const agents = sqliteTable("agents", {
   capCents: integer("cap_cents"), // weekly spend cap in cents; null = uncapped
   paused: integer("paused").notNull().default(0), // 0/1
   model: text("model"), // per-agent model pin (provider/model string); null = no pin
+  toolScopes: text("tool_scopes"), // JSON string array of coarse skill/domain ids; null = unrestricted
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
@@ -167,7 +171,9 @@ export const agents = sqliteTable("agents", {
  * the Guardrails surface. `pattern` is the enforcement pattern the template
  * compiles to: `autonomy:<class>` patterns are enforced by the permission
  * checker (an enabled checkpoint tightens that autonomy category to "ask");
- * other pattern forms are declarative-only today. `scope` is 'everywhere',
+ * the legacy compiled patterns "tool:publish_*" / "contact:*" alias to
+ * autonomy:publish / autonomy:contact; any other pattern form is
+ * declarative-only. `scope` is 'everywhere',
  * 'agent:<agentId>', or 'mission:<missionId>'. References are by convention
  * (store-enforced, no FKs), matching the sibling HQ tables.
  */

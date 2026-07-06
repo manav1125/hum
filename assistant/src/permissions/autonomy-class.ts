@@ -8,9 +8,9 @@
  * NO LLM, NO I/O, fully unit-testable.
  *
  * The category is intentionally coarse and biased toward the *more dangerous*
- * reading on ambiguity, so that the policy's safe defaults (send/money/delete →
- * ask) apply to anything that smells consequential. "other" is the catch-all
- * and itself defaults to ask.
+ * reading on ambiguity, so that the policy's safe defaults (send/money/delete/
+ * publish/contact → ask) apply to anything that smells consequential. "other"
+ * is the catch-all and itself defaults to ask.
  */
 
 export type AutonomyClass =
@@ -19,6 +19,8 @@ export type AutonomyClass =
   | "send"
   | "money"
   | "delete"
+  | "publish"
+  | "contact"
   | "other";
 
 // ── Core tool names (exact match) ──────────────────────────────────────────────
@@ -111,10 +113,61 @@ function toolNameSegments(toolName: string): string[] {
 
 /** Whether any name segment is a money term (plural-insensitive). */
 function hasMoneySegment(toolName: string): boolean {
+  return hasSegmentFrom(toolName, MONEY_SEGMENTS);
+}
+
+/** Whether any name segment is in `terms` (plural-insensitive). */
+function hasSegmentFrom(toolName: string, terms: ReadonlySet<string>): boolean {
   return toolNameSegments(toolName).some(
     (segment) =>
-      MONEY_SEGMENTS.has(segment) ||
-      (segment.endsWith("s") && MONEY_SEGMENTS.has(segment.slice(0, -1))),
+      terms.has(segment) ||
+      (segment.endsWith("s") && terms.has(segment.slice(0, -1))),
+  );
+}
+
+// ── Publish detection ──────────────────────────────────────────────────────────
+// A tool is a "publish" action when its name carries a publish/deploy segment
+// anywhere (like money, segment-matched so `publish_website`, `deploy_game`,
+// `app_publish`, `unpublish_page` all match). Public egress is consequential
+// enough that read-ish names carrying these segments (e.g. a hypothetical
+// `get_deploy_status`) deliberately land here too — over-asking is the safe
+// direction, matching the money precedent (`list_transactions` → money).
+const PUBLISH_SEGMENTS: ReadonlySet<string> = new Set([
+  "publish",
+  "unpublish",
+  "republish",
+  "deploy",
+  "broadcast",
+]);
+
+// ── Contact (outbound outreach) detection ──────────────────────────────────────
+// A tool is a "contact" action when it initiates real-time outreach to a
+// person: its name pairs a call/phone segment with an initiation segment
+// (`call_start`, `make_phone_call`, `create_call`, `dial_number`, …).
+// Message/email sends are NOT in this class — they classify as "send" first
+// (see SEND_VERBS), and the guardrail contact checkpoint matches both classes
+// coarsely (see guardrails/checkpoint-enforcement).
+const CONTACT_CHANNEL_SEGMENTS: ReadonlySet<string> = new Set([
+  "call",
+  "phone",
+  "dial",
+]);
+const CONTACT_INITIATION_SEGMENTS: ReadonlySet<string> = new Set([
+  "start",
+  "initiate",
+  "place",
+  "make",
+  "begin",
+  "create",
+  "dial",
+  "outbound",
+]);
+
+/** Whether the tool name pairs a call/phone segment with an initiation verb. */
+function isContactInitiation(toolName: string): boolean {
+  return (
+    hasSegmentFrom(toolName, CONTACT_CHANNEL_SEGMENTS) &&
+    hasSegmentFrom(toolName, CONTACT_INITIATION_SEGMENTS)
   );
 }
 
@@ -140,6 +193,11 @@ const SEND_VERBS: ReadonlyArray<string> = [
   "subscribe_",
   "unsubscribe_",
 ];
+// A "send" SEGMENT anywhere in the name also classifies as send: messaging
+// egress tools name the channel first and the verb last (`messaging_send`),
+// which no prefix rule can catch. Segment-matched so "sender"/"resend" style
+// words don't false-positive.
+const SEND_SEGMENTS: ReadonlySet<string> = new Set(["send"]);
 const DRAFT_VERBS: ReadonlyArray<string> = ["create_", "update_", "draft_"];
 const RESEARCH_VERBS: ReadonlyArray<string> = [
   "get_",
@@ -197,7 +255,16 @@ export function classifyAutonomy(
   // Delete before send/draft/research so e.g. "unsubscribe_" doesn't shadow a
   // genuine delete verb (none overlap today, but order encodes the priority).
   if (DELETE_VERBS.some((v) => suffix.startsWith(v))) return "delete";
+  // Send before publish/contact so existing send-classified tools (post_*,
+  // message*, …) keep their class — send checkpoints keep covering them, and
+  // the contact checkpoint matches the send class coarsely on top.
   if (SEND_VERBS.some((v) => suffix.startsWith(v))) return "send";
+  if (hasSegmentFrom(toolName, SEND_SEGMENTS)) return "send";
+  // Publish/contact before draft/research: `publish_website` / `deploy_game`
+  // and `call_start` / `create_call` are consequential even when a draft-ish
+  // or read-ish verb also appears in the name.
+  if (hasSegmentFrom(toolName, PUBLISH_SEGMENTS)) return "publish";
+  if (isContactInitiation(toolName)) return "contact";
   if (DRAFT_VERBS.some((v) => suffix.startsWith(v))) return "draft";
   if (RESEARCH_VERBS.some((v) => suffix.startsWith(v))) return "research";
 

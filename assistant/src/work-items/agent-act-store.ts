@@ -48,11 +48,27 @@ export interface AgentAct {
   /** Denormalized from the work item's project at write time. */
   missionId: string | null;
   kind: AgentActKind;
-  /** 0/1 — the owner undid this act (redo / output rejection). */
+  /**
+   * Human title of what the act did (the work item's title, e.g. "Draft the
+   * pricing one-pager"); null = no natural title source at capture time.
+   */
+  title: string | null;
+  /** 0/1 — the owner undid this act (redo / output rejection / reverse). */
   reversed: number;
   reversedAt: number | null;
   /** Conservative heuristic estimate — see RUN_MINUTES_SAVED_HEURISTIC. */
   estMinutesSaved: number | null;
+  /**
+   * The run's real attributable LLM cost in cents, summed from
+   * llm_usage_events over the run conversation at capture time.
+   * Null = unknown (pre-migration act or no run conversation), NOT zero.
+   */
+  costCents: number | null;
+  /**
+   * Dominant model of the run — highest summed cost across the run
+   * conversation's usage rows (ties break by call count). Null = unknown.
+   */
+  model: string | null;
   createdAt: number;
 }
 
@@ -119,6 +135,53 @@ export function estimateRunMinutesSaved(signals: {
 // ── Capture ──────────────────────────────────────────────────────────
 
 /**
+ * The run's attributable cost + dominant model, read from llm_usage_events
+ * over the run conversation (the same attribution join getAgentSpend uses:
+ * every background run executes in a dedicated conversation, so its usage
+ * rows ARE the run's cost). Dominant model = highest summed cost, ties
+ * broken by call count then name. Returns nulls (unknown, NOT zero/free)
+ * when the conversation has no usage rows or the read fails.
+ */
+export function computeRunCostAndModel(conversationId: string): {
+  costCents: number | null;
+  model: string | null;
+} {
+  try {
+    const raw = getSqliteFrom(getDb());
+    const rows = raw
+      .prepare(
+        /*sql*/ `SELECT
+           COALESCE(NULLIF(TRIM(model), ''), 'unknown') AS model,
+           COALESCE(SUM(estimated_cost_usd), 0)          AS cost_usd,
+           COUNT(*)                                      AS calls
+         FROM llm_usage_events
+         WHERE conversation_id = ?
+         GROUP BY 1`,
+      )
+      .all(conversationId) as Array<{
+      model: string;
+      cost_usd: number | null;
+      calls: number;
+    }>;
+    if (rows.length === 0) return { costCents: null, model: null };
+    const totalUsd = rows.reduce((sum, r) => sum + (r.cost_usd ?? 0), 0);
+    const dominant = [...rows].sort(
+      (a, b) =>
+        (b.cost_usd ?? 0) - (a.cost_usd ?? 0) ||
+        Number(b.calls) - Number(a.calls) ||
+        a.model.localeCompare(b.model),
+    )[0];
+    return { costCents: Math.round(totalUsd * 100), model: dominant.model };
+  } catch (err) {
+    log.warn(
+      { err: String(err), conversationId },
+      "failed to compute run cost/model for act (ignored)",
+    );
+    return { costCents: null, model: null };
+  }
+}
+
+/**
  * Append one act row. Best-effort by contract — returns null (and logs)
  * instead of throwing, so a ledger failure never breaks the choke point
  * that observed the act.
@@ -128,7 +191,10 @@ export function recordAgentAct(opts: {
   agent?: string | null;
   workItemId?: string | null;
   missionId?: string | null;
+  title?: string | null;
   estMinutesSaved?: number | null;
+  costCents?: number | null;
+  model?: string | null;
 }): AgentAct | null {
   try {
     const db = getDb();
@@ -138,9 +204,12 @@ export function recordAgentAct(opts: {
       workItemId: opts.workItemId ?? null,
       missionId: opts.missionId ?? null,
       kind: opts.kind,
+      title: opts.title?.trim() || null,
       reversed: 0,
       reversedAt: null,
       estMinutesSaved: opts.estMinutesSaved ?? null,
+      costCents: opts.costCents ?? null,
+      model: opts.model ?? null,
       createdAt: Date.now(),
     };
     db.insert(agentActs).values(act).run();
@@ -158,11 +227,24 @@ export function recordAgentAct(opts: {
  * The runner's completion choke point: record one `run_completed` act for a
  * work-item run that reached a non-failed terminal status. mission_id is
  * denormalized from the work item's project at write time (matching
- * work-output-store). Never throws.
+ * work-output-store); the act's title is the work item's title (the ledger
+ * shows what was actually done, not a kind-derived label); cost + dominant
+ * model are computed from the run conversation's usage rows when the runner
+ * passes it. Never throws.
  */
 export function recordActForCompletedRun(
-  workItem: { id: string; projectId: string | null; assignee: string | null },
-  signals: { toolsUsed: Iterable<string>; outputCount: number },
+  workItem: {
+    id: string;
+    title: string;
+    projectId: string | null;
+    assignee: string | null;
+  },
+  signals: {
+    toolsUsed: Iterable<string>;
+    outputCount: number;
+    /** The dedicated run conversation — the cost/model attribution key. */
+    runConversationId?: string | null;
+  },
 ): AgentAct | null {
   try {
     const db = getDb();
@@ -173,12 +255,18 @@ export function recordActForCompletedRun(
           .where(eq(projects.id, workItem.projectId))
           .get()?.missionId ?? null)
       : null;
+    const { costCents, model } = signals.runConversationId
+      ? computeRunCostAndModel(signals.runConversationId)
+      : { costCents: null, model: null };
     return recordAgentAct({
       kind: "run_completed",
       agent: workItem.assignee,
       workItemId: workItem.id,
       missionId,
+      title: workItem.title,
       estMinutesSaved: estimateRunMinutesSaved(signals),
+      costCents,
+      model,
     });
   } catch (err) {
     log.warn(
@@ -222,7 +310,144 @@ export function reverseLatestActForWorkItem(workItemId: string): boolean {
   }
 }
 
+/**
+ * Outcome of an owner-initiated reversal (`POST acts/:id/reverse`). Honest
+ * by contract: `ok: false` means NOTHING was changed — the endpoint never
+ * fakes success for an act it has no concrete way to unwind.
+ */
+export type ReverseActOutcome =
+  | {
+      ok: true;
+      act: AgentAct;
+      unwound: {
+        /** work_outputs of the act's work item flipped approved → pending. */
+        outputsDemoted: number;
+        /** The work item was reopened done → awaiting_review. */
+        workItemReopened: boolean;
+      };
+    }
+  | {
+      ok: false;
+      code: "not_found" | "already_reversed" | "no_undo";
+      reason: string;
+    };
+
+/** Act kinds with a concrete undo mechanism (given a bound work item). */
+const REVERSIBLE_KINDS: ReadonlySet<AgentActKind> = new Set([
+  "run_completed",
+  "output_produced",
+]);
+
+const NO_UNDO_REASONS: Record<string, string> = {
+  message_drafted:
+    "A drafted message has no undo mechanism — drafts are not registered anywhere the ledger can retract from.",
+  schedule_fired:
+    "A fired schedule already executed — its side effects cannot be undone from the ledger.",
+  other: "Acts of kind 'other' carry no concrete undo mechanism.",
+};
+
+/**
+ * Owner-initiated active reversal of one act by id. Where a concrete undo
+ * exists — `run_completed` / `output_produced` acts bound to a work item —
+ * it is performed alongside flipping the reversed flag:
+ *
+ *   1. The work item's approved deliverables are demoted back to pending
+ *      review (un-accepted). Direct SQL on purpose: routing through
+ *      setWorkOutputReviewState would fire its own reverse-latest-act hook
+ *      and double-reverse a sibling act.
+ *   2. For `run_completed`, a `done` work item is reopened to
+ *      `awaiting_review` so the reversed work re-enters the Review lane.
+ *   3. The act itself flips reversed = 1.
+ *
+ * Kinds with no concrete undo (message_drafted / schedule_fired / other),
+ * acts with no bound work item, and already-reversed acts return
+ * `ok: false` and change nothing — the caller maps these to 409/404.
+ *
+ * Unlike the observation-side capture paths this is a deliberate mutation:
+ * unexpected DB failures propagate to the caller instead of being swallowed.
+ */
+export function reverseAct(id: string): ReverseActOutcome {
+  const db = getDb();
+  const act = db.select().from(agentActs).where(eq(agentActs.id, id)).get() as
+    | AgentAct
+    | undefined;
+  if (!act) {
+    return { ok: false, code: "not_found", reason: `Act not found: ${id}` };
+  }
+  if (act.reversed) {
+    return {
+      ok: false,
+      code: "already_reversed",
+      reason: "This act was already reversed.",
+    };
+  }
+  if (!REVERSIBLE_KINDS.has(act.kind)) {
+    return {
+      ok: false,
+      code: "no_undo",
+      reason:
+        NO_UNDO_REASONS[act.kind] ??
+        `Acts of kind '${act.kind}' carry no concrete undo mechanism.`,
+    };
+  }
+  if (!act.workItemId) {
+    return {
+      ok: false,
+      code: "no_undo",
+      reason:
+        "This act is not bound to a work item, so there is nothing concrete to unwind.",
+    };
+  }
+
+  const raw = getSqliteFrom(db);
+  const now = Date.now();
+
+  // 1. Un-accept the deliverables: approved → pending. (Direct SQL — see
+  // the function doc for why this bypasses setWorkOutputReviewState.)
+  const outputsDemoted = raw
+    .prepare(
+      /*sql*/ `UPDATE work_outputs SET review_state = 'pending'
+       WHERE work_item_id = ? AND review_state = 'approved'`,
+    )
+    .run(act.workItemId).changes;
+
+  // 2. Reopen a completed run for re-review. Only 'done' flips — an item
+  // already awaiting review, re-running, or archived is left alone.
+  let workItemReopened = false;
+  if (act.kind === "run_completed") {
+    workItemReopened =
+      raw
+        .prepare(
+          /*sql*/ `UPDATE work_items SET status = 'awaiting_review', updated_at = ?
+           WHERE id = ? AND status = 'done'`,
+        )
+        .run(now, act.workItemId).changes > 0;
+  }
+
+  // 3. Flip the act itself.
+  raw
+    .prepare(
+      /*sql*/ `UPDATE agent_acts SET reversed = 1, reversed_at = ?
+       WHERE id = ? AND reversed = 0`,
+    )
+    .run(now, id);
+
+  return {
+    ok: true,
+    act: { ...act, reversed: 1, reversedAt: now },
+    unwound: { outputsDemoted, workItemReopened },
+  };
+}
+
 // ── Reads ────────────────────────────────────────────────────────────
+
+/** Fetch a single act by id. */
+export function getAgentAct(id: string): AgentAct | undefined {
+  const db = getDb();
+  return db.select().from(agentActs).where(eq(agentActs.id, id)).get() as
+    | AgentAct
+    | undefined;
+}
 
 export interface AgentActsAgentSummary {
   agent: string;

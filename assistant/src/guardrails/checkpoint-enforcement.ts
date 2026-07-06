@@ -103,6 +103,25 @@ function resolveRunIdentity(conversationId: string): RunIdentity {
   return identity;
 }
 
+// ── Class matching ───────────────────────────────────────────────────
+
+/**
+ * Whether a checkpoint enforcing `enforced` covers a tool call classified as
+ * `actual`. Equality, plus one deliberate coarsening: a `contact` checkpoint
+ * also covers the `send` class. Recipient-level "new contact" filtering is
+ * unknowable pre-execution, so "always ask before contacting someone new"
+ * honestly enforces as "ask on ANY outbound contact" — call initiation
+ * (contact class) and every message/email send (send class). Coarse matching
+ * only ever ADDS asks, so tighten-only is preserved.
+ */
+export function checkpointClassMatches(
+  enforced: AutonomyClass,
+  actual: AutonomyClass,
+): boolean {
+  if (enforced === actual) return true;
+  return enforced === "contact" && actual === "send";
+}
+
 // ── The override ─────────────────────────────────────────────────────
 
 export interface CheckpointOverrideResult {
@@ -157,7 +176,11 @@ export function applyCheckpointAutonomyOverride(opts: {
     };
 
     for (const checkpoint of checkpoints) {
-      if (enforcedAutonomyClass(checkpoint.pattern) !== opts.autonomyClass) {
+      const enforced = enforcedAutonomyClass(checkpoint.pattern);
+      if (
+        enforced == null ||
+        !checkpointClassMatches(enforced, opts.autonomyClass)
+      ) {
         continue;
       }
       if (!scopeApplies(checkpoint, opts.conversationId, resolveIdentity)) {

@@ -90,3 +90,90 @@ export function getUsageRollup(opts?: { days?: number }): UsageRollup {
     to,
   };
 }
+
+// ── Per-mission attribution ──────────────────────────────────────────
+
+export interface MissionSpend {
+  missionId: string;
+  missionTitle: string;
+  /** Real attributed LLM cost over the window, in cents. */
+  costCents: number;
+  /** Run conversations that contributed. */
+  runs: number;
+}
+
+/**
+ * Per-mission attributed spend over the trailing `days` window (default 7)
+ * — the "$ by mission" slice of the Guardrails ledger.
+ *
+ * Derivation (real, not a fabricated split — the same attribution chain as
+ * agent-store.getAgentSpend, extended one hop): llm_usage_events →
+ * work_items on usage.conversation_id = work_items.last_run_conversation_id
+ * → projects on work_items.project_id → missions on projects.mission_id.
+ *
+ * Honest limits, matching getAgentSpend:
+ *   - Only the LATEST run conversation per work item is tracked, so spend
+ *     from a superseded prior run of the same item is not attributed.
+ *   - Cost outside a work-item run (chat, schedules, meetings) and cost on
+ *     items with no project → mission chain is intentionally excluded.
+ *   - Missions with no attributable cost in the window are omitted.
+ * Best-effort: a usage-store hiccup returns an empty list.
+ */
+export function getMissionSpend(opts?: { days?: number }): MissionSpend[] {
+  const to = Date.now();
+  const days =
+    opts?.days != null && Number.isFinite(opts.days) && opts.days > 0
+      ? opts.days
+      : 7;
+  const from = to - days * 24 * 60 * 60 * 1000;
+
+  let rows: Array<{
+    mission_id: string;
+    mission_title: string;
+    cost_usd: number | null;
+    runs: number;
+  }> = [];
+  try {
+    rows = rawAll<{
+      mission_id: string;
+      mission_title: string;
+      cost_usd: number | null;
+      runs: number;
+    }>(
+      /*sql*/ `
+      SELECT
+        m.id                                   AS mission_id,
+        m.title                                AS mission_title,
+        COALESCE(SUM(u.estimated_cost_usd), 0) AS cost_usd,
+        COUNT(DISTINCT u.conversation_id)      AS runs
+      FROM llm_usage_events u
+      JOIN work_items wi ON wi.last_run_conversation_id = u.conversation_id
+      JOIN projects p    ON p.id = wi.project_id
+      JOIN missions m    ON m.id = p.mission_id
+      WHERE u.conversation_id IS NOT NULL
+        AND u.created_at >= ?1
+        AND u.created_at <= ?2
+      GROUP BY m.id, m.title
+      `,
+      from,
+      to,
+    );
+  } catch (err) {
+    log.warn({ err: String(err) }, "failed to compute mission spend (ignored)");
+    rows = [];
+  }
+
+  return rows
+    .map((r) => ({
+      missionId: r.mission_id,
+      missionTitle: r.mission_title,
+      costCents: Math.round((r.cost_usd ?? 0) * 100),
+      runs: Number(r.runs),
+    }))
+    .filter((r) => r.costCents > 0)
+    .sort(
+      (a, b) =>
+        b.costCents - a.costCents ||
+        a.missionTitle.localeCompare(b.missionTitle),
+    );
+}

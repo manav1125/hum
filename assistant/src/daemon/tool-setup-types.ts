@@ -72,6 +72,14 @@ export interface ToolSetupContext extends SurfaceConversationContext {
   /** When set, the subagent/wake tool allowlist (see {@link subagentToolGateMode}). */
   subagentAllowedTools?: Set<string>;
   /**
+   * Guardrails agent tool-scope filter (background work-item runs only).
+   * When set, tools for which the predicate returns false are dropped from
+   * the wire tool definitions each turn AND rejected at execution time.
+   * Built from the run agent's `tool_scopes` by
+   * guardrails/agent-tool-scopes.ts; absent = unrestricted.
+   */
+  toolScopeFilter?: (toolName: string) => boolean;
+  /**
    * How {@link subagentAllowedTools} is enforced. Absent or `"wire"` keeps
    * the historical behavior (definitions filtered before the provider
    * request); `"execution"` keeps the full tool surface on the wire and

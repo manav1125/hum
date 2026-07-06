@@ -129,10 +129,58 @@ describe("classifyAutonomy — connector verbs", () => {
   });
 });
 
+describe("classifyAutonomy — publish", () => {
+  test("publish/deploy segments → publish", () => {
+    expect(classifyAutonomy("publish_website")).toBe("publish");
+    expect(classifyAutonomy("mcp__site__publish_website")).toBe("publish");
+    expect(classifyAutonomy("mcp__game__publish_game")).toBe("publish");
+    expect(classifyAutonomy("mcp__game__deploy_game")).toBe("publish");
+    expect(classifyAutonomy("mcp__site__deploy_website")).toBe("publish");
+    expect(classifyAutonomy("unpublish_page")).toBe("publish");
+    expect(classifyAutonomy("app_publish")).toBe("publish");
+    // camelCase boundaries still match.
+    expect(classifyAutonomy("mcp__site__deployWebsite")).toBe("publish");
+  });
+
+  test("publish terms embedded inside larger words do NOT match", () => {
+    expect(classifyAutonomy("get_publisher_info")).not.toBe("publish");
+    expect(classifyAutonomy("list_deployments")).not.toBe("publish");
+  });
+
+  test("send/delete/money keep priority over publish", () => {
+    // A posting verb keeps its send class — the send checkpoint covers it.
+    expect(classifyAutonomy("mcp__x__post_tweet")).toBe("send");
+    expect(classifyAutonomy("mcp__site__delete_deploy_target")).toBe("delete");
+    expect(classifyAutonomy("mcp__shop__deploy_checkout")).toBe("money");
+  });
+});
+
+describe("classifyAutonomy — contact", () => {
+  test("call/phone initiation tools → contact", () => {
+    expect(classifyAutonomy("call_start")).toBe("contact");
+    expect(classifyAutonomy("mcp__twilio__create_call")).toBe("contact");
+    expect(classifyAutonomy("mcp__twilio__make_phone_call")).toBe("contact");
+    expect(classifyAutonomy("start_call")).toBe("contact");
+    expect(classifyAutonomy("dial_number")).toBe("contact");
+  });
+
+  test("non-initiating call tools are NOT contact", () => {
+    expect(classifyAutonomy("call_status")).toBe("other");
+    expect(classifyAutonomy("call_end")).toBe("other");
+    expect(classifyAutonomy("list_calls")).toBe("research");
+    // "call" without an initiation verb (e.g. RPC-ish names).
+    expect(classifyAutonomy("call_api")).toBe("other");
+  });
+
+  test("message/email sends stay send (contact checkpoint matches them coarsely)", () => {
+    expect(classifyAutonomy("messaging_send")).toBe("send");
+    expect(classifyAutonomy("mcp__gmail__send_email")).toBe("send");
+  });
+});
+
 describe("classifyAutonomy — fallthrough", () => {
   test("unknown tool with no recognizable verb → other", () => {
     expect(classifyAutonomy("mcp__weird__frobnicate_widget")).toBe("other");
     expect(classifyAutonomy("some_random_tool")).toBe("other");
-    expect(classifyAutonomy("mcp__game__deploy_game")).toBe("other");
   });
 });

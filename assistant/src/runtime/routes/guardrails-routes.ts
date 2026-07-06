@@ -32,7 +32,11 @@ import {
   listCheckpoints,
   updateCheckpoint,
 } from "../../guardrails/checkpoint-store.js";
-import { getUsageRollup } from "../../guardrails/usage-rollup.js";
+import {
+  getMissionSpend,
+  getUsageRollup,
+} from "../../guardrails/usage-rollup.js";
+import { rawGet } from "../../memory/raw-query.js";
 import {
   getActsSummary,
   listRecentActs,
@@ -131,9 +135,26 @@ const actSchema = z.object({
     "schedule_fired",
     "other",
   ]),
+  title: z
+    .string()
+    .nullable()
+    .describe(
+      "Human title of what the act did (the work item's title); null = no natural source at capture",
+    ),
   reversed: z.number().int(),
   reversedAt: z.number().int().nullable(),
   estMinutesSaved: z.number().int().nullable(),
+  costCents: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "The run's real attributable LLM cost in cents; null = unknown, NOT zero",
+    ),
+  model: z
+    .string()
+    .nullable()
+    .describe("Dominant model of the run; null = unknown"),
   createdAt: z.number().int(),
 });
 
@@ -144,8 +165,39 @@ const modelMixSchema = z.object({
   share: z.number().describe("costCents / totalCents (0..1)"),
 });
 
+const missionSpendSchema = z.object({
+  missionId: z.string(),
+  missionTitle: z.string(),
+  costCents: z
+    .number()
+    .int()
+    .describe(
+      "Real attributed spend over the window (usage → run conversation → work item → project → mission)",
+    ),
+  runs: z.number().int().describe("Run conversations that contributed"),
+});
+
+const heldItemSchema = z.object({
+  requestId: z.string(),
+  title: z
+    .string()
+    .describe("What is being held — the tool awaiting approval, humanized"),
+  agent: z
+    .string()
+    .optional()
+    .describe(
+      "The assignee whose run is held, when the confirmation belongs to a work-item run conversation",
+    ),
+  ageMs: z.number().int().describe("How long the approval has been held"),
+});
+
 const ledgerSchema = z.object({
   recentActs: z.array(actSchema),
+  heldItems: z
+    .array(heldItemSchema)
+    .describe(
+      "Named approvals currently held, most recent first, capped at 5 (heldCount carries the full total)",
+    ),
   summary: z.object({
     actCount: z.number().int().describe("Acts over the window"),
     reversedCount: z.number().int(),
@@ -162,6 +214,11 @@ const ledgerSchema = z.object({
       .int()
       .describe("Workspace-wide LLM cost over the window (all usage)"),
     byModel: z.array(modelMixSchema),
+    byMission: z
+      .array(missionSpendSchema)
+      .describe(
+        "Per-mission attributed $ over the window, highest first; missions with no attributable cost are omitted",
+      ),
   }),
 });
 
@@ -188,15 +245,89 @@ function withEnforcement(
   };
 }
 
-/** Approvals held for the owner right now (live pending confirmations). */
-function countHeldApprovals(): number {
+/** Live pending confirmations — the approvals held for the owner right now. */
+function listHeldApprovals(): ReturnType<typeof getAllPendingInteractions> {
   try {
     return getAllPendingInteractions().filter(
       (i) => i.kind === "confirmation" || i.kind === "acp_confirmation",
-    ).length;
+    );
   } catch {
-    return 0;
+    return [];
   }
+}
+
+/** Fields of a confirmation's tool input worth surfacing as a title hint. */
+const HELD_INPUT_HINT_FIELDS = [
+  "command",
+  "query",
+  "url",
+  "path",
+  "recipient",
+  "to",
+] as const;
+
+/**
+ * Human title for one held approval: the tool awaiting approval, humanized,
+ * plus a short hint from its input where one exists ("bash — rm -rf dist").
+ */
+function heldItemTitle(
+  details: { toolName: string; input: Record<string, unknown> } | undefined,
+): string {
+  if (!details?.toolName) return "Pending approval";
+  const tool = details.toolName.replace(/_/g, " ");
+  for (const field of HELD_INPUT_HINT_FIELDS) {
+    const value = details.input?.[field];
+    if (typeof value === "string" && value.trim()) {
+      const hint = value.trim();
+      const truncated = hint.length > 60 ? `${hint.slice(0, 57)}…` : hint;
+      return `${tool} — ${truncated}`;
+    }
+  }
+  return tool;
+}
+
+interface HeldItem {
+  requestId: string;
+  title: string;
+  agent?: string;
+  ageMs: number;
+}
+
+/**
+ * Named held approvals for the ledger — most recent first, capped at 5
+ * (heldCount still carries the full total). `agent` resolves when the held
+ * confirmation belongs to a work-item run conversation (the same
+ * last_run_conversation_id binding spend attribution uses); owner-chat
+ * confirmations have no agent. Best-effort per item — a lookup failure
+ * drops the agent, never the item.
+ */
+function listHeldItems(
+  held: ReturnType<typeof getAllPendingInteractions>,
+): HeldItem[] {
+  const now = Date.now();
+  return [...held]
+    .sort((a, b) => (b.registeredAt ?? 0) - (a.registeredAt ?? 0))
+    .slice(0, 5)
+    .map((i) => {
+      let agent: string | undefined;
+      try {
+        const row = rawGet<{ assignee: string | null }>(
+          /*sql*/ `SELECT assignee FROM work_items
+           WHERE last_run_conversation_id = ?
+           LIMIT 1`,
+          i.conversationId,
+        );
+        if (row) agent = row.assignee?.trim() || "cue";
+      } catch {
+        // agent stays undefined — the held item is still listed
+      }
+      return {
+        requestId: i.requestId,
+        title: heldItemTitle(i.confirmationDetails),
+        ...(agent ? { agent } : {}),
+        ageMs: Math.max(0, now - (i.registeredAt ?? now)),
+      };
+    });
 }
 
 function parseDays(raw: unknown): number {
@@ -217,7 +348,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "The composed Guardrails payload",
     description:
-      "One read for the whole Guardrails surface: the checkpoint rules (with honest enforced/declarative flags), the agent roster with real attributed spend vs cap and the per-agent model pin, and the evidence ledger (recent acts, currently-held approvals, workspace $ + model mix over the window). Composes the existing agent/act/usage stores — nothing is fabricated.",
+      "One read for the whole Guardrails surface: the checkpoint rules (with honest enforced/declarative flags), the agent roster with real attributed spend vs cap and the per-agent model pin, and the evidence ledger (recent acts with per-act cost/model/title, named held approvals, workspace $ + model mix + per-mission $ over the window). Composes the existing agent/act/usage stores — nothing is fabricated.",
     tags: ["guardrails"],
     queryParams: [
       {
@@ -250,19 +381,22 @@ export const ROUTES: RouteDefinition[] = [
 
       const acts = getActsSummary({ days });
       const rollup = getUsageRollup({ days });
+      const held = listHeldApprovals();
 
       return {
         checkpoints,
         agents,
         ledger: {
           recentActs: listRecentActs({ limit: 20 }),
+          heldItems: listHeldItems(held),
           summary: {
             actCount: acts.acts,
             reversedCount: acts.reversed,
-            heldCount: countHeldApprovals(),
+            heldCount: held.length,
             estMinutesSaved: acts.estMinutesSaved,
             totalCents: rollup.totalCents,
             byModel: rollup.byModel,
+            byMission: getMissionSpend({ days }),
           },
         },
         window: { days, from: rollup.from, to: rollup.to },

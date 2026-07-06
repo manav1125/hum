@@ -20,6 +20,7 @@ import {
 import {
   _clearRunIdentityCacheForTesting,
   applyCheckpointAutonomyOverride,
+  checkpointClassMatches,
 } from "./checkpoint-enforcement.js";
 import {
   createCheckpoint,
@@ -99,15 +100,130 @@ describe("everywhere-scoped checkpoints", () => {
     ).toBe("auto");
   });
 
-  test("declarative patterns (publish/contact) do not enforce", () => {
-    createCheckpoint({ template: "publish", label: "Publishing" });
-    createCheckpoint({ template: "contact", label: "Contacting investors" });
-    for (const cls of ["send", "money", "delete", "other"] as const) {
+  test("truly declarative patterns (custom non-autonomy) do not enforce", () => {
+    createCheckpoint({
+      template: "custom",
+      label: "My rule",
+      pattern: "tool:my_tool_*",
+    });
+    for (const cls of [
+      "send",
+      "money",
+      "delete",
+      "publish",
+      "contact",
+      "other",
+    ] as const) {
       expect(
         applyCheckpointAutonomyOverride({ autonomyClass: cls, mode: "auto" })
           .mode,
       ).toBe("auto");
     }
+  });
+
+  test("a publish checkpoint tightens the publish class only", () => {
+    const cp = createCheckpoint({
+      template: "publish",
+      label: "Posting or publishing publicly",
+    });
+    const publish = applyCheckpointAutonomyOverride({
+      autonomyClass: "publish",
+      mode: "auto",
+    });
+    expect(publish.mode).toBe("ask");
+    expect(publish.firedCheckpoint?.id).toBe(cp.id);
+    // publish stays out of unrelated classes.
+    for (const cls of ["send", "money", "delete", "research"] as const) {
+      expect(
+        applyCheckpointAutonomyOverride({ autonomyClass: cls, mode: "auto" })
+          .mode,
+      ).toBe("auto");
+    }
+    // Tighten-only preserved.
+    expect(
+      applyCheckpointAutonomyOverride({ autonomyClass: "publish", mode: "ask" })
+        .mode,
+    ).toBe("ask");
+    expect(
+      applyCheckpointAutonomyOverride({
+        autonomyClass: "publish",
+        mode: "never",
+      }).mode,
+    ).toBe("never");
+  });
+
+  test("a legacy 'tool:publish_*' row enforces the publish class via the alias", () => {
+    const cp = createCheckpoint({
+      template: "publish",
+      label: "Legacy publish rule",
+      pattern: "tool:publish_*",
+    });
+    const result = applyCheckpointAutonomyOverride({
+      autonomyClass: "publish",
+      mode: "auto",
+    });
+    expect(result.mode).toBe("ask");
+    expect(result.firedCheckpoint?.id).toBe(cp.id);
+  });
+
+  test("a contact checkpoint tightens contact AND send (coarse outbound-contact match)", () => {
+    const cp = createCheckpoint({
+      template: "contact",
+      label: "Contacting someone new",
+    });
+    // Call initiation (contact class) asks.
+    expect(
+      applyCheckpointAutonomyOverride({
+        autonomyClass: "contact",
+        mode: "auto",
+      }),
+    ).toMatchObject({ mode: "ask", firedCheckpoint: { id: cp.id } });
+    // Message/email sends (send class) ask too — recipient-level "new
+    // contact" filtering is unknowable pre-execution, so ANY outbound
+    // contact asks.
+    expect(
+      applyCheckpointAutonomyOverride({ autonomyClass: "send", mode: "auto" }),
+    ).toMatchObject({ mode: "ask", firedCheckpoint: { id: cp.id } });
+    // But it never bleeds into non-contact classes.
+    for (const cls of ["money", "delete", "publish", "research"] as const) {
+      expect(
+        applyCheckpointAutonomyOverride({ autonomyClass: cls, mode: "auto" })
+          .mode,
+      ).toBe("auto");
+    }
+    // Tighten-only preserved.
+    expect(
+      applyCheckpointAutonomyOverride({ autonomyClass: "send", mode: "never" })
+        .mode,
+    ).toBe("never");
+  });
+
+  test("a legacy 'contact:*' row enforces via the alias", () => {
+    createCheckpoint({
+      template: "contact",
+      label: "Legacy contact rule",
+      pattern: "contact:*",
+    });
+    expect(
+      applyCheckpointAutonomyOverride({
+        autonomyClass: "contact",
+        mode: "auto",
+      }).mode,
+    ).toBe("ask");
+    expect(
+      applyCheckpointAutonomyOverride({ autonomyClass: "send", mode: "auto" })
+        .mode,
+    ).toBe("ask");
+  });
+
+  test("checkpointClassMatches: equality plus contact ⊇ send only", () => {
+    expect(checkpointClassMatches("publish", "publish")).toBe(true);
+    expect(checkpointClassMatches("contact", "contact")).toBe(true);
+    expect(checkpointClassMatches("contact", "send")).toBe(true);
+    // send does NOT cover contact (a send checkpoint is about messages).
+    expect(checkpointClassMatches("send", "contact")).toBe(false);
+    expect(checkpointClassMatches("publish", "send")).toBe(false);
+    expect(checkpointClassMatches("contact", "money")).toBe(false);
   });
 });
 

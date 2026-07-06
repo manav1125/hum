@@ -53,9 +53,45 @@ const agentSchema = z.object({
     .describe(
       "Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background work-item runs for this assignee execute on the pinned model.",
     ),
+  toolScopes: z
+    .array(z.string())
+    .nullable()
+    .describe(
+      "Tool-scope allowlist — coarse skill/domain ids ('email', 'calendar', 'research', 'files', 'code', 'docs', 'design', 'outreach', 'social', 'ads'); null = unrestricted. ENFORCED on background work-item runs: extension-owned (skill/plugin/MCP) tools whose name/owner matches a known domain outside these scopes are dropped from the run's tool surface and rejected at execution time. Core plumbing tools and tools matching no known domain are never filtered; interactive chat is never filtered.",
+    ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
+
+/**
+ * Normalize a wire toolScopes value: trim, lowercase, drop empties, dedupe.
+ * Null clears the restriction. Throws BadRequest on non-string entries or an
+ * oversized list.
+ */
+function normalizeToolScopes(value: unknown): string[] | null {
+  if (value === null) return null;
+  if (!Array.isArray(value)) {
+    throw new BadRequestError("toolScopes must be an array of strings or null");
+  }
+  if (value.length > 24) {
+    throw new BadRequestError("toolScopes supports at most 24 entries");
+  }
+  const normalized: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      throw new BadRequestError(
+        "toolScopes must be an array of strings or null",
+      );
+    }
+    const scope = entry.trim().toLowerCase();
+    if (!scope) continue;
+    if (scope.length > 40) {
+      throw new BadRequestError("each tool scope must be ≤ 40 characters");
+    }
+    if (!normalized.includes(scope)) normalized.push(scope);
+  }
+  return normalized;
+}
 
 const agentSpendSchema = z.object({
   agent: z.string(),
@@ -106,6 +142,7 @@ export const ROUTES: RouteDefinition[] = [
       capCents: z.number().int().min(0).optional(),
       paused: z.boolean().optional(),
       model: z.string().optional(),
+      toolScopes: z.array(z.string()).nullable().optional(),
     }),
     responseStatus: "201",
     responseBody: z.object({ agent: agentSchema }),
@@ -119,6 +156,7 @@ export const ROUTES: RouteDefinition[] = [
         capCents?: number;
         paused?: boolean;
         model?: string;
+        toolScopes?: string[] | null;
       };
       const name = typeof b.name === "string" ? b.name.trim() : "";
       if (!name) throw new BadRequestError("name is required");
@@ -131,6 +169,9 @@ export const ROUTES: RouteDefinition[] = [
         ...(typeof b.capCents === "number" ? { capCents: b.capCents } : {}),
         ...(typeof b.paused === "boolean" ? { paused: b.paused } : {}),
         ...(typeof b.model === "string" ? { model: b.model } : {}),
+        ...(b.toolScopes !== undefined
+          ? { toolScopes: normalizeToolScopes(b.toolScopes) }
+          : {}),
       });
       publishEvent({ type: "tasks_changed" } as ServerMessage);
       return { agent };
@@ -203,7 +244,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Update an agent",
     description:
-      "Rename, re-charter, change tier, set/clear the spend cap, pause/resume a role, or set/clear the model pin.",
+      "Rename, re-charter, change tier, set/clear the spend cap, pause/resume a role, set/clear the model pin, or set/clear the tool-scope allowlist.",
     tags: ["agents"],
     requestBody: z
       .object({
@@ -218,6 +259,12 @@ export const ROUTES: RouteDefinition[] = [
           .string()
           .nullable()
           .describe("Provider/model string to pin; null clears the pin"),
+        toolScopes: z
+          .array(z.string())
+          .nullable()
+          .describe(
+            "Coarse skill/domain ids to scope the agent's background runs to; null clears the restriction (unrestricted)",
+          ),
       })
       .partial(),
     responseBody: z.object({ agent: agentSchema }),
@@ -233,6 +280,7 @@ export const ROUTES: RouteDefinition[] = [
         capCents?: number | null;
         paused?: boolean;
         model?: string | null;
+        toolScopes?: string[] | null;
       };
       const updates: Parameters<typeof updateAgent>[1] = {};
       if (raw.name !== undefined) {
@@ -253,6 +301,11 @@ export const ROUTES: RouteDefinition[] = [
           typeof raw.model === "string" && raw.model.trim().length > 0
             ? raw.model.trim()
             : null;
+      }
+      // Null clears the restriction; an array is normalized (trim/lowercase/
+      // dedupe) — an empty array is a valid "no domain tools" restriction.
+      if (raw.toolScopes !== undefined) {
+        updates.toolScopes = normalizeToolScopes(raw.toolScopes);
       }
       const agent = updateAgent(id, updates);
       publishEvent({ type: "tasks_changed" } as ServerMessage);

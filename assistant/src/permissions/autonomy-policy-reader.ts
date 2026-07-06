@@ -4,8 +4,12 @@
  * Reads the autonomy policy map from the gateway via IPC. The gateway is the
  * sole source of truth (it owns the `autonomy_category_policies` table). When
  * the gateway is unreachable, this reader returns FAIL-CLOSED safe defaults:
- * research/draft → "auto", send/money/delete/other → "ask". It NEVER defaults
- * the consequential categories (send/money/delete) to "auto".
+ * research/draft → "auto", send/money/delete/publish/contact/other → "ask".
+ * It NEVER defaults a consequential category to "auto".
+ *
+ * The gateway's `autonomy_category_policies` table does not (yet) carry rows
+ * for the `publish` and `contact` categories, so those normalize to their
+ * fail-closed default ("ask") on every read until the gateway grows them.
  */
 
 import { ipcCall } from "../ipc/gateway-client.js";
@@ -28,6 +32,8 @@ const SAFE_DEFAULTS: AutonomyPolicyMap = {
   send: "ask",
   money: "ask",
   delete: "ask",
+  publish: "ask",
+  contact: "ask",
   other: "ask",
 };
 
@@ -37,6 +43,8 @@ const CATEGORIES: ReadonlyArray<AutonomyClass> = [
   "send",
   "money",
   "delete",
+  "publish",
+  "contact",
   "other",
 ];
 

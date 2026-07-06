@@ -380,11 +380,16 @@ paths:
                             - message_drafted
                             - schedule_fired
                             - other
+                        title:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Human title of what the act did (the work item's title); null = no natural source at capture
                         reversed:
                           type: integer
                           minimum: -9007199254740991
                           maximum: 9007199254740991
-                          description: 0/1 — the owner undid this act (redo or output rejection)
+                          description: 0/1 — the owner undid this act (redo, output rejection, or explicit reverse)
                         reversedAt:
                           anyOf:
                             - type: integer
@@ -398,6 +403,20 @@ paths:
                               maximum: 9007199254740991
                             - type: "null"
                           description: Conservative heuristic estimate captured with the act
+                        costCents:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description:
+                            The run's real attributable LLM cost in cents (summed from the run conversation's usage at capture); null =
+                            unknown, NOT zero
+                        model:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Dominant model of the run (highest summed cost); null = unknown
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -408,9 +427,12 @@ paths:
                         - workItemId
                         - missionId
                         - kind
+                        - title
                         - reversed
                         - reversedAt
                         - estMinutesSaved
+                        - costCents
+                        - model
                         - createdAt
                       additionalProperties: false
                 required:
@@ -429,6 +451,131 @@ paths:
           schema:
             type: integer
           description: Max acts to return (default 50, cap 200)
+  /v1/acts/{id}/reverse:
+    post:
+      operationId: acts_by_id_reverse_post
+      summary: Reverse an act
+      description:
+        "Owner-initiated reversal of one act. Where a concrete undo exists — run_completed / output_produced acts
+        bound to a work item — it is performed: the item's approved deliverables are demoted back to pending review, a
+        done item is reopened to awaiting_review (run_completed only), and the act flips to reversed. Kinds with no
+        concrete undo (message_drafted, schedule_fired, other), acts with no bound work item, and already-reversed acts
+        return 409 with the reason — never a fake success."
+      tags:
+        - acts
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  act:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      agent:
+                        type: string
+                        description: The assignee that acted; defaults to "cue"
+                      workItemId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      missionId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Denormalized at capture from the work item's project
+                      kind:
+                        type: string
+                        enum:
+                          - run_completed
+                          - output_produced
+                          - message_drafted
+                          - schedule_fired
+                          - other
+                      title:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Human title of what the act did (the work item's title); null = no natural source at capture
+                      reversed:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the owner undid this act (redo, output rejection, or explicit reverse)
+                      reversedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      estMinutesSaved:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Conservative heuristic estimate captured with the act
+                      costCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          The run's real attributable LLM cost in cents (summed from the run conversation's usage at capture); null =
+                          unknown, NOT zero
+                      model:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Dominant model of the run (highest summed cost); null = unknown
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - agent
+                      - workItemId
+                      - missionId
+                      - kind
+                      - title
+                      - reversed
+                      - reversedAt
+                      - estMinutesSaved
+                      - costCents
+                      - model
+                      - createdAt
+                    additionalProperties: false
+                  unwound:
+                    type: object
+                    properties:
+                      outputsDemoted:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: work_outputs of the act's work item flipped approved → pending
+                      workItemReopened:
+                        type: boolean
+                        description: The work item was reopened done → awaiting_review
+                    required:
+                      - outputsDemoted
+                      - workItemReopened
+                    additionalProperties: false
+                required:
+                  - act
+                  - unwound
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/acts/summary:
     get:
       operationId: acts_summary_get
@@ -705,6 +852,19 @@ paths:
                           description:
                             Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
                             work-item runs for this assignee execute on the pinned model.
+                        toolScopes:
+                          anyOf:
+                            - type: array
+                              items:
+                                type: string
+                            - type: "null"
+                          description:
+                            "Tool-scope allowlist — coarse skill/domain ids ('email', 'calendar', 'research', 'files', 'code', 'docs',
+                            'design', 'outreach', 'social', 'ads'); null = unrestricted. ENFORCED on background
+                            work-item runs: extension-owned (skill/plugin/MCP) tools whose name/owner matches a known
+                            domain outside these scopes are dropped from the run's tool surface and rejected at
+                            execution time. Core plumbing tools and tools matching no known domain are never filtered;
+                            interactive chat is never filtered."
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -723,6 +883,7 @@ paths:
                         - capCents
                         - paused
                         - model
+                        - toolScopes
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -791,6 +952,19 @@ paths:
                         description:
                           Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
                           work-item runs for this assignee execute on the pinned model.
+                      toolScopes:
+                        anyOf:
+                          - type: array
+                            items:
+                              type: string
+                          - type: "null"
+                        description:
+                          "Tool-scope allowlist — coarse skill/domain ids ('email', 'calendar', 'research', 'files', 'code', 'docs',
+                          'design', 'outreach', 'social', 'ads'); null = unrestricted. ENFORCED on background work-item
+                          runs: extension-owned (skill/plugin/MCP) tools whose name/owner matches a known domain outside
+                          these scopes are dropped from the run's tool surface and rejected at execution time. Core
+                          plumbing tools and tools matching no known domain are never filtered; interactive chat is
+                          never filtered."
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -809,6 +983,7 @@ paths:
                       - capCents
                       - paused
                       - model
+                      - toolScopes
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -847,6 +1022,12 @@ paths:
                   type: boolean
                 model:
                   type: string
+                toolScopes:
+                  anyOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: "null"
               required:
                 - name
               additionalProperties: false
@@ -942,6 +1123,19 @@ paths:
                         description:
                           Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
                           work-item runs for this assignee execute on the pinned model.
+                      toolScopes:
+                        anyOf:
+                          - type: array
+                            items:
+                              type: string
+                          - type: "null"
+                        description:
+                          "Tool-scope allowlist — coarse skill/domain ids ('email', 'calendar', 'research', 'files', 'code', 'docs',
+                          'design', 'outreach', 'social', 'ads'); null = unrestricted. ENFORCED on background work-item
+                          runs: extension-owned (skill/plugin/MCP) tools whose name/owner matches a known domain outside
+                          these scopes are dropped from the run's tool surface and rejected at execution time. Core
+                          plumbing tools and tools matching no known domain are never filtered; interactive chat is
+                          never filtered."
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -960,6 +1154,7 @@ paths:
                       - capCents
                       - paused
                       - model
+                      - toolScopes
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -975,7 +1170,9 @@ paths:
     patch:
       operationId: agents_by_id_patch
       summary: Update an agent
-      description: Rename, re-charter, change tier, set/clear the spend cap, pause/resume a role, or set/clear the model pin.
+      description:
+        Rename, re-charter, change tier, set/clear the spend cap, pause/resume a role, set/clear the model pin, or
+        set/clear the tool-scope allowlist.
       tags:
         - agents
       responses:
@@ -1034,6 +1231,19 @@ paths:
                         description:
                           Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
                           work-item runs for this assignee execute on the pinned model.
+                      toolScopes:
+                        anyOf:
+                          - type: array
+                            items:
+                              type: string
+                          - type: "null"
+                        description:
+                          "Tool-scope allowlist — coarse skill/domain ids ('email', 'calendar', 'research', 'files', 'code', 'docs',
+                          'design', 'outreach', 'social', 'ads'); null = unrestricted. ENFORCED on background work-item
+                          runs: extension-owned (skill/plugin/MCP) tools whose name/owner matches a known domain outside
+                          these scopes are dropped from the run's tool surface and rejected at execution time. Core
+                          plumbing tools and tools matching no known domain are never filtered; interactive chat is
+                          never filtered."
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -1052,6 +1262,7 @@ paths:
                       - capCents
                       - paused
                       - model
+                      - toolScopes
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -1107,6 +1318,13 @@ paths:
                     - type: string
                     - type: "null"
                   description: Provider/model string to pin; null clears the pin
+                toolScopes:
+                  anyOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: "null"
+                  description: Coarse skill/domain ids to scope the agent's background runs to; null clears the restriction (unrestricted)
               additionalProperties: false
   /v1/agents/spend:
     get:
@@ -15187,8 +15405,8 @@ paths:
       description:
         "One read for the whole Guardrails surface: the checkpoint rules (with honest enforced/declarative flags),
         the agent roster with real attributed spend vs cap and the per-agent model pin, and the evidence ledger (recent
-        acts, currently-held approvals, workspace $ + model mix over the window). Composes the existing agent/act/usage
-        stores — nothing is fabricated."
+        acts with per-act cost/model/title, named held approvals, workspace $ + model mix + per-mission $ over the
+        window). Composes the existing agent/act/usage stores — nothing is fabricated."
       tags:
         - guardrails
       responses:
@@ -15391,6 +15609,11 @@ paths:
                                 - message_drafted
                                 - schedule_fired
                                 - other
+                            title:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                              description: Human title of what the act did (the work item's title); null = no natural source at capture
                             reversed:
                               type: integer
                               minimum: -9007199254740991
@@ -15407,6 +15630,18 @@ paths:
                                   minimum: -9007199254740991
                                   maximum: 9007199254740991
                                 - type: "null"
+                            costCents:
+                              anyOf:
+                                - type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                - type: "null"
+                              description: The run's real attributable LLM cost in cents; null = unknown, NOT zero
+                            model:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                              description: Dominant model of the run; null = unknown
                             createdAt:
                               type: integer
                               minimum: -9007199254740991
@@ -15417,11 +15652,38 @@ paths:
                             - workItemId
                             - missionId
                             - kind
+                            - title
                             - reversed
                             - reversedAt
                             - estMinutesSaved
+                            - costCents
+                            - model
                             - createdAt
                           additionalProperties: false
+                      heldItems:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            requestId:
+                              type: string
+                            title:
+                              type: string
+                              description: What is being held — the tool awaiting approval, humanized
+                            agent:
+                              description: The assignee whose run is held, when the confirmation belongs to a work-item run conversation
+                              type: string
+                            ageMs:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                              description: How long the approval has been held
+                          required:
+                            - requestId
+                            - title
+                            - ageMs
+                          additionalProperties: false
+                        description: Named approvals currently held, most recent first, capped at 5 (heldCount carries the full total)
                       summary:
                         type: object
                         properties:
@@ -15473,6 +15735,32 @@ paths:
                                 - calls
                                 - share
                               additionalProperties: false
+                          byMission:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                missionId:
+                                  type: string
+                                missionTitle:
+                                  type: string
+                                costCents:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                  description: Real attributed spend over the window (usage → run conversation → work item → project → mission)
+                                runs:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                  description: Run conversations that contributed
+                              required:
+                                - missionId
+                                - missionTitle
+                                - costCents
+                                - runs
+                              additionalProperties: false
+                            description: Per-mission attributed $ over the window, highest first; missions with no attributable cost are omitted
                         required:
                           - actCount
                           - reversedCount
@@ -15480,9 +15768,11 @@ paths:
                           - estMinutesSaved
                           - totalCents
                           - byModel
+                          - byMission
                         additionalProperties: false
                     required:
                       - recentActs
+                      - heldItems
                       - summary
                     additionalProperties: false
                   window:

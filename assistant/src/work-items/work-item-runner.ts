@@ -7,6 +7,7 @@
 
 import { getOrCreateConversation } from "../daemon/conversation-store.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
+import { buildAgentToolScopeFilter } from "../guardrails/agent-tool-scopes.js";
 import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { recordImpact } from "../home/impact-store.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
@@ -372,7 +373,15 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // (RetryProvider.normalizeSendMessageOptions treats config.model as
   // authoritative). Null assignee = the house agent "cue" (never pinned).
   // Resolved once up front so every turn of the run uses the same model.
-  const pinnedModel = getAgentByAssignee(workItem.assignee)?.model ?? null;
+  const runAgent = getAgentByAssignee(workItem.assignee);
+  const pinnedModel = runAgent?.model ?? null;
+  // Guardrails agent tool scopes: when the run agent carries `tool_scopes`,
+  // the run conversation gets a tool filter — out-of-scope domain tools are
+  // dropped from the wire definitions and rejected at execution time. Null
+  // scopes (and the implicit house agent) = unrestricted.
+  const toolScopeFilter = runAgent?.toolScopes
+    ? buildAgentToolScopeFilter(runAgent.toolScopes)
+    : null;
 
   // Set status to running
   updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
@@ -418,6 +427,9 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             } as ServerMessage);
             conversation.taskRunId = taskRunId;
             conversation.headlessLock = true;
+            if (toolScopeFilter) {
+              conversation.toolScopeFilter = toolScopeFilter;
+            }
             // Work items are captured from the owner's own surfaces (chat,
             // voice, meetings, the web UI) — running one executes the owner's
             // request, so the run carries guardian trust, matching the
@@ -517,13 +529,16 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
 
         // Act ledger: a non-failed terminal run is one completed autonomous
         // act — record it beside the outputs registration with a conservative
-        // minutes-saved estimate from the run's tool-mix + deliverables.
+        // minutes-saved estimate from the run's tool-mix + deliverables, the
+        // item's title (so the ledger names what was done), and the run
+        // conversation id (the cost/model attribution key).
         // Failed runs are not acts (nothing was accomplished to reverse).
         // Observation-only: recordActForCompletedRun never throws.
         if (finalStatus !== "failed") {
           recordActForCompletedRun(current ?? workItem, {
             toolsUsed,
             outputCount,
+            runConversationId: result.conversationId ?? null,
           });
         }
       }

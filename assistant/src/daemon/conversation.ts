@@ -246,6 +246,14 @@ export class Conversation {
   /** @internal */ preactivatedSkillIds?: string[];
   /** @internal */ subagentAllowedTools?: Set<string>;
   /**
+   * Guardrails agent tool-scope filter — set by the work-item runner on
+   * background run conversations whose agent has `tool_scopes`. Tools
+   * failing the predicate are dropped from the wire tool definitions and
+   * rejected at execution time (see guardrails/agent-tool-scopes.ts).
+   * @internal
+   */
+  toolScopeFilter?: (toolName: string) => boolean;
+  /**
    * How {@link subagentAllowedTools} is enforced — see
    * {@link SubagentToolGateMode}. Set and restored alongside the allowlist
    * by `scopeWakeAllowedTools`.

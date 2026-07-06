@@ -153,6 +153,24 @@ export function createToolExecutor(
     };
   };
 
+  // Guardrails agent tool scopes (background work-item runs): the wire
+  // resolver already drops out-of-scope tools from the definitions, so this
+  // execution-time check is the belt that catches anything that slips
+  // through (e.g. a tool registered mid-turn). Rejects BEFORE dispatch —
+  // the executor of an out-of-scope tool never runs.
+  const rejectOutOfScopeTool = (
+    toolName: string,
+  ): ToolExecutionResult | null => {
+    const filter = ctx.toolScopeFilter;
+    if (!filter || filter(toolName)) return null;
+    return {
+      content:
+        `The tool "${toolName}" is outside this agent's tool scopes. ` +
+        "Use a tool within the agent's scoped domains, or finish without it.",
+      isError: true,
+    };
+  };
+
   return async (
     name: string,
     input: Record<string, unknown>,
@@ -171,6 +189,8 @@ export function createToolExecutor(
     if (executionName !== "skill_execute") {
       const rejection = rejectNonAllowlistedTool(executionName);
       if (rejection) return rejection;
+      const scopeRejection = rejectOutOfScopeTool(executionName);
+      if (scopeRejection) return scopeRejection;
     }
 
     if (isDoordashCommand(executionName, executionInput)) {
@@ -321,6 +341,8 @@ export function createToolExecutor(
       // underlying tool via the executor's allowedToolNames check.
       const innerRejection = rejectNonAllowlistedTool(toolName);
       if (innerRejection) return innerRejection;
+      const innerScopeRejection = rejectOutOfScopeTool(toolName);
+      if (innerScopeRejection) return innerScopeRejection;
 
       const result = await executor.execute(toolName, toolInput, toolContext);
       if (toolContext.approvedViaPrompt) {
@@ -403,6 +425,12 @@ export interface SkillProjectionContext {
   readonly hasNoClient?: boolean;
   /** When set, only tools in this set are included in the resolved tool list (subagent delegation). */
   subagentAllowedTools?: Set<string>;
+  /**
+   * Guardrails agent tool-scope filter (background work-item runs only) —
+   * tools failing the predicate are dropped from the resolved tool list.
+   * See {@link ToolSetupContext.toolScopeFilter}.
+   */
+  toolScopeFilter?: (toolName: string) => boolean;
   /**
    * How {@link subagentAllowedTools} is enforced — see
    * {@link SubagentToolGateMode}. Absent means `"wire"`.
@@ -720,9 +748,18 @@ export function createResolveToolsCallback(
       ctx.subagentToolGateMode === "execution"
         ? undefined
         : ctx.subagentAllowedTools;
-    const scopedCoreDefs = wireAllowlist
-      ? filteredCoreDefs.filter((d) => wireAllowlist.has(d.name))
-      : filteredCoreDefs;
+    // Guardrails agent tool scopes: drop out-of-scope tools from the wire so
+    // a scoped agent's background run never sees them. Applied everywhere the
+    // subagent wire allowlist is (core defs, MCP defs, projected skill
+    // tools); the executor rejects any call that slips through regardless.
+    const scopeFilter = ctx.toolScopeFilter;
+    const inScope = (name: string): boolean =>
+      scopeFilter == null || scopeFilter(name);
+    const scopedCoreDefs = (
+      wireAllowlist
+        ? filteredCoreDefs.filter((d) => wireAllowlist.has(d.name))
+        : filteredCoreDefs
+    ).filter((d) => inScope(d.name));
 
     // Re-read MCP tool definitions from the registry each turn so conversations
     // automatically pick up tools added/removed by `vellum mcp reload`.
@@ -735,9 +772,11 @@ export function createResolveToolsCallback(
       },
       "MCP tools resolved for turn",
     );
-    const scopedMcpDefs = wireAllowlist
-      ? currentMcpDefs.filter((d) => wireAllowlist.has(d.name))
-      : currentMcpDefs;
+    const scopedMcpDefs = (
+      wireAllowlist
+        ? currentMcpDefs.filter((d) => wireAllowlist.has(d.name))
+        : currentMcpDefs
+    ).filter((d) => inScope(d.name));
     const excluded = new Set(getConfig().tools.exclude);
     const allBaseDefs = [...scopedCoreDefs, ...scopedMcpDefs].filter(
       (d) => !excluded.has(d.name),
@@ -774,6 +813,8 @@ export function createResolveToolsCallback(
         continue;
       }
       if (excluded.has(name)) continue;
+      // Guardrails agent tool scopes apply to projected skill tools too.
+      if (!inScope(name)) continue;
       turnAllowed.add(name);
     }
     // Record the full resolved inventory durably for read-only queries before

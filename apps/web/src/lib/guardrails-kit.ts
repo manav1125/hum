@@ -10,6 +10,8 @@
  *   - templates: send_message / spend_over / publish / delete / contact / custom
  *   - scope strings: 'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'
  *   - model pin: a provider/model string on the agent (null = workspace default)
+ *   - tool scopes: coarse skill/domain ids on the agent (null = unrestricted),
+ *     enforced by the daemon on background work-item runs
  */
 
 export type CheckpointTemplate =
@@ -166,8 +168,68 @@ export function modelPinDisplay(model: string | null): {
 }
 
 // ---------------------------------------------------------------------------
+// Tool scopes — the daemon's known coarse skill/domain ids. An agent's
+// `toolScopes` allowlist draws from this set; null = unrestricted. Enforced
+// on background work-item runs (out-of-scope extension tools are dropped).
+// ---------------------------------------------------------------------------
+
+export const TOOL_SCOPE_IDS = [
+  "email",
+  "calendar",
+  "research",
+  "files",
+  "code",
+  "docs",
+  "design",
+  "outreach",
+  "social",
+  "ads",
+] as const;
+
+export type ToolScopeId = (typeof TOOL_SCOPE_IDS)[number];
+
+/**
+ * Normalize an edited scope selection for PATCH: everything on (or nothing
+ * deselectable left) collapses to null = unrestricted, matching the daemon's
+ * contract that null — not the full list — means "no restriction".
+ */
+export function normalizeToolScopeSelection(
+  selected: ReadonlySet<string>,
+): string[] | null {
+  if (TOOL_SCOPE_IDS.every((id) => selected.has(id))) return null;
+  return TOOL_SCOPE_IDS.filter((id) => selected.has(id));
+}
+
+// ---------------------------------------------------------------------------
 // Formatting + scope helpers
 // ---------------------------------------------------------------------------
+
+/** Held-approval age: ms → "22 min" / "3 h" / "2 d" (mock's held-row meta). */
+export function heldAgeLabel(ageMs: number): string {
+  const min = Math.round(ageMs / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h`;
+  return `${Math.round(h / 24)} d`;
+}
+
+/**
+ * Pull the daemon's structured conflict code out of a thrown SDK error.
+ * `POST acts/:id/reverse` 409s with `{error:{details:{code}}}` when nothing
+ * concrete can be undone — never a fake success.
+ */
+export function reverseConflictCode(
+  error: unknown,
+): "no_undo" | "already_reversed" | null {
+  if (typeof error !== "object" || error === null) return null;
+  const envelope = (error as { error?: unknown }).error;
+  if (typeof envelope !== "object" || envelope === null) return null;
+  const details = (envelope as { details?: unknown }).details;
+  if (typeof details !== "object" || details === null) return null;
+  const code = (details as { code?: unknown }).code;
+  return code === "no_undo" || code === "already_reversed" ? code : null;
+}
 
 /** $ formatting: cents → "$4.12" (whole dollars stay clean: "$20"). */
 export function dollars(cents: number): string {

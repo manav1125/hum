@@ -14,6 +14,8 @@ const SAFE: AutonomyPolicyMap = {
   send: "ask",
   money: "ask",
   delete: "ask",
+  publish: "ask",
+  contact: "ask",
   other: "ask",
 };
 

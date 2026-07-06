@@ -6,19 +6,25 @@
  *   1. CHECKPOINTS — named plain-English rules ("Cue always asks before…")
  *      with on/off toggles, scope chips, DEFAULT badges, and the 3-step
  *      "+ Add a checkpoint" composer (template → scope → name).
- *   2. AGENT SCOPES — one card per registry agent: tier line, tool chips
- *      (display-only this round), live spend-vs-cap bar (amber ≥80%, red at
- *      cap with the raise/keep decision), the model pin picker
- *      (Best · Sonnet / Fast · Haiku / Custom), and the paused variant.
- *   3. THE LEDGER — recent autonomous acts + the held-for-approval row and
- *      an honest rollup, linking out to Mission Control for the full feed.
+ *   2. AGENT SCOPES — one card per registry agent: tier line, editable tool
+ *      scopes (chips + "edit ✎" → toggle the known scope set, PATCHed as
+ *      `toolScopes`; null = unrestricted; enforced on background runs), live
+ *      spend-vs-cap bar (amber ≥80%, red at cap with the raise/keep
+ *      decision), the model pin picker (Best · Sonnet / Fast · Haiku /
+ *      Custom), and the paused variant.
+ *   3. THE LEDGER — recent autonomous acts (real titles, per-act $ + model
+ *      where measured, an active "↩ Reverse" that unwinds via
+ *      `POST acts/:id/reverse`), named held-for-approval rows, and an honest
+ *      rollup, linking out to Mission Control for the full feed.
  * Plus the "Usage & spend" transparency band (SET 3): Week/Month window,
- * per-agent $, model mix, and the share-able summary card.
+ * per-agent $, per-mission $, model mix, and the share-able summary card.
  *
  * Honesty rules baked in: checkpoints the permission checker doesn't enforce
- * yet carry an ADVISORY tag (payload `enforced:false`); tool chips are
- * display-only (no tool-scope backend yet); per-act $ / model / reverse are
- * left as TODOs because the act ledger doesn't carry them.
+ * yet carry an ADVISORY tag (payload `enforced:false`); nullable per-act
+ * $ / model mean "wasn't measured" and render as nothing (never a fake $0);
+ * a 409 from reverse surfaces as a plain "nothing to unwind" note — never a
+ * fake success. Tool scopes ride a parallel typed `agents` read because the
+ * composed guardrails payload doesn't carry `toolScopes` yet.
  */
 
 import { Loader2 } from "lucide-react";
@@ -35,7 +41,9 @@ import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import {
+  actsByIdReversePostMutation,
   agentsByIdPatchMutation,
+  agentsGetOptions,
   guardrailsCheckpointsByIdPatchMutation,
   guardrailsCheckpointsPostMutation,
   guardrailsGetOptions,
@@ -47,12 +55,16 @@ import {
   CHECKPOINT_TEMPLATES,
   agentGlyph,
   dollars,
+  heldAgeLabel,
   modelPinDisplay,
   MODEL_PIN_OPTIONS,
+  normalizeToolScopeSelection,
   parseThresholdCents,
+  reverseConflictCode,
   scopeDisplay,
   templateGlyph,
   tierDescriptor,
+  TOOL_SCOPE_IDS,
   type CheckpointTemplate,
 } from "@/lib/guardrails-kit";
 import { routes } from "@/utils/routes";
@@ -102,8 +114,17 @@ type Checkpoint = GuardrailsPayload["checkpoints"][number];
 type Agent = GuardrailsPayload["agents"][number];
 type LedgerAct = GuardrailsPayload["ledger"]["recentActs"][number];
 
+/**
+ * Tool scopes per agent id, from the parallel typed `agents` read (the
+ * composed guardrails payload doesn't carry `toolScopes`). `undefined` =
+ * registry not loaded (chips stay display-only); `null` = unrestricted.
+ */
+type ToolScopesByAgent = ReadonlyMap<string, string[] | null>;
+
 /** Partial-match key for every `guardrailsGet` window (7d + 30d). */
 const GUARDRAILS_KEY_PREFIX = [{ _id: "guardrailsGet" }] as const;
+/** Partial-match key for the agent registry read (tool scopes ride it). */
+const AGENTS_KEY_PREFIX = [{ _id: "agentsGet" }] as const;
 
 /** Per-agent hue — the mock's house palette (Ops teal / Builder blue / Growth violet). */
 function agentHue(name: string, index: number): string {
@@ -117,9 +138,10 @@ function agentHue(name: string, index: number): string {
 }
 
 /**
- * Display tool-scope chips. Display-only this round (no tool-scope backend):
- * the house agents get the mock's chip sets; anything else falls back to the
- * registry `domain` field split on separators.
+ * Fallback display chips while the agent registry read is still in flight
+ * (real `toolScopes` replace these once loaded): the house agents get the
+ * mock's chip sets; anything else falls back to the registry `domain` field
+ * split on separators.
  */
 function agentToolChips(agent: Agent): string[] {
   const n = agent.name.toLowerCase();
@@ -151,6 +173,7 @@ function timeAgo(epoch: number): string {
   return `${d} d ago`;
 }
 
+/** Kind-derived fallback labels — used when an act carries no `title`. */
 const ACT_TITLES: Record<LedgerAct["kind"], string> = {
   run_completed: "Completed a background run",
   output_produced: "Produced an output",
@@ -254,6 +277,18 @@ function GuardrailsBody({
   const { checkpoints, agents, ledger } = data;
   const summary = ledger.summary;
 
+  // Tool scopes ride the typed agent-registry read — the composed guardrails
+  // payload doesn't carry `toolScopes` (chips stay display-only until this
+  // resolves; a failure just leaves them display-only, never wrong).
+  const registryQuery = useQuery(
+    agentsGetOptions({ path: { assistant_id: assistantId } }),
+  );
+  const toolScopesByAgent = useMemo<ToolScopesByAgent | undefined>(() => {
+    const rows = registryQuery.data?.agents;
+    if (!rows) return undefined;
+    return new Map(rows.map((a) => [a.id, a.toolScopes]));
+  }, [registryQuery.data]);
+
   // Fresh-user state: only seeded defaults, nothing on the ledger yet.
   const isFresh =
     summary.actCount === 0 && checkpoints.every((c) => c.isDefault === 1);
@@ -282,6 +317,7 @@ function GuardrailsBody({
         <AgentScopesBand
           assistantId={assistantId}
           agents={agents}
+          toolScopesByAgent={toolScopesByAgent}
           isMobile={isMobile}
         />
       </Band>
@@ -306,7 +342,12 @@ function GuardrailsBody({
         }
         isMobile={isMobile}
       >
-        <LedgerBand ledger={ledger} agents={agents} fresh={isFresh} />
+        <LedgerBand
+          assistantId={assistantId}
+          ledger={ledger}
+          agents={agents}
+          fresh={isFresh}
+        />
       </Band>
       <UsageBand
         data={data}
@@ -1135,10 +1176,12 @@ function CheckpointComposer({
 function AgentScopesBand({
   assistantId,
   agents,
+  toolScopesByAgent,
   isMobile,
 }: {
   assistantId: string;
   agents: Agent[];
+  toolScopesByAgent: ToolScopesByAgent | undefined;
   isMobile: boolean;
 }) {
   if (agents.length === 0) {
@@ -1163,6 +1206,7 @@ function AgentScopesBand({
           key={agent.id}
           assistantId={assistantId}
           agent={agent}
+          toolScopes={toolScopesByAgent?.get(agent.id)}
           hue={agentHue(agent.name, i)}
         />
       ))}
@@ -1173,17 +1217,22 @@ function AgentScopesBand({
 function AgentCard({
   assistantId,
   agent,
+  toolScopes,
   hue,
 }: {
   assistantId: string;
   agent: Agent;
+  /** Real scopes from the registry read; undefined = not loaded yet. */
+  toolScopes: string[] | null | undefined;
   hue: string;
 }) {
   const queryClient = useQueryClient();
   const patchAgent = useMutation({
     ...agentsByIdPatchMutation(),
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: GUARDRAILS_KEY_PREFIX }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: GUARDRAILS_KEY_PREFIX });
+      void queryClient.invalidateQueries({ queryKey: AGENTS_KEY_PREFIX });
+    },
   });
 
   const paused = agent.paused === 1;
@@ -1194,7 +1243,7 @@ function AgentCard({
   const nearCap = !paused && !atCap && cap !== null && cap > 0 && ratio >= 0.8;
 
   const barColor = atCap ? C.danger : nearCap ? C.amber : hue;
-  const chips = agentToolChips(agent);
+  const fallbackChips = agentToolChips(agent);
 
   const badge = paused
     ? { text: "▪ PAUSED", color: C.t3, bg: C.sunken }
@@ -1275,46 +1324,23 @@ function AgentCard({
         </div>
       )}
 
-      {/* tool chips — display-only this round (no tool-scope backend). */}
-      {chips.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 6,
-            marginTop: 13,
-            opacity: paused ? 0.7 : 1,
-          }}
-        >
-          {chips.map((chip) => (
-            <span
-              key={chip}
-              style={{
-                fontSize: 11,
-                color: C.t2,
-                background: C.sunken,
-                borderRadius: 6,
-                padding: "4px 9px",
-              }}
-            >
-              {chip}
-            </span>
-          ))}
-          <span
-            title="Tool scopes are read-only for now — editing is coming."
-            style={{
-              fontSize: 11,
-              color: C.t3,
-              border: `1px dashed color-mix(in srgb, ${C.blue} 30%, transparent)`,
-              borderRadius: 6,
-              padding: "4px 9px",
-              cursor: "default",
-            }}
-          >
-            edit ✎
-          </span>
-        </div>
-      )}
+      {/* tool scopes — real chips + edit once the registry read resolves;
+          enforced by the daemon on this agent's background runs. */}
+      <ToolScopesRow
+        toolScopes={toolScopes}
+        fallbackChips={fallbackChips}
+        paused={paused}
+        saving={patchAgent.isPending}
+        onSave={(scopes, done) =>
+          patchAgent.mutate(
+            {
+              path: { assistant_id: assistantId, id: agent.id },
+              body: { toolScopes: scopes },
+            },
+            { onSuccess: done },
+          )
+        }
+      />
 
       {/* spend vs cap */}
       <div style={{ marginTop: 14 }}>
@@ -1471,6 +1497,184 @@ function AgentCard({
             })
           }
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The tool-scope chips row. Three states:
+ *   - registry not loaded (`toolScopes` undefined): fallback chips,
+ *     display-only, no edit affordance;
+ *   - loaded, scoped (array): the real allowlist chips + "edit ✎";
+ *   - loaded, null: subtle "unrestricted" label + "edit ✎".
+ * Edit mode toggles chips over the daemon's known scope set and PATCHes
+ * `toolScopes` (all-on collapses to null = unrestricted).
+ */
+function ToolScopesRow({
+  toolScopes,
+  fallbackChips,
+  paused,
+  saving,
+  onSave,
+}: {
+  toolScopes: string[] | null | undefined;
+  fallbackChips: string[];
+  paused: boolean;
+  saving: boolean;
+  onSave: (scopes: string[] | null, done: () => void) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+
+  const loaded = toolScopes !== undefined;
+  const chips = loaded ? (toolScopes ?? []) : fallbackChips;
+
+  if (!loaded && fallbackChips.length === 0) return null;
+
+  const chipStyle = (active: boolean): CSSProperties => ({
+    fontSize: 11,
+    color: active ? C.t2 : C.t3,
+    background: active ? C.sunken : "transparent",
+    border: active ? "1px solid transparent" : `1px dashed ${C.line2}`,
+    borderRadius: 6,
+    padding: "4px 9px",
+  });
+
+  if (editing) {
+    const toggle = (id: string) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+    return (
+      <div style={{ marginTop: 13 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {TOOL_SCOPE_IDS.map((id) => {
+            const on = selected.has(id);
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggle(id)}
+                style={{ ...chipStyle(on), cursor: "pointer" }}
+              >
+                {on ? "✓ " : ""}
+                {id}
+              </button>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginTop: 9,
+          }}
+        >
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() =>
+              onSave(normalizeToolScopeSelection(selected), () =>
+                setEditing(false),
+              )
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 11.5,
+              fontWeight: 600,
+              color: "#fff",
+              background: C.blue,
+              border: "none",
+              borderRadius: 7,
+              padding: "5px 12px",
+              cursor: saving ? "default" : "pointer",
+              opacity: saving ? 0.7 : 1,
+            }}
+          >
+            {saving && <Loader2 className="size-3 animate-spin" />}
+            Save scopes
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            style={{
+              fontSize: 11.5,
+              color: C.t3,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            Cancel
+          </button>
+          <span style={{ fontSize: 10, color: C.t3, marginLeft: "auto" }}>
+            all on = unrestricted
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 13,
+        opacity: paused ? 0.7 : 1,
+      }}
+    >
+      {loaded && toolScopes === null ? (
+        <span style={{ fontSize: 11, color: C.t3, fontStyle: "italic" }}>
+          unrestricted — every tool
+        </span>
+      ) : (
+        chips.map((chip) => (
+          <span
+            key={chip}
+            style={{
+              fontSize: 11,
+              color: C.t2,
+              background: C.sunken,
+              borderRadius: 6,
+              padding: "4px 9px",
+            }}
+          >
+            {chip}
+          </span>
+        ))
+      )}
+      {loaded && (
+        <button
+          type="button"
+          onClick={() => {
+            setSelected(new Set(toolScopes ?? TOOL_SCOPE_IDS));
+            setEditing(true);
+          }}
+          style={{
+            fontSize: 11,
+            color: C.blueS,
+            background: "transparent",
+            border: `1px dashed color-mix(in srgb, ${C.blue} 30%, transparent)`,
+            borderRadius: 6,
+            padding: "4px 9px",
+            cursor: "pointer",
+          }}
+        >
+          edit ✎
+        </button>
       )}
     </div>
   );
@@ -1686,16 +1890,60 @@ function ModelPinRow({
 // ---------------------------------------------------------------------------
 
 function LedgerBand({
+  assistantId,
   ledger,
   agents,
   fresh,
 }: {
+  assistantId: string;
   ledger: GuardrailsPayload["ledger"];
   agents: Agent[];
   fresh: boolean;
 }) {
   const navigate = useNavigate();
-  const { recentActs, summary } = ledger;
+  const queryClient = useQueryClient();
+  const { recentActs, heldItems, summary } = ledger;
+
+  // Honest per-act note when reverse 409s (nothing concrete to unwind).
+  const [reverseNotes, setReverseNotes] = useState<Record<string, string>>({});
+
+  const reverseMutation = useMutation({
+    ...actsByIdReversePostMutation(),
+    onMutate: (vars) => {
+      // Optimistic strike-through in every cached window.
+      queryClient.setQueriesData<GuardrailsPayload>(
+        { queryKey: GUARDRAILS_KEY_PREFIX },
+        (prev) =>
+          prev
+            ? {
+                ...prev,
+                ledger: {
+                  ...prev.ledger,
+                  recentActs: prev.ledger.recentActs.map((a) =>
+                    a.id === vars.path.id ? { ...a, reversed: 1 } : a,
+                  ),
+                },
+              }
+            : prev,
+      );
+    },
+    onError: (error, vars) => {
+      const code = reverseConflictCode(error);
+      setReverseNotes((prev) => ({
+        ...prev,
+        [vars.path.id]:
+          code === "already_reversed"
+            ? "Already reversed."
+            : code === "no_undo"
+              ? "Nothing to unwind — already executed."
+              : "Couldn't reverse — try again.",
+      }));
+    },
+    onSettled: () =>
+      // Refetch gives the truth either way (rolls back a failed optimistic
+      // flip; picks up the real reversedAt on success).
+      queryClient.invalidateQueries({ queryKey: GUARDRAILS_KEY_PREFIX }),
+  });
 
   const agentByName = useMemo(() => {
     const map = new Map<string, { agent: Agent; hue: string }>();
@@ -1705,68 +1953,56 @@ function LedgerBand({
     return map;
   }, [agents]);
 
+  // Up to 3 named held rows; the rest collapse into "and N more".
+  const shownHeld = heldItems.slice(0, 3);
+  const moreHeld = summary.heldCount - shownHeld.length;
+
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      {summary.heldCount > 0 && (
-        // A checkpoint fired — the held-for-approval row. Pending
-        // confirmations live in HQ's "Needs you" lane; Review jumps there.
+      {shownHeld.map((item) => {
+        const meta = item.agent
+          ? agentByName.get(item.agent.toLowerCase())
+          : undefined;
+        const agentLabel = item.agent
+          ? `${
+              meta
+                ? agentGlyph(meta.agent.name, meta.agent.emoji)
+                : agentGlyph(item.agent)
+            } ${meta?.agent.name ?? item.agent}`
+          : null;
+        return (
+          <HeldRow
+            key={item.requestId}
+            title={`Held for your approval — ${item.title}`}
+            sub={`${agentLabel ? `${agentLabel} · ` : ""}${heldAgeLabel(
+              item.ageMs,
+            )} ago · waiting in HQ's `}
+            onReview={() => navigate(routes.hq)}
+          />
+        );
+      })}
+      {shownHeld.length === 0 && summary.heldCount > 0 && (
+        // Fallback count-only row when the payload named none.
+        <HeldRow
+          title={`Held for your approval — ${
+            summary.heldCount === 1
+              ? "1 action waiting"
+              : `${summary.heldCount} actions waiting`
+          }`}
+          sub="A checkpoint fired · waiting in HQ's "
+          onReview={() => navigate(routes.hq)}
+        />
+      )}
+      {moreHeld > 0 && shownHeld.length > 0 && (
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 13,
-            padding: "12px 14px",
-            background: `color-mix(in srgb, ${C.amber} 7%, transparent)`,
-            border: `1px solid color-mix(in srgb, ${C.amber} 25%, transparent)`,
-            borderRadius: 11,
-            marginBottom: 8,
+            fontSize: 11,
+            color: C.t3,
+            padding: "0 14px 8px",
           }}
         >
-          <span
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: `color-mix(in srgb, ${C.amber} 14%, transparent)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: C.amber,
-              fontSize: 12,
-              flexShrink: 0,
-            }}
-          >
-            ⏸
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: C.t1 }}>
-              Held for your approval —{" "}
-              {summary.heldCount === 1
-                ? "1 action waiting"
-                : `${summary.heldCount} actions waiting`}
-            </div>
-            <div style={{ fontSize: 11, color: C.t3, marginTop: 2 }}>
-              A checkpoint fired · waiting in HQ&rsquo;s{" "}
-              <span style={{ color: C.amber }}>Needs you</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate(routes.hq)}
-            style={{
-              fontSize: 11.5,
-              fontWeight: 600,
-              background: C.blue,
-              color: "#fff",
-              border: "none",
-              borderRadius: 7,
-              padding: "6px 12px",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-          >
-            Review
-          </button>
+          and {moreHeld} more waiting in HQ&rsquo;s{" "}
+          <span style={{ color: C.amber }}>Needs you</span>
         </div>
       )}
 
@@ -1783,6 +2019,10 @@ function LedgerBand({
           const glyph = meta
             ? agentGlyph(meta.agent.name, meta.agent.emoji)
             : agentGlyph(act.agent);
+          const reversing =
+            reverseMutation.isPending &&
+            reverseMutation.variables?.path.id === act.id;
+          const note = reverseNotes[act.id];
           return (
             <div
               key={act.id}
@@ -1817,21 +2057,30 @@ function LedgerBand({
                   style={{
                     fontSize: 13,
                     color: C.t1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                     textDecoration:
                       act.reversed === 1 ? "line-through" : "none",
                   }}
                 >
-                  {ACT_TITLES[act.kind]}
+                  {act.title ?? ACT_TITLES[act.kind]}
                 </div>
                 <div style={{ fontSize: 11, color: C.t3, marginTop: 2 }}>
+                  {/* mock meta: "⚙ Ops · 1 h ago · $0.06 · Haiku" — $ and
+                      model only when measured (null = unknown, never $0). */}
                   {glyph} {act.agent} · {timeAgo(act.createdAt)}
+                  {act.costCents !== null ? ` · ${dollars(act.costCents)}` : ""}
+                  {act.model !== null ? ` · ${modelShortName(act.model)}` : ""}
                   {act.estMinutesSaved !== null && act.reversed !== 1
                     ? ` · ~${act.estMinutesSaved} min saved`
                     : ""}
-                  {/* TODO(guardrails): per-act $ cost + model are not on the
-                      act ledger yet — surface them here once the daemon
-                      attributes usage per act. */}
                 </div>
+                {note && act.reversed !== 1 && (
+                  <div style={{ fontSize: 10.5, color: C.amber, marginTop: 3 }}>
+                    {note}
+                  </div>
+                )}
               </div>
               {act.reversed === 1 ? (
                 <span style={{ fontSize: 11, color: C.t3, flexShrink: 0 }}>
@@ -1841,11 +2090,30 @@ function LedgerBand({
                 <span style={{ fontSize: 11, color: C.t3, flexShrink: 0 }}>
                   draft — nothing sent
                 </span>
-              ) : null}
-              {/* TODO(guardrails): the mock's active "↩ Reverse" affordance
-                  needs a reverse endpoint on the act ledger — none exists
-                  yet (reversal happens via redo / output rejection), so we
-                  only render the reversed state honestly. */}
+              ) : (
+                <button
+                  type="button"
+                  disabled={reversing}
+                  onClick={() =>
+                    reverseMutation.mutate({
+                      path: { assistant_id: assistantId, id: act.id },
+                    })
+                  }
+                  style={{
+                    fontSize: 11,
+                    color: C.blueS,
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    cursor: reversing ? "default" : "pointer",
+                    opacity: reversing ? 0.6 : 1,
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  ↩ Reverse
+                </button>
+              )}
             </div>
           );
         })
@@ -1867,6 +2135,87 @@ function LedgerBand({
         }}
       >
         See the full ledger — every act since day one ›
+      </button>
+    </div>
+  );
+}
+
+/**
+ * One held-for-approval row — a checkpoint fired and the act is waiting.
+ * Pending confirmations live in HQ's "Needs you" lane; Review jumps there.
+ */
+function HeldRow({
+  title,
+  sub,
+  onReview,
+}: {
+  title: string;
+  sub: string;
+  onReview: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 13,
+        padding: "12px 14px",
+        background: `color-mix(in srgb, ${C.amber} 7%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${C.amber} 25%, transparent)`,
+        borderRadius: 11,
+        marginBottom: 8,
+      }}
+    >
+      <span
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          background: `color-mix(in srgb, ${C.amber} 14%, transparent)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: C.amber,
+          fontSize: 12,
+          flexShrink: 0,
+        }}
+      >
+        ⏸
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: C.t1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {title}
+        </div>
+        <div style={{ fontSize: 11, color: C.t3, marginTop: 2 }}>
+          {sub}
+          <span style={{ color: C.amber }}>Needs you</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onReview}
+        style={{
+          fontSize: 11.5,
+          fontWeight: 600,
+          background: C.blue,
+          color: "#fff",
+          border: "none",
+          borderRadius: 7,
+          padding: "6px 12px",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        Review
       </button>
     </div>
   );
@@ -2077,9 +2426,81 @@ function UsageBand({
               </span>
             )}
           </div>
-          {/* TODO(guardrails): the mock's BY MISSION $ breakdown needs
-              per-mission cost attribution in the guardrails payload — not
-              exposed by the daemon yet. */}
+          {summary.byMission.length > 0 && (
+            // Per-mission attributed $, highest first (mirrors BY AGENT;
+            // bars scale against the costliest mission). Omitted when the
+            // window attributed nothing to a mission.
+            <div style={{ marginTop: 22 }}>
+              <MicroLabel>BY MISSION</MicroLabel>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  marginTop: 13,
+                }}
+              >
+                {summary.byMission.map((m, i) => {
+                  const max = summary.byMission[0]?.costCents ?? 0;
+                  const ratio = max > 0 ? m.costCents / max : 0;
+                  const hue = MIX_HUES[i % MIX_HUES.length];
+                  return (
+                    <div key={m.missionId}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          fontSize: 12,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: C.t1,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {m.missionTitle}
+                        </span>
+                        <span
+                          style={{
+                            fontFamily: mono,
+                            color: C.t2,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {dollars(m.costCents)}{" "}
+                          <span style={{ color: C.t3 }}>
+                            · {m.runs} {m.runs === 1 ? "run" : "runs"}
+                          </span>
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 5,
+                          borderRadius: 3,
+                          background: C.sunken,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${Math.min(100, Math.round(ratio * 100))}%`,
+                            height: "100%",
+                            background: hue,
+                            borderRadius: 3,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* right — model mix + the share-able summary card */}

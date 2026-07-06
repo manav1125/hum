@@ -50,6 +50,8 @@ import {
   migrateAddMemoryV3EverInjected,
   migrateAddMemoryV3Selections,
   migrateAddSourceTypeColumns,
+  migrateAgentActsCostModelTitle,
+  migrateAgentToolScopes,
   migrateAssistantContactMetadata,
   migrateBackfillAudioAttachmentMimeTypes,
   migrateBackfillContactInteractionStats,
@@ -536,6 +538,8 @@ export function initializeDb(): void {
     migrateCreateBrandProfiles,
     migrateCreateKits,
     migrateGuardrails,
+    migrateAgentActsCostModelTitle,
+    migrateAgentToolScopes,
   ];
 
   // Run each migration step, catching and logging individual failures so one

@@ -3,24 +3,32 @@
  * the Guardrails surface. A checkpoint is a named, plain-English rule compiled
  * from a template into an enforcement `pattern`:
  *
- *   - `autonomy:<class>` patterns (send / money / delete / draft / research /
- *     other) are ENFORCED: the permission checker consults enabled checkpoints
- *     on every tool call and tightens that autonomy category from "auto" to
- *     "ask" when one is in scope (see checkpoint-enforcement.ts). Enforcement
- *     only tightens — disabling a checkpoint never loosens the gateway's own
- *     per-category autonomy policy or trust rules.
- *   - Any other pattern form ("tool:publish_*", "contact:*", custom strings)
- *     is DECLARATIVE today: persisted and exposed with `enforced: false` so
- *     the UI can honestly show the rule as "coming online".
+ *   - `autonomy:<class>` patterns (send / money / delete / publish / contact /
+ *     draft / research / other) are ENFORCED: the permission checker consults
+ *     enabled checkpoints on every tool call and tightens that autonomy
+ *     category from "auto" to "ask" when one is in scope (see
+ *     checkpoint-enforcement.ts). Enforcement only tightens — disabling a
+ *     checkpoint never loosens the gateway's own per-category autonomy policy
+ *     or trust rules.
+ *   - The legacy compiled patterns "tool:publish_*" (publish template) and
+ *     "contact:*" (contact template) are ALIASES for autonomy:publish /
+ *     autonomy:contact — rows created before those classes existed enforce
+ *     identically without a data migration.
+ *   - Any other pattern form (custom strings) is DECLARATIVE: persisted and
+ *     exposed with `enforced: false` so the UI can honestly show the rule as
+ *     "coming online".
  *
  * Default template → pattern compilation:
- *   send_message → autonomy:send   (enforced)
- *   spend_over   → autonomy:money  (enforced; threshold_cents is advisory —
+ *   send_message → autonomy:send    (enforced)
+ *   spend_over   → autonomy:money   (enforced; threshold_cents is advisory —
  *                  per-action $ cost is unknowable pre-execution, so an
  *                  enabled spend_over checkpoint asks on ANY money action)
- *   delete       → autonomy:delete (enforced)
- *   publish      → tool:publish_*  (declarative)
- *   contact      → contact:*       (declarative)
+ *   delete       → autonomy:delete  (enforced)
+ *   publish      → autonomy:publish (enforced — publish/deploy-named tools)
+ *   contact      → autonomy:contact (enforced COARSELY — asks on any outbound
+ *                  contact: call initiation AND all message/email sends;
+ *                  recipient-level "new contact" filtering is unknowable
+ *                  pre-execution)
  *   custom       → caller-supplied (enforced only if it's an autonomy:<class>)
  *
  * Scope is 'everywhere', 'agent:<agentId>', or 'mission:<missionId>'.
@@ -75,9 +83,9 @@ const TEMPLATE_PATTERNS: Record<
 > = {
   send_message: "autonomy:send",
   spend_over: "autonomy:money",
-  publish: "tool:publish_*",
+  publish: "autonomy:publish",
   delete: "autonomy:delete",
-  contact: "contact:*",
+  contact: "autonomy:contact",
 };
 
 const AUTONOMY_CLASSES: ReadonlySet<string> = new Set([
@@ -86,15 +94,31 @@ const AUTONOMY_CLASSES: ReadonlySet<string> = new Set([
   "send",
   "money",
   "delete",
+  "publish",
+  "contact",
   "other",
 ]);
 
 /**
+ * Patterns compiled by earlier releases, before the publish/contact autonomy
+ * classes existed. Aliased in code (rather than rewritten by a migration) so
+ * every existing row — seeded defaults and user-created template checkpoints
+ * alike — enforces without touching stored data.
+ */
+const LEGACY_PATTERN_ALIASES: Record<string, AutonomyClass> = {
+  "tool:publish_*": "publish",
+  "contact:*": "contact",
+};
+
+/**
  * The autonomy category an `autonomy:<class>` pattern enforces, or null when
- * the pattern is declarative-only. This is the single source of truth both
- * the enforcement hook and the API's `enforced` flag read.
+ * the pattern is declarative-only. Legacy compiled patterns ("tool:publish_*",
+ * "contact:*") alias to their modern class. This is the single source of
+ * truth both the enforcement hook and the API's `enforced` flag read.
  */
 export function enforcedAutonomyClass(pattern: string): AutonomyClass | null {
+  const legacy = LEGACY_PATTERN_ALIASES[pattern.trim()];
+  if (legacy) return legacy;
   if (!pattern.startsWith("autonomy:")) return null;
   const cls = pattern.slice("autonomy:".length).trim();
   return AUTONOMY_CLASSES.has(cls) ? (cls as AutonomyClass) : null;
@@ -107,13 +131,30 @@ export function isCheckpointEnforced(checkpoint: { pattern: string }): boolean {
 
 /**
  * Human-readable enforcement mechanism for the API payload; null when the
- * checkpoint is declarative-only.
+ * checkpoint is declarative-only. Honest about granularity: publish and
+ * contact are lexical tool-name classifications, and contact deliberately
+ * matches coarsely (any outbound contact, not just new recipients).
  */
 export function checkpointEnforcementVia(checkpoint: {
   pattern: string;
 }): string | null {
   const cls = enforcedAutonomyClass(checkpoint.pattern);
   if (cls == null) return null;
+  if (cls === "publish") {
+    return (
+      "permission checker: tools named as publish/deploy actions " +
+      "(publish/unpublish/deploy/broadcast) tightened to ask; " +
+      "social posts classify as 'send' and are covered by the send checkpoint"
+    );
+  }
+  if (cls === "contact") {
+    return (
+      "permission checker: outbound-contact tools tightened to ask — " +
+      "phone/call initiation ('contact' class) plus ALL message/email sends " +
+      "('send' class); recipient-level filtering (only NEW contacts) is not " +
+      "knowable pre-execution, so any outbound contact asks"
+    );
+  }
   return `permission checker: autonomy category '${cls}' tightened to ask`;
 }
 

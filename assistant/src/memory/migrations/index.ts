@@ -294,6 +294,8 @@ export { migrateCreateAgents } from "./296-agents.js";
 export { migrateCreateBrandProfiles } from "./297-brand-profiles.js";
 export { migrateCreateKits } from "./298-create-kits.js";
 export { migrateGuardrails } from "./299-guardrails.js";
+export { migrateAgentActsCostModelTitle } from "./300-agent-acts-cost-model-title.js";
+export { migrateAgentToolScopes } from "./301-agent-tool-scopes.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

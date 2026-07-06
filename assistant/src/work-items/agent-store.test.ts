@@ -147,6 +147,66 @@ describe("CRUD", () => {
     expect(getAgent("ops")).toBeUndefined();
     expect(listAgents().map((a) => a.name)).toEqual(["Builder", "Growth"]);
   });
+
+  test("tool scopes round-trip as a string array (JSON in tool_scopes)", () => {
+    // Seeded rows have no scopes — unrestricted.
+    expect(getAgent("ops")?.toolScopes).toBeNull();
+
+    const updated = updateAgent("ops", {
+      toolScopes: ["email", "calendar", "research", "files"],
+    });
+    expect(updated?.toolScopes).toEqual([
+      "email",
+      "calendar",
+      "research",
+      "files",
+    ]);
+    // Persisted as a JSON string in the column…
+    const raw = getSqliteFrom(getDb())
+      .query(`SELECT tool_scopes FROM agents WHERE id = 'ops'`)
+      .get() as { tool_scopes: string | null };
+    expect(JSON.parse(raw.tool_scopes!)).toEqual([
+      "email",
+      "calendar",
+      "research",
+      "files",
+    ]);
+    // …and parsed back on every read path.
+    expect(getAgent("ops")?.toolScopes).toEqual([
+      "email",
+      "calendar",
+      "research",
+      "files",
+    ]);
+    expect(listAgents().find((a) => a.id === "ops")?.toolScopes).toEqual([
+      "email",
+      "calendar",
+      "research",
+      "files",
+    ]);
+  });
+
+  test("clearing tool scopes sets back to null (unrestricted)", () => {
+    updateAgent("ops", { toolScopes: ["email"] });
+    expect(getAgent("ops")?.toolScopes).toEqual(["email"]);
+    updateAgent("ops", { toolScopes: null });
+    expect(getAgent("ops")?.toolScopes).toBeNull();
+  });
+
+  test("hire with tool scopes persists them; empty array is a valid restriction", () => {
+    const scoped = createAgent({ name: "Scout", toolScopes: ["research"] });
+    expect(getAgent(scoped.id)?.toolScopes).toEqual(["research"]);
+
+    const lockdown = createAgent({ name: "Lockdown", toolScopes: [] });
+    expect(getAgent(lockdown.id)?.toolScopes).toEqual([]);
+  });
+
+  test("malformed tool_scopes content reads as null (unrestricted, never throws)", () => {
+    getSqliteFrom(getDb())
+      .prepare(`UPDATE agents SET tool_scopes = 'not-json' WHERE id = 'ops'`)
+      .run();
+    expect(getAgent("ops")?.toolScopes).toBeNull();
+  });
 });
 
 describe("spend attribution", () => {
