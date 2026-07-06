@@ -94,6 +94,11 @@ export interface Instance {
    * has already been converted into usage_sync ledger entries.
    */
   usageSyncedCents: number;
+  /**
+   * Container image the instance is currently running — set at provision
+   * and on each successful image update (null on legacy/pre-migration rows).
+   */
+  imageRef: string | null;
   createdAt: number;
 }
 
@@ -282,6 +287,15 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
         consumedAt INTEGER
       );
       CREATE INDEX idx_signin_tokens_customer ON signin_tokens(customerId)
+    `,
+  },
+  {
+    version: 4,
+    name: "instance-image-ref",
+    // Fleet image updates: track the image each instance runs. Existing
+    // rows backfill to NULL (image unknown until their next update).
+    sql: `
+      ALTER TABLE instances ADD COLUMN imageRef TEXT
     `,
   },
 ];
@@ -631,6 +645,7 @@ export class HqDb {
     url: string;
     secretsJson?: string;
     state?: InstanceState;
+    imageRef?: string | null;
   }): Instance {
     const instance: Instance = {
       id: randomUUID(),
@@ -642,10 +657,11 @@ export class HqDb {
       secretsJson: params.secretsJson ?? "{}",
       openrouterKeyHash: null,
       usageSyncedCents: 0,
+      imageRef: params.imageRef ?? null,
       createdAt: Date.now(),
     };
     this.db.run(
-      "INSERT INTO instances (id, customerId, driver, externalId, url, state, secretsJson, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO instances (id, customerId, driver, externalId, url, state, secretsJson, imageRef, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         instance.id,
         instance.customerId,
@@ -654,6 +670,7 @@ export class HqDb {
         instance.url,
         instance.state,
         instance.secretsJson,
+        instance.imageRef,
         instance.createdAt,
       ],
     );
@@ -721,6 +738,14 @@ export class HqDb {
   setInstanceOpenrouterKeyHash(id: string, keyHash: string | null): void {
     this.db.run("UPDATE instances SET openrouterKeyHash = ? WHERE id = ?", [
       keyHash,
+      id,
+    ]);
+  }
+
+  /** Record the container image the instance now runs (provision/update). */
+  setInstanceImageRef(id: string, imageRef: string | null): void {
+    this.db.run("UPDATE instances SET imageRef = ? WHERE id = ?", [
+      imageRef,
       id,
     ]);
   }

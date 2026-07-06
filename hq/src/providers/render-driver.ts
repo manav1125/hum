@@ -27,6 +27,7 @@ import type {
   InstanceSpec,
   ProvisionResult,
 } from "./driver.js";
+import { UpdateNotSupportedError } from "./driver.js";
 
 const RENDER_API_BASE = "https://api.render.com/v1";
 
@@ -132,6 +133,15 @@ export class RenderDriver implements InstanceDriver {
 
   async resume(externalId: string): Promise<void> {
     await this.api("POST", `/services/${externalId}/resume`);
+  }
+
+  /** Render is not our fleet-update path — deploys come from render.yaml. */
+  async update(_externalId: string, _image: string): Promise<void> {
+    throw new UpdateNotSupportedError(
+      "render-driver: image updates are not supported — Render services " +
+        "deploy from the render.yaml blueprint, not HQ's fleet path. " +
+        "Trigger a deploy from the Render dashboard/blueprint instead.",
+    );
   }
 
   async destroy(externalId: string): Promise<void> {

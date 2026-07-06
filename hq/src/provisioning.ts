@@ -134,6 +134,9 @@ export async function provisionCustomer(
     url: provisioned.url,
     secretsJson: JSON.stringify(secrets),
     state: "provisioning",
+    // Track what the instance runs so fleet image rolls know where each
+    // machine stands (same default chain the fly driver resolves).
+    imageRef: opts.image ?? process.env.CUE_IMAGE_REF ?? null,
   });
   if (llmKey.keyHash) {
     db.setInstanceOpenrouterKeyHash(instance.id, llmKey.keyHash);

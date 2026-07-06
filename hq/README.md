@@ -91,6 +91,7 @@ price-id → env-var mapping to paste into the environment.
 | `HQ_PUBLIC_URL` | Base URL for Stripe checkout success/cancel redirects |
 | `HQ_DRIVER` | `render` or `fly` to use that driver (default: mock) |
 | `HQ_HEALTH_TIMEOUT_MS` | Provision health-poll budget (default 5 min) |
+| `HQ_STAGING_INSTANCE_ID` | Instance id of the designated staging instance. When set, `POST /admin/fleet/update` refuses until that instance already runs the target image (staged rollout) |
 | `RENDER_API_KEY` | Render REST API key |
 | `RENDER_OWNER_ID` | Render owner/team id new services are created under |
 | `HQ_RENDER_IMAGE` | Container image for new instances (per-provision override: `image` in the POST body) |
@@ -171,6 +172,19 @@ Admin (Bearer `HQ_ADMIN_TOKEN`, or `?token=` for the browser dashboard):
   instance's signing key and returns
   `<instanceUrl>/assistant/?cueToken=<jwt>`.
 - `POST /admin/instances/:id/suspend|resume|destroy`.
+- `POST /admin/instances/:id/update {image}` — roll one live instance to a
+  new image (fly: per-machine config round-trip with only the image
+  swapped, wait for `started`, poll `/healthz`). On success
+  `instances.imageRef` advances; on health failure the 502 carries the
+  previous image ref — no automatic rollback in v1, roll back by updating
+  to that ref. Render answers 501 (deploys come from the blueprint).
+- `POST /admin/fleet/update {image, batchSize?}` — roll every live
+  instance of the active driver, oldest first, in sequential batches
+  (default 3 concurrent per batch). Skips suspended/deleted instances and
+  any already on the target image (re-running a halted roll resumes), and
+  halts on the first failed batch (`fleet_update_halted` event + 502).
+  With `HQ_STAGING_INSTANCE_ID` set, refuses (409 "roll staging first")
+  until the staging instance's `imageRef` equals the target image.
 
 ## The website (served by HQ)
 
@@ -265,6 +279,39 @@ needs isolation from the app machine, add a second small machine running
 Before first real use, walk `scripts/fly-dry-run.md` against a scratch
 customer (needs a Fly account + org token; nothing here has touched the
 live API yet).
+
+### Weekly ship (staged rollout)
+
+How product updates reach the fleet — staging gets the new image first,
+the fleet follows:
+
+```bash
+# 1. Build + push the release image (prints the ref).
+FLY_ORG_SLUG=<org> hq/scripts/fly-release.sh
+IMG=registry.fly.io/cue-releases:v<git sha>
+
+# 2. Roll the staging instance (HQ_STAGING_INSTANCE_ID) first.
+curl -X POST "$HQ/admin/instances/$STAGING_ID/update" \
+  -H "Authorization: Bearer $HQ_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"image\":\"$IMG\"}"
+
+# 3. Verify staging by hand (open it, run a turn, check /healthz).
+
+# 4. Roll the fleet — refused with 409 until step 2 landed.
+curl -X POST "$HQ/admin/fleet/update" \
+  -H "Authorization: Bearer $HQ_ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"image\":\"$IMG\",\"batchSize\":3}"
+```
+
+Each instance's update fetches the machine's current config and swaps
+**only** the image (env/services/mounts/init/guest ride along verbatim),
+waits for `started`, then polls the instance's public `/healthz`. A
+failure halts the roll and the error message names the previous image
+ref; recover by fixing the image and re-running (already-updated
+instances are skipped), or roll the failed instance back with
+`POST /admin/instances/:id/update {image: <previous ref>}`. The admin
+dashboard's instances column shows what each instance currently runs
+(`instances.imageRef`).
 
 ## How auth compatibility works
 

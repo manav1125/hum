@@ -39,6 +39,26 @@ interface Call {
   body: unknown;
 }
 
+/** The config GET machine returns — update() must round-trip it verbatim. */
+const MACHINE_CONFIG = {
+  image: "registry.fly.io/cue-releases:v1old",
+  init: { cmd: ["/app/assistant/docker-cue-app-entrypoint.sh"] },
+  env: { GATEWAY_PORT: "10000", ACTOR_TOKEN_SIGNING_KEY: "k".repeat(64) },
+  guest: { cpu_kind: "shared", cpus: 1, memory_mb: 1024 },
+  services: [
+    {
+      protocol: "tcp",
+      internal_port: 10000,
+      ports: [
+        { port: 80, handlers: ["http"], force_https: true },
+        { port: 443, handlers: ["http", "tls"] },
+      ],
+    },
+  ],
+  mounts: [{ volume: "vol_test1", path: "/workspace" }],
+  restart: { policy: "always" },
+};
+
 /**
  * Scriptable fetch covering the Machines API, GraphQL, and the instance's
  * /healthz. Routes are matched in order; unmatched requests 404 (so a test
@@ -83,6 +103,16 @@ function fakeFlyFetch(opts: {
     }
     if (method === "GET" && url.includes("/wait?state=")) {
       return Response.json({ ok: true });
+    }
+    if (method === "GET" && /\/machines\/mach1$/.test(url)) {
+      return Response.json({
+        id: "mach1",
+        state: "started",
+        config: structuredClone(MACHINE_CONFIG),
+      });
+    }
+    if (method === "POST" && /\/machines\/mach1$/.test(url)) {
+      return Response.json({ id: "mach1", state: "started" });
     }
     if (method === "GET" && url.endsWith("/machines")) {
       return Response.json([{ id: "mach1", state: "started" }]);
@@ -421,6 +451,70 @@ describe("suspend / resume / destroy", () => {
     const driver = makeDriver(fetchImpl);
     // Listing fails (404) and the app delete 404s — still resolves.
     await driver.destroy("cue-already-gone");
+  });
+});
+
+describe("update", () => {
+  const NEW_IMAGE = "registry.fly.io/cue-releases:v2new";
+
+  test("list → get config → post with image swapped → wait → healthz", async () => {
+    const { fetchImpl, calls } = fakeFlyFetch({});
+    const driver = makeDriver(fetchImpl);
+
+    await driver.update("cue-ada-abcd1234", NEW_IMAGE);
+
+    const plan = calls.map((c) => `${c.method} ${c.url}`);
+    expect(plan[0]).toBe(
+      "GET https://api.machines.dev/v1/apps/cue-ada-abcd1234/machines",
+    );
+    expect(plan[1]).toBe(
+      "GET https://api.machines.dev/v1/apps/cue-ada-abcd1234/machines/mach1",
+    );
+    expect(plan[2]).toBe(
+      "POST https://api.machines.dev/v1/apps/cue-ada-abcd1234/machines/mach1",
+    );
+    expect(plan[3]).toContain("/machines/mach1/wait?state=started");
+    expect(plan[4]).toBe("GET https://cue-ada-abcd1234.fly.dev/healthz");
+
+    // ONLY the image changed — env/services/mounts/init/guest/restart are
+    // the machine's existing config, byte-for-byte.
+    const body = calls[2].body as { config: typeof MACHINE_CONFIG };
+    expect(body).toEqual({
+      config: { ...structuredClone(MACHINE_CONFIG), image: NEW_IMAGE },
+    });
+    expect(body.config.env).toEqual(MACHINE_CONFIG.env);
+    expect(body.config.services).toEqual(MACHINE_CONFIG.services);
+    expect(body.config.mounts).toEqual(MACHINE_CONFIG.mounts);
+    expect(body.config.init).toEqual(MACHINE_CONFIG.init);
+    expect(body.config.guest).toEqual(MACHINE_CONFIG.guest);
+  });
+
+  test("unhealthy after update throws with the previous image ref", async () => {
+    const { fetchImpl } = fakeFlyFetch({ healthy: false });
+    const driver = makeDriver(fetchImpl);
+
+    await expect(
+      driver.update("cue-ada-abcd1234", NEW_IMAGE),
+    ).rejects.toThrow(
+      /previous image was registry\.fly\.io\/cue-releases:v1old/,
+    );
+    // The operator's rollback path is spelled out.
+    await expect(
+      driver.update("cue-ada-abcd1234", NEW_IMAGE),
+    ).rejects.toThrow(/roll back by calling update again/);
+  });
+
+  test("an app with no machines rejects rather than reporting success", async () => {
+    const { fetchImpl } = fakeFlyFetch({
+      route: (method, url) =>
+        method === "GET" && url.endsWith("/machines")
+          ? Response.json([])
+          : undefined,
+    });
+    const driver = makeDriver(fetchImpl);
+    await expect(driver.update("cue-empty", NEW_IMAGE)).rejects.toThrow(
+      /no machines/,
+    );
   });
 });
 

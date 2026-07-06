@@ -1,5 +1,6 @@
 /**
- * Cue HQ — nightly fleet sweep: health + metered usage.
+ * Cue HQ — fleet operations: the nightly sweep (health + metered usage)
+ * and the image-update roll (how weekly product updates ship).
  *
  * For every live instance (of the active driver):
  *   1. Probe its health endpoint; record an audit event on failure.
@@ -18,7 +19,7 @@
  */
 
 import { getBalance, syncKeyLimitsToBalance, syncUsage } from "./credits.js";
-import type { HqDb } from "./db.js";
+import type { HqDb, Instance } from "./db.js";
 import type { InstanceDriver } from "./providers/driver.js";
 
 export interface SweepResult {
@@ -109,6 +110,132 @@ export async function sweepFleet(
     exhausted: result.exhausted.length,
   });
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Fleet image update (staged rollout)
+// ---------------------------------------------------------------------------
+
+export interface FleetUpdateResult {
+  image: string;
+  batchSize: number;
+  /** Instance ids rolled to the new image, in roll order. */
+  updated: string[];
+  skipped: { instanceId: string; reason: "suspended" | "already_on_image" }[];
+  failed: { instanceId: string; error: string }[];
+  /** True when a failure stopped the roll before every target was updated. */
+  halted: boolean;
+}
+
+export type FleetUpdateOutcome =
+  | { ok: true; result: FleetUpdateResult }
+  | { ok: false; reason: "staging_not_rolled"; message: string };
+
+/**
+ * Roll every live instance of the active driver to a new image, oldest
+ * first, in sequential batches (batchSize machines update concurrently,
+ * then the next batch). Suspended/deleted instances never roll, and
+ * instances already on the target image are skipped — so re-running a
+ * halted roll resumes where it stopped. The first failed batch halts the
+ * whole roll (`fleet_update_halted` event); nothing after it is touched.
+ *
+ * Staged rollout: when HQ_STAGING_INSTANCE_ID (or opts.stagingInstanceId)
+ * names a staging instance, the roll refuses to start until that instance
+ * already runs the target image — ship staging first, fleet follows.
+ */
+export async function updateFleet(
+  db: HqDb,
+  driver: InstanceDriver,
+  opts: { image: string; batchSize?: number; stagingInstanceId?: string },
+): Promise<FleetUpdateOutcome> {
+  const { image } = opts;
+  const batchSize = Math.max(1, Math.floor(opts.batchSize ?? 3));
+  const stagingId =
+    opts.stagingInstanceId ?? process.env.HQ_STAGING_INSTANCE_ID ?? "";
+  if (stagingId) {
+    const staging = db.getInstance(stagingId);
+    if (!staging || staging.imageRef !== image) {
+      return {
+        ok: false,
+        reason: "staging_not_rolled",
+        message: `roll staging first: POST /admin/instances/${stagingId}/update`,
+      };
+    }
+  }
+
+  const result: FleetUpdateResult = {
+    image,
+    batchSize,
+    updated: [],
+    skipped: [],
+    failed: [],
+    halted: false,
+  };
+
+  const targets = db
+    .listInstances()
+    .filter((i) => i.driver === driver.id && i.state !== "deleted")
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .filter((i) => {
+      const reason =
+        i.state === "suspended"
+          ? ("suspended" as const)
+          : i.imageRef === image
+            ? ("already_on_image" as const)
+            : null;
+      if (reason) result.skipped.push({ instanceId: i.id, reason });
+      return reason === null;
+    });
+
+  for (let at = 0; at < targets.length; at += batchSize) {
+    const batch = targets.slice(at, at + batchSize);
+    const outcomes = await Promise.allSettled(
+      batch.map((i) => driver.update(i.externalId, image)),
+    );
+    outcomes.forEach((outcome, idx) => {
+      const instance: Instance = batch[idx];
+      if (outcome.status === "fulfilled") {
+        db.setInstanceImageRef(instance.id, image);
+        db.recordEvent("instance_updated", instance.customerId, {
+          instanceId: instance.id,
+          image,
+          previousImage: instance.imageRef,
+        });
+        result.updated.push(instance.id);
+      } else {
+        const error =
+          outcome.reason instanceof Error
+            ? outcome.reason.message
+            : String(outcome.reason);
+        db.recordEvent("instance_update_failed", instance.customerId, {
+          instanceId: instance.id,
+          image,
+          previousImage: instance.imageRef,
+          error,
+        });
+        result.failed.push({ instanceId: instance.id, error });
+      }
+    });
+    if (result.failed.length > 0) {
+      result.halted = true;
+      db.recordEvent("fleet_update_halted", null, {
+        image,
+        updated: result.updated.length,
+        remaining: targets.length - at - batch.length,
+        failed: result.failed,
+      });
+      break;
+    }
+  }
+
+  if (!result.halted) {
+    db.recordEvent("fleet_update_completed", null, {
+      image,
+      updated: result.updated.length,
+      skipped: result.skipped.length,
+    });
+  }
+  return { ok: true, result };
 }
 
 if (import.meta.main) {

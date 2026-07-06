@@ -45,11 +45,29 @@ export interface InstanceDriver {
   /** Resume a suspended instance. */
   resume(externalId: string): Promise<void>;
 
+  /**
+   * Roll a running instance to a new container image, preserving the rest
+   * of its configuration exactly. Resolves once the instance is healthy on
+   * the new image. No rollback in v1 — on failure the thrown error carries
+   * the previous image ref so an operator can roll back by calling update
+   * again with it. Providers that deploy some other way (Render deploys
+   * from the blueprint) throw UpdateNotSupportedError.
+   */
+  update(externalId: string, image: string): Promise<void>;
+
   /** Permanently destroy the instance. */
   destroy(externalId: string): Promise<void>;
 
   /** True when the instance answers its health check. Never throws. */
   health(url: string): Promise<boolean>;
+}
+
+/** Thrown by drivers whose provider has no HQ-driven image-update path. */
+export class UpdateNotSupportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UpdateNotSupportedError";
+  }
 }
 
 /**

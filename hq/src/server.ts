@@ -32,6 +32,8 @@
  *   POST /admin/instances/:id/suspend
  *   POST /admin/instances/:id/resume
  *   POST /admin/instances/:id/destroy
+ *   POST /admin/instances/:id/update       { image }
+ *   POST /admin/fleet/update               { image, batchSize? }
  */
 
 import { randomUUID } from "node:crypto";
@@ -48,7 +50,9 @@ import {
   resolvePlan,
   type TopupId,
 } from "./plans.js";
+import { updateFleet } from "./fleet.js";
 import type { InstanceDriver } from "./providers/driver.js";
+import { UpdateNotSupportedError } from "./providers/driver.js";
 import {
   autoProvisionOnPayment,
   mintMagicLinkForCustomer,
@@ -290,11 +294,16 @@ export function createHandler(
         }
 
         const instanceAction = path.match(
-          /^\/admin\/instances\/([^/]+)\/(suspend|resume|destroy)$/,
+          /^\/admin\/instances\/([^/]+)\/(suspend|resume|destroy|update)$/,
         );
         if (method === "POST" && instanceAction) {
           const [, instanceId, action] = instanceAction;
+          if (action === "update") return handleInstanceUpdate(instanceId, req);
           return handleInstanceAction(instanceId, action);
+        }
+
+        if (method === "POST" && path === "/admin/fleet/update") {
+          return handleFleetUpdate(req);
         }
 
         return json({ error: "not found" }, 404);
@@ -775,6 +784,73 @@ export function createHandler(
     };
   }
 
+  /**
+   * Roll one instance to a new image (driver.update). On success the
+   * instance's imageRef advances; on failure the event (and 502 body)
+   * carries the driver's error, which includes the previous image ref —
+   * no automatic rollback in v1, roll back by updating to that ref.
+   */
+  async function handleInstanceUpdate(
+    instanceId: string,
+    req: Request,
+  ): Promise<Response> {
+    const instance = db.getInstance(instanceId);
+    if (!instance) return json({ error: "unknown instance" }, 404);
+    const body = await readJsonBody(req);
+    const image = typeof body.image === "string" ? body.image.trim() : "";
+    if (!image) return json({ error: "image is required" }, 400);
+    if (instance.state !== "live") {
+      return json(
+        { error: `instance is ${instance.state} — only live instances update` },
+        409,
+      );
+    }
+    try {
+      await driver.update(instance.externalId, image);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      db.recordEvent("instance_update_failed", instance.customerId, {
+        instanceId,
+        image,
+        previousImage: instance.imageRef,
+        error: message,
+      });
+      return json(
+        { error: message },
+        err instanceof UpdateNotSupportedError ? 501 : 502,
+      );
+    }
+    db.setInstanceImageRef(instanceId, image);
+    db.recordEvent("instance_updated", instance.customerId, {
+      instanceId,
+      image,
+      previousImage: instance.imageRef,
+    });
+    return json({ ok: true, instance: redact(db.getInstance(instanceId)!) });
+  }
+
+  /**
+   * Roll the whole fleet (live instances of the active driver) to a new
+   * image in sequential batches. Refused (409) until the designated
+   * staging instance — HQ_STAGING_INSTANCE_ID, when set — already runs
+   * the target image. A halted roll answers 502 with what happened.
+   */
+  async function handleFleetUpdate(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const image = typeof body.image === "string" ? body.image.trim() : "";
+    if (!image) return json({ error: "image is required" }, 400);
+    const batchSize = Number(body.batchSize ?? 3);
+    if (!Number.isInteger(batchSize) || batchSize < 1) {
+      return json({ error: "batchSize must be a positive integer" }, 400);
+    }
+    const outcome = await updateFleet(db, driver, { image, batchSize });
+    if (!outcome.ok) return json({ error: outcome.message }, 409);
+    return json(
+      { ok: !outcome.result.halted, ...outcome.result },
+      outcome.result.halted ? 502 : 200,
+    );
+  }
+
   async function handleInstanceAction(
     instanceId: string,
     action: string,
@@ -853,6 +929,7 @@ function renderAdminPage(db: HqDb): string {
                 ${statusPill(i.state)}
                 <a class="dim" href="${esc(i.url)}" target="_blank">${esc(i.url)}</a>
                 <span class="dim mono">${esc(i.driver)}/${esc(i.externalId)}</span>
+                <span class="dim mono" title="image">${esc(i.imageRef ?? "image unknown")}</span>
                 ${
                   i.state === "live"
                     ? `<button onclick="act('/admin/instances/${i.id}/suspend')">Suspend</button>`

@@ -50,6 +50,12 @@ export class MockDriver implements InstanceDriver {
     inst.state = "live";
   }
 
+  async update(externalId: string, image: string): Promise<void> {
+    this.calls.push({ method: "update", arg: `${externalId} ${image}` });
+    const inst = this.requireInstance(externalId);
+    inst.spec = { ...inst.spec, image };
+  }
+
   async destroy(externalId: string): Promise<void> {
     this.calls.push({ method: "destroy", arg: externalId });
     const inst = this.requireInstance(externalId);

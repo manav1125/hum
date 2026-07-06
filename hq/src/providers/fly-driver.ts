@@ -42,6 +42,12 @@ import type {
   ProvisionResult,
 } from "./driver.js";
 
+/** Full machine config as returned by GET machine — round-tripped verbatim
+ * on update (only `image` changes); everything else is opaque to HQ. */
+interface FlyMachineConfig extends Record<string, unknown> {
+  image?: string;
+}
+
 const FLY_MACHINES_API_BASE = "https://api.machines.dev/v1";
 const FLY_GRAPHQL_URL = "https://api.fly.io/graphql";
 
@@ -367,6 +373,51 @@ export class FlyDriver implements InstanceDriver {
       await this.api(
         "POST",
         `/apps/${externalId}/machines/${machine.id}/start`,
+      );
+    }
+  }
+
+  /**
+   * Roll every machine in the app to a new image. Each machine's current
+   * config is fetched first and POSTed back with ONLY the image swapped —
+   * env/services/mounts/init/guest ride along byte-for-byte. After every
+   * machine reports `started`, the app's public /healthz is polled; on
+   * timeout this throws with the previous image ref in the message so an
+   * operator can roll back by calling update again with it (no automatic
+   * rollback in v1).
+   */
+  async update(externalId: string, image: string): Promise<void> {
+    const machines = await this.listMachines(externalId);
+    if (machines.length === 0) {
+      throw new Error(
+        `fly-driver: app ${externalId} has no machines to update`,
+      );
+    }
+    // externalId IS the app name; the public URL is derived the same way
+    // provision() built it.
+    const url = `https://${externalId}.fly.dev`;
+    let previousImage = "unknown";
+    for (const machine of machines) {
+      const current = (await this.api(
+        "GET",
+        `/apps/${externalId}/machines/${machine.id}`,
+      )) as { config?: FlyMachineConfig } | undefined;
+      if (!current?.config) {
+        throw new Error(
+          `fly-driver: machine ${machine.id} returned no config to update`,
+        );
+      }
+      previousImage = current.config.image ?? previousImage;
+      await this.api("POST", `/apps/${externalId}/machines/${machine.id}`, {
+        config: { ...current.config, image },
+      });
+      await this.waitForMachineState(externalId, machine.id, "started");
+    }
+    if (!(await this.pollHealthy(url))) {
+      throw new Error(
+        `fly-driver: ${url}/healthz not healthy within ${this.healthTimeoutMs}ms ` +
+          `after update to ${image}; previous image was ${previousImage} — ` +
+          `roll back by calling update again with it`,
       );
     }
   }
