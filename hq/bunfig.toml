@@ -1,0 +1,3 @@
+# hq/ is a self-contained workspace — this file shadows the repo-root
+# bunfig.toml so `bun test` here does NOT load the assistant's test preload.
+[test]
