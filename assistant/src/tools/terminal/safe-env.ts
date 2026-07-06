@@ -69,6 +69,7 @@ export const SAFE_ENV_VARS = [
   "CUE_DISABLE_BRAND_EXTRACT",
   "CUE_LOOP_LAG_WARN_MS",
   "CUE_LOG_FULL_LLM_PAYLOADS",
+  "CUE_MANAGED",
 ] as const;
 
 export const KATA_SAFE_ENV_VARS = [

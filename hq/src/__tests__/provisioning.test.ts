@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { HqDb } from "../db.js";
 import { MockDriver } from "../providers/mock-driver.js";
@@ -12,6 +12,22 @@ import {
 import { createHandler } from "../server.js";
 
 const ADMIN = "test-admin-token";
+
+// Provisioning consults the OpenRouter env — isolate from the dev machine.
+const savedEnv: Record<string, string | undefined> = {};
+const ENV_KEYS = ["OPENROUTER_PROVISIONING_KEY", "OPENROUTER_SHARED_KEY"];
+beforeEach(() => {
+  for (const k of ENV_KEYS) {
+    savedEnv[k] = process.env[k];
+    delete process.env[k];
+  }
+});
+afterEach(() => {
+  for (const k of ENV_KEYS) {
+    if (savedEnv[k] === undefined) delete process.env[k];
+    else process.env[k] = savedEnv[k];
+  }
+});
 
 /** Fake fetch that answers guardian/init like a live gateway would. */
 function fakeGuardianFetch(): typeof fetch {
@@ -66,6 +82,8 @@ describe("secrets + token minting", () => {
     expect(env.GUARDIAN_BOOTSTRAP_SECRET).toBe(secrets.guardianBootstrapSecret);
     expect(env.OPENROUTER_API_KEY).toBe("sk-test");
     expect(env.VELLUM_ASSISTANT_NAME).toBe("Cue");
+    // Managed-mode flag (allowlisted in assistant safe-env.ts).
+    expect(env.CUE_MANAGED).toBe("1");
   });
 
   test("minted actor token round-trips and carries daemon-compatible claims", () => {
@@ -152,6 +170,64 @@ describe("provisioning flow (mock driver)", () => {
     // Second provision is rejected (single-tenant: one instance).
     const dupe = await admin(`/admin/customers/${customerId}/provision`);
     expect(dupe.status).toBe(409);
+  });
+
+  test("provision mints a spend-capped child key and stores only its hash", async () => {
+    process.env.OPENROUTER_PROVISIONING_KEY = "pk_test";
+    const db = new HqDb(":memory:");
+    const driver = new MockDriver();
+    let keyCreateBody: Record<string, unknown> | null = null;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("openrouter.ai") && init?.method === "POST") {
+        keyCreateBody = JSON.parse(String(init.body));
+        return Response.json({
+          key: "sk-or-v1-child",
+          data: { hash: "kh_prov", disabled: false, limit: 25, usage: 0 },
+        });
+      }
+      if (url.endsWith("/v1/guardian/init")) {
+        return Response.json({
+          guardianPrincipalId: "vellum-principal-prov",
+          accessToken: "a.b.c",
+          accessTokenExpiresAt: Date.now() + 1000,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    const handle = createHandler({
+      db,
+      driver,
+      adminToken: ADMIN,
+      healthTimeoutMs: 100,
+      healthIntervalMs: 10,
+      fetchImpl,
+    });
+
+    const c = db.createCustomer({
+      email: "managed@x.io",
+      name: "Managed",
+      plan: "chief_of_staff",
+    });
+    const res = await handle(
+      new Request(`http://hq.local/admin/customers/${c.id}/provision`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ADMIN}` },
+        body: "{}",
+      }),
+    );
+    expect(res.status).toBe(200);
+    // Child key capped at the plan's COGS budget ($25 for 10000 credits).
+    expect(keyCreateBody!.limit).toBe(25);
+
+    const spec = [...driver.instances.values()][0].spec;
+    expect(spec.env.OPENROUTER_API_KEY).toBe("sk-or-v1-child");
+    expect(spec.env.CUE_MANAGED).toBe("1");
+
+    const inst = db.listInstancesByCustomer(c.id)[0];
+    expect(inst.openrouterKeyHash).toBe("kh_prov");
+    // The runtime key itself is never persisted anywhere in the row.
+    expect(JSON.stringify(inst)).not.toContain("sk-or-v1-child");
   });
 
   test("magic link mints a token verifiable with the instance signing key", async () => {

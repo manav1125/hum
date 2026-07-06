@@ -21,7 +21,24 @@ export type CustomerStatus =
   | "suspended"
   | "churned";
 
-export type CustomerPlan = "founding" | "founding_byo";
+/**
+ * Stored plan values. founding / founding_byo are legacy aliases that
+ * resolve to chief_of_staff (see plans.ts resolvePlan()).
+ */
+export type CustomerPlan =
+  | "founding"
+  | "founding_byo"
+  | "assistant"
+  | "chief_of_staff"
+  | "operator";
+
+export const CUSTOMER_PLANS: CustomerPlan[] = [
+  "founding",
+  "founding_byo",
+  "assistant",
+  "chief_of_staff",
+  "operator",
+];
 
 export interface Customer {
   id: string;
@@ -53,6 +70,16 @@ export interface Instance {
   state: InstanceState;
   /** JSON blob: bootstrap secret, signing key, guardianPrincipalId, etc. */
   secretsJson: string;
+  /**
+   * OpenRouter key hash (the management identifier the provisioning API
+   * returns) for this instance's child key — never the key itself.
+   */
+  openrouterKeyHash: string | null;
+  /**
+   * Usage-sync cursor: cumulative provider-reported cost (COGS cents) that
+   * has already been converted into usage_sync ledger entries.
+   */
+  usageSyncedCents: number;
   createdAt: number;
 }
 
@@ -70,6 +97,26 @@ export interface Subscription {
   stripeSubId: string;
   status: string;
   currentPeriodEnd: number | null;
+  /** Plan the subscription bills for (null/absent on legacy rows). */
+  plan?: string | null;
+}
+
+export type CreditEntryKind = "grant" | "topup" | "usage_sync" | "adjustment";
+
+export interface CreditEntry {
+  id: string;
+  customerId: string;
+  ts: number;
+  /** Signed credit delta (grants/topups positive, usage_sync negative). */
+  delta: number;
+  /** Running balance after this entry. */
+  balanceAfter: number;
+  kind: CreditEntryKind;
+  /**
+   * Human-readable note. Also carries the idempotency key for grants
+   * (`grant <stripeSubId>@<periodStart>`) and top-ups (`topup <ref>`).
+   */
+  note: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +208,46 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: "plans-and-credits",
+    // Rebuilds customers to widen the plan CHECK to the tier ids (SQLite
+    // cannot ALTER a CHECK constraint). Safe because migrations run before
+    // PRAGMA foreign_keys = ON — child tables reference customers by name,
+    // which survives the drop + rename.
+    sql: `
+      CREATE TABLE customers_v2 (
+        id         TEXT PRIMARY KEY,
+        email      TEXT NOT NULL UNIQUE,
+        name       TEXT NOT NULL,
+        status     TEXT NOT NULL DEFAULT 'waitlist'
+                   CHECK (status IN ('waitlist','invited','active','suspended','churned')),
+        plan       TEXT NOT NULL DEFAULT 'founding'
+                   CHECK (plan IN ('founding','founding_byo','assistant','chief_of_staff','operator')),
+        createdAt  INTEGER NOT NULL
+      );
+      INSERT INTO customers_v2 (id, email, name, status, plan, createdAt)
+        SELECT id, email, name, status, plan, createdAt FROM customers;
+      DROP TABLE customers;
+      ALTER TABLE customers_v2 RENAME TO customers;
+
+      CREATE TABLE credit_ledger (
+        id           TEXT PRIMARY KEY,
+        customerId   TEXT NOT NULL REFERENCES customers(id),
+        ts           INTEGER NOT NULL,
+        delta        INTEGER NOT NULL,
+        balanceAfter INTEGER NOT NULL,
+        kind         TEXT NOT NULL
+                     CHECK (kind IN ('grant','topup','usage_sync','adjustment')),
+        note         TEXT NOT NULL DEFAULT ''
+      );
+      CREATE INDEX idx_credit_ledger_customer ON credit_ledger(customerId, ts);
+
+      ALTER TABLE instances ADD COLUMN openrouterKeyHash TEXT;
+      ALTER TABLE instances ADD COLUMN usageSyncedCents INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE subscriptions ADD COLUMN plan TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -173,8 +260,10 @@ export class HqDb {
   constructor(path: string = process.env.HQ_DB_PATH ?? "hq.db") {
     this.db = new Database(path, { create: true });
     this.db.run("PRAGMA journal_mode = WAL;");
-    this.db.run("PRAGMA foreign_keys = ON;");
+    // Migrations run with foreign keys OFF (SQLite's documented procedure
+    // for table rebuilds — see migration 2); enforcement starts right after.
     this.migrate();
+    this.db.run("PRAGMA foreign_keys = ON;");
   }
 
   private migrate(): void {
@@ -315,6 +404,19 @@ export class HqDb {
     return { ...customer, status: to };
   }
 
+  /** Move a customer onto a plan tier (idempotent no-op when unchanged). */
+  setCustomerPlan(id: string, plan: CustomerPlan): Customer {
+    const customer = this.getCustomer(id);
+    if (!customer) throw new Error(`Unknown customer: ${id}`);
+    if (customer.plan === plan) return customer;
+    this.db.run("UPDATE customers SET plan = ? WHERE id = ?", [plan, id]);
+    this.recordEvent("customer_plan_changed", id, {
+      from: customer.plan,
+      to: plan,
+    });
+    return { ...customer, plan };
+  }
+
   // ── invites ───────────────────────────────────────────────────────────
 
   createInvite(params: {
@@ -408,6 +510,8 @@ export class HqDb {
       url: params.url,
       state: params.state ?? "provisioning",
       secretsJson: params.secretsJson ?? "{}",
+      openrouterKeyHash: null,
+      usageSyncedCents: 0,
       createdAt: Date.now(),
     };
     this.db.run(
@@ -483,23 +587,41 @@ export class HqDb {
     ]);
   }
 
+  /** Record the OpenRouter child-key hash (never the key itself). */
+  setInstanceOpenrouterKeyHash(id: string, keyHash: string | null): void {
+    this.db.run("UPDATE instances SET openrouterKeyHash = ? WHERE id = ?", [
+      keyHash,
+      id,
+    ]);
+  }
+
+  /** Advance the usage-sync cursor (cumulative reported COGS cents). */
+  setInstanceUsageSyncedCents(id: string, cents: number): void {
+    this.db.run("UPDATE instances SET usageSyncedCents = ? WHERE id = ?", [
+      cents,
+      id,
+    ]);
+  }
+
   // ── subscriptions ─────────────────────────────────────────────────────
 
   upsertSubscription(sub: Subscription): void {
     this.db.run(
-      `INSERT INTO subscriptions (customerId, stripeCustomerId, stripeSubId, status, currentPeriodEnd)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO subscriptions (customerId, stripeCustomerId, stripeSubId, status, currentPeriodEnd, plan)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(customerId) DO UPDATE SET
          stripeCustomerId = excluded.stripeCustomerId,
          stripeSubId = excluded.stripeSubId,
          status = excluded.status,
-         currentPeriodEnd = excluded.currentPeriodEnd`,
+         currentPeriodEnd = excluded.currentPeriodEnd,
+         plan = COALESCE(excluded.plan, subscriptions.plan)`,
       [
         sub.customerId,
         sub.stripeCustomerId,
         sub.stripeSubId,
         sub.status,
         sub.currentPeriodEnd,
+        sub.plan ?? null,
       ],
     );
     this.recordEvent("subscription_upserted", sub.customerId, {
@@ -525,6 +647,101 @@ export class HqDb {
           "SELECT * FROM subscriptions WHERE stripeSubId = ?",
         )
         .get(stripeSubId) ?? null
+    );
+  }
+
+  // ── credit ledger (append-only) ───────────────────────────────────────
+
+  /**
+   * Append a credit-ledger entry, computing the running balance inside a
+   * transaction so concurrent appends can never interleave balances.
+   */
+  appendCreditEntry(params: {
+    customerId: string;
+    delta: number;
+    kind: CreditEntryKind;
+    note: string;
+  }): CreditEntry {
+    if (!this.getCustomer(params.customerId)) {
+      throw new Error(`Unknown customer: ${params.customerId}`);
+    }
+    if (!Number.isInteger(params.delta)) {
+      throw new Error(`Credit delta must be an integer: ${params.delta}`);
+    }
+    const entry: CreditEntry = {
+      id: randomUUID(),
+      customerId: params.customerId,
+      ts: Date.now(),
+      delta: params.delta,
+      balanceAfter: 0, // set inside the transaction
+      kind: params.kind,
+      note: params.note,
+    };
+    const tx = this.db.transaction(() => {
+      entry.balanceAfter = this.getCreditBalance(params.customerId) + params.delta;
+      this.db.run(
+        "INSERT INTO credit_ledger (id, customerId, ts, delta, balanceAfter, kind, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          entry.id,
+          entry.customerId,
+          entry.ts,
+          entry.delta,
+          entry.balanceAfter,
+          entry.kind,
+          entry.note,
+        ],
+      );
+    });
+    tx();
+    this.recordEvent("credit_entry_appended", entry.customerId, {
+      delta: entry.delta,
+      balanceAfter: entry.balanceAfter,
+      kind: entry.kind,
+      note: entry.note,
+    });
+    return entry;
+  }
+
+  /** Current credit balance (0 for customers with no ledger entries). */
+  getCreditBalance(customerId: string): number {
+    const row = this.db
+      .query<{ balance: number | null }, [string]>(
+        "SELECT SUM(delta) AS balance FROM credit_ledger WHERE customerId = ?",
+      )
+      .get(customerId);
+    return row?.balance ?? 0;
+  }
+
+  listCreditEntries(customerId: string, limit = 100): CreditEntry[] {
+    return this.db
+      .query<CreditEntry, [string, number]>(
+        "SELECT * FROM credit_ledger WHERE customerId = ? ORDER BY ts DESC, rowid DESC LIMIT ?",
+      )
+      .all(customerId, limit);
+  }
+
+  /** True when the customer has any ledger entries at all. */
+  hasCreditHistory(customerId: string): boolean {
+    return (
+      this.db
+        .query<{ n: number }, [string]>(
+          "SELECT COUNT(*) AS n FROM credit_ledger WHERE customerId = ?",
+        )
+        .get(customerId)!.n > 0
+    );
+  }
+
+  /**
+   * Idempotency lookup: does an entry of `kind` with exactly this note
+   * already exist? Grants and top-ups encode their dedupe key in the note.
+   */
+  findCreditEntryByNote(kind: CreditEntryKind, note: string): CreditEntry | null {
+    return (
+      this.db
+        .query<CreditEntry, [string, string]>(
+          "SELECT * FROM credit_ledger WHERE kind = ? AND note = ? LIMIT 1",
+        )
+        .get(kind, note) ?? null
     );
   }
 }

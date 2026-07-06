@@ -76,6 +76,10 @@ export function buildInstanceEnv(
     GATEWAY_JWT: secrets.gatewayJwt,
     GUARDIAN_BOOTSTRAP_SECRET: secrets.guardianBootstrapSecret,
     ACTOR_TOKEN_SIGNING_KEY: secrets.actorTokenSigningKey,
+    // Managed-mode flag: HQ-provisioned instances run the fully managed
+    // LLM plan (BYO hidden). Not a secret — allowlisted in
+    // assistant/src/tools/terminal/safe-env.ts so the SPA/daemon can read it.
+    CUE_MANAGED: "1",
     // topology (mirrors render.yaml cue-app envVars)
     IS_CONTAINERIZED: "true",
     VELLUM_DISABLE_CES: "1",

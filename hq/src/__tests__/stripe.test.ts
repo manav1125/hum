@@ -194,7 +194,8 @@ describe("webhook state flips", () => {
   test("unknown event types are acknowledged and audited", async () => {
     process.env.STRIPE_WEBHOOK_SECRET = WHSEC;
     const db = new HqDb(":memory:");
-    const body = event("invoice.paid", {});
+    // invoice.paid is handled now — use a genuinely unhandled type.
+    const body = event("customer.created", {});
     const outcome = await handleStripeWebhook(
       { db, driver: new MockDriver() },
       body,

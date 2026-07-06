@@ -8,16 +8,47 @@
  * throws at import or boot time.
  *
  * Env contract:
- *   STRIPE_SECRET_KEY          — sk_… (checkout session creation)
- *   STRIPE_WEBHOOK_SECRET      — whsec_… (signature verification)
- *   STRIPE_PRICE_FOUNDING      — price id for the `founding` plan
- *   STRIPE_PRICE_FOUNDING_BYO  — price id for the `founding_byo` plan
- *   HQ_PUBLIC_URL              — base for checkout success/cancel URLs
+ *   STRIPE_SECRET_KEY             — sk_… (checkout session creation)
+ *   STRIPE_WEBHOOK_SECRET         — whsec_… (signature verification)
+ *   STRIPE_PRICE_ASSISTANT        — price id for the `assistant` tier
+ *   STRIPE_PRICE_CHIEF_OF_STAFF   — price id for the `chief_of_staff` tier
+ *   STRIPE_PRICE_OPERATOR         — price id for the `operator` tier
+ *   STRIPE_PRICE_TOPUP_1000/_5000 — one-time top-up price ids
+ *   STRIPE_PRICE_FOUNDING(_BYO)   — legacy price ids for the founding aliases
+ *   HQ_PUBLIC_URL                 — base for checkout success/cancel URLs
+ *   HQ_PUBLIC_SITE_URL            — marketing-site base; wins over
+ *                                   HQ_PUBLIC_URL for customer-facing
+ *                                   success/cancel redirects
+ *
+ * Everything HQ creates on Stripe carries metadata {app:"cue"} (products,
+ * prices, coupons, promotion codes, checkout sessions, subscriptions via
+ * subscription_data.metadata, payment intents) so the account stays
+ * auditable next to anything else living in it. ensureCatalog() creates
+ * the 3 tier products + prices and the top-up prices idempotently via
+ * stable price lookup_keys.
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import {
+  applyTopup,
+  grantMonthlyCredits,
+  syncKeyLimitsToBalance,
+} from "./credits.js";
 import type { CustomerPlan, HqDb } from "./db.js";
+import { disableKey, isOpenRouterConfigured } from "./openrouter.js";
+import {
+  PLANS,
+  PLAN_IDS,
+  TOPUPS,
+  TOPUP_IDS,
+  isPlanId,
+  isTopupId,
+  resolvePlan,
+  type PlanSpec,
+  type TopupId,
+  type TopupSpec,
+} from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
 
 const STRIPE_API_BASE = "https://api.stripe.com";
@@ -33,9 +64,76 @@ export function isWebhookConfigured(): boolean {
 }
 
 function priceIdForPlan(plan: CustomerPlan): string | undefined {
-  return plan === "founding_byo"
-    ? process.env.STRIPE_PRICE_FOUNDING_BYO
-    : process.env.STRIPE_PRICE_FOUNDING;
+  // Legacy founding aliases keep their dedicated price env vars so existing
+  // founding checkouts are unaffected by the tier rollout.
+  if (plan === "founding") return process.env.STRIPE_PRICE_FOUNDING;
+  if (plan === "founding_byo") return process.env.STRIPE_PRICE_FOUNDING_BYO;
+  return process.env[resolvePlan(plan).stripePriceEnvVar];
+}
+
+/** Customer-facing redirect base: the marketing site wins when configured. */
+function publicRedirectBase(): string {
+  return (
+    process.env.HQ_PUBLIC_SITE_URL ??
+    process.env.HQ_PUBLIC_URL ??
+    "http://localhost:8790"
+  );
+}
+
+async function stripePost(
+  path: string,
+  form: URLSearchParams,
+  fetchImpl: typeof fetch,
+): Promise<
+  | { ok: true; body: Record<string, unknown> }
+  | { ok: false; status: number; reason: string }
+> {
+  const res = await fetchImpl(`${STRIPE_API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form.toString(),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return {
+      ok: false,
+      status: res.status,
+      reason: `stripe_error_${res.status}: ${text.slice(0, 300)}`,
+    };
+  }
+  return {
+    ok: true,
+    body: (await res.json()) as Record<string, unknown>,
+  };
+}
+
+async function stripeGet(
+  path: string,
+  fetchImpl: typeof fetch,
+): Promise<
+  | { ok: true; body: Record<string, unknown> }
+  | { ok: false; status: number; reason: string }
+> {
+  const res = await fetchImpl(`${STRIPE_API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return {
+      ok: false,
+      status: res.status,
+      reason: `stripe_error_${res.status}: ${text.slice(0, 300)}`,
+    };
+  }
+  return {
+    ok: true,
+    body: (await res.json()) as Record<string, unknown>,
+  };
 }
 
 // ── checkout ─────────────────────────────────────────────────────────────
@@ -66,7 +164,7 @@ export async function createCheckoutSession(
     return { ok: false, reason: `no_price_configured_for_${params.plan}` };
   }
 
-  const base = process.env.HQ_PUBLIC_URL ?? "http://localhost:8790";
+  const base = publicRedirectBase();
   const form = new URLSearchParams({
     mode: "subscription",
     customer_email: params.email,
@@ -74,29 +172,217 @@ export async function createCheckoutSession(
     cancel_url: `${base}/checkout/cancel`,
     "line_items[0][price]": price,
     "line_items[0][quantity]": "1",
+    "metadata[app]": "cue",
     "metadata[customerId]": params.customerId,
+    "metadata[plan]": params.plan,
+    "subscription_data[metadata][app]": "cue",
     "subscription_data[metadata][customerId]": params.customerId,
+    "subscription_data[metadata][plan]": params.plan,
   });
   if (params.inviteCode) form.set("metadata[inviteCode]", params.inviteCode);
 
-  const res = await fetchImpl(`${STRIPE_API_BASE}/v1/checkout/sessions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form.toString(),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return {
-      ok: false,
-      reason: `stripe_error_${res.status}: ${text.slice(0, 300)}`,
-    };
+  // Invite discount: mint (or reuse) a promotion code carrying the invite's
+  // percentOff and attach it to the session.
+  if (params.percentOff && params.percentOff > 0 && params.inviteCode) {
+    const promo = await ensurePromotionCode(
+      params.inviteCode,
+      params.percentOff,
+      fetchImpl,
+    );
+    if (promo.ok) {
+      form.set("discounts[0][promotion_code]", promo.promotionCodeId);
+    }
+    // A promo failure degrades to full price rather than blocking checkout.
   }
-  const session = (await res.json()) as { id: string; url: string };
+
+  const created = await stripePost("/v1/checkout/sessions", form, fetchImpl);
+  if (!created.ok) return { ok: false, reason: created.reason };
+  const session = created.body as { id: string; url: string };
   return { ok: true, url: session.url, sessionId: session.id };
+}
+
+/**
+ * One-off payment-mode Checkout Session for a credit top-up pack. The
+ * webhook (checkout.session.completed, mode=payment, metadata.topup)
+ * applies the credits idempotently by session id.
+ */
+export async function createTopupCheckoutSession(
+  params: { customerId: string; email: string; topupId: TopupId },
+  fetchImpl: typeof fetch = fetch,
+): Promise<CheckoutResult> {
+  if (!isStripeConfigured()) {
+    return { ok: false, reason: "stripe_not_configured" };
+  }
+  const spec = TOPUPS[params.topupId];
+  const price = process.env[spec.stripePriceEnvVar];
+  if (!price) {
+    return { ok: false, reason: `no_price_configured_for_${params.topupId}` };
+  }
+
+  const base = publicRedirectBase();
+  const form = new URLSearchParams({
+    mode: "payment",
+    customer_email: params.email,
+    success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${base}/checkout/cancel`,
+    "line_items[0][price]": price,
+    "line_items[0][quantity]": "1",
+    "metadata[app]": "cue",
+    "metadata[customerId]": params.customerId,
+    "metadata[topup]": spec.id,
+    "metadata[credits]": String(spec.credits),
+    "payment_intent_data[metadata][app]": "cue",
+    "payment_intent_data[metadata][customerId]": params.customerId,
+    "payment_intent_data[statement_descriptor_suffix]": "CUE",
+  });
+
+  const created = await stripePost("/v1/checkout/sessions", form, fetchImpl);
+  if (!created.ok) return { ok: false, reason: created.reason };
+  const session = created.body as { id: string; url: string };
+  return { ok: true, url: session.url, sessionId: session.id };
+}
+
+// ── catalog (idempotent product/price provisioning) ──────────────────────
+
+export interface CatalogEntry {
+  kind: "plan" | "topup";
+  id: string;
+  productId: string;
+  priceId: string;
+  /** Env var the operator should point at priceId. */
+  envVar: string;
+  /** True when this call created the price (vs found an existing one). */
+  created: boolean;
+}
+
+export type CatalogResult =
+  | { ok: true; entries: CatalogEntry[] }
+  | { ok: false; reason: string };
+
+/**
+ * Ensure the 3 tier products + monthly prices and the top-up products +
+ * one-time prices exist. Idempotent: prices are looked up by their stable
+ * lookup_key first; only missing ones are created. Names are prefixed
+ * "Cue — ", everything carries metadata {app:"cue"}, and products set
+ * statement_descriptor "CUE" so card statements read consistently.
+ *
+ * Returns the priceId → env var mapping the operator pastes into the
+ * environment (HQ reads prices from env, never from live lookups).
+ */
+export async function ensureCatalog(
+  fetchImpl: typeof fetch = fetch,
+): Promise<CatalogResult> {
+  if (!isStripeConfigured()) {
+    return { ok: false, reason: "stripe_not_configured" };
+  }
+
+  const entries: CatalogEntry[] = [];
+  const specs: { kind: "plan" | "topup"; spec: PlanSpec | TopupSpec }[] = [
+    ...PLAN_IDS.map((id) => ({ kind: "plan" as const, spec: PLANS[id] })),
+    ...TOPUP_IDS.map((id) => ({ kind: "topup" as const, spec: TOPUPS[id] })),
+  ];
+
+  for (const { kind, spec } of specs) {
+    // 1. Existing price? lookup_key is unique per Stripe account.
+    const found = await stripeGet(
+      `/v1/prices?lookup_keys[]=${encodeURIComponent(spec.stripeLookupKey)}&limit=1`,
+      fetchImpl,
+    );
+    if (!found.ok) return { ok: false, reason: found.reason };
+    const existing = (found.body.data as Record<string, unknown>[])?.[0];
+    if (existing?.id) {
+      entries.push({
+        kind,
+        id: spec.id,
+        productId: String(existing.product ?? ""),
+        priceId: String(existing.id),
+        envVar: spec.stripePriceEnvVar,
+        created: false,
+      });
+      continue;
+    }
+
+    // 2. Product (stable custom id → creating twice 409s; reuse on that).
+    const productId = `cue_${spec.id}`;
+    const productForm = new URLSearchParams({
+      id: productId,
+      name: `Cue — ${spec.name}`,
+      statement_descriptor: "CUE",
+      "metadata[app]": "cue",
+      "metadata[cueId]": spec.id,
+    });
+    const product = await stripePost("/v1/products", productForm, fetchImpl);
+    if (!product.ok && !/resource_already_exists|already exists/i.test(product.reason)) {
+      return { ok: false, reason: product.reason };
+    }
+
+    // 3. Price (recurring for plans, one-time for top-ups).
+    const priceForm = new URLSearchParams({
+      product: productId,
+      currency: "usd",
+      unit_amount: String(spec.priceUsd * 100),
+      lookup_key: spec.stripeLookupKey,
+      "metadata[app]": "cue",
+      "metadata[cueId]": spec.id,
+    });
+    if (kind === "plan") priceForm.set("recurring[interval]", "month");
+    const price = await stripePost("/v1/prices", priceForm, fetchImpl);
+    if (!price.ok) return { ok: false, reason: price.reason };
+
+    entries.push({
+      kind,
+      id: spec.id,
+      productId,
+      priceId: String(price.body.id),
+      envVar: spec.stripePriceEnvVar,
+      created: true,
+    });
+  }
+
+  return { ok: true, entries };
+}
+
+/**
+ * Ensure a Stripe promotion code exists for an invite: a percent-off
+ * coupon wrapped in a promotion code named after the invite code. Reused
+ * when it already exists (promotion codes are unique per code string).
+ */
+export async function ensurePromotionCode(
+  inviteCode: string,
+  percentOff: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; promotionCodeId: string } | { ok: false; reason: string }> {
+  const existing = await stripeGet(
+    `/v1/promotion_codes?code=${encodeURIComponent(inviteCode)}&limit=1`,
+    fetchImpl,
+  );
+  if (!existing.ok) return { ok: false, reason: existing.reason };
+  const hit = (existing.body.data as Record<string, unknown>[])?.[0];
+  if (hit?.id) return { ok: true, promotionCodeId: String(hit.id) };
+
+  const coupon = await stripePost(
+    "/v1/coupons",
+    new URLSearchParams({
+      percent_off: String(percentOff),
+      duration: "forever",
+      name: `Cue invite ${inviteCode}`,
+      "metadata[app]": "cue",
+    }),
+    fetchImpl,
+  );
+  if (!coupon.ok) return { ok: false, reason: coupon.reason };
+
+  const promo = await stripePost(
+    "/v1/promotion_codes",
+    new URLSearchParams({
+      coupon: String(coupon.body.id),
+      code: inviteCode,
+      "metadata[app]": "cue",
+    }),
+    fetchImpl,
+  );
+  if (!promo.ok) return { ok: false, reason: promo.reason };
+  return { ok: true, promotionCodeId: String(promo.body.id) };
 }
 
 // ── webhook signature verification (HMAC per Stripe docs) ────────────────
@@ -179,13 +465,19 @@ export interface WebhookOutcome {
 
 /**
  * Handle a raw Stripe webhook request: verify the signature, then flip
- * customer/instance state:
- *   checkout.session.completed      → customer active + subscription row
+ * customer/instance/credit state:
+ *   checkout.session.completed      → subscription mode: customer active +
+ *                                     subscription row (+ plan from metadata);
+ *                                     payment mode with topup metadata:
+ *                                     apply the top-up + raise the key limit
+ *   invoice.paid                    → grant monthly credits (idempotent per
+ *                                     period) + reset the child-key limit
  *   customer.subscription.updated   → sync status; suspend/resume instances
  *   customer.subscription.deleted   → customer churned + instances suspended
+ *                                     + child keys disabled
  */
 export async function handleStripeWebhook(
-  deps: { db: HqDb; driver: InstanceDriver },
+  deps: { db: HqDb; driver: InstanceDriver; fetchImpl?: typeof fetch },
   rawBody: string,
   signatureHeader: string | null,
 ): Promise<WebhookOutcome> {
@@ -205,6 +497,7 @@ export async function handleStripeWebhook(
   }
   const obj = event.data?.object ?? {};
   const { db, driver } = deps;
+  const fetchImpl = deps.fetchImpl ?? fetch;
 
   switch (event.type) {
     case "checkout.session.completed": {
@@ -217,18 +510,94 @@ export async function handleStripeWebhook(
         });
         return { status: 200, body: { received: true, orphan: true } };
       }
+
+      // Payment mode + topup metadata → a credit pack, not a subscription.
+      if (obj.mode === "payment" && metadata.topup) {
+        const credits = isTopupId(metadata.topup)
+          ? TOPUPS[metadata.topup].credits
+          : Number(metadata.credits);
+        if (!Number.isInteger(credits) || credits <= 0) {
+          db.recordEvent("stripe_topup_invalid", customerId, {
+            sessionId: obj.id ?? null,
+            topup: metadata.topup,
+          });
+          return { status: 200, body: { received: true, invalid: true } };
+        }
+        const result = applyTopup(db, {
+          customerId,
+          credits,
+          ref: String(obj.id ?? `session-${Date.now()}`),
+        });
+        if (result.applied) {
+          await syncKeyLimitsToBalance(db, customerId, fetchImpl);
+        }
+        db.recordEvent("stripe_topup_completed", customerId, {
+          sessionId: obj.id ?? null,
+          credits,
+          applied: result.applied,
+          balance: result.balance,
+        });
+        return { status: 200, body: { received: true, applied: result.applied } };
+      }
+
+      if (isPlanId(metadata.plan)) {
+        db.setCustomerPlan(customerId, metadata.plan);
+      }
       db.upsertSubscription({
         customerId,
         stripeCustomerId: String(obj.customer ?? ""),
         stripeSubId: String(obj.subscription ?? ""),
         status: "active",
         currentPeriodEnd: null,
+        plan: metadata.plan ?? null,
       });
       db.transitionCustomer(customerId, "active");
       db.recordEvent("stripe_checkout_completed", customerId, {
         sessionId: obj.id ?? null,
       });
+      // Tag the Stripe customer object too (best-effort) so EVERYTHING on
+      // the account carries metadata {app:"cue"}.
+      if (isStripeConfigured() && obj.customer) {
+        await stripePost(
+          `/v1/customers/${obj.customer}`,
+          new URLSearchParams({
+            "metadata[app]": "cue",
+            "metadata[customerId]": customerId,
+          }),
+          fetchImpl,
+        ).catch(() => {});
+      }
       return { status: 200, body: { received: true } };
+    }
+
+    case "invoice.paid": {
+      const resolved = resolveCustomerFromInvoice(db, obj);
+      if (!resolved) {
+        db.recordEvent("stripe_webhook_orphan", null, { type: event.type });
+        return { status: 200, body: { received: true, orphan: true } };
+      }
+      const customer = db.getCustomer(resolved.customerId);
+      if (!customer) {
+        return { status: 200, body: { received: true, orphan: true } };
+      }
+      const sub = db.getSubscription(customer.id);
+      const plan = sub?.plan ?? customer.plan;
+      const grant = grantMonthlyCredits(db, {
+        customerId: customer.id,
+        plan,
+        stripeSubId: resolved.stripeSubId,
+        periodStart: Number(obj.period_start ?? 0),
+      });
+      if (grant.granted) {
+        await syncKeyLimitsToBalance(db, customer.id, fetchImpl);
+      }
+      db.recordEvent("stripe_invoice_paid", customer.id, {
+        invoiceId: obj.id ?? null,
+        stripeSubId: resolved.stripeSubId,
+        granted: grant.granted,
+        balance: grant.balance,
+      });
+      return { status: 200, body: { received: true, granted: grant.granted } };
     }
 
     case "customer.subscription.updated": {
@@ -280,6 +649,7 @@ export async function handleStripeWebhook(
       });
       db.transitionCustomer(resolved.customerId, "churned");
       await setInstancesState(db, driver, resolved.customerId, "suspended");
+      await disableCustomerKeys(db, resolved.customerId, fetchImpl);
       db.recordEvent("stripe_subscription_deleted", resolved.customerId, {
         stripeSubId: obj.id ?? null,
       });
@@ -291,6 +661,47 @@ export async function handleStripeWebhook(
         type: event.type ?? "unknown",
       });
       return { status: 200, body: { received: true, ignored: true } };
+  }
+}
+
+/** Match an invoice event to our customer via sub metadata or the sub id. */
+function resolveCustomerFromInvoice(
+  db: HqDb,
+  obj: Record<string, unknown>,
+): { customerId: string; stripeSubId: string } | null {
+  const subId = String(obj.subscription ?? "");
+  const subDetails = (obj.subscription_details ?? {}) as {
+    metadata?: Record<string, string>;
+  };
+  const metaCustomerId = subDetails.metadata?.customerId;
+  if (metaCustomerId && db.getCustomer(metaCustomerId)) {
+    return { customerId: metaCustomerId, stripeSubId: subId };
+  }
+  if (subId) {
+    const sub = db.getSubscriptionByStripeSubId(subId);
+    if (sub) return { customerId: sub.customerId, stripeSubId: subId };
+  }
+  return null;
+}
+
+/** Disable every provisioned child key of a customer (suspend/churn). */
+async function disableCustomerKeys(
+  db: HqDb,
+  customerId: string,
+  fetchImpl: typeof fetch,
+): Promise<void> {
+  if (!isOpenRouterConfigured()) return;
+  for (const instance of db.listInstancesByCustomer(customerId)) {
+    if (!instance.openrouterKeyHash) continue;
+    const result = await disableKey(instance.openrouterKeyHash, fetchImpl);
+    db.recordEvent(
+      result.ok ? "openrouter_key_disabled" : "openrouter_key_error",
+      customerId,
+      {
+        instanceId: instance.id,
+        ...(result.ok ? {} : { op: "disable", reason: result.reason }),
+      },
+    );
   }
 }
 
