@@ -1483,7 +1483,16 @@ export function HqPage() {
   const cameIn = queued.items;
   const workspaceMode = profile?.workspaceMode ?? "assist";
 
-  const hasMissions = missions.length > 0;
+  // The deck's live surfaces (pulse ring, headline, mission list, drift
+  // nudges) show only open rings — an achieved mission is done, not "on
+  // track", and belongs to its detail page's achieved banner instead.
+  // `byProject` above stays unfiltered so review/came-in items keep their
+  // mission tag even after the mission is achieved.
+  const deckMissions = useMemo(
+    () => missions.filter((m) => m.status !== "achieved"),
+    [missions],
+  );
+  const hasMissions = deckMissions.length > 0;
   // The next-move card and the Needs-you lane read the same stores — when the
   // move IS one of the review items, the emphasized card replaces its row.
   const reviewItems = review.items.filter((item) => item.id !== move.itemId);
@@ -1612,7 +1621,7 @@ export function HqPage() {
             <div data-slot="hq-stream" style={{ minWidth: 0 }}>
               <CaptureBar />
               <RingsHeroCard
-                missions={missions}
+                missions={deckMissions}
                 doneToday={doneToday.length}
                 dayLabel={dayLabel}
               />
@@ -1636,7 +1645,7 @@ export function HqPage() {
               {/* §6 · Drifting — honest nudge on any mission that's idling. */}
               <MissionDriftNudges
                 assistantId={assistantId}
-                missions={missions}
+                missions={deckMissions}
               />
 
               {reviewItems.length > 0 || move.hasMove ? (
@@ -1721,9 +1730,9 @@ export function HqPage() {
               <DoneTodayChips items={done.items} todayStart={todayStart} />
 
               <MicroLabel style={{ margin: "20px 0 10px" }}>
-                Missions · {missions.length}
+                Missions · {deckMissions.length}
               </MicroLabel>
-              <MissionList missions={missions} />
+              <MissionList missions={deckMissions} />
             </div>
 
             {/* RIGHT RAIL */}

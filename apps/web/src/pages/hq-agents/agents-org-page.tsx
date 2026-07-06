@@ -100,6 +100,7 @@ function AgentCard({
   onEdit,
   onTogglePause,
   onOpenTrust,
+  onRetire,
 }: {
   charter: AgentCharter;
   work: AgentWork | null;
@@ -109,6 +110,7 @@ function AgentCard({
   onEdit: () => void;
   onTogglePause: () => void;
   onOpenTrust: () => void;
+  onRetire: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = TIER_META[charter.tier];
@@ -247,6 +249,7 @@ function AgentCard({
               onTogglePause,
               C.amber,
             )}
+            {menuItem("✕", "Retire agent…", onRetire, C.danger)}
           </div>
         </>
       ) : null}
@@ -646,6 +649,18 @@ export function AgentsOrgPage() {
                 charterActions.update(c.id, { paused: !c.paused })
               }
               onOpenTrust={() => setTrustFor(c)}
+              onRetire={() => {
+                // Permanent removal — a browser confirm is the honest gate
+                // until a styled dialog exists (retire deletes the registry
+                // row; the ledger's past acts remain).
+                if (
+                  window.confirm(
+                    `Retire ${c.name}? Its charter and settings are removed permanently; past work in the ledger is kept.`,
+                  )
+                ) {
+                  charterActions.retire(c.id);
+                }
+              }}
             />
           ))}
           <HireCard onClick={() => setHiring(true)} />

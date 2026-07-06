@@ -96,6 +96,7 @@ function selectionToIntent(
     mode: sel.mode,
     templateId: sel.templateId,
     styleId: sel.styleId,
+    formatId: sel.formatId,
     chartTypes: sel.chartTypes,
     brandKitId: sel.inBrand ? brandKitId : null,
     reference: reference ?? undefined,

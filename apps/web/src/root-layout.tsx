@@ -6,6 +6,7 @@ import { useAppTheme } from "@/hooks/use-app-theme";
 import { useEventBusInit } from "@/hooks/use-event-bus-init";
 import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { CueMobileTabBar } from "@/components/cue-mobile-tab-bar";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import { useAssistantLifecycle } from "@/assistant/use-lifecycle";
@@ -93,7 +94,9 @@ export function RootLayout() {
   const sessionStatus = useAuthStore.use.sessionStatus();
   const isSessionInitializing = useIsSessionInitializing();
   const hasPlatformSession = useHasPlatformSession();
-  useClientFeatureFlagSync(!isSessionInitializing);
+  // Self-host deploys have no platform feature-flag service — the fetch can
+  // only 401 (defaults apply either way), so skip it to keep the console clean.
+  useClientFeatureFlagSync(!isSessionInitializing && !isSelfHostMode());
   useAssistantLifecycle({
     sessionStatus,
     hasPlatformSession,

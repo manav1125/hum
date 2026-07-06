@@ -21342,9 +21342,17 @@ paths:
                     description: Memory item objects
                   total:
                     type: number
+                  kindCounts:
+                    type: object
+                    propertyNames:
+                      type: string
+                    additionalProperties:
+                      type: number
+                    description: Per-kind totals over ALL matching rows (not just the page)
                 required:
                   - items
                   - total
+                  - kindCounts
                 additionalProperties: false
       parameters:
         - name: kind

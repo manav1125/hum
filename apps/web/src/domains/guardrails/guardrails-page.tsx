@@ -24,7 +24,7 @@
  * $ / model mean "wasn't measured" and render as nothing (never a fake $0);
  * a 409 from reverse surfaces as a plain "nothing to unwind" note — never a
  * fake success. Tool scopes ride a parallel typed `agents` read because the
- * composed guardrails payload doesn't carry `toolScopes` yet.
+ * composed guardrails payload carries `toolScopes` on each agent (R2).
  */
 
 import { Loader2 } from "lucide-react";
@@ -44,6 +44,7 @@ import {
   actsByIdReversePostMutation,
   agentsByIdPatchMutation,
   agentsGetOptions,
+  guardrailsCheckpointsByIdDeleteMutation,
   guardrailsCheckpointsByIdPatchMutation,
   guardrailsCheckpointsPostMutation,
   guardrailsGetOptions,
@@ -116,7 +117,7 @@ type LedgerAct = GuardrailsPayload["ledger"]["recentActs"][number];
 
 /**
  * Tool scopes per agent id, from the parallel typed `agents` read (the
- * composed guardrails payload doesn't carry `toolScopes`). `undefined` =
+ * agents read carries `toolScopes` since R2). `undefined` =
  * registry not loaded (chips stay display-only); `null` = unrestricted.
  */
 type ToolScopesByAgent = ReadonlyMap<string, string[] | null>;
@@ -564,6 +565,31 @@ function CheckpointsBand({
       queryClient.invalidateQueries({ queryKey: GUARDRAILS_KEY_PREFIX }),
   });
 
+  const deleteMutation = useMutation({
+    ...guardrailsCheckpointsByIdDeleteMutation(),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: GUARDRAILS_KEY_PREFIX }),
+  });
+
+  const remove = (cp: Checkpoint) => {
+    // Optimistic removal; the invalidate reconciles. Defaults are protected in
+    // the row (toggle-only) — deleting a default would resurrect confusion
+    // about the seeded baseline, disabling it is the honest off-switch.
+    queryClient.setQueriesData<GuardrailsPayload>(
+      { queryKey: GUARDRAILS_KEY_PREFIX },
+      (prev) =>
+        prev
+          ? {
+              ...prev,
+              checkpoints: prev.checkpoints.filter((c) => c.id !== cp.id),
+            }
+          : prev,
+    );
+    deleteMutation.mutate({
+      path: { assistant_id: assistantId, id: cp.id },
+    });
+  };
+
   const toggle = (cp: Checkpoint) => {
     // Optimistic: flip the toggle in every cached window immediately.
     queryClient.setQueriesData<GuardrailsPayload>(
@@ -601,6 +627,7 @@ function CheckpointsBand({
           agents={agents}
           isMobile={isMobile}
           onToggle={() => toggle(cp)}
+          onRemove={cp.isDefault === 1 ? undefined : () => remove(cp)}
         />
       ))}
       {fresh && (
@@ -648,11 +675,14 @@ function CheckpointRow({
   agents,
   isMobile,
   onToggle,
+  onRemove,
 }: {
   checkpoint: Checkpoint;
   agents: Agent[];
   isMobile: boolean;
   onToggle: () => void;
+  /** Absent on DEFAULT rows — the seeded baseline is toggle-only. */
+  onRemove?: () => void;
 }) {
   const scope = scopeDisplay(checkpoint.scope, agents);
   const on = checkpoint.enabled === 1;
@@ -769,6 +799,25 @@ function CheckpointRow({
           {isMobile ? "ADVISORY" : "ADVISORY · COMING ONLINE"}
         </span>
       )}
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove checkpoint: ${checkpoint.label}`}
+          title="Remove this checkpoint"
+          style={{
+            border: "none",
+            background: "transparent",
+            color: C.t3,
+            fontSize: 13,
+            lineHeight: 1,
+            padding: "6px 4px",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
+      ) : null}
       <Toggle on={on} label={checkpoint.label} onChange={onToggle} />
     </div>
   );

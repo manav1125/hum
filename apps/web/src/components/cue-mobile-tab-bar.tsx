@@ -144,7 +144,15 @@ export function CueMobileTabBar() {
   // tab bar there so those surfaces render edge-to-edge.
   if (tabBarHidden(pathname)) return null;
 
-  const initial = userInitial(user?.firstName || user?.username || user?.email);
+  // The self-host gateway session uses a placeholder user ("Local User") with
+  // no real profile — deriving from it shows a wrong "L". Treat it as no-name
+  // so the avatar falls back to the design-book monogram default.
+  const isPlaceholderUser = user?.id === "gateway-local";
+  const initial = userInitial(
+    isPlaceholderUser
+      ? null
+      : user?.firstName || user?.username || user?.email,
+  );
 
   const createActive = pathname.endsWith("/create");
   const youActive =

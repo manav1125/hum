@@ -704,6 +704,9 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({
       items: z.array(z.unknown()).describe("Memory item objects"),
       total: z.number(),
+      kindCounts: z
+        .record(z.string(), z.number())
+        .describe("Per-kind totals over ALL matching rows (not just the page)"),
     }),
     handler: ({ queryParams }) => handleListMemoryItems(queryParams ?? {}),
   },

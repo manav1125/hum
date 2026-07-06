@@ -13,7 +13,7 @@
  * Cue-HQ-Build voice; colors ride the theme-aware `C` tokens.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { C, mono, serif } from "@/domains/activity/theme";
 
@@ -23,6 +23,20 @@ import {
   type AgentCharter,
   type AgentTier,
 } from "./charters";
+
+/**
+ * Close the sheet on Escape — both modals are hand-rolled dialogs (no
+ * <dialog>/Radix), so backdrop-click was the only way out before this.
+ */
+function useEscapeToClose(onClose: () => void) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+}
 
 const EMOJI_CHOICES = ["⚙", "▲", "✦", "◆", "✎", "☉", "◉", "⬡", "✿", "⚑"];
 const TIERS: AgentTier[] = [1, 2, 3, 4];
@@ -201,6 +215,7 @@ export function CharterEditor({
     charter.capUsd != null ? String(charter.capUsd) : "",
   );
   const { update } = useCharterActions(assistantId);
+  useEscapeToClose(onClose);
 
   const canSave = name.trim().length > 0;
 
@@ -347,6 +362,7 @@ export function HireModal({
   const [mandate, setMandate] = useState("");
   const [tier, setTier] = useState<AgentTier>(2);
   const { hire: hireAgent } = useCharterActions(assistantId);
+  useEscapeToClose(onClose);
 
   const canHire = name.trim().length > 0;
 

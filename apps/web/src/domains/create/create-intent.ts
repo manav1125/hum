@@ -16,8 +16,12 @@
  */
 
 import {
+  getDataFormatSpec,
+  getDocTypeSpec,
   getStyleSpec,
   getTemplateSpec,
+  type DataFormatSpec,
+  type DocTypeSpec,
   type StyleSpec,
   type TemplateSpec,
 } from "./studio-specs";
@@ -43,10 +47,12 @@ export interface CreateReference {
 export interface CreateIntent {
   /** slides | image | video | data | docs | … */
   mode: string;
-  /** Resolves a TemplateSpec (slides / dashboards / docs). */
+  /** Resolves a TemplateSpec (slides / dashboards) or a DocTypeSpec (docs). */
   templateId?: string;
   /** Resolves a StyleSpec (image / video). */
   styleId?: string;
+  /** Data mode — output format (dashboard / report / sheet / slides). */
+  formatId?: string;
   /** Data mode — chart types to include. */
   chartTypes?: string[];
   /** Active brand kit id, or null to generate un-branded. */
@@ -131,6 +137,14 @@ function brandContract(b: BrandProfileLike): string {
   return lines.join("\n");
 }
 
+function docTypeContract(d: DocTypeSpec): string {
+  return `DOCUMENT — write a "${d.name}" (${d.description}) with these sections, in order: ${d.outline.join(" → ")}.`;
+}
+
+function dataFormatContract(f: DataFormatSpec): string {
+  return `OUTPUT — produce a ${f.label}: ${f.description}`;
+}
+
 function styleContract(s: StyleSpec): string {
   return `STYLE — apply the "${s.label}" style: ${s.promptFragment}${
     s.model ? ` (prefer model: ${s.model})` : ""
@@ -162,8 +176,22 @@ export function compileCreateIntent(
     : undefined;
   if (template) blocks.push(templateContract(template));
 
+  // Docs mode parks a DocTypeSpec id in `templateId` (per studio-specs). When
+  // the slide-template lookup misses, resolve it as a doc type so the chosen
+  // document shape + outline actually reach the seeded prompt.
+  if (!template && intent.templateId) {
+    const docType = getDocTypeSpec(intent.templateId);
+    if (docType) blocks.push(docTypeContract(docType));
+  }
+
   const style = intent.styleId ? getStyleSpec(intent.styleId) : undefined;
   if (style) blocks.push(styleContract(style));
+
+  // Data mode — the picked output format rides ahead of the chart list.
+  const format = intent.formatId
+    ? getDataFormatSpec(intent.formatId)
+    : undefined;
+  if (format) blocks.push(dataFormatContract(format));
 
   if (intent.chartTypes?.length) {
     blocks.push(`CHARTS — include these chart types: ${intent.chartTypes.join(", ")}.`);

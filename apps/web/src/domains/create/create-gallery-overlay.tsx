@@ -22,7 +22,7 @@
  */
 
 import { Check, Search, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
@@ -264,6 +264,19 @@ export function CreateGalleryOverlay({
   const copy = GALLERY_COPY[kind];
 
   const [inBrand, setInBrand] = useState(hasBrand && initialInBrand);
+
+  // Escape dismisses the overlay — a modal dialog must be keyboard-closable,
+  // not only via the backdrop / ✕ pointer targets.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   // slides / style / docs / canvas — a single selected id.
   const [selectedId, setSelectedId] = useState<string | null>(null);

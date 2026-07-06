@@ -445,6 +445,13 @@ function probePlatformSessionIfReachable(
   set: AuthSet,
   options?: { setUserOnSuccess?: boolean; clearOnFailure?: boolean },
 ): void {
+  // Self-host (Cue gateway) deploys have no platform allauth to probe — the
+  // request can only 401, spamming the console on every page load. Treat the
+  // platform session as definitively absent instead of probing.
+  if (isSelfHostMode()) {
+    set({ platformSession: "absent" });
+    return;
+  }
   if (
     !isLocalMode() ||
     isGatewayAuthEnabled() ||

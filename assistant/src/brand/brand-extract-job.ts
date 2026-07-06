@@ -340,17 +340,37 @@ async function runFlashExtraction(args: {
 
   const config = getConfig();
   const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
-  const result = await runBtwSidechain({
-    content: buildBrandExtractionPrompt(args),
-    provider,
-    systemPrompt:
-      "You extract structured brand kits from source material. Reply with ONLY the requested JSON object. Prefer omitting a field over guessing.",
-    messages: [],
-    tools: [],
-    callSite: "conversationTitle",
-    maxTokens: resolved.maxTokens,
-    timeoutMs: EXTRACTION_TIMEOUT_MS,
-  });
+  let result: Awaited<ReturnType<typeof runBtwSidechain>>;
+  try {
+    result = await runBtwSidechain({
+      content: buildBrandExtractionPrompt(args),
+      provider,
+      systemPrompt:
+        "You extract structured brand kits from source material. Reply with ONLY the requested JSON object. Prefer omitting a field over guessing.",
+      messages: [],
+      tools: [],
+      callSite: "conversationTitle",
+      maxTokens: resolved.maxTokens,
+      timeoutMs: EXTRACTION_TIMEOUT_MS,
+    });
+  } catch (err) {
+    // The extract endpoints promise to never throw — an LLM outage (provider
+    // 4xx/5xx, timeout) must degrade to whatever the structural parsers found
+    // rather than turning the whole draft into a 500.
+    log.warn(
+      { err: String(err), kind: args.kind },
+      "flash brand extraction failed; returning structural draft",
+    );
+    const fallback: Omit<DraftBrandProfile, "source"> = {
+      name: args.label,
+      palette: {},
+      fonts: {},
+      logo: {},
+      voice: {},
+      assets: [],
+    };
+    return args.hints ? mergeStructuredHints(fallback, args.hints) : fallback;
+  }
 
   const parsed = parseBrandExtractionResponse(result.text);
   const base: Omit<DraftBrandProfile, "source"> = {
