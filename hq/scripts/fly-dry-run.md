@@ -106,3 +106,14 @@ curl -X POST "localhost:8790/admin/customers/<id>/provision" \
       `HQ_HEALTH_TIMEOUT_MS` if 5 min was tight.
 - [ ] Rotate the org token if it was pasted anywhere it shouldn't live.
 - [ ] Delete the scratch customer row from hq.db (or keep it as a canary).
+
+## Dry-run results — 2026-07-06 (PASSED)
+
+Executed against org `personal`, image `registry.fly.io/cue-releases:v9ce28d3dfd`:
+
+- Provision → live: **2m32s** end-to-end (image pull 16s, machine boot 19s, rest is daemon first-boot + health). Default 5-min timeout is fine; first run used 15 min out of caution.
+- **Gotcha found + fixed**: the machine must override the image CMD with `init.cmd = ["/app/assistant/docker-cue-app-entrypoint.sh"]` (the combined daemon+gateway entrypoint render.yaml uses via dockerCommand). The image default runs the daemon only — nothing listens on :10000 and health never passes. Teardown-on-failure worked (no leaked resources).
+- Auth probe with HQ-minted magic-link token: 200. **Live chat turn: assistant replied** (OpenRouter key seeded from providerEnv, Fly iad egress accepted by OpenRouter).
+- Suspend: machine `stopped`, healthz dark. Resume: healthy after **~75s** (full daemon boot — relevant to future wake-on-demand UX). Token + volume survived.
+- Destroy: app + volume gone, only `cue-releases` remains. No billing leaks.
+- Boot warnings observed (non-fatal, same class as Render): embedding-worker retries, one gateway→daemon IPC timeout during warmup.

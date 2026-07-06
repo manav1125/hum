@@ -218,6 +218,11 @@ export class FlyDriver implements InstanceDriver {
         region,
         config: {
           image,
+          // The image's default CMD is the standalone daemon
+          // (docker-entrypoint.sh); the combined daemon+gateway entrypoint is
+          // what render.yaml runs via `dockerCommand` — mirror that here, or
+          // nothing listens on the public port and health never passes.
+          init: { cmd: ["/app/assistant/docker-cue-app-entrypoint.sh"] },
           env: spec.env,
           guest,
           // Public ingress: Fly's edge proxies 80/443 → the gateway on its
