@@ -864,13 +864,20 @@ export const routeTree = [
                         },
                       },
                       {
-                        path: "trust",
+                        // Guardrails — the Trust console evolved into the
+                        // unified rules/scopes/ledger surface (same nav slot).
+                        path: "guardrails",
                         lazy: {
                           Component: () =>
-                            import("@/domains/trust/trust-console-page").then(
-                              (m) => m.TrustConsolePage,
-                            ),
+                            import(
+                              "@/domains/guardrails/guardrails-page"
+                            ).then((m) => m.GuardrailsPage),
                         },
+                      },
+                      {
+                        // The old Trust console URL redirects to Guardrails.
+                        path: "trust",
+                        element: <Navigate to={routes.guardrails} replace />,
                       },
                       {
                         path: "people",

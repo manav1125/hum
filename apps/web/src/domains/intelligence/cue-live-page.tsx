@@ -1064,13 +1064,13 @@ function TrustNote() {
         marginTop: "auto",
       }}
     >
-      Every action runs through the approvals model. Manage who can reach Cue in
-      the{" "}
+      Every action runs through the approvals model. Draw the lines Cue works
+      inside in{" "}
       <Link
-        to="/assistant/trust"
+        to="/assistant/guardrails"
         style={{ color: C.blueStrong, textDecoration: "none" }}
       >
-        Trust console
+        Guardrails
       </Link>
       .
     </div>

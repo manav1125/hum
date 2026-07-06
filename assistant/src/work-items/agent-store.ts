@@ -53,6 +53,14 @@ export interface Agent {
   capCents: number | null;
   /** 0/1 — the role is paused. */
   paused: number;
+  /**
+   * Per-agent model pin (provider/model string, e.g.
+   * "anthropic/claude-haiku-4.5"); null = no pin. Background work-item runs
+   * for this assignee execute on the pinned model via the run conversation's
+   * `modelOverride` (see work-item-runner) — an explicit per-call model that
+   * wins over profile/call-site resolution in the provider layer.
+   */
+  model: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -73,6 +81,25 @@ export function getAgent(id: string): Agent | undefined {
     | undefined;
 }
 
+/**
+ * Resolve the agent behind a work-item assignee (matched case-insensitively
+ * on `name`, the assignee match key). Null/empty assignee reads as the
+ * implicit house agent "cue", which is deliberately not a registry row —
+ * returns undefined.
+ */
+export function getAgentByAssignee(
+  assignee: string | null | undefined,
+): Agent | undefined {
+  const name = assignee?.trim();
+  if (!name) return undefined;
+  const db = getDb();
+  return db
+    .select()
+    .from(agents)
+    .where(sql`lower(${agents.name}) = lower(${name})`)
+    .get() as Agent | undefined;
+}
+
 /** "Hire an agent" — add a new role to the org. */
 export function createAgent(opts: {
   name: string;
@@ -82,6 +109,7 @@ export function createAgent(opts: {
   tier?: string;
   capCents?: number | null;
   paused?: boolean;
+  model?: string | null;
 }): Agent {
   const db = getDb();
   const now = Date.now();
@@ -94,6 +122,7 @@ export function createAgent(opts: {
     tier: opts.tier ?? "1",
     capCents: opts.capCents ?? null,
     paused: opts.paused ? 1 : 0,
+    model: opts.model ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -102,15 +131,22 @@ export function createAgent(opts: {
 }
 
 /**
- * Patch one agent (rename / re-charter / tier / cap / pause). Only provided
- * fields are written; the rest keep their current value.
+ * Patch one agent (rename / re-charter / tier / cap / pause / model pin).
+ * Only provided fields are written; the rest keep their current value.
  */
 export function updateAgent(
   id: string,
   updates: Partial<
     Pick<
       Agent,
-      "name" | "emoji" | "domain" | "charter" | "tier" | "capCents" | "paused"
+      | "name"
+      | "emoji"
+      | "domain"
+      | "charter"
+      | "tier"
+      | "capCents"
+      | "paused"
+      | "model"
     >
   >,
 ): Agent | undefined {

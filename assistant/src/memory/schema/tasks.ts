@@ -157,6 +157,29 @@ export const agents = sqliteTable("agents", {
   tier: text("tier").notNull().default("1"), // autonomy tier '1'..'4' (text for headroom)
   capCents: integer("cap_cents"), // weekly spend cap in cents; null = uncapped
   paused: integer("paused").notNull().default(0), // 0/1
+  model: text("model"), // per-agent model pin (provider/model string); null = no pin
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+/**
+ * Guardrail checkpoints — the "Cue always asks before…" rule registry behind
+ * the Guardrails surface. `pattern` is the enforcement pattern the template
+ * compiles to: `autonomy:<class>` patterns are enforced by the permission
+ * checker (an enabled checkpoint tightens that autonomy category to "ask");
+ * other pattern forms are declarative-only today. `scope` is 'everywhere',
+ * 'agent:<agentId>', or 'mission:<missionId>'. References are by convention
+ * (store-enforced, no FKs), matching the sibling HQ tables.
+ */
+export const guardrailCheckpoints = sqliteTable("guardrail_checkpoints", {
+  id: text("id").primaryKey(),
+  template: text("template").notNull(), // 'send_message' | 'spend_over' | 'publish' | 'delete' | 'contact' | 'custom'
+  label: text("label").notNull(), // plain-English rule name
+  pattern: text("pattern").notNull(), // compiled enforcement pattern (see module doc)
+  scope: text("scope").notNull().default("everywhere"),
+  thresholdCents: integer("threshold_cents"), // spend_over dollar line (advisory)
+  enabled: integer("enabled").notNull().default(1), // 0/1
+  isDefault: integer("is_default").notNull().default(0), // 0/1 — seeded starter rule
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

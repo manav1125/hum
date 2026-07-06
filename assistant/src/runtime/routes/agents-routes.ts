@@ -47,6 +47,12 @@ const agentSchema = z.object({
     .nullable()
     .describe("Weekly spend cap in cents; null = uncapped"),
   paused: z.number().int().describe("0/1 — the role is paused"),
+  model: z
+    .string()
+    .nullable()
+    .describe(
+      "Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background work-item runs for this assignee execute on the pinned model.",
+    ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -99,6 +105,7 @@ export const ROUTES: RouteDefinition[] = [
       tier: tierSchema.optional(),
       capCents: z.number().int().min(0).optional(),
       paused: z.boolean().optional(),
+      model: z.string().optional(),
     }),
     responseStatus: "201",
     responseBody: z.object({ agent: agentSchema }),
@@ -111,6 +118,7 @@ export const ROUTES: RouteDefinition[] = [
         tier?: string;
         capCents?: number;
         paused?: boolean;
+        model?: string;
       };
       const name = typeof b.name === "string" ? b.name.trim() : "";
       if (!name) throw new BadRequestError("name is required");
@@ -122,6 +130,7 @@ export const ROUTES: RouteDefinition[] = [
         ...(typeof b.tier === "string" ? { tier: b.tier } : {}),
         ...(typeof b.capCents === "number" ? { capCents: b.capCents } : {}),
         ...(typeof b.paused === "boolean" ? { paused: b.paused } : {}),
+        ...(typeof b.model === "string" ? { model: b.model } : {}),
       });
       publishEvent({ type: "tasks_changed" } as ServerMessage);
       return { agent };
@@ -194,7 +203,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Update an agent",
     description:
-      "Rename, re-charter, change tier, set/clear the spend cap, or pause/resume a role.",
+      "Rename, re-charter, change tier, set/clear the spend cap, pause/resume a role, or set/clear the model pin.",
     tags: ["agents"],
     requestBody: z
       .object({
@@ -205,6 +214,10 @@ export const ROUTES: RouteDefinition[] = [
         tier: tierSchema,
         capCents: z.number().int().min(0).nullable(),
         paused: z.boolean(),
+        model: z
+          .string()
+          .nullable()
+          .describe("Provider/model string to pin; null clears the pin"),
       })
       .partial(),
     responseBody: z.object({ agent: agentSchema }),
@@ -219,6 +232,7 @@ export const ROUTES: RouteDefinition[] = [
         tier?: string;
         capCents?: number | null;
         paused?: boolean;
+        model?: string | null;
       };
       const updates: Parameters<typeof updateAgent>[1] = {};
       if (raw.name !== undefined) {
@@ -233,6 +247,13 @@ export const ROUTES: RouteDefinition[] = [
       if (raw.capCents !== undefined) updates.capCents = raw.capCents;
       // The store column is 0/1; accept a boolean at the wire and normalize.
       if (raw.paused !== undefined) updates.paused = raw.paused ? 1 : 0;
+      // Empty string reads as "clear the pin" so a UI picker can reset it.
+      if (raw.model !== undefined) {
+        updates.model =
+          typeof raw.model === "string" && raw.model.trim().length > 0
+            ? raw.model.trim()
+            : null;
+      }
       const agent = updateAgent(id, updates);
       publishEvent({ type: "tasks_changed" } as ServerMessage);
       return { agent };

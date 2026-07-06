@@ -134,6 +134,7 @@ import {
   migrateGuardianTimestampsEpochMs,
   migrateGuardianVerificationPurpose,
   migrateGuardianVerificationSessions,
+  migrateGuardrails,
   migrateHeartbeatRuns,
   migrateInviteCodeHashColumn,
   migrateInviteContactId,
@@ -534,6 +535,7 @@ export function initializeDb(): void {
     migrateCreateAgents,
     migrateCreateBrandProfiles,
     migrateCreateKits,
+    migrateGuardrails,
   ];
 
   // Run each migration step, catching and logging individual failures so one

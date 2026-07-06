@@ -293,6 +293,7 @@ export { migrateContactInteractionIndexes } from "./295-contact-interaction-inde
 export { migrateCreateAgents } from "./296-agents.js";
 export { migrateCreateBrandProfiles } from "./297-brand-profiles.js";
 export { migrateCreateKits } from "./298-create-kits.js";
+export { migrateGuardrails } from "./299-guardrails.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

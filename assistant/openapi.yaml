@@ -698,6 +698,13 @@ paths:
                           minimum: -9007199254740991
                           maximum: 9007199254740991
                           description: 0/1 — the role is paused
+                        model:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
+                            work-item runs for this assignee execute on the pinned model.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -715,6 +722,7 @@ paths:
                         - tier
                         - capCents
                         - paused
+                        - model
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -776,6 +784,13 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                         description: 0/1 — the role is paused
+                      model:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
+                          work-item runs for this assignee execute on the pinned model.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -793,6 +808,7 @@ paths:
                       - tier
                       - capCents
                       - paused
+                      - model
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -829,6 +845,8 @@ paths:
                   maximum: 9007199254740991
                 paused:
                   type: boolean
+                model:
+                  type: string
               required:
                 - name
               additionalProperties: false
@@ -917,6 +935,13 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                         description: 0/1 — the role is paused
+                      model:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
+                          work-item runs for this assignee execute on the pinned model.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -934,6 +959,7 @@ paths:
                       - tier
                       - capCents
                       - paused
+                      - model
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -949,7 +975,7 @@ paths:
     patch:
       operationId: agents_by_id_patch
       summary: Update an agent
-      description: Rename, re-charter, change tier, set/clear the spend cap, or pause/resume a role.
+      description: Rename, re-charter, change tier, set/clear the spend cap, pause/resume a role, or set/clear the model pin.
       tags:
         - agents
       responses:
@@ -1001,6 +1027,13 @@ paths:
                         minimum: -9007199254740991
                         maximum: 9007199254740991
                         description: 0/1 — the role is paused
+                      model:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Per-agent model pin (provider/model string, e.g. 'anthropic/claude-haiku-4.5'); null = no pin. Background
+                          work-item runs for this assignee execute on the pinned model.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -1018,6 +1051,7 @@ paths:
                       - tier
                       - capCents
                       - paused
+                      - model
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -1068,6 +1102,11 @@ paths:
                     - type: "null"
                 paused:
                   type: boolean
+                model:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                  description: Provider/model string to pin; null clears the pin
               additionalProperties: false
   /v1/agents/spend:
     get:
@@ -15141,6 +15180,728 @@ paths:
           schema:
             type: string
           description: Conversation ID (required)
+  /v1/guardrails:
+    get:
+      operationId: guardrails_get
+      summary: The composed Guardrails payload
+      description:
+        "One read for the whole Guardrails surface: the checkpoint rules (with honest enforced/declarative flags),
+        the agent roster with real attributed spend vs cap and the per-agent model pin, and the evidence ledger (recent
+        acts, currently-held approvals, workspace $ + model mix over the window). Composes the existing agent/act/usage
+        stores — nothing is fabricated."
+      tags:
+        - guardrails
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkpoints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        template:
+                          type: string
+                          enum:
+                            - send_message
+                            - spend_over
+                            - publish
+                            - delete
+                            - contact
+                            - custom
+                          description: Checkpoint template the rule was authored from
+                        label:
+                          type: string
+                          description: Plain-English rule name
+                        pattern:
+                          type: string
+                          description:
+                            Compiled enforcement pattern. 'autonomy:<class>' patterns are enforced by the permission checker; other
+                            forms are declarative today.
+                        scope:
+                          type: string
+                          description: "'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'"
+                        thresholdCents:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description:
+                            "spend_over dollar line in cents. Advisory: per-action cost is unknowable pre-execution, so an enabled
+                            spend_over checkpoint asks on ANY money-category action."
+                        enabled:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — the rule is active
+                        isDefault:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — seeded starter rule
+                        enforced:
+                          type: boolean
+                          description:
+                            Whether this rule is live in the permission checker (autonomy:<class> patterns) or declarative-only
+                            ('coming online').
+                        enforcedVia:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The enforcement mechanism; null when declarative
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - template
+                        - label
+                        - pattern
+                        - scope
+                        - thresholdCents
+                        - enabled
+                        - isDefault
+                        - enforced
+                        - enforcedVia
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        emoji:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        domain:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        charter:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        tier:
+                          type: string
+                        capCents:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        paused:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        model:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Per-agent model pin; background runs execute on it
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        spend:
+                          type: object
+                          properties:
+                            spentCents:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                              description: Real attributed spend over the window (work-item-run slice)
+                            capCents:
+                              anyOf:
+                                - type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                - type: "null"
+                              description: Weekly cap; null = uncapped
+                            runs:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                              description: Run conversations that contributed
+                          required:
+                            - spentCents
+                            - capCents
+                            - runs
+                          additionalProperties: false
+                      required:
+                        - id
+                        - name
+                        - emoji
+                        - domain
+                        - charter
+                        - tier
+                        - capCents
+                        - paused
+                        - model
+                        - createdAt
+                        - updatedAt
+                        - spend
+                      additionalProperties: false
+                  ledger:
+                    type: object
+                    properties:
+                      recentActs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            agent:
+                              type: string
+                            workItemId:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            missionId:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            kind:
+                              type: string
+                              enum:
+                                - run_completed
+                                - output_produced
+                                - message_drafted
+                                - schedule_fired
+                                - other
+                            reversed:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            reversedAt:
+                              anyOf:
+                                - type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                - type: "null"
+                            estMinutesSaved:
+                              anyOf:
+                                - type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                - type: "null"
+                            createdAt:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                          required:
+                            - id
+                            - agent
+                            - workItemId
+                            - missionId
+                            - kind
+                            - reversed
+                            - reversedAt
+                            - estMinutesSaved
+                            - createdAt
+                          additionalProperties: false
+                      summary:
+                        type: object
+                        properties:
+                          actCount:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description: Acts over the window
+                          reversedCount:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          heldCount:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description: Approvals currently held (pending confirmations right now)
+                          estMinutesSaved:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description: Sum over non-reversed acts only
+                          totalCents:
+                            type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                            description: Workspace-wide LLM cost over the window (all usage)
+                          byModel:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                model:
+                                  type: string
+                                costCents:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                calls:
+                                  type: integer
+                                  minimum: -9007199254740991
+                                  maximum: 9007199254740991
+                                share:
+                                  type: number
+                                  description: costCents / totalCents (0..1)
+                              required:
+                                - model
+                                - costCents
+                                - calls
+                                - share
+                              additionalProperties: false
+                        required:
+                          - actCount
+                          - reversedCount
+                          - heldCount
+                          - estMinutesSaved
+                          - totalCents
+                          - byModel
+                        additionalProperties: false
+                    required:
+                      - recentActs
+                      - summary
+                    additionalProperties: false
+                  window:
+                    type: object
+                    properties:
+                      days:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      from:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      to:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - days
+                      - from
+                      - to
+                    additionalProperties: false
+                required:
+                  - checkpoints
+                  - agents
+                  - ledger
+                  - window
+                additionalProperties: false
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Trailing window in days for spend/acts/usage (default 7)
+  /v1/guardrails/checkpoints:
+    get:
+      operationId: guardrails_checkpoints_get
+      summary: List guardrail checkpoints
+      description: Every checkpoint rule, oldest-first, each with its honest enforced/declarative flag.
+      tags:
+        - guardrails
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkpoints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        template:
+                          type: string
+                          enum:
+                            - send_message
+                            - spend_over
+                            - publish
+                            - delete
+                            - contact
+                            - custom
+                          description: Checkpoint template the rule was authored from
+                        label:
+                          type: string
+                          description: Plain-English rule name
+                        pattern:
+                          type: string
+                          description:
+                            Compiled enforcement pattern. 'autonomy:<class>' patterns are enforced by the permission checker; other
+                            forms are declarative today.
+                        scope:
+                          type: string
+                          description: "'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'"
+                        thresholdCents:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description:
+                            "spend_over dollar line in cents. Advisory: per-action cost is unknowable pre-execution, so an enabled
+                            spend_over checkpoint asks on ANY money-category action."
+                        enabled:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — the rule is active
+                        isDefault:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — seeded starter rule
+                        enforced:
+                          type: boolean
+                          description:
+                            Whether this rule is live in the permission checker (autonomy:<class> patterns) or declarative-only
+                            ('coming online').
+                        enforcedVia:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The enforcement mechanism; null when declarative
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - template
+                        - label
+                        - pattern
+                        - scope
+                        - thresholdCents
+                        - enabled
+                        - isDefault
+                        - enforced
+                        - enforcedVia
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - checkpoints
+                additionalProperties: false
+    post:
+      operationId: guardrails_checkpoints_post
+      summary: Add a checkpoint
+      description:
+        Author a rule from a template (send_message / spend_over / publish / delete / contact / custom). The
+        pattern compiles from the template unless supplied; custom requires an explicit pattern. Scope it everywhere, to
+        one agent, or to one mission.
+      tags:
+        - guardrails
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkpoint:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      template:
+                        type: string
+                        enum:
+                          - send_message
+                          - spend_over
+                          - publish
+                          - delete
+                          - contact
+                          - custom
+                        description: Checkpoint template the rule was authored from
+                      label:
+                        type: string
+                        description: Plain-English rule name
+                      pattern:
+                        type: string
+                        description:
+                          Compiled enforcement pattern. 'autonomy:<class>' patterns are enforced by the permission checker; other
+                          forms are declarative today.
+                      scope:
+                        type: string
+                        description: "'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'"
+                      thresholdCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          "spend_over dollar line in cents. Advisory: per-action cost is unknowable pre-execution, so an enabled
+                          spend_over checkpoint asks on ANY money-category action."
+                      enabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the rule is active
+                      isDefault:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — seeded starter rule
+                      enforced:
+                        type: boolean
+                        description:
+                          Whether this rule is live in the permission checker (autonomy:<class> patterns) or declarative-only
+                          ('coming online').
+                      enforcedVia:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The enforcement mechanism; null when declarative
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - template
+                      - label
+                      - pattern
+                      - scope
+                      - thresholdCents
+                      - enabled
+                      - isDefault
+                      - enforced
+                      - enforcedVia
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - checkpoint
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                template:
+                  type: string
+                  enum:
+                    - send_message
+                    - spend_over
+                    - publish
+                    - delete
+                    - contact
+                    - custom
+                  description: Checkpoint template the rule was authored from
+                label:
+                  type: string
+                  minLength: 1
+                pattern:
+                  description: Required for template 'custom'; compiled otherwise
+                  type: string
+                scope:
+                  description: "'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'"
+                  type: string
+                thresholdCents:
+                  type: integer
+                  minimum: 0
+                  maximum: 9007199254740991
+                enabled:
+                  type: boolean
+              required:
+                - template
+                - label
+              additionalProperties: false
+  /v1/guardrails/checkpoints/{id}:
+    delete:
+      operationId: guardrails_checkpoints_by_id_delete
+      summary: Delete a checkpoint
+      description: Hard-delete a rule. Seeded defaults are not resurrected (the seed only runs on an empty table).
+      tags:
+        - guardrails
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: guardrails_checkpoints_by_id_patch
+      summary: Update a checkpoint
+      description: Rename, toggle on/off, re-scope, re-pattern, or change the spend threshold.
+      tags:
+        - guardrails
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkpoint:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      template:
+                        type: string
+                        enum:
+                          - send_message
+                          - spend_over
+                          - publish
+                          - delete
+                          - contact
+                          - custom
+                        description: Checkpoint template the rule was authored from
+                      label:
+                        type: string
+                        description: Plain-English rule name
+                      pattern:
+                        type: string
+                        description:
+                          Compiled enforcement pattern. 'autonomy:<class>' patterns are enforced by the permission checker; other
+                          forms are declarative today.
+                      scope:
+                        type: string
+                        description: "'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'"
+                      thresholdCents:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          "spend_over dollar line in cents. Advisory: per-action cost is unknowable pre-execution, so an enabled
+                          spend_over checkpoint asks on ANY money-category action."
+                      enabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the rule is active
+                      isDefault:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — seeded starter rule
+                      enforced:
+                        type: boolean
+                        description:
+                          Whether this rule is live in the permission checker (autonomy:<class> patterns) or declarative-only
+                          ('coming online').
+                      enforcedVia:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The enforcement mechanism; null when declarative
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - template
+                      - label
+                      - pattern
+                      - scope
+                      - thresholdCents
+                      - enabled
+                      - isDefault
+                      - enforced
+                      - enforcedVia
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - checkpoint
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                pattern:
+                  type: string
+                  minLength: 1
+                scope:
+                  type: string
+                  description: "'everywhere' | 'agent:<agentId>' | 'mission:<missionId>'"
+                thresholdCents:
+                  anyOf:
+                    - type: integer
+                      minimum: 0
+                      maximum: 9007199254740991
+                    - type: "null"
+                enabled:
+                  type: boolean
+              additionalProperties: false
   /v1/health:
     get:
       operationId: health_get

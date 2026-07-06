@@ -154,8 +154,8 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  * Demoted from the rail but kept reachable: Memory (Intelligence tab),
  * Next moves (Home feed + /assistant/next-moves), Connections (Intelligence ›
  * Connectors), Meeting (Home record action + /assistant/meeting), People
- * (Contacts › "People · dossiers" + /assistant/people), Trust (Contacts +
- * /assistant/trust).
+ * (Contacts › "People · dossiers" + /assistant/people), Guardrails — the
+ * evolved Trust console (/assistant/guardrails; /assistant/trust redirects).
  */
 export function AssistantSideMenu({
   assistantId,
@@ -530,7 +530,8 @@ export function AssistantSideMenu({
 
           The Dashboard folded into HQ; Workspace, Connections (channel setup),
           Memory, Connectors live as Intelligence tabs; Meeting stays routable;
-          Trust = a link on People. (See docblock.)
+          Guardrails (the evolved Trust console) = linked from agent surfaces.
+          (See docblock.)
         */}
         <SideMenu.Item
           icon={Target}

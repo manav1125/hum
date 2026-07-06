@@ -680,7 +680,7 @@ export function AgentsOrgPage() {
           onClose={() => setTrustFor(null)}
           onOpenPreferences={() => {
             setTrustFor(null);
-            navigate(routes.trust);
+            navigate(routes.guardrails);
           }}
         />
       ) : null}

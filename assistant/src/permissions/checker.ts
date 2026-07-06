@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { getIsContainerized } from "../config/env-registry.js";
 import { getConfig } from "../config/loader.js";
 import { loadSkillCatalog, resolveSkillSelector } from "../config/skills.js";
+import { applyCheckpointAutonomyOverride } from "../guardrails/checkpoint-enforcement.js";
 import { ipcClassifyRisk } from "../ipc/gateway-client.js";
 import { indexCatalogById } from "../skills/include-graph.js";
 import { getSkillRoots } from "../skills/path-classifier.js";
@@ -551,7 +552,19 @@ export async function check(
     getAutonomyPolicy(),
   ]);
   const autonomyClass = classifyAutonomy(toolName, input);
-  const autonomyMode = autonomyPolicy[autonomyClass];
+  // Guardrail checkpoints layer on top of the gateway's per-category policy
+  // and only tighten: an enabled `autonomy:<class>` checkpoint in scope
+  // (everywhere / this run's agent / this run's mission) turns "auto" into
+  // "ask". Disabling a checkpoint never loosens the underlying policy. The
+  // override is fail-open toward the base mode — the gateway defaults
+  // (send/money/delete → ask) remain the safety net.
+  const autonomyMode = applyCheckpointAutonomyOverride({
+    autonomyClass,
+    mode: autonomyPolicy[autonomyClass],
+    ...(policyContext?.conversationId
+      ? { conversationId: policyContext.conversationId }
+      : {}),
+  }).mode;
   const approvalContext: ApprovalContext = {
     riskLevel: risk,
     toolName,

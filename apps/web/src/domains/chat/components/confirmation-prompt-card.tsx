@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Loader2, Shield } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { MakeRuleSheet } from "@/domains/chat/components/make-rule-sheet";
 import { getRiskBadgeStyle } from "@/domains/chat/utils/risk";
 import type { ConfirmationDecision } from "@/types/event-types";
 import type {
@@ -39,6 +40,9 @@ export function ConfirmationPromptCard({
 }: ConfirmationPromptCardProps) {
   const [showDetails, setShowDetails] = useState(false);
   const [showSplitMenu, setShowSplitMenu] = useState(false);
+  // "Make this a rule →" (Guardrails SET 2) — opens the pre-filled
+  // checkpoint mini-sheet. Additive: the decision buttons stay live above.
+  const [showRuleSheet, setShowRuleSheet] = useState(false);
   const splitMenuRef = useRef<HTMLDivElement>(null);
 
   // Close split menu when clicking outside
@@ -198,6 +202,32 @@ export function ConfirmationPromptCard({
           )}
         </div>
       )}
+
+      {/* Guardrails SET 2 — rules born in the moment. A hairline-separated
+          affordance under the decision buttons; opens the pre-filled
+          checkpoint mini-sheet without disturbing the decision above. */}
+      <div className="mt-3 border-t border-[var(--border-base)] pt-3">
+        {showRuleSheet ? (
+          <MakeRuleSheet
+            toolName={confirmation.toolName}
+            title={confirmation.title}
+            onBack={() => setShowRuleSheet(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowRuleSheet(true)}
+            className="flex w-full items-center justify-center gap-2 bg-transparent text-body-small-default transition-colors hover:opacity-80"
+          >
+            <span className="font-medium text-[var(--accent-cue-strong)]">
+              → Make this a rule
+            </span>
+            <span className="text-[var(--content-tertiary)]">
+              save it as a named checkpoint
+            </span>
+          </button>
+        )}
+      </div>
     </Card>
   );
 }

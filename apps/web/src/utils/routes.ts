@@ -109,7 +109,7 @@ export const routes = {
   create: r("/assistant/create"),
   // v0.3 flagship surfaces. Demoted off the primary nav rail (per the clean-rail
   // design) but still routable + linked from their new homes: Next moves from
-  // Home's feed, Meeting from Home's record action, People + Trust from Contacts.
+  // Home's feed, Meeting from Home's record action, People from Contacts.
   nextMoves: r("/assistant/next-moves"),
   dashboard: r("/assistant/dashboard"),
   // Mission Control — the unified five-lane command center (Inbound · Awaiting
@@ -119,6 +119,9 @@ export const routes = {
   activity: r("/assistant/activity"),
   agentsAtWork: r("/assistant/agents"),
   meeting: r("/assistant/meeting"),
+  // Guardrails — checkpoints · agent scopes · the ledger. Took over the
+  // Trust console's slot; the old /trust URL redirects here.
+  guardrails: r("/assistant/guardrails"),
   trust: r("/assistant/trust"),
   people: r("/assistant/people"),
   voice: r("/assistant/voice"),

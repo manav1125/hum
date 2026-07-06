@@ -25,6 +25,7 @@ import {
   recordActForCompletedRun,
   reverseLatestActForWorkItem,
 } from "./agent-act-store.js";
+import { getAgentByAssignee } from "./agent-store.js";
 import {
   ensureProjectKnowledgeFiles,
   type MaterializedProjectKnowledge,
@@ -364,6 +365,15 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // per-project/per-task instructions before executing.
   const contextPreamble = buildWorkItemContextPreamble(workItem);
 
+  // Guardrails per-agent model pin: a background run executes as the item's
+  // assignee; when that agent pins a model, the run conversation is created
+  // with the existing `modelOverride` mechanism — an explicit per-call model
+  // that wins over profile/call-site resolution in the provider layer
+  // (RetryProvider.normalizeSendMessageOptions treats config.model as
+  // authoritative). Null assignee = the house agent "cue" (never pinned).
+  // Resolved once up front so every turn of the run uses the same model.
+  const pinnedModel = getAgentByAssignee(workItem.assignee)?.model ?? null;
+
   // Set status to running
   updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
   recordWorkItemEvent({
@@ -395,7 +405,10 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             updateWorkItem(workItemId, {
               lastRunConversationId: conversationId,
             });
-            conversation = await getOrCreateConversation(conversationId);
+            conversation = await getOrCreateConversation(
+              conversationId,
+              pinnedModel ? { modelOverride: pinnedModel } : undefined,
+            );
 
             broadcastMessage({
               type: "task_run_conversation_created",
