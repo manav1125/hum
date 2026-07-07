@@ -128,6 +128,34 @@ export interface Subscription {
 
 export type CreditEntryKind = "grant" | "topup" | "usage_sync" | "adjustment";
 
+/** A customer's shareable referral code (one per customer, minted lazily). */
+export interface ReferralCode {
+  code: string;
+  customerId: string;
+  createdAt: number;
+}
+
+export type ReferralRedemptionStatus = "pending" | "awarded" | "capped";
+
+/**
+ * One referee's use of a referral code. Created pending when the referral
+ * code reaches checkout; resolved (awarded/capped) exactly once on the
+ * referee's first paid invoice. `refereeCustomerId` is UNIQUE — a customer
+ * can only ever be referred once (first touch wins).
+ */
+export interface ReferralRedemption {
+  id: string;
+  code: string;
+  refereeCustomerId: string;
+  status: ReferralRedemptionStatus;
+  /** Credits actually granted to the referrer (0 when capped). */
+  creditsAwarded: number;
+  awardedAt: number | null;
+  /** Stripe invoice that triggered the award (webhook-replay audit key). */
+  invoiceId: string | null;
+  createdAt: number;
+}
+
 export interface CreditEntry {
   id: string;
   customerId: string;
@@ -313,6 +341,36 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
     // no custom domain was provisioned (url IS the provider URL).
     sql: `
       ALTER TABLE instances ADD COLUMN flyUrl TEXT
+    `,
+  },
+  {
+    // WS6 growth loops. NOTE for the merge orchestrator: another workstream
+    // (WS4 Slack) also adds an HQ migration — renumber whichever lands
+    // second (the runner is strictly additive, keyed on `version`).
+    version: 6,
+    name: "ws6-referrals",
+    // Referral program: one shareable code per customer; one redemption row
+    // per referred customer (UNIQUE refereeCustomerId — first touch wins),
+    // resolved exactly once on the referee's first paid invoice.
+    sql: `
+      CREATE TABLE referral_codes (
+        code       TEXT PRIMARY KEY,
+        customerId TEXT NOT NULL UNIQUE REFERENCES customers(id),
+        createdAt  INTEGER NOT NULL
+      );
+
+      CREATE TABLE referral_redemptions (
+        id                TEXT PRIMARY KEY,
+        code              TEXT NOT NULL REFERENCES referral_codes(code),
+        refereeCustomerId TEXT NOT NULL UNIQUE REFERENCES customers(id),
+        status            TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','awarded','capped')),
+        creditsAwarded    INTEGER NOT NULL DEFAULT 0,
+        awardedAt         INTEGER,
+        invoiceId         TEXT,
+        createdAt         INTEGER NOT NULL
+      );
+      CREATE INDEX idx_referral_redemptions_code ON referral_redemptions(code)
     `,
   },
 ];
@@ -933,6 +991,163 @@ export class HqDb {
         )
         .get(kind, note) ?? null
     );
+  }
+
+  // ── referrals (WS6 growth loops) ──────────────────────────────────────
+
+  /**
+   * The customer's referral code, minting one on first use. Codes read
+   * `REF-XXXXXXXX` (same unambiguous alphabet as invites, distinct prefix
+   * so the two can never be confused at a glance or in support threads).
+   */
+  ensureReferralCode(customerId: string): ReferralCode {
+    if (!this.getCustomer(customerId)) {
+      throw new Error(`Unknown customer: ${customerId}`);
+    }
+    const existing = this.getReferralCodeByCustomer(customerId);
+    if (existing) return existing;
+    const referral: ReferralCode = {
+      code: "REF-" + readableCode(8),
+      customerId,
+      createdAt: Date.now(),
+    };
+    this.db.run(
+      "INSERT INTO referral_codes (code, customerId, createdAt) VALUES (?, ?, ?)",
+      [referral.code, referral.customerId, referral.createdAt],
+    );
+    this.recordEvent("referral_code_created", customerId, {
+      code: referral.code,
+    });
+    return referral;
+  }
+
+  getReferralCode(code: string): ReferralCode | null {
+    return (
+      this.db
+        .query<ReferralCode, [string]>(
+          "SELECT * FROM referral_codes WHERE code = ?",
+        )
+        .get(code.trim().toUpperCase()) ?? null
+    );
+  }
+
+  getReferralCodeByCustomer(customerId: string): ReferralCode | null {
+    return (
+      this.db
+        .query<ReferralCode, [string]>(
+          "SELECT * FROM referral_codes WHERE customerId = ?",
+        )
+        .get(customerId) ?? null
+    );
+  }
+
+  /**
+   * Record a referee's pending redemption of a referral code. A customer
+   * can only ever be referred once — when a redemption already exists for
+   * this referee (any status, any code), it wins and is returned unchanged.
+   */
+  createReferralRedemption(params: {
+    code: string;
+    refereeCustomerId: string;
+  }): ReferralRedemption {
+    const existing = this.getReferralRedemptionByReferee(
+      params.refereeCustomerId,
+    );
+    if (existing) return existing;
+    const redemption: ReferralRedemption = {
+      id: randomUUID(),
+      code: params.code,
+      refereeCustomerId: params.refereeCustomerId,
+      status: "pending",
+      creditsAwarded: 0,
+      awardedAt: null,
+      invoiceId: null,
+      createdAt: Date.now(),
+    };
+    this.db.run(
+      "INSERT INTO referral_redemptions (id, code, refereeCustomerId, status, creditsAwarded, awardedAt, invoiceId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        redemption.id,
+        redemption.code,
+        redemption.refereeCustomerId,
+        redemption.status,
+        redemption.creditsAwarded,
+        redemption.awardedAt,
+        redemption.invoiceId,
+        redemption.createdAt,
+      ],
+    );
+    this.recordEvent("referral_redemption_created", params.refereeCustomerId, {
+      code: params.code,
+    });
+    return redemption;
+  }
+
+  getReferralRedemptionByReferee(
+    refereeCustomerId: string,
+  ): ReferralRedemption | null {
+    return (
+      this.db
+        .query<ReferralRedemption, [string]>(
+          "SELECT * FROM referral_redemptions WHERE refereeCustomerId = ?",
+        )
+        .get(refereeCustomerId) ?? null
+    );
+  }
+
+  listReferralRedemptionsByCode(code: string): ReferralRedemption[] {
+    return this.db
+      .query<ReferralRedemption, [string]>(
+        "SELECT * FROM referral_redemptions WHERE code = ? ORDER BY createdAt DESC",
+      )
+      .all(code);
+  }
+
+  /**
+   * Resolve a pending redemption exactly once. Atomic on status='pending' —
+   * a raced or replayed resolve returns null and changes nothing.
+   */
+  resolveReferralRedemption(
+    id: string,
+    outcome: {
+      status: "awarded" | "capped";
+      creditsAwarded: number;
+      invoiceId: string | null;
+    },
+    now: number = Date.now(),
+  ): ReferralRedemption | null {
+    let resolved: ReferralRedemption | null = null;
+    const tx = this.db.transaction(() => {
+      const row = this.db
+        .query<ReferralRedemption, [string]>(
+          "SELECT * FROM referral_redemptions WHERE id = ?",
+        )
+        .get(id);
+      if (!row || row.status !== "pending") return;
+      this.db.run(
+        "UPDATE referral_redemptions SET status = ?, creditsAwarded = ?, awardedAt = ?, invoiceId = ? WHERE id = ?",
+        [outcome.status, outcome.creditsAwarded, now, outcome.invoiceId, id],
+      );
+      resolved = {
+        ...row,
+        status: outcome.status,
+        creditsAwarded: outcome.creditsAwarded,
+        awardedAt: now,
+        invoiceId: outcome.invoiceId,
+      };
+    });
+    tx();
+    return resolved;
+  }
+
+  /** Total referral credits a code has earned (awarded redemptions only). */
+  sumReferralCreditsAwarded(code: string): number {
+    const row = this.db
+      .query<{ total: number | null }, [string]>(
+        "SELECT SUM(creditsAwarded) AS total FROM referral_redemptions WHERE code = ? AND status = 'awarded'",
+      )
+      .get(code);
+    return row?.total ?? 0;
   }
 }
 

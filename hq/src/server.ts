@@ -15,6 +15,9 @@
  *                               falling back to /account
  *   POST /testflight            { email } → {ok} (idempotent interest event)
  *   GET  /downloads/cue-macos.dmg — DMG from HQ_DOWNLOADS_DIR (branded 404)
+ *   GET  /skills/{slug}         — public shareable skill page (share.ts:
+ *                               static catalog/seed-source render, OG tags,
+ *                               install CTA; zero customer data)
  *
  * Customer routes (signed session cookie, HQ_SESSION_SECRET):
  *   GET  /account/summary       — plan + credits + 30-day usage
@@ -68,6 +71,12 @@ import {
   provisionCustomer,
   publicSiteBase,
 } from "./provisioning.js";
+import { referralSummary, validateReferralCode } from "./referrals.js";
+import {
+  getShareSkill,
+  renderShareNotFoundPage,
+  renderSkillSharePage,
+} from "./share.js";
 import {
   SIGNIN_TOKEN_TTL_MS,
   customerIdFromRequest,
@@ -275,6 +284,16 @@ export function createHandler(
         path === "/downloads/cue-macos.dmg"
       ) {
         return handleMacDownload(method);
+      }
+
+      // Shareable skill pages: /skills/{slug} only (single segment) — the
+      // /skills index page itself stays a static site file, and deeper
+      // paths fall through to static serving untouched.
+      if (method === "GET" || method === "HEAD") {
+        const shareMatch = path.match(/^\/skills\/([^/]+)$/);
+        if (shareMatch) {
+          return handleSkillSharePage(decodeURIComponent(shareMatch[1]), method);
+        }
       }
 
       // ── customer (session-cookie) routes ──────────────────────────────
@@ -508,6 +527,27 @@ export function createHandler(
       plan,
     });
 
+    // Optional referral code (friend's REF-XXXXXXXX): validated here —
+    // unknown/self-referral codes are dropped (never block checkout) — and
+    // carried on the checkout as Stripe metadata; the webhook awards the
+    // referrer on this customer's first paid invoice.
+    let referralCode: string | undefined;
+    if (typeof body.referralCode === "string" && body.referralCode.trim()) {
+      const validation = validateReferralCode(
+        db,
+        body.referralCode,
+        customer.id,
+      );
+      if (validation.ok) {
+        referralCode = validation.code;
+      } else {
+        db.recordEvent("referral_code_rejected", customer.id, {
+          code: body.referralCode.trim(),
+          reason: validation.reason,
+        });
+      }
+    }
+
     const checkout = await createCheckoutSession(
       {
         customerId: customer.id,
@@ -515,6 +555,7 @@ export function createHandler(
         plan,
         inviteCode: invite.code,
         percentOff: invite.percentOff,
+        referralCode,
       },
       fetchImpl,
     );
@@ -526,6 +567,7 @@ export function createHandler(
         plan,
         checkoutUrl: null,
         reason: checkout.reason,
+        referralApplied: !!referralCode,
       });
     }
     void trackEvent(
@@ -546,6 +588,7 @@ export function createHandler(
       customerId: customer.id,
       plan,
       checkoutUrl: checkout.url,
+      referralApplied: !!referralCode,
     });
   }
 
@@ -794,6 +837,29 @@ export function createHandler(
     });
   }
 
+  /**
+   * GET /skills/{slug} — public shareable skill page. Pure static render
+   * (share.ts reads the catalog file + seed-source constants only): no db
+   * access, no cookies, no customer or instance data on this path.
+   */
+  function handleSkillSharePage(slug: string, method: string): Response {
+    const skill = getShareSkill(slug);
+    if (!skill) {
+      return new Response(method === "HEAD" ? null : renderShareNotFoundPage(), {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+    const html = renderSkillSharePage(skill, publicSiteBase());
+    return new Response(method === "HEAD" ? null : html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "public, max-age=300",
+      },
+    });
+  }
+
   /** Cookie-authed /account/* routes. */
   async function handleAccount(
     req: Request,
@@ -942,6 +1008,9 @@ export function createHandler(
       },
       usage: { days },
       instanceUrl: instance?.url ?? null,
+      // Growth loop: the customer's shareable referral code (minted lazily
+      // on first view) + earnings against the lifetime cap.
+      referral: referralSummary(db, customer.id, publicSiteBase()),
     };
   }
 
