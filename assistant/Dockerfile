@@ -62,6 +62,13 @@ RUN set -eu; for pkg in /app/skills/*/package.json; do \
 # touches them, so the emitted manifest is correct in the meantime.
 COPY assistant ./assistant
 
+# Ship the feature-flag registry (the per-package copies under src/config are
+# gitignored/generated, so they are absent from a clean build). The daemon's
+# assistant-feature-flags loader resolves `<app>/meta/feature-flags/…` as a
+# fallback candidate — without this, newly-declared flags (e.g. marketplace)
+# have no default in the image and resolve OFF regardless of defaultEnabled.
+COPY meta ./meta
+
 # Emit the meet-join manifest consumed by the daemon-side loader to
 # register proxy tools/routes without importing the skill in-process.
 RUN bun run /app/skills/meet-join/scripts/emit-manifest.ts \

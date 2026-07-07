@@ -60,3 +60,5 @@ skills/meet-join/**/*.test.ts
 !hq/**
 !site/
 !site/**
+!meta/
+!meta/**
