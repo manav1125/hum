@@ -429,9 +429,6 @@ class Component extends DCLogic {
 
     // NAV scroll state
     const nav=document.getElementById('haloNav');
-    const word=document.getElementById('haloNavWord');
-    const sub=document.getElementById('haloNavSub');
-    const navlinks=[...document.querySelectorAll('[data-navlink]')];
     // mobile nav
     const ham=document.getElementById('haloHamburger');
     const mob=document.getElementById('haloMobileNav');
@@ -443,13 +440,13 @@ class Component extends DCLogic {
     }
     const setNav=()=>{
       const s=window.scrollY>40; if(!nav) return;
-      nav.style.background=s?'rgba(255,255,255,.85)':'transparent';
-      nav.style.boxShadow=s?'0 1px 0 rgba(26,34,48,.08),0 10px 30px -20px rgba(26,34,48,.3)':'none';
+      // Scrolled nav stays on the dark design system: translucent #0F1620 + blur,
+      // keeping the light links and the filled CTA readable over any section.
+      nav.style.background=s?'rgba(15,22,32,.92)':'transparent';
+      nav.style.boxShadow=s?'0 1px 0 rgba(255,255,255,.08),0 10px 30px -20px rgba(0,0,0,.6)':'none';
       nav.style.backdropFilter=s?'blur(12px)':'none';
+      nav.style.webkitBackdropFilter=s?'blur(12px)':'none';
       nav.style.padding=s?'11px clamp(20px,5vw,56px)':'16px clamp(20px,5vw,56px)';
-      if(word) word.style.color=s?'#1A2230':'#fff';
-      if(sub) sub.style.color=s?'#8D99A5':'rgba(255,255,255,.6)';
-      navlinks.forEach(a=>{ a.style.color=s?'#5A6672':'rgba(255,255,255,.75)'; });
     };
     setNav(); window.addEventListener('scroll',setNav,{passive:true});
 

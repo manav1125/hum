@@ -1243,22 +1243,16 @@ class Component extends DCLogic {
 
     // ---- NAV scroll + color state ----
     const nav = document.getElementById('cueNav');
-    const word = document.getElementById('cueNavWord');
-    const links = document.getElementById('cueNavLinks');
     const setNav = () => {
       const s = window.scrollY > 40;
       if(!nav) return;
-      nav.style.background = s ? 'rgba(255,255,255,.92)' : 'transparent';
-      nav.style.boxShadow = s ? '0 1px 0 rgba(26,34,48,.08),0 10px 30px -20px rgba(26,34,48,.3)' : 'none';
+      // Scrolled nav stays on the dark design system: translucent #0F1620 + blur,
+      // keeping the light links and the filled Sign in button readable over any section.
+      nav.style.background = s ? 'rgba(15,22,32,.92)' : 'transparent';
+      nav.style.boxShadow = s ? '0 1px 0 rgba(255,255,255,.08),0 10px 30px -20px rgba(0,0,0,.6)' : 'none';
       nav.style.backdropFilter = s ? 'blur(14px)' : 'none';
+      nav.style.webkitBackdropFilter = s ? 'blur(14px)' : 'none';
       nav.style.padding = s ? '11px clamp(20px,5vw,56px)' : '16px clamp(20px,5vw,56px)';
-      if(word) word.style.color = s ? '#1A2230' : '#fff';
-      if(links) [...links.querySelectorAll('a')].forEach(a=>{
-        if(a.getAttribute('data-keep')) return;
-        a.style.color = s ? '#5A6672' : 'rgba(255,255,255,.75)';
-      });
-      const ham = document.getElementById('cueHamburger');
-      if(ham) [...ham.querySelectorAll('span')].forEach(sp=>{ sp.style.background = s ? '#1A2230' : '#fff'; });
     };
     setNav();
     window.addEventListener('scroll', ()=>{ setNav(); updateProg(); }, {passive:true});
