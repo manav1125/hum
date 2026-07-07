@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { FlyDriver, parseGuestPreset } from "../providers/fly-driver.js";
+import {
+  FlyDriver,
+  isCapacityError,
+  parseGuestPreset,
+} from "../providers/fly-driver.js";
 
 const ENV_KEYS = [
   "FLY_API_TOKEN",
@@ -165,6 +169,7 @@ function makeDriver(fetchImpl: typeof fetch): FlyDriver {
     fetchImpl,
     healthTimeoutMs: 100,
     healthIntervalMs: 10,
+    placementBackoffMs: 5,
   });
 }
 
@@ -384,6 +389,188 @@ describe("app-name collision", () => {
     const driver = makeDriver(fetchImpl);
     expect(driver.provision(SPEC)).rejects.toThrow(/→ 500/);
     expect(appCreates).toBe(1);
+  });
+});
+
+describe("capacity placement retries", () => {
+  // The two production rejections this feature exists for, verbatim.
+  const VOLUME_CAPACITY_ERROR =
+    "failed_precondition: machine capacity hold failed: insufficient CPUs available to fulfill request";
+  const MACHINE_CAPACITY_ERROR =
+    "insufficient resources to create new machine with existing volume 'vol_test1'";
+
+  test("isCapacityError matches the production rejections, not generic failures", () => {
+    expect(isCapacityError(new Error(VOLUME_CAPACITY_ERROR))).toBe(true);
+    expect(
+      isCapacityError(
+        new Error(`Fly API POST /apps/x/machines → 412: ${MACHINE_CAPACITY_ERROR}`),
+      ),
+    ).toBe(true);
+    expect(isCapacityError(new Error("Fly API POST /x → 500: internal error"))).toBe(false);
+    expect(isCapacityError(new Error("Fly volume create returned no id"))).toBe(false);
+  });
+
+  test("volume capacity hold failure retries the volume create, then succeeds", async () => {
+    let volumeCreates = 0;
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          if (volumeCreates === 1) {
+            return Response.json(
+              { error: VOLUME_CAPACITY_ERROR },
+              { status: 422 },
+            );
+          }
+        }
+        return undefined;
+      },
+    });
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(volumeCreates).toBe(2);
+    expect(result.url).toBe("https://cue-ada-abcd1234.fly.dev");
+    // Nothing existed to clean up between attempts — no deletes, no teardown.
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  test("machine 412 deletes the pinned volume, recreates it, retries the machine", async () => {
+    let volumeCreates = 0;
+    let machineCreates = 0;
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          return Response.json({ id: `vol_test${volumeCreates}`, name: "workspace" });
+        }
+        if (method === "POST" && url.endsWith("/machines")) {
+          machineCreates += 1;
+          if (machineCreates === 1) {
+            return Response.json(
+              { error: MACHINE_CAPACITY_ERROR },
+              { status: 412 },
+            );
+          }
+        }
+        return undefined;
+      },
+    });
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(result.externalId).toBe("cue-ada-abcd1234");
+    expect(volumeCreates).toBe(2);
+    expect(machineCreates).toBe(2);
+
+    // The full-host volume was deleted BEFORE the fresh volume was created.
+    const plan = calls.map((c) => `${c.method} ${c.url}`);
+    const volumeDeleteAt = plan.indexOf(
+      "DELETE https://api.machines.dev/v1/apps/cue-ada-abcd1234/volumes/vol_test1",
+    );
+    const secondVolumeAt = plan.lastIndexOf(
+      "POST https://api.machines.dev/v1/apps/cue-ada-abcd1234/volumes",
+    );
+    expect(volumeDeleteAt).toBeGreaterThan(-1);
+    expect(secondVolumeAt).toBeGreaterThan(volumeDeleteAt);
+
+    // The successful machine mounts the FRESH volume, not the pinned one.
+    const machineBody = calls[
+      plan.lastIndexOf(
+        "POST https://api.machines.dev/v1/apps/cue-ada-abcd1234/machines",
+      )
+    ].body as { config: { mounts: { volume: string; path: string }[] } };
+    expect(machineBody.config.mounts).toEqual([
+      { volume: "vol_test2", path: "/workspace" },
+    ]);
+  });
+
+  test("exhausted attempts throw with the attempt count and tear the app down", async () => {
+    let volumeCreates = 0;
+    let machineCreates = 0;
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          return Response.json({ id: `vol_test${volumeCreates}`, name: "workspace" });
+        }
+        if (method === "POST" && url.endsWith("/machines")) {
+          machineCreates += 1;
+          return Response.json({ error: MACHINE_CAPACITY_ERROR }, { status: 412 });
+        }
+        return undefined;
+      },
+    });
+    const driver = makeDriver(fetchImpl);
+
+    await expect(driver.provision(SPEC)).rejects.toThrow(
+      /placement failed after 4 attempts/,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(volumeCreates).toBe(4);
+    expect(machineCreates).toBe(4);
+    // Every pinned volume was deleted between attempts, and the standard
+    // teardown still ran (app deleted, force).
+    const volumeDeletes = calls.filter(
+      (c) => c.method === "DELETE" && /\/volumes\/vol_test\d$/.test(c.url),
+    );
+    expect(volumeDeletes.length).toBeGreaterThanOrEqual(4);
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "DELETE" &&
+          c.url.endsWith("/apps/cue-ada-abcd1234?force=true"),
+      ),
+    ).toBe(true);
+  });
+
+  test("non-capacity machine errors are NOT retried (fail fast + teardown)", async () => {
+    let volumeCreates = 0;
+    let machineCreates = 0;
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          return undefined;
+        }
+        if (method === "POST" && url.endsWith("/machines")) {
+          machineCreates += 1;
+          return new Response("internal error", { status: 500 });
+        }
+        return undefined;
+      },
+    });
+    const driver = makeDriver(fetchImpl);
+
+    await expect(driver.provision(SPEC)).rejects.toThrow(/→ 500/);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(volumeCreates).toBe(1);
+    expect(machineCreates).toBe(1);
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "DELETE" &&
+          c.url.endsWith("/apps/cue-ada-abcd1234?force=true"),
+      ),
+    ).toBe(true);
+  });
+
+  test("non-capacity volume errors are NOT retried", async () => {
+    let volumeCreates = 0;
+    const { fetchImpl } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          return new Response("internal error", { status: 500 });
+        }
+        return undefined;
+      },
+    });
+    const driver = makeDriver(fetchImpl);
+    await expect(driver.provision(SPEC)).rejects.toThrow(/→ 500/);
+    expect(volumeCreates).toBe(1);
   });
 });
 

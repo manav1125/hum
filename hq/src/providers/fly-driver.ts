@@ -53,6 +53,17 @@
  * and tears down everything it created if that never happens — Fly has no
  * "deploy in progress" state to lean on, so a half-created app would
  * otherwise leak (and bill) silently.
+ *
+ * Capacity placement: Fly hosts fill up. Volume create can be rejected with
+ * "failed_precondition: machine capacity hold failed: insufficient CPUs
+ * available", and machine create can 412 with "insufficient resources to
+ * create new machine with existing volume 'vol_…'" — a volume pins its
+ * machines to one physical host, so a volume placed on a host that fills up
+ * before machine-create can never receive its machine. provision() retries
+ * the volume+machine pair up to PLACEMENT_ATTEMPTS times (~15s apart); a
+ * machine-side capacity rejection deletes the pinned volume first so the
+ * recreate rolls a fresh host. Non-capacity errors keep the existing
+ * fail-fast + teardown behavior.
  */
 
 import type {
@@ -73,6 +84,22 @@ const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 
 /** How many times provision() peeks at cert issuance before moving on. */
 const CERT_POLL_ATTEMPTS = 6;
+
+/** Volume+machine placement attempts against Fly capacity rejections. */
+const PLACEMENT_ATTEMPTS = 4;
+/** Backoff between placement attempts (tests use tiny values via the ctor). */
+const PLACEMENT_BACKOFF_MS = 15_000;
+
+/**
+ * Fly capacity/placement rejections (retryable by re-placing), as seen in
+ * production: volume create → "failed_precondition: machine capacity hold
+ * failed: insufficient CPUs available to fulfill request"; machine create →
+ * 412 "insufficient resources to create new machine with existing volume".
+ */
+export function isCapacityError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /insufficient|capacity hold|failed_precondition|→ 412/i.test(msg);
+}
 
 interface CustomDomainConfig {
   /** e.g. "justcue.app" */
@@ -139,6 +166,7 @@ export class FlyDriver implements InstanceDriver {
   private readonly fetchImpl: typeof fetch;
   private readonly healthTimeoutMs: number;
   private readonly healthIntervalMs: number;
+  private readonly placementBackoffMs: number;
 
   constructor(
     opts: {
@@ -146,6 +174,8 @@ export class FlyDriver implements InstanceDriver {
       /** Provision health-poll budget (tests use tiny values). */
       healthTimeoutMs?: number;
       healthIntervalMs?: number;
+      /** Backoff between capacity-placement attempts (tests use tiny values). */
+      placementBackoffMs?: number;
     } = {},
   ) {
     this.apiToken = process.env.FLY_API_TOKEN ?? "";
@@ -155,6 +185,7 @@ export class FlyDriver implements InstanceDriver {
       opts.healthTimeoutMs ??
       Number(process.env.HQ_HEALTH_TIMEOUT_MS ?? 5 * 60_000);
     this.healthIntervalMs = opts.healthIntervalMs ?? 5_000;
+    this.placementBackoffMs = opts.placementBackoffMs ?? PLACEMENT_BACKOFF_MS;
   }
 
   get configured(): boolean {
@@ -256,45 +287,13 @@ export class FlyDriver implements InstanceDriver {
     try {
       await this.allocatePublicIps(appName);
 
-      const volume = (await this.api("POST", `/apps/${appName}/volumes`, {
-        name: "workspace",
+      const machine = await this.placeVolumeAndMachine(
+        appName,
         region,
-        size_gb: volumeSizeGb(spec),
-      })) as FlyVolume;
-      if (!volume?.id) {
-        throw new Error("Fly volume create returned no id");
-      }
-
-      const machine = (await this.api("POST", `/apps/${appName}/machines`, {
-        region,
-        config: {
-          image,
-          // The image's default CMD is the standalone daemon
-          // (docker-entrypoint.sh); the combined daemon+gateway entrypoint is
-          // what render.yaml runs via `dockerCommand` — mirror that here, or
-          // nothing listens on the public port and health never passes.
-          init: { cmd: ["/app/assistant/docker-cue-app-entrypoint.sh"] },
-          env: spec.env,
-          guest,
-          // Public ingress: Fly's edge proxies 80/443 → the gateway on its
-          // in-container GATEWAY_PORT (10000, per the render.yaml contract).
-          services: [
-            {
-              protocol: "tcp",
-              internal_port: 10000,
-              ports: [
-                { port: 80, handlers: ["http"], force_https: true },
-                { port: 443, handlers: ["http", "tls"] },
-              ],
-            },
-          ],
-          mounts: [{ volume: volume.id, path: "/workspace" }],
-          restart: { policy: "always" },
-        },
-      })) as FlyMachine;
-      if (!machine?.id) {
-        throw new Error("Fly machine create returned no id");
-      }
+        spec,
+        image,
+        guest,
+      );
 
       await this.waitForMachineState(appName, machine.id, "started");
 
@@ -324,6 +323,122 @@ export class FlyDriver implements InstanceDriver {
       );
     }
     return { externalId: appName, url };
+  }
+
+  /**
+   * Create the /workspace volume and the machine that mounts it, retrying
+   * Fly capacity rejections. A volume pins its machines to one physical
+   * host, so the pair fails in two capacity-shaped ways:
+   *
+   *  a. volume create → "capacity hold failed: insufficient CPUs available"
+   *     (failed_precondition): the chosen host can't also fit the machine.
+   *     Back off and create again — placement re-rolls per create.
+   *  b. machine create → 412 "insufficient resources to create new machine
+   *     with existing volume 'vol_…'": the host filled up between the two
+   *     calls. The volume can never receive a machine now, so delete it and
+   *     recreate for a fresh host before retrying the machine.
+   *
+   * Non-capacity errors throw immediately (the provision() catch tears the
+   * app down, unchanged). Exhausting PLACEMENT_ATTEMPTS throws a
+   * "placement failed after N attempts" error carrying the last rejection.
+   */
+  private async placeVolumeAndMachine(
+    appName: string,
+    region: string,
+    spec: InstanceSpec,
+    image: string,
+    guest: { cpu_kind: string; cpus: number; memory_mb: number },
+  ): Promise<FlyMachine> {
+    let volume: FlyVolume | null = null;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= PLACEMENT_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        console.warn(
+          `[fly-driver] placement attempt ${attempt - 1}/${PLACEMENT_ATTEMPTS} for ${appName} hit Fly capacity — retrying: ${
+            lastError?.message.slice(0, 200)
+          }`,
+        );
+        await new Promise((r) => setTimeout(r, this.placementBackoffMs));
+      }
+
+      if (!volume) {
+        try {
+          const created = (await this.api("POST", `/apps/${appName}/volumes`, {
+            name: "workspace",
+            region,
+            size_gb: volumeSizeGb(spec),
+          })) as FlyVolume;
+          if (!created?.id) {
+            throw new Error("Fly volume create returned no id");
+          }
+          volume = created;
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          if (!isCapacityError(lastError)) throw lastError;
+          continue; // no capacity hold on that host — re-roll placement
+        }
+      }
+
+      try {
+        return await this.createMachine(appName, region, spec, image, guest, volume);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (!isCapacityError(lastError)) throw lastError;
+        // The volume pins machines to a now-full host — delete it so the
+        // next attempt places a fresh volume on a host with room.
+        await this.api(
+          "DELETE",
+          `/apps/${appName}/volumes/${volume.id}`,
+        ).catch(() => {});
+        volume = null;
+      }
+    }
+
+    throw new Error(
+      `fly-driver: placement failed after ${PLACEMENT_ATTEMPTS} attempts: ${lastError?.message}`,
+    );
+  }
+
+  private async createMachine(
+    appName: string,
+    region: string,
+    spec: InstanceSpec,
+    image: string,
+    guest: { cpu_kind: string; cpus: number; memory_mb: number },
+    volume: FlyVolume,
+  ): Promise<FlyMachine> {
+    const machine = (await this.api("POST", `/apps/${appName}/machines`, {
+      region,
+      config: {
+        image,
+        // The image's default CMD is the standalone daemon
+        // (docker-entrypoint.sh); the combined daemon+gateway entrypoint is
+        // what render.yaml runs via `dockerCommand` — mirror that here, or
+        // nothing listens on the public port and health never passes.
+        init: { cmd: ["/app/assistant/docker-cue-app-entrypoint.sh"] },
+        env: spec.env,
+        guest,
+        // Public ingress: Fly's edge proxies 80/443 → the gateway on its
+        // in-container GATEWAY_PORT (10000, per the render.yaml contract).
+        services: [
+          {
+            protocol: "tcp",
+            internal_port: 10000,
+            ports: [
+              { port: 80, handlers: ["http"], force_https: true },
+              { port: 443, handlers: ["http", "tls"] },
+            ],
+          },
+        ],
+        mounts: [{ volume: volume.id, path: "/workspace" }],
+        restart: { policy: "always" },
+      },
+    })) as FlyMachine;
+    if (!machine?.id) {
+      throw new Error("Fly machine create returned no id");
+    }
+    return machine;
   }
 
   /**

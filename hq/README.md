@@ -377,6 +377,19 @@ are pullable by every app in the same org. Point HQ at the ref via
 `/workspace` volume behind a shared IPv4 + dedicated IPv6, with Fly's edge
 terminating TLS in front of the gateway on port 10000.
 
+**Capacity placement retries.** Fly hosts fill up mid-provision: volume
+create can be rejected with `capacity hold failed: insufficient CPUs
+available`, and machine create can 412 with `insufficient resources to
+create new machine with existing volume` — a volume pins its machines to
+one physical host, so a volume placed on a host that fills up before
+machine-create can never receive its machine. The driver retries the
+volume+machine pair up to 4 times (~15s apart); on a machine-side capacity
+rejection it deletes the pinned volume and recreates it so the retry rolls
+a fresh host. Non-capacity errors still fail fast and tear the app down as
+before; if every attempt is rejected the provision fails with "placement
+failed after 4 attempts" (carrying Fly's last rejection) and the standard
+teardown runs.
+
 **Qdrant on Fly (v1):** the driver deliberately provisions no Qdrant and
 sets no `QDRANT_URL`. The daemon treats Qdrant as a non-blocking subsystem
 (`assistant/src/daemon/lifecycle.ts`): without `QDRANT_URL`,
