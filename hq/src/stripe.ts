@@ -52,6 +52,10 @@ import {
   type TopupSpec,
 } from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
+import {
+  awardReferralOnPaidInvoice,
+  recordReferralRedemption,
+} from "./referrals.js";
 
 const STRIPE_API_BASE = "https://api.stripe.com";
 
@@ -155,6 +159,12 @@ export async function createCheckoutSession(
     plan: CustomerPlan;
     inviteCode?: string;
     percentOff?: number;
+    /**
+     * Validated referral code (referrals.ts) riding along as metadata on
+     * both the session and the subscription, so checkout.session.completed
+     * AND invoice.paid can each see it whatever order Stripe delivers them.
+     */
+    referralCode?: string;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<CheckoutResult> {
@@ -182,6 +192,13 @@ export async function createCheckoutSession(
     "subscription_data[metadata][plan]": params.plan,
   });
   if (params.inviteCode) form.set("metadata[inviteCode]", params.inviteCode);
+  if (params.referralCode) {
+    form.set("metadata[referralCode]", params.referralCode);
+    form.set(
+      "subscription_data[metadata][referralCode]",
+      params.referralCode,
+    );
+  }
 
   // Invite discount: mint (or reuse) a promotion code carrying the invite's
   // percentOff and attach it to the session.
@@ -504,6 +521,9 @@ export interface WebhookOutcome {
  *                                     apply the top-up + raise the key limit
  *   invoice.paid                    → grant monthly credits (idempotent per
  *                                     period) + reset the child-key limit
+ *                                     + award the referrer on the referee's
+ *                                     first paid invoice (referrals.ts —
+ *                                     idempotent, capped)
  *   invoice.payment_failed          → payment-failed email (grace period)
  *   customer.subscription.updated   → sync status; suspend/resume instances
  *   customer.subscription.deleted   → customer churned + instances suspended
@@ -618,6 +638,15 @@ export async function handleStripeWebhook(
         plan: metadata.plan ?? null,
       });
       db.transitionCustomer(customerId, "active");
+      // Referral: bind the referee to their referrer's code (pending until
+      // the first paid invoice awards it). Re-validated inside; invalid or
+      // self-referral codes are dropped with an audit event.
+      if (metadata.referralCode) {
+        recordReferralRedemption(db, {
+          code: metadata.referralCode,
+          refereeCustomerId: customerId,
+        });
+      }
       db.recordEvent("stripe_checkout_completed", customerId, {
         sessionId: obj.id ?? null,
       });
@@ -678,11 +707,26 @@ export async function handleStripeWebhook(
       if (grant.granted) {
         await syncKeyLimitsToBalance(db, customer.id, fetchImpl);
       }
+      // Referral: the referee's first paid invoice awards the referrer.
+      // Idempotent inside (pending-row gate + note-keyed ledger entry), so
+      // Stripe retries/replays of this invoice can never double-award.
+      const subMeta = ((obj.subscription_details ?? {}) as {
+        metadata?: Record<string, string>;
+      }).metadata;
+      const referral = awardReferralOnPaidInvoice(db, {
+        refereeCustomerId: customer.id,
+        invoiceId: obj.id ? String(obj.id) : null,
+        referralCode: subMeta?.referralCode,
+      });
+      if (referral.awarded) {
+        await syncKeyLimitsToBalance(db, referral.referrerCustomerId, fetchImpl);
+      }
       db.recordEvent("stripe_invoice_paid", customer.id, {
         invoiceId: obj.id ?? null,
         stripeSubId: resolved.stripeSubId,
         granted: grant.granted,
         balance: grant.balance,
+        referralAwarded: referral.awarded,
       });
       return { status: 200, body: { received: true, granted: grant.granted } };
     }
