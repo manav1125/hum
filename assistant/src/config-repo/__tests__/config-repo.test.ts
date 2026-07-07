@@ -38,13 +38,13 @@ import { ROUTES } from "../../runtime/routes/work-items-routes.js";
 import { createSchedule } from "../../schedule/schedule-store.js";
 import { createManagedSkill } from "../../skills/managed-store.js";
 import {
-  getWorkItem,
-  listWorkItems,
-} from "../../work-items/work-item-store.js";
-import {
   getWorkspaceConfigPath,
   getWorkspaceDir,
 } from "../../util/platform.js";
+import {
+  getWorkItem,
+  listWorkItems,
+} from "../../work-items/work-item-store.js";
 import { runGit } from "../git.js";
 import {
   flushConfigRepo,
