@@ -57,6 +57,7 @@ import { SequencesSection } from "@/domains/activity/sections/sequences-section"
 import { WatchingSection } from "@/domains/activity/sections/watching-section";
 import { InboundLane } from "@/pages/mission-control/inbound-lane";
 
+import { BuildOutTiles } from "./build-out-tiles";
 import { NextMoveHero } from "./next-move-hero";
 
 // SSE (`useActivitySync`) drives freshness across the whole stream, so every
@@ -475,6 +476,12 @@ export function CommandCenterPage({
             thing the eye lands on. Renders a calm caught-up card when there's
             no move (never a void). */}
         <NextMoveHero assistantId={assistantId} />
+
+        {/* BUILD-OUT TILES — live counts (Integrations · Scheduled · Skills ·
+            Team/Channels · Marketplace), each deep-linking to its surface.
+            Renders only when HQ setup is complete (never fights the setup
+            meter) and only with the `onboarding-v2` flag ON. */}
+        <BuildOutTiles assistantId={assistantId} />
 
         {/* The calm editorial stream below the hero. Empty high-priority lanes
             (Needs you / In motion) collapse to a single slim line so real

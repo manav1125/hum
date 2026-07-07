@@ -276,6 +276,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "onboarding-v2",
+      "scope": "assistant",
+      "key": "onboarding-v2",
+      "label": "Onboarding v2",
+      "description": "Enable the upgraded HQ onboarding: the optional 'How Cue thinks' step (Cue credits / bring-your-own OpenRouter key), the searchable Composio connect-tools grid on the connect step, and the command-center build-out tiles. OFF renders the original 5-step wizard and no tiles.",
+      "defaultEnabled": true
+    },
+    {
       "id": "marketplace",
       "scope": "assistant",
       "key": "marketplace",

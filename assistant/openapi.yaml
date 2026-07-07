@@ -8010,6 +8010,96 @@ paths:
                 - requestId
                 - decision
               additionalProperties: false
+  /v1/connector-apps:
+    get:
+      operationId: connectorapps_get
+      summary: List Composio-connectable apps
+      description:
+        Return the catalog of Composio-connectable apps with this install's connected state. Server-side cached
+        (24h); falls back to a static curated list when Composio is unavailable or unconfigured.
+      tags:
+        - connectors
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  source:
+                    type: string
+                    enum:
+                      - composio
+                      - curated
+                  apps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        slug:
+                          type: string
+                        name:
+                          type: string
+                        category:
+                          type: string
+                        connected:
+                          type: boolean
+                      required:
+                        - slug
+                        - name
+                        - category
+                        - connected
+                      additionalProperties: false
+                required:
+                  - configured
+                  - source
+                  - apps
+                additionalProperties: false
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive filter over name, slug, and category.
+  /v1/connector-apps/connect:
+    post:
+      operationId: connectorapps_connect_post
+      summary: Start a Composio OAuth connection
+      description:
+        Initiate a Composio OAuth connection for a toolkit slug; returns the redirect URL the user must open to
+        finish authorizing.
+      tags:
+        - connectors
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirectUrl:
+                    type: string
+                required:
+                  - redirectUrl
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                slug:
+                  type: string
+                  description: Composio toolkit slug (e.g. 'gmail')
+              required:
+                - slug
+              additionalProperties: false
   /v1/consolidation/config:
     get:
       operationId: consolidation_config_get

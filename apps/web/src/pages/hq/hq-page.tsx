@@ -40,6 +40,7 @@ import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { getBudgetConfig } from "@/lib/budget-api";
 import { relativeTime } from "@/domains/activity/theme";
+import { BuildOutTiles } from "@/pages/command-center/build-out-tiles";
 import {
   dismissMeter,
   readSetupState,
@@ -1590,6 +1591,11 @@ export function HqPage() {
 
         {/* SETTING UP · N OF M — non-shaming first-run meter (self-hides). */}
         {!isLoading ? <SetupMeter /> : null}
+
+        {/* Build-out tiles — live counts, deep-linking. Render only once
+            setup is COMPLETE (the component gates itself), so this never
+            competes with the meter above for attention. */}
+        {!isLoading ? <BuildOutTiles assistantId={assistantId} /> : null}
 
         {isLoading ? (
           <HqDeckSkeleton />
