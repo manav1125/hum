@@ -14,6 +14,10 @@ COPY hq/src ./src
 COPY hq/tsconfig.json ./
 COPY site /app/site
 
+# First-party skills catalog for WS6 public share pages (/skills/{slug} for
+# cue-official skills). share.ts resolves ../../skills/catalog.json → /app/skills.
+COPY skills/catalog.json /app/skills/catalog.json
+
 ENV HQ_DB_PATH=/data/hq.db \
     HQ_SITE_DIR=/app/site \
     HQ_PORT=8790
