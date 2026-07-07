@@ -123,6 +123,9 @@ price-id → env-var mapping to paste into the environment.
 | `EMAIL_FROM` | From header for transactional email (default `Cue <hello@justcue.ai>`) |
 | `KLAVIYO_PRIVATE_KEY` | Klaviyo private API key (`pk_…`) for lifecycle event sync (see "Klaviyo sync"). Unset ⇒ no-op: every would-be event is logged at info level, nothing is sent |
 | `CUE_TAVILY_API_KEY` / `CUE_FIRECRAWL_API_KEY` / `CUE_SERPER_API_KEY` | Platform keys for the bundled web-research/web-scrape skills, passed through verbatim to every instance env by `buildInstanceEnv()`. Unset ⇒ the corresponding tools on instances report a clean "not configured" message (that IS the off state) |
+| `SLACK_SIGNING_SECRET` | The org-level Slack app's signing secret — verifies `/slack/events` + `/slack/commands` requests (v0 scheme, 5-min replay window). Unset ⇒ all `/slack/*` routes answer 503 (that IS the off state) |
+| `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | Slack OAuth credentials for the multi-workspace "Add to Slack" install flow (`/slack/install` → `/slack/oauth/callback`). Install links are minted per customer via `POST /admin/customers/:id/slack-install-link`; routing additionally requires the per-customer flag (`POST …/slack-toggle {enabled:true}`, default OFF) |
+| `SLACK_BOT_TOKEN` | Optional single-workspace dev fallback bot token, used only when an install row has no stored token |
 
 `OPENROUTER_API_KEY` is minted by HQ at provision time (a limit-capped
 child key — see the plans & credits section). Other per-instance provider

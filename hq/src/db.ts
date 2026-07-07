@@ -51,6 +51,25 @@ export interface Customer {
   checkoutSessionId: string | null;
   /** When that checkout completed (ms) — drives the "delayed" threshold. */
   checkoutSessionAt: number | null;
+  /**
+   * WS4 Slack channel flag (0/1, SQLite boolean). Default OFF — Slack
+   * events for this customer's workspace only dispatch when enabled.
+   */
+  slackEnabled: number;
+}
+
+/**
+ * One installed Slack workspace, bound to a customer at OAuth-install time.
+ * `botToken` is the workspace's xoxb- token — plaintext at rest like
+ * instances.secretsJson, and never serialized into an HTTP response.
+ */
+export interface SlackInstall {
+  teamId: string;
+  customerId: string;
+  botToken: string;
+  botUserId: string;
+  teamName: string;
+  installedAt: number;
 }
 
 export interface SigninToken {
@@ -373,6 +392,37 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
       CREATE INDEX idx_referral_redemptions_code ON referral_redemptions(code)
     `,
   },
+  {
+    version: 7,
+    name: "ws4-slack-channel",
+    // WS4 Slack channel bot. Additive only:
+    //   customers.slackEnabled — per-customer routing flag, default OFF.
+    //   slack_installs — one row per installed Slack workspace (team →
+    //     customer binding + the workspace bot token). botToken follows the
+    //     instances.secretsJson precedent: plaintext at rest in HQ's SQLite,
+    //     NEVER serialized into any HTTP response (see redactSlackInstall).
+    //   slack_event_dedupe — Slack redelivers events (3s ack window, up to
+    //     3 retries); event_id is the dedupe key. Rows expire after 24h.
+    sql: `
+      ALTER TABLE customers ADD COLUMN slackEnabled INTEGER NOT NULL DEFAULT 0;
+
+      CREATE TABLE slack_installs (
+        teamId      TEXT PRIMARY KEY,
+        customerId  TEXT NOT NULL REFERENCES customers(id),
+        botToken    TEXT NOT NULL,
+        botUserId   TEXT NOT NULL DEFAULT '',
+        teamName    TEXT NOT NULL DEFAULT '',
+        installedAt INTEGER NOT NULL
+      );
+      CREATE INDEX idx_slack_installs_customer ON slack_installs(customerId);
+
+      CREATE TABLE slack_event_dedupe (
+        eventId TEXT PRIMARY KEY,
+        ts      INTEGER NOT NULL
+      );
+      CREATE INDEX idx_slack_event_dedupe_ts ON slack_event_dedupe(ts)
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -500,6 +550,7 @@ export class HqDb {
       createdAt: Date.now(),
       checkoutSessionId: null,
       checkoutSessionAt: null,
+      slackEnabled: 0,
     };
     this.db.run(
       "INSERT INTO customers (id, email, name, status, plan, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1148,6 +1199,110 @@ export class HqDb {
       )
       .get(code);
     return row?.total ?? 0;
+  }
+
+  // ── Slack channel (WS4) ───────────────────────────────────────────────
+
+  /** Flip the per-customer Slack routing flag (default OFF at creation). */
+  setCustomerSlackEnabled(id: string, enabled: boolean): Customer {
+    const customer = this.getCustomer(id);
+    if (!customer) throw new Error(`Unknown customer: ${id}`);
+    const value = enabled ? 1 : 0;
+    if (customer.slackEnabled === value) return customer;
+    this.db.run("UPDATE customers SET slackEnabled = ? WHERE id = ?", [
+      value,
+      id,
+    ]);
+    this.recordEvent("customer_slack_flag_changed", id, { enabled });
+    return { ...customer, slackEnabled: value };
+  }
+
+  /**
+   * Store (or refresh) a workspace's team → customer binding. Re-installing
+   * the app into the same workspace replaces the token and can re-bind the
+   * team to a different customer (last install wins — Slack team ids are
+   * globally unique, so a team belongs to exactly one customer).
+   */
+  upsertSlackInstall(params: {
+    teamId: string;
+    customerId: string;
+    botToken: string;
+    botUserId?: string;
+    teamName?: string;
+  }): SlackInstall {
+    if (!this.getCustomer(params.customerId)) {
+      throw new Error(`Unknown customer: ${params.customerId}`);
+    }
+    const install: SlackInstall = {
+      teamId: params.teamId,
+      customerId: params.customerId,
+      botToken: params.botToken,
+      botUserId: params.botUserId ?? "",
+      teamName: params.teamName ?? "",
+      installedAt: Date.now(),
+    };
+    this.db.run(
+      `INSERT INTO slack_installs (teamId, customerId, botToken, botUserId, teamName, installedAt)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(teamId) DO UPDATE SET
+         customerId = excluded.customerId,
+         botToken = excluded.botToken,
+         botUserId = excluded.botUserId,
+         teamName = excluded.teamName,
+         installedAt = excluded.installedAt`,
+      [
+        install.teamId,
+        install.customerId,
+        install.botToken,
+        install.botUserId,
+        install.teamName,
+        install.installedAt,
+      ],
+    );
+    // Audit event carries the binding only — never the bot token.
+    this.recordEvent("slack_installed", install.customerId, {
+      teamId: install.teamId,
+      teamName: install.teamName,
+    });
+    return install;
+  }
+
+  getSlackInstall(teamId: string): SlackInstall | null {
+    return (
+      this.db
+        .query<SlackInstall, [string]>(
+          "SELECT * FROM slack_installs WHERE teamId = ?",
+        )
+        .get(teamId) ?? null
+    );
+  }
+
+  listSlackInstallsByCustomer(customerId: string): SlackInstall[] {
+    return this.db
+      .query<SlackInstall, [string]>(
+        "SELECT * FROM slack_installs WHERE customerId = ? ORDER BY installedAt DESC",
+      )
+      .all(customerId);
+  }
+
+  /**
+   * Record a Slack event id for dedupe. Returns true when this delivery is
+   * the first (process it), false on a redelivery (skip it). Atomic via the
+   * primary key — racing deliveries can never both see "first". Rows older
+   * than 24h are purged opportunistically (Slack retries within minutes).
+   */
+  recordSlackEventId(eventId: string, now: number = Date.now()): boolean {
+    this.db.run("DELETE FROM slack_event_dedupe WHERE ts < ?", [
+      now - 86_400_000,
+    ]);
+    this.db.run(
+      "INSERT OR IGNORE INTO slack_event_dedupe (eventId, ts) VALUES (?, ?)",
+      [eventId, now],
+    );
+    const changed = this.db
+      .query<{ n: number }, []>("SELECT changes() AS n")
+      .get();
+    return (changed?.n ?? 0) > 0;
   }
 }
 
