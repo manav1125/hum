@@ -978,6 +978,18 @@ export const routeTree = [
                             },
                           },
                           {
+                            // Skill marketplace (WS1) — gated by the
+                            // `marketplace` assistant feature flag; the page
+                            // redirects to Skills when the flag is off.
+                            path: "marketplace",
+                            lazy: {
+                              Component: () =>
+                                import("@/pages/marketplace/marketplace-page").then(
+                                  (m) => m.MarketplacePage,
+                                ),
+                            },
+                          },
+                          {
                             path: "memory",
                             lazy: {
                               Component: () =>

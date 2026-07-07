@@ -245,6 +245,11 @@ describe("resolveSkillStates with feature flags", () => {
           blockMalware: true,
           maxSkillsShRisk: "medium",
         },
+        marketplace: {
+          enabled: true,
+          indexTtlHours: 24,
+          maxItemsPerSource: 500,
+        },
       },
     });
 

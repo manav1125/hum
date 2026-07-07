@@ -97,6 +97,7 @@ import { ROUTES as KITS_ROUTES } from "./kits-routes.js";
 import { ROUTES as LLM_CALL_SITES_ROUTES } from "./llm-call-sites-routes.js";
 import { ROUTES as LOG_EXPORT_ROUTES } from "./log-export-routes.js";
 import { ROUTES as MAINTENANCE_ROUTES } from "./maintenance-routes.js";
+import { ROUTES as MARKETPLACE_ROUTES } from "./marketplace-routes.js";
 import { ROUTES as MCP_AUTH_ROUTES } from "./mcp-auth-routes.js";
 import { ROUTES as MEETING_ROUTES } from "./meeting-routes.js";
 import { ROUTES as MEMORY_ITEM_ROUTES } from "./memory-item-routes.js";
@@ -239,6 +240,7 @@ export const ROUTES: RouteDefinition[] = [
   ...INFERENCE_SEND_ROUTES,
   ...INTERNAL_OAUTH_ROUTES,
   ...INTERNAL_TELEMETRY_ROUTES,
+  ...MARKETPLACE_ROUTES,
   ...MCP_AUTH_ROUTES,
   ...OAUTH_CONNECT_ROUTES,
   ...INTERNAL_TWILIO_ROUTES,

@@ -35,13 +35,14 @@ mock.module("@/components/layout/chat-layout-slots-store", () => ({
 }));
 
 // The real feature-flag store imports the generated API client, which isn't
-// available under the test runner. Stub the two selectors the layout reads;
-// `false` for `externalPlugins` keeps the baseline tab set.
+// available under the test runner. Stub the selectors the layout reads;
+// `false` for `externalPlugins`/`marketplace` keeps the baseline tab set.
 mock.module("@/stores/assistant-feature-flag-store", () => ({
   useAssistantFeatureFlagStore: {
     use: {
       hasHydrated: () => true,
       externalPlugins: () => false,
+      marketplace: () => false,
     },
   },
 }));

@@ -134,6 +134,10 @@ export const routes = {
   plugins: r("/assistant/plugins"),
   plugin: (name: string) => dyn(r("/assistant/plugins"), name),
   skills: r("/assistant/skills"),
+  // Skill marketplace — Explore / Sources / Installed over GitHub-ingested
+  // SKILL.md sources. Lives next to Skills in the Intelligence tab rail and
+  // is gated by the `marketplace` assistant feature flag.
+  marketplace: r("/assistant/marketplace"),
   memory: r("/assistant/memory"),
   workspace: r("/assistant/workspace"),
   library: {
