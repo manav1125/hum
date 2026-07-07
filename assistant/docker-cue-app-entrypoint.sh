@@ -37,6 +37,11 @@ echo "[cue-app] starting daemon (workspace=${VELLUM_WORKSPACE_DIR})" >&2
 DAEMON_PID=$!
 
 # Wait for the daemon's IPC socket — the gateway connects to it on boot.
+# Large workspaces boot slowly (bun cold start + SQLite WAL replay + schema
+# migrations can exceed 3 minutes on a multi-hundred-MB DB), so the budget
+# must be generous; a too-short wait turns a healthy slow boot into a crash
+# loop. Override per-deploy with CUE_DAEMON_SOCKET_WAIT_S.
+SOCK_WAIT="${CUE_DAEMON_SOCKET_WAIT_S:-900}"
 i=0
 while [ ! -S "$SOCK" ]; do
   if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
@@ -45,10 +50,11 @@ while [ ! -S "$SOCK" ]; do
     exit 1
   fi
   i=$((i + 1))
-  if [ "$i" -ge 180 ]; then
+  if [ "$i" -ge "$SOCK_WAIT" ]; then
     echo "[cue-app] timed out after ${i}s waiting for $SOCK" >&2
     exit 1
   fi
+  [ $((i % 30)) -eq 0 ] && echo "[cue-app] still waiting for daemon socket (${i}s/${SOCK_WAIT}s — large DBs replay WAL + migrate on first boot)" >&2
   sleep 1
 done
 echo "[cue-app] assistant socket ready; starting gateway" >&2
