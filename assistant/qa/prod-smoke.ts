@@ -120,6 +120,26 @@ async function checkToolsRegistry() {
   );
 }
 
+async function checkConnectorApps() {
+  const res = await api("connector-apps");
+  if (res.status !== 200)
+    return record(
+      "connector-apps",
+      "fail",
+      `GET connector-apps → ${res.status}`,
+    );
+  const body = (await res.json()) as {
+    configured: boolean;
+    source: string;
+    apps: Array<{ slug: string }>;
+  };
+  record(
+    "connector-apps",
+    body.apps.length > 0 ? "pass" : "fail",
+    `${body.apps.length} apps (source=${body.source}, configured=${body.configured})`,
+  );
+}
+
 async function checkHeartbeat() {
   const cfg = (await (await api("heartbeat/config")).json()) as {
     enabled: boolean;
@@ -421,6 +441,7 @@ const checks: Array<[string, () => Promise<void>]> = [
   ["tools-registry", checkToolsRegistry],
   ["marketplace", checkMarketplace],
   ["research-tools", checkResearchTools],
+  ["connector-apps", checkConnectorApps],
   ["heartbeat", checkHeartbeat],
   ["credentials", checkCredentials],
   ["push-devices", checkPushDevices],

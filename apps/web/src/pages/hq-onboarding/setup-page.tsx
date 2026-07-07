@@ -9,10 +9,14 @@
  *       default workspace mode (me→observe, work→assist, company→autonomous;
  *       the widest leash selected wins) and tunes every later line of copy.
  *   1 · Name your HQ        → company-profile.identity
- *   2 · Connect your world  → real source cards that deep-link into the same
- *       contacts/channels setup the Channels page uses; each individually
- *       skippable. The "already found" proof band shows REAL captured-item
- *       counts or nothing at all — never a fabricated number.
+ *   1.5 · How Cue thinks    → onboarding-v2 only: Cue credits (default) /
+ *       BYO OpenRouter key (validated, stored on the existing
+ *       credential/openrouter/api_key path) / Claude-subscription placeholder.
+ *   2 · Connect your world  → onboarding-v2: searchable Composio connect-tools
+ *       grid (Easy connect / Custom tabs, every card skippable). Flag OFF:
+ *       the original source cards that deep-link into the same
+ *       contacts/channels setup the Channels page uses. The "already found"
+ *       proof band shows REAL captured-item counts or nothing at all.
  *   3 · Give Cue direction  → company-profile.direction (free text). File
  *       upload is a visual affordance only for now (org-knowledge API is
  *       future backend work — see the report).
@@ -28,7 +32,7 @@
  * follow the app theme with no bespoke palette.
  */
 
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
@@ -42,6 +46,18 @@ import {
 } from "@/pages/hq/hq-kit";
 import { BrandOnboardingStep } from "@/pages/brand-kit/brand-onboarding-step";
 
+import { ConnectToolsStep } from "./connect-tools-step";
+import {
+  checkDotStyle,
+  connectPillStyle,
+  inputStyle,
+  rowIconStyle,
+  selectRowStyle,
+  PrimaryButton,
+  StepCard,
+  StepFooter,
+  StepHead,
+} from "./setup-chrome";
 import {
   isPersonalFork,
   markSetupCompleted,
@@ -51,10 +67,13 @@ import {
   modeCaption,
   modeForFork,
   setFork as persistFork,
+  useOnboardingV2Enabled,
   useSetupState,
+  useSetupStepIds,
   type ForkSelection,
   type SetupStepId,
 } from "./setup-state";
+import { ThinkStep } from "./think-step";
 import {
   useAlreadyFound,
   useCompanyProfile,
@@ -65,19 +84,33 @@ import {
 } from "./use-setup-data";
 
 // ---------------------------------------------------------------------------
-// The flow model — Step 0 (fork) + five tracked steps.
+// The flow model — Step 0 (fork) + the tracked steps. With `onboarding-v2`
+// the optional "think" screen ("How Cue thinks") sits between name and
+// connect; OFF renders the original five-step flow untouched.
 // ---------------------------------------------------------------------------
 
 type Screen =
   | "fork"
   | "name"
+  | "think"
   | "connect"
   | "brand"
   | "direction"
   | "mission"
   | "team";
 
-const ORDER: Screen[] = [
+const ORDER_V2: Screen[] = [
+  "fork",
+  "name",
+  "think",
+  "connect",
+  "brand",
+  "direction",
+  "mission",
+  "team",
+];
+
+const ORDER_V1: Screen[] = [
   "fork",
   "name",
   "connect",
@@ -91,7 +124,7 @@ const ORDER: Screen[] = [
 function resumeScreen(next: SetupStepId | null): Screen {
   if (next === null) return "fork";
   if (next === "mode") return "fork";
-  return next; // name | connect | direction | mission are 1:1 with screens
+  return next; // name | think | connect | direction | mission are 1:1
 }
 
 // ---------------------------------------------------------------------------
@@ -102,24 +135,36 @@ export function HqSetupPage() {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
   const state = useSetupState();
+  const v2 = useOnboardingV2Enabled();
+  const stepIds = useSetupStepIds();
+  const order = v2 ? ORDER_V2 : ORDER_V1;
 
   const [screen, setScreen] = useState<Screen>(() => {
     // Resume where they left off: first not-done tracked step, else fork.
-    const { next } = meterProgress(state);
+    const { next } = meterProgress(state, stepIds);
     return resumeScreen(next);
   });
 
   const fork = state.fork;
   const personal = isPersonalFork(fork);
-  // Personal fork folds the autonomy step → "N OF 4"; company keeps 5.
-  const totalSteps = personal ? 4 : 5;
+  // Personal fork folds the autonomy step (mode) out of the displayed count;
+  // v2 adds the "think" step → personal 5 / company 6 (v1: 4 / 5).
+  const totalSteps = stepIds.length - (personal ? 1 : 0);
+  // Display numbers per tracked screen (v2 shifts everything after "think").
+  const stepNo: Record<"name" | "think" | "connect" | "direction" | "mission", number> =
+    v2
+      ? { name: 1, think: 2, connect: 3, direction: 4, mission: 5 }
+      : { name: 1, think: 0, connect: 2, direction: 3, mission: 4 };
 
   const putProfile = usePutCompanyProfile(assistantId);
 
+  // A resumed "think" with the flag now OFF falls through to connect.
+  const effectiveScreen: Screen = screen === "think" && !v2 ? "connect" : screen;
+
   const go = (next: Screen) => setScreen(next);
   const advance = () => {
-    const i = ORDER.indexOf(screen);
-    go(ORDER[Math.min(i + 1, ORDER.length - 1)]);
+    const i = order.indexOf(effectiveScreen);
+    go(order[Math.min(i + 1, order.length - 1)]);
   };
   const enterHq = () => {
     markSetupCompleted(Date.now());
@@ -136,11 +181,11 @@ export function HqSetupPage() {
       <div style={shellStyle} data-slot="hq-setup-shell">
         <TopBar
           onExit={() => void navigate(routes.hq)}
-          done={meterProgress(state).doneCount}
-          total={5}
+          done={meterProgress(state, stepIds).doneCount}
+          total={stepIds.length}
         />
 
-        {screen === "fork" && (
+        {effectiveScreen === "fork" && (
           <ForkStep
             initial={fork}
             onContinue={(sel) => {
@@ -159,10 +204,10 @@ export function HqSetupPage() {
           />
         )}
 
-        {screen === "name" && (
+        {effectiveScreen === "name" && (
           <NameStep
             assistantId={assistantId}
-            stepNo={1}
+            stepNo={stepNo.name}
             total={totalSteps}
             personal={personal}
             onContinue={(name) => {
@@ -180,24 +225,57 @@ export function HqSetupPage() {
           />
         )}
 
-        {screen === "connect" && (
-          <ConnectStep
+        {effectiveScreen === "think" && (
+          <ThinkStep
             assistantId={assistantId}
-            stepNo={2}
+            stepNo={stepNo.think}
             total={totalSteps}
             personal={personal}
-            onContinue={(anyConnected) => {
-              markStep("connect", anyConnected ? "done" : "skipped");
+            onContinue={() => {
+              markStep("think", "done");
               advance();
             }}
             onSkip={() => {
-              markStep("connect", "skipped");
+              markStep("think", "skipped");
               advance();
             }}
           />
         )}
 
-        {screen === "brand" && (
+        {effectiveScreen === "connect" &&
+          (v2 ? (
+            <ConnectToolsStep
+              assistantId={assistantId}
+              stepNo={stepNo.connect}
+              total={totalSteps}
+              personal={personal}
+              onContinue={(anyConnected) => {
+                markStep("connect", anyConnected ? "done" : "skipped");
+                advance();
+              }}
+              onSkip={() => {
+                markStep("connect", "skipped");
+                advance();
+              }}
+            />
+          ) : (
+            <ConnectStep
+              assistantId={assistantId}
+              stepNo={stepNo.connect}
+              total={totalSteps}
+              personal={personal}
+              onContinue={(anyConnected) => {
+                markStep("connect", anyConnected ? "done" : "skipped");
+                advance();
+              }}
+              onSkip={() => {
+                markStep("connect", "skipped");
+                advance();
+              }}
+            />
+          ))}
+
+        {effectiveScreen === "brand" && (
           <BrandOnboardingStep
             stepLabel="Make everything look like you"
             onContinue={advance}
@@ -205,9 +283,9 @@ export function HqSetupPage() {
           />
         )}
 
-        {screen === "direction" && (
+        {effectiveScreen === "direction" && (
           <DirectionStep
-            stepNo={3}
+            stepNo={stepNo.direction}
             total={totalSteps}
             personal={personal}
             onContinue={(text) => {
@@ -229,10 +307,10 @@ export function HqSetupPage() {
           />
         )}
 
-        {screen === "mission" && (
+        {effectiveScreen === "mission" && (
           <MissionStep
             assistantId={assistantId}
-            stepNo={4}
+            stepNo={stepNo.mission}
             total={totalSteps}
             personal={personal}
             onCreated={() => {
@@ -246,7 +324,7 @@ export function HqSetupPage() {
           />
         )}
 
-        {screen === "team" && (
+        {effectiveScreen === "team" && (
           <TeamStep
             assistantId={assistantId}
             total={totalSteps}
@@ -292,135 +370,9 @@ function TopBar({
   );
 }
 
-/** The white first-run card every step lives inside. */
-function StepCard({ children }: { children: ReactNode }) {
-  return (
-    <div style={cardStyle} data-slot="hq-setup-card">
-      {children}
-    </div>
-  );
-}
-
-function StepHead({
-  label,
-  title,
-  blurb,
-}: {
-  label: string;
-  title: string;
-  blurb: string;
-}) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <MicroLabel color={C.blue} style={{ marginBottom: 12 }}>
-        {label}
-      </MicroLabel>
-      <h1
-        style={{
-          fontFamily: serif,
-          fontSize: 30,
-          lineHeight: 1.08,
-          color: C.t1,
-          fontWeight: 400,
-          margin: "0 0 8px",
-        }}
-      >
-        {title}
-      </h1>
-      <p style={{ fontSize: 13.5, color: C.t2, lineHeight: 1.5, margin: 0 }}>
-        {blurb}
-      </p>
-    </div>
-  );
-}
-
-/** Dark "Continue ›" pill. */
-function PrimaryButton({
-  children,
-  onClick,
-  disabled,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        ...primaryBtnStyle,
-        opacity: disabled ? 0.45 : 1,
-        cursor: disabled ? "not-allowed" : "pointer",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SkipLink({
-  children,
-  onClick,
-}: {
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" onClick={onClick} style={skipLinkStyle}>
-      {children}
-    </button>
-  );
-}
-
-/** Continue + Skip row — the footer every skippable step shares. */
-function StepFooter({
-  continueLabel,
-  onContinue,
-  continueDisabled,
-  onSkip,
-  skipLabel = "Skip for now",
-  caption,
-}: {
-  continueLabel: string;
-  onContinue: () => void;
-  continueDisabled?: boolean;
-  onSkip: () => void;
-  skipLabel?: string;
-  caption?: string;
-}) {
-  return (
-    <div style={{ marginTop: 22 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 14,
-        }}
-      >
-        <PrimaryButton onClick={onContinue} disabled={continueDisabled}>
-          {continueLabel}
-        </PrimaryButton>
-        <SkipLink onClick={onSkip}>{skipLabel}</SkipLink>
-      </div>
-      {caption ? (
-        <div
-          style={{
-            fontFamily: mono,
-            fontSize: 11,
-            color: C.t3,
-            marginTop: 12,
-            letterSpacing: "0.02em",
-          }}
-        >
-          {caption}
-        </div>
-      ) : null}
-    </div>
-  );
-}
+// StepCard / StepHead / PrimaryButton / SkipLink / StepFooter and the shared
+// row/input styles live in ./setup-chrome (also used by the onboarding-v2
+// step modules).
 
 // ---------------------------------------------------------------------------
 // Step 0 — the fork
@@ -1236,65 +1188,6 @@ const shellStyle: CSSProperties = {
   maxWidth: 520,
 };
 
-const cardStyle: CSSProperties = {
-  background: C.surface,
-  border: `1px solid ${C.line}`,
-  borderRadius: 22,
-  padding: 28,
-  boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-};
-
-const selectRowStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-  width: "100%",
-  border: `1px solid ${C.line}`,
-  borderRadius: 14,
-  padding: "13px 14px",
-  background: C.surface,
-  cursor: "pointer",
-  textAlign: "left",
-  font: "inherit",
-  transition: "border-color .12s, background .12s",
-};
-
-const rowIconStyle: CSSProperties = {
-  width: 38,
-  height: 38,
-  borderRadius: 11,
-  background: C.sunken,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 18,
-  flexShrink: 0,
-};
-
-const checkDotStyle: CSSProperties = {
-  width: 22,
-  height: 22,
-  borderRadius: "50%",
-  border: `1.5px solid ${C.line2}`,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 12,
-  flexShrink: 0,
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  border: `1px solid ${C.line2}`,
-  borderRadius: 12,
-  padding: "12px 14px",
-  fontSize: 15,
-  color: C.t1,
-  background: C.bg,
-  outline: "none",
-  boxSizing: "border-box",
-};
-
 const textareaStyle: CSSProperties = {
   ...inputStyle,
   fontSize: 13.5,
@@ -1332,40 +1225,6 @@ const teamHeroStyle: CSSProperties = {
   background: "linear-gradient(150deg, #16202E, #0C121B)",
   borderRadius: 18,
   padding: "26px 0",
-};
-
-const primaryBtnStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: C.t1,
-  color: C.bg,
-  border: "none",
-  borderRadius: 12,
-  padding: "12px 22px",
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const skipLinkStyle: CSSProperties = {
-  background: "none",
-  border: "none",
-  color: C.t3,
-  fontSize: 13,
-  cursor: "pointer",
-  padding: "6px 4px",
-};
-
-const connectPillStyle: CSSProperties = {
-  border: `1px solid ${C.line2}`,
-  background: C.bg,
-  color: C.t1,
-  borderRadius: 9,
-  padding: "7px 14px",
-  fontSize: 12.5,
-  cursor: "pointer",
-  flexShrink: 0,
 };
 
 const ghostLinkStyle: CSSProperties = {

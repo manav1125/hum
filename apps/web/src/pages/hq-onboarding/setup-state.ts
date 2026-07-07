@@ -6,10 +6,11 @@
  *  · Step 0 fork ("What's Cue for?" — Me / My work / My company, multi-select)
  *    sets the workspace-mode default and tunes every later line of copy
  *    (the R5·A4 personal fork: no company language anywhere).
- *  · Five tracked steps feed the meter: mode · name · connect · direction ·
- *    mission. Every one is skippable; whatever's skipped becomes the gentle,
- *    non-shaming "SETTING UP · N OF 5" meter on HQ — visible until finished
- *    or dismissed ("this never nags"), hidden the moment all five are done.
+ *  · The tracked steps feed the meter: mode · name · think · connect ·
+ *    direction · mission ("think" only when the `onboarding-v2` flag is ON).
+ *    Every one is skippable; whatever's skipped becomes the gentle,
+ *    non-shaming "SETTING UP · N OF total" meter on HQ — visible until
+ *    finished or dismissed ("this never nags"), hidden when all are done.
  *
  * All reads go through a cached snapshot + subscriber list so components can
  * ride `useSyncExternalStore` without re-parsing JSON per render.
@@ -17,14 +18,43 @@
 
 import { useSyncExternalStore } from "react";
 
+import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
+
 import type { WorkspaceMode } from "./use-setup-data";
 
 const STORAGE_KEY = "cue:hq-setup-progress";
 
-/** The five tracked setup steps (the meter's "N OF 5"). */
-export type SetupStepId = "mode" | "name" | "connect" | "direction" | "mission";
+/**
+ * Progress-schema version. v1 (or absent) = the original five-step list
+ * (mode·name·connect·direction·mission). v2 adds the optional "think" step
+ * ("How Cue thinks" — Cue credits vs BYO OpenRouter key) between name and
+ * connect. Old values parse unchanged (steps is a partial record, unknown
+ * ids are simply absent), and `meterProgress` treats `completedAt` as
+ * terminal so a user who finished onboarding on the v1 list is NEVER
+ * re-gated by the meter when the list grows.
+ */
+const SETUP_STATE_VERSION = 2;
+
+/** The tracked setup steps (the meter's "N OF total"). */
+export type SetupStepId =
+  | "mode"
+  | "name"
+  | "think"
+  | "connect"
+  | "direction"
+  | "mission";
 
 export const SETUP_STEP_IDS: SetupStepId[] = [
+  "mode",
+  "name",
+  "think",
+  "connect",
+  "direction",
+  "mission",
+];
+
+/** The v1 step list — what the meter tracks when `onboarding-v2` is OFF. */
+export const LEGACY_SETUP_STEP_IDS: SetupStepId[] = [
   "mode",
   "name",
   "connect",
@@ -42,6 +72,12 @@ export interface ForkSelection {
 }
 
 export interface SetupState {
+  /**
+   * Progress-schema version this value was last written with. Parsed values
+   * missing the field are v1 (the pre-"think" step list). Read-only signal —
+   * every mutation rewrites at the current version.
+   */
+  version: number;
   /** Set the first time the flow opens — gates the never-onboarded auto-show. */
   started: boolean;
   steps: Partial<Record<SetupStepId, StepOutcome>>;
@@ -53,6 +89,7 @@ export interface SetupState {
 }
 
 const EMPTY_STATE: SetupState = {
+  version: SETUP_STATE_VERSION,
   started: false,
   steps: {},
   fork: null,
@@ -73,6 +110,9 @@ function parse(raw: string | null): SetupState {
   try {
     const v = JSON.parse(raw) as Partial<SetupState>;
     return {
+      // Absent = v1 (written before the field existed). Tolerated as-is —
+      // v1 values need no rewriting, only the completedAt terminal rule.
+      version: typeof v.version === "number" ? v.version : 1,
       started: v.started === true,
       steps: typeof v.steps === "object" && v.steps !== null ? v.steps : {},
       fork:
@@ -91,6 +131,16 @@ function parse(raw: string | null): SetupState {
   }
 }
 
+/**
+ * Drop the cached snapshot so the next read re-parses localStorage. Only
+ * needed when localStorage is mutated behind the store's back (tests
+ * seeding old-schema values); real writes go through `write()` and real
+ * cross-tab changes arrive via the `storage` event.
+ */
+export function resetSetupStateCache(): void {
+  cache = null;
+}
+
 export function readSetupState(): SetupState {
   if (cache === null) {
     try {
@@ -103,6 +153,9 @@ export function readSetupState(): SetupState {
 }
 
 function write(next: SetupState): void {
+  // Every write re-stamps the current schema version (an old-version value
+  // being mutated is thereby migrated in place — its fields all parse).
+  next = { ...next, version: SETUP_STATE_VERSION };
   cache = next;
   try {
     globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -198,6 +251,8 @@ export function stepLabel(id: SetupStepId, personal: boolean): string {
       return "Choose what Cue is for";
     case "name":
       return personal ? "Name your space" : "Name your HQ";
+    case "think":
+      return "Choose how Cue thinks";
     case "connect":
       return personal ? "Connect your world" : "Connect where work flows";
     case "direction":
@@ -214,12 +269,24 @@ export interface MeterProgress {
   next: SetupStepId | null;
 }
 
-export function meterProgress(state: SetupState): MeterProgress {
-  const doneCount = SETUP_STEP_IDS.filter(
+export function meterProgress(
+  state: SetupState,
+  stepIds: SetupStepId[] = SETUP_STEP_IDS,
+): MeterProgress {
+  // Backward-compat rule for a grown step list: once the user has hit
+  // "Enter HQ" (`completedAt` set), steps added AFTER v1 ("think") drop out
+  // of the tracked list — a finished user is never re-gated by an upgrade.
+  // Legacy steps they explicitly skipped keep the meter alive exactly as
+  // before (the gentle, dismissible "finish when you like" behavior).
+  const effective =
+    state.completedAt !== null
+      ? stepIds.filter((id) => LEGACY_SETUP_STEP_IDS.includes(id))
+      : stepIds;
+  const doneCount = effective.filter(
     (id) => state.steps[id] === "done",
   ).length;
-  const next = SETUP_STEP_IDS.find((id) => state.steps[id] !== "done") ?? null;
-  return { doneCount, total: SETUP_STEP_IDS.length, next };
+  const next = effective.find((id) => state.steps[id] !== "done") ?? null;
+  return { doneCount, total: effective.length, next };
 }
 
 // ---------------------------------------------------------------------------
@@ -233,12 +300,30 @@ export function meterProgress(state: SetupState): MeterProgress {
 export interface SetupProgress {
   /** Steps completed (skipped steps do NOT count as done). */
   done: number;
-  /** Always 5 — the tracked first-run steps. */
+  /** The tracked first-run steps (6 with `onboarding-v2`, else 5). */
   total: number;
   /** First not-yet-done step id, or null when finished. */
   nextStep: SetupStepId | null;
   /** Fork-aware human label for `nextStep` (personal never hears "company"). */
   nextLabel: string | null;
+}
+
+/**
+ * Whether the `onboarding-v2` assistant flag is ON — gates the "think" step,
+ * the connect-tools grid, and the command-center build-out tiles. Reads the
+ * live flag store (registry default `true`; a real /feature-flags response
+ * can turn it off centrally).
+ */
+export function useOnboardingV2Enabled(): boolean {
+  const enabled = useAssistantFeatureFlagStore(
+    (s) => (s as Record<string, unknown>).onboardingV2,
+  );
+  return enabled !== false;
+}
+
+/** The tracked step list for the current flag state. */
+export function useSetupStepIds(): SetupStepId[] {
+  return useOnboardingV2Enabled() ? SETUP_STEP_IDS : LEGACY_SETUP_STEP_IDS;
 }
 
 /**
@@ -253,7 +338,8 @@ export interface SetupProgress {
  */
 export function useSetupProgress(): SetupProgress {
   const state = useSetupState();
-  const { doneCount, total, next } = meterProgress(state);
+  const stepIds = useSetupStepIds();
+  const { doneCount, total, next } = meterProgress(state, stepIds);
   const personal = isPersonalFork(state.fork);
   return {
     done: doneCount,
@@ -261,4 +347,17 @@ export function useSetupProgress(): SetupProgress {
     nextStep: next,
     nextLabel: next ? stepLabel(next, personal) : null,
   };
+}
+
+/**
+ * Whether HQ first-run setup is complete — the gate the command-center
+ * build-out tiles use ("don't fight the setup meter for attention").
+ * True once the user hit "Enter HQ", or once every tracked step is done.
+ */
+export function useSetupComplete(): boolean {
+  const state = useSetupState();
+  const stepIds = useSetupStepIds();
+  if (state.completedAt !== null) return true;
+  const { doneCount, total } = meterProgress(state, stepIds);
+  return total > 0 && doneCount >= total;
 }
