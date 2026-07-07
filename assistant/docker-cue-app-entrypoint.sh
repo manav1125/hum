@@ -127,8 +127,44 @@ for pair in "replicate:REPLICATE_API_TOKEN" "apify:APIFY_API_TOKEN"; do
   fi
 done
 
-# Gateway in the foreground = the public service. On container stop it receives
-# SIGTERM and shuts down cleanly; the daemon is torn down with the container
-# (its SQLite WAL replays on next boot).
+# Gateway in the background too — this shell stays alive to SUPERVISE both
+# processes. Without supervision, a daemon OOM-kill (seen live during the
+# first-boot burst on 1GB machines: qdrant download + embedding worker) leaves
+# the gateway serving /healthz 200 — a healthy-looking zombie that errors on
+# every chat/mission. Exiting 1 as soon as EITHER process dies lets the
+# platform restart policy (Fly "always" / Render) reboot the whole machine
+# cleanly.
 cd /app/gateway
-exec bun --smol run src/index.ts
+bun --smol run src/index.ts &
+GATEWAY_PID=$!
+
+# Clean shutdown: forward SIGTERM/SIGINT (docker stop / platform stop) to both
+# processes and wait for them, so a container stop is never treated as a
+# crash.
+_shutdown() {
+  trap '' TERM INT
+  echo "[cue-app] stop signal — shutting down gateway and daemon" >&2
+  kill "$GATEWAY_PID" "$DAEMON_PID" 2>/dev/null || true
+  wait "$GATEWAY_PID" 2>/dev/null || true
+  wait "$DAEMON_PID" 2>/dev/null || true
+  exit 0
+}
+trap _shutdown TERM INT
+
+# Supervise: debian-slim /bin/sh is dash, which lacks bash's `wait -n`, so
+# poll both PIDs. `sleep` runs backgrounded + `wait`ed so the TERM/INT trap
+# fires immediately instead of after the current sleep completes.
+while :; do
+  if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
+    echo "[cue-app] daemon exited — restarting container" >&2
+    kill "$GATEWAY_PID" 2>/dev/null || true
+    exit 1
+  fi
+  if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+    echo "[cue-app] gateway exited — restarting container" >&2
+    kill "$DAEMON_PID" 2>/dev/null || true
+    exit 1
+  fi
+  sleep 5 &
+  wait $! || true
+done

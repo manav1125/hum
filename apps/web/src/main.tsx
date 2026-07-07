@@ -17,6 +17,7 @@ import {
   bootstrapCueSelfHost,
   shouldShowCueConnect,
 } from "@/lib/self-hosted/cue-self-host";
+import { markHqNativeIfFresh } from "@/pages/hq/hq-native-marker";
 import { initSentry } from "@/lib/sentry/sentry-init";
 import { setupAuthListeners, useAuthStore } from "@/stores/auth-store";
 import { setupOrganizationStore } from "@/stores/organization-store";
@@ -29,6 +30,12 @@ import { initSafeAreaBridge } from "@/runtime/native-safe-area";
 import { initInputModality } from "@vellumai/design-library";
 
 async function boot() {
+  // Fresh profiles are "HQ-native": pre-set the HQ-orientation seen-flag
+  // before onboarding/selection can write any localStorage, so the
+  // "Your Home is now HQ" what-changed modal only ever shows to profiles
+  // with pre-HQ usage evidence. See `pages/hq/hq-native-marker.ts`.
+  markHqNativeIfFresh();
+
   // Seed a self-hosted gateway token from `?cueToken=` (if present) before the
   // auth/lifecycle layer reads it, so the hosted SPA boots into a `self`
   // session against its same-origin gateway. No-op outside self-host mode.

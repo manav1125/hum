@@ -7,13 +7,17 @@
  * 390px). Two panels map the two Home modules that moved:
  *   Up next · Scheduled → Queued & scheduled
  *   Your Next Move      → Top of Needs you
+ *
+ * Returning users ONLY: fresh profiles never used the old Home, so
+ * `markHqNativeIfFresh()` (called at app boot in `main.tsx`) pre-sets the
+ * seen-flag when localStorage carries no prior-usage evidence — see
+ * `hq-native-marker.ts`.
  */
 
 import { useEffect, useState } from "react";
 
+import { HQ_ORIENTATION_SEEN_KEY as STORAGE_KEY } from "./hq-native-marker";
 import { C, mono, serif } from "./hq-kit";
-
-const STORAGE_KEY = "cue:hq-orientation-seen";
 
 /** True once (per profile) — whether to show the switch-over orientation. */
 export function useHqOrientation(): { show: boolean; dismiss: () => void } {

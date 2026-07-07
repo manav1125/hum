@@ -514,6 +514,25 @@ export function AssistantSideMenu({
             <div className="flex items-center gap-2">{headerActions}</div>
           </div>
         ) : null}
+        {/* Primary action at the very top of the rail: start a new
+            conversation (Claude-style "new task"). Drives users into chat
+            before the surface list; the compact pencil in the "Chat" section
+            header stays as the in-context affordance. */}
+        {onStartNewConversation ? (
+          <>
+            <SideMenu.Item
+              icon={SquarePen}
+              label="New conversation"
+              showCollapsedTooltip
+              emphasized
+              onSelect={() => {
+                onStartNewConversation();
+                onClose?.();
+              }}
+            />
+            <SideMenu.Separator />
+          </>
+        ) : null}
         {/*
           The clean rail: HQ · Projects · Create · Voice · Intelligence ·
           Library · People. "Chat" is the conversation-thread list below
