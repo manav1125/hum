@@ -80,7 +80,13 @@ export interface Instance {
   customerId: string;
   driver: string;
   externalId: string;
+  /** Public base URL — the branded custom domain when one was provisioned. */
   url: string;
+  /**
+   * Provider-native fallback/ops URL (e.g. https://<app>.fly.dev) when
+   * `url` is a custom domain; null otherwise (url IS the provider URL).
+   */
+  flyUrl: string | null;
   state: InstanceState;
   /** JSON blob: bootstrap secret, signing key, guardianPrincipalId, etc. */
   secretsJson: string;
@@ -296,6 +302,17 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
     // rows backfill to NULL (image unknown until their next update).
     sql: `
       ALTER TABLE instances ADD COLUMN imageRef TEXT
+    `,
+  },
+  {
+    version: 5,
+    name: "instance-fly-url",
+    // Custom instance domains: `url` becomes the branded hostname
+    // (https://<app>.justcue.app) and the provider-native .fly.dev URL
+    // moves here as the fallback/ops URL. NULL on legacy rows and whenever
+    // no custom domain was provisioned (url IS the provider URL).
+    sql: `
+      ALTER TABLE instances ADD COLUMN flyUrl TEXT
     `,
   },
 ];
@@ -658,6 +675,7 @@ export class HqDb {
     driver: string;
     externalId: string;
     url: string;
+    flyUrl?: string | null;
     secretsJson?: string;
     state?: InstanceState;
     imageRef?: string | null;
@@ -668,6 +686,7 @@ export class HqDb {
       driver: params.driver,
       externalId: params.externalId,
       url: params.url,
+      flyUrl: params.flyUrl ?? null,
       state: params.state ?? "provisioning",
       secretsJson: params.secretsJson ?? "{}",
       openrouterKeyHash: null,
@@ -676,13 +695,14 @@ export class HqDb {
       createdAt: Date.now(),
     };
     this.db.run(
-      "INSERT INTO instances (id, customerId, driver, externalId, url, state, secretsJson, imageRef, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO instances (id, customerId, driver, externalId, url, flyUrl, state, secretsJson, imageRef, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         instance.id,
         instance.customerId,
         instance.driver,
         instance.externalId,
         instance.url,
+        instance.flyUrl,
         instance.state,
         instance.secretsJson,
         instance.imageRef,

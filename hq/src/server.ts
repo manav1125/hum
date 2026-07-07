@@ -77,7 +77,7 @@ import {
   originAllowed,
   sessionSetCookieHeader,
 } from "./sessions.js";
-import { resolveSiteDir, serveSite } from "./site.js";
+import { canonicalHostRedirect, resolveSiteDir, serveSite } from "./site.js";
 import {
   createBillingPortalSession,
   createCheckoutSession,
@@ -192,6 +192,13 @@ export function createHandler(
     const method = req.method.toUpperCase();
 
     try {
+      // ── canonical host (HQ_CANONICAL_HOST; no-op when unset) ──────────
+      // GET/HEAD on a non-canonical host (justcue.io, www, *.fly.dev) 301
+      // to the canonical origin; POSTs (Stripe webhook!), /healthz probes,
+      // and instance-domain hosts are exempt — see site.ts.
+      const redirect = canonicalHostRedirect(req, url, path);
+      if (redirect) return redirect;
+
       // ── public ────────────────────────────────────────────────────────
       if (method === "GET" && path === "/healthz") {
         return json({ ok: true, service: "cue-hq" });
@@ -993,7 +1000,7 @@ function renderDownloadMissingPage(): string {
 <div class="card">
   <span class="mark">C<i></i></span>
   <h1>This download isn't ready yet.</h1>
-  <p>The Cue for Mac installer is being prepared. Check back shortly, or email hello@cue.ai and we'll send it your way.</p>
+  <p>The Cue for Mac installer is being prepared. Check back shortly, or email hello@justcue.ai and we'll send it your way.</p>
   <a href="/account">Back to your account</a>
 </div>
 </body></html>`;

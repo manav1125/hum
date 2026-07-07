@@ -28,8 +28,18 @@ export interface InstanceSpec {
 export interface ProvisionResult {
   /** Provider-side id (e.g. Render `srv-…`). */
   externalId: string;
-  /** Public base URL of the instance. */
+  /**
+   * Public base URL of the instance — the branded custom domain
+   * (https://<app>.<HQ_INSTANCE_DOMAIN>) when the driver set one up,
+   * otherwise the provider-native URL.
+   */
   url: string;
+  /**
+   * Provider-native URL (e.g. https://<app>.fly.dev) kept as the
+   * fallback/ops URL when `url` is a custom domain. Absent when no custom
+   * domain was configured (url IS the provider URL).
+   */
+  flyUrl?: string;
 }
 
 export interface InstanceDriver {

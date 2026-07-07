@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 # Product app-screen demos are noindex (also flagged per-page)
 
-Sitemap: https://cue.ai/sitemap.xml
+Sitemap: https://justcue.ai/sitemap.xml

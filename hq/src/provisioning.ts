@@ -131,7 +131,11 @@ export async function provisionCustomer(
     customerId: customer.id,
     driver: driver.id,
     externalId: provisioned.externalId,
+    // url is the branded custom domain when the driver set one up (magic
+    // links + welcome status then use it); the provider-native URL rides
+    // along as flyUrl — the ops/fallback URL for health checks.
     url: provisioned.url,
+    flyUrl: provisioned.flyUrl ?? null,
     secretsJson: JSON.stringify(secrets),
     state: "provisioning",
     // Track what the instance runs so fleet image rolls know where each

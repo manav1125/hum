@@ -40,7 +40,7 @@
 
   <!-- open-cue fallback notice (?error=no_instance) -->
   <sc-if value="{{ showNoInstance }}" hint-placeholder-val="{{ false }}">
-    <div style="font-size:12.5px;color:#9DB4E6;margin:-12px 0 20px;line-height:1.5">Your Cue isn't ready to open just yet — it may still be provisioning. If this keeps happening, email hello@cue.ai.</div>
+    <div style="font-size:12.5px;color:#9DB4E6;margin:-12px 0 20px;line-height:1.5">Your Cue isn't ready to open just yet — it may still be provisioning. If this keeps happening, email hello@justcue.ai.</div>
   </sc-if>
 
   <!-- payment-failed banner -->
@@ -198,7 +198,7 @@ class Component extends DCLogic {
     if (outcome.kind === "unauthorized") { location.href = "signin.html"; return; }
     this.setState({
       topupNotice: outcome.kind === "unavailable"
-        ? "Top-ups aren't open just yet — email hello@cue.ai and we'll sort you out."
+        ? "Top-ups aren't open just yet — email hello@justcue.ai and we'll sort you out."
         : "Something went wrong. Try again in a moment.",
     });
   }

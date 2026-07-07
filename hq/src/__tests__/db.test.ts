@@ -23,6 +23,38 @@ describe("migrations", () => {
   });
 });
 
+describe("instance flyUrl column (migration 5)", () => {
+  test("persists across reopen; create without flyUrl defaults to null", () => {
+    const dir = mkdtempSync(join(tmpdir(), "hq-db-flyurl-"));
+    const path = join(dir, "hq.db");
+    const a = new HqDb(path);
+    const c = a.createCustomer({ email: "fly@x.io", name: "Fly" });
+    const custom = a.createInstance({
+      customerId: c.id,
+      driver: "fly",
+      externalId: "cue-fly-1",
+      url: "https://cue-fly-1.justcue.app",
+      flyUrl: "https://cue-fly-1.fly.dev",
+    });
+    const plain = a.createInstance({
+      customerId: c.id,
+      driver: "fly",
+      externalId: "cue-fly-2",
+      url: "https://cue-fly-2.fly.dev",
+    });
+    expect(custom.flyUrl).toBe("https://cue-fly-1.fly.dev");
+    expect(plain.flyUrl).toBeNull();
+    a.close();
+
+    // Survives reopen (the migration runner no-ops on the second open).
+    const b = new HqDb(path);
+    expect(b.getInstance(custom.id)?.flyUrl).toBe("https://cue-fly-1.fly.dev");
+    expect(b.getInstance(custom.id)?.url).toBe("https://cue-fly-1.justcue.app");
+    expect(b.getInstance(plain.id)?.flyUrl).toBeNull();
+    b.close();
+  });
+});
+
 describe("customer state machine", () => {
   test("waitlist → invited → active → suspended → active", () => {
     const db = memDb();

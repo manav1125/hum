@@ -13,7 +13,7 @@
  *
  * Env contract:
  *   RESEND_API_KEY — Resend secret (re_…). Unset ⇒ log-only mode.
- *   EMAIL_FROM     — From header (default "Cue <hello@cue.ai>").
+ *   EMAIL_FROM     — From header (default "Cue <hello@justcue.ai>").
  */
 
 const RESEND_API_BASE = "https://api.resend.com";
@@ -23,7 +23,7 @@ export function isEmailConfigured(): boolean {
 }
 
 function emailFrom(): string {
-  return process.env.EMAIL_FROM ?? "Cue <hello@cue.ai>";
+  return process.env.EMAIL_FROM ?? "Cue <hello@justcue.ai>";
 }
 
 // ── template shell (site/emails.html, verbatim styles) ───────────────────
@@ -72,7 +72,7 @@ function renderEmailHtml(p: EmailParts): string {
     ${psHtml}
   </div>
   <div style="background:#FAFBFC;border-top:1px solid #EDF0F4;padding:18px 40px;font-size:11.5px;color:#98A2AF;line-height:1.6">
-    © 2026 Cue · <a href="mailto:hello@cue.ai" style="color:#5A6672;text-decoration:none">hello@cue.ai</a><br>${esc(p.legal)}
+    © 2026 Cue · <a href="mailto:hello@justcue.ai" style="color:#5A6672;text-decoration:none">hello@justcue.ai</a><br>${esc(p.legal)}
   </div>
 </div>
 </body></html>`;

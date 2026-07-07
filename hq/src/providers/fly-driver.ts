@@ -21,6 +21,25 @@
  *                        render.yaml's disk block); spec.plan like "20gb"
  *                        overrides per-provision
  *
+ * Custom instance domains (all three set ⇒ enabled; any unset ⇒ the whole
+ * feature is skipped and behavior is byte-identical to before):
+ *   HQ_INSTANCE_DOMAIN            — customer domain, e.g. "justcue.app";
+ *                                   the subdomain label is the fly app name
+ *                                   (globally unique already), so an app
+ *                                   cue-ada-1234 serves at
+ *                                   https://cue-ada-1234.justcue.app
+ *   CLOUDFLARE_API_TOKEN          — zone-scoped token (DNS edit)
+ *   CLOUDFLARE_ZONE_ID_INSTANCES  — the justcue.app zone id
+ * After /healthz passes on the .fly.dev URL, provision() creates a
+ * DNS-only CNAME on Cloudflare (proxied: false — Cloudflare's proxy breaks
+ * Fly's TLS handshake for custom hostnames), requests an ACME cert via the
+ * Machines API certificates resource (the old GraphQL addCertificate path;
+ * fly.io/docs/networking/custom-domain-api now 301s to the REST resource),
+ * and polls issuance briefly WITHOUT failing the provision — the hostname
+ * is recorded optimistically and the .fly.dev URL rides along as flyUrl.
+ * Any custom-domain failure falls back to the .fly.dev URL (never fails a
+ * healthy provision). destroy() deletes the CNAME again (best-effort).
+ *
  * Qdrant: intentionally NOT provisioned and QDRANT_URL is NOT set. The
  * daemon treats Qdrant as a non-blocking subsystem: without QDRANT_URL,
  * QdrantManager (assistant/src/memory/qdrant-manager.ts) self-spawns a
@@ -50,6 +69,32 @@ interface FlyMachineConfig extends Record<string, unknown> {
 
 const FLY_MACHINES_API_BASE = "https://api.machines.dev/v1";
 const FLY_GRAPHQL_URL = "https://api.fly.io/graphql";
+const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
+
+/** How many times provision() peeks at cert issuance before moving on. */
+const CERT_POLL_ATTEMPTS = 6;
+
+interface CustomDomainConfig {
+  /** e.g. "justcue.app" */
+  domain: string;
+  cfToken: string;
+  cfZoneId: string;
+}
+
+/**
+ * The custom-domain env triple, or null when any part is missing (feature
+ * off — current .fly.dev behavior unchanged).
+ */
+export function customDomainConfig(): CustomDomainConfig | null {
+  const domain = (process.env.HQ_INSTANCE_DOMAIN ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+|\.+$/g, "");
+  const cfToken = process.env.CLOUDFLARE_API_TOKEN ?? "";
+  const cfZoneId = process.env.CLOUDFLARE_ZONE_ID_INSTANCES ?? "";
+  if (!domain || !cfToken || !cfZoneId) return null;
+  return { domain, cfToken, cfZoneId };
+}
 
 interface FlyMachine {
   id: string;
@@ -263,7 +308,94 @@ export class FlyDriver implements InstanceDriver {
       throw err;
     }
 
+    // Custom instance domain — strictly after health passed on .fly.dev.
+    // Never fails a healthy provision: any Cloudflare/cert hiccup falls
+    // back to the .fly.dev URL (and a destroy cleans up a stray CNAME).
+    try {
+      const hostname = await this.provisionCustomDomain(appName);
+      if (hostname) {
+        return { externalId: appName, url: `https://${hostname}`, flyUrl: url };
+      }
+    } catch (err) {
+      console.warn(
+        `[fly-driver] custom domain for ${appName} failed — serving ${url}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     return { externalId: appName, url };
+  }
+
+  /**
+   * Point <app>.<HQ_INSTANCE_DOMAIN> at <app>.fly.dev and get it a cert.
+   * Returns the custom hostname, or null when the feature env is unset.
+   *
+   *  a. Cloudflare CNAME, DNS-only (`proxied: false` is load-bearing —
+   *     Cloudflare's proxy terminates TLS itself and breaks Fly's ACME
+   *     validation + TLS handshake for the hostname).
+   *  b. ACME cert via the Machines API certificates resource.
+   *  c. Brief issuance poll; slow issuance does NOT fail anything — the
+   *     hostname is recorded optimistically and Fly finishes in background.
+   */
+  private async provisionCustomDomain(appName: string): Promise<string | null> {
+    const cfg = customDomainConfig();
+    if (!cfg) return null;
+    const hostname = `${appName}.${cfg.domain}`;
+
+    await this.cloudflare(cfg, "POST", `/zones/${cfg.cfZoneId}/dns_records`, {
+      type: "CNAME",
+      name: hostname,
+      content: `${appName}.fly.dev`,
+      proxied: false,
+      ttl: 1, // 1 = automatic
+      comment: `cue-hq instance ${appName}`,
+    });
+
+    await this.api("POST", `/apps/${appName}/certificates/acme`, { hostname });
+
+    for (let attempt = 0; attempt < CERT_POLL_ATTEMPTS; attempt++) {
+      const cert = (await this.api(
+        "GET",
+        `/apps/${appName}/certificates/${hostname}`,
+      ).catch(() => undefined)) as { configured?: boolean } | undefined;
+      if (cert?.configured) break;
+      if (attempt < CERT_POLL_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, this.healthIntervalMs));
+      }
+    }
+    return hostname;
+  }
+
+  /** Cloudflare API v4 plumbing (checks the envelope's `success` flag). */
+  private async cloudflare(
+    cfg: CustomDomainConfig,
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<unknown> {
+    const res = await this.fetchImpl(`${CLOUDFLARE_API_BASE}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${cfg.cfToken}`,
+        "Content-Type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const payload = (await res.json().catch(() => null)) as {
+      success?: boolean;
+      errors?: { message?: string }[];
+      result?: unknown;
+    } | null;
+    if (!res.ok || !payload?.success) {
+      const detail =
+        payload?.errors?.map((e) => e.message ?? "unknown").join("; ") ??
+        `HTTP ${res.status}`;
+      throw new Error(
+        `Cloudflare ${method} ${path} failed: ${detail.slice(0, 500)}`,
+      );
+    }
+    return payload.result;
   }
 
   /**
@@ -423,7 +555,38 @@ export class FlyDriver implements InstanceDriver {
   }
 
   async destroy(externalId: string): Promise<void> {
+    // Best-effort DNS cleanup first (never blocks the teardown); the Fly
+    // certificate needs no separate delete — it dies with the app.
+    try {
+      await this.removeCustomDomainRecord(externalId);
+    } catch (err) {
+      console.warn(
+        `[fly-driver] DNS cleanup for ${externalId} failed (record may linger): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     await this.teardown(externalId);
+  }
+
+  /** Delete the instance's Cloudflare CNAME (list by name → delete by id). */
+  private async removeCustomDomainRecord(appName: string): Promise<void> {
+    const cfg = customDomainConfig();
+    if (!cfg) return;
+    const hostname = `${appName}.${cfg.domain}`;
+    const records = (await this.cloudflare(
+      cfg,
+      "GET",
+      `/zones/${cfg.cfZoneId}/dns_records?type=CNAME&name=${encodeURIComponent(hostname)}`,
+    )) as { id?: string }[] | undefined;
+    for (const record of Array.isArray(records) ? records : []) {
+      if (!record?.id) continue;
+      await this.cloudflare(
+        cfg,
+        "DELETE",
+        `/zones/${cfg.cfZoneId}/dns_records/${record.id}`,
+      );
+    }
   }
 
   /**

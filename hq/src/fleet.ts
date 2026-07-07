@@ -54,7 +54,13 @@ export async function sweepFleet(
   for (const instance of live) {
     if (instance.driver !== driver.id) continue; // sweep per-driver
     result.checked += 1;
-    const ok = await driver.health(instance.url);
+    // Probe the branded URL first; a custom-domain instance whose DNS/cert
+    // is mid-issuance (or broken) still counts healthy via its provider
+    // fallback URL (flyUrl) — the machine itself is what we're sweeping.
+    let ok = await driver.health(instance.url);
+    if (!ok && instance.flyUrl && instance.flyUrl !== instance.url) {
+      ok = await driver.health(instance.flyUrl);
+    }
     if (ok) {
       result.healthy += 1;
     } else {
@@ -62,6 +68,7 @@ export async function sweepFleet(
       db.recordEvent("fleet_health_failed", instance.customerId, {
         instanceId: instance.id,
         url: instance.url,
+        flyUrl: instance.flyUrl,
         driver: instance.driver,
       });
       // TODO: escalate — retry with backoff, then notify (the Cue prod

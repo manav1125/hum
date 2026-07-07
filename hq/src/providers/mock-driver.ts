@@ -32,10 +32,19 @@ export class MockDriver implements InstanceDriver {
   async provision(spec: InstanceSpec): Promise<ProvisionResult> {
     this.counter += 1;
     const externalId = `mock-${this.counter}`;
-    const url = `http://${spec.name}.mock.local`;
+    const providerUrl = `http://${spec.name}.mock.local`;
+    // Mirror the fly driver's custom-domain split: with HQ_INSTANCE_DOMAIN
+    // set, the primary url is a fake branded hostname and the provider url
+    // rides along as flyUrl — so provisioning tests cover both columns.
+    const instanceDomain = (process.env.HQ_INSTANCE_DOMAIN ?? "").trim();
+    const url = instanceDomain
+      ? `https://${spec.name}.${instanceDomain}`
+      : providerUrl;
     this.instances.set(externalId, { externalId, url, spec, state: "live" });
     this.calls.push({ method: "provision", arg: spec.name });
-    return { externalId, url };
+    return instanceDomain
+      ? { externalId, url, flyUrl: providerUrl }
+      : { externalId, url };
   }
 
   async suspend(externalId: string): Promise<void> {

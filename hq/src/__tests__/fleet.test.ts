@@ -7,7 +7,11 @@ import { sweepFleet } from "../fleet.js";
 import { generateInstanceSecrets } from "../secrets.js";
 
 const savedEnv: Record<string, string | undefined> = {};
-const ENV_KEYS = ["OPENROUTER_PROVISIONING_KEY", "OPENROUTER_SHARED_KEY"];
+const ENV_KEYS = [
+  "OPENROUTER_PROVISIONING_KEY",
+  "OPENROUTER_SHARED_KEY",
+  "HQ_INSTANCE_DOMAIN",
+];
 
 beforeEach(() => {
   for (const k of ENV_KEYS) {
@@ -51,6 +55,44 @@ describe("fleet sweep", () => {
     const kinds = db.listEvents().map((e) => e.kind);
     expect(kinds).toContain("fleet_health_failed");
     expect(kinds).toContain("fleet_sweep_completed");
+  });
+
+  test("custom-domain instance falls back to flyUrl for health", async () => {
+    const db = new HqDb(":memory:");
+    const driver = new MockDriver();
+    const c = db.createCustomer({ email: "dom@x.io", name: "Dom" });
+
+    // Branded URL unhealthy (cert mid-issuance), provider URL healthy.
+    const inst = db.createInstance({
+      customerId: c.id,
+      driver: "mock",
+      externalId: "mock-dom",
+      url: "https://cue-dom.justcue.app",
+      flyUrl: "http://cue-dom.mock.local",
+      state: "provisioning",
+    });
+    db.transitionInstance(inst.id, "live");
+    driver.healthByUrl.set("https://cue-dom.justcue.app", false);
+    driver.healthByUrl.set("http://cue-dom.mock.local", true);
+
+    // Keep the sweep's usage sync off the network (mock guardrails 404s).
+    const fetchImpl = (async (_input: RequestInfo | URL) =>
+      new Response("not found", { status: 404 })) as typeof fetch;
+
+    const ok = await sweepFleet(db, driver, { fetchImpl });
+    expect(ok.healthy).toBe(1);
+    expect(ok.failed.length).toBe(0);
+
+    // Both URLs down ⇒ failure recorded, with both urls in the event.
+    driver.healthByUrl.set("http://cue-dom.mock.local", false);
+    const bad = await sweepFleet(db, driver, { fetchImpl });
+    expect(bad.healthy).toBe(0);
+    expect(bad.failed.length).toBe(1);
+    const failure = db
+      .listEvents()
+      .find((e) => e.kind === "fleet_health_failed");
+    expect(failure?.dataJson).toContain("cue-dom.justcue.app");
+    expect(failure?.dataJson).toContain("cue-dom.mock.local");
   });
 
   test("suspended and deleted instances are skipped", async () => {

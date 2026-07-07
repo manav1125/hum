@@ -28,10 +28,14 @@ not do yet — production path is HQ-served, above):
 - **CLI:** `netlify deploy --dir=. --prod`
 - **Git:** commit the folder; `netlify.toml` sets `publish = "."`.
 
-## ⚙️ Set your domain (1 change)
-SEO tags, canonical URLs, `sitemap.xml`, and `robots.txt` use the placeholder
-`https://cue.ai`. After you lock your real domain, find-and-replace `https://cue.ai`
-across `index.html`, `halo.html`, `sitemap.xml`, and `robots.txt`.
+## ⚙️ Domain: done — justcue.ai
+SEO tags, canonical URLs, `sitemap.xml`, and `robots.txt` are set to the real
+domain **`https://justcue.ai`** (swapped from the old `https://cue.ai`
+placeholder across `index.html`, `halo.html`, `sitemap.xml`, `robots.txt`, and
+the contact `hello@justcue.ai` mailtos on every page). If the domain ever
+changes again, find-and-replace `https://justcue.ai` across those files.
+Non-canonical hosts (justcue.io, www) 301 to justcue.ai — handled by HQ's
+`HQ_CANONICAL_HOST` redirect, see `hq/README.md` § Domains.
 
 ## SEO / indexability
 - **Static `<head>`** on the public pages (`index.html`, `halo.html`): real `<title>`,

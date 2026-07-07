@@ -15,7 +15,11 @@ const ADMIN = "test-admin-token";
 
 // Provisioning consults the OpenRouter env — isolate from the dev machine.
 const savedEnv: Record<string, string | undefined> = {};
-const ENV_KEYS = ["OPENROUTER_PROVISIONING_KEY", "OPENROUTER_SHARED_KEY"];
+const ENV_KEYS = [
+  "OPENROUTER_PROVISIONING_KEY",
+  "OPENROUTER_SHARED_KEY",
+  "HQ_INSTANCE_DOMAIN",
+];
 beforeEach(() => {
   for (const k of ENV_KEYS) {
     savedEnv[k] = process.env[k];
@@ -255,6 +259,36 @@ describe("provisioning flow (mock driver)", () => {
     if (verified.ok) {
       expect(verified.claims.sub).toBe("actor:Cue:vellum-principal-m");
     }
+  });
+
+  test("custom instance domain: url/flyUrl split lands on the instance row", async () => {
+    process.env.HQ_INSTANCE_DOMAIN = "justcue.app";
+    const { db, admin } = setup();
+    const c = db.createCustomer({ email: "dom@x.io", name: "Dom" });
+    const res = await admin(`/admin/customers/${c.id}/provision`);
+    expect(res.status).toBe(200);
+
+    const inst = db.listInstancesByCustomer(c.id)[0];
+    const name = `cue-dom-${c.id.slice(0, 8)}`;
+    expect(inst.url).toBe(`https://${name}.justcue.app`);
+    expect(inst.flyUrl).toBe(`http://${name}.mock.local`);
+    expect(inst.state).toBe("live");
+
+    // Magic links use the branded url (welcome email / welcome status).
+    const magic = await admin(`/admin/customers/${c.id}/magic-link`);
+    expect(magic.status).toBe(200);
+    const { url } = (await magic.json()) as { url: string };
+    expect(url).toStartWith(`https://${name}.justcue.app/assistant/?cueToken=`);
+  });
+
+  test("without HQ_INSTANCE_DOMAIN the row is unchanged: flyUrl null", async () => {
+    const { db, admin } = setup();
+    const c = db.createCustomer({ email: "plain@x.io", name: "Plain" });
+    const res = await admin(`/admin/customers/${c.id}/provision`);
+    expect(res.status).toBe(200);
+    const inst = db.listInstancesByCustomer(c.id)[0];
+    expect(inst.url).toBe(`http://cue-plain-${c.id.slice(0, 8)}.mock.local`);
+    expect(inst.flyUrl).toBeNull();
   });
 
   test("suspend and resume drive the provider and the state machine", async () => {

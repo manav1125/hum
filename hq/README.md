@@ -90,6 +90,10 @@ price-id → env-var mapping to paste into the environment.
 | `HQ_DB_PATH` | SQLite file (default `./hq.db`) |
 | `HQ_PUBLIC_URL` | Base URL for Stripe checkout success/cancel redirects |
 | `HQ_DRIVER` | `render` or `fly` to use that driver (default: mock) |
+| `HQ_CANONICAL_HOST` | Canonical public host, e.g. `justcue.ai`. When set, GET/HEAD requests on any other host (justcue.io, www.justcue.ai, cue-hq.fly.dev) 301 to `https://<canonical><path>`. POSTs (Stripe webhook!), `/healthz`, and instance-domain hosts are exempt. Unset ⇒ no redirects |
+| `HQ_INSTANCE_DOMAIN` | Customer-instance domain, e.g. `justcue.app` — each provision gets `https://<fly-app-name>.<domain>` (see Domains). Also exempts those hosts from the canonical redirect |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with DNS-edit on the instance zone (custom instance domains) |
+| `CLOUDFLARE_ZONE_ID_INSTANCES` | Cloudflare zone id of `HQ_INSTANCE_DOMAIN`. All three custom-domain vars must be set or the feature is skipped entirely |
 | `HQ_HEALTH_TIMEOUT_MS` | Provision health-poll budget (default 5 min) |
 | `HQ_STAGING_INSTANCE_ID` | Instance id of the designated staging instance. When set, `POST /admin/fleet/update` refuses until that instance already runs the target image (staged rollout) |
 | `RENDER_API_KEY` | Render REST API key |
@@ -116,7 +120,7 @@ price-id → env-var mapping to paste into the environment.
 | `HQ_SESSION_SECRET` | HMAC key for the customer `/account` session cookie + enables `/signin`. Unset ⇒ site auth routes answer 503 |
 | `HQ_DOWNLOADS_DIR` | Directory HQ serves app downloads from (default `/data/downloads`). `GET /downloads/cue-macos.dmg` streams `cue-macos.dmg` from here; a missing file answers a friendly branded 404 |
 | `RESEND_API_KEY` | Resend secret for transactional email. Unset ⇒ log-only mode: every would-be email (incl. its action link) is printed at info level |
-| `EMAIL_FROM` | From header for transactional email (default `Cue <hello@cue.ai>`) |
+| `EMAIL_FROM` | From header for transactional email (default `Cue <hello@justcue.ai>`) |
 
 `OPENROUTER_API_KEY` is minted by HQ at provision time (a limit-capped
 child key — see the plans & credits section). Other per-instance provider
@@ -186,6 +190,58 @@ Admin (Bearer `HQ_ADMIN_TOKEN`, or `?token=` for the browser dashboard):
   halts on the first failed batch (`fleet_update_halted` event + 502).
   With `HQ_STAGING_INSTANCE_ID` set, refuses (409 "roll staging first")
   until the staging instance's `imageRef` equals the target image.
+
+## Domains
+
+The domain layout (all registered; cuedesk.ai is parked and unused):
+
+- **justcue.ai** — canonical marketing site + HQ (this server).
+- **justcue.io** — redirect-only to justcue.ai.
+- **justcue.app** — customer instances: `https://<fly-app-name>.justcue.app`.
+
+**Site hostnames (one-time manual setup).** HQ runs as the `cue-hq` Fly
+app, so the apex/www/redirect hosts all point at it and Fly needs a cert
+per hostname:
+
+| Record | Zone | Type | Value | Proxy status |
+| --- | --- | --- | --- | --- |
+| `justcue.ai` (apex) | justcue.ai | `A` / `AAAA` | `cue-hq`'s public IPv4 / IPv6 (`flyctl ips list -a cue-hq`); use CNAME/ALIAS flattening to `cue-hq.fly.dev` if the DNS host supports it | DNS-only |
+| `www.justcue.ai` | justcue.ai | `CNAME` | `cue-hq.fly.dev` | DNS-only |
+| `justcue.io` (apex) | justcue.io | `A` / `AAAA` or ALIAS | same as apex above | DNS-only |
+| `www.justcue.io` | justcue.io | `CNAME` | `cue-hq.fly.dev` | DNS-only |
+
+Then mint the certs on the `cue-hq` app:
+
+```bash
+flyctl certs add justcue.ai      -a cue-hq
+flyctl certs add www.justcue.ai  -a cue-hq
+flyctl certs add justcue.io      -a cue-hq
+flyctl certs add www.justcue.io  -a cue-hq
+flyctl certs check justcue.ai    -a cue-hq   # repeat per hostname
+```
+
+Set `HQ_CANONICAL_HOST=justcue.ai` and every GET on justcue.io / www /
+cue-hq.fly.dev 301s to the canonical host — no separate redirect service.
+Keep the Stripe webhook endpoint pointed at whichever URL was registered;
+POSTs are never redirected.
+
+**Per-instance domains (automated).** With `HQ_INSTANCE_DOMAIN=justcue.app`
++ `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID_INSTANCES` set, the fly
+driver finishes every provision (after `/healthz` passes on `.fly.dev`) by:
+
+1. creating a **DNS-only** CNAME `<app>.justcue.app → <app>.fly.dev` on
+   Cloudflare (`proxied: false` is required — Cloudflare's proxy breaks
+   Fly's TLS handshake/ACME validation for custom hostnames),
+2. requesting an ACME cert for the hostname via the Machines API
+   certificates resource (`POST /apps/<app>/certificates/acme`),
+3. briefly polling issuance — slow issuance never fails the provision.
+
+The instance row then stores `url = https://<app>.justcue.app` (magic
+links, welcome status, and the account page use the branded URL) and
+`flyUrl = https://<app>.fly.dev` as the ops/fallback URL; the fleet sweep
+probes `url` first and falls back to `flyUrl`. `destroy` deletes the
+CNAME again. With any of the three vars unset, provisioning behaves
+exactly as before (`.fly.dev` only).
 
 ## The website (served by HQ)
 

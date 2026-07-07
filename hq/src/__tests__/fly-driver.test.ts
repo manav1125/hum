@@ -11,6 +11,9 @@ const ENV_KEYS = [
   "HQ_FLY_VOLUME_SIZE_GB",
   "CUE_IMAGE_REF",
   "HQ_HEALTH_TIMEOUT_MS",
+  "HQ_INSTANCE_DOMAIN",
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ZONE_ID_INSTANCES",
 ] as const;
 const savedEnv = new Map<string, string | undefined>();
 
@@ -91,6 +94,29 @@ function fakeFlyFetch(opts: {
     }
     if (url === "https://api.fly.io/graphql") {
       return Response.json({ data: { allocateIpAddress: {} } });
+    }
+    // Cloudflare DNS (custom instance domains).
+    if (url.startsWith("https://api.cloudflare.com/client/v4/")) {
+      if (method === "POST" && url.endsWith("/dns_records")) {
+        return Response.json({ success: true, errors: [], result: { id: "cfrec1" } });
+      }
+      if (method === "GET" && url.includes("/dns_records?")) {
+        return Response.json({ success: true, errors: [], result: [{ id: "cfrec1" }] });
+      }
+      if (method === "DELETE" && url.includes("/dns_records/")) {
+        return Response.json({ success: true, errors: [], result: { id: "cfrec1" } });
+      }
+      return new Response("unexpected cloudflare call", { status: 404 });
+    }
+    // Fly certificates resource (custom instance domains).
+    if (method === "POST" && url.endsWith("/certificates/acme")) {
+      return Response.json(
+        { configured: false, acme_requested: true, status: "pending_validation" },
+        { status: 201 },
+      );
+    }
+    if (method === "GET" && url.includes("/certificates/")) {
+      return Response.json({ configured: true });
     }
     if (method === "POST" && url.endsWith("/v1/apps")) {
       return Response.json({ id: "app-internal-id" }, { status: 201 });
@@ -515,6 +541,154 @@ describe("update", () => {
     await expect(driver.update("cue-empty", NEW_IMAGE)).rejects.toThrow(
       /no machines/,
     );
+  });
+});
+
+describe("custom instance domains", () => {
+  const APP = "cue-ada-abcd1234";
+  const HOSTNAME = `${APP}.justcue.app`;
+
+  function enableCustomDomain() {
+    process.env.HQ_INSTANCE_DOMAIN = "justcue.app";
+    process.env.CLOUDFLARE_API_TOKEN = "cf-test-token";
+    process.env.CLOUDFLARE_ZONE_ID_INSTANCES = "zone-instances-1";
+  }
+
+  test("happy path: DNS-only CNAME + ACME cert AFTER health; url/flyUrl split", async () => {
+    enableCustomDomain();
+    const { fetchImpl, calls } = fakeFlyFetch({});
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(result.externalId).toBe(APP);
+    expect(result.url).toBe(`https://${HOSTNAME}`);
+    expect(result.flyUrl).toBe(`https://${APP}.fly.dev`);
+
+    const plan = calls.map((c) => `${c.method} ${c.url}`);
+    const healthAt = plan.indexOf(`GET https://${APP}.fly.dev/healthz`);
+    const dnsAt = plan.indexOf(
+      "POST https://api.cloudflare.com/client/v4/zones/zone-instances-1/dns_records",
+    );
+    const certAt = plan.indexOf(
+      `POST https://api.machines.dev/v1/apps/${APP}/certificates/acme`,
+    );
+    // Custom-domain work happens strictly after /healthz passed on .fly.dev.
+    expect(healthAt).toBeGreaterThan(-1);
+    expect(dnsAt).toBeGreaterThan(healthAt);
+    expect(certAt).toBeGreaterThan(dnsAt);
+
+    // DNS record body: CNAME <app>.justcue.app → <app>.fly.dev, DNS-only.
+    const dnsBody = calls[dnsAt].body as Record<string, unknown>;
+    expect(dnsBody.type).toBe("CNAME");
+    expect(dnsBody.name).toBe(HOSTNAME);
+    expect(dnsBody.content).toBe(`${APP}.fly.dev`);
+    // proxied MUST be false — Cloudflare proxying breaks Fly's TLS handshake.
+    expect(dnsBody.proxied).toBe(false);
+
+    // Cert request carries the hostname; issuance is polled.
+    expect(calls[certAt].body).toEqual({ hostname: HOSTNAME });
+    expect(plan).toContain(
+      `GET https://api.machines.dev/v1/apps/${APP}/certificates/${HOSTNAME}`,
+    );
+  });
+
+  test("slow cert issuance does NOT fail the provision (optimistic hostname)", async () => {
+    enableCustomDomain();
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) =>
+        method === "GET" && url.includes("/certificates/")
+          ? Response.json({ configured: false })
+          : undefined,
+    });
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(result.url).toBe(`https://${HOSTNAME}`);
+    expect(result.flyUrl).toBe(`https://${APP}.fly.dev`);
+    // Poll attempts are bounded — it gave up rather than hanging.
+    const polls = calls.filter(
+      (c) => c.method === "GET" && c.url.includes("/certificates/"),
+    );
+    expect(polls.length).toBeGreaterThan(1);
+    expect(polls.length).toBeLessThanOrEqual(10);
+  });
+
+  test("Cloudflare failure falls back to the .fly.dev URL, provision still ok", async () => {
+    enableCustomDomain();
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) =>
+        method === "POST" && url.endsWith("/dns_records")
+          ? Response.json(
+              { success: false, errors: [{ message: "zone locked" }] },
+              { status: 403 },
+            )
+          : undefined,
+    });
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(result.url).toBe(`https://${APP}.fly.dev`);
+    expect(result.flyUrl).toBeUndefined();
+    // The healthy app was NOT torn down over a DNS hiccup.
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  test("destroy also deletes the Cloudflare DNS record (list → delete by id)", async () => {
+    enableCustomDomain();
+    const { fetchImpl, calls } = fakeFlyFetch({});
+    const driver = makeDriver(fetchImpl);
+
+    await driver.destroy(APP);
+    const cf = calls.filter((c) => c.url.startsWith("https://api.cloudflare.com/"));
+    expect(cf.length).toBe(2);
+    expect(cf[0].method).toBe("GET");
+    expect(cf[0].url).toContain(
+      `/zones/zone-instances-1/dns_records?type=CNAME&name=${encodeURIComponent(HOSTNAME)}`,
+    );
+    expect(cf[1].method).toBe("DELETE");
+    expect(cf[1].url).toEndWith("/zones/zone-instances-1/dns_records/cfrec1");
+    // Fly teardown still ran in full.
+    expect(
+      calls.some((c) => c.method === "DELETE" && c.url.endsWith(`/apps/${APP}?force=true`)),
+    ).toBe(true);
+  });
+
+  test("DNS cleanup failure never blocks destroy", async () => {
+    enableCustomDomain();
+    const { fetchImpl, calls } = fakeFlyFetch({
+      route: (method, url) =>
+        url.startsWith("https://api.cloudflare.com/")
+          ? new Response("cf down", { status: 500 })
+          : undefined,
+    });
+    const driver = makeDriver(fetchImpl);
+    await driver.destroy(APP); // resolves despite Cloudflare being down
+    expect(
+      calls.some((c) => c.method === "DELETE" && c.url.endsWith(`/apps/${APP}?force=true`)),
+    ).toBe(true);
+  });
+
+  test("unset env ⇒ zero Cloudflare/cert calls, no flyUrl (behavior unchanged)", async () => {
+    const { fetchImpl, calls } = fakeFlyFetch({});
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(result.url).toBe(`https://${APP}.fly.dev`);
+    expect(result.flyUrl).toBeUndefined();
+
+    await driver.destroy(APP);
+    expect(calls.some((c) => c.url.includes("cloudflare.com"))).toBe(false);
+    expect(calls.some((c) => c.url.includes("/certificates"))).toBe(false);
+  });
+
+  test("partially-set env (domain without Cloudflare creds) stays off", async () => {
+    process.env.HQ_INSTANCE_DOMAIN = "justcue.app";
+    const { fetchImpl, calls } = fakeFlyFetch({});
+    const driver = makeDriver(fetchImpl);
+    const result = await driver.provision(SPEC);
+    expect(result.url).toBe(`https://${APP}.fly.dev`);
+    expect(result.flyUrl).toBeUndefined();
+    expect(calls.some((c) => c.url.includes("cloudflare.com"))).toBe(false);
   });
 });
 
