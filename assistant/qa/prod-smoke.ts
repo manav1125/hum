@@ -383,10 +383,44 @@ async function fileFailures(failed: CheckResult[]) {
 
 // ---------------------------------------------------------------------------
 
+// WS1 marketplace: sources resolve (flag ON) and live GitHub ingestion works.
+async function checkMarketplace() {
+  const res = await api("marketplace/sources");
+  if (res.status === 404)
+    return record("marketplace", "warn", "marketplace flag OFF on this instance");
+  if (res.status !== 200)
+    return record("marketplace", "fail", `marketplace/sources → ${res.status}`);
+  const { sources } = (await res.json()) as { sources: unknown[] };
+  record(
+    "marketplace",
+    sources && sources.length > 0 ? "pass" : "fail",
+    `${sources?.length ?? 0} source(s) registered`,
+  );
+}
+
+// WS2 bundled research/scrape tools registered (keys optional — presence only).
+async function checkResearchTools() {
+  const res = await api("skills");
+  if (res.status !== 200)
+    return record("research-tools", "fail", `skills → ${res.status}`);
+  const { skills } = (await res.json()) as { skills: Array<{ id: string }> };
+  const want = ["web-research", "web-scrape"];
+  const missing = want.filter((w) => !skills.some((s) => s.id === w));
+  record(
+    "research-tools",
+    missing.length === 0 ? "pass" : "fail",
+    missing.length === 0
+      ? "web-research + web-scrape present"
+      : `missing: ${missing.join(", ")}`,
+  );
+}
+
 const checks: Array<[string, () => Promise<void>]> = [
   ["spa-served", checkSpaServed],
   ["auth-api", checkAuthApi],
   ["tools-registry", checkToolsRegistry],
+  ["marketplace", checkMarketplace],
+  ["research-tools", checkResearchTools],
   ["heartbeat", checkHeartbeat],
   ["credentials", checkCredentials],
   ["push-devices", checkPushDevices],
