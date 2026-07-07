@@ -121,6 +121,7 @@ price-id → env-var mapping to paste into the environment.
 | `HQ_DOWNLOADS_DIR` | Directory HQ serves app downloads from (default `/data/downloads`). `GET /downloads/cue-macos.dmg` streams `cue-macos.dmg` from here; a missing file answers a friendly branded 404 |
 | `RESEND_API_KEY` | Resend secret for transactional email. Unset ⇒ log-only mode: every would-be email (incl. its action link) is printed at info level |
 | `EMAIL_FROM` | From header for transactional email (default `Cue <hello@justcue.ai>`) |
+| `KLAVIYO_PRIVATE_KEY` | Klaviyo private API key (`pk_…`) for lifecycle event sync (see "Klaviyo sync"). Unset ⇒ no-op: every would-be event is logged at info level, nothing is sent |
 
 `OPENROUTER_API_KEY` is minted by HQ at provision time (a limit-capped
 child key — see the plans & credits section). Other per-instance provider
@@ -275,6 +276,40 @@ auto-provisioning completes; *sign-in link* fires from `POST /signin`;
 built but not yet wired to the fleet sweep (TODO below). Without
 `RESEND_API_KEY` every send logs the recipient, subject, and action link
 at info level — the whole flow is testable keyless.
+
+## Klaviyo sync
+
+Every commercially meaningful lifecycle event is mirrored to Klaviyo
+(`src/klaviyo.ts`, Events API via plain fetch, revision `2026-04-15`) so
+marketing flows can trigger off real product state. Fire-and-forget:
+callers never await the send — a Klaviyo outage cannot slow or fail a
+checkout, webhook, or sweep — and failures land as `klaviyo_sync_failed`
+audit events. Each emission carries a stable `unique_id`, so Stripe
+webhook retries and nightly re-sweeps dedupe on Klaviyo's side. Without
+`KLAVIYO_PRIVATE_KEY` the whole layer no-ops (logged at info level).
+
+The metric catalog (build flows off these names verbatim):
+
+| Metric | Trigger | Event properties | Profile properties |
+| --- | --- | --- | --- |
+| `Cue Waitlist Joined` | `POST /waitlist` creates a new customer | `plan` | `plan` |
+| `Cue Invited` | Invite minted (`POST /admin/customers/:id/invite`) | `code`, `percentOff` | `plan` |
+| `Cue Checkout Started` | Successful `POST /redeem` that returned a Stripe checkout URL | `plan`, `code` | `plan` |
+| `Cue Subscribed` | `checkout.session.completed` (subscription mode) webhook | `plan` | `plan` |
+| `Cue Instance Ready` | Auto-provision completed after payment | `instanceUrl` | `plan` |
+| `Cue Credits Low` | Fleet sweep: balance crosses below 15% of the plan's monthly grant — once per billing cycle (`unique_id` keyed on customer + grant period) | `balance`, `threshold` | `plan`, `credit_balance` |
+| `Cue Credits Exhausted` | Fleet sweep: balance ≤ 0, child key frozen | `balance` | `plan`, `credit_balance` |
+| `Cue Topped Up` | Top-up applied (Stripe payment-mode webhook or admin topup) | `credits` | `plan`, `credit_balance` |
+| `Cue Payment Failed` | `invoice.payment_failed` webhook | `invoiceId` | `plan` |
+| `Cue Cancelled` | `customer.subscription.deleted` webhook | `stripeSubId` | `plan` |
+| `Cue TestFlight Interest` | `POST /testflight` (first submission per email) | — | — |
+
+Profiles are keyed by email; `first_name` rides along wherever we know
+the customer's name. `unique_id` conventions: entity-scoped stable keys
+(`waitlist:<customerId>`, `invite:<code>`, `checkout-started:<sessionId>`,
+`subscribed:<sessionId>`, `instance-ready:<instanceId>`,
+`credits-low:<customerId>:<grant note>`, `topup:<ref>`,
+`payment-failed:<invoiceId>`, `cancelled:<subId>`, `testflight:<email>`).
 
 ## Website integration contract
 

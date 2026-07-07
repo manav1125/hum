@@ -37,6 +37,7 @@ import {
 } from "./credits.js";
 import type { CustomerPlan, HqDb } from "./db.js";
 import { paymentFailedEmail, sendEmail } from "./email.js";
+import { firstNameOf, trackEvent } from "./klaviyo.js";
 import { disableKey, isOpenRouterConfigured } from "./openrouter.js";
 import {
   PLANS,
@@ -581,6 +582,22 @@ export async function handleStripeWebhook(
           applied: result.applied,
           balance: result.balance,
         });
+        if (result.applied) {
+          const customer = db.getCustomer(customerId)!;
+          void trackEvent(
+            db,
+            {
+              metric: "Cue Topped Up",
+              email: customer.email,
+              firstName: firstNameOf(customer.name),
+              profileProps: { plan: customer.plan, credit_balance: result.balance },
+              props: { credits },
+              uniqueId: `topup:${String(obj.id ?? event.id ?? "")}`,
+              customerId,
+            },
+            fetchImpl,
+          );
+        }
         return { status: 200, body: { received: true, applied: result.applied } };
       }
 
@@ -604,6 +621,23 @@ export async function handleStripeWebhook(
       db.recordEvent("stripe_checkout_completed", customerId, {
         sessionId: obj.id ?? null,
       });
+      {
+        const customer = db.getCustomer(customerId)!;
+        const plan = isPlanId(metadata.plan) ? metadata.plan : customer.plan;
+        void trackEvent(
+          db,
+          {
+            metric: "Cue Subscribed",
+            email: customer.email,
+            firstName: firstNameOf(customer.name),
+            profileProps: { plan },
+            props: { plan },
+            uniqueId: `subscribed:${String(obj.id ?? event.id ?? "")}`,
+            customerId,
+          },
+          fetchImpl,
+        );
+      }
       // Website flow: paid customers get their instance without an admin in
       // the loop. Not awaited — Stripe's delivery timeout is far shorter
       // than a provision; idempotency lives in provisioning.ts.
@@ -673,6 +707,19 @@ export async function handleStripeWebhook(
         invoiceId: obj.id ?? null,
         emailed: result.ok,
       });
+      void trackEvent(
+        db,
+        {
+          metric: "Cue Payment Failed",
+          email: customer.email,
+          firstName: firstNameOf(customer.name),
+          profileProps: { plan: customer.plan },
+          props: { invoiceId: obj.id ?? null },
+          uniqueId: `payment-failed:${String(obj.id ?? event.id ?? "")}`,
+          customerId: customer.id,
+        },
+        fetchImpl,
+      );
       return { status: 200, body: { received: true } };
     }
 
@@ -729,6 +776,22 @@ export async function handleStripeWebhook(
       db.recordEvent("stripe_subscription_deleted", resolved.customerId, {
         stripeSubId: obj.id ?? null,
       });
+      const churned = db.getCustomer(resolved.customerId);
+      if (churned) {
+        void trackEvent(
+          db,
+          {
+            metric: "Cue Cancelled",
+            email: churned.email,
+            firstName: firstNameOf(churned.name),
+            profileProps: { plan: churned.plan },
+            props: { stripeSubId: obj.id ?? null },
+            uniqueId: `cancelled:${String(obj.id ?? event.id ?? "")}`,
+            customerId: churned.id,
+          },
+          fetchImpl,
+        );
+      }
       return { status: 200, body: { received: true } };
     }
 

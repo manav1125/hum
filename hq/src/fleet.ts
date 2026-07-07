@@ -20,7 +20,12 @@
 
 import { getBalance, syncKeyLimitsToBalance, syncUsage } from "./credits.js";
 import type { HqDb, Instance } from "./db.js";
+import { firstNameOf, trackEvent } from "./klaviyo.js";
+import { resolvePlan } from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
+
+/** Credits-low threshold: below this fraction of the plan's monthly grant. */
+export const CREDITS_LOW_FRACTION = 0.15;
 
 export interface SweepResult {
   checked: number;
@@ -49,7 +54,7 @@ export async function sweepFleet(
     creditsUsed: 0,
     exhausted: [],
   };
-  const exhaustedCustomers = new Set<string>();
+  const checkedCustomers = new Set<string>();
 
   for (const instance of live) {
     if (instance.driver !== driver.id) continue; // sweep per-driver
@@ -91,17 +96,78 @@ export async function sweepFleet(
       result.creditsUsed += usage.creditsUsed;
     }
 
-    // Exhaustion check — once per customer per sweep. Customers with no
+    // Balance checks — once per customer per sweep. Customers with no
     // ledger at all (never granted) are skipped rather than frozen at 0.
-    if (exhaustedCustomers.has(instance.customerId)) continue;
+    if (checkedCustomers.has(instance.customerId)) continue;
+    checkedCustomers.add(instance.customerId);
     if (!db.hasCreditHistory(instance.customerId)) continue;
-    if (getBalance(db, instance.customerId) > 0) continue;
-    exhaustedCustomers.add(instance.customerId);
+    const balance = getBalance(db, instance.customerId);
+    const customer = db.getCustomer(instance.customerId);
+
+    if (balance > 0) {
+      // Low-balance crossing: below 15% of the plan's monthly grant, once
+      // per billing cycle (the latest grant entry IS the cycle — its note
+      // is `grant <subId>@<periodStart>`, unique per period). The local
+      // credits_low event carries the same key so re-sweeps single-fire;
+      // Klaviyo's unique_id dedupes any retries beyond that.
+      if (!customer) continue;
+      const grant = db
+        .listCreditEntries(instance.customerId, 1000)
+        .find((e) => e.kind === "grant");
+      if (!grant) continue; // no cycle to key on (never granted a period)
+      const threshold =
+        resolvePlan(customer.plan).monthlyCredits * CREDITS_LOW_FRACTION;
+      if (balance >= threshold) continue;
+      const uniqueId = `credits-low:${customer.id}:${grant.note}`;
+      if (db.findLatestEventByKindData("credits_low", JSON.stringify(uniqueId))) {
+        continue; // already fired this cycle
+      }
+      db.recordEvent("credits_low", customer.id, {
+        uniqueId,
+        balance,
+        threshold,
+      });
+      void trackEvent(
+        db,
+        {
+          metric: "Cue Credits Low",
+          email: customer.email,
+          firstName: firstNameOf(customer.name),
+          profileProps: { plan: customer.plan, credit_balance: balance },
+          props: { balance, threshold },
+          uniqueId,
+          customerId: customer.id,
+        },
+        fetchImpl,
+      );
+      continue;
+    }
+
     result.exhausted.push(instance.customerId);
     db.recordEvent("credits_exhausted", instance.customerId, {
       instanceId: instance.id,
-      balance: getBalance(db, instance.customerId),
+      balance,
     });
+    if (customer) {
+      const grant = db
+        .listCreditEntries(instance.customerId, 1000)
+        .find((e) => e.kind === "grant");
+      void trackEvent(
+        db,
+        {
+          metric: "Cue Credits Exhausted",
+          email: customer.email,
+          firstName: firstNameOf(customer.name),
+          profileProps: { plan: customer.plan, credit_balance: balance },
+          props: { balance },
+          // Period-keyed so nightly re-sweeps of a still-exhausted
+          // customer dedupe on Klaviyo's side.
+          uniqueId: `credits-exhausted:${customer.id}:${grant?.note ?? "no-grant"}`,
+          customerId: customer.id,
+        },
+        fetchImpl,
+      );
+    }
     // Freeze: with balance ≤ 0 the headroom is zero, so the child-key
     // limit lands exactly on current spend. No-op without a provisioning
     // key (shared-key mode has no per-customer limit to move).

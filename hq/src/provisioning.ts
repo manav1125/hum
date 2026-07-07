@@ -16,6 +16,7 @@
 
 import { sendEmail, welcomeEmail } from "./email.js";
 import type { Customer, HqDb, Instance } from "./db.js";
+import { firstNameOf, trackEvent } from "./klaviyo.js";
 import { provisionLlmKey } from "./openrouter.js";
 import { creditsToCogsUsd, resolvePlan } from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
@@ -310,6 +311,20 @@ export async function autoProvisionOnPayment(
   db.recordEvent("auto_provision_completed", customerId, {
     instanceId: outcome.instance.id,
   });
+  // Marketing sync — fire-and-forget, never blocks provisioning.
+  void trackEvent(
+    db,
+    {
+      metric: "Cue Instance Ready",
+      email: customer.email,
+      firstName: firstNameOf(customer.name),
+      profileProps: { plan: customer.plan },
+      props: { instanceUrl: outcome.instance.url },
+      uniqueId: `instance-ready:${outcome.instance.id}`,
+      customerId,
+    },
+    fetchImpl,
+  );
 
   // Welcome email (best-effort; the /welcome page also surfaces the link).
   const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);

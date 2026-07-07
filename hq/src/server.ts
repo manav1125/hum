@@ -50,6 +50,7 @@ import { adjustCredits, applyTopup, syncKeyLimitsToBalance } from "./credits.js"
 import type { CreditEntry, Customer, CustomerPlan, HqDb, Instance } from "./db.js";
 import { InvalidTransitionError } from "./db.js";
 import { sendEmail, signinEmail } from "./email.js";
+import { trackEvent } from "./klaviyo.js";
 import {
   TOPUPS,
   isPlanId,
@@ -222,6 +223,20 @@ export function createHandler(
         const plan = parsePlan(body.plan, "founding");
         const customer = db.createCustomer({ email, name, plan });
         db.recordEvent("waitlist_joined", customer.id, { email });
+        // Marketing sync — fire-and-forget, never blocks the response.
+        void trackEvent(
+          db,
+          {
+            metric: "Cue Waitlist Joined",
+            email: customer.email,
+            firstName: firstNameOf(customer),
+            profileProps: { plan: customer.plan },
+            props: { plan: customer.plan },
+            uniqueId: `waitlist:${customer.id}`,
+            customerId: customer.id,
+          },
+          fetchImpl,
+        );
         return json({ ok: true, customerId: customer.id }, 201);
       }
 
@@ -375,6 +390,19 @@ export function createHandler(
     if (customer.status === "waitlist") {
       db.transitionCustomer(customer.id, "invited");
     }
+    void trackEvent(
+      db,
+      {
+        metric: "Cue Invited",
+        email: customer.email,
+        firstName: firstNameOf(customer),
+        profileProps: { plan: customer.plan },
+        props: { code: invite.code, percentOff: invite.percentOff },
+        uniqueId: `invite:${invite.code}`,
+        customerId: customer.id,
+      },
+      fetchImpl,
+    );
     return json({ ok: true, invite });
   }
 
@@ -500,6 +528,19 @@ export function createHandler(
         reason: checkout.reason,
       });
     }
+    void trackEvent(
+      db,
+      {
+        metric: "Cue Checkout Started",
+        email: customer.email,
+        firstName: firstNameOf(customer),
+        profileProps: { plan },
+        props: { plan, code: invite.code },
+        uniqueId: `checkout-started:${checkout.sessionId}`,
+        customerId: customer.id,
+      },
+      fetchImpl,
+    );
     return json({
       ok: true,
       customerId: customer.id,
@@ -545,6 +586,19 @@ export function createHandler(
     const result = applyTopup(db, { customerId: customer.id, credits, ref });
     if (result.applied) {
       await syncKeyLimitsToBalance(db, customer.id, fetchImpl);
+      void trackEvent(
+        db,
+        {
+          metric: "Cue Topped Up",
+          email: customer.email,
+          firstName: firstNameOf(customer),
+          profileProps: { plan: customer.plan, credit_balance: result.balance },
+          props: { credits },
+          uniqueId: `topup:${ref}`,
+          customerId: customer.id,
+        },
+        fetchImpl,
+      );
     }
     return json({
       ok: true,
@@ -700,6 +754,17 @@ export function createHandler(
     }
     const customer = db.getCustomerByEmail(email);
     db.recordEvent("testflight_interest", customer?.id ?? null, { email });
+    void trackEvent(
+      db,
+      {
+        metric: "Cue TestFlight Interest",
+        email,
+        ...(customer ? { firstName: firstNameOf(customer) } : {}),
+        uniqueId: `testflight:${email}`,
+        customerId: customer?.id ?? null,
+      },
+      fetchImpl,
+    );
     return json({ ok: true });
   }
 
