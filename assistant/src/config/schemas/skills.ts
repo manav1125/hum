@@ -83,6 +83,40 @@ const RemoteProvidersConfigSchema = z
   })
   .describe("Remote skill provider configurations");
 
+const MarketplaceConfigSchema = z
+  .object({
+    enabled: z
+      .boolean({ error: "skills.marketplace.enabled must be a boolean" })
+      .default(true)
+      .describe(
+        "Whether the skill marketplace (GitHub source ingestion + marketplace routes) is enabled. " +
+          "Combined with the `marketplace` assistant feature flag — both must be on.",
+      ),
+    githubToken: z
+      .string({ error: "skills.marketplace.githubToken must be a string" })
+      .optional()
+      .describe(
+        "Optional GitHub token used for source indexing to raise API rate limits. " +
+          "Never forwarded to child processes.",
+      ),
+    indexTtlHours: z
+      .number({ error: "skills.marketplace.indexTtlHours must be a number" })
+      .positive()
+      .default(24)
+      .describe("How long a source index is served from cache before re-fetching"),
+    maxItemsPerSource: z
+      .number({
+        error: "skills.marketplace.maxItemsPerSource must be a number",
+      })
+      .int()
+      .positive()
+      .default(500)
+      .describe("Cap on indexed skills per source (protects giant repos)"),
+  })
+  .describe(
+    "Skill marketplace — open GitHub ingestion of SKILL.md repos, parallel to the first-party catalog",
+  );
+
 // 'unknown' is valid as a risk label on a skill but not as a threshold — setting the threshold
 // to 'unknown' would silently disable fail-closed behavior since nothing can exceed it.
 const VALID_MAX_RISK_LEVELS = [
@@ -142,6 +176,9 @@ export const SkillsConfigSchema = z
     ),
     remotePolicy: RemotePolicyConfigSchema.default(
       RemotePolicyConfigSchema.parse({}),
+    ),
+    marketplace: MarketplaceConfigSchema.default(
+      MarketplaceConfigSchema.parse({}),
     ),
   })
   .describe(

@@ -41,6 +41,11 @@ const PLUGINS_TAB: IntelligenceTab = {
   to: routes.plugins,
 };
 
+const MARKETPLACE_TAB: IntelligenceTab = {
+  label: "Marketplace",
+  to: routes.marketplace,
+};
+
 /**
  * Shared layout for the "About Assistant" pages (Identity, Skills,
  * Workspace, Contacts). Renders a heading + tab bar above an
@@ -82,20 +87,27 @@ export function IntelligenceLayout() {
     };
   }, [isMobile, assistantName, setTopBarCenter]);
 
+  const marketplace = useAssistantFeatureFlagStore.use.marketplace();
+
   // Insert the Plugins tab between Identity and Skills when the
   // `external-plugins` flag is on. Gated on `hasHydrated` so we don't
   // flash the tab in/out — until the first /feature-flags response
   // lands, render the baseline tabs (Identity + Skills + Memories).
   // The PluginsPage route itself also waits for hydration before
   // deciding to redirect, so a deep-link to /assistant/plugins is safe.
-  const tabs: readonly IntelligenceTab[] =
-    hasHydrated && externalPlugins
-      ? [
-          BASE_INTELLIGENCE_TABS[0],
-          PLUGINS_TAB,
-          ...BASE_INTELLIGENCE_TABS.slice(1),
-        ]
-      : BASE_INTELLIGENCE_TABS;
+  // The Marketplace tab slots in right after Skills under the same
+  // hydration rule (its page also redirects when the flag is off).
+  const tabs: readonly IntelligenceTab[] = (() => {
+    let result: IntelligenceTab[] = [...BASE_INTELLIGENCE_TABS];
+    if (hasHydrated && externalPlugins) {
+      result = [result[0], PLUGINS_TAB, ...result.slice(1)];
+    }
+    if (hasHydrated && marketplace) {
+      const skillsIndex = result.findIndex((tab) => tab.to === routes.skills);
+      result.splice(skillsIndex + 1, 0, MARKETPLACE_TAB);
+    }
+    return result;
+  })();
 
   // Tabs whose mobile rendering is a full-bleed designed surface that paints
   // its own background + padding (the "You" screen on Channels & Agents, the

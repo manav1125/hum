@@ -276,6 +276,14 @@
       "defaultEnabled": false
     },
     {
+      "id": "marketplace",
+      "scope": "assistant",
+      "key": "marketplace",
+      "label": "Skill Marketplace",
+      "description": "Enable the skill marketplace: GitHub source ingestion (indexing public repos of SKILL.md files), the daemon marketplace/* routes, and the web Marketplace surface. Installs are markdown-only with hash-pinned locking and capability consent; the existing catalog.json install flow is unaffected.",
+      "defaultEnabled": true
+    },
+    {
       "id": "external-plugins",
       "scope": "assistant",
       "key": "external-plugins",

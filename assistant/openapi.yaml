@@ -21221,6 +21221,927 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/marketplace/install:
+    post:
+      operationId: marketplace_install_post
+      summary: Install marketplace skill
+      description:
+        Two-phase install with capability consent. Without confirm:true the response is the install-confirmation
+        payload (files, skipped executables, declared capabilities — or the 'no declared capabilities' notice). With
+        confirm:true the skill's markdown/text assets are written into the managed skills dir and a hash-pinned entry is
+        recorded in skills-lock.json.
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requiresConfirmation:
+                    type: boolean
+                  ok:
+                    type: boolean
+                  skillId:
+                    type: string
+                  item:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      displayName:
+                        type: string
+                      description:
+                        type: string
+                      source:
+                        type: string
+                      sourceLabel:
+                        type: string
+                      skillPath:
+                        type: string
+                      ref:
+                        type: string
+                      url:
+                        type: string
+                      emoji:
+                        type: string
+                      license:
+                        type: string
+                      capabilities:
+                        type: object
+                        properties:
+                          secrets:
+                            type: array
+                            items:
+                              type: string
+                          connectors:
+                            type: array
+                            items:
+                              type: string
+                          network:
+                            type: array
+                            items:
+                              type: string
+                          writes:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - secrets
+                          - connectors
+                          - network
+                          - writes
+                        additionalProperties: false
+                      installed:
+                        type: boolean
+                    required:
+                      - id
+                      - name
+                      - displayName
+                      - description
+                      - source
+                      - sourceLabel
+                      - skillPath
+                      - ref
+                      - capabilities
+                    additionalProperties: false
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                        size:
+                          type: number
+                      required:
+                        - path
+                      additionalProperties: false
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                        reason:
+                          type: string
+                      required:
+                        - path
+                        - reason
+                      additionalProperties: false
+                  capabilities:
+                    type: object
+                    properties:
+                      secrets:
+                        type: array
+                        items:
+                          type: string
+                      connectors:
+                        type: array
+                        items:
+                          type: string
+                      network:
+                        type: array
+                        items:
+                          type: string
+                      writes:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - secrets
+                      - connectors
+                      - network
+                      - writes
+                    additionalProperties: false
+                  notice:
+                    type: string
+                  alreadyInstalled:
+                    type: boolean
+                  lock:
+                    type: object
+                    properties:
+                      source:
+                        type: string
+                      sourceType:
+                        type: string
+                        const: github
+                      ref:
+                        type: string
+                      skillPath:
+                        type: string
+                      computedHash:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties:
+                          type: string
+                      gitSha:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties:
+                          type: string
+                      installedAt:
+                        type: string
+                      consent:
+                        type: object
+                        properties:
+                          consentedAt:
+                            type: string
+                          capabilities:
+                            type: object
+                            properties:
+                              secrets:
+                                type: array
+                                items:
+                                  type: string
+                              connectors:
+                                type: array
+                                items:
+                                  type: string
+                              network:
+                                type: array
+                                items:
+                                  type: string
+                              writes:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - secrets
+                              - connectors
+                              - network
+                              - writes
+                            additionalProperties: false
+                          undeclared:
+                            type: boolean
+                        required:
+                          - consentedAt
+                          - capabilities
+                          - undeclared
+                        additionalProperties: false
+                      skippedFiles:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            path:
+                              type: string
+                            reason:
+                              type: string
+                          required:
+                            - path
+                            - reason
+                          additionalProperties: false
+                    required:
+                      - source
+                      - sourceType
+                      - ref
+                      - skillPath
+                      - computedHash
+                      - installedAt
+                      - consent
+                    additionalProperties: false
+                required:
+                  - skillId
+                  - skipped
+                  - capabilities
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                itemId:
+                  type: string
+                  description: Namespaced item id ({owner}--{repo}--{skill})
+                confirm:
+                  description: Explicit consent — required to actually install
+                  type: boolean
+              required:
+                - itemId
+              additionalProperties: false
+  /v1/marketplace/installed:
+    get:
+      operationId: marketplace_installed_get
+      summary: List installed marketplace skills
+      description:
+        Return skills-lock.json entries (marketplace installs only; catalog installs are tracked by
+        install-meta.json as before).
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installed:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        skillId:
+                          type: string
+                        source:
+                          type: string
+                        ref:
+                          type: string
+                        skillPath:
+                          type: string
+                        installedAt:
+                          type: string
+                        present:
+                          type: boolean
+                        undeclaredCapabilities:
+                          type: boolean
+                        skippedFiles:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              path:
+                                type: string
+                              reason:
+                                type: string
+                            required:
+                              - path
+                              - reason
+                            additionalProperties: false
+                      required:
+                        - skillId
+                        - source
+                        - ref
+                        - skillPath
+                        - installedAt
+                        - present
+                        - undeclaredCapabilities
+                      additionalProperties: false
+                required:
+                  - installed
+                additionalProperties: false
+  /v1/marketplace/items:
+    get:
+      operationId: marketplace_items_get
+      summary: List marketplace items
+      description:
+        Return indexed skills across enabled sources. Pass ?source= to index a single source (the UI streams
+        results per source) and ?query= for text search. Indexes are cached per source for 24h.
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        displayName:
+                          type: string
+                        description:
+                          type: string
+                        source:
+                          type: string
+                        sourceLabel:
+                          type: string
+                        skillPath:
+                          type: string
+                        ref:
+                          type: string
+                        url:
+                          type: string
+                        emoji:
+                          type: string
+                        license:
+                          type: string
+                        capabilities:
+                          type: object
+                          properties:
+                            secrets:
+                              type: array
+                              items:
+                                type: string
+                            connectors:
+                              type: array
+                              items:
+                                type: string
+                            network:
+                              type: array
+                              items:
+                                type: string
+                            writes:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - secrets
+                            - connectors
+                            - network
+                            - writes
+                          additionalProperties: false
+                        installed:
+                          type: boolean
+                      required:
+                        - id
+                        - name
+                        - displayName
+                        - description
+                        - source
+                        - sourceLabel
+                        - skillPath
+                        - ref
+                        - capabilities
+                      additionalProperties: false
+                  errors:
+                    description: Sources that failed to index (partial results returned)
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        error:
+                          type: string
+                      required:
+                        - source
+                        - error
+                      additionalProperties: false
+                  truncated:
+                    type: boolean
+                required:
+                  - items
+                additionalProperties: false
+      parameters:
+        - name: query
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Text search across name, description, id, and source.
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Restrict to one source address (e.g. 'anthropics/skills' or 'cue-official').
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - "true"
+          description: Force a re-index, bypassing the 24h cache.
+  /v1/marketplace/items/{id}:
+    get:
+      operationId: marketplace_items_by_id_get
+      summary: Get marketplace item detail
+      description:
+        Return one indexed item plus a SKILL.md preview and the install plan (files that would be installed, files
+        skipped by the markdown-only safety boundary, declared capabilities).
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      displayName:
+                        type: string
+                      description:
+                        type: string
+                      source:
+                        type: string
+                      sourceLabel:
+                        type: string
+                      skillPath:
+                        type: string
+                      ref:
+                        type: string
+                      url:
+                        type: string
+                      emoji:
+                        type: string
+                      license:
+                        type: string
+                      capabilities:
+                        type: object
+                        properties:
+                          secrets:
+                            type: array
+                            items:
+                              type: string
+                          connectors:
+                            type: array
+                            items:
+                              type: string
+                          network:
+                            type: array
+                            items:
+                              type: string
+                          writes:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - secrets
+                          - connectors
+                          - network
+                          - writes
+                        additionalProperties: false
+                      installed:
+                        type: boolean
+                    required:
+                      - id
+                      - name
+                      - displayName
+                      - description
+                      - source
+                      - sourceLabel
+                      - skillPath
+                      - ref
+                      - capabilities
+                    additionalProperties: false
+                  skillMd:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description: Raw SKILL.md content preview
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                        size:
+                          type: number
+                      required:
+                        - path
+                      additionalProperties: false
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                        reason:
+                          type: string
+                      required:
+                        - path
+                        - reason
+                      additionalProperties: false
+                  capabilities:
+                    type: object
+                    properties:
+                      secrets:
+                        type: array
+                        items:
+                          type: string
+                      connectors:
+                        type: array
+                        items:
+                          type: string
+                      network:
+                        type: array
+                        items:
+                          type: string
+                      writes:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - secrets
+                      - connectors
+                      - network
+                      - writes
+                    additionalProperties: false
+                  notice:
+                    type: string
+                  alreadyInstalled:
+                    type: boolean
+                required:
+                  - item
+                  - skillMd
+                  - files
+                  - skipped
+                  - capabilities
+                  - notice
+                  - alreadyInstalled
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/marketplace/sources:
+    delete:
+      operationId: marketplace_sources_delete
+      summary: Remove marketplace source
+      description: Remove a source by ?address=. Built-in seed sources are disabled rather than deleted.
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+                additionalProperties: false
+      parameters:
+        - name: address
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Source address (owner/repo or cue-official)
+    get:
+      operationId: marketplace_sources_get
+      summary: List marketplace sources
+      description: Return the source registry (seed sources plus user-added repos).
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        address:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - github
+                            - catalog
+                        ref:
+                          type: string
+                        label:
+                          type: string
+                        enabled:
+                          type: boolean
+                        builtIn:
+                          type: boolean
+                        license:
+                          type: string
+                      required:
+                        - address
+                        - kind
+                        - enabled
+                      additionalProperties: false
+                required:
+                  - sources
+                additionalProperties: false
+    post:
+      operationId: marketplace_sources_post
+      summary: Add marketplace source
+      description:
+        Add a public GitHub repo (owner/repo or github.com URL) as a skill source. The repo is verified via the
+        GitHub API and its license is recorded; repos without a detectable license are added with a warning. Pass
+        enabled=false with an existing address to disable instead.
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  source:
+                    type: object
+                    properties:
+                      address:
+                        type: string
+                      kind:
+                        type: string
+                        enum:
+                          - github
+                          - catalog
+                      ref:
+                        type: string
+                      label:
+                        type: string
+                      enabled:
+                        type: boolean
+                      builtIn:
+                        type: boolean
+                      license:
+                        type: string
+                    required:
+                      - address
+                      - kind
+                      - enabled
+                    additionalProperties: false
+                  warning:
+                    type: string
+                required:
+                  - source
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: string
+                  description: owner/repo or a github.com URL
+                ref:
+                  description: Git ref (defaults to the default branch)
+                  type: string
+                label:
+                  type: string
+                enabled:
+                  description: Toggle an existing source instead of adding
+                  type: boolean
+              required:
+                - address
+              additionalProperties: false
+  /v1/marketplace/update:
+    post:
+      operationId: marketplace_update_post
+      summary: Apply marketplace update
+      description:
+        Re-install one lock-tracked skill from its pinned source. Requires confirm:true — clients must present the
+        diff from GET marketplace/updates first.
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  skillId:
+                    type: string
+                  lock:
+                    type: object
+                    properties:
+                      source:
+                        type: string
+                      sourceType:
+                        type: string
+                        const: github
+                      ref:
+                        type: string
+                      skillPath:
+                        type: string
+                      computedHash:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties:
+                          type: string
+                      gitSha:
+                        type: object
+                        propertyNames:
+                          type: string
+                        additionalProperties:
+                          type: string
+                      installedAt:
+                        type: string
+                      consent:
+                        type: object
+                        properties:
+                          consentedAt:
+                            type: string
+                          capabilities:
+                            type: object
+                            properties:
+                              secrets:
+                                type: array
+                                items:
+                                  type: string
+                              connectors:
+                                type: array
+                                items:
+                                  type: string
+                              network:
+                                type: array
+                                items:
+                                  type: string
+                              writes:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - secrets
+                              - connectors
+                              - network
+                              - writes
+                            additionalProperties: false
+                          undeclared:
+                            type: boolean
+                        required:
+                          - consentedAt
+                          - capabilities
+                          - undeclared
+                        additionalProperties: false
+                      skippedFiles:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            path:
+                              type: string
+                            reason:
+                              type: string
+                          required:
+                            - path
+                            - reason
+                          additionalProperties: false
+                    required:
+                      - source
+                      - sourceType
+                      - ref
+                      - skillPath
+                      - computedHash
+                      - installedAt
+                      - consent
+                    additionalProperties: false
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                        reason:
+                          type: string
+                      required:
+                        - path
+                        - reason
+                      additionalProperties: false
+                required:
+                  - ok
+                  - skillId
+                  - lock
+                  - skipped
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                skillId:
+                  type: string
+                confirm:
+                  type: boolean
+                  const: true
+              required:
+                - skillId
+                - confirm
+              additionalProperties: false
+  /v1/marketplace/updates:
+    get:
+      operationId: marketplace_updates_get
+      summary: Check marketplace updates
+      description:
+        Re-resolve every lock entry against its source and diff per-file hashes. Read-only — nothing is applied;
+        the client presents the diff and applies via POST marketplace/update on explicit confirm.
+      tags:
+        - marketplace
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        skillId:
+                          type: string
+                        source:
+                          type: string
+                        upToDate:
+                          type: boolean
+                        error:
+                          type: string
+                        changes:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              path:
+                                type: string
+                              status:
+                                type: string
+                                enum:
+                                  - added
+                                  - removed
+                                  - changed
+                            required:
+                              - path
+                              - status
+                            additionalProperties: false
+                      required:
+                        - skillId
+                        - source
+                        - upToDate
+                        - changes
+                      additionalProperties: false
+                required:
+                  - updates
+                additionalProperties: false
   /v1/meetings/recap:
     post:
       operationId: meetings_recap_post
