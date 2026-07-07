@@ -15,6 +15,11 @@ export interface InstanceSpec {
    * Full env contract for the instance (see render.yaml at the repo root):
    * GUARDIAN_BOOTSTRAP_SECRET, ACTOR_TOKEN_SIGNING_KEY, OPENROUTER_API_KEY,
    * REPLICATE_API_TOKEN, GATEWAY_JWT, CES_SERVICE_TOKEN, ASSISTANT_API_KEY, …
+   *
+   * Optional bundled tool-API keys (web-research / web-scrape skills),
+   * passed through from HQ's own env by buildInstanceEnv() when set:
+   * CUE_TAVILY_API_KEY, CUE_FIRECRAWL_API_KEY, CUE_SERPER_API_KEY.
+   * Unset = the corresponding tools report "not configured" on the instance.
    */
   env: Record<string, string>;
   /** Provider region hint (e.g. "singapore"). */

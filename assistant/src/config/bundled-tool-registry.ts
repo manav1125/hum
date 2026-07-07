@@ -146,6 +146,13 @@ import * as taskQueueRun from "./bundled-skills/tasks/tools/task-queue-run.js";
 import * as transcribeMedia from "./bundled-skills/transcribe/tools/transcribe-media.js";
 // ── video-studio ───────────────────────────────────────────────────────────────
 import * as videoCompose from "./bundled-skills/video-studio/tools/video-compose.js";
+// ── web-research ───────────────────────────────────────────────────────────────
+import * as serperImages from "./bundled-skills/web-research/tools/serper-images.js";
+import * as serperSearch from "./bundled-skills/web-research/tools/serper-search.js";
+import * as tavilySearch from "./bundled-skills/web-research/tools/tavily-search.js";
+// ── web-scrape ─────────────────────────────────────────────────────────────────
+import * as firecrawlCrawl from "./bundled-skills/web-scrape/tools/firecrawl-crawl.js";
+import * as firecrawlScrape from "./bundled-skills/web-scrape/tools/firecrawl-scrape.js";
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 
@@ -313,4 +320,13 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
 
   // video-studio
   ["video-studio:tools/video-compose.ts", videoCompose],
+
+  // web-research
+  ["web-research:tools/tavily-search.ts", tavilySearch],
+  ["web-research:tools/serper-search.ts", serperSearch],
+  ["web-research:tools/serper-images.ts", serperImages],
+
+  // web-scrape
+  ["web-scrape:tools/firecrawl-scrape.ts", firecrawlScrape],
+  ["web-scrape:tools/firecrawl-crawl.ts", firecrawlCrawl],
 ]);

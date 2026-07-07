@@ -54,6 +54,18 @@ envVarGroups:
       # dashboard (sync:false) so it survives every redeploy.
       - key: REPLICATE_API_TOKEN
         sync: false
+      # Bundled tool-API keys for the web-research / web-scrape skills
+      # (Tavily search, Firecrawl scrape/crawl, Serper SERP — all DIRECT
+      # API-key integrations, NOT Composio). Optional: unset ⇒ the tools
+      # report a clean "not configured" message. Read by daemon-process
+      # executors only; deliberately NOT in SAFE_ENV_VARS, so they never
+      # reach bash/child processes. Set values in the dashboard.
+      - key: CUE_TAVILY_API_KEY
+        sync: false
+      - key: CUE_FIRECRAWL_API_KEY
+        sync: false
+      - key: CUE_SERPER_API_KEY
+        sync: false
       # Shared JWT signing key for the co-located gateway + daemon. WITHOUT a
       # shared key each generates its own disk key, so the gateway's exchange
       # token fails the daemon's verify (invalid_signature) on every /v1/* call.

@@ -55,6 +55,7 @@ import {
   RateLimitConfigSchema,
   TimeoutConfigSchema,
 } from "./schemas/timeouts.js";
+import { ToolApisConfigSchema } from "./schemas/tool-apis.js";
 import { ToolsConfigSchema } from "./schemas/tools.js";
 import { WorkspaceGitConfigSchema } from "./schemas/workspace-git.js";
 
@@ -121,6 +122,10 @@ export const AssistantConfigSchema = z
     ),
     ui: UiConfigSchema.default(UiConfigSchema.parse({})),
     tools: ToolsConfigSchema.default(ToolsConfigSchema.parse({})),
+    // Bundled tool-provider API keys (web-research / web-scrape skills).
+    // All keys optional; env vars (CUE_*_API_KEY) are the fallback. Absent
+    // key = tool reports "not configured" — that is the feature-off state.
+    toolApis: ToolApisConfigSchema.default(ToolApisConfigSchema.parse({})),
     // Per-plugin config blocks keyed by plugin name. The schema is intentionally
     // permissive — each plugin's manifest supplies its own validator which the
     // plugin bootstrap (`external-plugins-bootstrap.ts`) runs against the raw

@@ -122,6 +122,7 @@ price-id → env-var mapping to paste into the environment.
 | `RESEND_API_KEY` | Resend secret for transactional email. Unset ⇒ log-only mode: every would-be email (incl. its action link) is printed at info level |
 | `EMAIL_FROM` | From header for transactional email (default `Cue <hello@justcue.ai>`) |
 | `KLAVIYO_PRIVATE_KEY` | Klaviyo private API key (`pk_…`) for lifecycle event sync (see "Klaviyo sync"). Unset ⇒ no-op: every would-be event is logged at info level, nothing is sent |
+| `CUE_TAVILY_API_KEY` / `CUE_FIRECRAWL_API_KEY` / `CUE_SERPER_API_KEY` | Platform keys for the bundled web-research/web-scrape skills, passed through verbatim to every instance env by `buildInstanceEnv()`. Unset ⇒ the corresponding tools on instances report a clean "not configured" message (that IS the off state) |
 
 `OPENROUTER_API_KEY` is minted by HQ at provision time (a limit-capped
 child key — see the plans & credits section). Other per-instance provider

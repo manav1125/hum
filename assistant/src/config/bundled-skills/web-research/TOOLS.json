@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "tavily_search",
+      "description": "Search the live web via Tavily and return research-grade results with cited source snippets (title, URL, content excerpt, relevance score) plus an optional synthesized answer. Default tool for answering questions about anything current or external — latest news, prices, events, facts that may have changed. Tavily is a DIRECT api.tavily.com integration (API key via daemon config toolApis.tavilyKey or CUE_TAVILY_API_KEY) — it does NOT use Composio or OAuth. If the key is missing this tool returns a clear message; relay it to the user and NEVER offer a Composio 'Connect Tavily' flow.",
+      "category": "network",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query. Keep it focused — one question per call."
+          },
+          "max_results": {
+            "type": "number",
+            "description": "Optional. Number of results to return (1-20, default 5)."
+          },
+          "topic": {
+            "type": "string",
+            "enum": ["general", "news", "finance"],
+            "description": "Optional. Search vertical: 'general' (default), 'news' for current events, 'finance' for markets."
+          },
+          "time_range": {
+            "type": "string",
+            "enum": ["day", "week", "month", "year"],
+            "description": "Optional. Restrict results to this recency window. Use for 'latest/today' questions."
+          },
+          "include_answer": {
+            "type": "boolean",
+            "description": "Optional (default true). Include Tavily's short synthesized answer alongside the raw results."
+          }
+        },
+        "required": ["query"]
+      },
+      "executor": "tools/tavily-search.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "serper_search",
+      "description": "Google SERP search via Serper: organic results (title, link, snippet, position) plus answer box, knowledge graph, and related searches when present. Use when the user wants Google-style links/rankings, the official site of something, or a quick knowledge-graph fact; use tavily_search instead for research-grade cited snippets. Serper is a DIRECT google.serper.dev integration (API key via daemon config toolApis.serperKey or CUE_SERPER_API_KEY) — NOT Composio/OAuth. If the key is missing this tool returns a clear message; relay it and NEVER offer a Composio 'Connect Serper' flow.",
+      "category": "network",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query."
+          },
+          "num": {
+            "type": "number",
+            "description": "Optional. Number of organic results (1-20, default 10)."
+          },
+          "gl": {
+            "type": "string",
+            "description": "Optional. Two-letter country code to geo-target results (e.g. 'us', 'sg', 'de')."
+          },
+          "hl": {
+            "type": "string",
+            "description": "Optional. Interface language code (e.g. 'en', 'de')."
+          }
+        },
+        "required": ["query"]
+      },
+      "executor": "tools/serper-search.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "serper_images",
+      "description": "Google Images search via Serper: returns image URLs, thumbnails, dimensions, and the source page for each hit. Use when the user asks to find images, photos, product shots, logos, or diagrams of something on the web (finding EXISTING images — for generating new images use replicate_run / image tools instead). Serper is a DIRECT google.serper.dev integration (API key via daemon config toolApis.serperKey or CUE_SERPER_API_KEY) — NOT Composio/OAuth. If the key is missing this tool returns a clear message; relay it and NEVER offer a Composio connect flow.",
+      "category": "network",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "What to find images of (e.g. 'red panda close-up', 'Tesla Cybertruck interior')."
+          },
+          "num": {
+            "type": "number",
+            "description": "Optional. Number of images to return (1-20, default 10)."
+          }
+        },
+        "required": ["query"]
+      },
+      "executor": "tools/serper-images.ts",
+      "execution_target": "host"
+    }
+  ]
+}

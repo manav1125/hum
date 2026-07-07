@@ -61,9 +61,38 @@ export function generateInstanceSecrets(): InstanceSecrets {
 }
 
 /**
+ * Bundled tool-API platform keys (web-research / web-scrape skills) that HQ
+ * passes through to every instance when set in HQ's own environment. The
+ * daemon reads these directly (assistant bundled-skill executors); they are
+ * deliberately NOT in the assistant's SAFE_ENV_VARS allowlist, so they never
+ * reach bash/child processes on the instance. Unset here = the corresponding
+ * tool on the instance reports a clean "not configured" message.
+ */
+export const TOOL_API_PASSTHROUGH_ENV_VARS = [
+  "CUE_TAVILY_API_KEY",
+  "CUE_FIRECRAWL_API_KEY",
+  "CUE_SERPER_API_KEY",
+] as const;
+
+/** Collect the tool-API passthrough env pairs present in `source`. */
+export function toolApiPassthroughEnv(
+  source: Record<string, string | undefined> = process.env,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of TOOL_API_PASSTHROUGH_ENV_VARS) {
+    const value = source[key]?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
+/**
  * Assemble the per-instance env contract (mirrors the `cue-app` service in
  * the repo-root render.yaml). Provider/channel secrets (OPENROUTER_API_KEY,
  * REPLICATE_API_TOKEN, …) come from `providerEnv` — HQ never hardcodes them.
+ * Bundled tool-API keys (CUE_TAVILY_API_KEY, CUE_FIRECRAWL_API_KEY,
+ * CUE_SERPER_API_KEY) pass through from HQ's own env when set; `providerEnv`
+ * can still override them per-instance.
  */
 export function buildInstanceEnv(
   secrets: InstanceSecrets,
@@ -95,6 +124,9 @@ export function buildInstanceEnv(
     ASSISTANT_HOST: "127.0.0.1",
     DEFAULT_ASSISTANT_ID: "cue-local",
     VELLUM_ASSISTANT_NAME: DEFAULT_ASSISTANT_NAME,
+    // Bundled tool-API platform keys (optional; only included when set in
+    // HQ's env). providerEnv below can still override per-instance.
+    ...toolApiPassthroughEnv(),
     ...providerEnv,
   };
 }

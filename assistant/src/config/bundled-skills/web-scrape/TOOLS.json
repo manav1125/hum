@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "firecrawl_scrape",
+      "description": "Convert a single web page into clean, LLM-ready markdown via Firecrawl (handles JS-rendered pages and complex layouts that plain web_fetch extracts poorly). Complements web_fetch — for a quick simple-page read use web_fetch; use this when you need high-fidelity clean-markdown extraction. Firecrawl is a DIRECT api.firecrawl.dev integration (API key via daemon config toolApis.firecrawlKey or CUE_FIRECRAWL_API_KEY) — NOT Composio/OAuth. If the key is missing this tool returns a clear message; relay it and NEVER offer a Composio 'Connect Firecrawl' flow.",
+      "category": "network",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The page URL to scrape. If scheme is missing, https:// is assumed."
+          },
+          "only_main_content": {
+            "type": "boolean",
+            "description": "Optional (default true). Strip headers, navigation, and footers, returning only the main content."
+          },
+          "max_chars": {
+            "type": "number",
+            "description": "Optional. Maximum characters of markdown to return (default 20000, max 100000)."
+          }
+        },
+        "required": ["url"]
+      },
+      "executor": "tools/firecrawl-scrape.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "firecrawl_crawl",
+      "description": "Bounded multi-page site crawl via Firecrawl: starts at a URL, follows child links, and returns each crawled page as clean markdown. Use ONLY when the user needs content from multiple pages of one site (docs site, blog, site section) — for a single page use firecrawl_scrape or web_fetch. Bounds are HARD-CAPPED in the executor: max_pages is clamped to 20 and max_depth to 2 regardless of what you pass. Firecrawl is a DIRECT api.firecrawl.dev integration (API key via daemon config toolApis.firecrawlKey or CUE_FIRECRAWL_API_KEY) — NOT Composio/OAuth. If the key is missing this tool returns a clear message; relay it and NEVER offer a Composio connect flow.",
+      "category": "network",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The starting URL for the crawl (child pages under it are followed)."
+          },
+          "max_pages": {
+            "type": "number",
+            "description": "Optional. Maximum pages to crawl (default 10; hard cap 20 — larger values are clamped)."
+          },
+          "max_depth": {
+            "type": "number",
+            "description": "Optional. Maximum link depth from the start URL (default 1; hard cap 2 — larger values are clamped)."
+          },
+          "wait_seconds": {
+            "type": "number",
+            "description": "Optional. Maximum seconds to wait for the crawl job to finish (default 180, max 600)."
+          }
+        },
+        "required": ["url"]
+      },
+      "executor": "tools/firecrawl-crawl.ts",
+      "execution_target": "host"
+    }
+  ]
+}
