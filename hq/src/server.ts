@@ -18,6 +18,10 @@
  *   GET  /skills/{slug}         — public shareable skill page (share.ts:
  *                               static catalog/seed-source render, OG tags,
  *                               install CTA; zero customer data)
+ *   GET  /slack/install         ?state= → 302 to Slack OAuth (channels/slack)
+ *   GET  /slack/oauth/callback  ?code=&state= → store team→customer binding
+ *   POST /slack/events          Slack Events API (signature-verified, deduped)
+ *   POST /slack/commands        /cue status|new|help (signature-verified)
  *
  * Customer routes (signed session cookie, HQ_SESSION_SECRET):
  *   GET  /account/summary       — plan + credits + 30-day usage
@@ -38,6 +42,8 @@
  *   POST /admin/customers/:id/magic-link
  *   POST /admin/customers/:id/topup             { credits?, topupId?, kind?, note? }
  *   GET  /admin/customers/:id/credits           — balance + ledger
+ *   POST /admin/customers/:id/slack-install-link — signed "Add to Slack" URL
+ *   POST /admin/customers/:id/slack-toggle      { enabled } — routing flag
  *   POST /admin/instances/:id/suspend
  *   POST /admin/instances/:id/resume
  *   POST /admin/instances/:id/destroy
@@ -49,6 +55,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { isSlackOAuthConfigured, slackSigningSecret } from "./channels/slack/config.js";
+import { handleSlackRequest, type SlackRouterDeps } from "./channels/slack/router.js";
+import { mintInstallState } from "./channels/slack/verify.js";
 import { adjustCredits, applyTopup, syncKeyLimitsToBalance } from "./credits.js";
 import type { CreditEntry, Customer, CustomerPlan, HqDb, Instance } from "./db.js";
 import { InvalidTransitionError } from "./db.js";
@@ -104,6 +113,14 @@ export interface ServerDeps {
   healthTimeoutMs?: number;
   healthIntervalMs?: number;
   fetchImpl?: typeof fetch;
+  /**
+   * Slack channel (WS4) knobs: reply-poll bounds + the async-work scheduler
+   * tests use to await event dispatches that are acked-then-processed.
+   */
+  slack?: Pick<
+    SlackRouterDeps,
+    "replyTimeoutMs" | "pollIntervalMs" | "schedule" | "nowMs"
+  >;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +196,12 @@ export function createHandler(
     fetchImpl,
     healthTimeoutMs: deps.healthTimeoutMs,
     healthIntervalMs: deps.healthIntervalMs,
+  };
+
+  const slackDeps: SlackRouterDeps = {
+    db,
+    fetchImpl,
+    ...(deps.slack ?? {}),
   };
 
   // Fire-and-forget auto-provision after a paid subscription checkout.
@@ -286,6 +309,20 @@ export function createHandler(
         return handleMacDownload(method);
       }
 
+      // ── Slack channel (WS4) — install/OAuth/events/commands ───────────
+      // Signature-verified inside; 503 in "not configured" mode; returns
+      // null for /slack/* subpaths it doesn't own (falls through to 404).
+      if (path.startsWith("/slack/")) {
+        const handled = await handleSlackRequest(
+          slackDeps,
+          req,
+          url,
+          path,
+          method,
+        );
+        if (handled) return handled;
+      }
+
       // Shareable skill pages: /skills/{slug} only (single segment) — the
       // /skills index page itself stays a static site file, and deeper
       // paths fall through to static serving untouched.
@@ -335,7 +372,7 @@ export function createHandler(
         }
 
         const customerAction = path.match(
-          /^\/admin\/customers\/([^/]+)\/(invite|provision|checkout|magic-link|topup|credits)$/,
+          /^\/admin\/customers\/([^/]+)\/(invite|provision|checkout|magic-link|topup|credits|slack-install-link|slack-toggle)$/,
         );
         if (customerAction) {
           const [, customerId, action] = customerAction;
@@ -355,6 +392,12 @@ export function createHandler(
           if (action === "checkout") return handleCheckout(customer);
           if (action === "topup") return handleTopup(customer, req);
           if (action === "magic-link") return handleMagicLink(customer);
+          if (action === "slack-install-link") {
+            return handleSlackInstallLink(customer);
+          }
+          if (action === "slack-toggle") {
+            return handleSlackToggle(customer, req);
+          }
           return json({ error: "not found" }, 404);
         }
 
@@ -657,6 +700,35 @@ export function createHandler(
       return json(body, status);
     }
     return json(outcome);
+  }
+
+  /**
+   * Mint the customer's "Add to Slack" link: /slack/install with an
+   * HMAC-signed state that the OAuth callback resolves back to this
+   * customer. 503 while the Slack app credentials aren't configured.
+   */
+  function handleSlackInstallLink(customer: Customer): Response {
+    if (!isSlackOAuthConfigured()) {
+      return json({ error: "slack not configured" }, 503);
+    }
+    const state = mintInstallState(customer.id, slackSigningSecret());
+    return json({
+      ok: true,
+      url: `${publicSiteBase()}/slack/install?state=${encodeURIComponent(state)}`,
+    });
+  }
+
+  /** Flip the per-customer Slack routing flag ({enabled: boolean}). */
+  async function handleSlackToggle(
+    customer: Customer,
+    req: Request,
+  ): Promise<Response> {
+    const body = await readJsonBody(req);
+    if (typeof body.enabled !== "boolean") {
+      return json({ error: "enabled must be a boolean" }, 400);
+    }
+    const updated = db.setCustomerSlackEnabled(customer.id, body.enabled);
+    return json({ ok: true, slackEnabled: updated.slackEnabled === 1 });
   }
 
   // ── website flow implementations ──────────────────────────────────────
