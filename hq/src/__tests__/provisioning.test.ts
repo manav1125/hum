@@ -19,6 +19,10 @@ const ENV_KEYS = [
   "OPENROUTER_PROVISIONING_KEY",
   "OPENROUTER_SHARED_KEY",
   "HQ_INSTANCE_DOMAIN",
+  // buildInstanceEnv passes these through from HQ's env — isolate.
+  "CUE_TAVILY_API_KEY",
+  "CUE_FIRECRAWL_API_KEY",
+  "CUE_SERPER_API_KEY",
 ];
 beforeEach(() => {
   for (const k of ENV_KEYS) {
@@ -88,6 +92,31 @@ describe("secrets + token minting", () => {
     expect(env.VELLUM_ASSISTANT_NAME).toBe("Cue");
     // Managed-mode flag (allowlisted in assistant safe-env.ts).
     expect(env.CUE_MANAGED).toBe("1");
+  });
+
+  test("bundled tool-API keys pass through from HQ env only when set", () => {
+    const secrets = generateInstanceSecrets();
+
+    // Unset in HQ env (beforeEach cleared them) → absent from instance env.
+    const bare = buildInstanceEnv(secrets);
+    expect(bare.CUE_TAVILY_API_KEY).toBeUndefined();
+    expect(bare.CUE_FIRECRAWL_API_KEY).toBeUndefined();
+    expect(bare.CUE_SERPER_API_KEY).toBeUndefined();
+
+    // Set in HQ env → passed through verbatim.
+    process.env.CUE_TAVILY_API_KEY = "tvly-platform";
+    process.env.CUE_FIRECRAWL_API_KEY = "fc-platform";
+    process.env.CUE_SERPER_API_KEY = "serper-platform";
+    const env = buildInstanceEnv(secrets);
+    expect(env.CUE_TAVILY_API_KEY).toBe("tvly-platform");
+    expect(env.CUE_FIRECRAWL_API_KEY).toBe("fc-platform");
+    expect(env.CUE_SERPER_API_KEY).toBe("serper-platform");
+
+    // providerEnv still overrides per-instance.
+    const overridden = buildInstanceEnv(secrets, {
+      CUE_TAVILY_API_KEY: "tvly-byo",
+    });
+    expect(overridden.CUE_TAVILY_API_KEY).toBe("tvly-byo");
   });
 
   test("minted actor token round-trips and carries daemon-compatible claims", () => {
