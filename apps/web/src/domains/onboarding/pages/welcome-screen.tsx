@@ -21,7 +21,7 @@ export function WelcomeScreen() {
   };
 
   return (
-    <OnboardingLayout>
+    <OnboardingLayout showCreatureFooter={false}>
       <div className="mx-auto flex min-h-screen w-full max-w-xl flex-col items-center px-6 pb-40 text-[var(--content-default)]">
         <div className="flex flex-1 flex-col items-center justify-center">
           <ApertureAvatar
