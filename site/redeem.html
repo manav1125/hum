@@ -46,7 +46,7 @@
         <label for="code" style="display:block;font-size:12px;color:#9DB4E6;font-weight:500;margin-bottom:7px;font-family:'DM Mono',monospace;letter-spacing:.06em">INVITE CODE</label>
         <input id="code" name="code" class="cue-in {{ codeErrCls }}" type="text" placeholder="FOUNDER-7K2M" autocomplete="off" spellcheck="false" style="text-transform:uppercase;letter-spacing:.18em;font-family:'DM Mono',monospace;font-size:15px" aria-describedby="code-error">
         <sc-if value="{{ showCodeError }}" hint-placeholder-val="{{ false }}">
-          <div id="code-error" style="font-size:12.5px;color:#E9938A;margin-top:8px;line-height:1.5">{{ codeErrorText }}</div>
+          <div id="code-error" style="font-size:12.5px;color:#E9938A;margin-top:8px;line-height:1.5">{{ codeErrorText }} <a href="/#waitlist" style="color:#9DB4E6;text-decoration:none">Join the waitlist.</a></div>
         </sc-if>
       </div>
 
@@ -97,7 +97,7 @@
       <div style="text-align:center;font-size:11.5px;color:#67748A">Secure checkout by Stripe. Cancel anytime.</div>
     </form>
 
-    <div style="text-align:center;font-size:12.5px;color:#7E8BA3;margin-top:18px">No code? <a href="index.html#waitlist" style="color:#9DB4E6;text-decoration:none">Join the waitlist.</a></div>
+    <div style="text-align:center;font-size:12.5px;color:#7E8BA3;margin-top:18px">No code? <a href="/#waitlist" style="color:#9DB4E6;text-decoration:none">Join the waitlist.</a></div>
   </div>
 </div>
 
@@ -161,8 +161,8 @@ class Component extends DCLogic {
       showCodeError: v === "invalid" || v === "expired",
       codeErrCls: (v === "invalid" || v === "expired") ? "err" : "",
       codeErrorText: v === "expired"
-        ? "This code has already been used or expired. Reach out to whoever invited you, or join the waitlist."
-        : "That code isn't valid. Check for typos, or join the waitlist.",
+        ? "This code has already been used or expired. Reach out to whoever invited you, or"
+        : "That code isn't valid. Check for typos, or",
       planFixed: !!sel,
       planChoose: !sel,
       selectedPlanName: sel ? sel.name : "",

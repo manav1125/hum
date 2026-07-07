@@ -170,6 +170,11 @@
       return apiCall("GET", "/account/summary");
     },
 
+    /** POST /testflight — records interest, idempotent per email. */
+    testflight: function (email) {
+      return apiCall("POST", "/testflight", { email: String(email || "").trim() });
+    },
+
     /** POST /account/topup {pack} → {kind:"checkout"|"unavailable"|"unauthorized"|"error"}. */
     topup: function (pack) {
       return apiCall("POST", "/account/topup", { pack: pack }).then(function (res) {
@@ -189,4 +194,24 @@
     /** href for the Stripe billing portal (server-side 302). */
     portalHref: (base || "") + "/account/portal",
   };
+
+  // Deep links like /#waitlist: the DC runtime (support.js) re-renders the
+  // page content after load, which defeats the browser's native anchor
+  // scroll. Re-run the scroll once the target element actually exists.
+  function scrollToHash() {
+    var id = (location.hash || "").slice(1);
+    if (!id) return;
+    var tries = 0;
+    (function attempt() {
+      var el = document.getElementById(id);
+      if (el) { el.scrollIntoView(); return; }
+      if (++tries < 40) setTimeout(attempt, 100);
+    })();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", scrollToHash);
+  } else {
+    scrollToHash();
+  }
+  window.addEventListener("load", function () { setTimeout(scrollToHash, 50); });
 })();

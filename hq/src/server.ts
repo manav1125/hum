@@ -10,12 +10,18 @@
  *   POST /webhooks/stripe       (raw body + Stripe-Signature)
  *   GET  /welcome/status        ?session_id= → provisioning|ready|delayed|unknown
  *   POST /signin                { email } → always {ok} (magic-link email)
- *   GET  /auth                  ?token= → session cookie + 302 /account
+ *   GET  /auth                  ?token= → session cookie + 302 into the
+ *                               customer's instance (fresh magic link),
+ *                               falling back to /account
+ *   POST /testflight            { email } → {ok} (idempotent interest event)
+ *   GET  /downloads/cue-macos.dmg — DMG from HQ_DOWNLOADS_DIR (branded 404)
  *
  * Customer routes (signed session cookie, HQ_SESSION_SECRET):
  *   GET  /account/summary       — plan + credits + 30-day usage
  *   POST /account/topup         { pack } → Stripe checkout URL (Origin-checked)
  *   GET  /account/portal        → 302 to the Stripe billing portal
+ *   GET  /account/open          → 302 to a fresh instance magic link
+ *                               (no instance ⇒ /account?error=no_instance)
  *
  * Everything else on GET/HEAD falls through to the static marketing site
  * (site.ts: HQ_SITE_DIR, clean URLs — /pricing → pricing.html etc.).
@@ -37,6 +43,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import { adjustCredits, applyTopup, syncKeyLimitsToBalance } from "./credits.js";
 import type { CreditEntry, Customer, CustomerPlan, HqDb, Instance } from "./db.js";
@@ -236,8 +244,24 @@ export function createHandler(
         return handleAuth(url);
       }
 
+      if (method === "POST" && path === "/testflight") {
+        return handleTestflight(req);
+      }
+
+      if (
+        (method === "GET" || method === "HEAD") &&
+        path === "/downloads/cue-macos.dmg"
+      ) {
+        return handleMacDownload(method);
+      }
+
       // ── customer (session-cookie) routes ──────────────────────────────
-      if (path === "/account/summary" || path === "/account/topup" || path === "/account/portal") {
+      if (
+        path === "/account/summary" ||
+        path === "/account/topup" ||
+        path === "/account/portal" ||
+        path === "/account/open"
+      ) {
         return handleAccount(req, path, method);
       }
 
@@ -623,9 +647,11 @@ export function createHandler(
 
   /**
    * GET /auth?token= — consume the emailed one-time token, set the signed
-   * session cookie, land on /account. Bad/expired tokens bounce to /signin.
+   * session cookie, and land the user IN their Cue: a freshly minted
+   * instance magic link when they have a live instance, /account otherwise.
+   * Bad/expired tokens bounce to /signin.
    */
-  function handleAuth(url: URL): Response {
+  async function handleAuth(url: URL): Promise<Response> {
     if (!isSessionConfigured()) {
       return json({ error: "signin not configured (HQ_SESSION_SECRET)" }, 503);
     }
@@ -641,10 +667,58 @@ export function createHandler(
     const customer = db.getCustomer(consumed.customerId);
     if (!customer) return redirectTo("/signin?error=link_expired");
     db.recordEvent("site_session_created", customer.id, {});
-    return redirectTo("/account", {
+    const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
+    return redirectTo(magic.ok ? magic.url : "/account", {
       "Set-Cookie": sessionSetCookieHeader(mintSessionValue(customer.id), {
         secure: publicSiteBase().startsWith("https://"),
       }),
+    });
+  }
+
+  /**
+   * POST /testflight { email } — record iOS TestFlight interest. Idempotent
+   * per email (repeat submissions answer ok without a second event); works
+   * for signed-in customers and strangers alike.
+   */
+  async function handleTestflight(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!email || !email.includes("@")) {
+      return json({ error: "email is required" }, 400);
+    }
+    const fragment = `"email":${JSON.stringify(email)}`;
+    if (db.findLatestEventByKindData("testflight_interest", fragment)) {
+      return json({ ok: true, existing: true });
+    }
+    const customer = db.getCustomerByEmail(email);
+    db.recordEvent("testflight_interest", customer?.id ?? null, { email });
+    return json({ ok: true });
+  }
+
+  /**
+   * GET /downloads/cue-macos.dmg — the macOS app image, served from
+   * HQ_DOWNLOADS_DIR (default /data/downloads; the DMG is uploaded to the
+   * volume out-of-band — see README). Missing file ⇒ a friendly branded 404.
+   */
+  function handleMacDownload(method: string): Response {
+    const dir = process.env.HQ_DOWNLOADS_DIR ?? "/data/downloads";
+    const filePath = join(dir, "cue-macos.dmg");
+    if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+      return new Response(renderDownloadMissingPage(), {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+    const size = statSync(filePath).size;
+    return new Response(method === "HEAD" ? null : Bun.file(filePath), {
+      headers: {
+        "Content-Type": "application/x-apple-diskimage",
+        "Content-Length": String(size),
+        "Content-Disposition": 'attachment; filename="cue-macos.dmg"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache",
+      },
     });
   }
 
@@ -656,6 +730,21 @@ export function createHandler(
   ): Promise<Response> {
     const customerId = customerIdFromRequest(req);
     const customer = customerId ? db.getCustomer(customerId) : null;
+
+    if (path === "/account/open" && method === "GET") {
+      // Link-driven: the account header's "Open Cue" button. Mint a fresh
+      // instance magic link; quiet fallback when there's nothing to open.
+      if (!customer) {
+        return new Response(null, { status: 302, headers: { Location: "/signin" } });
+      }
+      const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: magic.ok ? magic.url : "/account?error=no_instance",
+        },
+      });
+    }
 
     if (path === "/account/portal" && method === "GET") {
       // Link-driven route: redirect rather than JSON on every outcome.
@@ -869,6 +958,45 @@ export function createHandler(
     await driver.destroy(instance.externalId);
     return json({ ok: true, instance: redact(db.transitionInstance(instanceId, "deleted")) });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Branded 404 for /downloads when the DMG hasn't been uploaded yet.
+// Matches the site's dark palette (#0F1620 / #3D6EE8) with system fonts —
+// self-contained, no external assets.
+// ---------------------------------------------------------------------------
+
+function renderDownloadMissingPage(): string {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Cue — download not ready</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center;
+         justify-content:center; background:#0F1620; color:#E6ECF5;
+         font:15px/1.6 -apple-system, "SF Pro Text", "Segoe UI", sans-serif; }
+  .card { max-width:420px; padding:40px 32px; text-align:center; }
+  .mark { width:44px; height:44px; border-radius:12px; background:#1A2230;
+          border:1.5px solid rgba(255,255,255,.18); display:inline-flex;
+          align-items:center; justify-content:center; position:relative;
+          font-size:24px; font-weight:600; color:#fff; }
+  .mark i { position:absolute; width:7px; height:7px; border-radius:50%;
+            background:#3D6EE8; right:9px; bottom:11px; }
+  h1 { font-size:22px; font-weight:600; letter-spacing:-.02em; margin:22px 0 0; }
+  p { color:#AEB7C7; font-size:14px; margin:12px 0 0; }
+  a { display:inline-block; margin-top:22px; background:#3D6EE8; color:#fff;
+      text-decoration:none; border-radius:10px; padding:11px 20px;
+      font-size:13.5px; font-weight:500; }
+</style></head><body>
+<div class="card">
+  <span class="mark">C<i></i></span>
+  <h1>This download isn't ready yet.</h1>
+  <p>The Cue for Mac installer is being prepared. Check back shortly, or email hello@cue.ai and we'll send it your way.</p>
+  <a href="/account">Back to your account</a>
+</div>
+</body></html>`;
 }
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@
     <div style="display:flex;align-items:center;gap:14px">
       <span style="font-size:12.5px;color:#7E8BA3">{{ email }}</span>
       <sc-if value="{{ hasInstance }}" hint-placeholder-val="{{ true }}">
-        <a href="{{ openCueHref }}" style="font-size:12.5px;font-weight:500;background:#3D6EE8;color:#fff;border-radius:9px;padding:8px 15px;text-decoration:none">Open Cue ↗</a>
+        <a href="/account/open" style="font-size:12.5px;font-weight:500;background:#3D6EE8;color:#fff;border-radius:9px;padding:8px 15px;text-decoration:none">Open Cue ↗</a>
       </sc-if>
     </div>
   </div>
@@ -37,6 +37,11 @@
 <div data-screen-label="Account" style="max-width:720px;margin:0 auto;padding:clamp(24px,5vw,40px) clamp(18px,4vw,28px) 80px">
   <h1 style="font-size:clamp(24px,4vw,30px);font-weight:600;letter-spacing:-.02em;color:#fff;margin:0 0 4px">Your account</h1>
   <p style="font-size:13.5px;color:#7E8BA3;margin:0 0 24px">Everything else lives inside Cue. This is where you manage the plan.</p>
+
+  <!-- open-cue fallback notice (?error=no_instance) -->
+  <sc-if value="{{ showNoInstance }}" hint-placeholder-val="{{ false }}">
+    <div style="font-size:12.5px;color:#9DB4E6;margin:-12px 0 20px;line-height:1.5">Your Cue isn't ready to open just yet — it may still be provisioning. If this keeps happening, email hello@cue.ai.</div>
+  </sc-if>
 
   <!-- payment-failed banner -->
   <sc-if value="{{ showPayFail }}" hint-placeholder-val="{{ false }}">
@@ -137,6 +142,29 @@
       </div>
     </sc-if>
   </div>
+
+  <!-- ░░ DEVICES CARD ░░ -->
+  <div id="apps" style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:22px 22px;margin-top:14px;scroll-margin-top:90px">
+    <div style="font:500 10px 'DM Mono',monospace;letter-spacing:.12em;color:#9DB4E6">GET CUE ON YOUR DEVICES</div>
+    <div data-topups style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+      <a href="/downloads/cue-macos.dmg" style="display:block;text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:13px;padding:14px 16px;text-decoration:none;color:#fff">
+        <div style="font-size:15px;font-weight:600">Download for Mac</div>
+        <div style="font-size:12.5px;color:#AEB7C7;margin-top:2px">Apple silicon · .dmg</div>
+      </a>
+      <div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:13px;padding:14px 16px;color:#fff">
+        <div style="font-size:15px;font-weight:600">Cue for iPhone</div>
+        <sc-if value="{{ tfDone }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px;color:#8FD3B6;margin-top:8px;line-height:1.5">✓ You're on the list — invite coming by email.</div>
+        </sc-if>
+        <sc-if value="{{ tfForm }}" hint-placeholder-val="{{ true }}">
+          <form id="tf-form" onSubmit="{{ tfSubmit }}" style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+            <input name="email" type="email" placeholder="you@company.com" value="{{ tfEmail }}" style="width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:9px 11px;font-size:12.5px;color:#fff;font-family:inherit;outline:none">
+            <button type="submit" style="background:rgba(61,110,232,.16);border:1px solid rgba(61,110,232,.45);color:#fff;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:500;font-family:inherit;cursor:pointer">{{ tfLabel }}</button>
+          </form>
+        </sc-if>
+      </div>
+    </div>
+  </div>
 </div>
 
 </x-dc>
@@ -146,7 +174,7 @@
 // /account/portal → billing portal. 401 bounces to /signin. The designed
 // healthy / low / zero / payment-failed states derive from real data.
 class Component extends DCLogic {
-  state = { changeOpen: false, loaded: false, topupNotice: "" };
+  state = { changeOpen: false, loaded: false, topupNotice: "", tf: "idle" }; // tf: idle | sending | done
   summary = null;
 
   componentDidMount() {
@@ -173,6 +201,19 @@ class Component extends DCLogic {
         ? "Top-ups aren't open just yet — email hello@cue.ai and we'll sort you out."
         : "Something went wrong. Try again in a moment.",
     });
+  }
+
+  // POST /testflight {email} — idempotent server-side; the button flips
+  // to the done state regardless of repeat submissions.
+  async joinTestflight(e) {
+    e.preventDefault();
+    if (this.state.tf === "sending") return;
+    const input = document.querySelector("#tf-form input[name=email]");
+    const email = input ? input.value.trim() : "";
+    if (!email || email.indexOf("@") === -1) { if (input) input.focus(); return; }
+    this.setState({ tf: "sending" });
+    try { await CueCommerce.testflight(email); } catch (_) { /* quiet */ }
+    this.setState({ tf: "done" });
   }
 
   fmtDate(iso) {
@@ -209,7 +250,8 @@ class Component extends DCLogic {
     return {
       email: s ? s.email : "",
       hasInstance: !!(s && s.instanceUrl),
-      openCueHref: (s && s.instanceUrl) || "#",
+      showNoInstance:
+        new URLSearchParams(location.search).get("error") === "no_instance",
       portalHref: CueCommerce.portalHref,
       planName: s ? s.plan.name : "—",
       planPrice: s ? "$" + s.plan.priceUsd + "/mo" : "",
@@ -234,6 +276,11 @@ class Component extends DCLogic {
       changeOpen: this.state.changeOpen,
       changeLabel: this.state.changeOpen ? "Close" : "Change plan",
       toggleChange: () => this.setState((st) => ({ changeOpen: !st.changeOpen })),
+      tfForm: this.state.tf !== "done",
+      tfDone: this.state.tf === "done",
+      tfEmail: s ? s.email : "",
+      tfLabel: this.state.tf === "sending" ? "Joining…" : "Join the TestFlight",
+      tfSubmit: (e) => this.joinTestflight(e),
     };
   }
 }

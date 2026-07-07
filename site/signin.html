@@ -53,7 +53,8 @@
       <div id="state-sent" style="text-align:center;animation:cueLineIn .5s ease both">
         <div style="width:66px;height:66px;border-radius:50%;background:rgba(61,110,232,.14);border:1px solid rgba(61,110,232,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:26px;color:#9DB4E6">✉</div>
         <h1 style="font-size:clamp(24px,5vw,30px);line-height:1.1;letter-spacing:-.02em;font-weight:600;color:#fff;margin:0">Check your inbox.</h1>
-        <p style="font-size:14.5px;color:#AEB7C7;margin:14px auto 0;line-height:1.65;max-width:320px">We sent a sign-in link to <b style="color:#E4EAF4">{{ email }}</b>. It's valid for 15 minutes.</p>
+        <p style="font-size:14.5px;color:#AEB7C7;margin:14px auto 0;line-height:1.65;max-width:320px">If an account exists for <b style="color:#E4EAF4">{{ email }}</b>, a sign-in link is on its way. It's valid for 15 minutes.</p>
+        <p style="font-size:12px;color:#67748A;margin:12px auto 0;line-height:1.6;max-width:320px">New to Cue? Sign-ups are invite-only — <a href="/redeem" style="color:#9DB4E6;text-decoration:none">redeem an invite</a> or <a href="/#waitlist" style="color:#9DB4E6;text-decoration:none">join the waitlist</a>.</p>
         <button onClick="{{ reset }}" style="margin-top:22px;background:none;border:none;color:#9DB4E6;font-size:12.5px;font-family:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px">use a different email</button>
       </div>
     </sc-if>

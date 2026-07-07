@@ -114,6 +114,7 @@ price-id → env-var mapping to paste into the environment.
 | `HQ_PUBLIC_SITE_URL` | Marketing-site base URL; wins over `HQ_PUBLIC_URL` for checkout success/cancel redirects and emailed links. HQ serves the site itself, so point this at HQ's own origin |
 | `HQ_SITE_DIR` | Directory of the static marketing/commerce site (default: repo-root `site/`) |
 | `HQ_SESSION_SECRET` | HMAC key for the customer `/account` session cookie + enables `/signin`. Unset ⇒ site auth routes answer 503 |
+| `HQ_DOWNLOADS_DIR` | Directory HQ serves app downloads from (default `/data/downloads`). `GET /downloads/cue-macos.dmg` streams `cue-macos.dmg` from here; a missing file answers a friendly branded 404 |
 | `RESEND_API_KEY` | Resend secret for transactional email. Unset ⇒ log-only mode: every would-be email (incl. its action link) is printed at info level |
 | `EMAIL_FROM` | From header for transactional email (default `Cue <hello@cue.ai>`) |
 
@@ -246,6 +247,26 @@ wires the site):
   `POST <hq>/webhooks/stripe` with `STRIPE_WEBHOOK_SECRET` set. Events HQ
   consumes: `checkout.session.completed`, `invoice.paid`,
   `customer.subscription.updated`, `customer.subscription.deleted`.
+- **`GET /auth?token=…`** — consumes the emailed one-time sign-in token,
+  sets the session cookie, and 302s **into the customer's instance** via a
+  freshly minted magic link (`…/assistant/?cueToken=…`); customers without
+  a live instance land on `/account` instead. Bad/expired tokens bounce to
+  `/signin?error=link_expired`.
+- **`GET /account/open`** (session cookie) — the account page's "Open Cue"
+  button. 302 to a freshly minted instance magic link; no live instance ⇒
+  302 `/account?error=no_instance` (the page shows a quiet notice).
+- **`POST /testflight`** — body `{email}` → `{ok}` (repeat submissions:
+  `{ok, existing: true}`). Records a `testflight_interest` event,
+  idempotent per email — the account page's "Join the TestFlight" capture.
+- **`GET /downloads/cue-macos.dmg`** — the macOS app image, streamed from
+  `HQ_DOWNLOADS_DIR` (default `/data/downloads`) with
+  `application/x-apple-diskimage` + `Content-Length`. Missing file ⇒
+  branded 404 page. The DMG is uploaded to the Fly volume out-of-band:
+
+  ```bash
+  flyctl ssh console -a cue-hq -C "mkdir -p /data/downloads"
+  flyctl ssh sftp put ./Cue.dmg /data/downloads/cue-macos.dmg -a cue-hq
+  ```
 
 ## Fly release flow (build once, deploy many)
 

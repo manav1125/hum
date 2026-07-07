@@ -374,6 +374,21 @@ export class HqDb {
     return event;
   }
 
+  /**
+   * Latest event of a kind whose dataJson contains a fragment — e.g.
+   * `"email":"a@x.io"` for /testflight idempotency, where the interested
+   * party may not be a customer yet.
+   */
+  findLatestEventByKindData(kind: string, fragment: string): HqEvent | null {
+    return (
+      this.db
+        .query<HqEvent, [string, string]>(
+          "SELECT * FROM events WHERE kind = ? AND dataJson LIKE ? ORDER BY ts DESC LIMIT 1",
+        )
+        .get(kind, `%${fragment}%`) ?? null
+    );
+  }
+
   /** Latest event of a kind for a customer (welcome-status failure check). */
   findLatestEvent(kind: string, customerId: string): HqEvent | null {
     return (

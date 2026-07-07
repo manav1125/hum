@@ -115,7 +115,8 @@ describe("signin token lifecycle", () => {
     expect(match).not.toBeNull();
     const rawToken = match![1];
 
-    // Consume the link: 302 → /account with the session cookie set.
+    // Consume the link: 302 → /account (no live instance to land in) with
+    // the session cookie set.
     const auth = await handle(new Request(`http://hq.local/auth?token=${rawToken}`));
     expect(auth.status).toBe(302);
     expect(auth.headers.get("location")).toBe("/account");
@@ -174,6 +175,39 @@ describe("signin token lifecycle", () => {
     const { handle } = setup();
     const res = await handle(jsonReq("/signin", { email: "a@x.io" }));
     expect(res.status).toBe(503);
+  });
+
+  test("/auth with a live instance lands in the app (fresh magic link) + cookie", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
+    const { db, handle, resendCalls } = setup();
+    const c = db.createCustomer({ email: "live@x.io", name: "Liv", plan: "chief_of_staff" });
+    const secrets = generateInstanceSecrets();
+    secrets.guardianPrincipalId = "vellum-principal-live";
+    const inst = db.createInstance({
+      customerId: c.id,
+      driver: "mock",
+      externalId: "mock-live",
+      url: "http://live.mock.local",
+      secretsJson: JSON.stringify(secrets),
+    });
+    db.transitionInstance(inst.id, "live");
+
+    await handle(jsonReq("/signin", { email: "live@x.io" }));
+    const match = /\/auth\?token=([0-9a-f]{64})/.exec(String(resendCalls[0].html));
+    const auth = await handle(
+      new Request(`http://hq.local/auth?token=${match![1]}`),
+    );
+    expect(auth.status).toBe(302);
+    expect(auth.headers.get("location")).toStartWith(
+      "http://live.mock.local/assistant/?cueToken=",
+    );
+    const cookieValue = (auth.headers.get("set-cookie") ?? "")
+      .split(";")[0]
+      .split("=")
+      .slice(1)
+      .join("=");
+    expect(verifySessionValue(cookieValue)).toBe(c.id);
   });
 });
 
@@ -288,6 +322,41 @@ describe("/account", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://billing.stripe.com/p/session_1");
+  });
+
+  test("open: 302 to a fresh magic link; no instance → quiet fallback; anon → /signin", async () => {
+    const { db, handle } = setup();
+    const { c, cookie } = authedCustomer(db);
+
+    const anon = await handle(new Request("http://hq.local/account/open"));
+    expect(anon.status).toBe(302);
+    expect(anon.headers.get("location")).toBe("/signin");
+
+    // Authed but instanceless → the quiet notice fallback.
+    const none = await handle(
+      new Request("http://hq.local/account/open", { headers: { cookie } }),
+    );
+    expect(none.status).toBe(302);
+    expect(none.headers.get("location")).toBe("/account?error=no_instance");
+
+    const secrets = generateInstanceSecrets();
+    secrets.guardianPrincipalId = "vellum-principal-open";
+    const inst = db.createInstance({
+      customerId: c.id,
+      driver: "mock",
+      externalId: "mock-open",
+      url: "http://open.mock.local",
+      secretsJson: JSON.stringify(secrets),
+    });
+    db.transitionInstance(inst.id, "live");
+
+    const res = await handle(
+      new Request("http://hq.local/account/open", { headers: { cookie } }),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toStartWith(
+      "http://open.mock.local/assistant/?cueToken=",
+    );
   });
 
   test("summary reports the live instance url for the Open Cue button", async () => {
