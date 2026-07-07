@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { dirname, join, posix, resolve, sep } from "node:path";
 import { gunzipSync } from "node:zlib";
 
+import { notifyConfigChange } from "../config-repo/notify.js";
 import { getPlatformBaseUrl } from "../config/env.js";
 import { loadSkillCatalog } from "../config/skills.js";
 import { deleteSkillCapabilityNode } from "../memory/graph/capability-seed.js";
@@ -336,6 +337,9 @@ export function uninstallSkillLocally(skillId: string): void {
 
   rmSync(skillDir, { recursive: true, force: true });
   deleteSkillCapabilityNode(skillId);
+
+  // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+  notifyConfigChange(`skill uninstalled: ${skillId}`, "user");
 }
 
 function assertInstalledSkillDiscoverable(
@@ -518,6 +522,14 @@ export async function installSkillLocally(
       { skillId, source: installSource },
       "Installed skill from %s",
       installSource,
+    );
+
+    // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+    // No contactId ⇒ the install was not user-attributed (e.g. skill_load
+    // auto-install) ⇒ treat as an autonomous change for Review-lane purposes.
+    notifyConfigChange(
+      `skill installed: ${skillId}`,
+      contactId ? "user" : "assistant",
     );
   } catch (err) {
     rmSync(stagedDir, { recursive: true, force: true });

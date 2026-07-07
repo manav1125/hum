@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 
 import { stringify as stringifyYaml } from "yaml";
 
+import { notifyConfigChange } from "../config-repo/notify.js";
 import { deleteSkillCapabilityNode } from "../memory/graph/capability-seed.js";
 import { getLogger } from "../util/logger.js";
 import { getWorkspaceSkillsDir } from "../util/platform.js";
@@ -195,6 +196,14 @@ export function createManagedSkill(
     "Created managed skill",
   );
 
+  // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+  // No contactId ⇒ not user-attributed (e.g. the agent's scaffold tool) ⇒
+  // autonomous for Review-lane purposes.
+  notifyConfigChange(
+    `managed skill created: ${params.id}`,
+    params.contactId ? "user" : "assistant",
+  );
+
   return { created: true, path: skillFilePath };
 }
 
@@ -220,6 +229,9 @@ export function deleteManagedSkill(id: string): DeleteManagedSkillResult {
   rmSync(skillDir, { recursive: true });
   deleteSkillCapabilityNode(id);
   log.info({ id, path: skillDir }, "Deleted managed skill");
+
+  // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+  notifyConfigChange(`managed skill deleted: ${id}`, "user");
 
   return { deleted: true };
 }

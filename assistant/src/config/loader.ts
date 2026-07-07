@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { notifyConfigChange } from "../config-repo/notify.js";
 import { safeStatSync } from "../util/fs.js";
 import { getLogger } from "../util/logger.js";
 import {
@@ -920,6 +921,11 @@ export function saveRawConfig(config: Record<string, unknown>): void {
 
   cached = null; // invalidate cache
   cachedFileSignature = null;
+
+  // Config-as-code (WS5): snapshot the durable config surface into the local
+  // config repo. Flag-gated (default OFF), fire-and-forget — can never block
+  // or fail this save.
+  notifyConfigChange("assistant.json saved", "user");
 }
 
 export function getNestedValue(

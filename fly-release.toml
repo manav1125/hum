@@ -1,0 +1,4 @@
+app = "cue-releases"
+
+[build]
+  dockerfile = "assistant/Dockerfile"

@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { revertConfigCommit } from "../../config-repo/index.js";
 import { findConversation } from "../../daemon/conversation-registry.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
 import { reconcileFeedForWorkItemStatus } from "../../home/feed-writer.js";
@@ -368,10 +369,57 @@ export function extractWorkItemResult(
   return { conversationId, summary, highlights };
 }
 
+/**
+ * Config-repo (WS5) review items have no run conversation — their "output"
+ * is the config diff itself, carried in `notes` at creation time. Synthesize
+ * the standard output shape (summary + highlights) from those notes so the
+ * awaiting-review card renders them unchanged: bullet lines become
+ * highlights, the surrounding prose becomes the summary.
+ */
+function synthesizeConfigRepoOutput(workItem: {
+  title: string;
+  status: string;
+  notes: string | null;
+}): WorkItemOutputResult {
+  const lines = (workItem.notes ?? "").split("\n");
+  const highlights = lines
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith("- "))
+    .slice(0, 8);
+  const summary =
+    truncate(
+      lines
+        .filter((l) => !l.trim().startsWith("- "))
+        .join("\n")
+        .trim(),
+      2000,
+      "",
+    ) || "Configuration change recorded in the local config repo.";
+
+  return {
+    success: true,
+    output: {
+      title: workItem.title,
+      status: workItem.status,
+      runId: null,
+      conversationId: null,
+      completedAt: null,
+      summary,
+      highlights,
+    },
+  };
+}
+
 function getWorkItemOutput(id: string): WorkItemOutputResult {
   const workItem = getWorkItem(id);
   if (!workItem) {
     return { success: false, error: "Work item not found" };
+  }
+
+  // Config-repo review items never have a run — answer from notes instead of
+  // failing the "has not been run yet" check below.
+  if (workItem.sourceType === "config_repo") {
+    return synthesizeConfigRepoOutput(workItem);
   }
 
   const { conversationId, completedAt } =
@@ -1040,6 +1088,41 @@ export const ROUTES: RouteDefinition[] = [
       // gate fired on every "Run now" click. The web mutation wires only
       // `onSuccess`, so the 403 surfaced as nothing happening at all.
       const id = pathParams!.id;
+
+      // Config-repo (WS5) review items: "Redo" does not re-run anything —
+      // it reverts the underlying config commit in the local config repo,
+      // then closes the item. Everything else falls through to the normal
+      // background runner unchanged.
+      const existing = getWorkItem(id);
+      if (existing?.sourceType === "config_repo") {
+        if (!existing.sourceId) {
+          throw new ConflictError(
+            "Config change item has no commit hash to revert",
+          );
+        }
+        const revert = revertConfigCommit(existing.sourceId);
+        if (!revert.success) {
+          throw new ConflictError(
+            `Could not revert config commit ${existing.sourceId.slice(0, 10)}: ${revert.error ?? "unknown error"}`,
+          );
+        }
+        updateWorkItem(
+          id,
+          { status: "done", lastRunStatus: "reverted" },
+          { actor: "user" },
+        );
+        recordWorkItemEvent({
+          workItemId: id,
+          kind: "status_changed",
+          fromStatus: existing.status,
+          toStatus: "done",
+          actor: "user",
+        });
+        broadcastWorkItemStatus(id);
+        publishEvent({ type: "tasks_changed" });
+        return { id, success: true, lastRunId: "" };
+      }
+
       const result = runWorkItemInBackground(id);
 
       if (!result.success) {

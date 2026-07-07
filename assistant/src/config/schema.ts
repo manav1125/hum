@@ -28,6 +28,7 @@ import {
 } from "./schemas/channels.js";
 import { CompactionConfigSchema } from "./schemas/compaction.js";
 import { CompactionLogsConfigSchema } from "./schemas/compaction-logs.js";
+import { ConfigRepoConfigSchema } from "./schemas/config-repo.js";
 import { ConversationsConfigSchema } from "./schemas/conversations.js";
 import { FilingConfigSchema } from "./schemas/filing.js";
 import { HeartbeatConfigSchema } from "./schemas/heartbeat.js";
@@ -126,6 +127,9 @@ export const AssistantConfigSchema = z
     // All keys optional; env vars (CUE_*_API_KEY) are the fallback. Absent
     // key = tool reports "not configured" — that is the feature-off state.
     toolApis: ToolApisConfigSchema.default(ToolApisConfigSchema.parse({})),
+    // Config-as-code export (WS5). Default OFF: with the flag off the
+    // exporter never runs and no repo is created.
+    configRepo: ConfigRepoConfigSchema.default(ConfigRepoConfigSchema.parse({})),
     // Per-plugin config blocks keyed by plugin name. The schema is intentionally
     // permissive — each plugin's manifest supplies its own validator which the
     // plugin bootstrap (`external-plugins-bootstrap.ts`) runs against the raw

@@ -2,6 +2,7 @@ import { Cron } from "croner";
 import { and, asc, desc, eq, isNull, lt, lte, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
+import { notifyConfigChange } from "../config-repo/notify.js";
 import { getDb } from "../memory/db-connection.js";
 import { rawChanges } from "../memory/raw-query.js";
 import { scheduleJobs, scheduleRuns } from "../memory/schema.js";
@@ -197,6 +198,15 @@ export function createSchedule(params: {
 
   db.insert(scheduleJobs).values(row).run();
   notifySchedulesChanged();
+
+  // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+  // Schedules created by the agent (createdBy defaults to "agent") are
+  // autonomous config changes for Review-lane purposes.
+  notifyConfigChange(
+    `schedule created: ${params.name}`,
+    row.createdBy === "user" ? "user" : "assistant",
+  );
+
   return parseJobRow(row);
 }
 
@@ -378,6 +388,11 @@ export function updateSchedule(
   db.update(scheduleJobs).set(set).where(eq(scheduleJobs.id, id)).run();
   notifySchedulesChanged();
 
+  // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+  // Updates carry no actor attribution — record as "user" (commit-only, no
+  // Review item) rather than spamming Review with user-driven edits.
+  notifyConfigChange(`schedule updated: ${id}`, "user");
+
   return getSchedule(id);
 }
 
@@ -385,7 +400,11 @@ export function deleteSchedule(id: string): boolean {
   const db = getDb();
   db.delete(scheduleJobs).where(eq(scheduleJobs.id, id)).run();
   const deleted = rawChanges() > 0;
-  if (deleted) notifySchedulesChanged();
+  if (deleted) {
+    notifySchedulesChanged();
+    // Config-as-code (WS5): flag-gated, fire-and-forget, never blocks.
+    notifyConfigChange(`schedule deleted: ${id}`, "user");
+  }
   return deleted;
 }
 
