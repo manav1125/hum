@@ -691,6 +691,23 @@ function AutoRunGoals() {
               gap: 12,
             }}
           >
+            <span
+              aria-hidden
+              style={{
+                width: 30,
+                height: 30,
+                flexShrink: 0,
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                color: g.takeControl ? C.violetStrong : C.blueStrong,
+                background: g.takeControl ? C.violetWash : C.blueWash,
+              }}
+            >
+              {g.takeControl ? "✦" : "✉"}
+            </span>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div
                 style={{

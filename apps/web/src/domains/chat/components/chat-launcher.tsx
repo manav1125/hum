@@ -1,17 +1,44 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowUpRight,
   CalendarDays,
   FileText,
   Inbox,
+  ListChecks,
   Mail,
+  MessageSquare,
   Search,
+  ShieldAlert,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
 import { homeFeedGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
-import type { FeedItem } from "@vellumai/assistant-api";
+import type { FeedItem, FeedItemCategory } from "@vellumai/assistant-api";
+
+/**
+ * Channel-accurate icon for an open action-board item, mirroring the Home
+ * queue's per-category iconography so the same item reads the same in both
+ * places. Falls back to a neutral spark for uncategorised items.
+ */
+function categoryIcon(category: FeedItemCategory | undefined): LucideIcon {
+  switch (category) {
+    case "email":
+      return Mail;
+    case "scheduling":
+      return CalendarDays;
+    case "slack":
+    case "telegram":
+    case "whatsapp":
+    case "chat":
+      return MessageSquare;
+    case "task":
+      return ListChecks;
+    case "security":
+      return ShieldAlert;
+    default:
+      return Sparkles;
+  }
+}
 
 /**
  * Chat launcher — the empty-state quick-start surface beneath the composer.
@@ -62,14 +89,14 @@ export function ChatLauncher({
     staleTime: 30_000,
   });
 
-  const openItems = ((data?.items ?? []) as FeedItem[])
-    .filter(
-      (i) =>
-        i.id.startsWith("action-board:") &&
-        !i.id.endsWith(":summary") &&
-        i.title,
-    )
-    .slice(0, 3);
+  const allOpen = ((data?.items ?? []) as FeedItem[]).filter(
+    (i) =>
+      i.id.startsWith("action-board:") &&
+      !i.id.endsWith(":summary") &&
+      i.title,
+  );
+  const openItems = allOpen.slice(0, 3);
+  const openCount = allOpen.length;
 
   return (
     <div className="mx-auto flex w-full max-w-[var(--chat-max-width)] flex-col gap-4 px-3 pt-2 sm:px-6">
@@ -91,24 +118,54 @@ export function ChatLauncher({
         })}
       </div>
 
-      {/* open action items — pick up where you left off */}
+      {/* open action items — your real work, surfaced as one-tap starters.
+          Tapping a card seeds the composer with the action's prompt
+          (review-then-send), the same safe path the capability CTAs use — the
+          labelled pill mirrors Home's action without one-tap-sending a
+          consequential action straight from a greeting. */}
       {openItems.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="text-center font-[var(--font-mono)] text-[11px] uppercase tracking-wide text-[var(--content-tertiary)]">
-            Pick up where you left off
+        <div className="flex flex-col gap-2.5">
+          <div className="text-center text-sm text-[var(--content-secondary)]">
+            Before you start —{" "}
+            <span className="font-medium text-[var(--content-default)]">
+              {openCount} {openCount === 1 ? "thing needs" : "things need"} you
+            </span>{" "}
+            right now.
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {openItems.map((it) => {
-              const prompt =
-                it.actions?.[0]?.prompt ?? `Help me with: ${it.title}`;
+              const action = it.actions?.[0];
+              const prompt = action?.prompt ?? `Help me with: ${it.title}`;
+              const Icon = categoryIcon(it.category);
+              const urgent =
+                it.urgency === "high" || it.urgency === "critical";
               return (
                 <button
                   key={it.id}
                   type="button"
                   onClick={() => onSeed(prompt)}
-                  className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border-base)] bg-[var(--surface-overlay)] p-3 text-left transition-colors hover:border-[var(--border-active)]"
+                  title={
+                    action
+                      ? `${action.label} — opens in the composer to review first`
+                      : undefined
+                  }
+                  className={`group flex items-center gap-3 rounded-xl border bg-[var(--surface-overlay)] p-3 text-left transition-colors hover:border-[var(--border-active)] ${
+                    urgent
+                      ? "border-[var(--accent-cue)]"
+                      : "border-[var(--border-base)]"
+                  }`}
                 >
-                  <div className="min-w-0">
+                  <span
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg"
+                    style={{
+                      background:
+                        "color-mix(in srgb, var(--accent-cue) 12%, transparent)",
+                      color: "var(--accent-cue-strong)",
+                    }}
+                  >
+                    <Icon className="size-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium text-[var(--content-default)]">
                       {it.title}
                     </div>
@@ -118,7 +175,11 @@ export function ChatLauncher({
                       </div>
                     )}
                   </div>
-                  <ArrowUpRight className="size-4 shrink-0 text-[var(--content-tertiary)] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  {action && (
+                    <span className="shrink-0 rounded-lg bg-[var(--primary-base)] px-2.5 py-1 text-xs font-medium text-[var(--content-inset)] transition-opacity group-hover:opacity-90">
+                      {action.label}
+                    </span>
+                  )}
                 </button>
               );
             })}

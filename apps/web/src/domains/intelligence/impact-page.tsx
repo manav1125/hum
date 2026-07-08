@@ -197,6 +197,18 @@ export function ImpactPage() {
   const recent = data?.recent ?? [];
   const maxCat = Math.max(0.1, ...byCategory.map((c) => c.hours));
   const maxDay = Math.max(0.1, ...byDay);
+  // Intra-week momentum: the last three days vs the first three of the 7-day
+  // window. An honest trend from the data we have — NOT a true week-over-week
+  // (that would need a 14-day series from the daemon), so it's labelled
+  // "vs earlier this week", not "vs last week".
+  const recentSum = byDay.slice(-3).reduce((a, b) => a + b, 0);
+  const earlierSum = byDay.slice(0, 3).reduce((a, b) => a + b, 0);
+  const trendPct =
+    earlierSum > 0
+      ? Math.round(((recentSum - earlierSum) / earlierSum) * 100)
+      : recentSum > 0
+        ? 100
+        : 0;
   const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
   const todayIdx = (new Date().getDay() + 6) % 7;
 
@@ -381,6 +393,20 @@ export function ImpactPage() {
                   </div>
                 ))}
               </div>
+              {trendPct !== 0 && (recentSum > 0 || earlierSum > 0) && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    fontFamily: mono,
+                    fontSize: 10,
+                    letterSpacing: ".04em",
+                    color: trendPct > 0 ? "#6FCF97" : "#E0B15E",
+                  }}
+                >
+                  {trendPct > 0 ? "▲" : "▼"} {Math.abs(trendPct)}% vs earlier
+                  this week
+                </div>
+              )}
             </div>
           </div>
         </div>
