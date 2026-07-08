@@ -28,13 +28,24 @@ describe("connector-apps routes", () => {
     })) as {
       configured: boolean;
       source: string;
-      apps: Array<{ slug: string; name: string; connected: boolean }>;
+      apps: Array<{
+        slug: string;
+        name: string;
+        connected: boolean;
+        logoUrl?: string;
+      }>;
     };
     expect(result.configured).toBe(false);
     expect(result.source).toBe("curated");
     expect(result.apps.length).toBeGreaterThanOrEqual(25);
     expect(result.apps.some((a) => a.slug === "gmail")).toBe(true);
     expect(result.apps.every((a) => a.connected === false)).toBe(true);
+    // Every curated app carries a brand logo URL (Composio's public CDN).
+    expect(
+      result.apps.every(
+        (a) => a.logoUrl === `https://logos.composio.dev/api/${a.slug}`,
+      ),
+    ).toBe(true);
   });
 
   it("filters the list with ?query=", async () => {

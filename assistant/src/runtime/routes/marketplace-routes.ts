@@ -14,8 +14,12 @@
 
 import { z } from "zod";
 
+import { listSkills } from "../../daemon/handlers/skills.js";
 import { assertMarketplaceEnabled } from "../../skills/marketplace/flag.js";
-import { fetchRawFile, fetchRepoInfo } from "../../skills/marketplace/github.js";
+import {
+  fetchRawFile,
+  fetchRepoInfo,
+} from "../../skills/marketplace/github.js";
 import {
   findItemById,
   indexSource,
@@ -120,7 +124,15 @@ function withInstalledFlag(
 }
 
 function installedIdSet(): Set<string> {
-  return new Set(listInstalled().map((i) => i.skillId));
+  // Marketplace-lock installs are keyed by their namespaced managed-dir id
+  // (`owner--repo--skill`); GitHub-sourced items match here.
+  const ids = new Set(listInstalled().map((i) => i.skillId));
+  // First-party catalog items carry the plain skill id (`entry.id`), which is
+  // also the id every skill already present in the assistant reports. Union
+  // those in so bundled / catalog-installed / manually-added skills (e.g.
+  // Amazon, Browser) surface as "Installed" instead of offering "Install".
+  for (const skill of listSkills()) ids.add(skill.id);
+  return ids;
 }
 
 async function resolveItem(itemId: string): Promise<MarketplaceItem> {
@@ -226,7 +238,9 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({
       item: marketplaceItemSchema,
       skillMd: z.string().nullable().describe("Raw SKILL.md content preview"),
-      files: z.array(z.object({ path: z.string(), size: z.number().optional() })),
+      files: z.array(
+        z.object({ path: z.string(), size: z.number().optional() }),
+      ),
       skipped: z.array(skippedFileSchema),
       capabilities: capabilityManifestSchema,
       notice: z.string(),
@@ -291,10 +305,11 @@ export const ROUTES: RouteDefinition[] = [
       "Add a public GitHub repo (owner/repo or github.com URL) as a skill source. The repo is verified via the GitHub API and its license is recorded; repos without a detectable license are added with a warning. Pass enabled=false with an existing address to disable instead.",
     tags: ["marketplace"],
     requestBody: z.object({
-      address: z
+      address: z.string().describe("owner/repo or a github.com URL"),
+      ref: z
         .string()
-        .describe("owner/repo or a github.com URL"),
-      ref: z.string().optional().describe("Git ref (defaults to the default branch)"),
+        .optional()
+        .describe("Git ref (defaults to the default branch)"),
       label: z.string().optional(),
       enabled: z
         .boolean()
@@ -404,7 +419,9 @@ export const ROUTES: RouteDefinition[] = [
       "Two-phase install with capability consent. Without confirm:true the response is the install-confirmation payload (files, skipped executables, declared capabilities — or the 'no declared capabilities' notice). With confirm:true the skill's markdown/text assets are written into the managed skills dir and a hash-pinned entry is recorded in skills-lock.json.",
     tags: ["marketplace"],
     requestBody: z.object({
-      itemId: z.string().describe("Namespaced item id ({owner}--{repo}--{skill})"),
+      itemId: z
+        .string()
+        .describe("Namespaced item id ({owner}--{repo}--{skill})"),
       confirm: z
         .boolean()
         .optional()

@@ -1,26 +1,42 @@
 import { Loader2, Search } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
-import type { ConnectorStatus } from "@vellumai/ipc-contract";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { ConnectorAppLogo } from "@/components/connector-app-logo";
 import {
-  connectConnector,
-  connectorsAvailable,
-  listConnectors,
-} from "@/runtime/connectors";
+  connectorappsConnectPostMutation,
+  connectorappsGetOptions,
+  connectorappsGetQueryKey,
+} from "@/generated/daemon/@tanstack/react-query.gen";
+import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
+import { connectorsAvailable } from "@/runtime/connectors";
 import { routes } from "@/utils/routes";
 
 /**
- * Connectors — design-matched to surfaces/Connectors.dc.html while staying
- * wired to real Composio connector data. An editorial dark progress hero ("the
- * more Cue connects, the more it can do for you"), a tip banner, a search +
- * filter row, Connected rows (CONNECTED pill + Manage → ConnectorDetail), a
- * single-column Available list with Enable buttons, and the MCP-servers footer.
+ * Tools & Apps (Connectors) — design-matched to surfaces/Connectors.dc.html,
+ * wired to the daemon's Composio connector-apps catalog. An editorial dark
+ * progress hero ("the more Cue connects, the more it can do for you"), a tip
+ * banner, a search + filter row, Connected rows (CONNECTED pill + Manage →
+ * ConnectorDetail on desktop installs), a single-column Available list with
+ * Enable buttons, and the MCP-servers footer.
+ *
+ * DATA SOURCE: `GET /v1/connector-apps` — the SAME daemon route (and the same
+ * `connected` filter) the command-center Integrations tile and the onboarding
+ * connect grid use, so the connected count here always matches the tile.
+ * (This page previously read the Electron-local `window.vellum.connectors`
+ * IPC, whose catalog + Composio identity belonged to the local install — a
+ * different universe than the daemon the tile queried, so the two counts
+ * disagreed.) The Electron IPC remains only as the gate for the per-tool
+ * Manage surface, which is desktop-specific.
  *
  * The dark nav + intelligence tab bar are provided by IntelligenceLayout — not
  * rebuilt here.
  */
+
+type ConnectorApp = ConnectorappsGetResponses[200]["apps"][number];
 
 const C = {
   ink: "#1A2230",
@@ -39,6 +55,7 @@ const C = {
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
 
+/** Friendlier blurbs for the classic category ids; raw category otherwise. */
 const CATEGORY_DESC: Record<string, string> = {
   email: "Email and threads",
   calendar: "Events and scheduling",
@@ -52,6 +69,15 @@ const CATEGORY_DESC: Record<string, string> = {
   social: "Posts and direct messages",
 };
 
+/** The full Composio catalog is ~500 apps — cap the Available list and point
+ *  at search instead of rendering a five-hundred-row scroll. */
+const AVAILABLE_CAP = 60;
+
+/** Keep refetching for 2 minutes after a connect starts so the finished
+ *  OAuth flips the row to CONNECTED without a manual refresh. */
+const CONNECT_POLL_MS = 3_000;
+const CONNECT_POLL_WINDOW_MS = 120_000;
+
 const sectionLabel = {
   fontFamily: mono,
   fontSize: 10.5,
@@ -64,17 +90,22 @@ const sectionLabel = {
 function ConnectorRow({
   connector,
   busy,
+  connectable,
+  manageable,
   onConnect,
   onManage,
 }: {
-  connector: ConnectorStatus;
+  connector: ConnectorApp;
   busy: boolean;
+  connectable: boolean;
+  manageable: boolean;
   onConnect: () => void;
   onManage: () => void;
 }) {
   const desc = CATEGORY_DESC[connector.category] ?? connector.category;
   return (
     <div
+      data-slot="connector-row"
       style={{
         border: `1px solid ${C.line}`,
         borderRadius: 13,
@@ -85,24 +116,18 @@ function ConnectorRow({
         background: "#fff",
       }}
     >
-      <span
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 11,
+      <ConnectorAppLogo
+        name={connector.name}
+        logoUrl={connector.logoUrl}
+        size={40}
+        imgSize={24}
+        chipStyle={{
           background: connector.connected ? C.ink : C.sunken,
           color: connector.connected ? "#fff" : C.t2,
           border: connector.connected ? undefined : "1px solid #EDEFF3",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
           fontSize: 18,
-          fontWeight: 600,
-          flexShrink: 0,
         }}
-      >
-        {connector.name.charAt(0).toUpperCase()}
-      </span>
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14.5, fontWeight: 600 }}>{connector.name}</div>
         <div style={{ fontSize: 12.5, color: C.t2 }}>{desc}</div>
@@ -122,27 +147,34 @@ function ConnectorRow({
           >
             CONNECTED
           </span>
-          <button
-            type="button"
-            onClick={onManage}
-            style={{
-              fontSize: 12.5,
-              border: `1px solid ${C.line2}`,
-              background: "#fff",
-              borderRadius: 9,
-              padding: "8px 14px",
-              cursor: "pointer",
-              color: C.t1,
-            }}
-          >
-            Manage
-          </button>
+          {manageable && (
+            <button
+              type="button"
+              onClick={onManage}
+              style={{
+                fontSize: 12.5,
+                border: `1px solid ${C.line2}`,
+                background: "#fff",
+                borderRadius: 9,
+                padding: "8px 14px",
+                cursor: "pointer",
+                color: C.t1,
+              }}
+            >
+              Manage
+            </button>
+          )}
         </>
       ) : (
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || !connectable}
           onClick={onConnect}
+          title={
+            connectable
+              ? `Connect ${connector.name}`
+              : "Easy connect isn't configured on this instance yet"
+          }
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -153,7 +185,8 @@ function ConnectorRow({
             border: "none",
             borderRadius: 9,
             padding: "8px 18px",
-            cursor: busy ? "default" : "pointer",
+            opacity: connectable ? 1 : 0.5,
+            cursor: busy || !connectable ? "default" : "pointer",
           }}
         >
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
@@ -166,54 +199,108 @@ function ConnectorRow({
 
 export function ConnectorsPage() {
   const navigate = useNavigate();
-  const [available, setAvailable] = useState<boolean | null>(null);
-  const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
+  const assistantId = useActiveAssistantId();
+  const queryClient = useQueryClient();
+
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [tipDismissed, setTipDismissed] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const refresh = useCallback(async () => {
-    setConnectors(await listConnectors());
-  }, []);
+  const [pollUntil, setPollUntil] = useState(0);
+  // Per-tool Manage is an Electron desktop surface — gate the button only.
+  const [manageable, setManageable] = useState(false);
 
   useEffect(() => {
-    void (async () => {
-      const ok = await connectorsAvailable();
-      setAvailable(ok);
-      if (ok) await refresh();
-    })();
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [refresh]);
+    void connectorsAvailable().then(setManageable);
+  }, []);
 
-  const handleConnect = async (slug: string) => {
+  const appsQuery = useQuery({
+    ...connectorappsGetOptions({
+      path: { assistant_id: assistantId },
+      // Filter client-side so typing doesn't refetch per keystroke.
+      query: {},
+    }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: () => (Date.now() < pollUntil ? CONNECT_POLL_MS : false),
+  });
+
+  const connectMutation = useMutation({
+    ...connectorappsConnectPostMutation(),
+    onSettled: () => {
+      setBusySlug(null);
+      void queryClient.invalidateQueries({
+        queryKey: connectorappsGetQueryKey({
+          path: { assistant_id: assistantId },
+          query: {},
+        }),
+      });
+    },
+  });
+
+  const handleConnect = (slug: string) => {
     setBusySlug(slug);
     setNote(null);
-    const url = await connectConnector(slug);
-    setBusySlug(null);
-    if (!url) {
-      setNote("Couldn't start the connection — try again.");
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
-    setNote(
-      "A login tab opened — authorize, then this list updates automatically.",
+    connectMutation.mutate(
+      { path: { assistant_id: assistantId }, body: { slug } },
+      {
+        onSuccess: (data) => {
+          const url = (data as { redirectUrl?: string }).redirectUrl;
+          if (!url) {
+            setNote("Couldn't start the connection — try again.");
+            return;
+          }
+          window.open(url, "_blank", "noopener,noreferrer");
+          setNote(
+            "A login tab opened — authorize, then this list updates automatically.",
+          );
+          setPollUntil(Date.now() + CONNECT_POLL_WINDOW_MS);
+        },
+        onError: () => setNote("Couldn't start the connection — try again."),
+      },
     );
-    if (pollRef.current) clearInterval(pollRef.current);
-    let ticks = 0;
-    pollRef.current = setInterval(() => {
-      ticks += 1;
-      void refresh();
-      if (ticks > 40 && pollRef.current) clearInterval(pollRef.current);
-    }, 3000);
   };
 
-  if (available === null) return null;
-  if (!available) {
+  const connectors = appsQuery.data?.apps ?? [];
+  const connectable = appsQuery.data?.configured === true;
+
+  const q = query.trim().toLowerCase();
+  const categories = Array.from(
+    new Set(connectors.map((c) => c.category).filter(Boolean)),
+  ).sort();
+  const matches = (c: ConnectorApp) =>
+    (category === "all" || c.category === category) &&
+    (q === "" ||
+      c.name.toLowerCase().includes(q) ||
+      c.slug.toLowerCase().includes(q) ||
+      c.category.toLowerCase().includes(q));
+
+  const connected = connectors.filter((c) => c.connected && matches(c));
+  const availableMatches = connectors.filter((c) => !c.connected && matches(c));
+  const availableConnectors = availableMatches.slice(0, AVAILABLE_CAP);
+  const availableOverflow = availableMatches.length - availableConnectors.length;
+  const total = connectors.length;
+  const connectedTotal = connectors.filter((c) => c.connected).length;
+  const availTotal = total - connectedTotal;
+  const pct = total > 0 ? Math.round((connectedTotal / total) * 100) : 0;
+
+  if (appsQuery.isLoading) {
+    return (
+      <div
+        style={{
+          fontFamily: "'DM Sans', system-ui, sans-serif",
+          padding: "8px 0",
+          fontSize: 13,
+          color: C.t3,
+        }}
+      >
+        Loading connectable apps…
+      </div>
+    );
+  }
+
+  if (appsQuery.isError) {
     return (
       <div
         style={{
@@ -231,31 +318,27 @@ export function ConnectorsPage() {
             color: C.t2,
           }}
         >
-          Connectors are a macOS desktop feature and aren&apos;t set up on this
-          install yet.
+          Couldn&apos;t load the app catalog — the assistant may be
+          unreachable.{" "}
+          <button
+            type="button"
+            onClick={() => void appsQuery.refetch()}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: C.blue,
+              cursor: "pointer",
+              fontSize: 13,
+              padding: 0,
+              textDecoration: "underline",
+            }}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
   }
-
-  const q = query.trim().toLowerCase();
-  const categories = Array.from(
-    new Set(connectors.map((c) => c.category).filter(Boolean)),
-  ).sort();
-  const matches = (c: ConnectorStatus) =>
-    (category === "all" || c.category === category) &&
-    (q === "" ||
-      c.name.toLowerCase().includes(q) ||
-      c.category.toLowerCase().includes(q));
-
-  const connected = connectors.filter((c) => c.connected && matches(c));
-  const availableConnectors = connectors.filter(
-    (c) => !c.connected && matches(c),
-  );
-  const total = connectors.length || 12;
-  const connectedTotal = connectors.filter((c) => c.connected).length;
-  const availTotal = connectors.length - connectedTotal;
-  const pct = total > 0 ? Math.round((connectedTotal / total) * 100) : 0;
 
   return (
     <div
@@ -302,8 +385,11 @@ export function ConnectorsPage() {
             </span>
           </div>
           <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
-            You&apos;ve connected {connectedTotal} of {total}. Each one unlocks
-            new things Cue can handle on its own.
+            You&apos;ve connected{" "}
+            <span data-slot="connectors-connected-total">
+              {connectedTotal}
+            </span>{" "}
+            of {total}. Each one unlocks new things Cue can handle on its own.
           </div>
           <div
             style={{
@@ -490,7 +576,9 @@ export function ConnectorsPage() {
                 key={c.slug}
                 connector={c}
                 busy={busySlug === c.slug}
-                onConnect={() => void handleConnect(c.slug)}
+                connectable={connectable}
+                manageable={manageable}
+                onConnect={() => handleConnect(c.slug)}
                 onManage={() => navigate(routes.connector(c.slug))}
               />
             ))}
@@ -507,11 +595,25 @@ export function ConnectorsPage() {
                 key={c.slug}
                 connector={c}
                 busy={busySlug === c.slug}
-                onConnect={() => void handleConnect(c.slug)}
+                connectable={connectable}
+                manageable={manageable}
+                onConnect={() => handleConnect(c.slug)}
                 onManage={() => navigate(routes.connector(c.slug))}
               />
             ))}
           </div>
+          {availableOverflow > 0 && (
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 10.5,
+                color: C.t3,
+                marginTop: 10,
+              }}
+            >
+              {availableOverflow} more — search to narrow it down.
+            </div>
+          )}
         </>
       )}
 

@@ -45,9 +45,25 @@ export interface ConnectorApp {
   slug: string;
   name: string;
   category: string;
+  /**
+   * Brand logo URL for the app. From Composio's toolkit metadata
+   * (`meta.logo`, served off `logos.composio.dev`) on the live path; the
+   * curated fallback uses the same public CDN by slug. Optional — clients
+   * must degrade to a monogram chip when missing or unloadable.
+   */
+  logoUrl?: string;
   /** Whether THIS install has an ACTIVE Composio connection for the app. */
   connected: boolean;
 }
+
+/**
+ * Composio's public logo CDN, keyed by toolkit slug. Used for the curated
+ * fallback list (whose slugs are all Composio toolkit slugs), so fallback
+ * logos match what the live catalog would return. The UI's `onError`
+ * monogram fallback covers the case where the CDN itself is unreachable.
+ */
+const composioLogo = (slug: string): string =>
+  `https://logos.composio.dev/api/${slug}`;
 
 const CURATED_APPS: ReadonlyArray<Omit<ConnectorApp, "connected">> = [
   { slug: "gmail", name: "Gmail", category: "Email" },
@@ -148,7 +164,15 @@ async function composio(
 
 type CatalogEntry = Omit<ConnectorApp, "connected">;
 
+/**
+ * Bump when the catalog entry shape gains fields (e.g. `logoUrl`) so a
+ * pre-existing cache written by an older build is refetched instead of
+ * serving shape-incomplete entries for up to the 24h TTL.
+ */
+const CACHE_VERSION = 2;
+
 interface CatalogCacheFile {
+  version?: number;
   fetchedAt: number;
   apps: CatalogEntry[];
 }
@@ -167,6 +191,7 @@ function readCatalogCache(): CatalogCacheFile | null {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as CatalogCacheFile;
     if (
+      raw.version === CACHE_VERSION &&
       typeof raw.fetchedAt === "number" &&
       Array.isArray(raw.apps) &&
       raw.apps.length > 0
@@ -181,7 +206,11 @@ function readCatalogCache(): CatalogCacheFile | null {
 }
 
 function writeCatalogCache(apps: CatalogEntry[]): void {
-  const next: CatalogCacheFile = { fetchedAt: Date.now(), apps };
+  const next: CatalogCacheFile = {
+    version: CACHE_VERSION,
+    fetchedAt: Date.now(),
+    apps,
+  };
   catalogMemo = next;
   const path = cachePath();
   if (!path) return;
@@ -198,7 +227,7 @@ function parseToolkitItem(item: unknown): CatalogEntry | null {
   const t = item as {
     slug?: unknown;
     name?: unknown;
-    meta?: { categories?: Array<{ name?: unknown }> };
+    meta?: { logo?: unknown; categories?: Array<{ name?: unknown }> };
   };
   if (typeof t.slug !== "string" || t.slug.length === 0) return null;
   const name =
@@ -207,7 +236,11 @@ function parseToolkitItem(item: unknown): CatalogEntry | null {
     typeof t.meta?.categories?.[0]?.name === "string"
       ? (t.meta.categories[0].name as string)
       : "App";
-  return { slug: t.slug, name, category };
+  const logoUrl =
+    typeof t.meta?.logo === "string" && t.meta.logo.length > 0
+      ? t.meta.logo
+      : composioLogo(t.slug);
+  return { slug: t.slug, name, category, logoUrl };
 }
 
 /**
@@ -239,7 +272,10 @@ async function loadCatalog(
   }
   // Stale cache beats the static list; static list beats nothing.
   if (cached) return { apps: cached.apps, source: "composio" };
-  return { apps: [...CURATED_APPS], source: "curated" };
+  return {
+    apps: CURATED_APPS.map((a) => ({ ...a, logoUrl: composioLogo(a.slug) })),
+    source: "curated",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +284,9 @@ async function loadCatalog(
 
 let connectedMemo: { at: number; slugs: Set<string> } | null = null;
 
-async function connectedSlugs(creds: ComposioCreds | null): Promise<Set<string>> {
+async function connectedSlugs(
+  creds: ComposioCreds | null,
+): Promise<Set<string>> {
   if (!creds) return new Set();
   if (connectedMemo && Date.now() - connectedMemo.at < CONNECTED_TTL_MS) {
     return connectedMemo.slugs;
@@ -370,6 +408,14 @@ const connectorAppSchema = z.object({
   slug: z.string(),
   name: z.string(),
   category: z.string(),
+  logoUrl: z
+    .string()
+    .optional()
+    .describe(
+      "Brand logo URL (Composio toolkit metadata or the public Composio " +
+        "logo CDN for curated fallbacks). Clients render a monogram chip " +
+        "when missing or when the image fails to load.",
+    ),
   connected: z.boolean(),
 });
 

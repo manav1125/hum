@@ -325,12 +325,14 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
           >
             Cue knows{" "}
             <span style={{ fontStyle: "italic", color: C.violetWash }}>
-              {totalCount} skill{totalCount === 1 ? "" : "s"}
+              <span data-slot="skills-total-count">{totalCount}</span> skill
+              {totalCount === 1 ? "" : "s"}
             </span>{" "}
             — and learns new ones from you.
           </div>
           <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
-            {activeCount} {activeCount === 1 ? "is" : "are"} active right now.
+            <span data-slot="skills-active-count">{activeCount}</span>{" "}
+            {activeCount === 1 ? "is" : "are"} active right now.
             Describe any task in chat and Cue will build a skill for it.
           </div>
         </div>

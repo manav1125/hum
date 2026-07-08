@@ -67,9 +67,6 @@ export function MemoriesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const { data, isLoading, isError, refetch } =
-    useMemoryItemsQuery(assistantId);
-
   const [filter, setFilter] = useState<KindFilter>("all");
   const [query, setQuery] = useState("");
   const [confidentOnly, setConfidentOnly] = useState(false);
@@ -78,9 +75,25 @@ export function MemoriesPage() {
   const [draft, setDraft] = useState("");
   const [pendingForget, setPendingForget] = useState<MemoryItem | null>(null);
 
+  // Filter server-side: a kind chip must see ALL memories of that kind, not
+  // just whichever landed on the first page (154 procedural skill-notices
+  // otherwise crowd out every other kind).
+  const { data, isLoading, isError, refetch } = useMemoryItemsQuery(
+    assistantId,
+    filter === "all" ? null : filter,
+  );
+
   const items = useMemo<MemoryItem[]>(() => data?.items ?? [], [data?.items]);
-  const total = items.length;
   const kindCounts = useMemo(() => data?.kindCounts ?? {}, [data?.kindCounts]);
+  // Headline + "All" chip + placeholder = the GLOBAL total, stable across kind
+  // filters. `kindCounts` is computed server-side over all rows (never narrowed
+  // by the active kind), so its sum stays 428 when a chip is selected; it does
+  // narrow under search, which is the correct behaviour there. Falls back to
+  // the response total / loaded page only for older daemons without kindCounts.
+  const total = useMemo(() => {
+    const sum = Object.values(kindCounts).reduce((a, b) => a + b, 0);
+    return sum > 0 ? sum : (data?.total ?? items.length);
+  }, [kindCounts, data?.total, items.length]);
 
   // Header stats — derived from the real items (mock: "+24 this week" / "0.81
   // avg conf").

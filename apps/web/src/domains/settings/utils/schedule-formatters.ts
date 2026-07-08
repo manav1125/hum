@@ -198,10 +198,18 @@ export interface GroupedSchedules {
   pastOneTime: Schedule[];
 }
 
+/** The fields liveness classification actually reads — structural so callers
+ *  holding the raw generated schedule shape (no display enrichments) can use
+ *  `countLiveSchedules` too. */
+type ScheduleLiveness = Pick<
+  Schedule,
+  "isOneShot" | "status" | "enabled" | "nextRunAt"
+>;
+
 // Keyed on the lifecycle status, not lastRunAt/nextRunAt alone: a failed
 // attempt awaiting retry keeps lastRunAt set, and an in-flight run is
 // `firing` with nextRunAt already due — both are still live, not past.
-function isPastOneTime(schedule: Schedule, now: number): boolean {
+function isPastOneTime(schedule: ScheduleLiveness, now: number): boolean {
   if (schedule.status === "fired" || schedule.status === "cancelled") {
     return true;
   }
@@ -212,6 +220,20 @@ function isPastOneTime(schedule: Schedule, now: number): boolean {
     schedule.nextRunAt == null ||
     (!schedule.enabled && schedule.nextRunAt <= now)
   );
+}
+
+/**
+ * How many schedules the Schedules page presents as live — every recurring
+ * schedule plus upcoming one-shots, i.e. everything outside its collapsed
+ * "Past one-time" section. The command-center Scheduled-tasks tile uses this
+ * so its count always equals what that page shows.
+ */
+export function countLiveSchedules(
+  schedules: readonly ScheduleLiveness[],
+  now: number,
+): number {
+  return schedules.filter((s) => !s.isOneShot || !isPastOneTime(s, now))
+    .length;
 }
 
 export function groupSchedules(

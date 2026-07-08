@@ -185,6 +185,9 @@ export type ConnectorAppItem =
  * daemon itself can't be reached (fresh instance still waking, self-host
  * without the route) so the onboarding grid never renders a void.
  * `connected` is honestly false — we can't know without the daemon.
+ * Logos ride Composio's public logo CDN by toolkit slug (same URLs the
+ * daemon's own curated fallback returns); the UI monogram-falls-back when
+ * an image doesn't load.
  */
 const CURATED_CONNECTOR_APPS: ConnectorAppItem[] = (
   [
@@ -223,6 +226,7 @@ const CURATED_CONNECTOR_APPS: ConnectorAppItem[] = (
   slug,
   name,
   category,
+  logoUrl: `https://logos.composio.dev/api/${slug}`,
   connected: false,
 }));
 

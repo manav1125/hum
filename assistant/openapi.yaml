@@ -8045,6 +8045,11 @@ paths:
                           type: string
                         category:
                           type: string
+                        logoUrl:
+                          description:
+                            Brand logo URL (Composio toolkit metadata or the public Composio logo CDN for curated fallbacks). Clients
+                            render a monogram chip when missing or when the image fails to load.
+                          type: string
                         connected:
                           type: boolean
                       required:

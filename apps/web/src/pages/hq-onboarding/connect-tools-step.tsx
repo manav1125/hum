@@ -18,6 +18,7 @@
 import { useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router";
 
+import { ConnectorAppLogo } from "@/components/connector-app-logo";
 import { C, mono } from "@/domains/activity/theme";
 import { MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
@@ -210,12 +211,13 @@ function AppCard({
 
   return (
     <div style={appCardStyle} data-slot="hq-setup-app-card">
-      <span
-        aria-hidden
-        style={{ ...rowIconStyle, width: 32, height: 32, fontSize: 14 }}
-      >
-        {app.name.charAt(0).toUpperCase()}
-      </span>
+      <ConnectorAppLogo
+        name={app.name}
+        logoUrl={app.logoUrl}
+        size={32}
+        imgSize={20}
+        chipStyle={{ ...rowIconStyle, width: 32, height: 32, fontSize: 14 }}
+      />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span
           style={{
