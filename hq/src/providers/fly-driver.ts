@@ -20,6 +20,11 @@
  *   HQ_FLY_VOLUME_SIZE_GB — /workspace volume size (default 10, matching
  *                        render.yaml's disk block); spec.plan like "20gb"
  *                        overrides per-provision
+ *   HQ_FLY_PLACEMENT_ATTEMPTS   — max volume+machine placement tries against
+ *                        Fly host-capacity rejections (default 4, clamped 1..8)
+ *   HQ_FLY_PLACEMENT_BACKOFF_MS — base backoff between placement retries
+ *                        (default 15000); grows exponentially + jittered ±25%,
+ *                        capped at 120s per sleep
  *
  * Custom instance domains (all three set ⇒ enabled; any unset ⇒ the whole
  * feature is skipped and behavior is byte-identical to before):
@@ -60,10 +65,12 @@
  * create new machine with existing volume 'vol_…'" — a volume pins its
  * machines to one physical host, so a volume placed on a host that fills up
  * before machine-create can never receive its machine. provision() retries
- * the volume+machine pair up to PLACEMENT_ATTEMPTS times (~15s apart); a
- * machine-side capacity rejection deletes the pinned volume first so the
- * recreate rolls a fresh host. Non-capacity errors keep the existing
- * fail-fast + teardown behavior.
+ * the volume+machine pair up to HQ_FLY_PLACEMENT_ATTEMPTS times with
+ * exponential + jittered backoff (base HQ_FLY_PLACEMENT_BACKOFF_MS, ~15s);
+ * a machine-side capacity rejection (Fly 412) deletes the pinned volume
+ * first so the recreate rolls a fresh host. Only host-capacity-shaped
+ * failures retry (412/429/5xx + Fly's capacity text); plain client errors
+ * (400/401/404/409) keep the existing fail-fast + teardown behavior.
  */
 
 import type {
@@ -85,20 +92,51 @@ const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 /** How many times provision() peeks at cert issuance before moving on. */
 const CERT_POLL_ATTEMPTS = 6;
 
-/** Volume+machine placement attempts against Fly capacity rejections. */
+/**
+ * Volume+machine placement attempts against Fly capacity rejections.
+ * Overridable via HQ_FLY_PLACEMENT_ATTEMPTS (clamped to 1..8; default 4).
+ */
 const PLACEMENT_ATTEMPTS = 4;
-/** Backoff between placement attempts (tests use tiny values via the ctor). */
+/**
+ * Base backoff between placement attempts. Grows exponentially per attempt
+ * (base·2^(n-1)) and is jittered ±25% so a fleet of concurrent provisions
+ * doesn't re-stampede the same full hosts in lockstep. Overridable via
+ * HQ_FLY_PLACEMENT_BACKOFF_MS (tests inject a tiny value via the ctor).
+ */
 const PLACEMENT_BACKOFF_MS = 15_000;
+/** Ceiling on a single backoff sleep so exponential growth stays sane. */
+const PLACEMENT_BACKOFF_MAX_MS = 120_000;
+
+/** Read a positive-integer env knob, clamped, falling back to a default. */
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = Number(process.env[name] ?? "");
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(raw)));
+}
 
 /**
- * Fly capacity/placement rejections (retryable by re-placing), as seen in
- * production: volume create → "failed_precondition: machine capacity hold
- * failed: insufficient CPUs available to fulfill request"; machine create →
- * 412 "insufficient resources to create new machine with existing volume".
+ * Fly capacity/placement rejections — TRANSIENT, retryable by re-placing on
+ * a (usually) different host. Two shapes seen in production:
+ *   - volume create → "failed_precondition: machine capacity hold failed:
+ *     insufficient CPUs available to fulfill request" (HTTP 422-ish body);
+ *   - machine create → HTTP 412 "insufficient resources to create new
+ *     machine with existing volume 'vol_…'".
+ * We match both the 412 status (the primary host-capacity signal Fly uses)
+ * and the capacity text, plus 429 (rate-limit) and 5xx as best-effort
+ * transient-host signals. Plain client errors (400/401/404/409) never match,
+ * so they keep failing fast.
  */
 export function isCapacityError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /insufficient|capacity hold|failed_precondition|→ 412/i.test(msg);
+  // Client errors that a retry can never fix — fail fast even if some other
+  // pattern would otherwise match.
+  if (/→ (400|401|403|404|409|422)\b/.test(msg) && !/insufficient|capacity hold|failed_precondition/i.test(msg)) {
+    return false;
+  }
+  return (
+    /insufficient|capacity hold|failed_precondition/i.test(msg) ||
+    /→ (412|429|5\d{2})\b/.test(msg)
+  );
 }
 
 interface CustomDomainConfig {
@@ -166,6 +204,7 @@ export class FlyDriver implements InstanceDriver {
   private readonly fetchImpl: typeof fetch;
   private readonly healthTimeoutMs: number;
   private readonly healthIntervalMs: number;
+  private readonly placementAttempts: number;
   private readonly placementBackoffMs: number;
 
   constructor(
@@ -174,7 +213,9 @@ export class FlyDriver implements InstanceDriver {
       /** Provision health-poll budget (tests use tiny values). */
       healthTimeoutMs?: number;
       healthIntervalMs?: number;
-      /** Backoff between capacity-placement attempts (tests use tiny values). */
+      /** Max volume+machine placement attempts (tests use tiny values). */
+      placementAttempts?: number;
+      /** Base backoff between capacity-placement attempts (tests use tiny values). */
       placementBackoffMs?: number;
     } = {},
   ) {
@@ -185,7 +226,24 @@ export class FlyDriver implements InstanceDriver {
       opts.healthTimeoutMs ??
       Number(process.env.HQ_HEALTH_TIMEOUT_MS ?? 5 * 60_000);
     this.healthIntervalMs = opts.healthIntervalMs ?? 5_000;
-    this.placementBackoffMs = opts.placementBackoffMs ?? PLACEMENT_BACKOFF_MS;
+    this.placementAttempts =
+      opts.placementAttempts ??
+      envInt("HQ_FLY_PLACEMENT_ATTEMPTS", PLACEMENT_ATTEMPTS, 1, 8);
+    this.placementBackoffMs =
+      opts.placementBackoffMs ??
+      envInt("HQ_FLY_PLACEMENT_BACKOFF_MS", PLACEMENT_BACKOFF_MS, 1, PLACEMENT_BACKOFF_MAX_MS);
+  }
+
+  /**
+   * Backoff before placement attempt `attempt` (1-indexed; attempt 1 is the
+   * first retry, i.e. it runs after the initial try failed). Exponential in
+   * the attempt number, jittered ±25%, and capped at PLACEMENT_BACKOFF_MAX_MS.
+   */
+  private placementBackoff(attempt: number): number {
+    const exp = this.placementBackoffMs * 2 ** (attempt - 1);
+    const capped = Math.min(exp, PLACEMENT_BACKOFF_MAX_MS);
+    const jitter = capped * 0.25 * (Math.random() * 2 - 1);
+    return Math.max(0, Math.round(capped + jitter));
   }
 
   get configured(): boolean {
@@ -339,8 +397,10 @@ export class FlyDriver implements InstanceDriver {
    *     recreate for a fresh host before retrying the machine.
    *
    * Non-capacity errors throw immediately (the provision() catch tears the
-   * app down, unchanged). Exhausting PLACEMENT_ATTEMPTS throws a
-   * "placement failed after N attempts" error carrying the last rejection.
+   * app down, unchanged). Backoff between attempts is exponential + jittered
+   * (see placementBackoff). Exhausting the attempt cap
+   * (HQ_FLY_PLACEMENT_ATTEMPTS, default 4) throws a "placement failed after
+   * N attempts" error carrying the last rejection.
    */
   private async placeVolumeAndMachine(
     appName: string,
@@ -352,14 +412,15 @@ export class FlyDriver implements InstanceDriver {
     let volume: FlyVolume | null = null;
     let lastError: Error | null = null;
 
-    for (let attempt = 1; attempt <= PLACEMENT_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= this.placementAttempts; attempt++) {
       if (attempt > 1) {
+        const backoffMs = this.placementBackoff(attempt - 1);
         console.warn(
-          `[fly-driver] placement attempt ${attempt - 1}/${PLACEMENT_ATTEMPTS} for ${appName} hit Fly capacity — retrying: ${
+          `[fly-driver] placement retry ${attempt - 1}/${this.placementAttempts - 1} for ${appName} — Fly host capacity (backoff ${backoffMs}ms): ${
             lastError?.message.slice(0, 200)
           }`,
         );
-        await new Promise((r) => setTimeout(r, this.placementBackoffMs));
+        await new Promise((r) => setTimeout(r, backoffMs));
       }
 
       if (!volume) {
@@ -396,7 +457,7 @@ export class FlyDriver implements InstanceDriver {
     }
 
     throw new Error(
-      `fly-driver: placement failed after ${PLACEMENT_ATTEMPTS} attempts: ${lastError?.message}`,
+      `fly-driver: placement failed after ${this.placementAttempts} attempts: ${lastError?.message}`,
     );
   }
 

@@ -13,6 +13,8 @@ const ENV_KEYS = [
   "HQ_FLY_VM_SIZE",
   "HQ_FLY_VM_MEMORY_MB",
   "HQ_FLY_VOLUME_SIZE_GB",
+  "HQ_FLY_PLACEMENT_ATTEMPTS",
+  "HQ_FLY_PLACEMENT_BACKOFF_MS",
   "CUE_IMAGE_REF",
   "HQ_HEALTH_TIMEOUT_MS",
   "HQ_INSTANCE_DOMAIN",
@@ -406,8 +408,109 @@ describe("capacity placement retries", () => {
         new Error(`Fly API POST /apps/x/machines → 412: ${MACHINE_CAPACITY_ERROR}`),
       ),
     ).toBe(true);
-    expect(isCapacityError(new Error("Fly API POST /x → 500: internal error"))).toBe(false);
+    // A bare 412 (no capacity text in the body) is still a host-capacity signal.
+    expect(
+      isCapacityError(new Error("Fly API POST /apps/x/machines → 412: ")),
+    ).toBe(true);
+    // 429 (rate limit) and 5xx are treated as transient/retryable host signals.
+    expect(isCapacityError(new Error("Fly API POST /x → 429: slow down"))).toBe(true);
+    expect(isCapacityError(new Error("Fly API POST /x → 500: internal error"))).toBe(true);
+    expect(isCapacityError(new Error("Fly API POST /x → 503: unavailable"))).toBe(true);
+    // Plain client errors keep failing fast — a retry can't fix them.
+    expect(isCapacityError(new Error("Fly API POST /x → 400: bad request"))).toBe(false);
+    expect(isCapacityError(new Error("Fly API POST /x → 401: unauthorized"))).toBe(false);
+    expect(isCapacityError(new Error("Fly API POST /x → 404: not found"))).toBe(false);
+    expect(isCapacityError(new Error("Fly API POST /x → 409: conflict"))).toBe(false);
     expect(isCapacityError(new Error("Fly volume create returned no id"))).toBe(false);
+  });
+
+  test("machine 412 twice then succeeds — create succeeds after retries", async () => {
+    let machineCreates = 0;
+    let volumeCreates = 0;
+    const { fetchImpl } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          return Response.json({ id: `vol_test${volumeCreates}`, name: "workspace" });
+        }
+        if (method === "POST" && url.endsWith("/machines")) {
+          machineCreates += 1;
+          // Bare 412 (no capacity text) the first two attempts — the third wins.
+          if (machineCreates <= 2) {
+            return new Response("", { status: 412 });
+          }
+        }
+        return undefined;
+      },
+    });
+    const driver = makeDriver(fetchImpl);
+
+    const result = await driver.provision(SPEC);
+    expect(result.externalId).toBe("cue-ada-abcd1234");
+    expect(machineCreates).toBe(3); // 2 rejected + 1 success
+    expect(volumeCreates).toBe(3); // pinned volume re-rolled after each 412
+  });
+
+  test("412 every time — fails after the attempt cap", async () => {
+    let machineCreates = 0;
+    let volumeCreates = 0;
+    const { fetchImpl } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          volumeCreates += 1;
+          return Response.json({ id: `vol_test${volumeCreates}`, name: "workspace" });
+        }
+        if (method === "POST" && url.endsWith("/machines")) {
+          machineCreates += 1;
+          return new Response("", { status: 412 });
+        }
+        return undefined;
+      },
+    });
+    // Cap at 3 attempts via the ctor knob (mirrors HQ_FLY_PLACEMENT_ATTEMPTS).
+    const driver = new FlyDriver({
+      fetchImpl,
+      healthTimeoutMs: 100,
+      healthIntervalMs: 10,
+      placementAttempts: 3,
+      placementBackoffMs: 1,
+    });
+
+    await expect(driver.provision(SPEC)).rejects.toThrow(
+      /placement failed after 3 attempts/,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(machineCreates).toBe(3);
+  });
+
+  test("HQ_FLY_PLACEMENT_ATTEMPTS env overrides the attempt cap", async () => {
+    process.env.HQ_FLY_PLACEMENT_ATTEMPTS = "2";
+    let machineCreates = 0;
+    const { fetchImpl } = fakeFlyFetch({
+      route: (method, url) => {
+        if (method === "POST" && url.endsWith("/volumes")) {
+          return Response.json({ id: `vol_x${machineCreates}`, name: "workspace" });
+        }
+        if (method === "POST" && url.endsWith("/machines")) {
+          machineCreates += 1;
+          return new Response("", { status: 412 });
+        }
+        return undefined;
+      },
+    });
+    // No placementAttempts in ctor ⇒ the env knob is consulted.
+    const driver = new FlyDriver({
+      fetchImpl,
+      healthTimeoutMs: 100,
+      healthIntervalMs: 10,
+      placementBackoffMs: 1,
+    });
+
+    await expect(driver.provision(SPEC)).rejects.toThrow(
+      /placement failed after 2 attempts/,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(machineCreates).toBe(2);
   });
 
   test("volume capacity hold failure retries the volume create, then succeeds", async () => {
@@ -525,6 +628,9 @@ describe("capacity placement retries", () => {
     ).toBe(true);
   });
 
+  // A 4xx CLIENT error (here 400) is not host-capacity-shaped — a retry
+  // can't fix it, so placement fails fast. (5xx/429 ARE retried as transient
+  // host signals — see the isCapacityError cases above.)
   test("non-capacity machine errors are NOT retried (fail fast + teardown)", async () => {
     let volumeCreates = 0;
     let machineCreates = 0;
@@ -536,14 +642,14 @@ describe("capacity placement retries", () => {
         }
         if (method === "POST" && url.endsWith("/machines")) {
           machineCreates += 1;
-          return new Response("internal error", { status: 500 });
+          return new Response("bad request", { status: 400 });
         }
         return undefined;
       },
     });
     const driver = makeDriver(fetchImpl);
 
-    await expect(driver.provision(SPEC)).rejects.toThrow(/→ 500/);
+    await expect(driver.provision(SPEC)).rejects.toThrow(/→ 400/);
     await new Promise((r) => setTimeout(r, 50));
 
     expect(volumeCreates).toBe(1);
@@ -563,13 +669,13 @@ describe("capacity placement retries", () => {
       route: (method, url) => {
         if (method === "POST" && url.endsWith("/volumes")) {
           volumeCreates += 1;
-          return new Response("internal error", { status: 500 });
+          return new Response("bad request", { status: 400 });
         }
         return undefined;
       },
     });
     const driver = makeDriver(fetchImpl);
-    await expect(driver.provision(SPEC)).rejects.toThrow(/→ 500/);
+    await expect(driver.provision(SPEC)).rejects.toThrow(/→ 400/);
     expect(volumeCreates).toBe(1);
   });
 });
