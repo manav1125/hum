@@ -24,34 +24,215 @@ if [ "${CUE_RESET_GUARDIAN_LOCK:-}" = "1" ]; then
   echo "[cue-app] guardian-init lock reset (CUE_RESET_GUARDIAN_LOCK=1) — re-pairing enabled this boot" >&2
 fi
 
-echo "[cue-app] starting daemon (workspace=${VELLUM_WORKSPACE_DIR})" >&2
-# Daemon via its normal entrypoint (kata/apt prep, workspace hooks), backgrounded.
+# ── Daemon supervision policy ───────────────────────────────────────────
+# The daemon can be OOM-killed (SIGKILL/137) or crash on 1GB machines during
+# the first-boot burst (qdrant download + embedding worker). Rather than
+# recycle the whole container on the first death — which throws away the
+# gateway, its warm state, and the platform's slow reschedule — we RESPAWN the
+# daemon in place with exponential backoff and a bounded restart budget.
+#
+# Budget: allow at most CUE_DAEMON_MAX_RESTARTS respawns inside a rolling
+# CUE_DAEMON_RESTART_WINDOW_S window. A hard crash-loop (daemon dies faster
+# than it can boot) burns the budget quickly; once exhausted we exit non-zero
+# so the orchestrator (Fly "always" / Render) recycles the machine — a fresh
+# container may land on a healthier host or clear a wedged volume. This bounds
+# the in-container respawn so we never spin forever fighting an unrecoverable
+# fault.
+CUE_DAEMON_MAX_RESTARTS="${CUE_DAEMON_MAX_RESTARTS:-5}"
+CUE_DAEMON_RESTART_WINDOW_S="${CUE_DAEMON_RESTART_WINDOW_S:-600}"
+CUE_DAEMON_BACKOFF_BASE_S="${CUE_DAEMON_BACKOFF_BASE_S:-2}"
+CUE_DAEMON_BACKOFF_MAX_S="${CUE_DAEMON_BACKOFF_MAX_S:-60}"
+
+# Per-boot stderr tail of the most recent daemon process. The supervisor reads
+# it after a death to tell a *contention* exit (another daemon already holds
+# the IPC socket / DB — src/daemon/startup-error.ts emits DAEMON_ERROR: with
+# category PORT_IN_USE or DB_LOCKED) apart from an OOM/crash. Contention must
+# NOT be respawned: per assistant/CLAUDE.md "Daemon startup philosophy", a
+# daemon with no transport exits on purpose; respawning it just spins a doomed
+# duplicate that runs background jobs against the shared DB. So contention →
+# exit; everything else → respawn.
+DAEMON_STDERR_TAIL="${VELLUM_WORKSPACE_DIR}/.daemon-stderr.log"
+# FIFO carrying the daemon's stderr to a tee that fans it out to BOTH the
+# container log stream (>&2) and DAEMON_STDERR_TAIL. debian /bin/sh is dash,
+# which lacks bash process substitution (`2> >(...)`), so we use a POSIX named
+# pipe instead — and it keeps DAEMON_PID pointing at the daemon entrypoint
+# rather than at a pipeline's tail element.
+DAEMON_STDERR_FIFO="${VELLUM_WORKSPACE_DIR}/.daemon-stderr.fifo"
+DAEMON_TEE_PID=""
+
+# start_daemon: launch the daemon backgrounded via its normal entrypoint
+# (kata/apt prep, workspace hooks), setting DAEMON_PID to the new process.
 # DEBUG_STDOUT_LOGS=1: the daemon's pino logger writes to its rotating file
 # ONLY when stdout is not a TTY (src/util/logger.ts), so without this opt-in
 # none of the daemon's structured logs reach container stdout — Render's log
-# stream showed gateway + raw echo lines but no daemon output. Scoped to the
-# daemon subshell (the `keys set` seeding below discards its output anyway)
-# and overridable: set DEBUG_STDOUT_LOGS=0 in the service env to go back to
-# file-only logging.
-( cd /app/assistant && DEBUG_STDOUT_LOGS="${DEBUG_STDOUT_LOGS:-1}" exec /app/assistant/docker-entrypoint.sh ) &
-DAEMON_PID=$!
+# stream showed gateway + raw echo lines but no daemon output. Overridable: set
+# DEBUG_STDOUT_LOGS=0 in the service env to go back to file-only logging.
+#
+# The daemon's stderr flows through DAEMON_STDERR_FIFO into a tee so the
+# container log stream still sees it (>&2) AND the supervisor can inspect the
+# death cause in DAEMON_STDERR_TAIL. Each spawn truncates the tail so a prior
+# boot's DAEMON_ERROR: line can't be misread as this boot's death cause.
+start_daemon() {
+  : > "$DAEMON_STDERR_TAIL" 2>/dev/null || true
+  # (Re)create the FIFO and start a fresh tee reader for this daemon instance.
+  rm -f "$DAEMON_STDERR_FIFO" 2>/dev/null || true
+  mkfifo "$DAEMON_STDERR_FIFO" 2>/dev/null || true
+  if [ -p "$DAEMON_STDERR_FIFO" ]; then
+    tee -a "$DAEMON_STDERR_TAIL" < "$DAEMON_STDERR_FIFO" >&2 &
+    DAEMON_TEE_PID=$!
+    (
+      cd /app/assistant &&
+        DEBUG_STDOUT_LOGS="${DEBUG_STDOUT_LOGS:-1}" \
+          exec /app/assistant/docker-entrypoint.sh 2> "$DAEMON_STDERR_FIFO"
+    ) &
+    DAEMON_PID=$!
+  else
+    # FIFO unavailable (e.g. read-only workspace) — fall back to inheriting
+    # stderr directly. We lose contention detection but never lose the daemon.
+    DAEMON_TEE_PID=""
+    (
+      cd /app/assistant &&
+        DEBUG_STDOUT_LOGS="${DEBUG_STDOUT_LOGS:-1}" \
+          exec /app/assistant/docker-entrypoint.sh
+    ) &
+    DAEMON_PID=$!
+  fi
+}
+
+# daemon_exit_is_contention: true when the daemon's last stderr shows it aborted
+# because another instance already holds the transport/DB (PORT_IN_USE /
+# DB_LOCKED). Those are the categories emitted by the duplicate-daemon abort in
+# src/daemon/server.ts → startup-error.ts. In that case we must exit, not
+# respawn.
+daemon_exit_is_contention() {
+  [ -f "$DAEMON_STDERR_TAIL" ] || return 1
+  # Match the last DAEMON_ERROR: line's category. grep for the structured
+  # marker so ordinary log noise mentioning "port" can't trip this.
+  grep -a 'DAEMON_ERROR:' "$DAEMON_STDERR_TAIL" 2>/dev/null |
+    grep -Eq '"error":"(PORT_IN_USE|DB_LOCKED)"'
+}
+
+# ── Restart budget + backoff bookkeeping ────────────────────────────────
+# Restart timestamps recorded in a rolling window; RESTART_COUNT is the number
+# still inside CUE_DAEMON_RESTART_WINDOW_S. Reap the daemon (and its tee) and
+# decide: contention → exit non-zero (recycle container, don't duplicate);
+# budget exhausted → exit non-zero (crash-loop, let orchestrator recycle);
+# otherwise → back off (exponential, capped) and respawn.
+RESTART_COUNT=0
+# Newline-separated epoch seconds of restarts still within the window.
+RESTART_TIMES=""
+
+# now_s: current epoch seconds (date +%s is POSIX-portable).
+now_s() { date +%s; }
+
+# reap_daemon: block until the dead daemon (and its tee reader) are fully
+# collected so no zombies linger and DAEMON_STDERR_TAIL is flushed.
+reap_daemon() {
+  wait "$DAEMON_PID" 2>/dev/null || true
+  if [ -n "$DAEMON_TEE_PID" ]; then
+    # The tee exits on its own once the daemon closes the FIFO write end; give
+    # it a moment, then make sure it's gone so its buffer is flushed to the tail.
+    wait "$DAEMON_TEE_PID" 2>/dev/null || true
+    DAEMON_TEE_PID=""
+  fi
+}
+
+# supervise_daemon_death: called whenever the daemon process is found dead.
+# Returns 0 after a successful respawn (caller resumes monitoring); exits the
+# whole script non-zero when the death must recycle the container.
+supervise_daemon_death() {
+  _where="${1:-supervisor}"
+  reap_daemon
+
+  # Contention (another daemon holds the transport/DB): the daemon exited on
+  # purpose. Respawning would create a doomed duplicate — hand off to the
+  # orchestrator to recycle the whole machine instead.
+  if daemon_exit_is_contention; then
+    echo "[cue-app] daemon aborted: another instance holds the IPC socket/DB (duplicate-daemon guard) — NOT respawning, recycling container" >&2
+    kill "$GATEWAY_PID" 2>/dev/null || true
+    exit 1
+  fi
+
+  # Prune restart timestamps outside the rolling window, recompute the count.
+  _now="$(now_s)"
+  _cutoff=$((_now - CUE_DAEMON_RESTART_WINDOW_S))
+  _kept=""
+  RESTART_COUNT=0
+  # shellcheck disable=SC2086
+  for _t in $RESTART_TIMES; do
+    if [ "$_t" -ge "$_cutoff" ]; then
+      _kept="$_kept $_t"
+      RESTART_COUNT=$((RESTART_COUNT + 1))
+    fi
+  done
+  RESTART_TIMES="$_kept"
+
+  if [ "$RESTART_COUNT" -ge "$CUE_DAEMON_MAX_RESTARTS" ]; then
+    echo "[cue-app] daemon crash-looped: ${RESTART_COUNT} restarts within ${CUE_DAEMON_RESTART_WINDOW_S}s (budget=${CUE_DAEMON_MAX_RESTARTS}) — giving up, recycling container" >&2
+    kill "$GATEWAY_PID" 2>/dev/null || true
+    exit 1
+  fi
+
+  # Exponential backoff: base * 2^count, capped. Uses the pre-increment count
+  # so the first restart waits base seconds.
+  _backoff="$CUE_DAEMON_BACKOFF_BASE_S"
+  _n=0
+  while [ "$_n" -lt "$RESTART_COUNT" ]; do
+    _backoff=$((_backoff * 2))
+    if [ "$_backoff" -ge "$CUE_DAEMON_BACKOFF_MAX_S" ]; then
+      _backoff="$CUE_DAEMON_BACKOFF_MAX_S"
+      break
+    fi
+    _n=$((_n + 1))
+  done
+
+  _attempt=$((RESTART_COUNT + 1))
+  echo "[cue-app] daemon died (${_where}) — RESPAWN attempt ${_attempt}/${CUE_DAEMON_MAX_RESTARTS} in ${_backoff}s (window=${CUE_DAEMON_RESTART_WINDOW_S}s)" >&2
+  # Backoff via a backgrounded sleep + wait so the TERM/INT trap can still fire
+  # promptly during the pause.
+  sleep "$_backoff" &
+  wait $! 2>/dev/null || true
+
+  RESTART_TIMES="$RESTART_TIMES $(now_s)"
+  RESTART_COUNT=$((RESTART_COUNT + 1))
+  start_daemon
+  echo "[cue-app] daemon respawned (pid ${DAEMON_PID}); waiting for socket" >&2
+  return 0
+}
+
+echo "[cue-app] starting daemon (workspace=${VELLUM_WORKSPACE_DIR})" >&2
+start_daemon
+
+# GATEWAY_PID is referenced by supervise_daemon_death (to tear the gateway down
+# when a death recycles the container). It only exists after the gateway starts
+# below; predeclare it empty so the socket-wait phase can share the supervisor.
+GATEWAY_PID=""
 
 # Wait for the daemon's IPC socket — the gateway connects to it on boot.
 # Large workspaces boot slowly (bun cold start + SQLite WAL replay + schema
 # migrations can exceed 3 minutes on a multi-hundred-MB DB), so the budget
 # must be generous; a too-short wait turns a healthy slow boot into a crash
 # loop. Override per-deploy with CUE_DAEMON_SOCKET_WAIT_S.
+#
+# If the daemon dies before the socket appears (e.g. OOM mid-boot), route the
+# death through the supervisor: a contention/duplicate exit or an exhausted
+# budget recycles the container, otherwise it respawns and we restart the wait.
+# The wait budget resets per daemon instance — each fresh boot gets its full
+# SOCK_WAIT to replay WAL + migrate.
 SOCK_WAIT="${CUE_DAEMON_SOCKET_WAIT_S:-900}"
 i=0
 while [ ! -S "$SOCK" ]; do
   if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
     echo "[cue-app] daemon exited before creating $SOCK" >&2
-    wait "$DAEMON_PID" 2>/dev/null || true
-    exit 1
+    supervise_daemon_death "socket-wait"
+    # Respawned: reset the per-instance wait budget and keep polling.
+    i=0
+    continue
   fi
   i=$((i + 1))
   if [ "$i" -ge "$SOCK_WAIT" ]; then
-    echo "[cue-app] timed out after ${i}s waiting for $SOCK" >&2
+    echo "[cue-app] timed out after ${i}s waiting for $SOCK — recycling container" >&2
+    kill "$DAEMON_PID" 2>/dev/null || true
     exit 1
   fi
   [ $((i % 30)) -eq 0 ] && echo "[cue-app] still waiting for daemon socket (${i}s/${SOCK_WAIT}s — large DBs replay WAL + migrate on first boot)" >&2
@@ -137,20 +318,23 @@ done
 # processes. Without supervision, a daemon OOM-kill (seen live during the
 # first-boot burst on 1GB machines: qdrant download + embedding worker) leaves
 # the gateway serving /healthz 200 — a healthy-looking zombie that errors on
-# every chat/mission. Exiting 1 as soon as EITHER process dies lets the
-# platform restart policy (Fly "always" / Render) reboot the whole machine
-# cleanly.
+# every chat/mission. The supervisor below RESPAWNS a crashed/OOM-killed daemon
+# in place (bounded budget + backoff) so a transient OOM self-heals without a
+# full machine reschedule; only an unrecoverable fault (duplicate-daemon abort,
+# crash-loop past budget, or a gateway death) exits non-zero to let the platform
+# restart policy (Fly "always" / Render) reboot the whole machine cleanly.
 cd /app/gateway
 bun --smol run src/index.ts &
 GATEWAY_PID=$!
 
-# Clean shutdown: forward SIGTERM/SIGINT (docker stop / platform stop) to both
-# processes and wait for them, so a container stop is never treated as a
-# crash.
+# Clean shutdown: forward SIGTERM/SIGINT (docker stop / platform stop) to the
+# gateway, daemon, and the daemon's stderr tee, then wait, so a container stop
+# is never treated as a crash (and never triggers a respawn).
 _shutdown() {
   trap '' TERM INT
   echo "[cue-app] stop signal — shutting down gateway and daemon" >&2
   kill "$GATEWAY_PID" "$DAEMON_PID" 2>/dev/null || true
+  [ -n "$DAEMON_TEE_PID" ] && kill "$DAEMON_TEE_PID" 2>/dev/null || true
   wait "$GATEWAY_PID" 2>/dev/null || true
   wait "$DAEMON_PID" 2>/dev/null || true
   exit 0
@@ -160,15 +344,23 @@ trap _shutdown TERM INT
 # Supervise: debian-slim /bin/sh is dash, which lacks bash's `wait -n`, so
 # poll both PIDs. `sleep` runs backgrounded + `wait`ed so the TERM/INT trap
 # fires immediately instead of after the current sleep completes.
+#
+# Daemon death → supervise_daemon_death: respawn on OOM/crash within budget, or
+# exit non-zero on contention / crash-loop. Gateway death → exit non-zero: the
+# gateway is cheap and stateless to recycle and depends on the daemon socket, so
+# a fresh container is the right recovery (no in-place gateway respawn).
 while :; do
   if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
-    echo "[cue-app] daemon exited — restarting container" >&2
-    kill "$GATEWAY_PID" 2>/dev/null || true
-    exit 1
+    echo "[cue-app] daemon exited unexpectedly" >&2
+    supervise_daemon_death "supervisor"
+    # Respawned within budget — resume monitoring. The gateway reconnects to
+    # the new daemon over the same socket path once it rebinds.
+    continue
   fi
   if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
     echo "[cue-app] gateway exited — restarting container" >&2
     kill "$DAEMON_PID" 2>/dev/null || true
+    [ -n "$DAEMON_TEE_PID" ] && kill "$DAEMON_TEE_PID" 2>/dev/null || true
     exit 1
   fi
   sleep 5 &
