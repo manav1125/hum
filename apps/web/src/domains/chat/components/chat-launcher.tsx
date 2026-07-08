@@ -1,9 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import {
   CalendarDays,
   FileText,
   Inbox,
   ListChecks,
+  Loader2,
   Mail,
   MessageSquare,
   Search,
@@ -12,7 +15,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { homeFeedGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import { toast } from "@vellumai/design-library/components/toast";
+
+import { homeFeedByIdActionsByActionIdPost } from "@/generated/daemon/sdk.gen";
+import {
+  homeFeedGetOptions,
+  homeFeedGetQueryKey,
+} from "@/generated/daemon/@tanstack/react-query.gen";
+import { routes } from "@/utils/routes";
 import type { FeedItem, FeedItemCategory } from "@vellumai/assistant-api";
 
 /**
@@ -80,11 +90,16 @@ export function ChatLauncher({
   assistantId: string;
   onSeed: (text: string) => void;
 }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  const feedOpts = {
+    path: { assistant_id: assistantId },
+    query: { timeAwaySeconds: 0 },
+  } as const;
   const { data } = useQuery({
-    ...homeFeedGetOptions({
-      path: { assistant_id: assistantId },
-      query: { timeAwaySeconds: 0 },
-    }),
+    ...homeFeedGetOptions(feedOpts),
     enabled: !!assistantId,
     staleTime: 30_000,
   });
@@ -97,6 +112,76 @@ export function ChatLauncher({
   );
   const openItems = allOpen.slice(0, 3);
   const openCount = allOpen.length;
+
+  // Execute an open item's primary action directly, the same way Home's
+  // next-move card does. `mode: "smart"` lets the daemon route off the
+  // action's category + the autonomy policy: reversible work (draft, research)
+  // runs autonomously in the background; consequential actions (send, pay,
+  // approve, delete) are queued for approval rather than fired — so a single
+  // tap here never sends or spends. Thread-routed actions open a foreground
+  // conversation. Falls back to seeding the composer only when an action
+  // carries a prompt but no id (defensive — older feed payloads).
+  const triggerAction = useMutation({
+    mutationFn: async (vars: { itemId: string; actionId: string }) => {
+      const { data: result } = await homeFeedByIdActionsByActionIdPost({
+        path: {
+          assistant_id: assistantId,
+          id: vars.itemId,
+          actionId: vars.actionId,
+        },
+        body: { mode: "smart" },
+        throwOnError: true,
+      });
+      return result;
+    },
+    onSettled: () => {
+      setRunningId(null);
+      void queryClient.invalidateQueries({
+        queryKey: homeFeedGetQueryKey(feedOpts),
+      });
+    },
+  });
+
+  const runItem = (it: FeedItem) => {
+    const action = it.actions?.[0];
+    if (!action?.id) {
+      onSeed(action?.prompt ?? `Help me with: ${it.title}`);
+      return;
+    }
+    setRunningId(it.id);
+    triggerAction.mutate(
+      { itemId: it.id, actionId: action.id },
+      {
+        onSuccess: (result) => {
+          const r = result as {
+            mode?: string;
+            conversationId?: string;
+            workItemId?: string;
+          } | null;
+          if (r?.mode === "thread" && r.conversationId) {
+            void navigate(routes.conversation(r.conversationId));
+          } else if (r?.mode === "background") {
+            toast.success("Running in the background — track it in Activity.", {
+              action: {
+                label: "View in Activity",
+                onClick: () => void navigate(routes.activity),
+              },
+            });
+          } else if (r?.mode === "needs_you") {
+            toast.success("Queued — it'll wait for your approval in Activity.", {
+              action: {
+                label: "Review in Activity",
+                onClick: () => void navigate(routes.activity),
+              },
+            });
+          }
+        },
+        onError: () => {
+          toast.error("Couldn't start that. Try again.");
+        },
+      },
+    );
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-[var(--chat-max-width)] flex-col gap-4 px-3 pt-2 sm:px-6">
@@ -118,11 +203,11 @@ export function ChatLauncher({
         })}
       </div>
 
-      {/* open action items — your real work, surfaced as one-tap starters.
-          Tapping a card seeds the composer with the action's prompt
-          (review-then-send), the same safe path the capability CTAs use — the
-          labelled pill mirrors Home's action without one-tap-sending a
-          consequential action straight from a greeting. */}
+      {/* open action items — your real work, surfaced as one-tap actions.
+          Tapping a card runs its primary action via the daemon's autonomy
+          policy (`mode: "smart"`): reversible work runs in the background,
+          consequential actions queue for approval, thread-routed ones open a
+          conversation. The labelled pill is the action Cue will take. */}
       {openItems.length > 0 && (
         <div className="flex flex-col gap-2.5">
           <div className="text-center text-sm text-[var(--content-secondary)]">
@@ -135,21 +220,18 @@ export function ChatLauncher({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {openItems.map((it) => {
               const action = it.actions?.[0];
-              const prompt = action?.prompt ?? `Help me with: ${it.title}`;
               const Icon = categoryIcon(it.category);
               const urgent =
                 it.urgency === "high" || it.urgency === "critical";
+              const running = runningId === it.id;
               return (
                 <button
                   key={it.id}
                   type="button"
-                  onClick={() => onSeed(prompt)}
-                  title={
-                    action
-                      ? `${action.label} — opens in the composer to review first`
-                      : undefined
-                  }
-                  className={`group flex items-center gap-3 rounded-xl border bg-[var(--surface-overlay)] p-3 text-left transition-colors hover:border-[var(--border-active)] ${
+                  disabled={running}
+                  onClick={() => runItem(it)}
+                  title={action ? action.label : undefined}
+                  className={`group flex items-center gap-3 rounded-xl border bg-[var(--surface-overlay)] p-3 text-left transition-colors hover:border-[var(--border-active)] disabled:opacity-70 ${
                     urgent
                       ? "border-[var(--accent-cue)]"
                       : "border-[var(--border-base)]"
@@ -176,8 +258,11 @@ export function ChatLauncher({
                     )}
                   </div>
                   {action && (
-                    <span className="shrink-0 rounded-lg bg-[var(--primary-base)] px-2.5 py-1 text-xs font-medium text-[var(--content-inset)] transition-opacity group-hover:opacity-90">
-                      {action.label}
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--primary-base)] px-2.5 py-1 text-xs font-medium text-[var(--content-inset)] transition-opacity group-hover:opacity-90">
+                      {running && (
+                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                      )}
+                      {running ? "Starting…" : action.label}
                     </span>
                   )}
                 </button>
