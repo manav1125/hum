@@ -597,10 +597,12 @@ function ExploreTab({
   assistantId,
   perSource,
   totalItems,
+  onBrowseSources,
 }: {
   assistantId: string;
   perSource: ReturnType<typeof useSourceItems>;
   totalItems: number;
+  onBrowseSources: () => void;
 }) {
   const isNarrow = useIsMobile();
   const [query, setQuery] = useState("");
@@ -611,6 +613,7 @@ function ExploreTab({
   const [installError, setInstallError] = useState<string | null>(null);
 
   const needle = query.trim().toLowerCase();
+  const anyLoading = perSource.some((group) => group.isLoading);
   const visible = perSource
     .filter((group) => !sourceFilter || group.source.address === sourceFilter)
     .map((group) => ({
@@ -753,6 +756,13 @@ function ExploreTab({
         </div>
       ) : null}
 
+      {/* First run: no sources resolved to any skills yet, nothing loading.
+          Rather than a bare search box over blank space, invite the user to
+          add a source — the real action that fills this tab. */}
+      {!anyLoading && totalItems === 0 && !needle ? (
+        <ExploreEmptyState onBrowseSources={onBrowseSources} />
+      ) : null}
+
       {visible.map((group) => (
         <section key={group.source.address}>
           <SectionLabel>
@@ -804,6 +814,87 @@ function ExploreTab({
           error={installError}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * First-run empty state for Explore. Names the space, one calm line, one CTA
+ * that jumps to the Sources tab — the real action that populates this tab.
+ */
+function ExploreEmptyState({
+  onBrowseSources,
+}: {
+  onBrowseSources: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        gap: 14,
+        padding: "56px 24px",
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        background: C.surface,
+        marginTop: 20,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 13,
+          background: C.sunken,
+          display: "grid",
+          placeItems: "center",
+          fontSize: 24,
+        }}
+      >
+        🧩
+      </span>
+      <div
+        style={{
+          fontFamily: serif,
+          fontSize: 22,
+          letterSpacing: "-0.2px",
+          color: C.t1,
+        }}
+      >
+        Find skills worth running
+      </div>
+      <p
+        style={{
+          fontSize: 13,
+          color: C.t2,
+          lineHeight: 1.6,
+          maxWidth: 380,
+          margin: 0,
+        }}
+      >
+        Skills come from GitHub sources you trust. Add one and Cue indexes it,
+        then shows you exactly what each skill can touch before it runs.
+      </p>
+      <button
+        type="button"
+        onClick={onBrowseSources}
+        style={{
+          fontFamily: "inherit",
+          fontSize: 13,
+          fontWeight: 500,
+          color: C.bg,
+          background: C.ink,
+          border: "none",
+          borderRadius: 10,
+          padding: "10px 18px",
+          cursor: "pointer",
+        }}
+      >
+        Add a source
+      </button>
     </div>
   );
 }
@@ -1516,6 +1607,7 @@ export function MarketplacePage() {
               assistantId={assistantId}
               perSource={perSource}
               totalItems={totalItems}
+              onBrowseSources={() => setTab("sources")}
             />
           ) : tab === "sources" ? (
             <SourcesTab

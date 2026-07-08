@@ -7,6 +7,7 @@ import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { DetailCard } from "@/components/detail-card";
 import { SystemPermissionsCard } from "@/components/system-permissions-card";
 import { AccessConsentSetting } from "@/domains/settings/components/access-consent-setting";
+import { AutonomySettings } from "@/domains/settings/components/autonomy-settings";
 import { BiometricSettingsCard } from "@/domains/settings/components/biometric-settings-card";
 import { RiskToleranceSettings } from "@/domains/settings/components/risk-tolerance-settings";
 import { TrustRules } from "@/domains/settings/components/trust-rules/trust-rules";
@@ -121,6 +122,7 @@ export function PrivacyPage() {
       <BiometricSettingsCard />
       <SystemPermissionsCard />
       <TrustRules />
+      <AutonomySettings />
       <RiskToleranceSettings />
       <DetailCard title="Privacy">
         <div className="space-y-4">

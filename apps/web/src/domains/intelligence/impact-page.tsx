@@ -209,6 +209,13 @@ export function ImpactPage() {
   const minsPerTask =
     taskCount > 0 ? Math.round((hoursSaved * 60) / taskCount) : 0;
 
+  // First run: nothing recorded yet. Rather than a hero reading "gave you
+  // back 0 hours" over empty charts, show an inviting empty state. The moment
+  // Cue handles its first task the real dashboard takes over.
+  if (assistantId && taskCount === 0 && hoursSaved === 0) {
+    return <ImpactEmptyState onConnect={() => navigate(routes.connectors)} />;
+  }
+
   return (
     <div
       style={{
@@ -694,6 +701,81 @@ export function ImpactPage() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * First-run empty state. Names the space, one calm line of body, one CTA.
+ * The CTA opens Connectors — the real action that unlocks work Cue can do on
+ * your behalf, which is what fills this surface. No fabricated metrics: the
+ * dashboard only renders once real impact has been recorded.
+ */
+function ImpactEmptyState({ onConnect }: { onConnect: () => void }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: C.bg,
+        color: C.ink,
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        padding: "60px 24px",
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          textAlign: "center",
+          gap: 16,
+          maxWidth: 420,
+        }}
+      >
+        <Aperture />
+        <div
+          style={{
+            fontFamily: serif,
+            fontSize: 28,
+            letterSpacing: "-.3px",
+            lineHeight: 1.2,
+          }}
+        >
+          Your week with Cue starts here
+        </div>
+        <p
+          style={{
+            fontSize: 13.5,
+            color: C.t2,
+            lineHeight: 1.6,
+            margin: 0,
+          }}
+        >
+          As Cue handles email, meetings, and errands for you, the hours it
+          gives back show up here — traced to the work behind them. Connect a
+          tool to give it something to run with.
+        </p>
+        <button
+          type="button"
+          onClick={onConnect}
+          style={{
+            fontSize: 12.5,
+            background: C.blue,
+            color: "#fff",
+            border: "none",
+            borderRadius: 9,
+            padding: "10px 18px",
+            cursor: "pointer",
+          }}
+        >
+          Connect a tool
+        </button>
       </div>
     </div>
   );
