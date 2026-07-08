@@ -2,7 +2,7 @@
 // Memory Graph — Data access layer
 // ---------------------------------------------------------------------------
 
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, type SQL, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 import { getDb } from "../db-connection.js";
@@ -397,6 +397,42 @@ export function queryCapabilityNodes(
     .limit(limit)
     .all();
   return rows.map(rowToNode);
+}
+
+/**
+ * Drizzle SQL predicate that matches auto-seeded capability nodes (skill /
+ * CLI "... is available." notices) produced by `capability-seed.ts`. These are
+ * injected into the LLM context as the "Skills You Can Use" section but are
+ * NOT user memories — they must be excluded from the user-facing Memory
+ * surface (listing and counts) so ~150 confidence-1.0 procedural notices do
+ * not crowd out real memories.
+ *
+ * Keep this in sync with `isCapabilityNode` (types.ts) and the inline filter
+ * in `queryCapabilityNodes` above — all three describe the same content
+ * signatures (legacy `skill:`/`cli:` prefixes and the current
+ * `The "..." ... is available.` prose).
+ */
+export function capabilityNodeSqlFilter(): SQL {
+  return and(
+    eq(memoryGraphNodes.type, "procedural"),
+    or(
+      sql`${memoryGraphNodes.content} LIKE 'skill:%'`,
+      sql`${memoryGraphNodes.content} LIKE 'cli:%'`,
+      and(
+        sql`${memoryGraphNodes.content} LIKE 'The "%'`,
+        sql`${memoryGraphNodes.content} LIKE '% is available.%'`,
+      ),
+    ),
+  ) as SQL;
+}
+
+/**
+ * Negated form of {@link capabilityNodeSqlFilter}: matches every node that is
+ * NOT an auto-seeded capability notice. Use this in queries that surface or
+ * count user memories so skill-availability notices stay out.
+ */
+export function excludeCapabilityNodesSqlFilter(): SQL {
+  return sql`NOT (${capabilityNodeSqlFilter()})`;
 }
 
 /** Count all non-gone nodes in a scope. */

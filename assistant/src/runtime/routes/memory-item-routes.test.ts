@@ -228,6 +228,60 @@ describe("Memory Item Routes", () => {
       expect(body.items[0].id).toBe("i1");
     });
 
+    test("excludes auto-seeded skill/CLI capability notices", async () => {
+      // Real user memory — should surface.
+      insertItem({
+        id: "real",
+        type: "semantic",
+        content: "dark mode\nUser prefers dark mode",
+      });
+      // Organic procedural memory — should surface (NOT a capability notice).
+      insertItem({
+        id: "organic",
+        type: "procedural",
+        content: "FFmpeg needs -ac 2 for stereo output",
+      });
+      // Auto-seeded skill availability notice (current prose format) — dropped.
+      insertItem({
+        id: "cap-skill",
+        type: "procedural",
+        content:
+          'The "Inbox Cleanup" skill (inbox-cleanup) is available. Cleans your inbox.',
+      });
+      // Auto-seeded CLI availability notice (current prose format) — dropped.
+      insertItem({
+        id: "cap-cli",
+        type: "procedural",
+        content:
+          'The "assistant status" CLI command is available. Shows status.',
+      });
+      // Legacy-format capability notices — dropped.
+      insertItem({
+        id: "cap-skill-legacy",
+        type: "procedural",
+        content: "skill:heartbeat\nBody temperature check-ins.",
+      });
+      insertItem({
+        id: "cap-cli-legacy",
+        type: "procedural",
+        content: "cli:doctor\nRuns diagnostics.",
+      });
+
+      const res = await callHandler(route);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: Array<{ id: string }>;
+        total: number;
+        kindCounts: Record<string, number>;
+      };
+      const ids = body.items.map((i) => i.id).sort();
+      expect(ids).toEqual(["organic", "real"]);
+      expect(body.total).toBe(2);
+      // Counts must not include the four capability notices.
+      expect(body.kindCounts.procedural).toBe(1);
+      expect(body.kindCounts.semantic).toBe(1);
+    });
+
     test("returns items of all statuses when status=all", async () => {
       insertItem({
         id: "i1",

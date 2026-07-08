@@ -34,6 +34,7 @@ import {
 import {
   createNode,
   deleteNode,
+  excludeCapabilityNodesSqlFilter,
   getNode,
   updateNode,
 } from "../../memory/graph/store.js";
@@ -306,9 +307,11 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
     );
 
     if (semanticResult && semanticResult.ids.length > 0) {
-      // Compute kindCounts from all semantic matches
+      // Compute kindCounts from all semantic matches. Exclude auto-seeded
+      // skill/CLI capability notices — they are not user memories.
       const kindCountConditions = [
         inArray(memoryGraphNodes.id, semanticResult.ids),
+        excludeCapabilityNodesSqlFilter(),
       ];
       if (fidelityFilter) kindCountConditions.push(fidelityFilter);
 
@@ -328,6 +331,7 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
       {
         const filterConditions = [
           inArray(memoryGraphNodes.id, semanticResult.ids),
+          excludeCapabilityNodesSqlFilter(),
         ];
         if (kindParam) {
           filterConditions.push(eq(memoryGraphNodes.type, kindParam));
@@ -359,7 +363,10 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
       }
 
       // Hydrate nodes from DB
-      const hydrationConditions = [inArray(memoryGraphNodes.id, pageIds)];
+      const hydrationConditions = [
+        inArray(memoryGraphNodes.id, pageIds),
+        excludeCapabilityNodesSqlFilter(),
+      ];
       if (fidelityFilter) hydrationConditions.push(fidelityFilter);
       if (kindParam)
         hydrationConditions.push(eq(memoryGraphNodes.type, kindParam));
@@ -385,7 +392,9 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
   }
 
   // ── Kind counts for SQL path ───────────────────────────────────────
-  const kindCountConditions = [];
+  // Exclude auto-seeded skill/CLI capability notices — they are injected as
+  // "Skills You Can Use", not user memories, and must not inflate counts.
+  const kindCountConditions = [excludeCapabilityNodesSqlFilter()];
   if (fidelityFilter) kindCountConditions.push(fidelityFilter);
   if (searchParam) {
     kindCountConditions.push(
@@ -407,7 +416,8 @@ async function handleListMemoryItems(queryParams: Record<string, string>) {
   }
 
   // ── SQL path (default or fallback) ──────────────────────────────────
-  const conditions = [];
+  // Exclude auto-seeded skill/CLI capability notices (see kind-count note).
+  const conditions = [excludeCapabilityNodesSqlFilter()];
   if (fidelityFilter) conditions.push(fidelityFilter);
   if (kindParam) conditions.push(eq(memoryGraphNodes.type, kindParam));
   if (searchParam) {
