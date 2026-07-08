@@ -60,6 +60,14 @@ export interface ImpactSummary {
   byCategory: ImpactCategoryRollup[];
   /** Hours saved per weekday, Monday(0)..Sunday(6) — drives the hero sparkline. */
   byDay: number[];
+  /** Hours saved in the immediately-preceding window of the same length. */
+  previousHoursSaved: number;
+  /**
+   * Percent change in hours saved vs the previous equal-length window. `null`
+   * when there's no prior activity to compare against (a first week), so the
+   * client can omit the badge rather than show a misleading "+100%".
+   */
+  changePercent: number | null;
   recent: Array<{ detail: string; category: ImpactCategory; at: string }>;
 }
 
@@ -116,11 +124,22 @@ export function aggregateEvents(
   rangeDays: number,
   now: Date,
 ): ImpactSummary {
-  const cutoff = now.getTime() - rangeDays * 24 * 60 * 60 * 1000;
+  const windowMs = rangeDays * 24 * 60 * 60 * 1000;
+  const cutoff = now.getTime() - windowMs;
+  const priorCutoff = cutoff - windowMs;
   const events = allEvents.filter((e) => {
     const t = Date.parse(e.at);
     return !Number.isNaN(t) && t >= cutoff;
   });
+  // Prior equal-length window [now-2·range, now-range) for a true
+  // period-over-period comparison.
+  let priorMinutes = 0;
+  for (const e of allEvents) {
+    const t = Date.parse(e.at);
+    if (!Number.isNaN(t) && t >= priorCutoff && t < cutoff) {
+      priorMinutes += e.minutesSaved;
+    }
+  }
 
   const totals = new Map<ImpactCategory, { count: number; minutes: number }>();
   // Minutes per weekday, Monday(0)..Sunday(6).
@@ -155,12 +174,22 @@ export function aggregateEvents(
     .slice(0, 10)
     .map((e) => ({ detail: e.detail!, category: e.category, at: e.at }));
 
+  const previousHoursSaved = Math.round((priorMinutes / 60) * 10) / 10;
+  // Only a meaningful percentage when there's prior activity to divide by;
+  // otherwise null so the client omits the badge instead of showing "+100%".
+  const changePercent =
+    priorMinutes > 0
+      ? Math.round(((totalMinutes - priorMinutes) / priorMinutes) * 100)
+      : null;
+
   return {
     rangeDays,
     hoursSaved: Math.round((totalMinutes / 60) * 10) / 10,
     taskCount: events.length,
     byCategory,
     byDay,
+    previousHoursSaved,
+    changePercent,
     recent,
   };
 }

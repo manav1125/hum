@@ -82,7 +82,27 @@ describe("aggregateEvents", () => {
       taskCount: 0,
       byCategory: [],
       byDay: [0, 0, 0, 0, 0, 0, 0],
+      previousHoursSaved: 0,
+      changePercent: null,
       recent: [],
     });
+  });
+
+  it("computes week-over-week change vs the prior equal-length window", () => {
+    // 60 min this week (24h ago) vs 30 min the prior week (240h ≈ 10d ago) → +100%.
+    const s = aggregateEvents(
+      [ev("email", 60, 24), ev("email", 30, 240)],
+      7,
+      NOW,
+    );
+    expect(s.hoursSaved).toBe(1);
+    expect(s.previousHoursSaved).toBe(0.5);
+    expect(s.changePercent).toBe(100);
+  });
+
+  it("reports null change when there is no prior-window activity", () => {
+    const s = aggregateEvents([ev("email", 60, 24)], 7, NOW);
+    expect(s.previousHoursSaved).toBe(0);
+    expect(s.changePercent).toBeNull();
   });
 });

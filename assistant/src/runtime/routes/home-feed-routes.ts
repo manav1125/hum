@@ -792,6 +792,8 @@ const impactResponseSchema = z.object({
     }),
   ),
   byDay: z.array(z.number().nonnegative()),
+  previousHoursSaved: z.number().nonnegative(),
+  changePercent: z.number().nullable(),
   recent: z.array(
     z.object({
       detail: z.string(),

@@ -17768,6 +17768,13 @@ paths:
                     items:
                       type: number
                       minimum: 0
+                  previousHoursSaved:
+                    type: number
+                    minimum: 0
+                  changePercent:
+                    anyOf:
+                      - type: number
+                      - type: "null"
                   recent:
                     type: array
                     items:
@@ -17790,6 +17797,8 @@ paths:
                   - taskCount
                   - byCategory
                   - byDay
+                  - previousHoursSaved
+                  - changePercent
                   - recent
                 additionalProperties: false
       parameters:
