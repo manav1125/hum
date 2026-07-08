@@ -145,6 +145,23 @@ export async function getVoiceKeysStatus(): Promise<CueLiveVoiceKeysStatus | nul
   return window.vellum!.cueLive!.voiceKeysStatus!();
 }
 
+/**
+ * Subscribe to the ⌥R push-to-talk run hotkey (backlog #29). Electron-main
+ * fires this when the native helper reports the run key; the caller should
+ * start Cue Live voice (begin listening — the `useLiveVoice` flow). Returns an
+ * unsubscribe function, and a no-op unsubscribe when off-desktop or on an older
+ * preload that lacks the bridge.
+ */
+export function onCueLiveStartVoice(callback: () => void): () => void {
+  if (
+    !isCueLiveAvailable() ||
+    typeof window.vellum?.cueLive?.onStartVoice !== "function"
+  ) {
+    return () => {};
+  }
+  return window.vellum.cueLive.onStartVoice(callback);
+}
+
 /** Set or clear a voice key; returns the refreshed status. */
 export async function setVoiceKey(
   field: CueLiveVoiceKeyField,

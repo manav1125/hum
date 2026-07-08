@@ -91,6 +91,7 @@ const {
   setCueLiveEnabledGetter,
   describeNextMove,
   setGuidanceFetcher,
+  setStartVoiceDispatcher,
   __resetForTesting,
 } = await import("./cue-live-service");
 
@@ -304,6 +305,87 @@ describe("stop", () => {
     });
     await wait(0);
     expect(lastChild?.stdin.writes.length).toBe(writesAfterStop);
+  });
+});
+
+describe("⌥R run hotkey → start Cue Live voice (backlog #29)", () => {
+  // Start Cue Live and answer cuelive.start with the given trust state so the
+  // helper subscription is live and lastKnownTrusted is set as requested.
+  async function startTrusted(accessibilityTrusted: boolean) {
+    void start();
+    await wait(0);
+    emit({
+      jsonrpc: "2.0",
+      id: requestIdAt(0),
+      result: { enabled: true, accessibilityTrusted },
+    });
+    await wait(0);
+  }
+
+  /** Emit the helper's ⌥R run notification. */
+  const emitRun = () =>
+    emit({
+      jsonrpc: "2.0",
+      method: "cuelive.run",
+      params: { x: 100, y: 200, captureMode: "screen" },
+    });
+
+  test("a ⌥R event dispatches exactly one start-voice", async () => {
+    const startVoice = mock(() => undefined);
+    setStartVoiceDispatcher(startVoice);
+    await startTrusted(true);
+
+    emitRun();
+    await wait(0);
+
+    expect(startVoice).toHaveBeenCalledTimes(1);
+  });
+
+  test("two ⌥R presses dispatch two starts (idempotency is the renderer's job)", async () => {
+    const startVoice = mock(() => undefined);
+    setStartVoiceDispatcher(startVoice);
+    await startTrusted(true);
+
+    emitRun();
+    await wait(0);
+    emitRun();
+    await wait(0);
+
+    expect(startVoice).toHaveBeenCalledTimes(2);
+  });
+
+  test("no-ops when the helper is not trusted for Accessibility", async () => {
+    const startVoice = mock(() => undefined);
+    setStartVoiceDispatcher(startVoice);
+    await startTrusted(false);
+
+    emitRun();
+    await wait(0);
+
+    expect(startVoice).not.toHaveBeenCalled();
+  });
+
+  test("no-ops after stop (Cue Live not running)", async () => {
+    const startVoice = mock(() => undefined);
+    setStartVoiceDispatcher(startVoice);
+    await startTrusted(true);
+
+    void stop();
+    await wait(0);
+
+    emitRun();
+    await wait(0);
+
+    expect(startVoice).not.toHaveBeenCalled();
+  });
+
+  test("no-ops when no dispatcher is wired (older wiring)", async () => {
+    setStartVoiceDispatcher(null);
+    await startTrusted(true);
+
+    // No dispatcher: the only assertion is that this doesn't throw.
+    emitRun();
+    await wait(0);
   });
 });
 

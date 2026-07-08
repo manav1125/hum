@@ -157,6 +157,8 @@ declare global {
           goal: Omit<CueLiveGoal, "id"> & { id?: string },
         ): Promise<CueLiveGoal[]>;
         deleteGoal?(id: string): Promise<CueLiveGoal[]>;
+        /** ⌥R push-to-talk run hotkey (backlog #29) → start Cue Live voice. */
+        onStartVoice?(callback: () => void): () => void;
       };
       featureFlags?: {
         set(flags: Record<string, boolean>): void;

@@ -4,7 +4,7 @@ import type {
   CueLiveGoal,
   CueLivePermissions,
 } from "@vellumai/ipc-contract";
-import { shell } from "electron";
+import { BrowserWindow, shell } from "electron";
 import { z } from "zod";
 
 import {
@@ -15,6 +15,7 @@ import {
   isStarted,
   pushVoiceConfig,
   runTypedGoal,
+  setStartVoiceDispatcher,
   start as startCueLive,
   stop as stopCueLive,
   stopEverything,
@@ -113,11 +114,33 @@ export const deleteGoal = (
 };
 
 /**
+ * Push a "start Cue Live voice / begin listening" signal to the renderer — the
+ * main→renderer half of the ⌥R push-to-talk hotkey (backlog #29). Targets the
+ * focused window, falling back to the first one (same policy as
+ * `commands.ts#dispatchToFocused`), so the key works whichever Cue window the
+ * user is in. No-op when there is no window. The renderer subscribes via
+ * `window.vellum.cueLive.onStartVoice(...)` and starts the `useLiveVoice` flow.
+ */
+const sendStartVoiceToRenderer = (): void => {
+  const target =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  if (!target || target.webContents.isDestroyed()) {
+    log.info("[cue-live] start-voice: no renderer window to signal");
+    return;
+  }
+  target.webContents.send("vellum:cueLive:startVoice");
+};
+
+/**
  * IPC for the renderer Cue Live surface: read live status, flip the persisted
  * enable toggle (starting/stopping the overlay to match), and summon on demand
  * (the in-app "Try it" button — works even when the global hotkey isn't armed).
  */
 export const installCueLiveIpc = (): void => {
+  // Wire the ⌥R run-hotkey → renderer bridge: the service invokes this whenever
+  // the helper reports the run key (defensive gates live in the service).
+  setStartVoiceDispatcher(sendStartVoiceToRenderer);
+
   handle("vellum:cueLive:status", z.tuple([]), () => cueLiveStatus());
 
   handle(

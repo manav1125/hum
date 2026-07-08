@@ -125,6 +125,13 @@ export interface VellumBridge {
     ): Promise<CueLiveGoal[]>;
     /** Remove a goal by id; returns the updated list. */
     deleteGoal(id: string): Promise<CueLiveGoal[]>;
+    /**
+     * Subscribe to the ⌥R push-to-talk run hotkey (backlog #29). Fired from
+     * Electron-main when the native helper reports the run key; the renderer
+     * starts Cue Live voice (begins listening — the `useLiveVoice` flow).
+     * Returns an unsubscribe function.
+     */
+    onStartVoice(callback: () => void): () => void;
   };
   featureFlags: {
     set(flags: Record<string, boolean>): void;

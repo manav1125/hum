@@ -30,6 +30,7 @@ const CUE_LIVE_SHOW_CARD = "cuelive.showCard";
 const CUE_LIVE_HIGHLIGHT = "cuelive.highlight";
 const CUE_LIVE_HIDE = "cuelive.hide";
 const CUE_LIVE_SUMMONED = "cuelive.summoned";
+const CUE_LIVE_RUN = "cuelive.run";
 const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
 const CUE_LIVE_SUMMON_NOW = "cuelive.summonNow";
 const CUE_LIVE_SUMMON_GOAL = "cuelive.summonGoal";
@@ -48,6 +49,16 @@ const SUMMONED_SCHEMA = z.object({
   x: z.number(),
   y: z.number(),
   question: z.string().optional(),
+});
+
+/** `cuelive.run` — the ⌥R push-to-talk key (backlog #29). The helper reports
+ *  the cursor (AX top-left coords) and the active capture mode; Electron-main
+ *  turns it into a "start Cue Live voice / begin listening" signal to the
+ *  renderer. */
+const RUN_SCHEMA = z.object({
+  x: z.number(),
+  y: z.number(),
+  captureMode: z.string().optional(),
 });
 
 /** `cuelive.accessibilityTrusted` — emitted when the helper observes
@@ -117,6 +128,7 @@ const AUTO_HIDE_MS = 6_000;
 
 let started = false;
 let unsubscribeSummoned: (() => void) | null = null;
+let unsubscribeRun: (() => void) | null = null;
 let unsubscribeTrusted: (() => void) | null = null;
 let unsubscribeAbort: (() => void) | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -227,6 +239,54 @@ export const pushVoiceConfig = async (): Promise<void> => {
     });
   } catch (err) {
     log.warn(`[cue-live] setVoiceConfig failed: ${errMessage(err)}`);
+  }
+};
+
+/**
+ * The renderer-side "start Cue Live voice / begin listening" dispatcher,
+ * injected by `index.ts` (which owns the BrowserWindow → webContents.send
+ * plumbing). Kept as a setter — the same DI seam as {@link setGuidanceFetcher}
+ * — so this module doesn't import Electron's window machinery and the ⌥R
+ * handler is unit-testable with a plain fake. Null until wired / off-desktop.
+ */
+type StartVoiceDispatcher = () => void;
+let startVoiceDispatcher: StartVoiceDispatcher | null = null;
+export const setStartVoiceDispatcher = (
+  fn: StartVoiceDispatcher | null,
+): void => {
+  startVoiceDispatcher = fn;
+};
+
+/**
+ * ⌥R (backlog #29): the helper reports the run hotkey; start Cue Live voice by
+ * telling the renderer to begin listening (the `useLiveVoice` flow — the same
+ * start the in-app live-voice button triggers).
+ *
+ * Defensive: no-op unless Cue Live is running AND the helper is trusted for
+ * Accessibility (an untrusted helper never actually observed the keypress, and
+ * the global monitor is disarmed then anyway). Idempotency / double-start
+ * suppression lives in the renderer's live-voice store, which ignores a start
+ * while already listening; this handler only guarantees exactly one dispatch
+ * per ⌥R press.
+ */
+export const handleRun = (): void => {
+  if (!started) {
+    log.info("[cue-live] ⌥R ignored — Cue Live not started");
+    return;
+  }
+  if (!lastKnownTrusted) {
+    log.info("[cue-live] ⌥R ignored — helper not trusted for Accessibility");
+    return;
+  }
+  if (!startVoiceDispatcher) {
+    log.info("[cue-live] ⌥R received but no start-voice dispatcher wired");
+    return;
+  }
+  log.info("[cue-live] ⌥R — starting Cue Live voice (begin listening)");
+  try {
+    startVoiceDispatcher();
+  } catch (err) {
+    log.warn(`[cue-live] start-voice dispatch failed: ${errMessage(err)}`);
   }
 };
 
@@ -828,6 +888,14 @@ export const start = async (): Promise<void> => {
     },
   );
 
+  // ⌥R (backlog #29): the push-to-talk run hotkey. The native helper already
+  // parses + emits this; here it becomes a "start Cue Live voice" signal to the
+  // renderer. We only need the fact of the press (defensive checks live in
+  // handleRun), so the cursor payload is parsed but unused.
+  unsubscribeRun = client.onNotification(CUE_LIVE_RUN, RUN_SCHEMA, () => {
+    handleRun();
+  });
+
   // The helper arms the summon hotkey the moment Accessibility is granted at
   // runtime (no relaunch needed); surface that transition for diagnosability.
   unsubscribeTrusted = client.onNotification(
@@ -891,6 +959,8 @@ export const stop = async (): Promise<void> => {
   abortRequested = true;
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
+  unsubscribeRun?.();
+  unsubscribeRun = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
   unsubscribeAbort?.();
@@ -925,6 +995,8 @@ export const dispose = (): void => {
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
+  unsubscribeRun?.();
+  unsubscribeRun = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
   unsubscribeAbort?.();
@@ -937,12 +1009,15 @@ export const __resetForTesting = (): void => {
   clearHideTimer();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
+  unsubscribeRun?.();
+  unsubscribeRun = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
   unsubscribeAbort?.();
   unsubscribeAbort = null;
   persistedEnabledGetter = () => true;
   takeControlEnabledGetter = () => true;
+  startVoiceDispatcher = null;
   lastKnownTrusted = false;
   lastKnownScreenRecording = false;
 };

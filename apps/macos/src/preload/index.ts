@@ -241,6 +241,15 @@ const bridge: VellumBridge = {
         "vellum:cueLive:deleteGoal",
         id,
       ) as Promise<CueLiveGoal[]>,
+    onStartVoice: (callback: () => void) => {
+      const handler = () => {
+        callback();
+      };
+      ipcRenderer.on("vellum:cueLive:startVoice", handler);
+      return () => {
+        ipcRenderer.off("vellum:cueLive:startVoice", handler);
+      };
+    },
   },
   featureFlags: {
     set: (flags: Record<string, boolean>): void => {
