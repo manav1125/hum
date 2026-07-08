@@ -33,7 +33,7 @@ describe("resolveSelfHostUrl", () => {
   test("defaults to the pilot Render URL when CUE_SERVER_URL is unset", () => {
     delete process.env.CUE_SERVER_URL;
     expect(resolveSelfHostUrl()?.toString()).toBe(
-      "https://cue-app-3yne.onrender.com/assistant/",
+      "https://manav.justcue.app/assistant/",
     );
   });
 
@@ -59,14 +59,14 @@ describe("getRendererRootUrl", () => {
   test("packaged builds default to the self-host SPA root with a trailing slash", () => {
     delete process.env.CUE_SERVER_URL;
     expect(getRendererRootUrl(true)).toBe(
-      "https://cue-app-3yne.onrender.com/assistant/",
+      "https://manav.justcue.app/assistant/",
     );
   });
 
   test("getRendererBaseProd defaults to the self-host base without a trailing slash so aux windows can append a subpath", () => {
     delete process.env.CUE_SERVER_URL;
     expect(getRendererBaseProd()).toBe(
-      "https://cue-app-3yne.onrender.com/assistant",
+      "https://manav.justcue.app/assistant",
     );
   });
 

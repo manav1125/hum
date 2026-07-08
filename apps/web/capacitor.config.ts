@@ -15,7 +15,7 @@ const env = process.env.VELLUM_ENVIRONMENT ?? "dev";
 // time via CUE_SERVER_URL once a custom domain is set:
 //   CUE_SERVER_URL=https://cue.example.com/assistant VELLUM_ENVIRONMENT=cue bunx cap sync
 const CUE_SELF_HOST_URL =
-  process.env.CUE_SERVER_URL ?? "https://cue-app-3yne.onrender.com/assistant/";
+  process.env.CUE_SERVER_URL ?? "https://manav.justcue.app/assistant/";
 
 const SERVER_URL =
   env === "cue"

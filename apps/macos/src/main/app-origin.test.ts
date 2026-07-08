@@ -51,7 +51,7 @@ describe("resolveAllowedOrigin", () => {
     appState.isPackaged = true;
     expect(resolveAllowedOrigin()).toEqual({
       protocol: "https:",
-      host: "cue-app-3yne.onrender.com",
+      host: "manav.justcue.app",
     });
   });
 

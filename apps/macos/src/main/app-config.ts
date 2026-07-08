@@ -42,7 +42,7 @@ const DEV_SERVER_FALLBACK_URL = "http://localhost:5173/assistant";
  * SPA is mounted under `/assistant/`, and the SPA root needs the trailing
  * slash to avoid landing on the host's `/assistant/*` NotFound route.
  */
-const CUE_SELF_HOST_DEFAULT_URL = "https://cue-app-3yne.onrender.com/assistant/";
+const CUE_SELF_HOST_DEFAULT_URL = "https://manav.justcue.app/assistant/";
 
 /**
  * Resolve the self-host cloud renderer URL, or `null` when self-host is
