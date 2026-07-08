@@ -57,6 +57,17 @@ export interface LiveVoiceClientStartFrame {
   readonly type: "start";
   readonly conversationId?: string;
   readonly audio: LiveVoiceAudioConfig;
+  /**
+   * Opt-in continuous full-duplex mode. When absent or `false` (the default),
+   * the session is single-utterance: it closes after `tts_done` and rejects any
+   * audio received after `ptt_release` with `invalid_audio_payload`. Old clients
+   * (which never send this flag) therefore see the exact legacy behavior.
+   *
+   * When `true`, the session loops back to listening after each `tts_done` so
+   * the user can keep talking on the same socket, and post-release audio is
+   * accepted as the start of the next utterance / a barge-in.
+   */
+  readonly fullDuplex?: boolean;
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -357,6 +368,15 @@ function validateStartFrame(
     );
   }
 
+  if ("fullDuplex" in value && typeof value.fullDuplex !== "boolean") {
+    return protocolError(
+      "invalid_field",
+      "start frame field fullDuplex must be a boolean",
+      "fullDuplex",
+      "start",
+    );
+  }
+
   return {
     ok: true,
     frame: {
@@ -364,6 +384,7 @@ function validateStartFrame(
       ...(typeof value.conversationId === "string"
         ? { conversationId: value.conversationId }
         : {}),
+      ...(value.fullDuplex === true ? { fullDuplex: true } : {}),
       audio: audioConfig.frame,
     },
   };

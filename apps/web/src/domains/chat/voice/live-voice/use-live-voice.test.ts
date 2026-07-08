@@ -48,7 +48,11 @@ const { useLiveVoiceStore } =
 // ---------------------------------------------------------------------------
 
 class FakeClient {
-  connectArgs: { assistantId: string; conversationId?: string } | null = null;
+  connectArgs: {
+    assistantId: string;
+    conversationId?: string;
+    fullDuplex?: boolean;
+  } | null = null;
   sentAudio: ArrayBuffer[] = [];
   pttReleaseCount = 0;
   interruptCount = 0;
@@ -76,6 +80,7 @@ class FakeClient {
   async connect(args: {
     assistantId: string;
     conversationId?: string;
+    fullDuplex?: boolean;
   }): Promise<void> {
     this.connectArgs = args;
   }
@@ -189,7 +194,9 @@ function pcmChunk(ms: number): ArrayBuffer {
   return new Int16Array(samples).buffer;
 }
 
-function renderController() {
+function renderController(
+  overrides: { fullDuplex?: boolean } = {},
+) {
   const client = new FakeClient();
   const player = new FakePlayer();
   let capture!: FakeCapture;
@@ -202,6 +209,10 @@ function renderController() {
         capture = new FakeCapture(options);
         return capture as unknown as LiveVoiceAudioCapture;
       },
+      // Legacy suites below assert single-utterance behavior; opt out of the
+      // default full-duplex mode so they exercise the half-duplex path. The
+      // dedicated "full-duplex" suite opts back in explicitly.
+      fullDuplex: overrides.fullDuplex ?? false,
     }),
   );
 
@@ -259,6 +270,7 @@ describe("full turn", () => {
     expect(h.client.connectArgs).toEqual({
       assistantId: "assistant-1",
       conversationId: "conv-1",
+      fullDuplex: false,
     });
 
     await act(async () => {
@@ -470,6 +482,148 @@ describe("automatic ptt_release", () => {
 
     expect(h.client.pttReleaseCount).toBe(0);
     expect(h.view.result.current.state).toBe("listening");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full-duplex (continuous session across turns)
+// ---------------------------------------------------------------------------
+
+describe("full-duplex", () => {
+  test("stays half-duplex by default (full-duplex ships dormant)", async () => {
+    // Default (no override) — full-duplex is built but not yet real-audio-QA'd,
+    // so the web client does NOT opt in until a consumer passes
+    // `fullDuplex: true`. Flip this once device QA signs off (#53).
+    const client = new FakeClient();
+    const player = new FakePlayer();
+    let capture!: FakeCapture;
+    const view = renderHook(() =>
+      useLiveVoice({
+        createClient: () => client as unknown as LiveVoiceChannelClient,
+        createPlayer: () => player as unknown as LiveVoiceAudioPlayer,
+        createCapture: (options) => {
+          capture = new FakeCapture(options);
+          return capture as unknown as LiveVoiceAudioCapture;
+        },
+      }),
+    );
+    await act(async () => {
+      await view.result.current.start("assistant-1", "conv-1");
+    });
+    expect(client.connectArgs?.fullDuplex).toBe(false);
+    act(() => view.unmount());
+    void capture;
+  });
+
+  test("tts_done loops back to listening on the same socket (no close)", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    // Turn 1: think → speak.
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 2, turnId: "t1" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 3,
+        mimeType: "audio/pcm",
+        sampleRate: 24000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+
+    // tts_done → drain → back to listening (socket stays open, mic stays up).
+    await act(async () => {
+      h.client.emit("ttsDone", { type: "tts_done", seq: 4, turnId: "t1" });
+      h.player.finishPlayback();
+      await Promise.resolve();
+    });
+    expect(h.view.result.current.state).toBe("listening");
+    expect(h.client.closed).toBe(false);
+    expect(h.getCapture().shutdownCount).toBe(0);
+
+    // Turn 2: forwarding is re-armed, so a fresh chunk is streamed again.
+    const sentBefore = h.client.sentAudio.length;
+    act(() => {
+      h.getCapture().pushAmplitude(0.1);
+      h.getCapture().pushChunk(pcmChunk(20));
+    });
+    expect(h.client.sentAudio.length).toBe(sentBefore + 1);
+
+    // And a second full turn drives the machine again.
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 5, turnId: "t2" });
+    });
+    expect(h.view.result.current.state).toBe("thinking");
+    act(() => {
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 6,
+        mimeType: "audio/pcm",
+        sampleRate: 24000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+    await act(async () => {
+      h.client.emit("ttsDone", { type: "tts_done", seq: 7, turnId: "t2" });
+      h.player.finishPlayback();
+      await Promise.resolve();
+    });
+    expect(h.view.result.current.state).toBe("listening");
+    // The session was never closed across two turns.
+    expect(h.client.closed).toBe(false);
+    expect(h.client.ended).toBe(false);
+  });
+
+  test("barge-in interrupts and resumes listening on the same socket", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 2, turnId: "t1" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 3,
+        mimeType: "audio/pcm",
+        sampleRate: 24000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+
+    act(() => {
+      h.getCapture().pushAmplitude(0.2); // over BARGE_IN_AMPLITUDE_THRESHOLD
+    });
+
+    // Playback stopped, one interrupt sent, and — unlike half-duplex — the
+    // session stays open and resumes listening for the barge-in utterance.
+    expect(h.player.isPlaying).toBe(false);
+    expect(h.client.interruptCount).toBe(1);
+    expect(h.view.result.current.state).toBe("listening");
+    expect(h.client.closed).toBe(false);
+    expect(h.getCapture().shutdownCount).toBe(0);
+
+    // Forwarding is re-armed after barge-in.
+    const sentBefore = h.client.sentAudio.length;
+    act(() => {
+      h.getCapture().pushAmplitude(0.1);
+      h.getCapture().pushChunk(pcmChunk(20));
+    });
+    expect(h.client.sentAudio.length).toBe(sentBefore + 1);
+  });
+
+  test("stop() still tears down a full-duplex session", async () => {
+    const h = renderController({ fullDuplex: true });
+    await startListening(h);
+
+    await act(async () => {
+      await h.view.result.current.stop();
+    });
+
+    expect(h.client.ended).toBe(true);
+    expect(h.getCapture().shutdownCount).toBe(1);
+    expect(h.view.result.current.state).toBe("idle");
   });
 });
 

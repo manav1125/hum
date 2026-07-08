@@ -13,21 +13,27 @@
  * controller instance drives at most one session at a time; `start()` while a
  * session is live is a no-op (matching the macOS guard).
  *
- * ## Single-utterance sessions
- * A live-voice session handles exactly one utterance → one response. The runtime
- * (and the macOS reference) treat `ptt_release` as terminal: once released, the
- * session never re-accepts audio (sending more yields `invalid_audio_payload`).
- * So this controller does NOT keep one socket open across turns — after the
- * assistant finishes speaking it ends the session (→ idle), and the user starts
- * a fresh one for the next turn. Barge-in is the one case that reconnects
- * automatically (see below).
+ * ## Full-duplex (default) vs. single-utterance sessions
+ * By default this controller opts into continuous **full-duplex** mode (opt out
+ * with `fullDuplex: false`). The daemon keeps one socket open across turns: after
+ * the assistant finishes speaking (`tts_done`) the daemon loops back to
+ * listening, so this controller re-arms the mic forwarding gate (→ `listening`)
+ * for the next utterance instead of ending the session. Barge-in interrupts the
+ * assistant and resumes listening on the same socket.
  *
- * ## State transitions (one session = one turn)
+ * In legacy **half-duplex** mode (`fullDuplex: false`) a session handles exactly
+ * one utterance → one response: the runtime treats `ptt_release` as terminal
+ * (post-release audio yields `invalid_audio_payload`), so the controller ends the
+ * session after the response and the user starts a fresh one for the next turn;
+ * barge-in reconnects.
+ *
+ * ## State transitions
  * `idle → connecting` (start) → `listening` (ready + capture started) →
  * `transcribing` (ptt released) → `thinking` (server response) → `speaking`
- * (tts_audio) → `idle` (tts_done drained → session ended). The mic keeps
- * capturing for the whole session; `stop()`, teardown, an error, a server
- * `archived`/`closed`, or end-of-response returns to `idle`/`failed`.
+ * (tts_audio). In full-duplex, `speaking` → `listening` after the response
+ * drains (next turn on the same socket); in half-duplex, `speaking` → `idle`
+ * (session ended). The mic keeps capturing for the whole session; `stop()`,
+ * teardown, an error, or a server `archived`/`closed` returns to `idle`/`failed`.
  *
  * ## Mic forwarding
  * The mic capture graph runs for the entire active session so amplitude keeps
@@ -39,10 +45,10 @@
  *
  * ## Barge-in
  * While `speaking`, a captured amplitude over {@link BARGE_IN_AMPLITUDE_THRESHOLD}
- * stops playback, sends `interrupt` (once per response), and ends the session
- * (→ idle) — the interrupted session is terminal on the runtime, so the user
- * starts a fresh session to respond. (Seamless reconnect-on-barge-in is a
- * follow-up.)
+ * stops playback and sends `interrupt` (once per response). In full-duplex the
+ * daemon re-arms listening, so the controller resumes forwarding on the same
+ * socket (→ `listening`). In half-duplex the interrupted session is terminal, so
+ * the controller ends the session (→ idle) and the user starts a fresh one.
  *
  * ## Automatic push-to-talk release
  * While `listening`, sustained speech (≥ {@link MINIMUM_SPEECH_DURATION_BEFORE_RELEASE_MS})
@@ -124,6 +130,15 @@ export interface UseLiveVoiceOptions {
     options: ConstructorParameters<typeof LiveVoiceAudioCapture>[0],
   ) => LiveVoiceAudioCapture;
   createPlayer?: () => LiveVoiceAudioPlayer;
+  /**
+   * Opt into continuous full-duplex sessions (default `true`). When enabled the
+   * socket stays open across turns: after the assistant finishes speaking the
+   * hook re-arms the mic (→ `listening`) for the next utterance instead of
+   * ending the session, and barge-in interrupts without tearing the socket
+   * down. Set to `false` to force the legacy single-utterance behavior (close
+   * after `tts_done`; a fresh session per turn).
+   */
+  fullDuplex?: boolean;
 }
 
 /**
@@ -143,13 +158,17 @@ interface SessionContext {
   /**
    * Whether captured PCM is currently streamed to the server. On while the user
    * is speaking (`listening`); turned off after an automatic push-to-talk
-   * release. A live-voice session is single-utterance (the runtime treats
-   * `ptt_release` as terminal — it never re-accepts audio), so forwarding is not
-   * re-opened within a session: the session ends after the response, and a fresh
-   * session is started for the next turn. Amplitude keeps flowing regardless so
-   * barge-in works while not forwarding.
+   * release. In legacy (half-duplex) sessions the runtime treats `ptt_release`
+   * as terminal — it never re-accepts audio — so forwarding is not re-opened
+   * within a session: the session ends after the response and a fresh session is
+   * started for the next turn. In full-duplex sessions the socket stays open:
+   * after `tts_done` (or a barge-in) forwarding is re-armed for the next
+   * utterance on the same session. Amplitude keeps flowing regardless so barge-in
+   * works while not forwarding.
    */
   forwardingAudio: boolean;
+  /** Whether this session negotiated continuous full-duplex mode. */
+  fullDuplex: boolean;
   /** Whether the assistant has sent any TTS audio for the current response. */
   responseAudioStarted: boolean;
   /** Whether an interrupt was already sent for the current response. */
@@ -270,6 +289,12 @@ export function useLiveVoice(
       store.setState("connecting");
 
       const opts = optionsRef.current;
+      // Full-duplex ships DORMANT: the daemon + client paths are fully built and
+      // unit-tested, but continuous listening / barge-in isn't real-audio-QA'd
+      // yet, so the web client stays half-duplex unless a consumer explicitly
+      // opts in with `fullDuplex: true`. Flip the default here once device QA
+      // signs off (see #53 remaining-for-device-QA notes).
+      const fullDuplex = opts.fullDuplex === true;
       const client = (
         opts.createClient ?? (() => new LiveVoiceChannelClient())
       )();
@@ -285,6 +310,7 @@ export function useLiveVoice(
         generation: 0,
         captureRunning: false,
         forwardingAudio: false,
+        fullDuplex,
         responseAudioStarted: false,
         interruptSent: false,
         releaseInFlight: false,
@@ -386,7 +412,7 @@ export function useLiveVoice(
         }),
       );
 
-      await client.connect({ assistantId, conversationId });
+      await client.connect({ assistantId, conversationId, fullDuplex });
     },
     [teardown],
   );
@@ -516,15 +542,35 @@ function releasePushToTalk(session: SessionContext): void {
 }
 
 /**
- * Resume listening for the next utterance: re-open the forwarding gate, clear
- * the per-utterance counters/flags, and move to `listening`. The mic is already
- * running (continuous capture), so there is nothing to restart here.
+ * Resume listening for the next utterance on the same (full-duplex) session:
+ * re-open the forwarding gate, clear the per-utterance counters/flags, and move
+ * to `listening`. The mic is already running (continuous capture), so there is
+ * nothing to restart here. Only valid for full-duplex sessions — the daemon
+ * keeps the socket open and re-arms a fresh transcriber after each turn.
  */
+function resumeListening(session: SessionContext): void {
+  session.forwardingAudio = true;
+  session.releaseInFlight = false;
+  session.responseAudioStarted = false;
+  session.interruptSent = false;
+  session.speechMs = 0;
+  session.silenceMs = 0;
+  const s = useLiveVoiceStore.getState();
+  s.setPartialTranscript("");
+  s.setInputAmplitude(0);
+  s.setState("listening");
+}
+
 /**
- * Barge-in: stop playback and interrupt the server once per response, then end
- * the session (→ idle). The interrupted session is terminal on the runtime — it
- * won't accept more audio — so we can't keep forwarding on it; the user starts a
- * fresh session to respond. (Seamless reconnect-on-barge-in is a follow-up.)
+ * Barge-in: stop playback and interrupt the server once per response.
+ *
+ * Full-duplex: the daemon keeps the socket open and re-arms listening after the
+ * interrupt, so we resume forwarding on the same session (→ `listening`) and the
+ * user can immediately speak their interrupting utterance.
+ *
+ * Half-duplex (legacy): the interrupted session is terminal on the runtime — it
+ * won't accept more audio — so we tear the session down (→ idle) and the user
+ * starts a fresh session to respond.
  */
 function interruptIfSpeaking(
   session: SessionContext,
@@ -535,6 +581,10 @@ function interruptIfSpeaking(
   session.interruptSent = true;
   session.player.stop();
   session.client.interrupt();
+  if (session.fullDuplex) {
+    resumeListening(session);
+    return;
+  }
   teardown();
 }
 
@@ -546,16 +596,22 @@ function beginAssistantAudioIfNeeded(session: SessionContext): void {
 }
 
 /**
- * After `tts_done`, await playback drain, then end the session (→ idle).
+ * After `tts_done`, await playback drain, then finish the response.
  *
- * A live-voice session is single-utterance: once `ptt_release` fires the runtime
- * won't accept more audio on it, so we don't resume listening on the same
- * socket — we tear the session down and the user starts a fresh one for the next
- * turn (mirrors the macOS `closeCompletedUtteranceSessionAfterPlayback`).
+ * Full-duplex: the daemon keeps the socket open and loops back to listening, so
+ * we re-arm the mic forwarding gate on the same session (→ `listening`) for the
+ * next utterance instead of tearing down. The user keeps talking without
+ * re-opening the mic.
+ *
+ * Half-duplex (legacy): a session is single-utterance — once `ptt_release` fires
+ * the runtime won't accept more audio on it, so we tear the session down (→
+ * idle) and the user starts a fresh one for the next turn (mirrors the macOS
+ * `closeCompletedUtteranceSessionAfterPlayback`).
+ *
  * Forwarding is suspended during the drain so playback audio captured by the
  * (still-open) mic isn't streamed back. A barge-in during the drain already
- * tore this session down and reconnected (generation bumped / state no longer
- * `speaking`), so we leave that fresh session alone.
+ * advanced the session (generation bumped for half-duplex reconnect, or state no
+ * longer `speaking`), so we leave that alone.
  */
 async function finishResponseAfterPlayback(
   session: SessionContext,
@@ -568,8 +624,14 @@ async function finishResponseAfterPlayback(
   await session.player.waitUntilDrained();
   if (session.generation !== generation) return;
 
-  // A barge-in mid-drain already reconnected a fresh session; don't tear it down.
+  // A barge-in mid-drain already advanced the session; leave it alone.
   if (useLiveVoiceStore.getState().state !== "speaking") return;
+
+  if (session.fullDuplex) {
+    // Loop back to listening on the same open socket for the next utterance.
+    resumeListening(session);
+    return;
+  }
   teardown();
 }
 

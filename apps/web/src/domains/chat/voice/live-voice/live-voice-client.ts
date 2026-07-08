@@ -83,6 +83,12 @@ export interface LiveVoiceConnectArgs {
   assistantId: string;
   /** Optional conversation to attach the session to. */
   conversationId?: string;
+  /**
+   * Opt into continuous full-duplex mode (default `false`). When set, the
+   * daemon keeps the session open across turns instead of closing after
+   * `tts_done`, and accepts audio after `ptt_release` for the next utterance.
+   */
+  fullDuplex?: boolean;
 }
 
 /** Factory so tests can inject a mock WebSocket. Defaults to the global. */
@@ -109,6 +115,7 @@ export class LiveVoiceChannelClient {
   private ws: WebSocket | null = null;
   private connectTimeout: ReturnType<typeof setTimeout> | null = null;
   private conversationId: string | undefined;
+  private fullDuplex = false;
 
   private readonly listeners: {
     [E in LiveVoiceClientEventName]: Set<LiveVoiceClientEventHandler<E>>;
@@ -164,10 +171,12 @@ export class LiveVoiceChannelClient {
   async connect({
     assistantId,
     conversationId,
+    fullDuplex,
   }: LiveVoiceConnectArgs): Promise<void> {
     if (this.state !== "idle") return;
     this.state = "connecting";
     this.conversationId = conversationId;
+    this.fullDuplex = fullDuplex === true;
 
     let url: string;
     try {
@@ -254,6 +263,7 @@ export class LiveVoiceChannelClient {
       type: "start",
       audio: LIVE_VOICE_AUDIO_FORMAT,
       ...(this.conversationId ? { conversationId: this.conversationId } : {}),
+      ...(this.fullDuplex ? { fullDuplex: true } : {}),
     };
     this.trySend(JSON.stringify(startFrame));
   }

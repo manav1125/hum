@@ -47,6 +47,14 @@ export interface LiveVoiceClientStartFrame {
   readonly type: "start";
   readonly conversationId?: string;
   readonly audio: LiveVoiceAudioConfig;
+  /**
+   * Opt-in continuous full-duplex mode. When absent/`false` (the default), the
+   * session is single-turn: it closes after `tts_done` and the daemon rejects
+   * post-`ptt_release` audio. When `true`, the daemon loops back to listening
+   * after each `tts_done` so the same socket serves multiple turns. Mirrors the
+   * runtime contract in `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly fullDuplex?: boolean;
 }
 
 export interface LiveVoiceClientPttReleaseFrame {

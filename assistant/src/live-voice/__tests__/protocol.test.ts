@@ -37,6 +37,60 @@ describe("parseLiveVoiceClientTextFrame", () => {
     });
   });
 
+  test("parses start frames with the opt-in fullDuplex flag", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        fullDuplex: true,
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame).toEqual({
+      type: "start",
+      audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+      fullDuplex: true,
+    });
+  });
+
+  test("omits fullDuplex from the parsed frame when absent or false (default off)", () => {
+    for (const raw of [
+      {
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+      },
+      {
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        fullDuplex: false,
+      },
+    ]) {
+      const result = parseLiveVoiceClientTextFrame(JSON.stringify(raw));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect("fullDuplex" in result.frame).toBe(false);
+    }
+  });
+
+  test("rejects a non-boolean fullDuplex", () => {
+    const result = parseLiveVoiceClientTextFrame(
+      JSON.stringify({
+        type: "start",
+        audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        fullDuplex: "yes",
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatchObject({
+      code: "invalid_field",
+      field: "fullDuplex",
+    });
+  });
+
   test("parses base64 JSON audio frames", () => {
     const result = parseLiveVoiceClientTextFrame(
       JSON.stringify({ type: "audio", dataBase64: "AQIDBA==" }),

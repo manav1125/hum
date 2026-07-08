@@ -53,6 +53,14 @@ const LIVE_VOICE_TTS_SEGMENT_CHAR_THRESHOLD = 180;
 const SENTENCE_ENDING_PUNCTUATION = new Set([".", "!", "?"]);
 const TRAILING_SENTENCE_PUNCTUATION = new Set(['"', "'", ")", "]"]);
 
+/**
+ * Full-duplex sessions stay open across turns, so — unlike single-turn sessions
+ * that self-terminate after one `tts_done` — they need an inactivity bound so an
+ * abandoned socket doesn't hold a transcriber and turn resources forever. Reset
+ * on every inbound client frame; on expiry the session fails and closes.
+ */
+const LIVE_VOICE_FULL_DUPLEX_IDLE_TIMEOUT_MS = 120_000;
+
 export type LiveVoiceStreamingTranscriberResolver = (
   options: ResolveStreamingTranscriberOptions,
 ) => Promise<StreamingTranscriber | null>;
@@ -91,6 +99,11 @@ export interface LiveVoiceSessionOptions {
   emitMetrics?: boolean;
   metricsClock?: LiveVoiceMetricsClock;
   createTurnId?: () => string;
+  /**
+   * Inactivity bound for full-duplex sessions (ms). Ignored for half-duplex
+   * (single-turn) sessions, which self-terminate. Overridable for tests.
+   */
+  fullDuplexIdleTimeoutMs?: number;
 }
 
 interface ActiveAssistantTurn {
@@ -121,6 +134,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private readonly metrics: LiveVoiceMetricsCollector;
   private readonly createTurnId: () => string;
   private readonly conversationId: string;
+  private readonly fullDuplex: boolean;
+  private readonly fullDuplexIdleTimeoutMs: number;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private state: LiveVoiceSessionState = "initializing";
   private transcriber: StreamingTranscriber | null = null;
   private readonly finalTranscriptSegments: string[] = [];
@@ -149,6 +165,9 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     this.createTurnId = options.createTurnId ?? randomUUID;
     this.conversationId =
       context.startFrame.conversationId ?? context.sessionId;
+    this.fullDuplex = context.startFrame.fullDuplex === true;
+    this.fullDuplexIdleTimeoutMs =
+      options.fullDuplexIdleTimeoutMs ?? LIVE_VOICE_FULL_DUPLEX_IDLE_TIMEOUT_MS;
     this.metrics = new LiveVoiceMetricsCollector({
       sessionId: context.sessionId,
       conversationId: this.conversationId,
@@ -190,6 +209,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
       this.state = "active";
       this.metrics.markReady();
+      this.armIdleTimer();
       await this.sendFrame({
         type: "ready",
         sessionId: this.context.sessionId,
@@ -213,6 +233,8 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   async handleClientFrame(frame: LiveVoiceClientFrame): Promise<void> {
     if (this.state === "closed" || this.state === "failed") return;
 
+    this.armIdleTimer();
+
     switch (frame.type) {
       case "audio":
         await this.handleAudio(Buffer.from(frame.dataBase64, "base64"));
@@ -231,6 +253,8 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   }
 
   async handleBinaryAudio(chunk: Uint8Array): Promise<void> {
+    if (this.state === "closed" || this.state === "failed") return;
+    this.armIdleTimer();
     await this.handleAudio(Buffer.from(chunk));
   }
 
@@ -239,6 +263,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
     const shouldEmitSessionEndMetrics = this.state !== "failed";
     this.state = "closed";
+    this.clearIdleTimer();
     stopTranscriberBestEffort(this.transcriber);
     this.transcriber = null;
     await this.cancelAssistantTurn("session_closed");
@@ -253,6 +278,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       this.state === "utterance_released" ||
       this.state === "transcriber_closed"
     ) {
+      // Full-duplex sessions loop back to `active` after `tts_done`, at which
+      // point the next utterance's audio streams into a fresh transcriber.
+      // Audio that arrives in the transient released/closed/turn-in-flight
+      // window (before the loop-back) is not part of any live transcription —
+      // barge-in is signalled explicitly via the `interrupt` frame — so drop it
+      // silently rather than erroring. Legacy (half-duplex) sessions keep the
+      // terminal `invalid_audio_payload` rejection.
+      if (this.fullDuplex) return;
       await this.sendAudioAfterReleaseError();
       return;
     }
@@ -367,6 +400,143 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     this.transcriber = null;
     await this.cancelAssistantTurn("interrupt");
     await this.drainOutboundFrames();
+
+    // Full-duplex barge-in: cancelling the in-flight turn stops TTS (the abort
+    // signal halts further audio); now re-arm listening on the same socket so
+    // the user can immediately speak their interrupting utterance. Half-duplex
+    // leaves the session terminal — the client reconnects for the next turn.
+    if (this.fullDuplex) {
+      await this.beginNextListeningTurn();
+    }
+  }
+
+  /**
+   * Full-duplex loop-back: reset all per-turn state and re-arm a fresh
+   * transcriber so the session returns to `active` (listening) for the next
+   * utterance. Called after `tts_done` and after a barge-in `interrupt`.
+   *
+   * Bounded and non-leaking:
+   * - If the session has been closed/failed (explicit client close, transport
+   *   disconnect, error), this is a no-op and holds no resources.
+   * - The previous turn's transcriber was already stopped by `ptt_release` /
+   *   `interrupt`; we resolve a brand-new one so no zombie transcriber lingers.
+   * - Any transcriber resolved after a concurrent close is stopped immediately.
+   */
+  private async beginNextListeningTurn(): Promise<void> {
+    if (this.isClosed || this.state === "failed") return;
+
+    // Reset per-turn bookkeeping so the next exchange gets a fresh turnId and
+    // clean metrics/transcript/audio buffers (no cross-turn attribution).
+    this.finalTranscriptSegments.length = 0;
+    this.pttReleased = false;
+    this.assistantTurnStarted = false;
+    this.activeAssistantTurn = null;
+    this.currentTurnId = null;
+    this.currentUserMessageId = null;
+    this.currentUserAudioChunks = [];
+    this.metricsTurnStarted = false;
+    this.metricsTurnFinished = false;
+
+    let transcriber: StreamingTranscriber | null;
+    try {
+      transcriber = await this.resolveTranscriber({
+        sampleRate: this.context.startFrame.audio.sampleRate,
+      });
+    } catch (err) {
+      if (this.isClosed) return;
+      await this.failStartupSoft(
+        `Live voice transcription could not be restarted: ${errorMessage(err)}`,
+      );
+      return;
+    }
+
+    if (this.isTerminal) {
+      stopTranscriberBestEffort(transcriber);
+      return;
+    }
+
+    if (!transcriber) {
+      await this.failStartupSoft(unavailableTranscriberMessage());
+      return;
+    }
+
+    try {
+      this.transcriber = transcriber;
+      await transcriber.start((event) => {
+        void this.handleTranscriberEvent(event);
+      });
+    } catch (err) {
+      stopTranscriberBestEffort(transcriber);
+      this.transcriber = null;
+      if (this.isClosed) return;
+      await this.failStartupSoft(
+        `Live voice transcription could not be restarted: ${errorMessage(err)}`,
+      );
+      return;
+    }
+
+    if (this.isTerminal) {
+      stopTranscriberBestEffort(transcriber);
+      this.transcriber = null;
+      return;
+    }
+
+    this.state = "active";
+  }
+
+  /**
+   * Fail the session without throwing (mid-session variant of `failStartup`).
+   * Used by the full-duplex loop-back where there is no manager `start()` frame
+   * on the stack to propagate a startup error to.
+   */
+  private async failStartupSoft(message: string): Promise<void> {
+    if (this.isClosed || this.state === "failed") return;
+    this.state = "failed";
+    this.clearIdleTimer();
+    stopTranscriberBestEffort(this.transcriber);
+    this.transcriber = null;
+    await this.sendFrame({
+      type: "error",
+      code: LiveVoiceProtocolErrorCode.InvalidField,
+      message,
+    });
+  }
+
+  /**
+   * (Re)arm the inactivity bound for full-duplex sessions. No-op for half-duplex
+   * sessions (they self-terminate after one turn) and once the session is
+   * closed/failed. Reset on every inbound client frame and after `ready`.
+   */
+  private armIdleTimer(): void {
+    if (!this.fullDuplex) return;
+    if (this.isClosed || this.state === "failed") return;
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      void this.handleIdleTimeout();
+    }, this.fullDuplexIdleTimeoutMs);
+    // Do not keep the process alive solely for this timer.
+    this.idleTimer.unref?.();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer !== null) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  /**
+   * Inactivity expiry: tear down turn resources and fail the session so it does
+   * not hold a transcriber / assistant turn open indefinitely. The client (or
+   * the WebSocket close) then releases the session via the manager.
+   */
+  private async handleIdleTimeout(): Promise<void> {
+    if (this.isClosed || this.state === "failed") return;
+    await this.cancelAssistantTurn("idle_timeout");
+    await this.failStartupSoft(
+      "Live voice session closed after inactivity timeout.",
+    );
   }
 
   private async startAssistantTurnIfReady(): Promise<void> {
@@ -601,6 +771,14 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
           if (currentTurn.handle && currentTurn.finalized) {
             this.activeAssistantTurn = null;
           }
+        }
+
+        // Full-duplex: after the assistant finishes speaking, loop back to
+        // listening for the next utterance instead of leaving the session idle
+        // on a dead transcriber. Half-duplex sessions are left untouched — the
+        // client closes them after `tts_done` (legacy single-turn behavior).
+        if (this.fullDuplex) {
+          await this.beginNextListeningTurn();
         }
       });
   }
@@ -930,6 +1108,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
   private async failStartup(message: string): Promise<never> {
     this.state = "failed";
+    this.clearIdleTimer();
     await this.sendFrame({
       type: "error",
       code: LiveVoiceProtocolErrorCode.InvalidField,
@@ -969,6 +1148,11 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
 
   private get isClosed(): boolean {
     return this.state === "closed";
+  }
+
+  /** True once the session is terminal (closed or failed). */
+  private get isTerminal(): boolean {
+    return this.state === "closed" || this.state === "failed";
   }
 }
 
