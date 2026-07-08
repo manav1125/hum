@@ -119,22 +119,23 @@ describe("MarketplacePage", () => {
     seedStores({ marketplace: true });
     const html = renderPage();
 
-    expect(html).toContain("Marketplace");
-    expect(html).toContain("Skill marketplace · 2 sources");
+    // Hero banner (replaces the old "Marketplace" microlabel header).
+    expect(html).toContain("reviewed before they run");
+    expect(html).toContain("2 sources");
     expect(html).toContain("Explore");
     expect(html).toContain("Sources");
     expect(html).toContain("Installed");
-    // The card + its owner/repo attribution.
+    // The card + its owner/repo attribution + install CTA.
     expect(html).toContain("docx");
     expect(html).toContain("anthropics/skills");
     expect(html).toContain("Create and edit Word documents");
-    expect(html).toContain("NO DECLARED CAPABILITIES");
+    expect(html).toContain("Install");
   });
 
   test("renders NO marketplace UI when the flag is OFF", () => {
     seedStores({ marketplace: false });
     const html = renderPage();
-    expect(html).not.toContain("Skill marketplace");
+    expect(html).not.toContain("reviewed before they run");
     expect(html).not.toContain("Explore");
   });
 

@@ -13,24 +13,31 @@
  *
  * Every card is skippable; the whole step is skippable — footer copy:
  * "Connect a few now, or skip and add them anytime."
+ *
+ * The visual language matches the OnboardingConnect handoff mock: a progress
+ * header, serif headline with an italic-blue accent, an inset segmented
+ * "Easy connect / Custom" toggle, category filter chips, an icon search
+ * field, and a POPULAR two-column app grid where connected cards carry a
+ * green ✓ badge + subtle green tint and available cards carry a blue
+ * "+ Connect" button. It is a re-skin only — every live-data binding
+ * (apps query, connected state, connect mutation, search + tab state, the
+ * Continue/Skip handlers) is preserved.
  */
 
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router";
 
 import { ConnectorAppLogo } from "@/components/connector-app-logo";
-import { C, mono } from "@/domains/activity/theme";
+import { C, mono, serif } from "@/domains/activity/theme";
 import { MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
 import {
   connectPillStyle,
-  inputStyle,
   rowIconStyle,
   selectRowStyle,
   StepCard,
   StepFooter,
-  StepHead,
 } from "./setup-chrome";
 import {
   useAlreadyFound,
@@ -40,6 +47,42 @@ import {
   type ConnectorAppItem,
   type SourceCard,
 } from "./use-setup-data";
+
+// ---------------------------------------------------------------------------
+// Category chips — best-effort keyword filter over the live `category` field.
+//
+// The connector-apps data carries a free-text `category` per app (e.g.
+// "Email", "Calendar", "Developer", "Documents", "Files", "Messaging"). The
+// six chips map to substring matches against that real field — we do NOT
+// fabricate a category taxonomy into the data model. "All" is the pass-through.
+// ---------------------------------------------------------------------------
+
+const CATEGORIES = [
+  "All",
+  "Email",
+  "Calendar",
+  "Dev",
+  "Docs",
+  "Messaging",
+] as const;
+type Category = (typeof CATEGORIES)[number];
+
+/** Keyword substrings (lowercase) that a chip matches against `category`. */
+const CATEGORY_KEYWORDS: Record<Exclude<Category, "All">, string[]> = {
+  Email: ["email", "mail", "inbox"],
+  Calendar: ["calendar", "schedul", "meeting", "event"],
+  Dev: ["dev", "repo", "code", "issue", "engineering", "ci"],
+  Docs: ["doc", "note", "file", "drive", "database", "sheet", "wiki", "storage"],
+  Messaging: ["messag", "chat", "slack", "dm", "channel", "social"],
+};
+
+function appMatchesCategory(app: ConnectorAppItem, cat: Category): boolean {
+  if (cat === "All") return true;
+  const hay = `${app.category} ${app.name} ${app.slug}`.toLowerCase();
+  return CATEGORY_KEYWORDS[cat].some((kw) => hay.includes(kw));
+}
+
+const GRID_LIMIT = 30;
 
 export function ConnectToolsStep({
   assistantId,
@@ -58,6 +101,7 @@ export function ConnectToolsStep({
 }) {
   const [tab, setTab] = useState<"easy" | "custom">("easy");
   const [query, setQuery] = useState("");
+  const [cat, setCat] = useState<Category>("All");
 
   const grid = useConnectorApps(assistantId, query);
   const { cards, connectedIds } = useSourceCards(assistantId);
@@ -65,26 +109,93 @@ export function ConnectToolsStep({
 
   const anyConnected = grid.connectedCount > 0 || connectedIds.length > 0;
 
+  // Apply the category chip on top of the hook's search filter.
+  const filtered = useMemo(
+    () => grid.apps.filter((a) => appMatchesCategory(a, cat)),
+    [grid.apps, cat],
+  );
+  const shown = filtered.slice(0, GRID_LIMIT);
+  const remaining = Math.max(0, filtered.length - shown.length);
+
   return (
     <StepCard>
-      <StepHead
-        label={
-          personal
+      {/* Progress header — mono microlabel + 6-step bar row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 16,
+        }}
+      >
+        <MicroLabel color={C.t3}>
+          {personal
             ? `Step ${stepNo} of ${total} · Personal`
-            : `Step ${stepNo} / ${total}`
-        }
-        title={personal ? "Connect your world." : "Connect where work flows"}
-        blurb={
-          personal
-            ? "Cue can only help with what it can see. Just yours — nothing shared, nothing posted."
-            : "The more it can see, the more it catches. Nothing leaves without your say-so."
-        }
-      />
+            : `Step ${stepNo} of ${total} · Connect`}
+        </MicroLabel>
+        <div style={{ display: "flex", gap: 5 }} aria-hidden>
+          {Array.from({ length: total }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                width: 22,
+                height: 4,
+                borderRadius: 2,
+                background: i < stepNo ? C.blue : C.line2,
+              }}
+            />
+          ))}
+        </div>
+      </div>
 
-      {/* Easy connect / Custom tabs */}
+      {/* Serif headline with italic-blue accent */}
+      <h1
+        style={{
+          fontFamily: serif,
+          fontSize: 30,
+          lineHeight: 1.1,
+          color: C.t1,
+          fontWeight: 400,
+          letterSpacing: "-0.4px",
+          margin: "0 0 8px",
+        }}
+      >
+        {personal ? (
+          <>
+            Connect <span style={accentStyle}>your world</span>
+          </>
+        ) : (
+          <>
+            Connect where your <span style={accentStyle}>work flows</span>
+          </>
+        )}
+      </h1>
+      <p
+        style={{
+          fontSize: 13.5,
+          color: C.t2,
+          lineHeight: 1.5,
+          margin: "0 0 20px",
+          maxWidth: 520,
+        }}
+      >
+        {personal
+          ? "Cue can only help with what it can see. Just yours — nothing shared, nothing posted. "
+          : "Cue watches these so nothing slips through. Connect a few now, or skip and add them anytime — "}
+        <span style={{ color: C.t1 }}>nothing leaves without your say-so.</span>
+      </p>
+
+      {/* Easy connect / Custom segmented toggle */}
       <div
         role="tablist"
-        style={{ display: "flex", gap: 6, marginBottom: 12 }}
+        style={{
+          display: "inline-flex",
+          background: C.sunken,
+          borderRadius: 11,
+          padding: 3,
+          gap: 2,
+          marginBottom: 14,
+        }}
         data-slot="hq-setup-connect-tabs"
       >
         {(
@@ -102,10 +213,10 @@ export function ConnectToolsStep({
               aria-selected={on}
               onClick={() => setTab(key)}
               style={{
-                ...tabStyle,
-                background: on ? C.t1 : C.bg,
-                color: on ? C.bg : C.t2,
-                borderColor: on ? C.t1 : C.line2,
+                ...segStyle,
+                background: on ? C.surface : "transparent",
+                color: on ? C.t1 : C.t2,
+                boxShadow: on ? "0 1px 3px rgba(26,34,48,.12)" : "none",
               }}
             >
               {label}
@@ -116,45 +227,94 @@ export function ConnectToolsStep({
 
       {tab === "easy" ? (
         <div data-slot="hq-setup-connect-grid">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search apps — Gmail, Notion, GitHub…"
-            aria-label="Search connectable apps"
-            style={{ ...inputStyle, fontSize: 13.5, marginBottom: 10 }}
-          />
+          {/* Category filter chips */}
+          <div
+            role="tablist"
+            aria-label="Filter by category"
+            style={{
+              display: "flex",
+              gap: 7,
+              flexWrap: "wrap",
+              marginBottom: 14,
+            }}
+            data-slot="hq-setup-connect-cats"
+          >
+            {CATEGORIES.map((c) => {
+              const on = cat === c;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setCat(c)}
+                  style={{
+                    ...chipStyle,
+                    background: on ? C.t1 : C.surface,
+                    color: on ? C.bg : C.t2,
+                    borderColor: on ? C.t1 : C.line2,
+                  }}
+                >
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search field with icon */}
+          <div style={searchWrapStyle}>
+            <SearchIcon />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search 470+ apps"
+              aria-label="Search connectable apps"
+              style={searchInputStyle}
+            />
+          </div>
+
           {grid.isLoading ? (
-            <div style={{ fontSize: 13, color: C.t3, padding: "8px 0" }}>
+            <div style={{ fontSize: 13, color: C.t3, padding: "12px 0" }}>
               Loading connectable apps…
             </div>
-          ) : grid.apps.length === 0 ? (
-            <div style={{ fontSize: 13, color: C.t3, padding: "8px 0" }}>
-              No apps match “{query}”.
+          ) : shown.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.t3, padding: "12px 0" }}>
+              {query.trim()
+                ? `No apps match “${query}”.`
+                : "No apps in this category."}
             </div>
           ) : (
-            <div style={gridStyle}>
-              {grid.apps.slice(0, 30).map((app) => (
-                <AppCard
-                  key={app.slug}
-                  app={app}
-                  assistantId={assistantId}
-                  connectable={grid.connectable}
-                />
-              ))}
-            </div>
+            <>
+              <MicroLabel color={C.t3} style={{ margin: "14px 0 10px" }}>
+                Popular
+              </MicroLabel>
+              <div style={gridStyle}>
+                {shown.map((app) => (
+                  <AppCard
+                    key={app.slug}
+                    app={app}
+                    assistantId={assistantId}
+                    connectable={grid.connectable}
+                  />
+                ))}
+              </div>
+              {remaining > 0 ? (
+                <div
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 12.5,
+                    color: C.t3,
+                    marginTop: 14,
+                  }}
+                >
+                  {remaining}+ more apps —{" "}
+                  <span style={{ color: C.t2 }}>
+                    start typing to narrow it down.
+                  </span>
+                </div>
+              ) : null}
+            </>
           )}
-          {!grid.isLoading && grid.apps.length > 30 ? (
-            <div
-              style={{
-                fontFamily: mono,
-                fontSize: 10.5,
-                color: C.t3,
-                marginTop: 8,
-              }}
-            >
-              {grid.apps.length - 30} more — keep typing to narrow it down.
-            </div>
-          ) : null}
         </div>
       ) : (
         <CustomTab
@@ -210,19 +370,31 @@ function AppCard({
   };
 
   return (
-    <div style={appCardStyle} data-slot="hq-setup-app-card">
+    <div
+      style={{
+        ...appCardStyle,
+        ...(app.connected
+          ? {
+              border: `1px solid ${connectedBorder}`,
+              background: connectedTint,
+            }
+          : null),
+      }}
+      data-slot="hq-setup-app-card"
+      data-connected={app.connected ? "true" : "false"}
+    >
       <ConnectorAppLogo
         name={app.name}
         logoUrl={app.logoUrl}
-        size={32}
-        imgSize={20}
-        chipStyle={{ ...rowIconStyle, width: 32, height: 32, fontSize: 14 }}
+        size={38}
+        imgSize={22}
+        chipStyle={{ ...rowIconStyle, width: 38, height: 38, fontSize: 15 }}
       />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span
           style={{
             display: "block",
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: 600,
             color: C.t1,
             whiteSpace: "nowrap",
@@ -235,8 +407,8 @@ function AppCard({
         <span
           style={{
             display: "block",
-            fontSize: 10.5,
-            color: C.t3,
+            fontSize: 12,
+            color: C.t2,
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -246,16 +418,8 @@ function AppCard({
         </span>
       </span>
       {app.connected ? (
-        <span
-          style={{
-            fontFamily: mono,
-            fontSize: 9.5,
-            letterSpacing: "0.06em",
-            color: C.green,
-            flexShrink: 0,
-          }}
-        >
-          ✓ CONNECTED
+        <span style={connectedBadgeStyle}>
+          <CheckIcon /> CONNECTED
         </span>
       ) : (
         <button
@@ -263,9 +427,7 @@ function AppCard({
           onClick={start}
           disabled={!connectable || connect.isPending}
           style={{
-            ...connectPillStyle,
-            fontSize: 11.5,
-            padding: "5px 10px",
+            ...connectCtaStyle,
             opacity: connectable ? 1 : 0.5,
             cursor: connectable ? "pointer" : "not-allowed",
           }}
@@ -275,7 +437,7 @@ function AppCard({
               : "Easy connect isn't configured on this instance yet"
           }
         >
-          {connect.isPending ? "…" : "Connect"}
+          {connect.isPending ? "…" : "+ Connect"}
         </button>
       )}
     </div>
@@ -337,18 +499,8 @@ function CustomTab({
                 </span>
               </span>
               {card.connected ? (
-                <span
-                  style={{
-                    fontFamily: mono,
-                    fontSize: 10.5,
-                    letterSpacing: "0.08em",
-                    color: C.green,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 5,
-                  }}
-                >
-                  <span aria-hidden>✓</span> CONNECTED
+                <span style={connectedBadgeStyle}>
+                  <CheckIcon /> CONNECTED
                 </span>
               ) : (
                 <button
@@ -410,24 +562,99 @@ function CustomTab({
 }
 
 // ---------------------------------------------------------------------------
+// Inline icons (self-contained SVG, theme-aware via currentColor / props)
+// ---------------------------------------------------------------------------
+
+function SearchIcon() {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={C.t3}
+      strokeWidth={2}
+      aria-hidden
+      style={{ flexShrink: 0 }}
+    >
+      <circle cx={11} cy={11} r={7} />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width={10}
+      height={10}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={C.green}
+      strokeWidth={3.5}
+      aria-hidden
+    >
+      <path d="m5 13 4 4 10-11" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
 
-const tabStyle: CSSProperties = {
+const accentStyle: CSSProperties = {
+  fontStyle: "italic",
+  color: C.blue,
+};
+
+const segStyle: CSSProperties = {
+  border: "none",
+  borderRadius: 8,
+  padding: "8px 18px",
+  fontSize: 13,
+  fontWeight: 500,
+  whiteSpace: "nowrap",
+  cursor: "pointer",
+  transition: "background .12s, color .12s, box-shadow .12s",
+};
+
+const chipStyle: CSSProperties = {
   border: `1px solid ${C.line2}`,
   borderRadius: 999,
   padding: "6px 14px",
   fontSize: 12.5,
-  fontWeight: 600,
+  fontWeight: 500,
   cursor: "pointer",
+  transition: "background .12s, color .12s, border-color .12s",
+};
+
+const searchWrapStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  border: `1px solid ${C.line2}`,
+  borderRadius: 12,
+  padding: "11px 14px",
   background: C.bg,
-  transition: "background .12s, color .12s",
+};
+
+const searchInputStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  border: "none",
+  outline: "none",
+  background: "transparent",
+  fontSize: 14,
+  color: C.t1,
+  font: "inherit",
+  padding: 0,
 };
 
 const gridStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
-  gap: 8,
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
   maxHeight: 320,
   overflowY: "auto",
   paddingRight: 2,
@@ -436,12 +663,47 @@ const gridStyle: CSSProperties = {
 const appCardStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 9,
+  gap: 12,
   border: `1px solid ${C.line}`,
-  borderRadius: 12,
-  padding: "9px 10px",
+  borderRadius: 14,
+  padding: "12px 14px",
   background: C.surface,
   minWidth: 0,
+  transition: "border-color .16s, background .16s",
+};
+
+// Connected card — subtle green tint + green border (success green is used
+// for connected state only, per the design tokens).
+const connectedTint =
+  "color-mix(in srgb, var(--mv1-green) 7%, var(--mv1-card))";
+const connectedBorder =
+  "color-mix(in srgb, var(--mv1-green) 32%, var(--mv1-line))";
+
+const connectedBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  fontFamily: mono,
+  fontSize: 10,
+  letterSpacing: "0.04em",
+  color: C.green,
+  background: "color-mix(in srgb, var(--mv1-green) 16%, transparent)",
+  padding: "5px 9px",
+  borderRadius: 7,
+  flexShrink: 0,
+};
+
+const connectCtaStyle: CSSProperties = {
+  fontFamily: "inherit",
+  fontSize: 12.5,
+  fontWeight: 500,
+  color: C.blueS,
+  background: C.blueW,
+  border: `1px solid color-mix(in srgb, var(--mv1-blue) 30%, transparent)`,
+  borderRadius: 9,
+  padding: "7px 13px",
+  flexShrink: 0,
+  transition: "background .16s",
 };
 
 const foundBandStyle: CSSProperties = {

@@ -651,6 +651,7 @@ function RailContent({
     typeof memory.confidence === "number" ? memory.confidence.toFixed(2) : "—";
   const reinforcement = memory.reinforcementCount ?? 0;
   const source = sourceTypeLabel(memory.sourceType);
+  const recalled = memory.accessCount ?? 0;
   const firstSeen = Number.isFinite(memory.firstSeenAt)
     ? formatFriendlyDate(new Date(memory.firstSeenAt))
     : null;
@@ -758,11 +759,13 @@ function RailContent({
           {firstSeen ? <div>· first seen {firstSeen}</div> : null}
           {lastSeen ? <div>· last seen {lastSeen}</div> : null}
           {reinforcement > 0 ? <div>· reinforced {reinforcement}×</div> : null}
+          {recalled > 0 ? <div>· recalled {recalled}×</div> : null}
           {!source &&
           !memory.scopeLabel &&
           !firstSeen &&
           !lastSeen &&
-          reinforcement === 0 ? (
+          reinforcement === 0 &&
+          recalled === 0 ? (
             <div>No source signals recorded.</div>
           ) : null}
         </div>

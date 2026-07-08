@@ -2,18 +2,24 @@
  * Skill Marketplace — Explore / Sources / Installed over GitHub-ingested
  * SKILL.md sources (WS1, Kortix execution brief §3).
  *
- * Visual language matches the HQ kit used by `projects-page.tsx`: serif
- * display hero under a mono microlabel, HQ card DNA (emoji tile · sans
- * title · mono source microlabel), mono chips. Every card attributes its
- * source (`owner/repo`), installs go through an explicit capability-consent
- * card, and updates are diff-then-confirm — never silent.
+ * Visual language: the "reviewed before they run" design book — a dark ink
+ * hero with a serif headline + right-aligned live skill/source count,
+ * underline tabs (count badge on Installed), pill source filters, and skill
+ * cards that attribute their source (github-mark · owner/repo) and surface
+ * capability chips (● connector/network · ▲ secret/elevated) before an
+ * Install button. Every install still routes through the explicit
+ * capability-consent modal; updates stay diff-then-confirm — never silent.
+ *
+ * Bound to live data throughout: hero counts, "Search N skills", the
+ * Installed badge, and the INSTALLED card state all read the real daemon
+ * responses — no hardcoded demo numbers.
  *
  * Gated by the `marketplace` assistant feature flag: the Intelligence tab
  * only renders with the flag on, and this page redirects to Skills when a
  * deep-link lands with the flag off (same pattern as PluginsPage).
  */
 
-import { Check, Download, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Navigate } from "react-router";
 
@@ -46,16 +52,30 @@ type TabKey = "explore" | "sources" | "installed";
 
 // ─── Shared micro-components ─────────────────────────────────────────────────
 
-/** Mono all-caps chip, HQ voice. */
-function Chip({
+/** GitHub mark (the octocat glyph the mock uses for source attribution). */
+function GithubMark({ size = 10, color = C.t3 }: { size?: number; color?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={color}
+      aria-hidden
+      style={{ flexShrink: 0 }}
+    >
+      <path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5a4 4 0 0 1 1-2.7c-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7a4 4 0 0 1 1 2.7c0 3.9-2.3 4.7-4.6 5 .4.3.7 1 .7 2v2.9c0 .3.2.6.7.5A10 10 0 0 0 12 2Z" />
+    </svg>
+  );
+}
+
+/** Pill filter, HQ voice — active = dark ink fill (matches the mock chips). */
+function Pill({
   label,
   active = false,
-  color = C.t2,
   onClick,
 }: {
   label: string;
   active?: boolean;
-  color?: string;
   onClick?: () => void;
 }) {
   return (
@@ -63,19 +83,19 @@ function Chip({
       type="button"
       onClick={onClick}
       style={{
-        fontFamily: mono,
-        fontSize: 9.5,
-        letterSpacing: "0.05em",
-        textTransform: "uppercase",
-        color: active ? C.bg : color,
-        background: active
-          ? C.ink
-          : `color-mix(in srgb, ${color} 10%, transparent)`,
+        fontFamily: "inherit",
+        fontSize: 12,
+        fontWeight: 500,
+        color: active ? C.bg : C.t2,
+        background: active ? C.ink : C.surface,
         border: `1px solid ${active ? C.ink : C.line}`,
         borderRadius: 999,
-        padding: "4px 10px",
+        padding: "5px 13px",
         whiteSpace: "nowrap",
         cursor: onClick ? "pointer" : "default",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
       }}
     >
       {label}
@@ -88,8 +108,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontFamily: mono,
-        fontSize: 9.5,
-        letterSpacing: "0.09em",
+        fontSize: 10,
+        letterSpacing: "0.1em",
         textTransform: "uppercase",
         color: C.t3,
         margin: "20px 0 10px",
@@ -97,6 +117,51 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
+  );
+}
+
+// ─── Capability chips ────────────────────────────────────────────────────────
+
+type Cap = { glyph: string; label: string; elevated: boolean };
+
+/**
+ * Derive the mock's capability chips from `item.capabilities`. Secrets are
+ * marked with a ▲ (triangle → elevated/secret); connectors and network get a
+ * ● (dot). Writes fold into the dot bucket too.
+ */
+function capChips(caps: MarketplaceItem["capabilities"]): Cap[] {
+  const chips: Cap[] = [];
+  for (const label of caps.connectors)
+    chips.push({ glyph: "●", label, elevated: false });
+  for (const label of caps.network)
+    chips.push({ glyph: "●", label, elevated: false });
+  for (const label of caps.writes)
+    chips.push({ glyph: "●", label, elevated: false });
+  for (const label of caps.secrets)
+    chips.push({ glyph: "▲", label, elevated: true });
+  return chips;
+}
+
+function CapChip({ cap }: { cap: Cap }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        fontFamily: mono,
+        fontSize: 9.5,
+        background: C.sunken,
+        border: `1px solid ${C.line}`,
+        color: cap.elevated ? C.amber : C.t2,
+        padding: "3px 8px",
+        borderRadius: 6,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span style={{ color: cap.elevated ? C.amber : C.violet }}>{cap.glyph}</span>
+      {cap.label}
+    </span>
   );
 }
 
@@ -111,22 +176,16 @@ function SkillCard({
   onInstall: () => void;
   installing: boolean;
 }) {
-  const declared =
-    item.capabilities.secrets.length +
-      item.capabilities.connectors.length +
-      item.capabilities.network.length +
-      item.capabilities.writes.length >
-    0;
+  const chips = capChips(item.capabilities);
   return (
     <div
       style={{
-        padding: "14px 15px",
+        padding: 15,
         border: `1px solid ${C.line}`,
         borderRadius: 14,
         background: C.surface,
         display: "flex",
         flexDirection: "column",
-        gap: 9,
         minWidth: 0,
       }}
     >
@@ -134,12 +193,12 @@ function SkillCard({
         <span
           aria-hidden
           style={{
-            width: 34,
-            height: 34,
-            borderRadius: 9,
+            width: 40,
+            height: 40,
+            borderRadius: 11,
             display: "grid",
             placeItems: "center",
-            fontSize: 16,
+            fontSize: 20,
             background: C.sunken,
             flexShrink: 0,
           }}
@@ -149,7 +208,7 @@ function SkillCard({
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
-              fontSize: 13.5,
+              fontSize: 14.5,
               fontWeight: 600,
               lineHeight: 1.25,
               color: C.t1,
@@ -161,98 +220,110 @@ function SkillCard({
           >
             {item.displayName}
           </div>
-          {/* Source attribution on every card (owner/repo). */}
+          {/* Source attribution on every card (github-mark · owner/repo). */}
           <div
-            style={{
-              fontFamily: mono,
-              fontSize: 9,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: C.t3,
-              marginTop: 3,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {item.source}
-            {item.license ? ` · ${item.license}` : ""}
-          </div>
-        </div>
-      </div>
-      <div
-        style={{
-          fontSize: 12,
-          lineHeight: 1.45,
-          color: C.t2,
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-          minHeight: 34,
-        }}
-      >
-        {item.description}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          paddingTop: 9,
-          borderTop: `1px solid ${C.line}`,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: mono,
-            fontSize: 9,
-            letterSpacing: "0.05em",
-            color: declared ? C.amber : C.t3,
-          }}
-        >
-          {declared ? "DECLARES CAPABILITIES" : "NO DECLARED CAPABILITIES"}
-        </span>
-        {item.installed ? (
-          <span
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 5,
               fontFamily: mono,
-              fontSize: 9.5,
-              letterSpacing: "0.05em",
-              color: C.green,
+              fontSize: 10,
+              color: C.t3,
+              marginTop: 3,
+              maxWidth: "100%",
+              overflow: "hidden",
             }}
           >
-            <Check size={11} /> INSTALLED
-          </span>
-        ) : (
-          <button
-            type="button"
-            disabled={installing}
-            onClick={onInstall}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 11.5,
-              fontWeight: 500,
-              padding: "5px 11px",
-              borderRadius: 8,
-              border: "none",
-              background: C.ink,
-              color: C.bg,
-              cursor: installing ? "default" : "pointer",
-              opacity: installing ? 0.6 : 1,
-            }}
-          >
-            <Download size={12} />
-            {installing ? "Preparing…" : "Install"}
-          </button>
-        )}
+            <GithubMark size={10} color={C.t3} />
+            <span
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {item.source}
+              {item.license ? ` · ${item.license}` : ""}
+            </span>
+          </div>
+        </div>
       </div>
+
+      <div
+        style={{
+          fontSize: 12.5,
+          lineHeight: 1.5,
+          color: C.t2,
+          marginTop: 11,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          flex: 1,
+        }}
+      >
+        {item.description}
+      </div>
+
+      {chips.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            marginTop: 12,
+          }}
+        >
+          {chips.map((cap, i) => (
+            <CapChip key={`${cap.label}-${i}`} cap={cap} />
+          ))}
+        </div>
+      ) : null}
+
+      {item.installed ? (
+        <span
+          style={{
+            marginTop: 13,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            fontFamily: mono,
+            fontSize: 11,
+            letterSpacing: "0.06em",
+            color: C.green,
+            background: `color-mix(in srgb, ${C.green} 9%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${C.green} 28%, transparent)`,
+            borderRadius: 10,
+            padding: 9,
+            width: "100%",
+          }}
+        >
+          <Check size={13} /> INSTALLED
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={installing}
+          onClick={onInstall}
+          style={{
+            marginTop: 13,
+            fontFamily: "inherit",
+            fontSize: 13,
+            fontWeight: 500,
+            color: C.bg,
+            background: C.violetS,
+            border: "none",
+            borderRadius: 10,
+            padding: 9,
+            width: "100%",
+            cursor: installing ? "default" : "pointer",
+            opacity: installing ? 0.6 : 1,
+          }}
+        >
+          {installing ? "Preparing…" : "Install"}
+        </button>
+      )}
     </div>
   );
 }
@@ -297,7 +368,8 @@ function InstallConsentModal({
         position: "fixed",
         inset: 0,
         zIndex: 60,
-        background: "color-mix(in srgb, #000 42%, transparent)",
+        background: "rgba(20,28,40,.55)",
+        backdropFilter: "blur(3px)",
         display: "grid",
         placeItems: "center",
         padding: 16,
@@ -306,81 +378,135 @@ function InstallConsentModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "min(480px, 100%)",
+          width: "min(440px, 100%)",
           maxHeight: "82vh",
           overflowY: "auto",
           background: C.bg,
           border: `1px solid ${C.line}`,
-          borderRadius: 16,
-          padding: "20px 22px",
+          borderRadius: 18,
+          boxShadow: "0 40px 90px -30px rgba(0,0,0,.6)",
+          padding: "22px 24px",
         }}
       >
-        <MicroLabel>Install · capability consent</MicroLabel>
-        <div
-          style={{
-            fontFamily: serif,
-            fontSize: 24,
-            lineHeight: 1.1,
-            color: C.ink,
-            marginTop: 6,
-          }}
-        >
-          {plan.item?.displayName ?? plan.skillId}
-        </div>
-        <div
-          style={{
-            fontFamily: mono,
-            fontSize: 9.5,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: C.t3,
-            marginTop: 4,
-          }}
-        >
-          {plan.item?.source}
-          {plan.item?.license ? ` · ${plan.item.license}` : ""}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span
+            aria-hidden
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              display: "grid",
+              placeItems: "center",
+              fontSize: 22,
+              background: C.sunken,
+              flexShrink: 0,
+            }}
+          >
+            {plan.item?.emoji ?? "🧩"}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: C.t1 }}>
+              {plan.item?.displayName ?? plan.skillId}
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontFamily: mono,
+                fontSize: 10.5,
+                color: C.t3,
+                marginTop: 2,
+              }}
+            >
+              <GithubMark size={10} color={C.t3} />
+              {plan.item?.source}
+              {plan.item?.license ? ` · ${plan.item.license}` : ""}
+            </div>
+          </div>
         </div>
 
         <div
           style={{
-            marginTop: 14,
-            padding: "10px 12px",
-            borderRadius: 10,
-            background: `color-mix(in srgb, ${declared.length > 0 ? C.amber : C.blue} 9%, transparent)`,
+            marginTop: 16,
+            padding: "12px 14px",
+            borderRadius: 11,
+            background: C.sunken,
+            border: `1px solid ${C.line}`,
             fontSize: 12.5,
             lineHeight: 1.5,
-            color: C.t1,
+            color: C.t2,
+            display: "flex",
+            gap: 9,
           }}
         >
+          <span style={{ color: C.violet, flexShrink: 0 }}>✦</span>
           {plan.notice}
         </div>
 
         {declared.length > 0 ? (
-          <div style={{ marginTop: 12, display: "grid", gap: 6 }}>
-            {declared.map(([label, values]) => (
-              <div key={label} style={{ display: "flex", gap: 8, fontSize: 12 }}>
-                <span
-                  style={{
-                    fontFamily: mono,
-                    fontSize: 9.5,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    color: C.amber,
-                    minWidth: 82,
-                    paddingTop: 1,
-                  }}
-                >
-                  {label}
-                </span>
-                <span style={{ color: C.t2 }}>{values.join(", ")}</span>
-              </div>
-            ))}
-          </div>
+          <>
+            <div
+              style={{
+                fontFamily: mono,
+                fontSize: 10,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: C.t3,
+                margin: "18px 0 9px",
+              }}
+            >
+              This skill can access
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {declared.map(([label, values]) => {
+                const elevated = label === "Secrets";
+                return (
+                  <div
+                    key={label}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 7,
+                        display: "grid",
+                        placeItems: "center",
+                        fontSize: 12,
+                        flexShrink: 0,
+                        color: elevated ? C.amber : C.violet,
+                        background: `color-mix(in srgb, ${elevated ? C.amber : C.violet} 12%, transparent)`,
+                      }}
+                    >
+                      {elevated ? "▲" : "●"}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{ fontSize: 13, fontWeight: 500, color: C.t1 }}
+                      >
+                        {label}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.t3 }}>
+                        {values.join(", ")}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : null}
 
-        <SectionLabel>
-          Files to install · {files.length}
-        </SectionLabel>
+        <SectionLabel>Files to install · {files.length}</SectionLabel>
         <div style={{ display: "grid", gap: 3 }}>
           {files.map((f) => (
             <div
@@ -420,24 +546,20 @@ function InstallConsentModal({
           </div>
         ) : null}
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            gap: 8,
-            marginTop: 18,
-          }}
-        >
+        <div style={{ display: "flex", gap: 9, marginTop: 20 }}>
           <button
             type="button"
             onClick={onCancel}
             style={{
-              fontSize: 12,
-              padding: "7px 13px",
-              borderRadius: 9,
+              flex: 1,
+              fontFamily: "inherit",
+              fontSize: 13.5,
+              fontWeight: 500,
+              padding: 12,
+              borderRadius: 11,
               border: `1px solid ${C.line}`,
               background: C.surface,
-              color: C.t1,
+              color: C.t2,
               cursor: "pointer",
             }}
           >
@@ -448,12 +570,14 @@ function InstallConsentModal({
             disabled={confirming}
             onClick={onConfirm}
             style={{
-              fontSize: 12,
+              flex: 1.4,
+              fontFamily: "inherit",
+              fontSize: 13.5,
               fontWeight: 500,
-              padding: "7px 14px",
-              borderRadius: 9,
+              padding: 12,
+              borderRadius: 11,
               border: "none",
-              background: C.ink,
+              background: C.violetS,
               color: C.bg,
               cursor: confirming ? "default" : "pointer",
               opacity: confirming ? 0.6 : 1,
@@ -471,15 +595,16 @@ function InstallConsentModal({
 
 function ExploreTab({
   assistantId,
-  sources,
+  perSource,
+  totalItems,
 }: {
   assistantId: string;
-  sources: MarketplaceSource[];
+  perSource: ReturnType<typeof useSourceItems>;
+  totalItems: number;
 }) {
   const isNarrow = useIsMobile();
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
-  const perSource = useSourceItems(assistantId, sources);
   const install = useInstallSkill(assistantId);
   const [plan, setPlan] = useState<InstallResponse | null>(null);
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
@@ -541,7 +666,7 @@ function ExploreTab({
         gridTemplateColumns: isNarrow
           ? "1fr"
           : "repeat(auto-fill, minmax(270px, 1fr))",
-        gap: isNarrow ? 9 : 13,
+        gap: isNarrow ? 9 : 12,
       }}
     >
       {items.map((item) => (
@@ -557,51 +682,57 @@ function ExploreTab({
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          flexWrap: "wrap",
-          marginTop: 16,
-        }}
-      >
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search skills…"
-          aria-label="Search skills"
+      {/* Search — placeholder counts the real indexed skills. */}
+      <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+        <div
           style={{
-            flex: "1 1 220px",
-            minWidth: 180,
-            fontSize: 13,
-            padding: "8px 12px",
-            borderRadius: 10,
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
             border: `1px solid ${C.line}`,
+            borderRadius: 11,
+            padding: "10px 14px",
             background: C.surface,
-            color: C.t1,
-            outline: "none",
           }}
-        />
+        >
+          <Search size={15} color={C.t3} style={{ flexShrink: 0 }} />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${totalItems} skill${totalItems === 1 ? "" : "s"}`}
+            aria-label="Search skills"
+            style={{
+              flex: 1,
+              fontSize: 14,
+              fontFamily: "inherit",
+              border: "none",
+              background: "transparent",
+              color: C.t1,
+              outline: "none",
+              minWidth: 0,
+            }}
+          />
+        </div>
       </div>
 
-      {/* Per-source filter chips — item counts land as each source resolves. */}
+      {/* Per-source filter pills — counts land as each source resolves. */}
       <div
         style={{
           display: "flex",
-          gap: 6,
+          gap: 7,
           flexWrap: "wrap",
-          marginTop: 10,
+          marginTop: 12,
         }}
       >
-        <Chip
-          label="All sources"
+        <Pill
+          label="All"
           active={sourceFilter === null}
           onClick={() => setSourceFilter(null)}
         />
         {perSource.map(({ source, items, isLoading }) => (
-          <Chip
+          <Pill
             key={source.address}
             label={`${source.label ?? source.address}${
               isLoading ? " · …" : ` · ${items.length}`
@@ -637,12 +768,12 @@ function ExploreTab({
                 gridTemplateColumns: isNarrow
                   ? "1fr"
                   : "repeat(auto-fill, minmax(270px, 1fr))",
-                gap: 13,
+                gap: 12,
               }}
             >
-              <Shimmer height={118} radius={14} />
-              <Shimmer height={118} radius={14} />
-              <Shimmer height={118} radius={14} />
+              <Shimmer height={150} radius={14} />
+              <Shimmer height={150} radius={14} />
+              <Shimmer height={150} radius={14} />
             </div>
           ) : group.isError ? (
             <div style={{ fontSize: 12.5, color: C.t3 }}>
@@ -683,10 +814,12 @@ function SourcesTab({
   assistantId,
   sources,
   isLoading,
+  countFor,
 }: {
   assistantId: string;
   sources: MarketplaceSource[];
   isLoading: boolean;
+  countFor: (address: string) => number | null;
 }) {
   const addSource = useAddSource(assistantId);
   const removeSource = useRemoveSource(assistantId);
@@ -715,26 +848,60 @@ function SourcesTab({
   };
 
   return (
-    <div>
-      <SectionLabel>Add a source</SectionLabel>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ marginTop: 16 }}>
+      {/* Add-a-source banner — dashed card w/ github mark, per the mock. */}
+      <div
+        style={{
+          border: `1px dashed ${C.line2}`,
+          borderRadius: 13,
+          padding: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 13,
+          flexWrap: "wrap",
+          background: C.sunken,
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 10,
+            background: C.ink,
+            display: "grid",
+            placeItems: "center",
+            flexShrink: 0,
+          }}
+        >
+          <GithubMark size={20} color={C.bg} />
+        </span>
+        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.t1 }}>
+            Add a GitHub source
+          </div>
+          <div style={{ fontSize: 12.5, color: C.t2 }}>
+            Paste any public repo of skills — Cue indexes it and streams new
+            capabilities in.
+          </div>
+        </div>
         <input
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder="owner/repo or github.com URL"
+          placeholder="owner/repo"
           aria-label="Source repository address"
           style={{
-            flex: "1 1 260px",
-            minWidth: 200,
-            fontSize: 13,
+            flex: "1 1 200px",
+            minWidth: 180,
+            fontSize: 12,
             fontFamily: mono,
-            padding: "8px 12px",
+            padding: "9px 13px",
             borderRadius: 10,
             border: `1px solid ${C.line}`,
-            background: C.surface,
+            background: C.bg,
             color: C.t1,
             outline: "none",
           }}
@@ -747,24 +914,22 @@ function SourcesTab({
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
-            fontSize: 12,
+            fontFamily: "inherit",
+            fontSize: 13,
             fontWeight: 500,
-            padding: "8px 14px",
-            borderRadius: 9,
+            padding: "10px 18px",
+            borderRadius: 10,
             border: "none",
             background: C.ink,
             color: C.bg,
             cursor: addSource.isPending ? "default" : "pointer",
             opacity: addSource.isPending ? 0.6 : 1,
+            flexShrink: 0,
           }}
         >
           <Plus size={13} />
           {addSource.isPending ? "Verifying…" : "Add source"}
         </button>
-      </div>
-      <div style={{ fontSize: 11.5, color: C.t3, marginTop: 7 }}>
-        Any public GitHub repo of SKILL.md files becomes a source. The repo is
-        verified and its license recorded before it’s added.
       </div>
       {feedback ? (
         <div style={{ fontSize: 12, color: C.amber, marginTop: 8 }}>
@@ -777,75 +942,135 @@ function SourcesTab({
         <Shimmer height={54} radius={12} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
-          {sources.map((source) => (
-            <div
-              key={source.address}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "11px 14px",
-                border: `1px solid ${C.line}`,
-                borderRadius: 12,
-                background: C.surface,
-                opacity: source.enabled ? 1 : 0.55,
-              }}
-            >
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
-                  {source.label ?? source.address}
-                </div>
-                <div
-                  style={{
-                    fontFamily: mono,
-                    fontSize: 10,
-                    letterSpacing: "0.04em",
-                    color: C.t3,
-                    marginTop: 2,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {source.kind === "catalog"
-                    ? "first-party catalog"
-                    : `github.com/${source.address}`}
-                  {source.license ? ` · ${source.license}` : ""}
-                  {source.builtIn ? " · seeded" : ""}
-                  {!source.enabled ? " · disabled" : ""}
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label={`Remove source ${source.address}`}
-                disabled={removeSource.isPending || !source.enabled}
-                onClick={() =>
-                  removeSource.mutate({
-                    path: { assistant_id: assistantId },
-                    query: { address: source.address },
-                  })
-                }
-                title={
-                  source.builtIn
-                    ? "Seeded sources are disabled rather than deleted"
-                    : "Remove source"
-                }
+          {sources.map((source) => {
+            const count = countFor(source.address);
+            return (
+              <div
+                key={source.address}
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  display: "grid",
-                  placeItems: "center",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 15px",
                   border: `1px solid ${C.line}`,
-                  background: "transparent",
-                  color: C.t3,
-                  cursor: "pointer",
+                  borderRadius: 12,
+                  background: C.surface,
+                  opacity: source.enabled ? 1 : 0.55,
                 }}
               >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
+                <span
+                  aria-hidden
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 9,
+                    background: C.sunken,
+                    border: `1px solid ${C.line}`,
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <GithubMark size={16} color={C.ink} />
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      fontFamily: mono,
+                      color: C.t1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {source.label ?? source.address}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: C.t2,
+                      marginTop: 2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {source.kind === "catalog"
+                      ? "first-party catalog"
+                      : `github.com/${source.address}`}
+                    {source.license ? ` · ${source.license}` : ""}
+                    {!source.enabled ? " · disabled" : ""}
+                  </div>
+                </div>
+                {count != null ? (
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 11,
+                      color: C.t3,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {count} skill{count === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                {source.builtIn ? (
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 9.5,
+                      color: C.blueS,
+                      background: C.blueW,
+                      padding: "3px 8px",
+                      borderRadius: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    OFFICIAL
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={`Remove source ${source.address}`}
+                  disabled={removeSource.isPending || !source.enabled}
+                  onClick={() =>
+                    removeSource.mutate({
+                      path: { assistant_id: assistantId },
+                      query: { address: source.address },
+                    })
+                  }
+                  title={
+                    source.builtIn
+                      ? "Seeded sources are disabled rather than deleted"
+                      : "Remove source"
+                  }
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    padding: "7px 12px",
+                    borderRadius: 8,
+                    border: `1px solid color-mix(in srgb, ${C.danger} 26%, transparent)`,
+                    background: C.surface,
+                    color: C.danger,
+                    cursor:
+                      removeSource.isPending || !source.enabled
+                        ? "default"
+                        : "pointer",
+                    opacity: !source.enabled ? 0.5 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  <Trash2 size={12} />
+                  Remove
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -878,6 +1103,16 @@ function InstalledRow({
         background: C.surface,
       }}
     >
+      <span
+        aria-hidden
+        style={{
+          width: 9,
+          height: 9,
+          borderRadius: "50%",
+          background: hasUpdate ? C.amber : C.green,
+          flexShrink: 0,
+        }}
+      />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div
           style={{
@@ -902,16 +1137,27 @@ function InstalledRow({
           {hasUpdate ? (
             <span
               style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
                 fontFamily: mono,
-                fontSize: 9,
-                letterSpacing: "0.06em",
+                fontSize: 9.5,
                 color: C.amber,
                 background: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
                 borderRadius: 6,
-                padding: "2px 7px",
+                padding: "3px 8px",
                 whiteSpace: "nowrap",
               }}
             >
+              <span
+                aria-hidden
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: "50%",
+                  background: C.amber,
+                }}
+              />
               UPDATE · {update!.changes.length} FILE
               {update!.changes.length === 1 ? "" : "S"}
             </span>
@@ -964,6 +1210,7 @@ function InstalledRow({
           disabled={updating}
           onClick={onUpdate}
           style={{
+            fontFamily: "inherit",
             fontSize: 11.5,
             fontWeight: 500,
             padding: "6px 12px",
@@ -996,8 +1243,15 @@ function InstalledRow({
   );
 }
 
-function InstalledTab({ assistantId }: { assistantId: string }) {
-  const { installed, isLoading } = useInstalled(assistantId);
+function InstalledTab({
+  assistantId,
+  installed,
+  isLoading,
+}: {
+  assistantId: string;
+  installed: InstalledSkill[];
+  isLoading: boolean;
+}) {
   const [checking, setChecking] = useState(false);
   const updates = useUpdates(assistantId, checking);
   const applyUpdate = useApplyUpdate(assistantId);
@@ -1017,9 +1271,7 @@ function InstalledTab({ assistantId }: { assistantId: string }) {
           marginTop: 16,
         }}
       >
-        <MicroLabel>
-          Installed from sources · {installed.length}
-        </MicroLabel>
+        <MicroLabel>Installed from sources · {installed.length}</MicroLabel>
         <button
           type="button"
           disabled={updates.isLoading}
@@ -1031,6 +1283,7 @@ function InstalledTab({ assistantId }: { assistantId: string }) {
             display: "inline-flex",
             alignItems: "center",
             gap: 6,
+            fontFamily: "inherit",
             fontSize: 11.5,
             padding: "6px 11px",
             borderRadius: 8,
@@ -1094,10 +1347,24 @@ export function MarketplacePage() {
 
   const { sources, isLoading: sourcesLoading } =
     useMarketplaceSources(assistantId);
+  // Explore streams per source — lift it to the page so the hero count,
+  // "Search N skills", and per-source counts all read the same live data.
+  const perSource = useSourceItems(assistantId, sources);
+  const { installed, isLoading: installedLoading } = useInstalled(assistantId);
+
   const enabledCount = useMemo(
     () => sources.filter((s) => s.enabled).length,
     [sources],
   );
+  const totalItems = useMemo(
+    () => perSource.reduce((sum, group) => sum + group.items.length, 0),
+    [perSource],
+  );
+  const countFor = (address: string): number | null => {
+    const group = perSource.find((g) => g.source.address === address);
+    if (!group || group.isLoading) return null;
+    return group.items.length;
+  };
 
   // Wait for the first real /feature-flags response before deciding to
   // redirect (same rule as PluginsPage) — never bounce a user who has the
@@ -1105,62 +1372,164 @@ export function MarketplacePage() {
   if (!hasHydrated) return null;
   if (!marketplace) return <Navigate to={routes.skills} replace />;
 
-  const tabs: Array<{ key: TabKey; label: string }> = [
+  const tabs: Array<{ key: TabKey; label: string; badge?: number }> = [
     { key: "explore", label: "Explore" },
     { key: "sources", label: "Sources" },
-    { key: "installed", label: "Installed" },
+    { key: "installed", label: "Installed", badge: installed.length },
   ];
 
   return (
     <div style={{ minHeight: "100%", background: C.bg }}>
       <HqStyle />
-      <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-        {/* Serif hero under the mono microlabel — projects-page DNA. */}
-        <div style={{ paddingTop: isNarrow ? 4 : 8 }}>
-          <MicroLabel>
-            Skill marketplace · {enabledCount} source
-            {enabledCount === 1 ? "" : "s"}
-          </MicroLabel>
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: isNarrow ? "8px 14px 60px" : "8px 0 60px" }}>
+        {/* Dark ink hero: serif headline + right-aligned live skill/source count. */}
+        <div
+          style={{
+            position: "relative",
+            overflow: "hidden",
+            background: C.ink,
+            borderRadius: 16,
+            padding: isNarrow ? "18px 18px" : "20px 24px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 22,
+            flexWrap: isNarrow ? "wrap" : "nowrap",
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(340px 160px at 90% 50%, color-mix(in srgb, var(--mv1-violet) 42%, transparent), transparent 70%)",
+            }}
+          />
+          <div style={{ position: "relative", flex: 1, minWidth: 220 }}>
+            <div
+              style={{
+                fontFamily: serif,
+                fontSize: isNarrow ? 22 : 24,
+                color: "#fff",
+                letterSpacing: "-0.2px",
+                lineHeight: 1.2,
+              }}
+            >
+              New skills,{" "}
+              <span style={{ fontStyle: "italic", color: "#B7B0F0" }}>
+                reviewed before they run.
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
+              Install capabilities from trusted GitHub sources. Cue shows you
+              exactly what each one can touch — before it can act.
+            </div>
+          </div>
           <div
             style={{
-              fontFamily: serif,
-              fontSize: isNarrow ? 27 : 34,
-              lineHeight: 1.05,
-              color: C.ink,
-              marginTop: 6,
+              position: "relative",
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+              flexShrink: 0,
+              textAlign: "center",
             }}
           >
-            Marketplace
-          </div>
-          <div style={{ fontSize: 13, color: C.t2, marginTop: 8, maxWidth: 560 }}>
-            Skills from public GitHub sources, installed with hash-pinned
-            locking and capability consent. Markdown instructions only —
-            executable content never installs from third parties.
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 22,
+                color: "#fff",
+                fontWeight: 500,
+              }}
+            >
+              {totalItems}
+            </span>
+            <span
+              style={{
+                fontFamily: mono,
+                fontSize: 10.5,
+                color: "#9DB4E6",
+              }}
+            >
+              skills · {enabledCount} source{enabledCount === 1 ? "" : "s"}
+            </span>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 6, marginTop: 16 }}>
-          {tabs.map(({ key, label }) => (
-            <Chip
-              key={key}
-              label={label}
-              active={tab === key}
-              onClick={() => setTab(key)}
-            />
-          ))}
+        {/* Underline tabs — count badge on Installed reads live data. */}
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            borderBottom: `1px solid ${C.line}`,
+            marginBottom: 4,
+          }}
+        >
+          {tabs.map(({ key, label, badge }) => {
+            const active = tab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                style={{
+                  border: "none",
+                  background: "none",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 13.5,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? C.t1 : C.t3,
+                  padding: "6px 4px 12px",
+                  marginRight: 16,
+                  borderBottom: `2px solid ${active ? C.ink : "transparent"}`,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                }}
+              >
+                {label}
+                {badge != null ? (
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 10,
+                      background: C.sunken,
+                      color: C.t2,
+                      padding: "2px 6px",
+                      borderRadius: 5,
+                    }}
+                  >
+                    {badge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
 
-        <div style={{ paddingBottom: 60 }}>
+        <div>
           {tab === "explore" ? (
-            <ExploreTab assistantId={assistantId} sources={sources} />
+            <ExploreTab
+              assistantId={assistantId}
+              perSource={perSource}
+              totalItems={totalItems}
+            />
           ) : tab === "sources" ? (
             <SourcesTab
               assistantId={assistantId}
               sources={sources}
               isLoading={sourcesLoading}
+              countFor={countFor}
             />
           ) : (
-            <InstalledTab assistantId={assistantId} />
+            <InstalledTab
+              assistantId={assistantId}
+              installed={installed}
+              isLoading={installedLoading}
+            />
           )}
         </div>
       </div>
