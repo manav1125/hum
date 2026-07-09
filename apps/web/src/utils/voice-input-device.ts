@@ -14,10 +14,21 @@ export function getPreferredInputDeviceId(): string {
  * Audio constraints for voice capture, honoring the microphone chosen on the
  * Voice settings page. Uses `exact` so Chromium 130+ actually selects the
  * device (ideal constraints are silently ignored since that version).
+ *
+ * Echo cancellation, noise suppression, and auto gain are requested explicitly
+ * rather than relying on the `audio: true` defaults: a picked `deviceId` can
+ * otherwise drop browser AEC, which is what keeps the assistant's own TTS out
+ * of the mic — essential for clean capture and for full-duplex (barge-in)
+ * without the orb hearing itself.
  */
 export function voiceInputAudioConstraints(): MediaTrackConstraints | true {
   const deviceId = getPreferredInputDeviceId();
-  return deviceId ? { deviceId: { exact: deviceId } } : true;
+  const base: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  };
+  return deviceId ? { ...base, deviceId: { exact: deviceId } } : base;
 }
 
 /**

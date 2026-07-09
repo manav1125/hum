@@ -154,6 +154,7 @@ export function VoiceModeSurface({
     partialTranscript,
     finalTranscript,
     assistantTranscript,
+    inputAmplitude,
     error,
     failureKind,
     muted,
@@ -535,7 +536,11 @@ export function VoiceModeSurface({
               {denied ? (
                 <MicOff size={40} color={TEXT_2} aria-hidden />
               ) : (
-                <VoiceOrb state={orbState(state)} size={88} />
+                <VoiceOrb
+                  state={orbState(state)}
+                  size={88}
+                  amplitude={inputAmplitude}
+                />
               )}
             </span>
           </button>
