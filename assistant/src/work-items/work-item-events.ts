@@ -20,7 +20,11 @@ export type WorkItemEventKind =
   | "status_changed"
   | "run_started"
   | "run_finished"
-  | "approved";
+  | "approved"
+  // WS1: a run was blocked at run-start because an agent/task budget was
+  // exhausted (hard-stop). The item is set `failed` with a budget reason on
+  // `lastProgressNote`; this event marks it a resolvable budget incident.
+  | "budget_stop";
 
 export interface WorkItemEvent {
   id: string;

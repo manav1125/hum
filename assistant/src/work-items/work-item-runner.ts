@@ -8,6 +8,10 @@
 import { getOrCreateConversation } from "../daemon/conversation-store.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
 import { buildAgentToolScopeFilter } from "../guardrails/agent-tool-scopes.js";
+import {
+  type BudgetCheckResult,
+  checkRunStartBudget,
+} from "../guardrails/budget-enforcement.js";
 import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { recordImpact } from "../home/impact-store.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
@@ -302,6 +306,13 @@ export function buildWorkItemContextPreamble(item: WorkItem): string {
  * When called from a chat tool (e.g. Telegram), required tools are
  * auto-approved since the user explicitly requested execution.
  */
+/** Human one-liner for a budget hard-stop, stamped on `lastProgressNote`. */
+function budgetStopReason(b: BudgetCheckResult): string {
+  const usd = (c: number | null) => `$${((c ?? 0) / 100).toFixed(2)}`;
+  const who = b.scope === "agent" ? `Agent "${b.label}"` : "This task";
+  return `Stopped: ${who} reached its budget — ${usd(b.spentCents)} of ${usd(b.capCents)} spent. Raise the cap to continue.`;
+}
+
 export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   const workItem = getWorkItem(workItemId);
   if (!workItem) {
@@ -382,6 +393,48 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   const toolScopeFilter = runAgent?.toolScopes
     ? buildAgentToolScopeFilter(runAgent.toolScopes)
     : null;
+
+  // WS1 budget hard-stop (run boundary — mirrors the mission cycle-boundary
+  // check in mission-orchestrator): if the item's agent (opted into hard-stop
+  // via `hard_stop_enabled`) or its per-task budget is exhausted, stop BEFORE
+  // spending more. Set the item `failed` with a budget reason on
+  // `lastProgressNote` + a `budget_stop` event so it surfaces as a resolvable
+  // incident. Advisory caps / no task budget → `ok` → today's behavior; this
+  // returns early ONLY when a user opted into enforcement.
+  const budget = checkRunStartBudget(workItem.assignee ?? "cue", workItemId);
+  if (budget.state === "hard_stop") {
+    const reason = budgetStopReason(budget);
+    updateWorkItem(
+      workItemId,
+      { status: "failed", lastRunStatus: "failed", lastProgressNote: reason },
+      { actor: "runner" },
+    );
+    recordWorkItemEvent({
+      workItemId,
+      kind: "budget_stop",
+      fromStatus: workItem.status,
+      toStatus: "failed",
+      actor: "budget",
+    });
+    broadcastWorkItemStatus(workItemId);
+    broadcastMessage({ type: "tasks_changed" } as ServerMessage);
+    log.warn(
+      {
+        workItemId,
+        scope: budget.scope,
+        spentCents: budget.spentCents,
+        capCents: budget.capCents,
+      },
+      "work item run blocked: budget hard-stop",
+    );
+    return { success: false, error: reason, errorCode: "budget_stop" };
+  }
+  if (budget.state === "warn") {
+    log.info(
+      { workItemId, scope: budget.scope, pct: budget.pct },
+      "work item near budget (running anyway)",
+    );
+  }
 
   // Set status to running
   updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
