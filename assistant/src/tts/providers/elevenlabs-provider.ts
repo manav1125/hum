@@ -191,9 +191,15 @@ export function createElevenLabsProvider(): TtsProvider {
     async synthesize(
       request: TtsSynthesisRequest,
     ): Promise<TtsSynthesisResult> {
-      const apiKey = await getSecureKeyAsync(
-        credentialKey("elevenlabs", "api_key"),
-      );
+      // Prefer the secure store, then fall back to `ELEVENLABS_API_KEY` from the
+      // process env. The fallback matters on deployments whose credential store
+      // is not durable across restarts (containerized self-host): an
+      // `assistant credentials set --service elevenlabs …` value is wiped on
+      // restart, but a key supplied via the process environment survives —
+      // mirroring the DEEPGRAM_API_KEY / REPLICATE_API_TOKEN durability pattern.
+      const apiKey =
+        (await getSecureKeyAsync(credentialKey("elevenlabs", "api_key"))) ||
+        process.env.ELEVENLABS_API_KEY;
       if (!apiKey) {
         throw new ElevenLabsTtsError(
           "ELEVENLABS_TTS_NO_API_KEY",
