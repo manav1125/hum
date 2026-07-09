@@ -219,6 +219,12 @@ export interface OpenAIChatCompletionsProviderOptions {
    *  content or tool_calls must be set`. See {@link
    *  EMPTY_ASSISTANT_TURN_PLACEHOLDER}. */
   backfillEmptyAssistantContent?: boolean;
+  /** Strict OpenAI-compatibility mode: suppress request fields that some
+   *  OpenAI-*compatible* endpoints reject even though OpenAI/OpenRouter accept
+   *  them — currently `logit_bias` here, plus the `reasoning` and `provider`
+   *  extensions in the OpenRouter subclass. Enable when pointing a provider at a
+   *  foreign endpoint such as Gemini's OpenAI-compat API, which 400s on these. */
+  strictOpenAICompat?: boolean;
 }
 
 /** Wire-level reasoning_effort values. The OpenAI SDK type doesn't include
@@ -332,6 +338,7 @@ export class OpenAIChatCompletionsProvider implements Provider {
     | "reasoning_content"
     | undefined;
   private backfillEmptyAssistantContent: boolean;
+  protected strictOpenAICompat: boolean;
 
   constructor(
     apiKey: string,
@@ -357,6 +364,7 @@ export class OpenAIChatCompletionsProvider implements Provider {
     this.assistantReasoningField = options.assistantReasoningField;
     this.backfillEmptyAssistantContent =
       options.backfillEmptyAssistantContent ?? false;
+    this.strictOpenAICompat = options.strictOpenAICompat ?? false;
   }
 
   async sendMessage(
@@ -392,8 +400,10 @@ export class OpenAIChatCompletionsProvider implements Provider {
       }
 
       // Profile-scoped token biasing (e.g. the `suppress-cjk` preset). Resolved
-      // and gated to this provider family upstream in `RetryProvider`.
-      if (logitBias) {
+      // and gated to this provider family upstream in `RetryProvider`. Skipped
+      // in strict-compat mode — some OpenAI-compatible endpoints (Gemini's
+      // compat API) 400 on `logit_bias` even though OpenAI/OpenRouter accept it.
+      if (logitBias && !this.strictOpenAICompat) {
         params.logit_bias = logitBias;
       }
 

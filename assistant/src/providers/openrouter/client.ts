@@ -130,6 +130,20 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
       process.env.CUE_OPENROUTER_BASE_URL?.trim() ||
       options.baseURL?.trim() ||
       DEFAULT_OPENROUTER_BASE_URL;
+    // Strict OpenAI-compat mode when the connection is pointed at a foreign
+    // OpenAI-compatible endpoint (via CUE_OPENROUTER_BASE_URL) rather than
+    // OpenRouter itself — e.g. Gemini's compat API, which 400s on OpenRouter's
+    // proprietary `reasoning`/`provider` extensions and on `logit_bias`. In
+    // that mode we send only vendor-neutral OpenAI fields.
+    const foreignEndpoint = !/(^|\.)openrouter\.ai/i.test(
+      (() => {
+        try {
+          return new URL(baseURL).hostname;
+        } catch {
+          return baseURL;
+        }
+      })(),
+    );
     super(apiKey, model, {
       baseURL,
       providerName: "openrouter",
@@ -138,6 +152,7 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
       requestHeaders: OPENROUTER_APP_ATTRIBUTION_HEADERS,
       assistantReasoningField: "reasoning",
       backfillEmptyAssistantContent: true,
+      strictOpenAICompat: foreignEndpoint,
     });
     this.openRouterApiKey = apiKey;
     this.defaultModel = model;
@@ -204,6 +219,11 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
   protected override buildExtraCreateParams(
     options?: SendMessageOptions,
   ): Record<string, unknown> {
+    // Strict-compat endpoints (e.g. Gemini) reject OpenRouter's proprietary
+    // `reasoning` and `provider` fields. Send none of them — the target model
+    // still reasons server-side by its own default, so suppression is lossless
+    // for behavior, only for OpenRouter-specific routing/summary controls.
+    if (this.strictOpenAICompat) return {};
     const config = options?.config as Record<string, unknown> | undefined;
     const thinkingEnabled = isThinkingConfigEnabled(config?.thinking);
     const effort = config?.effort as string | undefined;
