@@ -67,6 +67,12 @@ export const workItems = sqliteTable("work_items", {
   sourceContext: text("source_context"), // nullable JSON: {origin, snippet} of where the task came from (triage-stamped)
   lastActivityAt: integer("last_activity_at"), // nullable epoch ms; bumped on any event/update so ranking de-prioritizes stale items
   lastProgressNote: text("last_progress_note"), // nullable one-line live-activity note ("Searching the web…") the runner stamps while status='running'
+  // WS3 (303-work-item-liveness). recoveryAttempts: times the startup watchdog
+  // requeued this item after a stranded run (bounds retries). livenessState:
+  // null = healthy; 'recovered' = requeued after a daemon-restart orphan;
+  // 'stalled' = hit the retry cap and was failed as a recovery incident.
+  recoveryAttempts: integer("recovery_attempts").notNull().default(0),
+  livenessState: text("liveness_state"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

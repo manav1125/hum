@@ -51,6 +51,10 @@ export interface WorkItem {
    * boards show mid-run progress instead of a bare "running" badge.
    */
   lastProgressNote: string | null;
+  /** WS3 (303): times the startup watchdog requeued this item after a stranded run. */
+  recoveryAttempts: number;
+  /** WS3: null = healthy; 'recovered' = requeued after a daemon-restart orphan; 'stalled' = failed at the retry cap. */
+  livenessState: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -111,6 +115,8 @@ export function createWorkItem(opts: {
     // ranking treats new captures as active from the moment they land.
     lastActivityAt: now,
     lastProgressNote: null,
+    recoveryAttempts: 0,
+    livenessState: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -198,6 +204,8 @@ export function updateWorkItem(
       | "context"
       | "sourceContext"
       | "lastProgressNote"
+      | "recoveryAttempts"
+      | "livenessState"
     >
   >,
   opts?: { actor?: string },

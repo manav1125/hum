@@ -98,6 +98,7 @@ import {
   getWorkspaceDir,
 } from "../util/platform.js";
 import { APP_VERSION } from "../version.js";
+import { recoverOrphanedWorkItemRuns } from "../work-items/work-item-recovery.js";
 import {
   listWorkItems,
   updateWorkItem,
@@ -616,6 +617,16 @@ export async function runDaemon(): Promise<void> {
         }
       } catch (err) {
         log.warn({ err }, "Hung-turn recovery failed — continuing startup");
+      }
+
+      // WS3: a background work-item run left `running` by an OOM/restart of the
+      // previous process is orphaned — requeue it (bounded) or fail it as a
+      // recovery incident. Safe at startup: nothing is in flight, so there's no
+      // double-run risk.
+      try {
+        recoverOrphanedWorkItemRuns();
+      } catch (err) {
+        log.warn({ err }, "Work-item recovery failed — continuing startup");
       }
 
       try {

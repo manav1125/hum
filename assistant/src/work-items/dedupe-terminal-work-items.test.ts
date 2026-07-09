@@ -32,6 +32,8 @@ function wi(overrides: Partial<WorkItem> & { id: string }): WorkItem {
     labels: null,
     assignee: null,
     taskBudgetCents: null,
+    recoveryAttempts: 0,
+    livenessState: null,
     context: null,
     sourceContext: null,
     lastActivityAt: null,

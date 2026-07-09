@@ -234,6 +234,7 @@ import {
   migrateUsageLlmCallCount,
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
+  migrateWorkItemLiveness,
   migrateWorkItemPmColumns,
   migrateWorkItemProgressNote,
   recoverCrashedMigrations,
@@ -542,6 +543,7 @@ export function initializeDb(): void {
     migrateAgentActsCostModelTitle,
     migrateAgentToolScopes,
     migrateBudgetPolicies,
+    migrateWorkItemLiveness,
   ];
 
   // Run each migration step, catching and logging individual failures so one

@@ -24,7 +24,11 @@ export type WorkItemEventKind =
   // WS1: a run was blocked at run-start because an agent/task budget was
   // exhausted (hard-stop). The item is set `failed` with a budget reason on
   // `lastProgressNote`; this event marks it a resolvable budget incident.
-  | "budget_stop";
+  | "budget_stop"
+  // WS3: the startup watchdog found this item stranded `running` (its run died
+  // with a previous daemon process). Requeued (toStatus=queued) up to the
+  // retry cap, or failed as a recovery incident (toStatus=failed) past it.
+  | "run_recovered";
 
 export interface WorkItemEvent {
   id: string;
