@@ -155,6 +155,7 @@ export function VoiceModeSurface({
     finalTranscript,
     assistantTranscript,
     error,
+    failureKind,
     muted,
     start,
     stop,
@@ -164,14 +165,14 @@ export function VoiceModeSurface({
   const connecting = state === "connecting";
   const active =
     state !== "idle" && state !== "failed" && state !== "connecting";
-  // Presentation-only flags derived from existing state. The live-voice
-  // controller maps every mic-start failure (incl. getUserMedia
-  // `permission-denied`) onto `state === "failed"` with the generic capture
-  // error — so a failed session is rendered as the design's mic-denied state
-  // (book §3.3). No new permission API is introduced; this only reskins the
-  // existing failure signal.
+  // Presentation-only flags derived from existing state. A failure is split by
+  // `failureKind`: a genuine mic/permission problem (`"mic"`) gets the
+  // "enable microphone" recovery; any other failure (provider rate-limit,
+  // network, daemon error — `"session"`) shows its own message instead of a
+  // misleading mic prompt.
   const listening = state === "listening" || state === "transcribing";
-  const denied = state === "failed";
+  const denied = state === "failed" && failureKind === "mic";
+  const sessionFailed = state === "failed" && failureKind !== "mic";
 
   const handleToggle = useCallback(() => {
     if (connecting) return;
@@ -368,7 +369,7 @@ export function VoiceModeSurface({
                   ? TEXT_2
                   : listening
                     ? BLUE
-                    : denied
+                    : denied || sessionFailed
                       ? DANGER
                       : TEXT_2,
             }}
@@ -377,7 +378,9 @@ export function VoiceModeSurface({
               ? "muted"
               : denied
                 ? "microphone unavailable"
-                : stateLabel(state)}
+                : sessionFailed
+                  ? "voice unavailable"
+                  : stateLabel(state)}
           </div>
 
           {/* Live transcript: finalized (white) + in-flight (blue) + reply. */}
@@ -442,6 +445,18 @@ export function VoiceModeSurface({
                 }}
               >
                 {assistantTranscript}
+              </div>
+            ) : null}
+            {sessionFailed ? (
+              <div
+                style={{
+                  fontSize: 17,
+                  lineHeight: 1.45,
+                  color: TEXT_2,
+                  marginTop: 12,
+                }}
+              >
+                Cue couldn&rsquo;t respond just now. Tap the orb to try again.
               </div>
             ) : null}
           </div>

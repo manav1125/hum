@@ -67,6 +67,13 @@ export interface LiveVoiceState {
   inputAmplitude: number;
   /** Human-readable error message when `state === "failed"`, `null` otherwise. */
   error: string | null;
+  /**
+   * What kind of failure occurred, so the UI can distinguish a genuine mic /
+   * permission problem (show the "enable microphone" recovery) from a session
+   * failure like a provider/network error (show the actual message, not a
+   * misleading mic prompt). `null` unless `state === "failed"`.
+   */
+  failureKind: "mic" | "session" | null;
 }
 
 export interface LiveVoiceActions {
@@ -79,8 +86,8 @@ export interface LiveVoiceActions {
   /** Reset the assistant transcript ahead of a new response. */
   clearAssistantTranscript: () => void;
   setInputAmplitude: (amplitude: number) => void;
-  /** Transition to `failed` with a message. */
-  fail: (message: string) => void;
+  /** Transition to `failed` with a message and a failure kind (default `session`). */
+  fail: (message: string, kind?: "mic" | "session") => void;
   /** Reset every field back to the idle defaults. */
   reset: () => void;
 }
@@ -98,6 +105,7 @@ const INITIAL_STATE: LiveVoiceState = {
   assistantTranscript: "",
   inputAmplitude: 0,
   error: null,
+  failureKind: null,
 };
 
 const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
@@ -110,7 +118,8 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
     set((s) => ({ assistantTranscript: s.assistantTranscript + delta })),
   clearAssistantTranscript: () => set({ assistantTranscript: "" }),
   setInputAmplitude: (inputAmplitude) => set({ inputAmplitude }),
-  fail: (message) => set({ state: "failed", error: message }),
+  fail: (message, kind = "session") =>
+    set({ state: "failed", error: message, failureKind: kind }),
   reset: () => set({ ...INITIAL_STATE }),
 }));
 

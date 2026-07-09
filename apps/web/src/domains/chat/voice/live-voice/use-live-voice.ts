@@ -108,6 +108,11 @@ export interface UseLiveVoiceResult {
   inputAmplitude: number;
   /** Failure message when `state === "failed"`, else `null`. */
   error: string | null;
+  /**
+   * What kind of failure occurred (`"mic"` = capture/permission, `"session"` =
+   * provider/network), so the UI shows the right recovery. `null` unless failed.
+   */
+  failureKind: "mic" | "session" | null;
   /** Whether the mic is currently muted (audio tracks disabled). */
   muted: boolean;
   /** Start a session for `assistantId`, optionally attaching a conversation. */
@@ -199,6 +204,7 @@ export function useLiveVoice(
   const assistantTranscript = useLiveVoiceStore.use.assistantTranscript();
   const inputAmplitude = useLiveVoiceStore.use.inputAmplitude();
   const error = useLiveVoiceStore.use.error();
+  const failureKind = useLiveVoiceStore.use.failureKind();
 
   const sessionRef = useRef<SessionContext | null>(null);
 
@@ -429,6 +435,7 @@ export function useLiveVoice(
     assistantTranscript,
     inputAmplitude,
     error,
+    failureKind,
     muted,
     start,
     stop,
@@ -454,7 +461,12 @@ async function startCapture(
     return;
   }
   if (!result.ok) {
-    finishWithError(session, teardown, "Microphone capture could not start.");
+    finishWithError(
+      session,
+      teardown,
+      "Microphone capture could not start.",
+      "mic",
+    );
     return;
   }
   session.captureRunning = true;
@@ -640,7 +652,8 @@ function finishWithError(
   session: SessionContext,
   teardown: () => void,
   message: string,
+  kind: "mic" | "session" = "session",
 ): void {
   teardown();
-  useLiveVoiceStore.getState().fail(message);
+  useLiveVoiceStore.getState().fail(message, kind);
 }

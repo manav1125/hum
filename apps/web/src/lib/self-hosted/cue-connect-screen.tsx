@@ -52,7 +52,9 @@ export function CueConnectScreen() {
   }
 
   return (
-    <OnboardingLayout>
+    // No creature footer here — that decorative art belongs to the branded
+    // Vellum onboarding funnel, not the Cue self-host sign-in.
+    <OnboardingLayout showCreatureFooter={false}>
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
         <div className="flex flex-col gap-2 text-center">
           <h1 className="text-display-small-default text-[var(--content-default)]">
