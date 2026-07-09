@@ -367,14 +367,34 @@ export function createElevenLabsProvider(): TtsProvider {
       const contentType = FORMAT_CONTENT_TYPE[outputFormat] ?? "audio/mpeg";
       const collected: Buffer[] = [];
       const reader = response.body.getReader();
+      // For raw 16-bit PCM the network can split a sample across chunk
+      // boundaries. Emitting an odd-length chunk shifts every subsequent sample
+      // by one byte on the player → progressive static. Carry any trailing odd
+      // byte into the next chunk so every emitted chunk is 2-byte aligned.
+      const isPcm = contentType === "audio/pcm";
+      let carry: Buffer | null = null;
       try {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          if (value && value.byteLength > 0) {
-            onChunk(value);
-            collected.push(Buffer.from(value));
+          if (!value || value.byteLength === 0) continue;
+          let buf = Buffer.from(value);
+          if (isPcm) {
+            if (carry) buf = Buffer.concat([carry, buf]);
+            const evenLen = buf.length - (buf.length % 2);
+            carry =
+              buf.length % 2 === 1
+                ? Buffer.from([buf[buf.length - 1]!])
+                : null;
+            buf = buf.subarray(0, evenLen);
+            if (buf.length === 0) continue;
           }
+          onChunk(buf);
+          collected.push(Buffer.from(buf));
+        }
+        if (carry && carry.length > 0) {
+          onChunk(carry);
+          collected.push(carry);
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") throw err;

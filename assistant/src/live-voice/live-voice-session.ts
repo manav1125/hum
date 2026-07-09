@@ -9,6 +9,21 @@ import {
   createConversation,
   getConversation,
 } from "../memory/conversation-crud.js";
+import { INTERNAL_GUARDIAN_TRUST_CONTEXT } from "../daemon/trust-context.js";
+
+/**
+ * System prompt for a local live-voice turn. The owner is speaking to their own
+ * Cue, so it must (a) keep its full identity + capabilities (not collapse into a
+ * generic "text assistant"), (b) actually USE its tools rather than refuse, and
+ * (c) speak briefly in plain, TTS-safe prose.
+ */
+const LIVE_VOICE_CONTROL_PROMPT = [
+  "You are Cue, your user's personal AI chief-of-staff, in a live spoken voice conversation with them right now.",
+  "You have the SAME full capabilities as in chat: your tools, connected apps (email, calendar, Slack, Notion, GitHub, and more), memory of past conversations, tasks, projects, and workspace files.",
+  "Act on requests directly by using your tools. Do NOT claim you lack access, tools, or permissions, and never say you are 'just a text-based assistant' — you can take real actions, and you are speaking with your own owner who has already authorized you.",
+  "Speak naturally and briefly, like a real conversation — usually one or two sentences unless asked for more. If you need a moment to do something, say so in a few words and then do it.",
+  "Your reply is read aloud by a text-to-speech engine: write plain conversational text ONLY. No markdown, asterisks, headings, bullet points, code blocks, links, or emojis.",
+].join(" ");
 import {
   listProviderIds,
   supportsBoundary,
@@ -613,8 +628,12 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         assistantMessageChannel: "vellum",
         userMessageInterface: "macos",
         assistantMessageInterface: "macos",
-        voiceControlPrompt:
-          "You are speaking in a local live voice session. Keep replies brief and conversational.",
+        voiceControlPrompt: LIVE_VOICE_CONTROL_PROMPT,
+        // The live-voice socket is authenticated as the instance owner, who is
+        // the guardian. Without this the turn runs as a non-guardian caller and
+        // the bridge strips every side-effect tool ("this action requires
+        // guardian-level access"), so the assistant refuses tasks it can do.
+        trustContext: INTERNAL_GUARDIAN_TRUST_CONTEXT,
         approvalMode: "local-live-voice",
         content,
         isInbound: true,
