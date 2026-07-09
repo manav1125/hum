@@ -6,6 +6,10 @@ import type {
   VoiceTurnOptions,
 } from "../calls/voice-session-bridge.js";
 import {
+  createConversation,
+  getConversation,
+} from "../memory/conversation-crud.js";
+import {
   listProviderIds,
   supportsBoundary,
 } from "../providers/speech-to-text/provider-catalog.js";
@@ -183,6 +187,23 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     if (this.state !== "initializing") return;
 
     try {
+      // Ensure a persisted `conversations` row exists for the id this session
+      // attaches turns to. A live-voice session opened without a conversationId
+      // (e.g. the Voice surface with no active chat) falls back to the socket
+      // session id, which has no row — so the first turn's user-message insert
+      // fails its FOREIGN KEY to conversations ("assistant turn could not be
+      // started: FOREIGN KEY constraint failed"). Chat never hits this because
+      // it creates the row via the conversation-key path; voice must ensure it
+      // here. Idempotent: a real conversationId from an existing chat already
+      // has its row, so this is a no-op there.
+      if (!getConversation(this.conversationId)) {
+        createConversation({
+          id: this.conversationId,
+          conversationType: "standard",
+          source: "live-voice",
+        });
+      }
+
       const transcriber = await this.resolveTranscriber({
         sampleRate: this.context.startFrame.audio.sampleRate,
       });

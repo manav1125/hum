@@ -536,6 +536,13 @@ export function createConversation(
   titleOrOpts?:
     | string
     | {
+        /**
+         * Use this exact conversation id instead of minting a fresh uuid. Lets
+         * callers that already hold a stable id (e.g. a live-voice session that
+         * uses its socket session id as the conversation id) persist the row
+         * under that id so downstream FKs resolve.
+         */
+        id?: string;
         title?: string;
         /**
          * Override the `is_auto_title` column (schema default 1). Pass
@@ -562,7 +569,7 @@ export function createConversation(
     requestedConversationType ?? "standard";
   const source = opts.source ?? "user";
   const groupId = opts.groupId;
-  const id = uuid();
+  const id = opts.id ?? uuid();
   const memoryScopeId = "default";
 
   // Ensure group_id column exists for deterministic schema readiness,
