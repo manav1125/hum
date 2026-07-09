@@ -571,15 +571,6 @@ export const routeTree = [
                     },
                   },
                   {
-                    path: "community",
-                    lazy: {
-                      Component: () =>
-                        import("@/domains/settings/pages/community-page").then(
-                          (m) => m.CommunityPage,
-                        ),
-                    },
-                  },
-                  {
                     path: "debug",
                     lazy: {
                       Component: () =>

@@ -108,7 +108,6 @@ import { handleSurfaceAction } from "@/domains/chat/surface-actions";
 import { useRuleEditorStore } from "@/domains/chat/rule-editor-store";
 import { useOpenAppFromChat } from "@/domains/chat/hooks/use-open-app-from-chat";
 import { useVoiceInput } from "@/domains/chat/hooks/use-voice-input";
-import { useConversationListQuery } from "@/hooks/conversation-queries";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { MobileChatView } from "@/domains/chat/components/mobile-chat-view";
 import { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
@@ -268,9 +267,6 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   const mainView = useViewerStore.use.mainView();
   const openedAppState = useViewerStore.use.openedAppState();
-
-  // Conversation count (for nudges — TanStack Query deduped)
-  const { conversations } = useConversationListQuery(assistantId, true);
 
   // -------------------------------------------------------------------------
   // Global Escape cancel — focused app case (document keydown) and
@@ -476,12 +472,7 @@ export function ChatMainPanel({
   // -------------------------------------------------------------------------
   // Nudges + ghost text
   // -------------------------------------------------------------------------
-  const nudges = useAppNudges(
-    messages,
-    conversations.length,
-    liveAssistantMessageId,
-    activeConversationId,
-  );
+  const nudges = useAppNudges(messages, liveAssistantMessageId);
 
   const lastCompleteAssistantMsgId = useMemo<string | null>(() => {
     const last = messages[messages.length - 1];

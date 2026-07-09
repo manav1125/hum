@@ -21,7 +21,6 @@ import {
   Mic,
   Palette,
   Settings,
-  Users,
   Volume2,
   Wallet,
   Puzzle,
@@ -50,7 +49,6 @@ export const PANEL_IDS = [
   "schedules",
   "archive",
   "billing",
-  "community",
   "assistant-status",
   "assistant-debug",
   "advanced",
@@ -158,12 +156,6 @@ export const SETTINGS_SIDEBAR: SidebarItem[] = [
     label: "Billing",
     href: routes.settings.billing,
     icon: CreditCard,
-  },
-  {
-    id: "community",
-    label: "Community",
-    href: routes.settings.community,
-    icon: Users,
   },
   {
     id: "assistant-debug",

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { DisplayMessage } from "@/domains/chat/types/types";
 import { useChatSessionStore } from "@/domains/chat/chat-session-store";
@@ -15,19 +15,6 @@ import {
   useMacOsNudgeState,
   MAC_APP_BANNER_MIN_TURNS,
 } from "@/hooks/use-macos-app-nudge";
-import {
-  useGitHubNudgeState,
-  ensureGitHubFirstSeenAt,
-  readGitHubUserMessagesSeen,
-  incrementGitHubUserMessagesSeen,
-  GITHUB_MIN_USER_MESSAGES,
-  type GitHubNudgeState,
-} from "@/hooks/use-github-nudge";
-import {
-  useDiscordNudgeState,
-  ensureFirstSeenAt,
-  type DiscordNudgeState,
-} from "@/hooks/use-discord-nudge";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,13 +27,11 @@ interface PlatformNudgeState {
 }
 
 /**
- * Aggregated nudge visibility and handlers for every nudge surface
- * (iOS/macOS app download, GitHub star, Discord community).
+ * Aggregated nudge visibility and handlers for the platform app-download
+ * nudge surface (iOS/macOS).
  *
  * Mutual-exclusivity rules:
  * 1. Only one platform nudge shows at a time (iOS xor macOS).
- * 2. GitHub nudge surfaces only once the platform nudge is resolved.
- * 3. Discord nudge surfaces only once GitHub is resolved, with a cooldown.
  */
 export interface AppNudgesState {
   /** True when the current browser is iOS Safari (non-native). */
@@ -60,14 +45,6 @@ export interface AppNudgesState {
   nudge: PlatformNudgeState;
   /** Whether the main-area app-download banner should render. */
   showBanner: boolean;
-
-  /** GitHub star nudge state and handlers. */
-  githubNudge: GitHubNudgeState;
-  showGitHubBanner: boolean;
-
-  /** Discord community nudge state and handlers. */
-  discordNudge: DiscordNudgeState;
-  showDiscordBanner: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,24 +52,18 @@ export interface AppNudgesState {
 // ---------------------------------------------------------------------------
 
 /**
- * Manages the full nudge stack: platform app-download (iOS/macOS), GitHub
- * star, and Discord community join. Tracks completed assistant turns to
- * gate the platform nudge behind a minimum-turn threshold, then cascades
- * visibility through the GitHub and Discord nudges with mutual-exclusivity
- * guarantees.
+ * Manages the platform app-download nudge (iOS/macOS). Tracks completed
+ * assistant turns to gate the nudge behind a minimum-turn threshold, then
+ * shows a single platform nudge (iOS xor macOS).
  *
  * @param messages - Current transcript messages (used to count completed assistant turns).
- * @param conversationCount - Total conversation count (gates the Discord nudge).
  * @param liveAssistantMessageId - Id of the currently-live assistant row, or
  *   `null` when nothing is streaming. Derived from message position and the
  *   conversation's processing state.
- * @param activeConversationId - Current conversation ID for user-message tracking.
  */
 export function useAppNudges(
   messages: readonly DisplayMessage[],
-  conversationCount: number,
   liveAssistantMessageId: string | null,
-  activeConversationId: string | null,
 ): AppNudgesState {
   // -------------------------------------------------------------------------
   // Platform detection
@@ -172,83 +143,11 @@ export function useAppNudges(
   const showBanner =
     isOnNudgePlatform && bannerEligible && nudge.bannerShouldShow;
 
-  // -------------------------------------------------------------------------
-  // GitHub star nudge — only after platform nudge is resolved
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    ensureGitHubFirstSeenAt();
-  }, []);
-
-  // Track user messages sent (cumulative, conversation-aware).
-  // Uses clientMessageId (stable correlation nonce) as the primary key so
-  // the same send isn't double-counted when the optimistic client-UUID id
-  // is swapped to the server-assigned messageId on user_message_echo.
-  const trackedConversationIdRef = useRef<string | null>(null);
-  const seenUserMsgKeysRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (readGitHubUserMessagesSeen() >= GITHUB_MIN_USER_MESSAGES) {
-      return;
-    }
-
-    // On conversation switch or first observation: snapshot existing messages
-    if (activeConversationId !== trackedConversationIdRef.current) {
-      trackedConversationIdRef.current = activeConversationId;
-      seenUserMsgKeysRef.current = new Set<string>();
-      for (const m of messages) {
-        if (m.role === "user") {
-          seenUserMsgKeysRef.current.add(m.clientMessageId ?? m.id);
-        }
-      }
-      return;
-    }
-
-    // Count newly-sent user messages
-    let newCount = 0;
-    for (const m of messages) {
-      if (m.role !== "user") {
-        continue;
-      }
-      const key = m.clientMessageId ?? m.id;
-      if (!seenUserMsgKeysRef.current.has(key)) {
-        seenUserMsgKeysRef.current.add(key);
-        newCount++;
-      }
-    }
-
-    if (newCount > 0) {
-      incrementGitHubUserMessagesSeen(newCount);
-    }
-  }, [messages, activeConversationId]);
-
-  const githubNudge = useGitHubNudgeState();
-  const platformNudgeResolved = !isOnNudgePlatform || !nudge.bannerShouldShow;
-  const showGitHubBanner =
-    platformNudgeResolved && githubNudge.bannerShouldShow;
-
-  // -------------------------------------------------------------------------
-  // Discord community nudge — only after GitHub nudge is resolved
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    ensureFirstSeenAt();
-  }, []);
-
-  const discordNudge = useDiscordNudgeState(
-    platformNudgeResolved,
-    conversationCount,
-  );
-  const showDiscordBanner =
-    !showBanner && !showGitHubBanner && discordNudge.bannerShouldShow;
-
   return {
     isOnIOS,
     isOnMacOS,
     isOnNudgePlatform,
     nudge,
     showBanner,
-    githubNudge,
-    showGitHubBanner,
-    discordNudge,
-    showDiscordBanner,
   };
 }
