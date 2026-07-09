@@ -51,6 +51,17 @@ export interface Agent {
   tier: string;
   /** Weekly spend cap in cents; null = uncapped. */
   capCents: number | null;
+  /**
+   * WS1 (302-budget-policies): soft-alert threshold (%) for the weekly cap;
+   * null = use the config default (`DEFAULT_WARN_PERCENT`, 80).
+   */
+  warnPercent: number | null;
+  /**
+   * WS1: 0/1. 0 (default) = `capCents` is advisory only (pre-WS1 behavior — it
+   * was never enforced). 1 = the run-start budget check pauses this agent's
+   * runs once weekly spend reaches `capCents`.
+   */
+  hardStopEnabled: number;
   /** 0/1 — the role is paused. */
   paused: number;
   /**
@@ -150,6 +161,8 @@ export function createAgent(opts: {
   charter?: string | null;
   tier?: string;
   capCents?: number | null;
+  warnPercent?: number | null;
+  hardStopEnabled?: boolean;
   paused?: boolean;
   model?: string | null;
   toolScopes?: string[] | null;
@@ -164,6 +177,8 @@ export function createAgent(opts: {
     charter: opts.charter ?? null,
     tier: opts.tier ?? "1",
     capCents: opts.capCents ?? null,
+    warnPercent: opts.warnPercent ?? null,
+    hardStopEnabled: opts.hardStopEnabled ? 1 : 0,
     paused: opts.paused ? 1 : 0,
     model: opts.model ?? null,
     toolScopes: opts.toolScopes ?? null,

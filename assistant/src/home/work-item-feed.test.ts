@@ -41,6 +41,7 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
     dueAt: null,
     labels: null,
     assignee: null,
+    taskBudgetCents: null,
     context: null,
     sourceContext: null,
     lastActivityAt: null,

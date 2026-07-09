@@ -62,6 +62,7 @@ export const workItems = sqliteTable("work_items", {
   dueAt: integer("due_at"), // nullable deadline, epoch ms (triage-extracted or user-set)
   labels: text("labels"), // nullable JSON array string of freeform labels
   assignee: text("assignee"), // nullable; null reads as "cue" (the AI runs it)
+  taskBudgetCents: integer("task_budget_cents"), // WS1: per-task hard cap in cents; null/0 = unlimited (pre-WS1 behavior)
   context: text("context"), // nullable per-task notes/context the user adds; injected into the agent before a run
   sourceContext: text("source_context"), // nullable JSON: {origin, snippet} of where the task came from (triage-stamped)
   lastActivityAt: integer("last_activity_at"), // nullable epoch ms; bumped on any event/update so ranking de-prioritizes stale items
@@ -159,6 +160,12 @@ export const agents = sqliteTable("agents", {
   charter: text("charter"), // the standing mandate
   tier: text("tier").notNull().default("1"), // autonomy tier '1'..'4' (text for headroom)
   capCents: integer("cap_cents"), // weekly spend cap in cents; null = uncapped
+  // WS1 budget policy (302-budget-policies). warnPercent: soft-alert threshold;
+  // null = use the workspace config default. hardStopEnabled: 0 (default) =
+  // cap_cents is advisory only (pre-WS1 behavior); 1 = the run-start budget
+  // check pauses the agent's runs at cap_cents.
+  warnPercent: integer("warn_percent"), // null = config default (e.g. 80)
+  hardStopEnabled: integer("hard_stop_enabled").notNull().default(0), // 0/1
   paused: integer("paused").notNull().default(0), // 0/1
   model: text("model"), // per-agent model pin (provider/model string); null = no pin
   toolScopes: text("tool_scopes"), // JSON string array of coarse skill/domain ids; null = unrestricted

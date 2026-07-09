@@ -59,6 +59,7 @@ import {
   migrateBackfillInlineAttachmentsToDisk,
   migrateBackfillProviderConnectionLabel,
   migrateBackfillUsageCacheAccounting,
+  migrateBudgetPolicies,
   migrateCallSessionInviteMetadata,
   migrateCallSessionMode,
   migrateCallSessionSkipDisclosure,
@@ -540,6 +541,7 @@ export function initializeDb(): void {
     migrateGuardrails,
     migrateAgentActsCostModelTitle,
     migrateAgentToolScopes,
+    migrateBudgetPolicies,
   ];
 
   // Run each migration step, catching and logging individual failures so one

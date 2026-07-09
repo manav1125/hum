@@ -37,6 +37,8 @@ export interface WorkItem {
   dueAt: number | null;
   labels: string | null;
   assignee: string | null;
+  /** WS1 (302-budget-policies): per-task hard cap in cents; null/0 = unlimited (default). */
+  taskBudgetCents: number | null;
   /** Per-task notes/context the user adds; injected into the agent before a run. */
   context: string | null;
   /** JSON snapshot of where the task came from (origin + original snippet). */
@@ -72,6 +74,8 @@ export function createWorkItem(opts: {
   assignee?: string;
   /** Per-task notes/context the user adds; read by the agent before a run. */
   context?: string;
+  /** WS1: per-task hard cap in cents; null/0 = unlimited (default). */
+  taskBudgetCents?: number | null;
   /** JSON snapshot of where the task came from (origin + original snippet). */
   sourceContext?: string;
   /** Audit-trail attribution for the created event (default "system"). */
@@ -100,6 +104,7 @@ export function createWorkItem(opts: {
     dueAt: opts.dueAt ?? null,
     labels: opts.labels ?? null,
     assignee: opts.assignee ?? "cue",
+    taskBudgetCents: opts.taskBudgetCents ?? null,
     context: opts.context ?? null,
     sourceContext: opts.sourceContext ?? null,
     // A freshly-created item is maximally fresh — seed last_activity_at so

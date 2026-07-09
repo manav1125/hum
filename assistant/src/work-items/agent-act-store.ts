@@ -182,6 +182,31 @@ export function computeRunCostAndModel(conversationId: string): {
 }
 
 /**
+ * WS1 per-task budget rollup: cumulative attributable spend for one work item
+ * across ALL its runs, in cents. Sums non-reversed act costs. Returns 0 when
+ * there are no acts (or on any read error — best-effort, never throws).
+ */
+export function getTaskSpendCents(workItemId: string): number {
+  try {
+    const raw = getSqliteFrom(getDb());
+    const row = raw
+      .prepare(
+        /*sql*/ `SELECT COALESCE(SUM(cost_cents), 0) AS cents
+                 FROM agent_acts
+                 WHERE work_item_id = ? AND reversed = 0`,
+      )
+      .get(workItemId) as { cents: number | null } | undefined;
+    return Math.max(0, Math.round(row?.cents ?? 0));
+  } catch (err) {
+    log.warn(
+      { err: String(err), workItemId },
+      "failed to compute task spend (ignored)",
+    );
+    return 0;
+  }
+}
+
+/**
  * Append one act row. Best-effort by contract — returns null (and logs)
  * instead of throwing, so a ledger failure never breaks the choke point
  * that observed the act.
