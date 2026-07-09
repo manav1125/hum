@@ -114,7 +114,22 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
     model: string,
     options: OpenRouterProviderOptions = {},
   ) {
-    const baseURL = options.baseURL?.trim() || DEFAULT_OPENROUTER_BASE_URL;
+    // Operator override for the OpenRouter-compatible base URL. Set
+    // `CUE_OPENROUTER_BASE_URL` to point the self-host "openrouter" brain at any
+    // OpenAI-compatible endpoint (e.g. Gemini's compat API,
+    // `https://generativelanguage.googleapis.com/v1beta/openai`) without
+    // touching the force-override in `llm-resolver.ts` /
+    // `seed-inference-profiles.ts`. Takes precedence over the per-connection
+    // baseURL (which is stripped for the `openrouter` provider anyway) so the
+    // container env is the single source of truth. Paired with
+    // `CUE_OPENROUTER_MODEL` (the model on that endpoint) and
+    // `OPENROUTER_API_KEY` (the endpoint's key, read as the auth fallback). Only
+    // takes effect for non-`anthropic/*` models, which route through the plain
+    // OpenAI chat/completions path below.
+    const baseURL =
+      process.env.CUE_OPENROUTER_BASE_URL?.trim() ||
+      options.baseURL?.trim() ||
+      DEFAULT_OPENROUTER_BASE_URL;
     super(apiKey, model, {
       baseURL,
       providerName: "openrouter",
