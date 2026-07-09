@@ -490,10 +490,10 @@ describe("automatic ptt_release", () => {
 // ---------------------------------------------------------------------------
 
 describe("full-duplex", () => {
-  test("stays half-duplex by default (full-duplex ships dormant)", async () => {
-    // Default (no override) — full-duplex is built but not yet real-audio-QA'd,
-    // so the web client does NOT opt in until a consumer passes
-    // `fullDuplex: true`. Flip this once device QA signs off (#53).
+  test("defaults to full-duplex (continuous conversation)", async () => {
+    // Default (no override) — full-duplex is the shipped default now that the
+    // full STT → brain → streaming-TTS loop + re-arm are verified end-to-end.
+    // A consumer can still force legacy push-to-talk with `fullDuplex: false`.
     const client = new FakeClient();
     const player = new FakePlayer();
     let capture!: FakeCapture;
@@ -510,7 +510,7 @@ describe("full-duplex", () => {
     await act(async () => {
       await view.result.current.start("assistant-1", "conv-1");
     });
-    expect(client.connectArgs?.fullDuplex).toBe(false);
+    expect(client.connectArgs?.fullDuplex).toBe(true);
     act(() => view.unmount());
     void capture;
   });

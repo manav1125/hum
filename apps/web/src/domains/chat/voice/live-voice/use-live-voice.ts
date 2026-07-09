@@ -295,12 +295,12 @@ export function useLiveVoice(
       store.setState("connecting");
 
       const opts = optionsRef.current;
-      // Full-duplex ships DORMANT: the daemon + client paths are fully built and
-      // unit-tested, but continuous listening / barge-in isn't real-audio-QA'd
-      // yet, so the web client stays half-duplex unless a consumer explicitly
-      // opts in with `fullDuplex: true`. Flip the default here once device QA
-      // signs off (see #53 remaining-for-device-QA notes).
-      const fullDuplex = opts.fullDuplex === true;
+      // Full-duplex (continuous conversation) is the default: the daemon +
+      // client paths are built, and the full STT → brain → streaming-TTS loop
+      // plus the re-arm-after-response path are verified end-to-end on prod.
+      // Echo is handled by the mic's echoCancellation constraint. A consumer can
+      // still force legacy push-to-talk by passing `fullDuplex: false`.
+      const fullDuplex = opts.fullDuplex !== false;
       const client = (
         opts.createClient ?? (() => new LiveVoiceChannelClient())
       )();
