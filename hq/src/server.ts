@@ -36,6 +36,7 @@
  * Admin routes (Bearer HQ_ADMIN_TOKEN, or ?token= for the browser page):
  *   GET  /admin                                 — HTML dashboard
  *   POST /admin/catalog/ensure                  — idempotent Stripe catalog
+ *   POST /admin/register-instance               { email, url, signingKey, guardianPrincipalId, name?, driver?, externalId?, flyUrl? }
  *   POST /admin/customers/:id/invite            { percentOff?, maxUses?, expiresDays? }
  *   POST /admin/customers/:id/provision         { providerEnv?, region?, plan?, image? }
  *   POST /admin/customers/:id/checkout          — Stripe checkout session URL
@@ -371,6 +372,10 @@ export function createHandler(
           return json({ ok: true, entries: result.entries });
         }
 
+        if (method === "POST" && path === "/admin/register-instance") {
+          return handleRegisterInstance(req);
+        }
+
         const customerAction = path.match(
           /^\/admin\/customers\/([^/]+)\/(invite|provision|checkout|magic-link|topup|credits|slack-install-link|slack-toggle)$/,
         );
@@ -700,6 +705,97 @@ export function createHandler(
       return json(body, status);
     }
     return json(outcome);
+  }
+
+  /**
+   * POST /admin/register-instance — enroll an EXISTING instance (one HQ did not
+   * provision itself — a manually-created Fly machine or a bare self-host) into
+   * the registry so its owner can use the email magic-link sign-in
+   * (POST /signin → GET /auth → mintMagicLinkForCustomer). HQ mints tokens the
+   * instance accepts OFFLINE, so it needs the instance's own
+   * ACTOR_TOKEN_SIGNING_KEY (64-hex) plus a known guardianPrincipalId (so it
+   * never has to hit the instance's one-time /v1/guardian/init, which is
+   * already consumed on a live instance). Body:
+   *   { email, url, signingKey, guardianPrincipalId,
+   *     name?, driver?="fly", externalId?, flyUrl?, guardianBootstrapSecret? }
+   * Idempotent on the customer (reused by email); refuses to attach a second
+   * live/suspended instance to a customer that already has one.
+   */
+  async function handleRegisterInstance(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const email = str(body.email).toLowerCase();
+    const url = str(body.url).replace(/\/$/, "");
+    const signingKey = str(body.signingKey);
+    const guardianPrincipalId = str(body.guardianPrincipalId);
+    const name = str(body.name) || email.split("@")[0];
+    const driver = str(body.driver) || "fly";
+    const externalId = str(body.externalId) || url;
+    const flyUrl = str(body.flyUrl) || null;
+
+    if (!email.includes("@")) return json({ error: "email is required" }, 400);
+    if (!/^https?:\/\//.test(url)) {
+      return json({ error: "url must be an absolute http(s) URL" }, 400);
+    }
+    if (!/^[0-9a-f]{64}$/i.test(signingKey)) {
+      return json(
+        {
+          error:
+            "signingKey must be 64 hex chars (the instance's ACTOR_TOKEN_SIGNING_KEY)",
+        },
+        400,
+      );
+    }
+    if (!guardianPrincipalId) {
+      return json({ error: "guardianPrincipalId is required" }, 400);
+    }
+
+    const customer =
+      db.getCustomerByEmail(email) ??
+      db.createCustomer({ email, name, status: "active" });
+
+    const existing = db
+      .listInstancesByCustomer(customer.id)
+      .find((i) => i.state === "live" || i.state === "suspended");
+    if (existing) {
+      return json(
+        {
+          error: "customer already has a live/suspended instance",
+          customerId: customer.id,
+          instanceId: existing.id,
+        },
+        409,
+      );
+    }
+
+    const secretsJson = JSON.stringify({
+      actorTokenSigningKey: signingKey,
+      guardianPrincipalId,
+      // Present but unused: the instance's guardian is already bootstrapped, so
+      // mintMagicLinkForCustomer skips guardian/init because the principal id
+      // above is already known.
+      guardianBootstrapSecret: str(body.guardianBootstrapSecret),
+    });
+    const instance = db.createInstance({
+      customerId: customer.id,
+      driver,
+      externalId,
+      url,
+      flyUrl,
+      secretsJson,
+      state: "live",
+    });
+    db.recordEvent("instance_registered", customer.id, {
+      instanceId: instance.id,
+      url: instance.url,
+    });
+    return json({
+      ok: true,
+      customerId: customer.id,
+      instanceId: instance.id,
+      url: instance.url,
+      state: instance.state,
+    });
   }
 
   /**
