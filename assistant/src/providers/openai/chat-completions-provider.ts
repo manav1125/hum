@@ -358,7 +358,12 @@ export class OpenAIChatCompletionsProvider implements Provider {
     });
     this.model = model;
     this.extraCreateParams = options.extraCreateParams ?? {};
-    this.maxReasoningEffort = options.maxReasoningEffort ?? "xhigh";
+    // Strict-compat endpoints (Gemini) only accept reasoning_effort up to
+    // "high" and 400 on "xhigh"/"max", so cap the clamp ceiling there. Standard
+    // OpenAI/OpenRouter accept the full range, hence the "xhigh" default.
+    this.maxReasoningEffort = options.strictOpenAICompat
+      ? "high"
+      : (options.maxReasoningEffort ?? "xhigh");
     this.requestHeaders = options.requestHeaders ?? {};
     this.parseThinkTags = options.parseThinkTags ?? false;
     this.assistantReasoningField = options.assistantReasoningField;
