@@ -178,9 +178,31 @@ function resolveOutputFormat(request: TtsSynthesisRequest): string {
   return request.useCase === "phone-call" ? "mp3_22050_32" : "mp3_44100_128";
 }
 
+/**
+ * Resolve the ElevenLabs API key: secure store first, then the
+ * `ELEVENLABS_API_KEY` process env (durable across restarts on containerized
+ * self-host, where the credential store is wiped). Throws a typed error when
+ * absent.
+ */
+async function resolveElevenLabsApiKey(): Promise<string> {
+  const apiKey =
+    (await getSecureKeyAsync(credentialKey("elevenlabs", "api_key"))) ||
+    process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    throw new ElevenLabsTtsError(
+      "ELEVENLABS_TTS_NO_API_KEY",
+      "ElevenLabs API key not configured. " +
+        "Add it in Settings → Voice or via: assistant credentials set --service elevenlabs --field api_key <key>",
+    );
+  }
+  return apiKey;
+}
+
 export function createElevenLabsProvider(): TtsProvider {
   const capabilities: TtsProviderCapabilities = {
-    supportsStreaming: false,
+    // ElevenLabs supports chunk-level streaming via its `/stream` endpoint,
+    // which live voice requires (it plays TTS as chunks arrive).
+    supportsStreaming: true,
     supportedFormats: ["mp3", "pcm"],
   };
 
@@ -191,22 +213,7 @@ export function createElevenLabsProvider(): TtsProvider {
     async synthesize(
       request: TtsSynthesisRequest,
     ): Promise<TtsSynthesisResult> {
-      // Prefer the secure store, then fall back to `ELEVENLABS_API_KEY` from the
-      // process env. The fallback matters on deployments whose credential store
-      // is not durable across restarts (containerized self-host): an
-      // `assistant credentials set --service elevenlabs …` value is wiped on
-      // restart, but a key supplied via the process environment survives —
-      // mirroring the DEEPGRAM_API_KEY / REPLICATE_API_TOKEN durability pattern.
-      const apiKey =
-        (await getSecureKeyAsync(credentialKey("elevenlabs", "api_key"))) ||
-        process.env.ELEVENLABS_API_KEY;
-      if (!apiKey) {
-        throw new ElevenLabsTtsError(
-          "ELEVENLABS_TTS_NO_API_KEY",
-          "ElevenLabs API key not configured. " +
-            "Add it in Settings → Voice or via: assistant credentials set --service elevenlabs --field api_key <key>",
-        );
-      }
+      const apiKey = await resolveElevenLabsApiKey();
 
       const config = getConfig().services.tts.providers.elevenlabs;
       const voiceId = resolveVoiceId(request, config);
@@ -286,6 +293,111 @@ export function createElevenLabsProvider(): TtsProvider {
         audio: Buffer.from(arrayBuffer),
         contentType,
       };
+    },
+
+    async synthesizeStream(
+      request: TtsSynthesisRequest,
+      onChunk: (chunk: Uint8Array) => void,
+    ): Promise<TtsSynthesisResult> {
+      const apiKey = await resolveElevenLabsApiKey();
+      const config = getConfig().services.tts.providers.elevenlabs;
+      const voiceId = resolveVoiceId(request, config);
+      const outputFormat = resolveOutputFormat(request);
+      const acceptType = FORMAT_CONTENT_TYPE[outputFormat] ?? "audio/mpeg";
+
+      // The `/stream` endpoint returns audio chunked as it is generated, which
+      // is what live voice needs (it plays each chunk as it arrives instead of
+      // waiting for the whole utterance).
+      const url = `${ELEVENLABS_API_BASE}/v1/text-to-speech/${voiceId}/stream`;
+
+      const body: Record<string, unknown> = {
+        text: request.text,
+        model_id: config.voiceModelId?.trim() || "eleven_multilingual_v2",
+        voice_settings: {
+          stability: config.stability,
+          similarity_boost: config.similarityBoost,
+          speed: config.speed,
+        },
+      };
+
+      log.info(
+        { voiceId, outputFormat, textLength: request.text.length },
+        "Starting ElevenLabs TTS streaming synthesis",
+      );
+
+      let response: Response;
+      try {
+        response = await fetch(`${url}?output_format=${outputFormat}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "xi-api-key": apiKey,
+            Accept: acceptType,
+          },
+          body: JSON.stringify(body),
+          signal: request.signal,
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") throw err;
+        throw new ElevenLabsTtsError(
+          "ELEVENLABS_TTS_REQUEST_FAILED",
+          `ElevenLabs TTS request failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        const message =
+          extractElevenLabsErrorMessage(errorText) ??
+          `ElevenLabs returned HTTP ${response.status}`;
+        throw new ElevenLabsTtsError(
+          "ELEVENLABS_TTS_HTTP_ERROR",
+          message,
+          response.status,
+        );
+      }
+
+      if (!response.body) {
+        throw new ElevenLabsTtsError(
+          "ELEVENLABS_TTS_EMPTY_RESPONSE",
+          "ElevenLabs TTS returned no audio stream",
+        );
+      }
+
+      const contentType = FORMAT_CONTENT_TYPE[outputFormat] ?? "audio/mpeg";
+      const collected: Buffer[] = [];
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.byteLength > 0) {
+            onChunk(value);
+            collected.push(Buffer.from(value));
+          }
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") throw err;
+        throw new ElevenLabsTtsError(
+          "ELEVENLABS_TTS_REQUEST_FAILED",
+          `ElevenLabs TTS stream read failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+
+      const audio = Buffer.concat(collected);
+      if (audio.byteLength === 0) {
+        throw new ElevenLabsTtsError(
+          "ELEVENLABS_TTS_EMPTY_RESPONSE",
+          "ElevenLabs TTS returned an empty audio stream",
+        );
+      }
+
+      log.debug(
+        { bytes: audio.byteLength },
+        "ElevenLabs TTS streaming synthesis complete",
+      );
+
+      return { audio, contentType };
     },
   };
 }

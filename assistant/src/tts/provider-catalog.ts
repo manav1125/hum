@@ -140,8 +140,8 @@ const CATALOG: readonly TtsProviderCatalogEntry[] = [
     callMode: "native-twilio",
     allowNativeFallback: true,
     capabilities: {
-      supportsStreaming: false,
-      supportedFormats: ["mp3"],
+      supportsStreaming: true,
+      supportedFormats: ["mp3", "pcm"],
     },
     secretRequirements: [
       {
