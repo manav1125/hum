@@ -19,9 +19,16 @@ const log = getLogger("gemini-live-client");
 const GEMINI_LIVE_WS_BASE =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
-/** Native-audio dialog model — best conversational quality + tool calling. */
-export const DEFAULT_GEMINI_LIVE_MODEL =
-  "models/gemini-2.5-flash-native-audio-latest";
+/**
+ * Half-cascade "live" model — the right default for a tool-heavy assistant.
+ * The native-audio dialog models (e.g. gemini-2.5-flash-native-audio-*) sound
+ * more expressive but have flaky function-call support: they 1007-close
+ * ("audio content type not supported for this model configuration") when they
+ * speak a preamble, call a tool, then try to speak the result. Cue's whole value
+ * is taking actions, so we default to the tool-robust live-preview class.
+ * Override per-instance with `CUE_GEMINI_LIVE_MODEL`.
+ */
+export const DEFAULT_GEMINI_LIVE_MODEL = "models/gemini-3.1-flash-live-preview";
 
 /** Gemini Live streams output audio as 24kHz 16-bit mono PCM. */
 export const GEMINI_LIVE_OUTPUT_SAMPLE_RATE = 24000;
