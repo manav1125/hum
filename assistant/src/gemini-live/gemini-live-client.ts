@@ -41,6 +41,16 @@ export function resolveGeminiLiveModel(): string {
 }
 
 /**
+ * BCP-47 language for speech recognition + synthesis. Without a pinned language
+ * Gemini Live auto-detects, and on a short/quiet first utterance it can guess
+ * wrong (e.g. transcribe English as Japanese), derailing the whole turn.
+ * Override with `CUE_GEMINI_LIVE_LANGUAGE`.
+ */
+export function resolveGeminiLiveLanguage(): string {
+  return process.env.CUE_GEMINI_LIVE_LANGUAGE?.trim() || "en-US";
+}
+
+/**
  * Resolve the Gemini API key. The self-host brain runs Gemini via the
  * "openrouter" masquerade, so the key lives at `credential/openrouter/api_key`;
  * fall back to the raw Gemini env vars so this works regardless of how the
@@ -95,6 +105,8 @@ export interface GeminiLiveConnectOptions {
   tools?: GeminiFunctionDeclaration[];
   /** Sample rate of the audio the client will stream in (usually 16000). */
   inputSampleRate: number;
+  /** BCP-47 language pinned for recognition + synthesis (e.g. "en-US"). */
+  language?: string;
   callbacks: GeminiLiveClientCallbacks;
 }
 
@@ -123,9 +135,19 @@ export class GeminiLiveClient {
       let setupDone = false;
 
       ws.onopen = () => {
+        const generationConfig: Record<string, unknown> = {
+          responseModalities: ["AUDIO"],
+        };
+        // Pin recognition + synthesis language so a short first utterance can't
+        // be auto-detected as the wrong language.
+        if (this.opts.language) {
+          generationConfig.speechConfig = {
+            languageCode: this.opts.language,
+          };
+        }
         const setup: Record<string, unknown> = {
           model: this.opts.model,
-          generationConfig: { responseModalities: ["AUDIO"] },
+          generationConfig,
           systemInstruction: {
             parts: [{ text: this.opts.systemInstruction }],
           },

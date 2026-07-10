@@ -23,6 +23,7 @@ import {
   GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
   GeminiLiveClient,
   resolveGeminiLiveApiKey,
+  resolveGeminiLiveLanguage,
   resolveGeminiLiveModel,
 } from "./gemini-live-client.js";
 import {
@@ -45,6 +46,7 @@ function buildSystemInstruction(): string {
     "You can take real actions with your tools. To note a quick task call add_task. For anything substantive that needs real work (research, drafting, multi-step tasks), call run_deep_task and tell them you're on it. To tell them what's on their plate, call get_open_tasks.",
     "Never claim you have done something unless you actually called the tool for it and it succeeded. If a tool fails, say so in one short sentence and offer a next step.",
     "Do not spell things out letter by letter or read punctuation, tool names, or code aloud. Just speak like a helpful person.",
+    "The user speaks English. Always understand their speech as English and reply in English, even if a word is unclear.",
   ].join(" ");
 }
 
@@ -77,6 +79,7 @@ export class GeminiLiveSession implements LiveVoiceSession {
       systemInstruction: buildSystemInstruction(),
       tools: GEMINI_LIVE_FUNCTION_DECLARATIONS,
       inputSampleRate: this.inputSampleRate,
+      language: resolveGeminiLiveLanguage(),
       callbacks: {
         onAudio: (pcm) => this.onModelAudio(pcm),
         onOutputText: (text) => {
