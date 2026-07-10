@@ -68,6 +68,13 @@ export interface LiveVoiceClientStartFrame {
    * accepted as the start of the next utterance / a barge-in.
    */
   readonly fullDuplex?: boolean;
+  /**
+   * Which voice engine handles this session. `"cascade"` (default when absent)
+   * is the STT → full-agent-loop → TTS pipeline. `"gemini-live"` routes to the
+   * speech-native Gemini Live realtime engine. Opt-in so the new engine ships
+   * dormant and old clients (which never send this) keep the cascade.
+   */
+  readonly engine?: "cascade" | "gemini-live";
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -377,6 +384,19 @@ function validateStartFrame(
     );
   }
 
+  if (
+    "engine" in value &&
+    value.engine !== "cascade" &&
+    value.engine !== "gemini-live"
+  ) {
+    return protocolError(
+      "invalid_field",
+      "start frame field engine must be 'cascade' or 'gemini-live'",
+      "engine",
+      "start",
+    );
+  }
+
   return {
     ok: true,
     frame: {
@@ -385,6 +405,9 @@ function validateStartFrame(
         ? { conversationId: value.conversationId }
         : {}),
       ...(value.fullDuplex === true ? { fullDuplex: true } : {}),
+      ...(value.engine === "gemini-live" || value.engine === "cascade"
+        ? { engine: value.engine }
+        : {}),
       audio: audioConfig.frame,
     },
   };

@@ -26,6 +26,7 @@ import { getIsPlatform } from "../config/env-registry.js";
 import { getConfig } from "../config/loader.js";
 import { createApprovalCopyGenerator } from "../daemon/approval-generators.js";
 import { processMessage } from "../daemon/process-message.js";
+import { createGeminiLiveSession } from "../gemini-live/gemini-live-session.js";
 import { createLiveVoiceSession } from "../live-voice/live-voice-session.js";
 import { LiveVoiceSessionManager } from "../live-voice/live-voice-session-manager.js";
 import {
@@ -168,7 +169,13 @@ export class RuntimeHttpServer {
 
     this.approvalCopyGenerator = createApprovalCopyGenerator();
     this.liveVoiceSessionManager = new LiveVoiceSessionManager({
-      createSession: (context) => createLiveVoiceSession(context),
+      // Route by engine: the speech-native Gemini Live realtime engine is
+      // opt-in via `engine: "gemini-live"` on the start frame; everything else
+      // (including old clients that never send the field) stays on the cascade.
+      createSession: (context) =>
+        context.startFrame.engine === "gemini-live"
+          ? createGeminiLiveSession(context)
+          : createLiveVoiceSession(context),
     });
     this.router = new HttpRouter();
   }

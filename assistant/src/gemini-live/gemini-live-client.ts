@@ -1,0 +1,257 @@
+/**
+ * Low-level client for Google's Gemini Live (`BidiGenerateContent`) WebSocket —
+ * the speech-native realtime API. This wraps the raw protocol (setup →
+ * setupComplete → streamed audio + tool calls) behind typed callbacks so the
+ * session layer can bridge it to Cue's live-voice client protocol.
+ *
+ * This is the "Tier 1" realtime engine (see docs/cue-voice-architecture-review.md):
+ * it handles the live conversation and quick function calls with ~sub-3s
+ * latency, in contrast to the cascade (STT → full agent loop → TTS) which stays
+ * as the deep-work tier reached via the `run_deep_task` function.
+ */
+
+import { credentialKey } from "../security/credential-key.js";
+import { getSecureKeyAsync } from "../security/secure-keys.js";
+import { getLogger } from "../util/logger.js";
+
+const log = getLogger("gemini-live-client");
+
+const GEMINI_LIVE_WS_BASE =
+  "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+
+/** Native-audio dialog model — best conversational quality + tool calling. */
+export const DEFAULT_GEMINI_LIVE_MODEL =
+  "models/gemini-2.5-flash-native-audio-latest";
+
+/** Gemini Live streams output audio as 24kHz 16-bit mono PCM. */
+export const GEMINI_LIVE_OUTPUT_SAMPLE_RATE = 24000;
+
+export function resolveGeminiLiveModel(): string {
+  const override = process.env.CUE_GEMINI_LIVE_MODEL?.trim();
+  const model = override || DEFAULT_GEMINI_LIVE_MODEL;
+  // The API wants a fully-qualified `models/...` resource name.
+  return model.startsWith("models/") ? model : `models/${model}`;
+}
+
+/**
+ * Resolve the Gemini API key. The self-host brain runs Gemini via the
+ * "openrouter" masquerade, so the key lives at `credential/openrouter/api_key`;
+ * fall back to the raw Gemini env vars so this works regardless of how the
+ * instance was provisioned.
+ */
+export async function resolveGeminiLiveApiKey(): Promise<string | null> {
+  const fromStore = await getSecureKeyAsync(
+    credentialKey("openrouter", "api_key"),
+  );
+  return (
+    fromStore ||
+    process.env.GEMINI_API_KEY?.trim() ||
+    process.env.CUE_GEMINI_API_KEY?.trim() ||
+    process.env.OPENROUTER_API_KEY?.trim() ||
+    null
+  );
+}
+
+export interface GeminiFunctionDeclaration {
+  name: string;
+  description: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface GeminiLiveToolCall {
+  id?: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface GeminiLiveClientCallbacks {
+  /** A chunk of output audio (raw PCM, 24kHz 16-bit mono). */
+  onAudio?: (pcm: Buffer) => void;
+  /** Server transcription of the model's spoken output (if enabled). */
+  onOutputText?: (text: string) => void;
+  /** Server transcription of the user's input audio (if enabled). */
+  onInputText?: (text: string) => void;
+  /** The model wants to call one or more functions. */
+  onToolCall?: (calls: GeminiLiveToolCall[]) => void;
+  /** The model finished its turn (generation complete). */
+  onTurnComplete?: () => void;
+  /** The user barged in — the model's output was interrupted server-side. */
+  onInterrupted?: () => void;
+  onError?: (message: string) => void;
+  onClose?: (code: number, reason: string) => void;
+}
+
+export interface GeminiLiveConnectOptions {
+  apiKey: string;
+  model: string;
+  systemInstruction: string;
+  tools?: GeminiFunctionDeclaration[];
+  /** Sample rate of the audio the client will stream in (usually 16000). */
+  inputSampleRate: number;
+  callbacks: GeminiLiveClientCallbacks;
+}
+
+/**
+ * A single Gemini Live session. Construct, `connect()` (resolves once the
+ * server acknowledges setup), then stream audio and relay tool responses.
+ */
+export class GeminiLiveClient {
+  private ws: WebSocket | null = null;
+  private readonly opts: GeminiLiveConnectOptions;
+  private readonly inputMimeType: string;
+  private closed = false;
+
+  constructor(opts: GeminiLiveConnectOptions) {
+    this.opts = opts;
+    this.inputMimeType = `audio/pcm;rate=${opts.inputSampleRate}`;
+  }
+
+  /** Open the socket and complete setup. Resolves on `setupComplete`. */
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const url = `${GEMINI_LIVE_WS_BASE}?key=${encodeURIComponent(this.opts.apiKey)}`;
+      const ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
+      this.ws = ws;
+      let setupDone = false;
+
+      ws.onopen = () => {
+        const setup: Record<string, unknown> = {
+          model: this.opts.model,
+          generationConfig: { responseModalities: ["AUDIO"] },
+          systemInstruction: {
+            parts: [{ text: this.opts.systemInstruction }],
+          },
+          // Server-side transcription so we can surface user + assistant text
+          // frames on the existing protocol (nice-to-have; audio is the product).
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+        };
+        if (this.opts.tools && this.opts.tools.length > 0) {
+          setup.tools = [{ functionDeclarations: this.opts.tools }];
+        }
+        this.send({ setup });
+      };
+
+      ws.onmessage = (ev: MessageEvent) => {
+        let msg: Record<string, unknown>;
+        try {
+          const raw =
+            typeof ev.data === "string"
+              ? ev.data
+              : Buffer.from(ev.data as ArrayBuffer).toString("utf8");
+          msg = JSON.parse(raw);
+        } catch {
+          return;
+        }
+        if (!setupDone && "setupComplete" in msg) {
+          setupDone = true;
+          resolve();
+          return;
+        }
+        try {
+          this.handleServerMessage(msg);
+        } catch (err) {
+          log.warn({ err }, "gemini-live: error handling server message");
+        }
+      };
+
+      ws.onerror = () => {
+        const message = "Gemini Live socket error";
+        if (!setupDone) reject(new Error(message));
+        this.opts.callbacks.onError?.(message);
+      };
+
+      ws.onclose = (ev: CloseEvent) => {
+        if (!setupDone) {
+          reject(
+            new Error(
+              `Gemini Live closed before setup (code=${ev.code} ${ev.reason || ""})`,
+            ),
+          );
+        }
+        this.opts.callbacks.onClose?.(ev.code, ev.reason || "");
+      };
+    });
+  }
+
+  private handleServerMessage(msg: Record<string, unknown>): void {
+    const cb = this.opts.callbacks;
+
+    const toolCall = msg.toolCall as
+      | { functionCalls?: GeminiLiveToolCall[] }
+      | undefined;
+    if (toolCall?.functionCalls?.length) {
+      cb.onToolCall?.(toolCall.functionCalls);
+      return;
+    }
+
+    const sc = msg.serverContent as
+      | {
+          modelTurn?: { parts?: Array<Record<string, unknown>> };
+          inputTranscription?: { text?: string };
+          outputTranscription?: { text?: string };
+          turnComplete?: boolean;
+          interrupted?: boolean;
+        }
+      | undefined;
+    if (!sc) return;
+
+    if (sc.interrupted) cb.onInterrupted?.();
+    if (sc.inputTranscription?.text)
+      cb.onInputText?.(sc.inputTranscription.text);
+    if (sc.outputTranscription?.text)
+      cb.onOutputText?.(sc.outputTranscription.text);
+
+    for (const part of sc.modelTurn?.parts ?? []) {
+      const inlineData = part.inlineData as
+        | { data?: string; mimeType?: string }
+        | undefined;
+      if (inlineData?.data) {
+        cb.onAudio?.(Buffer.from(inlineData.data, "base64"));
+      }
+    }
+
+    if (sc.turnComplete) cb.onTurnComplete?.();
+  }
+
+  /** Stream a chunk of input audio (raw PCM at `inputSampleRate`). */
+  sendAudio(pcm: Uint8Array): void {
+    this.send({
+      realtimeInput: {
+        audio: {
+          data: Buffer.from(pcm).toString("base64"),
+          mimeType: this.inputMimeType,
+        },
+      },
+    });
+  }
+
+  /** Signal end-of-input so server VAD closes the turn promptly. */
+  sendAudioStreamEnd(): void {
+    this.send({ realtimeInput: { audioStreamEnd: true } });
+  }
+
+  /** Return a function result for a tool the model called. */
+  sendToolResponse(
+    responses: Array<{ id?: string; name: string; response: unknown }>,
+  ): void {
+    this.send({ toolResponse: { functionResponses: responses } });
+  }
+
+  private send(payload: unknown): void {
+    if (this.closed) return;
+    if (!this.ws || this.ws.readyState !== 1) return;
+    this.ws.send(JSON.stringify(payload));
+  }
+
+  close(): void {
+    this.closed = true;
+    try {
+      this.ws?.close();
+    } catch {
+      // best-effort
+    }
+    this.ws = null;
+  }
+}
