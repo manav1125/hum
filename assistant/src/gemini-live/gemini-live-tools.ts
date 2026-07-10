@@ -10,10 +10,13 @@
  * a stub that reports false success (the cardinal voice sin).
  */
 
-import { executeTaskListAdd } from "../tools/tasks/work-item-enqueue.js";
-import type { ToolContext } from "../tools/types.js";
+import { createTask } from "../tasks/task-store.js";
 import { getLogger } from "../util/logger.js";
-import { listWorkItems } from "../work-items/work-item-store.js";
+import {
+  createWorkItemWithPermissions,
+  listWorkItems,
+} from "../work-items/work-item-store.js";
+import { triageAndMaybeAutoRunWorkItem } from "../work-items/work-item-triage.js";
 import type {
   GeminiFunctionDeclaration,
   GeminiLiveToolCall,
@@ -61,15 +64,48 @@ export const GEMINI_LIVE_FUNCTION_DECLARATIONS: GeminiFunctionDeclaration[] = [
   },
 ];
 
-/** Build a minimal guardian ToolContext for a live-voice-originated action. */
-function buildToolContext(conversationId: string): ToolContext {
-  return {
-    conversationId,
-    workingDir: process.cwd(),
-  } as ToolContext;
-}
-
 const OPEN_STATUSES = new Set(["queued", "running", "awaiting_review"]);
+
+/**
+ * Create a work item and return IMMEDIATELY, running triage + any auto-run in
+ * the background. The shared `executeTaskListAdd` path blocks up to 12s waiting
+ * for the triage/auto-run decision — fine for typed chat, but in a live voice
+ * turn that stall makes the model go silent and the realtime session time the
+ * turn out ("add a task stopped working"). Voice tool calls must be instant.
+ */
+function createWorkItemFast(opts: {
+  title: string;
+  executionPrompt?: string;
+  conversationId: string;
+  /**
+   * When true, triage may auto-run the item in the background (for `run_deep_task`
+   * — real work whose result lands in Review). When false (a plain `add_task`
+   * to-do like "go to the gym"), the item just sits in the queue as a reminder;
+   * auto-running a to-do produces nonsense output and hides it in Review.
+   */
+  autoRun: boolean;
+}): string {
+  const template = opts.executionPrompt ?? opts.title;
+  const task = createTask({
+    title: opts.title,
+    template,
+    createdFromConversationId: opts.conversationId,
+  });
+  const workItem = createWorkItemWithPermissions({
+    taskId: task.id,
+    title: opts.title,
+    priorityTier: 1,
+  });
+  if (opts.autoRun) {
+    // Fire-and-forget: triage + policy-gated auto-run in the background.
+    void triageAndMaybeAutoRunWorkItem(workItem.id, {
+      callerSetPriority: false,
+    }).catch((err) =>
+      log.warn({ err, id: workItem.id }, "background triage failed"),
+    );
+  }
+  return workItem.id;
+}
 
 /**
  * Execute a function the Gemini Live model called. Returns the plain object that
@@ -91,42 +127,33 @@ export async function executeGeminiLiveFunctionCall(
       case "add_task": {
         const title = String(call.args.title ?? "").trim();
         if (!title) return wrap({ ok: false, error: "empty title" });
-        const result = await executeTaskListAdd(
-          { title, if_exists: "reuse_existing" },
-          buildToolContext(ctx.conversationId),
-        );
-        log.info({ title, isError: result.isError }, "gemini-live add_task");
-        return wrap(
-          result.isError
-            ? { ok: false, error: result.content }
-            : { ok: true, message: `Added "${title}".` },
-        );
+        const id = createWorkItemFast({
+          title,
+          conversationId: ctx.conversationId,
+          autoRun: false,
+        });
+        log.info({ title, id }, "gemini-live add_task");
+        return wrap({
+          ok: true,
+          message: `Added "${title}" to your task list.`,
+        });
       }
 
       case "run_deep_task": {
         const request = String(call.args.request ?? "").trim();
         if (!request) return wrap({ ok: false, error: "empty request" });
-        // Enqueue as a work item with the full request as the execution prompt;
-        // triage auto-runs it in the background per the user's autonomy policy —
-        // exactly the same path a typed request takes.
-        const result = await executeTaskListAdd(
-          {
-            title: request.length > 80 ? `${request.slice(0, 77)}…` : request,
-            execution_prompt: request,
-            if_exists: "create_duplicate",
-          },
-          buildToolContext(ctx.conversationId),
-        );
-        log.info({ isError: result.isError }, "gemini-live run_deep_task");
-        return wrap(
-          result.isError
-            ? { ok: false, error: result.content }
-            : {
-                ok: true,
-                message:
-                  "Started working on that in the background; it'll be in the Review lane.",
-              },
-        );
+        const id = createWorkItemFast({
+          title: request.length > 80 ? `${request.slice(0, 77)}…` : request,
+          executionPrompt: request,
+          conversationId: ctx.conversationId,
+          autoRun: true,
+        });
+        log.info({ id }, "gemini-live run_deep_task");
+        return wrap({
+          ok: true,
+          message:
+            "Started working on that in the background; it'll be in the Review lane.",
+        });
       }
 
       case "get_open_tasks": {

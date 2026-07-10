@@ -79,23 +79,31 @@ import {
 // Thresholds (mirror the macOS LiveVoiceChannelManager defaults)
 // ---------------------------------------------------------------------------
 
-/** Mic amplitude (in [0, 1]) above which barge-in interrupts assistant speech. */
-const BARGE_IN_AMPLITUDE_THRESHOLD = 0.05;
+/**
+ * Mic amplitude (in [0, 1]) above which barge-in interrupts assistant speech.
+ * Set above the residual echo the mic's echo-cancellation leaves from the
+ * assistant's own voice through the speakers, so only real, close user speech
+ * interrupts — not the assistant hearing itself. Requires sustained speech (see
+ * {@link BARGE_IN_MIN_SPEECH_MS}) as a second guard against transient echo.
+ */
+const BARGE_IN_AMPLITUDE_THRESHOLD = 0.09;
+
+/** Sustained speech (ms) over the barge-in threshold before it interrupts. */
+const BARGE_IN_MIN_SPEECH_MS = 220;
 
 /**
- * Whether talking over the assistant interrupts it (barge-in). Disabled by
- * default: on a desktop with speakers (no headset) the mic picks up the
- * assistant's OWN voice, which trips barge-in — cutting the reply short and
- * derailing turn-taking ("plays for a bit then goes quiet, no next turn").
- * Reliable interruption needs real acoustic-echo cancellation tuned per device;
- * until then the assistant finishes its turn, then listens. The Stop button and
- * mute still work. Re-enable (with echo tuning) via `cue.voiceBargeIn=1`.
+ * Whether talking over the assistant interrupts it (barge-in). Enabled by
+ * default with a raised threshold + sustained-speech guard so the assistant's
+ * own voice through the speakers (residual echo after cancellation) doesn't trip
+ * it, while real user speech does. On a device where echo still leaks through,
+ * disable with `localStorage["cue.voiceBargeIn"]="0"` (assistant then finishes
+ * its turn before listening).
  */
 function isBargeInEnabled(): boolean {
   try {
-    return window.localStorage.getItem("cue.voiceBargeIn") === "1";
+    return window.localStorage.getItem("cue.voiceBargeIn") !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -238,6 +246,13 @@ interface SessionContext {
   speechMs: number;
   /** Accumulated trailing silence (ms) after speech in the current utterance. */
   silenceMs: number;
+  /**
+   * Timestamp (ms epoch) when the mic first went over the barge-in threshold in
+   * the current over-threshold run, or null when below. Barge-in fires only
+   * after the level stays high for {@link BARGE_IN_MIN_SPEECH_MS}, so a brief
+   * echo transient doesn't interrupt.
+   */
+  bargeInSinceMs: number | null;
 }
 
 /** Number of bytes per Int16 PCM sample. */
@@ -383,6 +398,7 @@ export function useLiveVoice(
         releaseInFlight: false,
         speechMs: 0,
         silenceMs: 0,
+        bargeInSinceMs: null,
       };
 
       const capture = (
@@ -564,8 +580,21 @@ function handleAmplitude(
 ): void {
   if (!session.captureRunning) return;
   useLiveVoiceStore.getState().setInputAmplitude(amplitude);
-  if (isBargeInEnabled() && amplitude >= BARGE_IN_AMPLITUDE_THRESHOLD) {
-    interruptIfSpeaking(session, teardown);
+  if (!isBargeInEnabled()) {
+    session.bargeInSinceMs = null;
+    return;
+  }
+  // Require the level to stay above the threshold for a minimum duration before
+  // interrupting, so a transient echo spike from the assistant's own voice
+  // doesn't cut it off — only sustained, real user speech barges in.
+  if (amplitude >= BARGE_IN_AMPLITUDE_THRESHOLD) {
+    const now = Date.now();
+    if (session.bargeInSinceMs === null) session.bargeInSinceMs = now;
+    else if (now - session.bargeInSinceMs >= BARGE_IN_MIN_SPEECH_MS) {
+      interruptIfSpeaking(session, teardown);
+    }
+  } else {
+    session.bargeInSinceMs = null;
   }
 }
 

@@ -51,6 +51,16 @@ export function resolveGeminiLiveLanguage(): string {
 }
 
 /**
+ * Gemini Live prebuilt voice name. Gemini Live speaks with its OWN voices (not
+ * the cascade's ElevenLabs voice), so we pick a warm female voice by default to
+ * match Cue's prior persona. Female options include Aoede, Kore, Leda, Zephyr;
+ * male include Puck, Charon, Fenrir, Orus. Override with `CUE_GEMINI_LIVE_VOICE`.
+ */
+export function resolveGeminiLiveVoice(): string {
+  return process.env.CUE_GEMINI_LIVE_VOICE?.trim() || "Aoede";
+}
+
+/**
  * Resolve the Gemini API key. The self-host brain runs Gemini via the
  * "openrouter" masquerade, so the key lives at `credential/openrouter/api_key`;
  * fall back to the raw Gemini env vars so this works regardless of how the
@@ -107,6 +117,8 @@ export interface GeminiLiveConnectOptions {
   inputSampleRate: number;
   /** BCP-47 language pinned for recognition + synthesis (e.g. "en-US"). */
   language?: string;
+  /** Prebuilt Gemini voice name (e.g. "Aoede"). */
+  voice?: string;
   callbacks: GeminiLiveClientCallbacks;
 }
 
@@ -138,12 +150,19 @@ export class GeminiLiveClient {
         const generationConfig: Record<string, unknown> = {
           responseModalities: ["AUDIO"],
         };
-        // Pin recognition + synthesis language so a short first utterance can't
-        // be auto-detected as the wrong language.
-        if (this.opts.language) {
-          generationConfig.speechConfig = {
-            languageCode: this.opts.language,
-          };
+        // Pin recognition + synthesis language + voice so a short first utterance
+        // can't be auto-detected as the wrong language, and Cue keeps a stable
+        // (female, by default) voice.
+        if (this.opts.language || this.opts.voice) {
+          const speechConfig: Record<string, unknown> = {};
+          if (this.opts.language)
+            speechConfig.languageCode = this.opts.language;
+          if (this.opts.voice) {
+            speechConfig.voiceConfig = {
+              prebuiltVoiceConfig: { voiceName: this.opts.voice },
+            };
+          }
+          generationConfig.speechConfig = speechConfig;
         }
         const setup: Record<string, unknown> = {
           model: this.opts.model,
