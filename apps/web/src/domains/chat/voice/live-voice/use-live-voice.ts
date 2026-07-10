@@ -82,6 +82,23 @@ import {
 /** Mic amplitude (in [0, 1]) above which barge-in interrupts assistant speech. */
 const BARGE_IN_AMPLITUDE_THRESHOLD = 0.05;
 
+/**
+ * Whether talking over the assistant interrupts it (barge-in). Disabled by
+ * default: on a desktop with speakers (no headset) the mic picks up the
+ * assistant's OWN voice, which trips barge-in — cutting the reply short and
+ * derailing turn-taking ("plays for a bit then goes quiet, no next turn").
+ * Reliable interruption needs real acoustic-echo cancellation tuned per device;
+ * until then the assistant finishes its turn, then listens. The Stop button and
+ * mute still work. Re-enable (with echo tuning) via `cue.voiceBargeIn=1`.
+ */
+function isBargeInEnabled(): boolean {
+  try {
+    return window.localStorage.getItem("cue.voiceBargeIn") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** Mic amplitude above which a chunk counts as speech (for silence detection). */
 const SPEECH_AMPLITUDE_THRESHOLD = 0.03;
 
@@ -547,7 +564,7 @@ function handleAmplitude(
 ): void {
   if (!session.captureRunning) return;
   useLiveVoiceStore.getState().setInputAmplitude(amplitude);
-  if (amplitude >= BARGE_IN_AMPLITUDE_THRESHOLD) {
+  if (isBargeInEnabled() && amplitude >= BARGE_IN_AMPLITUDE_THRESHOLD) {
     interruptIfSpeaking(session, teardown);
   }
 }
