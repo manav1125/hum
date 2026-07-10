@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { Keyboard, Mic, MicOff } from "lucide-react";
+import { Keyboard, Mic, MicOff, Sparkles } from "lucide-react";
 
 import {
   VoiceOrb,
@@ -184,6 +184,45 @@ export function VoiceModeSurface({
     }
   }, [active, connecting, start, stop, assistantId, conversationId]);
 
+  // --- Voice engine toggle (Realtime = Gemini Live vs Classic = cascade) -----
+  // Persists to the same `cue.voiceEngine` key `resolveVoiceEngine()` reads, so
+  // flipping it and (re)starting a session picks the chosen engine. Visible in
+  // the header because a localStorage flag is unusable inside the desktop app.
+  const [engine, setEngineState] = useState<"cascade" | "gemini-live">(() => {
+    try {
+      return window.localStorage.getItem("cue.voiceEngine") === "gemini-live"
+        ? "gemini-live"
+        : "cascade";
+    } catch {
+      return "cascade";
+    }
+  });
+  const toggleEngine = useCallback(() => {
+    const next = engine === "gemini-live" ? "cascade" : "gemini-live";
+    setEngineState(next);
+    try {
+      window.localStorage.setItem("cue.voiceEngine", next);
+    } catch {
+      // ignore locked-down storage
+    }
+    // Apply immediately: restart an in-flight session so the new engine takes
+    // effect (the engine is chosen at session start).
+    if (active || connecting) {
+      void (async () => {
+        await stop();
+        await start(assistantId, conversationId ?? undefined);
+      })();
+    }
+  }, [
+    engine,
+    active,
+    connecting,
+    stop,
+    start,
+    assistantId,
+    conversationId,
+  ]);
+
   // Auto-start once on mount when requested (in-chat overlay). Guarded on the
   // flag + a non-empty assistant id; only fires from idle so a re-render can't
   // restart a live or failed session.
@@ -308,6 +347,45 @@ export function VoiceModeSurface({
           Done
         </button>
       ) : null}
+
+      {/* Engine toggle — Realtime (Gemini Live) vs Classic (cascade). Top-left,
+          mirroring the Done button. Visible so it's usable inside the desktop
+          app where a localStorage flag can't be set. */}
+      <button
+        type="button"
+        onClick={toggleEngine}
+        aria-label={`Voice engine: ${engine === "gemini-live" ? "Realtime" : "Classic"}. Tap to switch.`}
+        title={
+          engine === "gemini-live"
+            ? "Realtime engine (Gemini Live) — faster, speech-native. Tap for Classic."
+            : "Classic engine (full assistant) — deeper, slower. Tap for Realtime."
+        }
+        style={{
+          position: "absolute",
+          top: `calc(14px + ${safeInset("top")})`,
+          left: `calc(14px + ${safeInset("left")})`,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: mono,
+          fontSize: 12,
+          color: engine === "gemini-live" ? "#0B0B0F" : TEXT_2,
+          background:
+            engine === "gemini-live"
+              ? "rgba(120,220,180,.92)"
+              : "rgba(255,255,255,.04)",
+          border: `1px solid ${LINE_2}`,
+          borderRadius: 999,
+          padding: "8px 14px",
+          minHeight: 36,
+          cursor: "pointer",
+          backdropFilter: "blur(8px)",
+          zIndex: 2,
+        }}
+      >
+        <Sparkles size={14} aria-hidden />
+        {engine === "gemini-live" ? "Realtime" : "Classic"}
+      </button>
 
       {!voiceMode ? (
         <div
