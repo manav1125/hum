@@ -144,6 +144,36 @@ export interface UseLiveVoiceOptions {
    * after `tts_done`; a fresh session per turn).
    */
   fullDuplex?: boolean;
+  /**
+   * Which server voice engine to use. Defaults to resolving the opt-in flag
+   * (`?voiceEngine=gemini-live` or `localStorage["cue.voiceEngine"]`), falling
+   * back to `"cascade"`. Lets us dogfood the speech-native Gemini Live engine
+   * without changing the default experience.
+   */
+  engine?: "cascade" | "gemini-live";
+}
+
+/**
+ * Resolve the opt-in voice engine: an explicit option wins, then a
+ * `?voiceEngine=gemini-live` query param, then `localStorage["cue.voiceEngine"]`,
+ * else the cascade default. Kept side-effect-free and SSR-safe.
+ */
+function resolveVoiceEngine(
+  explicit?: "cascade" | "gemini-live",
+): "cascade" | "gemini-live" {
+  if (explicit) return explicit;
+  if (typeof window === "undefined") return "cascade";
+  try {
+    const param = new URLSearchParams(window.location.search).get(
+      "voiceEngine",
+    );
+    if (param === "gemini-live" || param === "cascade") return param;
+    const stored = window.localStorage.getItem("cue.voiceEngine");
+    if (stored === "gemini-live" || stored === "cascade") return stored;
+  } catch {
+    // Access to location/localStorage can throw in locked-down contexts.
+  }
+  return "cascade";
 }
 
 /**
@@ -301,6 +331,7 @@ export function useLiveVoice(
       // Echo is handled by the mic's echoCancellation constraint. A consumer can
       // still force legacy push-to-talk by passing `fullDuplex: false`.
       const fullDuplex = opts.fullDuplex !== false;
+      const engine = resolveVoiceEngine(opts.engine);
       const client = (
         opts.createClient ?? (() => new LiveVoiceChannelClient())
       )();
@@ -418,7 +449,7 @@ export function useLiveVoice(
         }),
       );
 
-      await client.connect({ assistantId, conversationId, fullDuplex });
+      await client.connect({ assistantId, conversationId, fullDuplex, engine });
     },
     [teardown],
   );

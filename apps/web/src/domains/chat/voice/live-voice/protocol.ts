@@ -55,6 +55,13 @@ export interface LiveVoiceClientStartFrame {
    * runtime contract in `assistant/src/live-voice/protocol.ts`.
    */
   readonly fullDuplex?: boolean;
+  /**
+   * Which server voice engine handles this session. Absent/`"cascade"` is the
+   * STT → agent-loop → TTS pipeline; `"gemini-live"` routes to the speech-native
+   * Gemini Live realtime engine. Mirrors the runtime contract in
+   * `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly engine?: "cascade" | "gemini-live";
 }
 
 export interface LiveVoiceClientPttReleaseFrame {

@@ -89,6 +89,12 @@ export interface LiveVoiceConnectArgs {
    * `tts_done`, and accepts audio after `ptt_release` for the next utterance.
    */
   fullDuplex?: boolean;
+  /**
+   * Which server voice engine to use. `"cascade"` (default) is the
+   * STT → agent-loop → TTS pipeline; `"gemini-live"` routes to the speech-native
+   * Gemini Live realtime engine. Opt-in so the new engine stays dormant.
+   */
+  engine?: "cascade" | "gemini-live";
 }
 
 /** Factory so tests can inject a mock WebSocket. Defaults to the global. */
@@ -116,6 +122,7 @@ export class LiveVoiceChannelClient {
   private connectTimeout: ReturnType<typeof setTimeout> | null = null;
   private conversationId: string | undefined;
   private fullDuplex = false;
+  private engine: "cascade" | "gemini-live" = "cascade";
 
   private readonly listeners: {
     [E in LiveVoiceClientEventName]: Set<LiveVoiceClientEventHandler<E>>;
@@ -172,11 +179,13 @@ export class LiveVoiceChannelClient {
     assistantId,
     conversationId,
     fullDuplex,
+    engine,
   }: LiveVoiceConnectArgs): Promise<void> {
     if (this.state !== "idle") return;
     this.state = "connecting";
     this.conversationId = conversationId;
     this.fullDuplex = fullDuplex === true;
+    this.engine = engine === "gemini-live" ? "gemini-live" : "cascade";
 
     let url: string;
     try {
@@ -264,6 +273,7 @@ export class LiveVoiceChannelClient {
       audio: LIVE_VOICE_AUDIO_FORMAT,
       ...(this.conversationId ? { conversationId: this.conversationId } : {}),
       ...(this.fullDuplex ? { fullDuplex: true } : {}),
+      ...(this.engine === "gemini-live" ? { engine: "gemini-live" } : {}),
     };
     this.trySend(JSON.stringify(startFrame));
   }
