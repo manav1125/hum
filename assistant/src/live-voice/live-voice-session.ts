@@ -24,6 +24,20 @@ const LIVE_VOICE_CONTROL_PROMPT = [
   "Speak naturally and briefly, like a real conversation — usually one or two sentences unless asked for more. If you need a moment to do something, say so in a few words and then do it.",
   "Your reply is read aloud by a text-to-speech engine: write plain conversational text ONLY. No markdown, asterisks, headings, bullet points, code blocks, links, or emojis.",
 ].join(" ");
+
+/**
+ * Skills preactivated on every live-voice turn so their tools are available
+ * immediately (no `skill_load` round-trip — better capability AND lower
+ * latency). Covers the common spoken requests; the model can still `skill_load`
+ * anything else it needs.
+ */
+const LIVE_VOICE_PREACTIVATED_SKILLS = [
+  "tasks",
+  "schedule",
+  "contacts",
+  "messaging",
+  "followups",
+];
 import {
   listProviderIds,
   supportsBoundary,
@@ -634,6 +648,10 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         // the bridge strips every side-effect tool ("this action requires
         // guardian-level access"), so the assistant refuses tasks it can do.
         trustContext: INTERNAL_GUARDIAN_TRUST_CONTEXT,
+        // Give the assistant its common capabilities up front — otherwise a
+        // fresh voice conversation only has core tools and cannot add a task,
+        // schedule, etc. until it discovers and `skill_load`s them.
+        preactivatedSkillIds: LIVE_VOICE_PREACTIVATED_SKILLS,
         approvalMode: "local-live-voice",
         content,
         isInbound: true,

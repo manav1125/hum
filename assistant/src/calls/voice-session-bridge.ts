@@ -129,6 +129,13 @@ export interface VoiceTurnOptions {
   trustContext?: TrustContext;
   /** Permission handling mode. Defaults to phone-call auto policy. */
   approvalMode?: "phone-call" | "local-live-voice";
+  /**
+   * Skill IDs to preactivate for this turn so their tools are available
+   * immediately, without a `skill_load` round-trip. Live voice uses this to give
+   * the assistant its common capabilities (tasks, schedule, contacts, …) on the
+   * first turn — both for capability and to cut latency.
+   */
+  preactivatedSkillIds?: string[];
   /** Whether this is an inbound call (no outbound task). */
   isInbound: boolean;
   /** The outbound call task, if any. */
@@ -433,6 +440,9 @@ export async function startVoiceTurn(
       ),
     );
     conversation.setVoiceCallControlPrompt(voiceCallControlPrompt);
+    if (opts.preactivatedSkillIds && opts.preactivatedSkillIds.length > 0) {
+      conversation.preactivatedSkillIds = opts.preactivatedSkillIds;
+    }
 
     const persistResult = await conversation.persistUserMessage({
       content: persistedContent,
