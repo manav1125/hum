@@ -1,6 +1,6 @@
 /**
  * Route handlers for the agent registry — the Agents · org page roster
- * (Ops / Builder / Growth / …) plus per-agent attributed spend. Replaces the
+ * (Ops / Growth / Inbox / …) plus per-agent attributed spend. Replaces the
  * Phase-1 localStorage charter config so charters persist server-side and other
  * surfaces can read them. Mutations publish `tasks_changed` so SSE-driven
  * clients refetch, mirroring the missions/projects routes. Auth is enforced at
@@ -46,6 +46,19 @@ const agentSchema = z.object({
     .int()
     .nullable()
     .describe("Weekly spend cap in cents; null = uncapped"),
+  warnPercent: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Soft-alert threshold (%) for the weekly cap; null = config default (80)",
+    ),
+  hardStopEnabled: z
+    .number()
+    .int()
+    .describe(
+      "0/1. 0 = cap is advisory (warn only). 1 = the run-start budget check hard-stops this agent's background runs once weekly spend reaches capCents.",
+    ),
   paused: z.number().int().describe("0/1 — the role is paused"),
   model: z
     .string()
@@ -116,7 +129,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "List agents",
     description:
-      "The org roster — every staffed role (name, emoji, domain, charter, tier, cap, paused), name-ordered. The three defaults (Ops/Builder/Growth) are seeded on first init; `cue` is the implicit house agent and is not a row.",
+      "The org roster — every staffed role (name, emoji, domain, charter, tier, cap, paused), name-ordered. The three defaults (Ops/Growth/Inbox) are seeded on first init; `cue` is the implicit house agent and is not a row.",
     tags: ["agents"],
     responseBody: z.object({ agents: z.array(agentSchema) }),
     handler: () => ({ agents: listAgents() }),
@@ -140,6 +153,8 @@ export const ROUTES: RouteDefinition[] = [
       charter: z.string().optional(),
       tier: tierSchema.optional(),
       capCents: z.number().int().min(0).optional(),
+      warnPercent: z.number().int().min(1).max(100).nullable().optional(),
+      hardStopEnabled: z.boolean().optional(),
       paused: z.boolean().optional(),
       model: z.string().optional(),
       toolScopes: z.array(z.string()).nullable().optional(),
@@ -154,6 +169,8 @@ export const ROUTES: RouteDefinition[] = [
         charter?: string;
         tier?: string;
         capCents?: number;
+        warnPercent?: number | null;
+        hardStopEnabled?: boolean;
         paused?: boolean;
         model?: string;
         toolScopes?: string[] | null;
@@ -167,6 +184,10 @@ export const ROUTES: RouteDefinition[] = [
         ...(typeof b.charter === "string" ? { charter: b.charter } : {}),
         ...(typeof b.tier === "string" ? { tier: b.tier } : {}),
         ...(typeof b.capCents === "number" ? { capCents: b.capCents } : {}),
+        ...(b.warnPercent !== undefined ? { warnPercent: b.warnPercent } : {}),
+        ...(typeof b.hardStopEnabled === "boolean"
+          ? { hardStopEnabled: b.hardStopEnabled }
+          : {}),
         ...(typeof b.paused === "boolean" ? { paused: b.paused } : {}),
         ...(typeof b.model === "string" ? { model: b.model } : {}),
         ...(b.toolScopes !== undefined
@@ -254,6 +275,20 @@ export const ROUTES: RouteDefinition[] = [
         charter: z.string().nullable(),
         tier: tierSchema,
         capCents: z.number().int().min(0).nullable(),
+        warnPercent: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .nullable()
+          .describe(
+            "Soft-alert threshold (%) for the weekly cap; null = config default (80)",
+          ),
+        hardStopEnabled: z
+          .boolean()
+          .describe(
+            "true = enforce the weekly cap as a hard-stop on background runs; false = advisory (warn only)",
+          ),
         paused: z.boolean(),
         model: z
           .string()
@@ -278,6 +313,8 @@ export const ROUTES: RouteDefinition[] = [
         charter?: string | null;
         tier?: string;
         capCents?: number | null;
+        warnPercent?: number | null;
+        hardStopEnabled?: boolean;
         paused?: boolean;
         model?: string | null;
         toolScopes?: string[] | null;
@@ -293,7 +330,11 @@ export const ROUTES: RouteDefinition[] = [
       if (raw.charter !== undefined) updates.charter = raw.charter;
       if (raw.tier !== undefined) updates.tier = raw.tier;
       if (raw.capCents !== undefined) updates.capCents = raw.capCents;
+      if (raw.warnPercent !== undefined) updates.warnPercent = raw.warnPercent;
       // The store column is 0/1; accept a boolean at the wire and normalize.
+      if (raw.hardStopEnabled !== undefined) {
+        updates.hardStopEnabled = raw.hardStopEnabled ? 1 : 0;
+      }
       if (raw.paused !== undefined) updates.paused = raw.paused ? 1 : 0;
       // Empty string reads as "clear the pin" so a UI picker can reset it.
       if (raw.model !== undefined) {

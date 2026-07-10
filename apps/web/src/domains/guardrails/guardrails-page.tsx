@@ -1288,10 +1288,16 @@ function AgentCard({
   const cap = agent.spend.capCents;
   const spent = agent.spend.spentCents;
   const ratio = cap && cap > 0 ? spent / cap : 0;
-  const atCap = !paused && cap !== null && cap > 0 && spent >= cap;
-  const nearCap = !paused && !atCap && cap !== null && cap > 0 && ratio >= 0.8;
+  // A cap only actually stops the agent when hard-stop is enabled; otherwise
+  // `capCents` is advisory and background runs keep going past it.
+  const enforced = agent.hardStopEnabled === 1;
+  const overCap = !paused && cap !== null && cap > 0 && spent >= cap;
+  const atCap = overCap && enforced;
+  const overAdvisory = overCap && !enforced;
+  const nearCap =
+    !paused && !overCap && cap !== null && cap > 0 && ratio >= 0.8;
 
-  const barColor = atCap ? C.danger : nearCap ? C.amber : hue;
+  const barColor = atCap ? C.danger : overAdvisory || nearCap ? C.amber : hue;
   const fallbackChips = agentToolChips(agent);
 
   const badge = paused
@@ -1302,13 +1308,19 @@ function AgentCard({
           color: C.danger,
           bg: `color-mix(in srgb, ${C.danger} 12%, transparent)`,
         }
-      : nearCap
+      : overAdvisory
         ? {
-            text: "NEAR CAP",
+            text: "OVER CAP",
             color: C.amber,
             bg: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
           }
-        : { text: "ACTIVE", color: C.green, bg: C.greenW };
+        : nearCap
+          ? {
+              text: "NEAR CAP",
+              color: C.amber,
+              bg: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
+            }
+          : { text: "ACTIVE", color: C.green, bg: C.greenW };
 
   const raiseCapCents =
     cap !== null && cap > 0 ? Math.ceil((cap * 1.5) / 100) * 100 : null;
@@ -1497,6 +1509,63 @@ function AgentCard({
             Resumes Monday either way · cap lives in Guardrails
           </div>
         </>
+      ) : overAdvisory ? (
+        // Over the cap, but the cap is advisory — runs did NOT stop. Offer to
+        // enforce it (arm the hard-stop) or raise it.
+        <>
+          <div style={{ fontSize: 10.5, color: C.amber, marginTop: 6 }}>
+            Over the weekly cap — advisory only, so runs kept going.
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+            <button
+              type="button"
+              disabled={patchAgent.isPending}
+              onClick={() =>
+                patchAgent.mutate({
+                  path: { assistant_id: assistantId, id: agent.id },
+                  body: { hardStopEnabled: true },
+                })
+              }
+              style={{
+                flex: 1.3,
+                fontSize: 12,
+                fontWeight: 600,
+                background: C.blue,
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "10px 0",
+                cursor: "pointer",
+              }}
+            >
+              Enforce cap — stop future runs
+            </button>
+            {raiseCapCents !== null && (
+              <button
+                type="button"
+                disabled={patchAgent.isPending}
+                onClick={() =>
+                  patchAgent.mutate({
+                    path: { assistant_id: assistantId, id: agent.id },
+                    body: { capCents: raiseCapCents },
+                  })
+                }
+                style={{
+                  flex: 1,
+                  fontSize: 12,
+                  color: C.t2,
+                  background: C.sunken,
+                  border: `1px solid ${C.line2}`,
+                  borderRadius: 8,
+                  padding: "10px 0",
+                  cursor: "pointer",
+                }}
+              >
+                Raise to {dollars(raiseCapCents)}
+              </button>
+            )}
+          </div>
+        </>
       ) : paused ? (
         <div
           style={{
@@ -1537,15 +1606,64 @@ function AgentCard({
           </button>
         </div>
       ) : (
-        <ModelPinRow
-          agent={agent}
-          onPin={(model) =>
-            patchAgent.mutate({
-              path: { assistant_id: assistantId, id: agent.id },
-              body: { model },
-            })
-          }
-        />
+        <>
+          <ModelPinRow
+            agent={agent}
+            onPin={(model) =>
+              patchAgent.mutate({
+                path: { assistant_id: assistantId, id: agent.id },
+                body: { model },
+              })
+            }
+          />
+          {cap !== null && cap > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: `1px solid ${C.line}`,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11.5, color: C.t2 }}>
+                  Cap enforcement
+                </div>
+                <div style={{ fontSize: 10, color: C.t3, marginTop: 2 }}>
+                  {enforced
+                    ? "Hard-stops background runs at the cap"
+                    : "Advisory — warns but keeps running"}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={patchAgent.isPending}
+                onClick={() =>
+                  patchAgent.mutate({
+                    path: { assistant_id: assistantId, id: agent.id },
+                    body: { hardStopEnabled: !enforced },
+                  })
+                }
+                style={{
+                  flexShrink: 0,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: enforced ? C.blueS : C.t2,
+                  background: enforced ? C.blueW : C.sunken,
+                  border: `1px solid ${enforced ? "transparent" : C.line2}`,
+                  borderRadius: 8,
+                  padding: "7px 14px",
+                  cursor: "pointer",
+                }}
+              >
+                {enforced ? "◼ Enforced" : "Enforce"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

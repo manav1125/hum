@@ -102,6 +102,17 @@ const agentWithSpendSchema = z.object({
   charter: z.string().nullable(),
   tier: z.string(),
   capCents: z.number().int().nullable(),
+  warnPercent: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Soft-alert threshold (%) for the weekly cap; null = default 80"),
+  hardStopEnabled: z
+    .number()
+    .int()
+    .describe(
+      "0/1 — whether the weekly cap hard-stops this agent's background runs (vs. advisory warn-only)",
+    ),
   paused: z.number().int(),
   model: z
     .string()

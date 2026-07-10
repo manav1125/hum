@@ -207,6 +207,8 @@ export function updateAgent(
       | "charter"
       | "tier"
       | "capCents"
+      | "warnPercent"
+      | "hardStopEnabled"
       | "paused"
       | "model"
       | "toolScopes"
