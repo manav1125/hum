@@ -137,6 +137,10 @@ import {
   A2A_AGENT_CARD_PATH,
 } from "./http/routes/a2a-routes.js";
 import {
+  createA2AMessageSendHandler,
+  A2A_MESSAGE_SEND_PATH,
+} from "./http/routes/a2a-message-send.js";
+import {
   createTrustRulesListHandler,
   createTrustRulesCreateHandler,
   createTrustRulesUpdateHandler,
@@ -541,6 +545,10 @@ async function main() {
   const handleTrustRulesSuggest = createTrustRulesSuggestHandler();
 
   const handleAgentCard = createAgentCardHandler(configFileCache);
+  const handleA2AMessageSend = createA2AMessageSendHandler(
+    config,
+    configFileCache,
+  );
 
   const audioProxy = createAudioProxyHandler(config);
 
@@ -585,6 +593,13 @@ async function main() {
       path: A2A_AGENT_CARD_PATH,
       method: "GET",
       handler: (req) => handleAgentCard(req),
+    },
+
+    // ── A2A inbound message:send (peer agents; ACL-gated in the assistant) ──
+    {
+      path: A2A_MESSAGE_SEND_PATH,
+      method: "POST",
+      handler: (req) => handleA2AMessageSend(req),
     },
 
     // ── Webhooks (unauthenticated, validated by provider-specific mechanisms) ──

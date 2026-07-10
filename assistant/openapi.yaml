@@ -790,8 +790,7 @@ paths:
       summary: List agents
       description:
         The org roster — every staffed role (name, emoji, domain, charter, tier, cap, paused), name-ordered. The
-        three defaults (Ops/Builder/Growth) are seeded on first init; `cue` is the implicit house agent and is not a
-        row.
+        three defaults (Ops/Growth/Inbox) are seeded on first init; `cue` is the implicit house agent and is not a row.
       tags:
         - agents
       responses:
@@ -840,6 +839,20 @@ paths:
                               maximum: 9007199254740991
                             - type: "null"
                           description: Weekly spend cap in cents; null = uncapped
+                        warnPercent:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Soft-alert threshold (%) for the weekly cap; null = config default (80)
+                        hardStopEnabled:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description:
+                            0/1. 0 = cap is advisory (warn only). 1 = the run-start budget check hard-stops this agent's background
+                            runs once weekly spend reaches capCents.
                         paused:
                           type: integer
                           minimum: -9007199254740991
@@ -881,6 +894,8 @@ paths:
                         - charter
                         - tier
                         - capCents
+                        - warnPercent
+                        - hardStopEnabled
                         - paused
                         - model
                         - toolScopes
@@ -940,6 +955,20 @@ paths:
                             maximum: 9007199254740991
                           - type: "null"
                         description: Weekly spend cap in cents; null = uncapped
+                      warnPercent:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Soft-alert threshold (%) for the weekly cap; null = config default (80)
+                      hardStopEnabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description:
+                          0/1. 0 = cap is advisory (warn only). 1 = the run-start budget check hard-stops this agent's background
+                          runs once weekly spend reaches capCents.
                       paused:
                         type: integer
                         minimum: -9007199254740991
@@ -981,6 +1010,8 @@ paths:
                       - charter
                       - tier
                       - capCents
+                      - warnPercent
+                      - hardStopEnabled
                       - paused
                       - model
                       - toolScopes
@@ -1018,6 +1049,14 @@ paths:
                   type: integer
                   minimum: 0
                   maximum: 9007199254740991
+                warnPercent:
+                  anyOf:
+                    - type: integer
+                      minimum: 1
+                      maximum: 100
+                    - type: "null"
+                hardStopEnabled:
+                  type: boolean
                 paused:
                   type: boolean
                 model:
@@ -1111,6 +1150,20 @@ paths:
                             maximum: 9007199254740991
                           - type: "null"
                         description: Weekly spend cap in cents; null = uncapped
+                      warnPercent:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Soft-alert threshold (%) for the weekly cap; null = config default (80)
+                      hardStopEnabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description:
+                          0/1. 0 = cap is advisory (warn only). 1 = the run-start budget check hard-stops this agent's background
+                          runs once weekly spend reaches capCents.
                       paused:
                         type: integer
                         minimum: -9007199254740991
@@ -1152,6 +1205,8 @@ paths:
                       - charter
                       - tier
                       - capCents
+                      - warnPercent
+                      - hardStopEnabled
                       - paused
                       - model
                       - toolScopes
@@ -1219,6 +1274,20 @@ paths:
                             maximum: 9007199254740991
                           - type: "null"
                         description: Weekly spend cap in cents; null = uncapped
+                      warnPercent:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Soft-alert threshold (%) for the weekly cap; null = config default (80)
+                      hardStopEnabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description:
+                          0/1. 0 = cap is advisory (warn only). 1 = the run-start budget check hard-stops this agent's background
+                          runs once weekly spend reaches capCents.
                       paused:
                         type: integer
                         minimum: -9007199254740991
@@ -1260,6 +1329,8 @@ paths:
                       - charter
                       - tier
                       - capCents
+                      - warnPercent
+                      - hardStopEnabled
                       - paused
                       - model
                       - toolScopes
@@ -1311,6 +1382,16 @@ paths:
                       minimum: 0
                       maximum: 9007199254740991
                     - type: "null"
+                warnPercent:
+                  anyOf:
+                    - type: integer
+                      minimum: 1
+                      maximum: 100
+                    - type: "null"
+                  description: Soft-alert threshold (%) for the weekly cap; null = config default (80)
+                hardStopEnabled:
+                  type: boolean
+                  description: true = enforce the weekly cap as a hard-stop on background runs; false = advisory (warn only)
                 paused:
                   type: boolean
                 model:
@@ -15620,6 +15701,18 @@ paths:
                               minimum: -9007199254740991
                               maximum: 9007199254740991
                             - type: "null"
+                        warnPercent:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Soft-alert threshold (%) for the weekly cap; null = default 80
+                        hardStopEnabled:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — whether the weekly cap hard-stops this agent's background runs (vs. advisory warn-only)
                         paused:
                           type: integer
                           minimum: -9007199254740991
@@ -15670,6 +15763,8 @@ paths:
                         - charter
                         - tier
                         - capCents
+                        - warnPercent
+                        - hardStopEnabled
                         - paused
                         - model
                         - createdAt
@@ -19505,6 +19600,32 @@ paths:
                   - success
                   - enabled
                   - activeConnections
+                additionalProperties: false
+  /v1/integrations/a2a/inbound:
+    post:
+      operationId: integrations_a2a_inbound_post
+      summary: Create an inbound A2A task
+      description:
+        Called by the gateway when a peer agent sends a message:send. Persists the task (with the requester's push
+        URL) and returns the task id for the reply callback. ACL-gated on a trusted A2A contact.
+      tags:
+        - integrations
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                  state:
+                    type: string
+                    description: Initial task state (submitted)
+                required:
+                  - taskId
+                  - state
                 additionalProperties: false
   /v1/integrations/a2a/invite:
     post:

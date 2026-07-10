@@ -10,8 +10,13 @@
  * POST   /v1/integrations/a2a/invite/accept   — self-hosted broker: orchestrate complete + redeem
  */
 
+import { z } from "zod";
+
 import { isA2AEnabled } from "../../../a2a/feature-gate.js";
+import type { A2AMessage, Part } from "../../../a2a/protocol-types.js";
+import { createTask } from "../../../a2a/task-store.js";
 import { getConfig } from "../../../config/loader.js";
+import { findContactByAddress } from "../../../contacts/contact-store.js";
 import {
   A2AConfigResultSchema,
   acceptA2AInvite,
@@ -30,7 +35,7 @@ import {
   ACTOR_PRINCIPALS,
   GATEWAY_PRINCIPALS,
 } from "../../auth/route-policy.js";
-import { BadGatewayError, BadRequestError } from "../errors.js";
+import { BadGatewayError, BadRequestError, ForbiddenError } from "../errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -225,6 +230,89 @@ async function handleAcceptA2AInvite({ body = {} }: RouteHandlerArgs) {
   return result;
 }
 
+/**
+ * Create the inbound A2A task row for a `message:send` received at the gateway.
+ * The gateway owns the public JSON-RPC endpoint; this internal route persists
+ * the task (with the requester's push URL) so the later reply can complete it
+ * and push. Sender identity is ACL-gated here (fail fast) in addition to the
+ * inbound pipeline's own trust check. Returns the task id the gateway embeds in
+ * the `/deliver/a2a?taskId=...` reply callback.
+ */
+const A2AInboundTaskResultSchema = z.object({
+  taskId: z.string(),
+  state: z.string().describe("Initial task state (submitted)"),
+});
+
+function handleCreateA2AInboundTask({ body = {} }: RouteHandlerArgs) {
+  assertA2AFlag();
+  const { senderAssistantId, message, contextId, pushUrl } = body as {
+    senderAssistantId?: unknown;
+    message?: unknown;
+    contextId?: unknown;
+    pushUrl?: unknown;
+  };
+
+  if (typeof senderAssistantId !== "string" || !senderAssistantId) {
+    throw new BadRequestError(
+      "senderAssistantId is required and must be a non-empty string",
+    );
+  }
+  if (contextId !== undefined && typeof contextId !== "string") {
+    throw new BadRequestError("contextId must be a string when provided");
+  }
+  if (pushUrl !== undefined) {
+    if (typeof pushUrl !== "string" || !pushUrl) {
+      throw new BadRequestError(
+        "pushUrl must be a non-empty string when provided",
+      );
+    }
+    try {
+      new URL(pushUrl);
+    } catch {
+      throw new BadRequestError("pushUrl must be a valid URL");
+    }
+  }
+
+  // Validate the A2A message envelope minimally — the gateway parsed the
+  // JSON-RPC, but persist only a well-formed message.
+  const msg = message as Partial<A2AMessage> | undefined;
+  if (
+    !msg ||
+    typeof msg.message_id !== "string" ||
+    !msg.message_id ||
+    (msg.role !== "user" && msg.role !== "agent") ||
+    !Array.isArray(msg.parts)
+  ) {
+    throw new BadRequestError(
+      "message must be a valid A2A message (message_id, role, parts)",
+    );
+  }
+
+  // ACL: only a trusted A2A contact (established via an invite) may open a
+  // task. Unknown senders are rejected before any state is created.
+  if (!findContactByAddress("a2a", senderAssistantId)) {
+    throw new ForbiddenError("sender is not a trusted A2A contact");
+  }
+
+  const requestMessage: A2AMessage = {
+    message_id: msg.message_id,
+    role: msg.role,
+    parts: msg.parts as Part[],
+    ...(typeof msg.context_id === "string"
+      ? { context_id: msg.context_id }
+      : {}),
+  };
+
+  const task = createTask({
+    senderAssistantId,
+    requestMessage,
+    ...(typeof contextId === "string" ? { contextId } : {}),
+    ...(typeof pushUrl === "string" ? { pushUrl } : {}),
+  });
+
+  return { taskId: task.id, state: task.status.state };
+}
+
 // ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
@@ -307,6 +395,21 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["integrations"],
     handler: handleRedeemA2AInvite,
     responseBody: RedeemA2AInviteResultSchema,
+  },
+  {
+    operationId: "integrations_a2a_inbound_post",
+    endpoint: "integrations/a2a/inbound",
+    method: "POST",
+    policy: {
+      requiredScopes: ["internal.write"],
+      allowedPrincipalTypes: GATEWAY_PRINCIPALS,
+    },
+    summary: "Create an inbound A2A task",
+    description:
+      "Called by the gateway when a peer agent sends a message:send. Persists the task (with the requester's push URL) and returns the task id for the reply callback. ACL-gated on a trusted A2A contact.",
+    tags: ["integrations"],
+    handler: handleCreateA2AInboundTask,
+    responseBody: A2AInboundTaskResultSchema,
   },
   {
     operationId: "integrations_a2a_invite_accept_post",
