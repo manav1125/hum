@@ -91,6 +91,13 @@ const SILENCE_DURATION_BEFORE_RELEASE_MS = 1000;
 /** Minimum speech (ms) required before a silence window can trigger release. */
 const MINIMUM_SPEECH_DURATION_BEFORE_RELEASE_MS = 120;
 
+/**
+ * Hard cap on waiting for TTS playback to drain before re-arming the mic. Only
+ * fires if playback can't complete (e.g. a playback context that failed to
+ * resume); normal replies drain in a couple of seconds, well under this.
+ */
+const DRAIN_SAFETY_TIMEOUT_MS = 15000;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -338,6 +345,12 @@ export function useLiveVoice(
       const player = (
         opts.createPlayer ?? (() => new LiveVoiceAudioPlayer())
       )();
+      // `start()` runs inside the user gesture (mic tap). Unlock + resume the
+      // playback AudioContext now, while the gesture is fresh, so the first
+      // `tts_audio` frame — which for the realtime engine arrives seconds later,
+      // outside the gesture window — actually sounds instead of landing on a
+      // suspended context (which also hangs the drain and stalls re-arm).
+      player.prewarm();
 
       const session: SessionContext = {
         client,
@@ -664,7 +677,17 @@ async function finishResponseAfterPlayback(
   session.responseAudioStarted = false;
   session.forwardingAudio = false;
 
-  await session.player.waitUntilDrained();
+  // Bound the drain wait. Normal playback drains in a few seconds; this cap only
+  // fires if playback can't complete (e.g. a context that failed to resume),
+  // which would otherwise hang the wait forever and strand the session in
+  // `speaking` with no re-arm ("reply then goes silent"). Realtime replies are
+  // short, so the cap is comfortably above any real utterance.
+  await Promise.race([
+    session.player.waitUntilDrained(),
+    new Promise<void>((resolve) =>
+      setTimeout(resolve, DRAIN_SAFETY_TIMEOUT_MS),
+    ),
+  ]);
   if (session.generation !== generation) return;
 
   // A barge-in mid-drain already advanced the session; leave it alone.

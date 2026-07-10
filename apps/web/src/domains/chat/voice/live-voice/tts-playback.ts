@@ -89,6 +89,10 @@ export interface AudioContextLike {
   readonly currentTime: number;
   readonly sampleRate: number;
   readonly destination: AudioNode;
+  /** Playback state — `"suspended"` until resumed after a user gesture. */
+  readonly state?: AudioContextState;
+  /** Resume a suspended context (needs a prior user gesture on the page). */
+  resume?(): Promise<void>;
   createBuffer(
     numberOfChannels: number,
     length: number,
@@ -380,7 +384,28 @@ export class LiveVoiceAudioPlayer {
       this.context = this.createContext();
       this.playheadTime = 0;
     }
+    // A context created outside the user-gesture window starts "suspended";
+    // scheduled buffers then never sound AND their source nodes never fire
+    // `onended`, which hangs `waitUntilDrained()` and stalls the full-duplex
+    // re-arm ("reply then goes silent"). Resume is idempotent and a no-op when
+    // already running; it succeeds because the mic-tap that started the session
+    // is a prior user gesture on the page.
+    if (this.context.state === "suspended") {
+      void this.context.resume?.();
+    }
     return this.context;
+  }
+
+  /**
+   * Eagerly create + resume the playback context. Call this from the user
+   * gesture that starts a voice session (the mic tap) so the context is already
+   * running by the time the first `tts_audio` frame arrives — critical for the
+   * realtime engine, whose first audio lands seconds after the tap, well past
+   * the gesture window a lazy context would miss.
+   */
+  prewarm(): void {
+    const context = this.ensureContext();
+    if (context.state === "suspended") void context.resume?.();
   }
 
   private handleSourceEnded(source: AudioBufferSourceNode): void {
