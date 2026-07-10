@@ -54,6 +54,7 @@ import {
   resolveStructuredPricing,
 } from "../usage/pricing.js";
 import { getLogger } from "../util/logger.js";
+import { listAgents } from "../work-items/agent-store.js";
 import {
   createWorkItem,
   listWorkItems,
@@ -98,6 +99,12 @@ export interface MissionPlanItem {
   projectId: string | null;
   title: string;
   notes: string | null;
+  /**
+   * Staffed agent the planner assigned this item to (a roster agent name), or
+   * null for the house agent. Validated against the live roster before it lands
+   * on the work item's `assignee`; an unknown name falls back to the house agent.
+   */
+  assignee: string | null;
 }
 
 export interface MissionPlan {
@@ -170,6 +177,7 @@ export function parseMissionPlan(text: string): MissionPlan | null {
         projectId?: unknown;
         title?: unknown;
         notes?: unknown;
+        assignee?: unknown;
       };
       const title = typeof r.title === "string" ? r.title.trim() : "";
       if (!title) continue;
@@ -178,6 +186,10 @@ export function parseMissionPlan(text: string): MissionPlan | null {
         title,
         notes:
           typeof r.notes === "string" && r.notes.trim() ? r.notes.trim() : null,
+        assignee:
+          typeof r.assignee === "string" && r.assignee.trim()
+            ? r.assignee.trim()
+            : null,
       });
     }
     return {
@@ -353,6 +365,22 @@ export function buildMissionPlanPrompt(state: AssessedState): string {
     }
   }
   lines.push("</current-state>");
+
+  const roster = listAgents();
+  if (roster.length > 0) {
+    lines.push("");
+    lines.push("<roster>");
+    lines.push(
+      "Staffed agents you can assign each item to — set `assignee` to the exact name, or null for the default house agent:",
+    );
+    for (const a of roster) {
+      const head = a.domain?.trim() ? `${a.name} — ${a.domain.trim()}` : a.name;
+      const charter = a.charter?.trim();
+      lines.push(`  - ${head}${charter ? `: ${truncate(charter, 160)}` : ""}`);
+    }
+    lines.push("</roster>");
+  }
+
   lines.push("");
   // Planning doctrine — adapted from Paperclip's converting-plans-to-tasks
   // skill (MIT, github.com/paperclipai/paperclip).
@@ -369,6 +397,9 @@ export function buildMissionPlanPrompt(state: AssessedState): string {
   lines.push(
     "- Surface gaps (missing access, decisions the human must make, external inputs) in the report instead of papering over them.",
   );
+  lines.push(
+    "- Assign each item to the roster agent whose remit best fits it (set `assignee` to their exact name); use the house agent (null) only when none fits.",
+  );
   lines.push("</planning-doctrine>");
   lines.push("");
   if (mode === "observe") {
@@ -379,7 +410,7 @@ export function buildMissionPlanPrompt(state: AssessedState): string {
   }
   lines.push("Reply with ONLY a JSON object, no prose:");
   lines.push(
-    '{"assessment": "<one paragraph: where the mission stands vs the outcome>", "items": [{"projectId": "<id of an existing linked project>", "title": "<imperative task title>", "notes": "<what to do + acceptance criteria>"}], "report": "<one or two sentences for the founder: what moved, what is next, what needs them>"}',
+    '{"assessment": "<one paragraph: where the mission stands vs the outcome>", "items": [{"projectId": "<id of an existing linked project>", "title": "<imperative task title>", "notes": "<what to do + acceptance criteria>", "assignee": "<a roster agent name, or null for the house agent>"}], "report": "<one or two sentences for the founder: what moved, what is next, what needs them>"}',
   );
   lines.push(
     `items: at most ${MAX_ITEMS_PER_CYCLE}, only genuinely-next work. projectId MUST be one of the listed project ids — never invent one. Empty items array when nothing new should start.`,
@@ -721,7 +752,16 @@ export class MissionOrchestrator {
           const fallbackProjectId = state.linkedProjects.find(
             (p) => p.status === "active",
           )!.id;
+          // Resolve the planner's `assignee` names against the live roster
+          // (case-insensitive → canonical name). Unknown names fall through to
+          // the house agent, so a hallucinated role never orphans an item.
+          const rosterByLower = new Map(
+            listAgents().map((a) => [a.name.toLowerCase(), a.name]),
+          );
           for (const planItem of plan.items) {
+            const assignee = planItem.assignee
+              ? rosterByLower.get(planItem.assignee.toLowerCase())
+              : undefined;
             const projectId =
               planItem.projectId && validProjectIds.has(planItem.projectId)
                 ? planItem.projectId
@@ -734,6 +774,7 @@ export class MissionOrchestrator {
               taskId: task.id,
               title: planItem.title,
               ...(planItem.notes ? { notes: planItem.notes } : {}),
+              ...(assignee ? { assignee } : {}),
               projectId,
               sourceType: "mission",
               sourceId: mission.id,

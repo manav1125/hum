@@ -152,7 +152,7 @@ export const agentActs = sqliteTable("agent_acts", {
 
 /**
  * Agent registry — one row per standing role the owner staffs their company
- * with (Ops / Builder / Growth / …). The server-side home for the Agents · org
+ * with (Ops / Growth / Inbox / …). The server-side home for the Agents · org
  * page charters (replacing the Phase-1 localStorage config). `name` is both the
  * display name and the work-item `assignee` match key (matched case-insensitively);
  * `cue` is the implicit house agent and is not a row. References are by

@@ -118,6 +118,20 @@ describe("parseMissionPlan", () => {
   test("returns null for non-JSON", () => {
     expect(parseMissionPlan("no json here")).toBeNull();
   });
+
+  test("parses a per-item assignee, defaulting to null when absent", () => {
+    const text = JSON.stringify({
+      assessment: "ok",
+      items: [
+        { title: "Ops work", assignee: "Ops" },
+        { title: "Unowned work" },
+      ],
+      report: "r",
+    });
+    const plan = parseMissionPlan(text)!;
+    expect(plan.items[0]!.assignee).toBe("Ops");
+    expect(plan.items[1]!.assignee).toBeNull();
+  });
 });
 
 describe("cycle execution", () => {

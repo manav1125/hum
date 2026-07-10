@@ -7,7 +7,7 @@ const CHECKPOINT_KEY = "migration_agents_v1";
 /**
  * Create the `agents` table — the server-side agent registry behind the
  * Agents · org page (HQ). One row is one standing role the owner staffs their
- * company with (Ops / Builder / Growth / …). Replaces the localStorage-only
+ * company with (Ops / Growth / Inbox / …). Replaces the localStorage-only
  * charter config the web page used in Phase 1, so charters persist across
  * devices and other surfaces (work-item assignment, spend attribution) can
  * read them.
@@ -70,23 +70,23 @@ export function migrateCreateAgents(database: DrizzleDb): void {
             "Ops",
             "⚙",
             "Operations",
-            "Keep the raise & ops moving — never let a thread go cold.",
+            "Keep the calendar clean and vendors paid — never let a thread go cold.",
             "3",
-          ],
-          [
-            "builder",
-            "Builder",
-            "▲",
-            "Product",
-            "Ship product on cadence — quality over speed.",
-            "2",
           ],
           [
             "growth",
             "Growth",
             "✦",
             "Marketing",
-            "Grow pipeline & MRR — protect the brand voice.",
+            "Draft outreach and grow pipeline — never send without me; protect the brand voice.",
+            "2",
+          ],
+          [
+            "inbox",
+            "Inbox",
+            "✉",
+            "Inbox",
+            "Triage, file, and reply to the routine — surface only what needs me.",
             "2",
           ],
         ];

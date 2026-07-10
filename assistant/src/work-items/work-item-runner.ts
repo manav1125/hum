@@ -30,7 +30,7 @@ import {
   recordActForCompletedRun,
   reverseLatestActForWorkItem,
 } from "./agent-act-store.js";
-import { getAgentByAssignee } from "./agent-store.js";
+import { type Agent, getAgentByAssignee } from "./agent-store.js";
 import {
   ensureProjectKnowledgeFiles,
   type MaterializedProjectKnowledge,
@@ -258,8 +258,23 @@ function buildProjectKnowledgeSection(
  * Returns "" when the item carries none of these, so plain items run exactly
  * as before.
  */
-export function buildWorkItemContextPreamble(item: WorkItem): string {
+export function buildWorkItemContextPreamble(
+  item: WorkItem,
+  agent?: Pick<Agent, "name" | "domain" | "charter"> | null,
+): string {
   const sections: string[] = [];
+
+  // Agent mandate: when the item runs as a staffed role, lead with who it's
+  // acting as and its standing charter, so the run is carried out in that
+  // role's remit rather than as the generic house agent.
+  if (agent && (agent.charter?.trim() || agent.domain?.trim())) {
+    const domain = agent.domain?.trim();
+    const header = domain
+      ? `## Acting as: ${agent.name} — ${domain}`
+      : `## Acting as: ${agent.name}`;
+    const charter = agent.charter?.trim();
+    sections.push(charter ? `${header}\nStanding mandate: ${charter}` : header);
+  }
 
   if (item.projectId) {
     const project = getProject(item.projectId);
@@ -375,16 +390,16 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // Cowork context: the parent project's brief + the task's own context,
   // computed once up front and prepended to the run message so the agent reads
   // per-project/per-task instructions before executing.
-  const contextPreamble = buildWorkItemContextPreamble(workItem);
-
   // Guardrails per-agent model pin: a background run executes as the item's
   // assignee; when that agent pins a model, the run conversation is created
   // with the existing `modelOverride` mechanism — an explicit per-call model
   // that wins over profile/call-site resolution in the provider layer
   // (RetryProvider.normalizeSendMessageOptions treats config.model as
   // authoritative). Null assignee = the house agent "cue" (never pinned).
-  // Resolved once up front so every turn of the run uses the same model.
+  // Resolved once up front so every turn of the run uses the same model, and
+  // so its charter can lead the run preamble.
   const runAgent = getAgentByAssignee(workItem.assignee);
+  const contextPreamble = buildWorkItemContextPreamble(workItem, runAgent);
   const pinnedModel = runAgent?.model ?? null;
   // Guardrails agent tool scopes: when the run agent carries `tool_scopes`,
   // the run conversation gets a tool filter — out-of-scope domain tools are

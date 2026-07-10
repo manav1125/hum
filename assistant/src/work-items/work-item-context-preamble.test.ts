@@ -37,6 +37,30 @@ describe("buildWorkItemContextPreamble", () => {
     expect(buildWorkItemContextPreamble(item)).toBe("");
   });
 
+  test("leads with the acting agent's mandate when one is passed", () => {
+    const item = createWorkItem({ taskId, title: "Ship it" });
+    const preamble = buildWorkItemContextPreamble(item, {
+      name: "Ops",
+      domain: "Operations",
+      charter: "Keep the calendar clean and vendors paid.",
+    });
+    expect(preamble).toContain("Acting as: Ops — Operations");
+    expect(preamble).toContain(
+      "Standing mandate: Keep the calendar clean and vendors paid.",
+    );
+  });
+
+  test("no agent section for the house agent (no charter/domain)", () => {
+    const item = createWorkItem({ taskId, title: "Ship it" });
+    expect(
+      buildWorkItemContextPreamble(item, {
+        name: "cue",
+        domain: null,
+        charter: null,
+      }),
+    ).toBe("");
+  });
+
   test("includes the parent project's brief", () => {
     const project = createProject({
       title: "Q4 launch",
