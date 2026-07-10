@@ -61,22 +61,29 @@ export function resolveGeminiLiveVoice(): string {
 }
 
 /**
- * Resolve the Gemini API key. The self-host brain runs Gemini via the
- * "openrouter" masquerade, so the key lives at `credential/openrouter/api_key`;
- * fall back to the raw Gemini env vars so this works regardless of how the
- * instance was provisioned.
+ * Resolve the Gemini API key for the realtime voice engine.
+ *
+ * A dedicated Gemini key ALWAYS wins: `GEMINI_API_KEY` / `CUE_GEMINI_API_KEY`
+ * env, then a `gemini` credential. Only if none is set do we fall back to the
+ * shared `openrouter` credential (used when the brain also runs on Gemini via
+ * the masquerade). This ordering keeps voice on the real Gemini key even when
+ * the brain's `openrouter` credential/key points at a DIFFERENT provider (e.g.
+ * DeepSeek via OpenRouter) — otherwise voice would grab the OpenRouter key and
+ * fail with "API key not valid".
  */
 export async function resolveGeminiLiveApiKey(): Promise<string | null> {
-  const fromStore = await getSecureKeyAsync(
+  const fromEnv =
+    process.env.GEMINI_API_KEY?.trim() ||
+    process.env.CUE_GEMINI_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  const fromGeminiStore = await getSecureKeyAsync(
+    credentialKey("gemini", "api_key"),
+  );
+  if (fromGeminiStore) return fromGeminiStore;
+  const fromOpenrouterStore = await getSecureKeyAsync(
     credentialKey("openrouter", "api_key"),
   );
-  return (
-    fromStore ||
-    process.env.GEMINI_API_KEY?.trim() ||
-    process.env.CUE_GEMINI_API_KEY?.trim() ||
-    process.env.OPENROUTER_API_KEY?.trim() ||
-    null
-  );
+  return fromOpenrouterStore || null;
 }
 
 export interface GeminiFunctionDeclaration {

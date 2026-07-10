@@ -18,6 +18,11 @@ import type {
   LiveVoiceSessionFactoryContext,
 } from "../live-voice/live-voice-session-manager.js";
 import { LiveVoiceSessionStartupError } from "../live-voice/live-voice-session-manager.js";
+import {
+  ensureLiveVoiceThread,
+  finalizeLiveVoiceThread,
+  persistLiveVoiceTurn,
+} from "../live-voice/live-voice-thread.js";
 import { getLogger } from "../util/logger.js";
 import {
   GEMINI_LIVE_OUTPUT_SAMPLE_RATE,
@@ -60,6 +65,11 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private client: GeminiLiveClient | null = null;
   private currentTurnId: string | null = null;
   private closed = false;
+  // Turn transcript accumulation, flushed to the saved thread on turnComplete.
+  private pendingUserText = "";
+  private pendingAssistantText = "";
+  // Titles of tasks captured during the call, listed in the closing recap.
+  private readonly capturedTaskTitles: string[] = [];
 
   constructor(context: LiveVoiceSessionFactoryContext) {
     this.context = context;
@@ -87,9 +97,14 @@ export class GeminiLiveSession implements LiveVoiceSession {
       callbacks: {
         onAudio: (pcm) => this.onModelAudio(pcm),
         onOutputText: (text) => {
+          this.pendingAssistantText += text;
           void this.context.sendFrame({ type: "assistant_text_delta", text });
         },
         onInputText: (text) => {
+          // First real speech → make sure the saved thread exists so the call
+          // shows up in chat history from the start.
+          ensureLiveVoiceThread(this.conversationId);
+          this.pendingUserText += text;
           void this.context.sendFrame({ type: "stt_final", text });
         },
         onToolCall: (calls) => void this.onToolCall(calls),
@@ -177,12 +192,35 @@ export class GeminiLiveSession implements LiveVoiceSession {
   private onTurnComplete(): void {
     const turnId = this.currentTurnId ?? randomUUID();
     this.currentTurnId = null;
+    // Save this turn (user utterance + assistant reply) to the thread, then
+    // reset the buffers for the next turn. Fire-and-forget; never blocks audio.
+    const userText = this.pendingUserText;
+    const assistantText = this.pendingAssistantText;
+    this.pendingUserText = "";
+    this.pendingAssistantText = "";
+    if (userText.trim() || assistantText.trim()) {
+      void persistLiveVoiceTurn(this.conversationId, userText, assistantText);
+    }
     void this.context.sendFrame({ type: "tts_done", turnId });
   }
 
   private async onToolCall(
     calls: Array<{ id?: string; name: string; args: Record<string, unknown> }>,
   ): Promise<void> {
+    // Remember the human-readable title of each task captured, for the recap.
+    for (const call of calls) {
+      const label =
+        typeof call.args.title === "string"
+          ? call.args.title
+          : typeof call.args.request === "string"
+            ? call.args.request
+            : null;
+      if (label && call.name === "add_task") {
+        this.capturedTaskTitles.push(label);
+      } else if (label && call.name === "run_deep_task") {
+        this.capturedTaskTitles.push(`${label} (working on it)`);
+      }
+    }
     const responses = await Promise.all(
       calls.map((call) =>
         executeGeminiLiveFunctionCall(call, {
@@ -197,6 +235,28 @@ export class GeminiLiveSession implements LiveVoiceSession {
     this.closed = true;
     this.client?.close();
     this.client = null;
+    // Flush any un-flushed final turn, then write the recap + auto-title. All
+    // best-effort and detached — the socket is already closing.
+    const trailingUser = this.pendingUserText;
+    const trailingAssistant = this.pendingAssistantText;
+    this.pendingUserText = "";
+    this.pendingAssistantText = "";
+    void (async () => {
+      try {
+        if (trailingUser.trim() || trailingAssistant.trim()) {
+          await persistLiveVoiceTurn(
+            this.conversationId,
+            trailingUser,
+            trailingAssistant,
+          );
+        }
+        await finalizeLiveVoiceThread(this.conversationId, {
+          taskTitles: this.capturedTaskTitles,
+        });
+      } catch (err) {
+        log.warn({ err }, "gemini-live thread finalize failed");
+      }
+    })();
   }
 }
 
