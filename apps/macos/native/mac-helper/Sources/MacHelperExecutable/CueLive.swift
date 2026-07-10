@@ -179,18 +179,22 @@ final class CueLiveController: @unchecked Sendable {
         // means "key omitted" → keep the current binding.
         let summonField = CueHotkeyField.from(params: params, key: "summon")
         let runField = CueHotkeyField.from(params: params, key: "run")
-        let specs: (summon: String?, run: String?) = MainActor.assumeIsolated {
-            bindings = bindings.applying(summon: summonField, run: runField)
-            // Re-install only if the global monitor was already armed (trusted).
-            if hotkeyMonitor != nil || localHotkeyMonitor != nil {
-                removeHotkeyMonitors()
-                installHotkeyMonitors()
+        let pointField = CueHotkeyField.from(params: params, key: "point")
+        let specs: (summon: String?, run: String?, point: String?) =
+            MainActor.assumeIsolated {
+                bindings = bindings.applying(
+                    summon: summonField, run: runField, point: pointField)
+                // Re-install only if the global monitor was already armed (trusted).
+                if hotkeyMonitor != nil || localHotkeyMonitor != nil {
+                    removeHotkeyMonitors()
+                    installHotkeyMonitors()
+                }
+                return (bindings.summon?.spec, bindings.run?.spec, bindings.point?.spec)
             }
-            return (bindings.summon?.spec, bindings.run?.spec)
-        }
         let bindingsEcho: [String: Any] = [
             "summon": specs.summon.map { $0 as Any } ?? NSNull(),
             "run": specs.run.map { $0 as Any } ?? NSNull(),
+            "point": specs.point.map { $0 as Any } ?? NSNull(),
         ]
         return ["ok": true, "bindings": bindingsEcho]
     }
@@ -737,6 +741,10 @@ final class CueLiveController: @unchecked Sendable {
                 self.emitRun()
                 return true
             }
+            if let point = self.bindings.point, point.matches(event) {
+                self.emitPoint()
+                return true
+            }
             return false
         }
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
@@ -781,6 +789,22 @@ final class CueLiveController: @unchecked Sendable {
                 "x": mouse.x,
                 "y": screenHeight - mouse.y,  // AX top-left coords
                 "captureMode": captureMode.rawValue,
+            ]
+        )
+    }
+
+    /// The ⌥P point-at-element key. Distinct from summon (guidance card) and
+    /// ⌥R (act): asks the daemon to fly the cursor to the element the user most
+    /// likely needs next. Carries the cursor position so the daemon can scope.
+    @MainActor
+    private func emitPoint() {
+        let mouse = NSEvent.mouseLocation
+        let screenHeight = NSScreen.screens.first?.frame.height ?? 0
+        emit(
+            "cuelive.point",
+            [
+                "x": mouse.x,
+                "y": screenHeight - mouse.y,  // AX top-left coords
             ]
         )
     }

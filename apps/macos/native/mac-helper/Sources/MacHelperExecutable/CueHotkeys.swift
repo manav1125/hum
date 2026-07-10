@@ -135,20 +135,28 @@ struct CueHotkeyBindings: Sendable {
     /// Push-to-run: a one-shot "act on what you said / see now" trigger,
     /// distinct from summon. ⌥R by default (backlog #29).
     var run: CueHotkey?
+    /// Point-at-element: a pointing-only look gesture — fly the cursor to the
+    /// element the user most likely needs next, no take-control. ⌥P by default.
+    var point: CueHotkey?
 
-    /// The shipped defaults: summon = Control+Option+Space, run = Option+R.
+    /// The shipped defaults: summon = Control+Option+Space, run = Option+R,
+    /// point = Option+P.
     static let defaults = CueHotkeyBindings(
         summon: CueHotkey(spec: "control+option+space"),
-        run: CueHotkey(spec: "option+r")
+        run: CueHotkey(spec: "option+r"),
+        point: CueHotkey(spec: "option+p")
     )
 
     /// Apply a partial update: an `.absent` field keeps the current binding (so
-    /// a partial update doesn't clobber the other), while `.present(hotkey)`
+    /// a partial update doesn't clobber the others), while `.present(hotkey)`
     /// replaces it (with `nil` disabling the action).
-    func applying(summon: CueHotkeyField, run: CueHotkeyField) -> CueHotkeyBindings {
+    func applying(
+        summon: CueHotkeyField, run: CueHotkeyField, point: CueHotkeyField
+    ) -> CueHotkeyBindings {
         var result = self
         if case let .present(hotkey) = summon { result.summon = hotkey }
         if case let .present(hotkey) = run { result.run = hotkey }
+        if case let .present(hotkey) = point { result.point = hotkey }
         return result
     }
 }

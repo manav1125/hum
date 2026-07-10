@@ -479,8 +479,7 @@ function HotkeysCard({
         />
         <HotkeyRow
           label="Point at element"
-          hint="Coming soon"
-          disabled
+          hint="Flies the cursor to what to do next"
           cap={<Keycap>⌥ P</Keycap>}
         />
         <HotkeyRow

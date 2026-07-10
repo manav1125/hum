@@ -285,6 +285,70 @@ describe("summon → capture → look → point orchestration", () => {
   });
 });
 
+describe("⌥P point-at-element → capture → look → point (no take-control)", () => {
+  test("a ⌥P event runs the pointing look flow and flies to the point", async () => {
+    process.env.CUE_LIVE_POINT_DWELL_MS = "0";
+    requestLocalDaemonMock.mockImplementation(async () => ({
+      answer: "The Send button.",
+      points: [{ x: 320, y: 200, label: "Send" }],
+    }));
+
+    void start();
+    await wait(0);
+    emit({ jsonrpc: "2.0", id: requestIdAt(0), result: { enabled: true } });
+    await wait(0);
+
+    // The helper emits cuelive.point (⌥P) with just the cursor — no question.
+    emit({ jsonrpc: "2.0", method: "cuelive.point", params: { x: 10, y: 20 } });
+    await wait(0);
+
+    const cap = writeFor("cuelive.captureScreen");
+    expect(cap).toBeDefined();
+    emit({
+      jsonrpc: "2.0",
+      id: (cap as { id: number }).id,
+      result: {
+        ok: true,
+        data: "QkFTRTY0",
+        mediaType: "image/png",
+        width: 640,
+        height: 400,
+        screenWidth: 640,
+        screenHeight: 400,
+      },
+    });
+    await wait(0);
+
+    // Answer the immediate "thinking" card so the flow proceeds.
+    const thinking = writeFor("cuelive.showCard");
+    if (thinking) {
+      emit({ jsonrpc: "2.0", id: (thinking as { id: number }).id, result: {} });
+    }
+    await wait(0);
+    await wait(0);
+
+    // The vision route was asked with the pointing-focused question.
+    expect(requestLocalDaemonMock).toHaveBeenCalledWith(
+      "/cuelive/look",
+      expect.objectContaining({
+        imageBase64: "QkFTRTY0",
+        question: expect.stringContaining("Point at"),
+      }),
+    );
+
+    // The cursor flies to the element; ⌥P never takes control.
+    const point = writeFor("cuelive.pointAt");
+    expect(point?.params).toMatchObject({ label: "Send" });
+    expect(writeFor("cuelive.performAction")).toBeUndefined();
+
+    // Drain the pointAt ack so the flow completes cleanly.
+    if (point) {
+      emit({ jsonrpc: "2.0", id: (point as { id: number }).id, result: {} });
+    }
+    await wait(0);
+  });
+});
+
 describe("stop", () => {
   test("sends cuelive.stop and drops the summon subscription", async () => {
     void start();

@@ -31,6 +31,7 @@ const CUE_LIVE_HIGHLIGHT = "cuelive.highlight";
 const CUE_LIVE_HIDE = "cuelive.hide";
 const CUE_LIVE_SUMMONED = "cuelive.summoned";
 const CUE_LIVE_RUN = "cuelive.run";
+const CUE_LIVE_POINT = "cuelive.point";
 const CUE_LIVE_ACCESSIBILITY_TRUSTED = "cuelive.accessibilityTrusted";
 const CUE_LIVE_SUMMON_NOW = "cuelive.summonNow";
 const CUE_LIVE_SUMMON_GOAL = "cuelive.summonGoal";
@@ -129,6 +130,7 @@ const AUTO_HIDE_MS = 6_000;
 let started = false;
 let unsubscribeSummoned: (() => void) | null = null;
 let unsubscribeRun: (() => void) | null = null;
+let unsubscribePoint: (() => void) | null = null;
 let unsubscribeTrusted: (() => void) | null = null;
 let unsubscribeAbort: (() => void) | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -459,6 +461,12 @@ const ACT_STEP_DELAY_MS = 750;
 const DEFAULT_LOOK_QUESTION =
   "What's on my screen right now, and what should I do next?";
 
+/** Fixed question for the ⌥P "point at element" gesture — pointing-focused so
+ *  the model returns the element(s) to fly the cursor to, with terse labels. */
+const POINT_QUESTION =
+  "Point at the element on screen I most likely need to act on next. " +
+  "Return the on-screen point(s) with a few-word label each.";
+
 /** At most this many points get pointed at, so a long answer doesn't drag. */
 const MAX_POINTS = 5;
 /** Dwell on each pointed element so the user can follow the cursor. */
@@ -640,18 +648,47 @@ const handleSummon = async (
   client: MacHelperClient,
   cursor: { x: number; y: number; question?: string },
 ): Promise<void> => {
-  clearHideTimer();
-  const gen = ++summonGeneration;
   // The spoken question (push-to-talk) wins; then an in-app ask; then default.
   const spokenGoal = cursor.question?.trim();
-  const question = spokenGoal ?? pendingQuestion ?? DEFAULT_LOOK_QUESTION;
-  pendingQuestion = null;
 
   // A spoken goal + take-control enabled → actually do the task.
   if (spokenGoal && takeControlEnabledGetter()) {
+    clearHideTimer();
+    const gen = ++summonGeneration;
     await runActLoop(client, gen, spokenGoal, cursor);
     return;
   }
+
+  const question = spokenGoal ?? pendingQuestion ?? DEFAULT_LOOK_QUESTION;
+  pendingQuestion = null;
+  await lookAndPoint(client, question, cursor);
+};
+
+/**
+ * ⌥P "point at element" — a pointing-only variant of the look flow. Captures
+ * the screen, asks the model where to look, and flies the cursor to the
+ * element(s) with a spoken/labeled answer. Distinct from summon (which may take
+ * control on a spoken goal) and from ⌥R (which acts): this NEVER takes control.
+ */
+const handlePoint = async (
+  client: MacHelperClient,
+  cursor: { x: number; y: number },
+): Promise<void> => {
+  await lookAndPoint(client, POINT_QUESTION, cursor);
+};
+
+/**
+ * Shared capture → `/cuelive/look` → point-at-each-element flow, used by both
+ * summon (no spoken goal) and ⌥P point-at-element. Bumps the summon generation
+ * so a slow response from a superseded call can't redraw the overlay.
+ */
+const lookAndPoint = async (
+  client: MacHelperClient,
+  question: string,
+  cursor: { x: number; y: number },
+): Promise<void> => {
+  clearHideTimer();
+  const gen = ++summonGeneration;
 
   // 1. Capture the screen.
   let cap: z.infer<typeof CAPTURE_SCHEMA>;
@@ -896,6 +933,17 @@ export const start = async (): Promise<void> => {
     handleRun();
   });
 
+  // ⌥P (point at element): the helper reports the cursor; Electron-main runs the
+  // pointing-only look flow (no take-control). Reuses SUMMONED_SCHEMA — point
+  // emits x/y and never a question.
+  unsubscribePoint = client.onNotification(
+    CUE_LIVE_POINT,
+    SUMMONED_SCHEMA,
+    (cursor) => {
+      void handlePoint(client, cursor);
+    },
+  );
+
   // The helper arms the summon hotkey the moment Accessibility is granted at
   // runtime (no relaunch needed); surface that transition for diagnosability.
   unsubscribeTrusted = client.onNotification(
@@ -961,6 +1009,8 @@ export const stop = async (): Promise<void> => {
   unsubscribeSummoned = null;
   unsubscribeRun?.();
   unsubscribeRun = null;
+  unsubscribePoint?.();
+  unsubscribePoint = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
   unsubscribeAbort?.();
@@ -997,6 +1047,8 @@ export const dispose = (): void => {
   unsubscribeSummoned = null;
   unsubscribeRun?.();
   unsubscribeRun = null;
+  unsubscribePoint?.();
+  unsubscribePoint = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
   unsubscribeAbort?.();
@@ -1011,6 +1063,8 @@ export const __resetForTesting = (): void => {
   unsubscribeSummoned = null;
   unsubscribeRun?.();
   unsubscribeRun = null;
+  unsubscribePoint?.();
+  unsubscribePoint = null;
   unsubscribeTrusted?.();
   unsubscribeTrusted = null;
   unsubscribeAbort?.();
