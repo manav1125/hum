@@ -12,6 +12,7 @@ import { compileApp } from "../../bundler/app-compiler.js";
 import { generateAppIcon } from "../../media/app-icon-generator.js";
 import type { AppDefinition } from "../../memory/app-store.js";
 import { getAppDirPath } from "../../memory/app-store.js";
+import { openAppViaSurface } from "./open-proxy.js";
 
 // ---------------------------------------------------------------------------
 // Shared result type
@@ -371,6 +372,7 @@ export interface AppRefreshInput {
 export async function executeAppRefresh(
   input: AppRefreshInput,
   store: AppStore,
+  proxyToolResolver?: ProxyResolver,
 ): Promise<ExecutorResult> {
   const app = store.getApp(input.app_id);
   if (!app) {
@@ -390,11 +392,32 @@ export async function executeAppRefresh(
   if (app.formatVersion === 2) {
     const appDir = getAppDirPath(input.app_id);
     const compileResult = await compileApp(appDir);
+    // Surface the inline Open card on a clean build. app_create deliberately
+    // skips auto-open when it scaffolds a placeholder main.tsx (the app isn't
+    // real yet), so for the common multifile flow — create → file_write →
+    // refresh — this is the first point the finished app can be opened. Doing
+    // it here means the card appears whenever the agent refreshes a working
+    // build, without depending on the model also remembering to call app_open
+    // (weaker models narrate a fake link and stop instead). Best-effort: a
+    // missing client or open failure never fails the refresh.
+    let autoOpened = false;
+    if (compileResult.ok && proxyToolResolver) {
+      const openResult = await openAppViaSurface(
+        input.app_id,
+        proxyToolResolver,
+        {
+          preview: { context: "app_refresh" as const },
+          open_mode: "preview",
+        },
+      );
+      autoOpened = !/could not be opened|Failed to auto-open/.test(openResult);
+    }
     return {
       content: JSON.stringify({
         refreshed: true,
         appId: updated.id,
         name: updated.name,
+        auto_opened: autoOpened,
         ...compileResultPayload(compileResult),
       }),
       isError: false,

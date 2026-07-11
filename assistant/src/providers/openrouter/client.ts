@@ -56,6 +56,46 @@ export function extractOnlyList(config: unknown): string[] {
   return only.filter((x): x is string => typeof x === "string" && x.length > 0);
 }
 
+/**
+ * Operator-level OpenRouter provider-routing controls, read from env so a
+ * self-host can steer which upstream providers serve a model WITHOUT a rebuild.
+ * This matters because OpenRouter load-balances open-weight models (e.g.
+ * `deepseek/deepseek-chat`) across a pool whose members differ in health,
+ * context window, and payload tolerance: some 429/5xx under load, some cap
+ * context below what Cue's full agentic payload (large system prompt + many
+ * tool schemas) needs, and some 400 on that payload outright. Pinning the
+ * `order` to the large-context, healthy providers — with `allow_fallbacks`
+ * gating whether OpenRouter may spill to the rest — is the difference between
+ * a reliable brain and intermittent "provider rejected the request" outages.
+ *
+ *   CUE_OPENROUTER_PROVIDER_ORDER          e.g. "DeepInfra,StreamLake"
+ *   CUE_OPENROUTER_PROVIDER_ALLOW_FALLBACKS  "0"/"false" to forbid spill
+ *   CUE_OPENROUTER_PROVIDER_REQUIRE_PARAMS   "1"/"true" to require full param support
+ *
+ * Returns the fields to merge into the wire `provider` object, or an empty
+ * object when nothing is configured. Exported for tests.
+ */
+export function envProviderRouting(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const order = process.env.CUE_OPENROUTER_PROVIDER_ORDER?.trim();
+  if (order) {
+    const list = order
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (list.length > 0) out.order = list;
+  }
+  const allow =
+    process.env.CUE_OPENROUTER_PROVIDER_ALLOW_FALLBACKS?.trim().toLowerCase();
+  if (allow === "0" || allow === "false") out.allow_fallbacks = false;
+  else if (allow === "1" || allow === "true") out.allow_fallbacks = true;
+  const requireParams =
+    process.env.CUE_OPENROUTER_PROVIDER_REQUIRE_PARAMS?.trim().toLowerCase();
+  if (requireParams === "1" || requireParams === "true")
+    out.require_parameters = true;
+  return out;
+}
+
 // OpenRouter's `reasoning.summary` field controls whether reasoning models emit
 // a human-readable summary alongside (or instead of) encrypted reasoning blocks.
 // Models like Kimi K2.6 return only encrypted `reasoning_details` unless a
@@ -246,14 +286,23 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
       reasoning.summary = summaryOverride ?? "detailed";
       extras.reasoning = reasoning;
     }
+    // Merge, in precedence order: per-call config.provider (lowest) < env
+    // operator routing < per-call `openrouter.only` (highest, an explicit
+    // caller pin). The env layer lets a self-host pin `order`/`allow_fallbacks`
+    // globally so Cue's full agentic payload only reaches providers that can
+    // serve it, without a rebuild.
     const only = extractOnlyList(config);
-    if (only.length > 0) {
-      const existingProvider = (config?.provider ?? {}) as Record<
-        string,
-        unknown
-      >;
-      extras.provider = { ...existingProvider, only };
-    }
+    const existingProvider = (config?.provider ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const envRouting = envProviderRouting();
+    const provider: Record<string, unknown> = {
+      ...existingProvider,
+      ...envRouting,
+    };
+    if (only.length > 0) provider.only = only;
+    if (Object.keys(provider).length > 0) extras.provider = provider;
     return extras;
   }
 

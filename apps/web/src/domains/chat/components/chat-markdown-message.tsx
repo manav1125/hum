@@ -26,8 +26,12 @@ import {
 function isNonNavigableAppLink(href: string | undefined): boolean {
   if (!href) return false;
   const h = href.trim().toLowerCase();
-  if (/^(preview|vellumapp|sandbox|app):\/\//.test(h)) return true;
+  // Hallucinated app-address schemes, in single- or double-slash form
+  // (`sandbox:/preview/…`, `preview://app/…`, `vellumapp://…`, `app://…`).
+  if (/^(preview|vellumapp|sandbox|app):\/+/.test(h)) return true;
+  // Bare sandbox/preview paths a model may emit as a relative URL.
   if (/(^|\/)(v1\/)?apps\//.test(h)) return true;
+  if (/(^|\/)preview\/[0-9a-f-]{8,}/.test(h)) return true;
   return false;
 }
 

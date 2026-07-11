@@ -240,6 +240,8 @@ app_refresh(app_id)
 
 Call it ONCE, after ALL file writes — batching is required. If it fails, the response has error details; fix with `file_edit`, then `app_refresh` again.
 
+On a clean compile, `app_refresh` **also surfaces the inline Open card automatically** (response has `auto_opened: true`). So the card appears the moment the build compiles — you do not need a separate `app_open` for a fresh build. Step 5 is a no-op belt when `auto_opened` is already true.
+
 ### 5 — Show the preview card
 
 ```
@@ -248,13 +250,17 @@ app_open(app_id, open_mode: "preview")
 
 ⚠️ Don't skip this — without it the user has no Open button, just your text. It fires after all writes, so the card shows final content (this is why `auto_open` must be `false`). Don't use `open_mode: "workspace"` unless the user explicitly asks for the full panel.
 
-🚫 **NEVER write a link or URL to the app in your chat text.** The `app_open` card
-IS the only way the user opens the app. Do NOT invent, guess, or paste any app
-address — no `preview://…`, no `http(s)://…/apps/…`, no "click here to open",
-no "direct link", no markdown link pointing at the app. There is no shareable
-URL. Any URL you write will be dead and send the user to the wrong place. If the
-app isn't opening for them, the fix is to call `app_open(app_id, open_mode:
-"preview")` again (after `skill_load`) — never to hand them a link.
+🚫 **NEVER write a link, URL, or image embed pointing at the app in your chat
+text.** The Open card (surfaced by `app_refresh`/`app_open`) IS the only way the
+user opens the app. Do NOT invent, guess, or paste any app address, in a link
+`[…](…)` OR an image `![…](…)` — no `preview://…`, no `sandbox:/…` or
+`sandbox://…`, no `http(s)://…/apps/…`, no `/preview/<id>`, no "click here to
+open", no "direct link". There is no shareable URL and no inline preview image.
+Any such address is dead and sends the user to the wrong place (this is the exact
+bug where a hallucinated link opened the conversation instead of the app). After
+the card surfaces, just describe the app in words — the card does the opening. If
+it isn't opening, call `app_refresh(app_id)` (after `skill_load`) again — never
+hand them a link or an image.
 
 ### 6 — Iteration
 

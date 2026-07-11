@@ -13,5 +13,9 @@ export async function run(
   if (typeof input.change_summary === "string" && input.change_summary.trim()) {
     setAppCommitMessage(context.conversationId, input.change_summary.trim());
   }
-  return executeAppRefresh({ app_id: input.app_id as string }, appStore);
+  return executeAppRefresh(
+    { app_id: input.app_id as string },
+    appStore,
+    context.proxyToolResolver,
+  );
 }
