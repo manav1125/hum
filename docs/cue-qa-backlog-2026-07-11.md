@@ -19,6 +19,26 @@ voice = **Gemini Live** (gemini-3.1-flash-live-preview)._
 
 ## Known bugs / regressions (this backlog)
 
+### P0 — app-builder: apps build + serve but don't OPEN from the client
+_Investigated the "3D Game Bali Motorbike" thread._ The app **`bali-bike-buddies`**
+(appId `c65902f3-ff30-442f-b23e-05997f8575b6`) built fine: valid compiled Preact
+bundle on disk (`/workspace/data/apps/…/dist/`), and it **serves cleanly**
+(`/v1/apps/:id/dist/index.html|main.js|main.css` all HTTP 200). So the app is real
+and works server-side. Two things break the user experience:
+- **The model hallucinated a fake link** in chat: `[…](preview://app/bali-motorbike-adventure)`.
+  `preview://` is not a real scheme — clicking it in macOS falls back to the
+  conversation URL. The model (esp. DeepSeek) must NOT write app links at all;
+  apps open via the app surface card / Library → `/v1/apps/open-bundle` →
+  `vellumapp://` window (macOS) or the web `library/:appId` route.
+- **The proper "open app" affordance** (surface card / auto_open) either isn't
+  surfacing or its open action misroutes to the conversation. _This is the real
+  client bug — in the macOS bundle-open flow (`bundle-flow.ts`/`app-protocol.ts`)
+  or the web app-surface card._
+- **Over-promising:** the sandbox builds 2D web (Preact), not true 3D games. The
+  model should scope "3D game" requests honestly (offer a 2D interactive build)
+  rather than claim a game and produce a directory listing.
+- **Workaround for now:** open built apps from the **Library**, not the chat link.
+
 ### P0 — correctness / just-introduced
 1. **Empty `[]` assistant bubble before agentic turns.** A spurious empty assistant
    message is persisted before the real tool call/text on build turns. Cosmetic
