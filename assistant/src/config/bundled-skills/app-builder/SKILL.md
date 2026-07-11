@@ -28,6 +28,8 @@ Load `frontend-design` first (`skill_load("frontend-design")`), then move fast: 
 
 **Does NOT belong here:** anything complex, multi-user, or meant to be **published, deployed, handed off, or shipped to other people**. Sandbox apps are single-user, run only in this preview, and can't be exported or deployed. They're the wrong home for a real product.
 
+**Be honest about the medium.** This sandbox builds **2D web apps** — HTML, CSS, and Preact/JS in a browser iframe. It is NOT a game engine and has no 3D. If the user asks for a "3D game" (or anything needing Unity/Unreal/WebGL-heavy real-time 3D), say so plainly in one sentence and offer what you *can* genuinely build — a polished 2D interactive experience (canvas/SVG animation, parallax, sprites) — then build that well. Never label a 2D build a "3D game", and never ship a static directory/list and call it a game. Set the expectation first, then over-deliver on the 2D version.
+
 When a request is for a shippable/complex app, don't build in the sandbox. Instead:
 
 1. **Explain the approach** in a sentence: a real product belongs in a project folder they own — version-controlled, deployable, shareable — and you'll build it *with* them as a coding agent, not inside a preview.
@@ -245,6 +247,14 @@ app_open(app_id, open_mode: "preview")
 ```
 
 ⚠️ Don't skip this — without it the user has no Open button, just your text. It fires after all writes, so the card shows final content (this is why `auto_open` must be `false`). Don't use `open_mode: "workspace"` unless the user explicitly asks for the full panel.
+
+🚫 **NEVER write a link or URL to the app in your chat text.** The `app_open` card
+IS the only way the user opens the app. Do NOT invent, guess, or paste any app
+address — no `preview://…`, no `http(s)://…/apps/…`, no "click here to open",
+no "direct link", no markdown link pointing at the app. There is no shareable
+URL. Any URL you write will be dead and send the user to the wrong place. If the
+app isn't opening for them, the fix is to call `app_open(app_id, open_mode:
+"preview")` again (after `skill_load`) — never to hand them a link.
 
 ### 6 — Iteration
 
