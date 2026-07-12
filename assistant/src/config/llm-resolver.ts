@@ -162,6 +162,28 @@ export function resolveCallSiteConfig(
   } else {
     delete (resolved as { logitBias?: unknown }).logitBias;
   }
+  // Direct-Anthropic opt-in (BYO Anthropic key, credits on the caller's own
+  // account). When `CUE_ANTHROPIC_CALLSITES` lists this call site, route it to
+  // Anthropic-direct — the key is read from the secure vault (`keys set
+  // anthropic …`) via the provider-based auth fallback — BEFORE the OpenRouter
+  // force below, which would otherwise clobber any non-`openrouter` provider
+  // back onto the DeepSeek path. This is what lets an operator send e.g.
+  // `mainAgent` to Claude Sonnet for reliable builds while every cheap/background
+  // call site stays on OpenRouter/DeepSeek. Empty/unset ⇒ no effect, so the
+  // default self-host behaviour is unchanged. Model per env, with a sane default.
+  const anthropicSites = (process.env.CUE_ANTHROPIC_CALLSITES ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (anthropicSites.includes(callSite)) {
+    resolved.provider = "anthropic";
+    delete (resolved as { provider_connection?: unknown }).provider_connection;
+    resolved.model =
+      callSite === "mainAgent"
+        ? (process.env.CUE_ANTHROPIC_MODEL ?? "claude-sonnet-4-6")
+        : (process.env.CUE_ANTHROPIC_FLASH_MODEL ?? "claude-haiku-4-5");
+    return resolved;
+  }
   // Self-host OpenRouter override (see FORCE_OPENROUTER_DEEPSEEK): force every
   // resolved call site onto OpenRouter regardless of the profile layers.
   // mainAgent runs a strong tool-calling model; other call sites run a faster
