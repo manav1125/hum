@@ -32,5 +32,6 @@
       "split": "holdout",
       "prompt": "Add a recurring reminder to go to the gym tomorrow morning."
     }
-  ]
+  ],
+  "uniquify": true
 }

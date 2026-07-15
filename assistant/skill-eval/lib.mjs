@@ -89,7 +89,9 @@ async function findConversation(prompt) {
   const r = await robustFetch(`${API}/conversations?limit=20`, { headers: H });
   if (!r || !r.ok) return null;
   const j = await r.json();
-  const needle = prompt.slice(0, 40).toLowerCase();
+  // Use a wide needle so a per-run nonce appended to the prompt (uniquify mode)
+  // actually disambiguates this run's conversation from prior identical prompts.
+  const needle = prompt.slice(0, 120).toLowerCase();
   for (const c of j.conversations || []) {
     const ms = await messages(c.id);
     const u = ms.find((m) => m.role === "user");

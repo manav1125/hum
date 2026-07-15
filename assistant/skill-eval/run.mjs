@@ -62,9 +62,15 @@ console.error(
 // Roll out one task end-to-end (send → wait → score). Errors never throw.
 async function rollout(t) {
   const key = `eval-${suite.skill}-${t.id}-${stamp}`;
+  // State-accumulating skills (e.g. `tasks`) dedup against items prior runs
+  // created, which depresses the score for a NON-problem. When the suite sets
+  // `uniquify`, append a per-run nonce so every run's items are fresh.
+  const prompt = suite.uniquify
+    ? `${t.prompt} (ref ${stamp}-${t.id})`
+    : t.prompt;
   try {
-    await sendTask(key, t.prompt);
-    const messages = await waitForCompletion(t.prompt);
+    await sendTask(key, prompt);
+    const messages = await waitForCompletion(prompt);
     const score = messages
       ? scorer(messages)
       : {
