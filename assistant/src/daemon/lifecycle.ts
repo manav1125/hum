@@ -638,7 +638,10 @@ export async function runDaemon(): Promise<void> {
         try {
           startWorkItemQueueDrainer();
         } catch (err) {
-          log.warn({ err }, "Queue drainer failed to start — continuing startup");
+          log.warn(
+            { err },
+            "Queue drainer failed to start — continuing startup",
+          );
         }
       }
 
