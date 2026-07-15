@@ -20,14 +20,8 @@ const ERROR_RE =
 export function scoreAppBuilder(messages) {
   const all = JSON.stringify(messages);
   const finalText = lastAssistantText(messages);
-  const tail = all.slice(-4000);
 
   const built = /"(?:name|toolName)":"app_create"/.test(all);
-  // Clean compile = an app exists and the latest compile signal shows no errors.
-  const compiledOk =
-    built &&
-    (/"compiled":true/.test(all) || /"compile_errors":\[\]/.test(all)) &&
-    !/"compile_errors":\["[^\]]/.test(tail);
   // A rendered app surfaces as a `surface` block (surfaceType card) and/or an
   // app_open/app_refresh/ui_show tool call — any of these means the user got a
   // real openable app, not just prose.
@@ -45,6 +39,10 @@ export function scoreAppBuilder(messages) {
     finalText.length > 40 &&
     !ERROR_RE.test(finalText) &&
     !/couldn't fit the next step|tried to compact/i.test(finalText);
+  // Compile proxy: tool RESULTS aren't exposed over the messages API, so we
+  // can't read compile_errors directly. A surfaced app card with no error in
+  // the turn is the best available signal that the build actually compiled.
+  const compiledOk = built && surfaced && noError;
 
   const parts = {
     built: { pass: built, weight: 2 },
