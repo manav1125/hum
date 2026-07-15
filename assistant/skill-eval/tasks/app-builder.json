@@ -1,0 +1,36 @@
+{
+  "skill": "app-builder",
+  "note": "Objectively-scorable build tasks. Each is a single user turn; the scorer reads the resulting conversation transcript. train = used for reflection, holdout = used only to gate an edit.",
+  "tasks": [
+    {
+      "id": "counter",
+      "split": "train",
+      "prompt": "Build a simple counter app with plus and minus buttons and a reset. Clean minimal design."
+    },
+    {
+      "id": "tip",
+      "split": "train",
+      "prompt": "Build a tip calculator: enter a bill amount and tip percent, show the tip and total updating live. Modern clean design."
+    },
+    {
+      "id": "mood",
+      "split": "train",
+      "prompt": "Build a mood tracker: log a daily mood with an emoji and see a 7-day history. Calm, soft design."
+    },
+    {
+      "id": "todo",
+      "split": "train",
+      "prompt": "Build a to-do list app: add a task, check it off, and delete it. Persist locally. Simple design."
+    },
+    {
+      "id": "palette",
+      "split": "holdout",
+      "prompt": "Build a color palette generator: show five random hex color swatches, click one to copy it, and a button to regenerate. Nice modern design."
+    },
+    {
+      "id": "flashcards",
+      "split": "holdout",
+      "prompt": "Build a flashcards app: show a question, tap to flip to the answer, and next/previous buttons to move through a small deck. Clean design."
+    }
+  ]
+}

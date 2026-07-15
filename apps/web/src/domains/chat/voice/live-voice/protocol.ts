@@ -62,6 +62,13 @@ export interface LiveVoiceClientStartFrame {
    * `assistant/src/live-voice/protocol.ts`.
    */
   readonly engine?: "cascade" | "gemini-live";
+  /**
+   * IANA timezone from the browser (`Intl.DateTimeFormat().resolvedOptions()
+   * .timeZone`) so the assistant grounds "now" in the user's local time instead
+   * of defaulting to UTC. Mirrors the runtime contract in
+   * `assistant/src/live-voice/protocol.ts`.
+   */
+  readonly timezone?: string;
 }
 
 export interface LiveVoiceClientPttReleaseFrame {

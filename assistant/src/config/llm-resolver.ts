@@ -162,27 +162,56 @@ export function resolveCallSiteConfig(
   } else {
     delete (resolved as { logitBias?: unknown }).logitBias;
   }
-  // Direct-Anthropic opt-in (BYO Anthropic key, credits on the caller's own
-  // account). When `CUE_ANTHROPIC_CALLSITES` lists this call site, route it to
-  // Anthropic-direct — the key is read from the secure vault (`keys set
-  // anthropic …`) via the provider-based auth fallback — BEFORE the OpenRouter
-  // force below, which would otherwise clobber any non-`openrouter` provider
-  // back onto the DeepSeek path. This is what lets an operator send e.g.
-  // `mainAgent` to Claude Sonnet for reliable builds while every cheap/background
-  // call site stays on OpenRouter/DeepSeek. Empty/unset ⇒ no effect, so the
-  // default self-host behaviour is unchanged. Model per env, with a sane default.
-  const anthropicSites = (process.env.CUE_ANTHROPIC_CALLSITES ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (anthropicSites.includes(callSite)) {
-    resolved.provider = "anthropic";
-    delete (resolved as { provider_connection?: unknown }).provider_connection;
-    resolved.model =
-      callSite === "mainAgent"
-        ? (process.env.CUE_ANTHROPIC_MODEL ?? "claude-sonnet-4-6")
-        : (process.env.CUE_ANTHROPIC_FLASH_MODEL ?? "claude-haiku-4-5");
-    return resolved;
+  // Direct BYO-provider opt-in (Anthropic / OpenAI, credits on the caller's own
+  // account). When `CUE_<PROVIDER>_CALLSITES` lists this call site, route it to
+  // that first-party provider — the key is read from the secure vault
+  // (`keys set anthropic|openai …`) or the `<PROVIDER>_API_KEY` env fallback —
+  // BEFORE the OpenRouter force below, which would otherwise clobber any
+  // non-`openrouter` provider back onto the DeepSeek path. This is what lets an
+  // operator send e.g. `mainAgent` to Claude/GPT for reliable builds while every
+  // cheap/background call site stays on OpenRouter/DeepSeek. Empty/unset ⇒ no
+  // effect, so the default self-host behaviour is unchanged. Model per env, with
+  // a sane default; `mainAgent` gets the strong model, others the flash one.
+  const directRoutes: Array<{
+    provider: "anthropic" | "openai";
+    sites: string;
+    model?: string;
+    flashModel?: string;
+    modelDefault: string;
+    flashDefault: string;
+  }> = [
+    {
+      provider: "anthropic",
+      sites: process.env.CUE_ANTHROPIC_CALLSITES ?? "",
+      model: process.env.CUE_ANTHROPIC_MODEL,
+      flashModel: process.env.CUE_ANTHROPIC_FLASH_MODEL,
+      modelDefault: "claude-sonnet-4-6",
+      flashDefault: "claude-haiku-4-5",
+    },
+    {
+      provider: "openai",
+      sites: process.env.CUE_OPENAI_CALLSITES ?? "",
+      model: process.env.CUE_OPENAI_MODEL,
+      flashModel: process.env.CUE_OPENAI_FLASH_MODEL,
+      modelDefault: "gpt-5.4-mini",
+      flashDefault: "gpt-5.4-mini",
+    },
+  ];
+  for (const route of directRoutes) {
+    const sites = route.sites
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (sites.includes(callSite)) {
+      resolved.provider = route.provider;
+      delete (resolved as { provider_connection?: unknown })
+        .provider_connection;
+      resolved.model =
+        callSite === "mainAgent"
+          ? (route.model ?? route.modelDefault)
+          : (route.flashModel ?? route.flashDefault);
+      return resolved;
+    }
   }
   // Self-host OpenRouter override (see FORCE_OPENROUTER_DEEPSEEK): force every
   // resolved call site onto OpenRouter regardless of the profile layers.

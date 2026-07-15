@@ -14,3 +14,4 @@ src/context/prompts/**/*.md
 # Create Studio deck templates — vendored HTML/JSON reference assets (lifted
 # from the Mira fork) consumed verbatim by app-builder. Not source we format.
 src/config/bundled-skills/app-builder/templates/**
+skill-eval/results/

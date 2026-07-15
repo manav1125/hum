@@ -75,6 +75,14 @@ export interface LiveVoiceClientStartFrame {
    * dormant and old clients (which never send this) keep the cascade.
    */
   readonly engine?: "cascade" | "gemini-live";
+  /**
+   * IANA timezone reported by the client's browser (e.g. "Asia/Hong_Kong").
+   * Used to ground the assistant's sense of "now" in the user's local time —
+   * without it the realtime engine defaults to UTC and tells the user the wrong
+   * time. Optional so old clients (which never send it) degrade to a UTC clock
+   * plus a prompt to ask the user's timezone rather than assume.
+   */
+  readonly timezone?: string;
 }
 
 export interface LiveVoiceClientAudioFrame {
@@ -397,6 +405,15 @@ function validateStartFrame(
     );
   }
 
+  if ("timezone" in value && !isNonEmptyString(value.timezone)) {
+    return protocolError(
+      "invalid_field",
+      "start frame field timezone must be a non-empty string",
+      "timezone",
+      "start",
+    );
+  }
+
   return {
     ok: true,
     frame: {
@@ -407,6 +424,9 @@ function validateStartFrame(
       ...(value.fullDuplex === true ? { fullDuplex: true } : {}),
       ...(value.engine === "gemini-live" || value.engine === "cascade"
         ? { engine: value.engine }
+        : {}),
+      ...(typeof value.timezone === "string" && value.timezone.trim()
+        ? { timezone: value.timezone }
         : {}),
       audio: audioConfig.frame,
     },

@@ -268,12 +268,20 @@ export class LiveVoiceChannelClient {
 
   private handleOpen(): void {
     if (this.state !== "connecting" || !this.ws) return;
+    const browserTimezone = (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+      } catch {
+        return undefined;
+      }
+    })();
     const startFrame: LiveVoiceClientStartFrame = {
       type: "start",
       audio: LIVE_VOICE_AUDIO_FORMAT,
       ...(this.conversationId ? { conversationId: this.conversationId } : {}),
       ...(this.fullDuplex ? { fullDuplex: true } : {}),
       ...(this.engine === "gemini-live" ? { engine: "gemini-live" } : {}),
+      ...(browserTimezone ? { timezone: browserTimezone } : {}),
     };
     this.trySend(JSON.stringify(startFrame));
   }
