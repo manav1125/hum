@@ -10,7 +10,10 @@ function lastAssistantText(messages) {
   return a ? (a.textSegments || []).join(" ") : "";
 }
 
-const ADD_RE = /"name":"(task_list_add|work_item_[a-z]*add|add_task)"/i;
+// The add op appears either as a top-level tool name OR — the common case —
+// inside a skill_execute call as `"tool":"task_list_add"`.
+const ADD_RE =
+  /"(?:name|tool)":"(task_list_add|work_item_[a-z]*add|add_task|createWorkItem[A-Za-z]*)"/i;
 const ERROR_RE =
   /HTTP \d{3}|provider returned (?:a )?(?:server )?error|rejected the request|The AI provider|context length|no endpoints/i;
 // Phrases that mean the add FAILED (the model admitting it couldn't).

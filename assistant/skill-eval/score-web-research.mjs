@@ -8,10 +8,14 @@ function lastAssistantText(messages) {
   return a ? (a.textSegments || []).join(" ") : "";
 }
 
+// Search fires either as a top-level tool OR inside skill_execute as
+// `"tool":"tavily_search"`.
 const SEARCH_RE =
-  /"name":"(web_search|tavily_search|search_web|brave_search)"/i;
+  /"(?:name|tool)":"(web_search|tavily_search|search_web|brave_search|perplexity_search)"/i;
+// Only clear-cut "search is broken / no key" admissions — kept tight so it
+// doesn't false-positive on ordinary prose.
 const KEY_ERROR_RE =
-  /isn'?t configured|not configured|missing (?:the )?(?:api )?keys?|no (?:web )?search|search (?:capability|isn'?t|is not) (?:available|configured)|set (?:that|it) up/i;
+  /(?:web ?search|search (?:tool|capability|provider))[^.]{0,40}(?:isn'?t|is not|not)\s+(?:configured|available|set up)|missing (?:the )?(?:api )?keys? for|no search provider|couldn'?t (?:fetch|run|perform)[^.]{0,30}search/i;
 const ERROR_RE =
   /HTTP \d{3}|provider returned (?:a )?(?:server )?error|rejected the request/i;
 // A citation: a URL, or a markdown link, or a bracketed source.
