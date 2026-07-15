@@ -28,7 +28,11 @@ export type WorkItemEventKind =
   // WS3: the startup watchdog found this item stranded `running` (its run died
   // with a previous daemon process). Requeued (toStatus=queued) up to the
   // retry cap, or failed as a recovery incident (toStatus=failed) past it.
-  | "run_recovered";
+  | "run_recovered"
+  // A permission prompt raised during this item's headless run expired without
+  // an answer and auto-resolved DENY — the step was silently skipped. Durable
+  // marker so review surfaces can flag "finished, but with skipped steps".
+  | "approval_timeout";
 
 export interface WorkItemEvent {
   id: string;

@@ -50,21 +50,21 @@ import {
   addMessage,
   createConversation,
 } from "../../memory/conversation-crud.js";
-import { emitNotificationSignal } from "../../notifications/emit-signal.js";
 import { getAutonomyPolicy } from "../../permissions/autonomy-policy-reader.js";
 import { createTask } from "../../tasks/task-store.js";
 import { getLogger } from "../../util/logger.js";
-import { broadcastWorkItemStatus } from "../../work-items/work-item-runner.js";
+import {
+  broadcastWorkItemStatus,
+  runWorkItemInBackground,
+} from "../../work-items/work-item-runner.js";
 import {
   createWorkItem,
   findActiveWorkItemBySource,
   getWorkItem,
   listWorkItems,
-  updateWorkItem,
 } from "../../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
-import { runBackgroundJob } from "../background-job-runner.js";
 import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -416,9 +416,6 @@ export function handleListHomeFeed({
   };
 }
 
-/** How long a background home-action agent run may take before timing out. */
-const HOME_ACTION_TIMEOUT_MS = 180_000;
-
 const feedActionRequestSchema = z.object({
   // "smart" (default) routes off the autonomy policy; the others force a mode.
   mode: z.enum(["smart", "background", "thread"]).optional(),
@@ -529,8 +526,10 @@ function createFeedActionWorkItem(
  *
  *   - "thread"     — seed a foreground conversation the user drives (the
  *                    original behavior).
- *   - "background" — dispatch an autonomous agent run; show it live in
- *                    Activity → Running, then post a "Done" card back to Home.
+ *   - "background" — dispatch an autonomous run via the guardrailed
+ *                    work-item runner; it shows live in Activity → Running
+ *                    and lands in awaiting_review (the Review lane) on
+ *                    success, like every other background work-item run.
  *   - "needs_you"  — queue it but do NOT run; it waits for explicit approval.
  *
  * The default ("smart") picks the mode from the action's category + the
@@ -612,68 +611,62 @@ export async function handlePostFeedAction({
     return { mode: "needs_you", workItemId: wi.id };
   }
 
-  // ── Background: dispatch an autonomous run, surface it in Activity. ──
+  // ── Background: dispatch through the guardrailed work-item runner. ──
+  // ONE execution engine: the same `runWorkItemInBackground` that runs
+  // queued/approved work items owns the status transitions, the budget
+  // hard-stop, the agent model pin, the tool-scope filter, mid-run progress
+  // notes, output capture, and the act ledger. This route only creates (or
+  // dedupes onto) the work item and returns the ids the client tracks —
+  // clients observe the run via the runner's `work_item_status_changed` /
+  // `work_item_completed` broadcasts, exactly like every other background run.
   const wi = createFeedActionWorkItem(item, action);
-  updateWorkItem(wi.id, { status: "running" });
-  broadcastWorkItemStatus(wi.id);
+  const dispatch = runWorkItemInBackground(wi.id);
 
-  // Fire-and-forget — return immediately; the run reports back via the
-  // work-item status broadcast + a Home result card.
-  void runBackgroundJob({
-    jobName: `home-action:${item.id}`,
-    source: "home-feed-action",
-    prompt: action.prompt,
-    systemHint: action.label,
-    trustContext: { sourceChannel: "vellum", trustClass: "guardian" },
-    callSite: "homeAction",
-    timeoutMs: HOME_ACTION_TIMEOUT_MS,
-    origin: "task",
-    conversationType: "background",
-  })
-    .then(async (result) => {
-      updateWorkItem(wi.id, {
-        status: result.ok ? "done" : "failed",
-        lastRunConversationId: result.conversationId || null,
-        lastRunStatus: result.ok ? "ok" : "failed",
-      });
-      broadcastWorkItemStatus(wi.id);
+  if (
+    !dispatch.success &&
+    dispatch.errorCode !== "already_running" &&
+    dispatch.errorCode !== "budget_stop"
+  ) {
+    // not_found / no_task / invalid_status on an item we just created or
+    // deduped onto — a genuine dispatch failure the client should see.
+    log.warn(
+      { itemId, actionId, workItemId: wi.id, errorCode: dispatch.errorCode },
+      "Feed action failed to dispatch to the work-item runner",
+    );
+    throw new InternalError(dispatch.error ?? "Failed to dispatch feed action");
+  }
 
-      if (result.ok) {
-        // Post a "Done" card back to Home. runBackgroundJob already emits an
-        // activity.failed card on failure, so we only emit on success.
-        await emitNotificationSignal({
-          sourceEventName: "activity.complete",
-          sourceChannel: "assistant_tool",
-          sourceContextId: `home-action:${item.id}`,
-          attentionHints: {
-            requiresAction: false,
-            urgency: "low",
-            isAsyncBackground: true,
-            visibleInSourceNow: false,
-          },
-          contextPayload: {
-            title: `Done — ${action.label}`,
-            summary: `Cue finished "${action.label}" in the background. Open it to review.`,
-          },
-          dedupeKey: `home-action:${item.id}`,
-        });
-        // Retire the original card so it doesn't linger next to the result.
-        patchFeedItemStatus(item.id, "acted_on");
-      }
-    })
-    .catch((err) => {
-      log.warn(
-        { err, itemId, workItemId: wi.id },
-        "Home action background run failed to dispatch",
-      );
-      updateWorkItem(wi.id, { status: "failed", lastRunStatus: "failed" });
-      broadcastWorkItemStatus(wi.id);
-    });
+  // Retire the originating Home card — the commitment now lives in the work
+  // queue and the runner's broadcasts carry the live state from here on
+  // (mirrors the needs_you branch). This also covers the budget_stop case:
+  // the runner already marked the item failed with the stop reason on
+  // `lastProgressNote`, and that incident surfaces in Activity, not as a
+  // stale "Run it" card. Skip synthesized work-item cards (no on-disk row).
+  if (!item.id.startsWith(WORK_ITEM_FEED_PREFIX)) {
+    void patchFeedItemStatus(item.id, "acted_on");
+  }
 
-  log.info(
-    { itemId, actionId, workItemId: wi.id },
-    "Feed action dispatched to background",
-  );
+  if (dispatch.success) {
+    log.info(
+      { itemId, actionId, workItemId: wi.id },
+      "Feed action dispatched to background via work-item runner",
+    );
+  } else if (dispatch.errorCode === "already_running") {
+    // Deduped onto an item that is already running — the click's intent is
+    // satisfied; point the client at the live item instead of double-running.
+    log.info(
+      { itemId, actionId, workItemId: wi.id },
+      "Feed action already running in background (duplicate dispatch suppressed)",
+    );
+  } else {
+    // budget_stop: enforcement the user opted into. The runner set the item
+    // failed with a human-readable reason; return the item so the client can
+    // route to Activity where the stop is shown as a resolvable incident.
+    log.warn(
+      { itemId, actionId, workItemId: wi.id, error: dispatch.error },
+      "Feed action blocked by budget hard-stop",
+    );
+  }
   return { mode: "background", workItemId: wi.id };
 }
 
@@ -962,7 +955,7 @@ export const ROUTES: RouteDefinition[] = [
     handler: handlePostFeedAction,
     summary: "Trigger home feed action",
     description:
-      "Execute a feed action. `mode` selects how it runs: 'smart' (default) routes off the action's category + the autonomy policy; 'background' dispatches an autonomous run (shown in Activity, result card posted to Home); 'thread' seeds a foreground conversation. Returns the resolved mode plus a `conversationId` (thread) or `workItemId` (background/needs_you).",
+      "Execute a feed action. `mode` selects how it runs: 'smart' (default) routes off the action's category + the autonomy policy; 'background' dispatches an autonomous run through the work-item runner (shown in Activity, lands in the Review lane on success); 'thread' seeds a foreground conversation. Returns the resolved mode plus a `conversationId` (thread) or `workItemId` (background/needs_you).",
     tags: ["home"],
     requestBody: feedActionRequestSchema,
     responseBody: z.object({

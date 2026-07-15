@@ -86,6 +86,18 @@ export class PermissionPrompter {
           "Permission prompt timed out, defaulting to deny",
         );
         this.onStateChanged?.(requestId, "timed_out", "timeout", toolUseId);
+        // Headless work-item runs: a timeout here means the run will finish
+        // WITHOUT this step ever executing, and nothing else surfaces that.
+        // Stamp an explicit skipped-step marker on the owning work item so the
+        // silent deny is visible at review time. Fire-and-forget + lazily
+        // imported: the deny below resolves regardless, interactive prompts
+        // (whose conversation is not a live work-item run) are a no-op inside,
+        // and the permissions layer keeps no static work-items dependency.
+        void import("../work-items/work-item-approval-timeouts.js")
+          .then((m) =>
+            m.recordApprovalTimeoutForConversation(conversationId, toolName),
+          )
+          .catch(() => {});
         (interaction?.rpcResolve as ((v: ConfirmResult) => void) | undefined)?.(
           {
             decision: "deny",

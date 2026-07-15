@@ -328,6 +328,23 @@ function formatAmbiguityMessage(
   )}`;
 }
 
+/**
+ * Find the `running` work item whose live background run owns the given
+ * conversation. Used by the approval-timeout path to attribute a timed-out
+ * permission prompt to the headless run it fired in: the runner stamps
+ * `lastRunConversationId` before the first message is processed, so during a
+ * run this is an exact match. Interactive chat conversations never match — a
+ * finished run's item is no longer `running`, so a user later prompting inside
+ * that conversation resolves to nothing here.
+ */
+export function findRunningWorkItemByRunConversationId(
+  conversationId: string,
+): WorkItem | undefined {
+  return listWorkItems({ status: "running" }).find(
+    (i) => i.lastRunConversationId === conversationId,
+  );
+}
+
 /** Find all active work items for a given task ID */
 export function findActiveWorkItemsByTaskId(taskId: string): WorkItem[] {
   return listWorkItems().filter(

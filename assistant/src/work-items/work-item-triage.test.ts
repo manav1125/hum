@@ -66,8 +66,12 @@ import {
 } from "./work-item-store.js";
 import {
   buildSourceContext,
+  buildTriagePrompt,
   classifyWorkItemAutonomy,
+  CONSERVATIVE_AUTO_RUN_TOOLS,
+  conservativeRequiredToolsForCapture,
   hardDeniedAutoRunTools,
+  impliesSideEffectDeliverable,
   isHardDeniedForAutoRun,
   maybeAutoRunWorkItem,
   parseTriageResponse,
@@ -135,6 +139,117 @@ describe("classifyWorkItemAutonomy", () => {
       requiredTools: JSON.stringify(["read", 42, null]),
     });
     expect(classifyWorkItemAutonomy(item)).toEqual(["research"]);
+  });
+});
+
+describe("conservativeRequiredToolsForCapture (deterministic producer stamp)", () => {
+  test("research-y captures get the read-only research set", () => {
+    const stamped = conservativeRequiredToolsForCapture(
+      "Research competitor pricing",
+      "Compare the top 5 and summarize",
+    );
+    expect(stamped).toBeDefined();
+    expect(JSON.parse(stamped!)).toEqual([...CONSERVATIVE_AUTO_RUN_TOOLS]);
+  });
+
+  test("a stamped item classifies to a real category, not ['other']", () => {
+    // The whole point of the stamp: meeting/mission items used to land with
+    // no snapshot → ["other"] → policy fail-closes to ask → parked forever.
+    const item = makeItem({
+      requiredTools: conservativeRequiredToolsForCapture("Summarize the news")!,
+    });
+    expect(classifyWorkItemAutonomy(item)).toEqual(["research"]);
+    expect(classifyWorkItemAutonomy(item)).not.toEqual(["other"]);
+  });
+
+  test("every tool in the conservative set passes the hard-deny floor", () => {
+    for (const tool of CONSERVATIVE_AUTO_RUN_TOOLS) {
+      expect(isHardDeniedForAutoRun(tool)).toBe(false);
+    }
+    const item = makeItem({
+      requiredTools: JSON.stringify(CONSERVATIVE_AUTO_RUN_TOOLS),
+    });
+    expect(hardDeniedAutoRunTools(item)).toEqual([]);
+  });
+
+  test("side-effect-implying titles keep an empty snapshot (park for review)", () => {
+    for (const title of [
+      "Email Sarah the updated deck",
+      "Post the launch announcement on LinkedIn",
+      "Buy a domain for the microsite",
+      "Reply to Aileen about the OTP",
+      "Send the OTP to Aileen",
+      "Cancel the Notion subscription",
+      "Call the vendor about the renewal",
+      "Follow up with the design agency",
+      "Delete the stale staging database",
+      "Publish the changelog",
+      "Pay the AWS invoice",
+    ]) {
+      expect(conservativeRequiredToolsForCapture(title)).toBeUndefined();
+      expect(impliesSideEffectDeliverable(title)).toBe(true);
+    }
+  });
+
+  test("side-effect intent in the notes also blocks the stamp", () => {
+    expect(
+      conservativeRequiredToolsForCapture(
+        "Vendor renewal prep",
+        "then email them the signed PO",
+      ),
+    ).toBeUndefined();
+  });
+
+  test("benign research/draft phrasing is not treated as a side effect", () => {
+    for (const title of [
+      "Research competitor pricing",
+      "Summarize yesterday's standup",
+      "Draft an outline for the Q3 strategy doc",
+      "Review the onboarding flow for friction",
+      "Prepare talking points for the offsite",
+    ]) {
+      expect(impliesSideEffectDeliverable(title)).toBe(false);
+      expect(conservativeRequiredToolsForCapture(title)).toBeDefined();
+    }
+  });
+});
+
+describe("buildTriagePrompt (provenance + sender identity)", () => {
+  test("includes source provenance and the sender-identity scoring guidance", () => {
+    const prompt = buildTriagePrompt(
+      makeItem({
+        title: "Reply to Aileen",
+        notes: "From: Aileen Diaz via whatsapp — asking for the login code",
+        sourceType: "whatsapp",
+        sourceId: "chat-42",
+      }),
+      [],
+    );
+    expect(prompt).toContain("captured from whatsapp");
+    expect(prompt).toContain("Source: whatsapp (source id: chat-42)");
+    // Notes (which carry the "From: … via …" provenance line) are included.
+    expect(prompt).toContain("From: Aileen Diaz via whatsapp");
+    // The explicit scoring instruction for sender identity is present.
+    expect(prompt).toContain("Sender identity:");
+    expect(prompt).toContain("VIP or frequent correspondent");
+    // The JSON output contract is unchanged.
+    expect(prompt).toContain(
+      '{"urgency": <0-100>, "tier": <0|1|2>, "projectId": <string|null>, "dueAt": <"YYYY-MM-DDTHH:MM"|null>}',
+    );
+  });
+
+  test("source line includes the sourceType alone when no sourceId is set", () => {
+    const prompt = buildTriagePrompt(
+      makeItem({ title: "Task", sourceType: "meeting" }),
+      [],
+    );
+    expect(prompt).toContain("Source: meeting");
+    expect(prompt).not.toContain("source id:");
+  });
+
+  test("omits the provenance line entirely for source-less items", () => {
+    const prompt = buildTriagePrompt(makeItem({ title: "Plain task" }), []);
+    expect(prompt).not.toContain("Source:");
   });
 });
 
@@ -254,6 +369,19 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
     expect(runnerCalls).toEqual([item.id]);
   });
 
+  test("an item stamped with the conservative producer set auto-runs under a research=auto policy", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "Research competitor pricing",
+      requiredTools: conservativeRequiredToolsForCapture(
+        "Research competitor pricing",
+      ),
+    });
+    const decision = await maybeAutoRunWorkItem(item.id);
+    expect(decision).toEqual({ started: true, reason: "started" });
+    expect(runnerCalls).toEqual([item.id]);
+  });
+
   test("defers to the policy for non-hard-denied classes (ask blocks)", async () => {
     mockPolicy = { ...mockPolicy, research: "ask" };
     const item = createWorkItem({
@@ -308,6 +436,38 @@ describe("triageWorkItem stamping (DB-backed)", () => {
     const fresh = getWorkItem(item.id)!;
     expect(fresh.sortIndex).not.toBeNull();
     expect(fresh.priorityTier).toBe(2); // not re-scored once no longer queued
+  });
+
+  test("sender/channel provenance in notes bumps heuristic urgency (smaller sortIndex)", async () => {
+    const withSender = createWorkItem({
+      taskId,
+      title: "Look into the login issue",
+      notes: "From: Aileen Diaz via whatsapp — she can't get the code",
+      sourceType: "whatsapp",
+    });
+    const selfNote = createWorkItem({
+      taskId,
+      title: "Look into the login issue",
+    });
+    await triageWorkItem(withSender.id, {});
+    await triageWorkItem(selfNote.id, {});
+    // Base heuristic urgency 50 → sortIndex 50; the sender bump (+15) ranks
+    // the human-sourced item first within the tier.
+    expect(getWorkItem(selfNote.id)!.sortIndex).toBe(50);
+    expect(getWorkItem(withSender.id)!.sortIndex).toBe(35);
+  });
+
+  test("the sender bump caps at 100 urgency and stacks with high-urgency keywords", async () => {
+    const item = createWorkItem({
+      taskId,
+      title: "Urgent: unblock the deploy",
+      notes: "From: Marco via slack — blocked, deadline today",
+      sourceType: "slack",
+    });
+    await triageWorkItem(item.id, {});
+    // High-urgency base 85 + 15 bump = 100 → sortIndex 0.
+    expect(getWorkItem(item.id)!.sortIndex).toBe(0);
+    expect(getWorkItem(item.id)!.priorityTier).toBe(0);
   });
 
   test("never overwrites caller-provided sortIndex or priority (callerSetPriority)", async () => {

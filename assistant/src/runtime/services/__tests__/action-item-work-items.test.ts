@@ -26,8 +26,15 @@ mock.module("../../assistant-event-hub.js", () => ({
 // it) that gets stamped onto the freshly-minted work item, standing in for the
 // real flash-LLM project match. The bridge awaits this before reading the row
 // back, so a synchronous stamp is observed by the filing resolution.
+//
+// The bridge also calls the real (pure, LLM-free) required-tools stamping
+// helper from the same module — capture it by value before installing the
+// mock so the mock can pass it through unchanged.
+import { conservativeRequiredToolsForCapture as realConservativeRequiredToolsForCapture } from "../../../work-items/work-item-triage.js";
+
 let fileOntoProjectId: string | null = null;
 mock.module("../../../work-items/work-item-triage.js", () => ({
+  conservativeRequiredToolsForCapture: realConservativeRequiredToolsForCapture,
   triageAndMaybeAutoRunWorkItem: async (workItemId: string) => {
     if (fileOntoProjectId) {
       const { updateWorkItem } =
@@ -52,6 +59,7 @@ import {
   createProject,
   updateProject,
 } from "../../../work-items/project-store.js";
+import { getWorkItem } from "../../../work-items/work-item-store.js";
 import { actionItemsToWorkItems } from "../action-item-work-items.js";
 
 initializeDb();
@@ -121,6 +129,46 @@ describe("actionItemsToWorkItems — filing resolution", () => {
     expect(refs[0]?.projectTitle).toBeNull();
     expect(refs[0]?.missionId).toBeNull();
     expect(refs[0]?.missionTitle).toBeNull();
+  });
+
+  test("research-y action items get the conservative requiredTools stamp", async () => {
+    const refs = await actionItemsToWorkItems(
+      [
+        {
+          text: "Research venue options for the offsite",
+          owner: null,
+          done: false,
+        },
+      ],
+      "meeting",
+      CONV,
+    );
+
+    expect(refs).toHaveLength(1);
+    const item = getWorkItem(refs[0]!.id)!;
+    expect(item.requiredTools).not.toBeNull();
+    // Read-only research tools only — the snapshot classifies to "research"
+    // instead of the fail-closed "other", so the item can auto-run per policy.
+    expect(JSON.parse(item.requiredTools!)).toEqual([
+      "web_fetch",
+      "web_search",
+    ]);
+  });
+
+  test("side-effect-implying action items keep an empty snapshot (park for review)", async () => {
+    const refs = await actionItemsToWorkItems(
+      [
+        { text: "Email Sarah the updated deck", owner: null, done: false },
+        { text: "Send the OTP to Aileen", owner: "Manav", done: false },
+      ],
+      "meeting",
+      CONV,
+    );
+
+    expect(refs).toHaveLength(2);
+    for (const ref of refs) {
+      expect(getWorkItem(ref.id)!.requiredTools).toBeNull();
+    }
   });
 
   test("mission fields null when the linked mission row is gone", async () => {

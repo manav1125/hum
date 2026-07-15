@@ -28,7 +28,10 @@ import {
   findActiveWorkItemBySource,
   getWorkItem,
 } from "../../work-items/work-item-store.js";
-import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
+import {
+  conservativeRequiredToolsForCapture,
+  triageAndMaybeAutoRunWorkItem,
+} from "../../work-items/work-item-triage.js";
 import { broadcastMessage } from "../assistant-event-hub.js";
 
 const log = getLogger("action-item-work-items");
@@ -156,13 +159,22 @@ export async function actionItemsToWorkItems(
         template: title,
         createdFromConversationId: conversationId,
       });
+      const notes = item.owner ? `Owner: ${item.owner}` : undefined;
+      // Stamp the conservative read-only tool snapshot so triage classifies
+      // the item into a real autonomy category ("research") instead of the
+      // fail-closed "other" — without this, extracted action items could
+      // never auto-run and parked forever. Items whose text implies a
+      // side-effect deliverable ("email X", "post Y") deliberately keep an
+      // empty snapshot and park for human review.
+      const requiredTools = conservativeRequiredToolsForCapture(title, notes);
       const workItem = createWorkItemWithPermissions({
         taskId: task.id,
         title,
-        notes: item.owner ? `Owner: ${item.owner}` : undefined,
+        notes,
         priorityTier: 1, // medium default — background triage refines it
         sourceType,
         sourceId: conversationId,
+        ...(requiredTools ? { requiredTools } : {}),
       });
       // Rank the fresh capture, file it onto its best-matching project (and thus
       // mission, via project.missionId), and — when the autonomy policy allows —

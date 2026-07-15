@@ -92,12 +92,35 @@ const HIGH_URGENCY_RE =
 const LOW_URGENCY_RE =
   /\b(someday|eventually|no rush|when (you|we) (get|have) (a chance|time)|low priority|nice to have|backlog|later this (month|quarter|year))\b/i;
 
+/**
+ * Sender/channel provenance line a channel-tagged producer writes into an
+ * item's notes ("From: Aileen Diaz via whatsapp"). A message from a real
+ * person waiting on the other end of a channel is more urgent than a
+ * self-captured note, so the heuristic bumps urgency when it sees one.
+ */
+const SENDER_PROVENANCE_RE =
+  /From: .+ via (slack|email|sms|whatsapp|telegram)/i;
+
+/** Urgency points added when {@link SENDER_PROVENANCE_RE} matches the notes. */
+const SENDER_PROVENANCE_URGENCY_BUMP = 15;
+
 function heuristicScore(item: WorkItem): TriageScore {
   const text = `${item.title} ${item.notes ?? ""}`;
   const base = { projectId: null, dueAt: null };
-  if (HIGH_URGENCY_RE.test(text)) return { urgency: 85, tier: 0, ...base };
-  if (LOW_URGENCY_RE.test(text)) return { urgency: 25, tier: 2, ...base };
-  return { urgency: 50, tier: 1, ...base };
+  const score: TriageScore = HIGH_URGENCY_RE.test(text)
+    ? { urgency: 85, tier: 0, ...base }
+    : LOW_URGENCY_RE.test(text)
+      ? { urgency: 25, tier: 2, ...base }
+      : { urgency: 50, tier: 1, ...base };
+  // A named human sender on a real channel is waiting — rank it above
+  // same-tier self-notes (urgency feeds sortIndex; tier is left alone).
+  if (item.notes && SENDER_PROVENANCE_RE.test(item.notes)) {
+    score.urgency = Math.min(
+      100,
+      score.urgency + SENDER_PROVENANCE_URGENCY_BUMP,
+    );
+  }
+  return score;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +152,8 @@ export function buildSourceContext(item: WorkItem): string {
 // Flash-LLM scoring (best-effort)
 // ---------------------------------------------------------------------------
 
-function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
+/** Exported for tests; production callers go through {@link triageWorkItem}. */
+export function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
   const source = item.sourceType ? ` (captured from ${item.sourceType})` : "";
   const projectLines = projects
     .slice(0, 20)
@@ -137,7 +161,14 @@ function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
   return [
     `Today is ${new Date().toString()}.`,
     `Task${source}: ${item.title}`,
+    // Notes are included verbatim (bounded) — channel-tagged producers write
+    // sender provenance there ("From: <name> via <channel>"), which the
+    // sender-identity instruction below tells the scorer how to weigh.
     item.notes ? `Details: ${item.notes.slice(0, 500)}` : "",
+    // Provenance: the capturing channel/surface + its source id, when stamped.
+    item.sourceType
+      ? `Source: ${item.sourceType}${item.sourceId ? ` (source id: ${item.sourceId})` : ""}`
+      : "",
     projectLines.length > 0
       ? `Existing projects:\n${projectLines.join("\n")}`
       : "",
@@ -145,6 +176,7 @@ function buildTriagePrompt(item: WorkItem, projects: Project[]): string {
     "Triage this task for a busy professional. Reply with ONLY a JSON object, no prose:",
     '{"urgency": <0-100>, "tier": <0|1|2>, "projectId": <string|null>, "dueAt": <"YYYY-MM-DDTHH:MM"|null>}.',
     "tier 0 = must happen soon (hard deadline, time-sensitive, blocking someone). tier 1 = normal. tier 2 = whenever.",
+    'Sender identity: when the details carry a message from a real named person addressed to the user (e.g. a "From: <name> via <channel>" line, or a channel source like email/slack/whatsapp with a named sender), default to HIGHER urgency than a self-captured note — a person is waiting on a response. When the sender is clearly a VIP or frequent correspondent (boss, investor, client, close collaborator, an ongoing thread), boost the tier one level as well. Items with no sender are self-notes and score normally.',
     "projectId: the id of the ONE existing project this clearly belongs to, else null. Never invent an id.",
     'dueAt: only when the text states an explicit deadline ("by Friday", "before the flight tomorrow") — resolve it to a local date-time; else null. When only a day is given, use 17:00.',
   ]
@@ -319,6 +351,70 @@ export function isHardDeniedForAutoRun(toolName: string): boolean {
  */
 export function hardDeniedAutoRunTools(item: WorkItem): string[] {
   return parseRequiredTools(item).filter(isHardDeniedForAutoRun);
+}
+
+// ---------------------------------------------------------------------------
+// Conservative required-tools stamp for deterministic producers
+// ---------------------------------------------------------------------------
+
+/**
+ * The read/research-only tool set deterministic producers (meeting/voice
+ * action items, mission plan items) stamp onto the work items they create.
+ *
+ * Why: an item created with NO `requiredTools` snapshot classifies as
+ * ["other"], which every sane policy fail-closes to "ask" — so those items
+ * could never auto-run and parked forever. Stamping a snapshot that
+ * classifies to a real autonomy category (these two are both "research")
+ * lets the per-category policy actually decide.
+ *
+ * Safety: the runner auto-approves an item's requiredTools during its run,
+ * so this set must ONLY ever contain read/research/draft-class tools. NEVER
+ * add send/money/delete/publish/browser/computer-use/host_* tools here —
+ * every entry must pass {@link isHardDeniedForAutoRun} (enforced again at
+ * stamp time as a belt-and-suspenders filter). Note the set is also
+ * deliberately narrow at run time: anything outside it still hits the
+ * normal per-tool permission gates mid-run.
+ */
+export const CONSERVATIVE_AUTO_RUN_TOOLS: readonly string[] = [
+  "web_fetch",
+  "web_search",
+];
+
+/**
+ * Keyword guard for side-effect deliverables. When an item's text clearly
+ * implies egress or an irreversible action ("email X", "post Y", "buy Z",
+ * "cancel W"), producers leave `requiredTools` EMPTY on purpose: the empty
+ * snapshot classifies as "other" → policy "ask" → the item parks for human
+ * review, which is the correct outcome there. Over-matching is safe (the
+ * item just stays parked, exactly as before this guard existed);
+ * under-matching only means the item auto-runs with read-only tools
+ * approved — real egress still hits the per-tool permission gates mid-run.
+ */
+const SIDE_EFFECT_DELIVERABLE_RE =
+  /\b(send|resend|forward|reply|respond|email|e-mail|message|text|dm|ping|post|publish|tweet|announce|share|submit|deploy|launch|release|ship|buy|purchase|order|pay|invoice|charge|refund|transfer|wire|book|reserve|subscribe|unsubscribe|sign\s*up|register|enroll|rsvp|invite|schedule|call|phone|dial|follow\s*up\s+with|cancel|delete|remove|archive|approve|reject|merge|upload|sell|donate)\b/i;
+
+/** Whether the text clearly implies a side-effect deliverable. */
+export function impliesSideEffectDeliverable(text: string): boolean {
+  return SIDE_EFFECT_DELIVERABLE_RE.test(text);
+}
+
+/**
+ * The `requiredTools` JSON snapshot a deterministic producer should stamp on
+ * a work item it creates, or `undefined` to deliberately leave the snapshot
+ * empty (side-effect-implying items park for review — see
+ * {@link impliesSideEffectDeliverable}).
+ */
+export function conservativeRequiredToolsForCapture(
+  title: string,
+  notes?: string | null,
+): string | undefined {
+  if (impliesSideEffectDeliverable(`${title} ${notes ?? ""}`)) {
+    return undefined;
+  }
+  const safe = CONSERVATIVE_AUTO_RUN_TOOLS.filter(
+    (t) => !isHardDeniedForAutoRun(t),
+  );
+  return safe.length > 0 ? JSON.stringify(safe) : undefined;
 }
 
 function countRunningItems(): number {

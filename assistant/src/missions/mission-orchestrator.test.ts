@@ -164,6 +164,45 @@ describe("cycle execution", () => {
     expect(fresh.spentCents).toBe(1);
   });
 
+  test("plan items get the conservative requiredTools stamp; side-effect items stay empty", async () => {
+    const { mission, projectId } = makeMissionWithProject({ mode: "assist" });
+    const orchestrator = new MissionOrchestrator({
+      planner: plannerReturning({
+        assessment: "a",
+        items: [
+          {
+            projectId: null,
+            title: "Research competitor pricing",
+            notes: "Compare the top 5 and summarize",
+          },
+          {
+            projectId: null,
+            title: "Email the beta invite to the waitlist",
+            notes: null,
+          },
+        ],
+        report: "r",
+      }),
+    });
+
+    const result = await orchestrator.runCycle(mission.id);
+    expect(result.enqueued).toBe(2);
+
+    const items = listWorkItems({ projectId });
+    const research = items.find((i) => i.title.startsWith("Research"))!;
+    // Read-only research tools — classifies to "research" (not the
+    // fail-closed "other"), so autonomous-mode items can pass the auto-run
+    // policy gate instead of parking forever.
+    expect(JSON.parse(research.requiredTools!)).toEqual([
+      "web_fetch",
+      "web_search",
+    ]);
+    // "Email X" implies a side-effect deliverable — deliberately no snapshot,
+    // so the item parks for human review.
+    const email = items.find((i) => i.title.startsWith("Email"))!;
+    expect(email.requiredTools).toBeNull();
+  });
+
   test("exact-once: a re-run producing the same plan enqueues nothing", async () => {
     const { mission, projectId } = makeMissionWithProject({ mode: "assist" });
     const orchestrator = new MissionOrchestrator({

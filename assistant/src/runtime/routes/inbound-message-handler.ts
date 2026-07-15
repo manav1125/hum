@@ -80,6 +80,7 @@ import type { ContentBlock } from "../../providers/types.js";
 import { wrapUntrustedContent } from "../../security/untrusted-content.js";
 import { canonicalizeInboundIdentity } from "../../util/canonicalize-identity.js";
 import { getLogger } from "../../util/logger.js";
+import { maybeCaptureCommitments } from "../../work-items/commitment-capture.js";
 import { DAEMON_INTERNAL_ASSISTANT_ID } from "../assistant-scope.js";
 import { deliverChannelReply } from "../gateway-client.js";
 import { resolveTrustContext } from "../trust-context-resolver.js";
@@ -1282,6 +1283,28 @@ export async function handleChannelInbound({
         clientTimezone: inboundClientTimezone,
         slackBotMentioned,
         slackInbound,
+      });
+
+      // ── Deterministic commitment capture ──
+      // Fire-and-forget safety net that does NOT depend on the agent choosing
+      // to call task_list_add: external-channel messages are scanned for
+      // explicit asks/commitments and captured as work items (prefilter +
+      // conservative flash-LLM extraction, then the standard triage/auto-run
+      // pass). Runs strictly AFTER the agent turn is dispatched and never
+      // blocks or fails message processing — maybeCaptureCommitments never
+      // rejects. Scoping (external channels only by default), the
+      // CUE_COMMITMENT_CAPTURE_CHANNELS override, and the
+      // CUE_DISABLE_COMMITMENT_CAPTURE kill switch live inside the module.
+      void maybeCaptureCommitments({
+        sourceChannel,
+        conversationId: result.conversationId,
+        content: trimmedContent,
+        senderDisplayName: body.actorDisplayName,
+        senderUsername: body.actorUsername,
+        senderExternalId: canonicalSenderId ?? rawSenderId ?? null,
+        isBot:
+          sourceMetadata?.isBot === true ||
+          sourceMetadata?.subtype === "bot_message",
       });
     }
   }

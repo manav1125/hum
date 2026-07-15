@@ -60,7 +60,10 @@ import {
   listWorkItems,
   type WorkItem,
 } from "../work-items/work-item-store.js";
-import { triageAndMaybeAutoRunWorkItem } from "../work-items/work-item-triage.js";
+import {
+  conservativeRequiredToolsForCapture,
+  triageAndMaybeAutoRunWorkItem,
+} from "../work-items/work-item-triage.js";
 import {
   claimMissionPlanFingerprint,
   type CompanyProfile,
@@ -770,10 +773,21 @@ export class MissionOrchestrator {
             // Mirrors the quick-add route: work_items.taskId needs a real
             // tasks row, so mint a lightweight template per item.
             const task = createTask({ title: planItem.title, template });
+            // The planner doesn't emit per-item tools, so stamp the
+            // conservative read-only snapshot — it classifies to "research"
+            // instead of the fail-closed "other", letting autonomous-mode
+            // items actually pass the auto-run policy gate. Items whose
+            // text implies a side-effect deliverable keep an empty
+            // snapshot and park for human review.
+            const requiredTools = conservativeRequiredToolsForCapture(
+              planItem.title,
+              template,
+            );
             const item = createWorkItem({
               taskId: task.id,
               title: planItem.title,
               ...(planItem.notes ? { notes: planItem.notes } : {}),
+              ...(requiredTools ? { requiredTools } : {}),
               ...(assignee ? { assignee } : {}),
               projectId,
               sourceType: "mission",

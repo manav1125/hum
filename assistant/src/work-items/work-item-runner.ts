@@ -37,6 +37,11 @@ import {
 } from "./project-knowledge-store.js";
 import { getProject } from "./project-store.js";
 import { resolveRequiredTools } from "./resolve-required-tools.js";
+import {
+  buildSkippedStepsNote,
+  clearApprovalTimeouts,
+  consumeApprovalTimeouts,
+} from "./work-item-approval-timeouts.js";
 import { recordWorkItemEvent } from "./work-item-events.js";
 import {
   getWorkItem,
@@ -451,6 +456,10 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
     );
   }
 
+  // A fresh run starts with a clean approval-timeout slate — records from an
+  // earlier run of this item must not leak into this run's terminal note.
+  clearApprovalTimeouts(workItemId);
+
   // Set status to running
   updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
   recordWorkItemEvent({
@@ -548,6 +557,11 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
       }
 
       const current = getWorkItem(workItemId);
+      // Approval prompts that expired unanswered during this run: consumed
+      // unconditionally (so a cancelled run doesn't leak registry entries) and
+      // persisted as the item's terminal note — an awaiting_review item that
+      // silently skipped its send/publish step must not LOOK fine.
+      const skippedApprovals = consumeApprovalTimeouts(workItemId);
       let terminalStatus: TerminalWorkItemStatus | null = null;
       if (current?.status !== "cancelled") {
         const finalStatus: WorkItemStatus =
@@ -561,8 +575,12 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
             lastRunConversationId: result.conversationId,
             lastRunStatus: result.status,
             // The run is over — a stale "Searching the web…" line must not
-            // linger on a finished item.
-            lastProgressNote: null,
+            // linger on a finished item. But a run that skipped steps because
+            // approvals timed out keeps saying so, so review surfaces flag it.
+            lastProgressNote:
+              skippedApprovals.length > 0
+                ? buildSkippedStepsNote(skippedApprovals)
+                : null,
           },
           { actor: "runner" },
         );
@@ -629,12 +647,19 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
         errConversation.headlessLock = false;
       }
       log.error({ err, workItemId }, "work item background run failed");
+      // Drain the registry even on a crashed run; keep the skipped-steps note
+      // when approvals timed out before the crash, so the failure record still
+      // says which side-effect steps never happened.
+      const skippedApprovals = consumeApprovalTimeouts(workItemId);
       updateWorkItem(
         workItemId,
         {
           status: "failed",
           lastRunStatus: "failed",
-          lastProgressNote: null,
+          lastProgressNote:
+            skippedApprovals.length > 0
+              ? buildSkippedStepsNote(skippedApprovals)
+              : null,
         },
         { actor: "runner" },
       );

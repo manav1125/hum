@@ -98,7 +98,9 @@ import {
   getWorkspaceDir,
 } from "../util/platform.js";
 import { APP_VERSION } from "../version.js";
+import { seedDefaultAgentRoster } from "../work-items/default-roster-seed.js";
 import { recoverOrphanedWorkItemRuns } from "../work-items/work-item-recovery.js";
+import { startWorkItemQueueDrainer } from "../work-items/work-item-queue-drainer.js";
 import {
   listWorkItems,
   updateWorkItem,
@@ -628,6 +630,23 @@ export async function runDaemon(): Promise<void> {
       } catch (err) {
         log.warn({ err }, "Work-item recovery failed — continuing startup");
       }
+
+      // Periodic queue drainer: re-dispatches stalled `queued` items (incl. the
+      // runs recovery just requeued) through the same policy-gated auto-run gate
+      // triage uses. Kill switch also re-checked at every sweep.
+      if (process.env.CUE_DISABLE_QUEUE_DRAINER?.trim() !== "1") {
+        try {
+          startWorkItemQueueDrainer();
+        } catch (err) {
+          log.warn({ err }, "Queue drainer failed to start — continuing startup");
+        }
+      }
+
+      // Default agent roster: staff Ops/Growth/Inbox when the registry is
+      // completely empty, so the mission planner has named agents to assign
+      // to. Non-empty rosters are never touched; kill switch:
+      // CUE_DISABLE_DEFAULT_AGENT_SEED=1. seedDefaultAgentRoster never throws.
+      seedDefaultAgentRoster();
 
       try {
         const twilioProvider = new TwilioConversationRelayProvider();
