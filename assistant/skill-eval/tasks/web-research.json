@@ -1,0 +1,36 @@
+{
+  "skill": "web-research",
+  "note": "Web-search reliability. Each prompt needs a live web search + a sourced answer. Scorer checks the search tool fired, no missing-key error, a real source/URL in the answer, and a substantive response.",
+  "tasks": [
+    {
+      "id": "capital",
+      "split": "train",
+      "prompt": "Search the web: what is the capital of Australia? Give the source."
+    },
+    {
+      "id": "f1",
+      "split": "train",
+      "prompt": "Use web search to tell me who won the most recent Formula 1 race, with a source link."
+    },
+    {
+      "id": "btc",
+      "split": "train",
+      "prompt": "What is the current price of Bitcoin? Search the web and cite where you got it."
+    },
+    {
+      "id": "ceo",
+      "split": "train",
+      "prompt": "Search the web for who the current CEO of OpenAI is, and link the source."
+    },
+    {
+      "id": "weather",
+      "split": "holdout",
+      "prompt": "Look up the weather forecast for Hong Kong this weekend and tell me the source."
+    },
+    {
+      "id": "news",
+      "split": "holdout",
+      "prompt": "Search the web for one notable AI news headline from this week, with the source link."
+    }
+  ]
+}

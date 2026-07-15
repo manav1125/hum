@@ -1,0 +1,36 @@
+{
+  "skill": "tasks",
+  "note": "Task-capture reliability. Each prompt should create a work item via task_list_add. Scorer checks the add actually fired, no error, a real confirmation (not a hallucinated 'it's in My Day'), and no failure phrasing.",
+  "tasks": [
+    {
+      "id": "dentist",
+      "split": "train",
+      "prompt": "Add a task to call the dentist and book a cleaning for next week."
+    },
+    {
+      "id": "invoice",
+      "split": "train",
+      "prompt": "Remind me to send the Q3 invoice to the AEF fund on Friday."
+    },
+    {
+      "id": "groceries",
+      "split": "train",
+      "prompt": "Add a to-do: buy oat milk, spinach, and coffee beans."
+    },
+    {
+      "id": "deck",
+      "split": "train",
+      "prompt": "Add a task: finish the pitch deck edits before the Monday board call."
+    },
+    {
+      "id": "followup",
+      "split": "holdout",
+      "prompt": "Remind me to follow up with the Brinc portfolio founders about their metrics."
+    },
+    {
+      "id": "gym",
+      "split": "holdout",
+      "prompt": "Add a recurring reminder to go to the gym tomorrow morning."
+    }
+  ]
+}

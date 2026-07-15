@@ -15,8 +15,14 @@ import { fileURLToPath } from "node:url";
 
 import { BASE, sendTask, waitForCompletion } from "./lib.mjs";
 import { scoreAppBuilder } from "./score-app-builder.mjs";
+import { scoreTasks } from "./score-tasks.mjs";
+import { scoreWebResearch } from "./score-web-research.mjs";
 
-const SCORERS = { "app-builder": scoreAppBuilder };
+const SCORERS = {
+  "app-builder": scoreAppBuilder,
+  tasks: scoreTasks,
+  "web-research": scoreWebResearch,
+};
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const [taskfile, ...rest] = process.argv.slice(2);
@@ -53,36 +59,53 @@ console.error(
   `[${suite.skill}] ${label}: ${tasks.length} tasks against ${BASE}`,
 );
 
-// Fan out all rollouts, then await each. Unique conversation keys per run.
-const runs = tasks.map((t) => {
+// Roll out one task end-to-end (send → wait → score). Errors never throw.
+async function rollout(t) {
   const key = `eval-${suite.skill}-${t.id}-${stamp}`;
-  return (async () => {
-    try {
-      await sendTask(key, t.prompt);
-      const messages = await waitForCompletion(t.prompt);
-      const score = messages
-        ? scorer(messages)
-        : {
-            total: 0,
-            max: 10,
-            parts: {},
-            finalText: "(timeout — no transcript)",
-          };
-      return { id: t.id, split: t.split, ...score };
-    } catch (err) {
-      return {
-        id: t.id,
-        split: t.split,
-        total: 0,
-        max: 10,
-        parts: {},
-        finalText: `(rollout error: ${err.message})`,
-      };
-    }
-  })();
-});
+  try {
+    await sendTask(key, t.prompt);
+    const messages = await waitForCompletion(t.prompt);
+    const score = messages
+      ? scorer(messages)
+      : {
+          total: 0,
+          max: 10,
+          parts: {},
+          finalText: "(timeout — no transcript)",
+        };
+    // Tool names used, for the optimizer's failure analysis.
+    const tools = messages
+      ? [
+          ...new Set(
+            [...JSON.stringify(messages).matchAll(/"name":"([a-z_]+)"/g)].map(
+              (m) => m[1],
+            ),
+          ),
+        ]
+      : [];
+    return { id: t.id, split: t.split, prompt: t.prompt, tools, ...score };
+  } catch (err) {
+    return {
+      id: t.id,
+      split: t.split,
+      prompt: t.prompt,
+      tools: [],
+      total: 0,
+      max: 10,
+      parts: {},
+      finalText: `(rollout error: ${err.message})`,
+    };
+  }
+}
 
-const results = await Promise.all(runs);
+// Cap concurrency: many simultaneous heavy builds overflow the runtime provider's
+// context and skew scores. Batches of 3 keep load sane without serializing fully.
+const CONCURRENCY = Number(process.env.CUE_EVAL_CONCURRENCY || 3);
+const results = [];
+for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+  const batch = tasks.slice(i, i + CONCURRENCY);
+  results.push(...(await Promise.all(batch.map(rollout))));
+}
 const sum = results.reduce((s, r) => s + r.total, 0);
 const maxSum = results.reduce((s, r) => s + r.max, 0);
 const pct = maxSum ? Math.round((sum / maxSum) * 1000) / 10 : 0;

@@ -18,13 +18,19 @@ replaces "eyeball it" with a scored loop.
 ## Layout
 
 - `tasks/<skill>.json` — the task suite (prompt + `train`/`holdout` split).
+  Suites: **app-builder** (does it build?), **tasks** (does the add reliably
+  fire + confirm?), **web-research** (does it search + cite a real source?).
 - `lib.mjs` — drive one user turn per task against a running instance; wait for
-  the streaming build to actually complete (settles on content growth, not
-  message count — a build is one long streaming message).
-- `score-<skill>.mjs` — the objective rubric. For app-builder: `built`
-  (app_create called), `compiled`, `surfaced` (real app card, not prose),
-  `noFakeLink`, `completed`, `noError` — all checkable from the transcript.
+  the streaming turn to actually complete (settles on content growth + ends on a
+  text block, not message count — a build is one long streaming message).
+- `score-<skill>.mjs` — the objective rubric per skill, all checkable from the
+  transcript. app-builder: `built`/`compiled`/`surfaced`/`noFakeLink`/`completed`/
+  `noError`. tasks: `addCalled`/`confirmed`/`noError`/`noFakePlace`. web-research:
+  `searchCalled`/`hasSource`/`answered`/`noKeyError`.
 - `run.mjs` — fan out rollouts, score, write `results/<skill>-<label>.json`.
+- `optimize.mjs` — automated **reflect + edit**: reads the failing rollouts,
+  asks an optimizer LLM for ONE bounded SKILL.md edit, writes a proposal to
+  `proposals/` for review + gating. Does NOT auto-apply (edits must be gated).
 
 ## Run
 
@@ -53,6 +59,23 @@ The optimizer that proposes edits can be a human, a strong model, or Cue itself.
 The point SkillOpt makes — and that this harness lets us test on _our_ tasks —
 is that a hardened skill can lift a cheap runtime model's reliability by a
 model-tier's worth, without paying frontier prices at runtime.
+
+### Automating the reflect + edit (optimize.mjs)
+
+```bash
+node run.mjs tasks/app-builder.json --label baseline   # 1. rollout + score
+node optimize.mjs app-builder --label baseline          # 2. LLM proposes a bounded edit -> proposals/
+#    ...review the proposal, apply it to the SKILL.md, redeploy the daemon...
+node run.mjs tasks/app-builder.json --label edited      # 3. gate: keep only if the score rose
+```
+
+Optimizer model via `CUE_EVAL_OPTIMIZER_MODEL` (default `deepseek/deepseek-v4-flash`).
+Point it at a stronger model for bigger gains (SkillOpt: a stronger optimizer wins).
+The human stays in the loop at the apply+gate step on purpose — per **SkillLens**,
+~25% of skill edits cause _negative transfer_ (they make the agent worse), and an
+LLM judge picks the better of two skills only ~46% of the time. So: never ship an
+ungated edit, and **re-gate every skill after a model swap** — that's exactly when
+a skill can silently stop transferring.
 
 ## Caveat
 
