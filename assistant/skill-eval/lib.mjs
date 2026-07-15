@@ -110,7 +110,7 @@ async function findConversation(prompt) {
  */
 export async function waitForCompletion(
   prompt,
-  { maxMs = 360_000, quietMs = 30_000, pollMs = 6_000 } = {},
+  { maxMs = 420_000, quietMs = 60_000, pollMs = 6_000 } = {},
 ) {
   const start = Date.now();
   let lastSig = "";
@@ -135,9 +135,15 @@ export async function waitForCompletion(
       lastChange = Date.now();
       continue;
     }
+    // A turn that ends on a tool_use/surface block is still running (waiting on
+    // a tool result or the next step). It's only done when the newest assistant
+    // message's LAST content block is text AND the transcript has been quiet —
+    // this is what stops us scoring a mid-build snapshot during a long pause.
     const last = ms[ms.length - 1];
-    const settled =
-      last && last.role === "assistant" && Date.now() - lastChange >= quietMs;
+    const blocks = last?.contentBlocks || [];
+    const lastBlockType = blocks.length ? blocks[blocks.length - 1].type : null;
+    const endsOnText = last?.role === "assistant" && lastBlockType === "text";
+    const settled = endsOnText && Date.now() - lastChange >= quietMs;
     if (settled) return ms;
   }
   return convId ? await messages(convId) : null;

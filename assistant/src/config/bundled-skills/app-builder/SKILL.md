@@ -20,6 +20,16 @@ Load `frontend-design` first (`skill_load("frontend-design")`), then move fast: 
 
 **Design quality is delegated to the `frontend-design` skill. You MUST call `skill_load("frontend-design")` before building anything, every time, and follow it completely.** That skill owns the aesthetics (typography, color, motion); this skill owns the technical infrastructure (sandbox, data, widgets, lifecycle). Skipping the load gives generic, templated UI, which is a failed build.
 
+### Execution discipline — how to actually build (read this first)
+
+The app is built ONLY by calling the real tools, and only a finished, compiled app counts. Two failure modes to avoid completely:
+
+1. **Never write the app as chat text.** Do NOT paste HTML/CSS/TSX, code blocks, file contents, or tool-call JSON (e.g. ```` ```json {"skill":...} ```` or `<use_parallel_tool_calls>`) into your message. Writing code in the chat builds nothing — the user gets a wall of text and no app. The ONLY way to create files is the `file_write` / `app_create` tools. If you catch yourself typing a code fence, stop and make the tool call instead.
+
+2. **Don't narrate a plan and stop.** One short sentence of preamble is the max. Do not end your turn after saying "Let me build this" or describing a plan — that leaves the user with nothing. In the SAME turn, carry the build all the way through: `skill_load("app-builder")` + `skill_load("frontend-design")` → `app_create` (scaffold) → `file_write` the real files → `app_refresh`. Only stop once the app has compiled and the Open card has surfaced.
+
+A turn that ends without a compiled app and a surfaced card is a failed build, no matter how good the description sounds.
+
 ---
 
 ## Scope — what belongs here, what doesn't
