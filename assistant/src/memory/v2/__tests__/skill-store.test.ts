@@ -57,6 +57,23 @@ interface BackfillCall {
   allowedSuffixes: ReadonlySet<string>;
 }
 
+interface MarketplaceItemStub {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string;
+  source: string;
+  sourceLabel: string;
+  skillPath: string;
+  ref: string;
+  capabilities: {
+    secrets: string[];
+    connectors: string[];
+    network: string[];
+    writes: string[];
+  };
+}
+
 interface TestState {
   catalog: SkillSummary[] | null;
   resolved: ResolvedSkill[] | null;
@@ -65,7 +82,9 @@ interface TestState {
   flagsEnabled: Record<string, boolean>;
   embedThrows: Error | null;
   embedReturn: number[][];
+  embedInputs: string[];
   sparseReturn: { indices: number[]; values: number[] };
+  sparseInputs: string[];
   upsertCalls: UpsertCall[];
   pruneCalls: PruneCall[];
   upsertThrows: Error | null;
@@ -73,6 +92,9 @@ interface TestState {
   backfillReturn: number;
   backfillThrows: Error | null;
   callSequence: Array<"upsert" | "prune" | "backfill">;
+  marketplaceEnabled: boolean;
+  marketplaceItems: MarketplaceItemStub[];
+  marketplaceThrows: Error | null;
 }
 
 const state: TestState = {
@@ -83,7 +105,9 @@ const state: TestState = {
   flagsEnabled: {},
   embedThrows: null,
   embedReturn: [],
+  embedInputs: [],
   sparseReturn: { indices: [1], values: [1] },
+  sparseInputs: [],
   upsertCalls: [],
   pruneCalls: [],
   upsertThrows: null,
@@ -91,6 +115,9 @@ const state: TestState = {
   backfillReturn: 0,
   backfillThrows: null,
   callSequence: [],
+  marketplaceEnabled: true,
+  marketplaceItems: [],
+  marketplaceThrows: null,
 };
 
 // Stub config so resolveSkillStates / mcp augmentation have something to read.
@@ -141,15 +168,19 @@ mock.module("../../../config/assistant-feature-flags.js", () => ({
 }));
 
 mock.module("../../embedding-backend.js", () => ({
-  embedWithBackend: async (_config: unknown, inputs: unknown[]) => {
+  embedWithBackend: async (_config: unknown, inputs: string[]) => {
     if (state.embedThrows) throw state.embedThrows;
+    state.embedInputs.push(...inputs);
     // Echo the configured per-call vectors back, padded if needed.
     const vectors = state.embedReturn.length
       ? state.embedReturn
       : inputs.map(() => [0.1, 0.2, 0.3]);
     return { provider: "local", model: "test-model", vectors };
   },
-  generateSparseEmbedding: () => state.sparseReturn,
+  generateSparseEmbedding: (input: string) => {
+    state.sparseInputs.push(input);
+    return state.sparseReturn;
+  },
 }));
 
 mock.module("../qdrant.js", () => ({
@@ -185,6 +216,17 @@ mock.module("../../../skills/catalog-cache.js", () => ({
   },
 }));
 
+mock.module("../../../skills/marketplace/flag.js", () => ({
+  isMarketplaceEnabled: () => state.marketplaceEnabled,
+}));
+
+mock.module("../../../skills/marketplace/indexer.js", () => ({
+  listCachedMarketplaceItems: () => {
+    if (state.marketplaceThrows) throw state.marketplaceThrows;
+    return state.marketplaceItems;
+  },
+}));
+
 // Imported AFTER all mocks are wired so the module under test sees the stubs.
 const {
   seedV2SkillEntries,
@@ -210,6 +252,23 @@ function makeSummary(overrides: Partial<SkillSummary> = {}): SkillSummary {
   };
 }
 
+function makeMarketplaceItem(
+  overrides: Partial<MarketplaceItemStub> = {},
+): MarketplaceItemStub {
+  return {
+    id: "acme--tools--widgets",
+    name: "widgets",
+    displayName: "Widgets",
+    description: "Makes widgets",
+    source: "acme/tools",
+    sourceLabel: "Acme tools",
+    skillPath: "widgets",
+    ref: "main",
+    capabilities: { secrets: [], connectors: [], network: [], writes: [] },
+    ...overrides,
+  };
+}
+
 function resetState(): void {
   state.catalog = [];
   state.resolved = [];
@@ -218,7 +277,9 @@ function resetState(): void {
   state.flagsEnabled = {};
   state.embedThrows = null;
   state.embedReturn = [];
+  state.embedInputs.length = 0;
   state.sparseReturn = { indices: [1], values: [1] };
+  state.sparseInputs.length = 0;
   state.upsertCalls.length = 0;
   state.pruneCalls.length = 0;
   state.upsertThrows = null;
@@ -226,6 +287,9 @@ function resetState(): void {
   state.backfillReturn = 0;
   state.backfillThrows = null;
   state.callSequence.length = 0;
+  state.marketplaceEnabled = true;
+  state.marketplaceItems = [];
+  state.marketplaceThrows = null;
   _resetSkillStoreForTests();
 }
 
@@ -771,6 +835,182 @@ Write a local article draft.
 
     expect(state.upsertCalls).toHaveLength(1);
     expect(state.pruneCalls).toHaveLength(0);
+  });
+
+  test("embeds the rich embeddingContent while the cached content stays short", async () => {
+    // Enough activation hints that the combined prose passes the 500-char
+    // injection cap: the embedded text (dense batch input AND sparse encode
+    // input) must be the rich form with every hint, while the cached
+    // `content` the injection renderer reads stays capped at 500.
+    const activationHints = Array.from(
+      { length: 12 },
+      (_, i) => `user asks about scenario number ${i} involving many words`,
+    );
+    const lastHint = activationHints[activationHints.length - 1]!;
+    const skillA = makeSummary({
+      id: "example-skill-a",
+      displayName: "Skill A",
+      activationHints,
+      avoidWhen: ["the trailing avoid-when hint"],
+    });
+    state.catalog = [skillA];
+    state.resolved = [{ summary: skillA, state: "enabled" }];
+    state.embedReturn = [[0.1, 0.2, 0.3]];
+
+    await seedV2SkillEntries();
+
+    expect(state.embedInputs).toHaveLength(1);
+    const embedded = state.embedInputs[0]!;
+    expect(embedded.length).toBeGreaterThan(500);
+    expect(embedded).toContain(lastHint);
+    expect(embedded).toContain("Avoid when: the trailing avoid-when hint.");
+    // Sparse channel encodes the same rich form.
+    expect(state.sparseInputs).toEqual([embedded]);
+
+    const entry = getSkillCapability("example-skill-a");
+    expect(entry).not.toBeNull();
+    expect(entry!.content.length).toBeLessThanOrEqual(500);
+    expect(entry!.content).not.toContain(lastHint);
+    expect(entry!.embeddingContent).toBe(embedded);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Third-party marketplace seeding
+  // ---------------------------------------------------------------------------
+
+  test("seeds cached marketplace items under skills/marketplace/<id> with not-installed content", async () => {
+    const installed = makeSummary({ id: "example-skill-a" });
+    state.catalog = [installed];
+    state.resolved = [{ summary: installed, state: "enabled" }];
+    state.fullCatalog = [
+      { id: "example-skill-a", name: "example-skill-a", description: "A" },
+    ];
+    state.marketplaceItems = [makeMarketplaceItem()];
+    state.embedReturn = [
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ];
+
+    await seedV2SkillEntries();
+
+    const slugs = state.upsertCalls.map((c) => c.slug).sort();
+    expect(slugs).toEqual([
+      "skills/example-skill-a",
+      "skills/marketplace/acme--tools--widgets",
+    ]);
+    const marketplaceUpsert = state.upsertCalls.find(
+      (c) => c.slug === "skills/marketplace/acme--tools--widgets",
+    )!;
+    expect(marketplaceUpsert.kind).toBe("skill");
+
+    // The cache resolves the entry by unified slug and flags it marketplace.
+    const entry = getSkillCapability("skills/marketplace/acme--tools--widgets");
+    expect(entry).not.toBeNull();
+    expect(entry!.marketplace).toBe(true);
+    expect(entry!.content).toContain("NOT installed");
+    expect(entry!.content).toContain("skill marketplace");
+    expect(entry!.content).toContain("acme--tools--widgets");
+
+    // The prune except-list covers the marketplace suffix so the fresh
+    // point survives the same-run prune.
+    expect(state.pruneCalls).toHaveLength(1);
+    expect([...state.pruneCalls[0].activeSuffixes].sort()).toEqual([
+      "example-skill-a",
+      "marketplace/acme--tools--widgets",
+    ]);
+  });
+
+  test("slugifies marketplace ids with uppercase and dots into slug-safe suffixes", async () => {
+    state.catalog = [];
+    state.resolved = [];
+    state.marketplaceItems = [
+      makeMarketplaceItem({ id: "Acme.Corp--My_Tools--PDF.Widgets" }),
+    ];
+    state.embedReturn = [[0.1, 0.2, 0.3]];
+
+    await seedV2SkillEntries();
+
+    expect(state.upsertCalls).toHaveLength(1);
+    expect(state.upsertCalls[0].slug).toBe(
+      "skills/marketplace/acme-corp--my-tools--pdf-widgets",
+    );
+  });
+
+  test("skips marketplace items whose id matches an installed or catalog skill", async () => {
+    // An installed marketplace skill lives in the managed dir under the same
+    // namespaced id — it is already seeded as a loadable skill and must not
+    // be double-seeded as a not-installed marketplace listing.
+    const installedMarketplace = makeSummary({
+      id: "acme--tools--widgets",
+      displayName: "Widgets",
+    });
+    state.catalog = [installedMarketplace];
+    state.resolved = [{ summary: installedMarketplace, state: "enabled" }];
+    state.fullCatalog = [
+      { id: "catalog-skill", name: "catalog-skill", description: "C" },
+    ];
+    state.marketplaceItems = [
+      makeMarketplaceItem({ id: "acme--tools--widgets" }),
+      makeMarketplaceItem({ id: "catalog-skill", displayName: "Catalog" }),
+    ];
+    state.embedReturn = [
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ];
+
+    await seedV2SkillEntries();
+
+    const slugs = state.upsertCalls.map((c) => c.slug).sort();
+    expect(slugs).toEqual([
+      "skills/acme--tools--widgets",
+      "skills/catalog-skill",
+    ]);
+  });
+
+  test("seeds no marketplace entries when the local index is empty", async () => {
+    const skillA = makeSummary({ id: "example-skill-a" });
+    state.catalog = [skillA];
+    state.resolved = [{ summary: skillA, state: "enabled" }];
+    state.marketplaceItems = [];
+    state.embedReturn = [[0.1, 0.2, 0.3]];
+
+    await seedV2SkillEntries();
+
+    expect(state.upsertCalls.map((c) => c.slug)).toEqual([
+      "skills/example-skill-a",
+    ]);
+  });
+
+  test("seeds no marketplace entries when the marketplace is disabled", async () => {
+    const skillA = makeSummary({ id: "example-skill-a" });
+    state.catalog = [skillA];
+    state.resolved = [{ summary: skillA, state: "enabled" }];
+    state.marketplaceEnabled = false;
+    state.marketplaceItems = [makeMarketplaceItem()];
+    state.embedReturn = [[0.1, 0.2, 0.3]];
+
+    await seedV2SkillEntries();
+
+    expect(state.upsertCalls.map((c) => c.slug)).toEqual([
+      "skills/example-skill-a",
+    ]);
+  });
+
+  test("marketplace enumeration failure is non-fatal — loadable skills still seed", async () => {
+    const skillA = makeSummary({ id: "example-skill-a" });
+    state.catalog = [skillA];
+    state.resolved = [{ summary: skillA, state: "enabled" }];
+    state.marketplaceThrows = new Error("cache dir unreadable");
+    state.embedReturn = [[0.1, 0.2, 0.3]];
+
+    await expect(
+      seedV2SkillEntries({ throwOnError: true }),
+    ).resolves.toBeUndefined();
+
+    expect(state.upsertCalls.map((c) => c.slug)).toEqual([
+      "skills/example-skill-a",
+    ]);
+    expect(getSkillCapability("example-skill-a")).not.toBeNull();
   });
 });
 

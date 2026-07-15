@@ -914,7 +914,13 @@ async function renderInjectionBlock(
   for (const slug of skillSlugs) {
     const entry = getSkillCapability(slug);
     if (!entry) continue;
-    skillLines.push(`- ${entry.content} → use skill_load to activate`);
+    // Marketplace entries (seeded under `skills/marketplace/<id>`) are NOT
+    // installed — they cannot be loaded with skill_load. Label them so the
+    // model asks the user to install instead of attempting a load.
+    const suffix = entry.marketplace
+      ? "→ NOT installed; available in the skill marketplace — ask the user to install it from the marketplace UI"
+      : "→ use skill_load to activate";
+    skillLines.push(`- ${entry.content} ${suffix}`);
   }
   if (skillLines.length > 0) {
     sections.push(`### Skills You Can Use\n${skillLines.join("\n")}`);

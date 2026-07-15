@@ -129,9 +129,22 @@ export type ActivationState = z.infer<typeof ActivationStateSchema>;
 /**
  * Per-skill capability snapshot held in-process and embedded into the unified
  * `memory_v2_concept_pages` Qdrant collection under the slug `skills/<id>`.
- * `content` is the rendered `buildSkillContent` string — already capped at
- * 500 chars upstream and already containing the skill's display name — and
- * is what we embed and what we render verbatim in `### Skills You Can Use`.
+ *
+ * The rendered text is split into two forms so retrieval recall and injection
+ * compactness don't fight over one cap:
+ *  - `content` is the SHORT rendered `buildSkillContent` string (capped at
+ *    500 chars, already containing the skill's display name). It is what we
+ *    render verbatim in `### Skills You Can Use` and in the page index.
+ *  - `embeddingContent` is the RICH form (capped at ~1500 chars, includes the
+ *    full activation-hints / avoid-when lists that the short cap truncates).
+ *    It is what we embed (dense + sparse). Optional so in-process consumers
+ *    and tests that only care about the injected form can omit it; readers
+ *    fall back to `content` when absent.
+ *
+ * `marketplace` marks third-party marketplace skills that are NOT installed —
+ * they are seeded under `skills/marketplace/<id>` so they are discoverable in
+ * the same embedding space, and the injection renderer labels them as
+ * requiring a user install instead of `skill_load`.
  *
  * Plain interface (no Zod) because skill data does not cross a serialization
  * boundary: it is built in-process by `seedV2SkillEntries` and read in-process
@@ -141,6 +154,8 @@ export type ActivationState = z.infer<typeof ActivationStateSchema>;
 export interface SkillEntry {
   id: string;
   content: string;
+  embeddingContent?: string;
+  marketplace?: boolean;
 }
 
 // ---------------------------------------------------------------------------

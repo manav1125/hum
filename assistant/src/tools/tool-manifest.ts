@@ -11,6 +11,7 @@ import {
   isCesSecureInstallEnabled,
   isCesToolsEnabled,
 } from "../credential-execution/feature-gates.js";
+import { getA2AOutboundToolsIfEnabled } from "./a2a/send.js";
 import { askQuestionTool } from "./ask-question/ask-question-tool.js";
 import { makeAuthenticatedRequestTool } from "./credential-execution/make-authenticated-request.js";
 import { manageSecureCommandTool } from "./credential-execution/manage-secure-command-tool.js";
@@ -25,6 +26,7 @@ import { webFetchTool } from "./network/web-fetch.js";
 import { webSearchTool } from "./network/web-search.js";
 import { skillExecuteTool } from "./skills/execute.js";
 import { skillLoadTool } from "./skills/load.js";
+import { skillSearchTool } from "./skills/search.js";
 import { notifyParentTool } from "./subagent/notify-parent.js";
 import { requestSystemPermissionTool } from "./system/request-permission.js";
 import { shellTool } from "./terminal/shell.js";
@@ -64,6 +66,7 @@ export const eagerModuleToolNames: string[] = [
   "web_fetch",
   "skill_execute",
   "skill_load",
+  "skill_search",
   "request_system_permission",
   "notify_parent",
 ];
@@ -86,6 +89,7 @@ export const explicitTools: ToolDefinition[] = [
   webSearchTool,
   skillExecuteTool,
   skillLoadTool,
+  skillSearchTool,
   requestSystemPermissionTool,
   // Always-explicit tools
   rememberTool,
@@ -93,6 +97,12 @@ export const explicitTools: ToolDefinition[] = [
   credentialStoreTool,
   notifyParentTool,
   askQuestionTool,
+  // A2A outbound send — DORMANT unless env CUE_A2A_OUTBOUND=1 is set at
+  // process start. When the flag is absent this spread is empty, so the
+  // tool is never registered and the model never sees it. The env var is
+  // read once at first module evaluation (daemon startup), matching the
+  // process-lifetime semantics of env-gated features.
+  ...getA2AOutboundToolsIfEnabled(),
   // NOTE: external skill tools (registered via registerExternalTools in
   // registry.ts) are intentionally NOT included here. `explicitTools` is a
   // module-level const whose value is fixed at first evaluation, so

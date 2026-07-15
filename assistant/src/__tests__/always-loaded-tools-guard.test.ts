@@ -28,7 +28,7 @@ afterAll(() => {
 });
 
 describe("always-loaded tool count", () => {
-  test("should be exactly 11 with recall occupying the existing slot", async () => {
+  test("should be exactly 12 with recall occupying the existing slot", async () => {
     await initializeTools();
     const allDefs = getAllToolDefinitions();
 
@@ -60,12 +60,13 @@ describe("always-loaded tool count", () => {
       "remember",
       "skill_execute",
       "skill_load",
+      "skill_search",
       "web_fetch",
       "web_search",
     ].sort();
 
     expect(activeNames).toEqual(expectedNames);
     expect(activeNames.filter((name) => name === "recall")).toHaveLength(1);
-    expect(activeTools.length).toBe(11);
+    expect(activeTools.length).toBe(12);
   });
 });

@@ -992,6 +992,56 @@ describe("injectMemoryV2Block", () => {
     expect(skillIdx).toBeGreaterThan(headerIdx);
   });
 
+  test("labels marketplace skill entries as not-installed instead of skill_load", async () => {
+    // A marketplace entry (seeded under `skills/marketplace/<id>`, flagged
+    // `marketplace: true`) is NOT loadable — the renderer must direct the
+    // model to ask the user to install it, not to call skill_load. A
+    // loadable skill in the same block keeps the skill_load suffix.
+    stageTurn([
+      { slug: "skills/marketplace/acme--tools--widgets", denseScore: 0.9 },
+      { slug: "skills/loadable-skill", denseScore: 0.8 },
+    ]);
+    stageSkills([
+      {
+        id: "marketplace/acme--tools--widgets",
+        content:
+          'The "Widgets" skill (acme--tools--widgets) is available in the skill marketplace but is NOT installed. Makes widgets.',
+        marketplace: true,
+      },
+      {
+        id: "loadable-skill",
+        content:
+          'The "Loadable Skill" skill (loadable-skill) is available. Loads things.',
+      },
+    ]);
+
+    const result = await injectMemoryV2Block({
+      database: db,
+      conversationId: "conv-1",
+      currentTurn: 1,
+      recentTurnPairs: [
+        { assistantMessage: "", userMessage: "Help me make widgets" },
+      ],
+      nowText: "Now",
+      messageId: "msg-1",
+      config: makeConfig(),
+    });
+
+    expect(result.block).not.toBeNull();
+    expect(result.block).toContain(
+      '- The "Widgets" skill (acme--tools--widgets) is available in the skill marketplace but is NOT installed. Makes widgets. → NOT installed; available in the skill marketplace — ask the user to install it from the marketplace UI',
+    );
+    expect(result.block).toContain(
+      '- The "Loadable Skill" skill (loadable-skill) is available. Loads things. → use skill_load to activate',
+    );
+    // The marketplace bullet must not carry the skill_load suffix.
+    const marketplaceLine = result
+      .block!.split("\n")
+      .find((line) => line.includes("acme--tools--widgets"));
+    expect(marketplaceLine).toBeDefined();
+    expect(marketplaceLine).not.toContain("skill_load");
+  });
+
   test("renders concept-page sections before the skills subsection in mixed blocks", async () => {
     // Concept page hit AND a skill — concept-page sections come first, then
     // the skills subsection.

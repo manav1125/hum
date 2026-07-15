@@ -108,7 +108,7 @@ describe("tool registry dynamic-tools tools", () => {
 
 describe("tool manifest", () => {
   test("eager module tool names list contains expected count", () => {
-    expect(eagerModuleToolNames.length).toBe(11);
+    expect(eagerModuleToolNames.length).toBe(12);
   });
 
   test("explicit tools list includes memory and credential tools", () => {

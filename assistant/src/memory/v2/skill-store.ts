@@ -3,10 +3,15 @@
 // ---------------------------------------------------------------------------
 //
 // Enumerate the enabled-skill catalog AND uninstalled catalog skills, render
-// each skill's prose statement via `buildSkillContent`, embed dense + sparse,
+// each skill's prose statement via `buildSkillContents` (a short injected
+// form plus a rich embedded form), embed dense + sparse from the rich form,
 // and upsert into `memory_v2_concept_pages` under the slug `skills/<id>`.
 // Including uninstalled catalog skills ensures their activation hints are
-// discoverable by intent so the model can auto-install them.
+// discoverable by intent so the model can auto-install them. Third-party
+// marketplace skills already present in the local marketplace index caches
+// are additionally seeded under `skills/marketplace/<id>` so they are
+// discoverable in the same embedding space — labeled not-installed so the
+// renderer directs the model to ask the user to install them.
 //
 // Skills share the concept-page collection rather than living in a dedicated
 // one so the per-turn activation pipeline scores them against the same
@@ -24,6 +29,8 @@ import { getConfig } from "../../config/loader.js";
 import { resolveSkillStates } from "../../config/skill-state.js";
 import { loadSkillCatalog } from "../../config/skills.js";
 import { getCatalog } from "../../skills/catalog-cache.js";
+import { isMarketplaceEnabled } from "../../skills/marketplace/flag.js";
+import { listCachedMarketplaceItems } from "../../skills/marketplace/indexer.js";
 import {
   fromCatalogSkill,
   fromSkillSummary,
@@ -42,7 +49,8 @@ import {
 } from "./qdrant.js";
 import {
   augmentMcpSetupDescription,
-  buildSkillContent,
+  buildMarketplaceSkillContents,
+  buildSkillContents,
 } from "./skill-content.js";
 import {
   generateBm25DocEmbedding,
@@ -71,6 +79,36 @@ const SKILL_PAYLOAD_KIND = "skill";
 /** Compose the unified-collection slug for a skill id. */
 export function skillSlugFor(id: string): string {
   return `${SKILL_SLUG_PREFIX}${id}`;
+}
+
+/**
+ * Slug prefix for third-party marketplace skills (not installed, discoverable
+ * via the marketplace UI). Nested under `skills/` so the injection router's
+ * `isSkillSlug` branch still claims them; the extra segment lets the renderer
+ * (and anything reading raw slugs) tell a marketplace listing apart from a
+ * loadable skill.
+ */
+export const MARKETPLACE_SKILL_SLUG_PREFIX = `${SKILL_SLUG_PREFIX}marketplace/`;
+
+/** True iff the slug refers to a third-party marketplace skill entry. */
+export function isMarketplaceSkillSlug(slug: string): boolean {
+  return slug.startsWith(MARKETPLACE_SKILL_SLUG_PREFIX);
+}
+
+/**
+ * Compose the `skills/`-relative slug suffix for a marketplace item id.
+ * Marketplace ids (`{owner}--{repo}--{skillName}`) may carry uppercase, dots,
+ * or underscores from repo/folder names; concept-page slugs are constrained
+ * to `[a-z0-9][a-z0-9-]*(/...)*`, so the id is lowercased and disallowed
+ * runs collapse to `-`. Returns `null` when nothing slug-safe remains.
+ */
+function marketplaceSlugSuffixFor(itemId: string): string | null {
+  const slugified = itemId
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!slugified) return null;
+  return `marketplace/${slugified}`;
 }
 
 /**
@@ -110,15 +148,21 @@ let legacyKindBackfillDone = false;
  *   1. Enumerate the local skill catalog and resolve each skill's enabled
  *      state (`resolveSkillStates`).
  *   2. Build a `SkillEntry` per enabled skill, applying the mcp-setup
- *      augmentation and the prose-style content render (`buildSkillContent`,
- *      capped at 500 chars).
+ *      augmentation and the prose-style content render (`buildSkillContents`:
+ *      a short injected form capped at 500 chars plus a rich embedded form
+ *      capped at 1500 chars carrying the full hint lists).
  *   3. Defense-in-depth feature-flag filter: drop any skill whose declared
  *      `metadata.vellum.feature-flag` is currently disabled.
  *   3b. Fetch the full remote catalog and seed any uninstalled skills so
  *      their activation hints are discoverable by semantic search. Best-effort:
  *      if the catalog fetch fails, only installed skills are seeded.
- *   4. Embed all `content` strings in a single dense `embedWithBackend` call,
- *      and a per-skill synchronous `generateSparseEmbedding`.
+ *   3c. Enumerate third-party skills from the on-disk marketplace index
+ *      caches (no network) and seed them under `skills/marketplace/<id>`,
+ *      flagged `marketplace: true` and worded as not-installed. Skipped when
+ *      the marketplace is disabled or nothing has been indexed locally.
+ *   4. Embed all `embeddingContent` strings in a single dense
+ *      `embedWithBackend` call, and a per-skill synchronous sparse encode of
+ *      the same rich form.
  *   5. Upsert one Qdrant point per skill via `upsertConceptPageEmbedding`
  *      keyed deterministically on slug `skills/<id>`.
  *   6. Call `pruneSlugsWithPrefixExcept(SKILL_SLUG_PREFIX, ...)` to drop any
@@ -188,8 +232,7 @@ async function runSeedV2SkillEntries(generation: number): Promise<void> {
       if (flagKey && !isAssistantFeatureFlagEnabled(flagKey, config)) continue;
 
       const augmented = augmentMcpSetupDescription(fromSkillSummary(summary));
-      const content = buildSkillContent(augmented);
-      seeds.push({ id: summary.id, content });
+      seeds.push({ id: summary.id, ...buildSkillContents(augmented) });
     }
 
     // Seed uninstalled catalog skills so their activation hints are
@@ -212,13 +255,51 @@ async function runSeedV2SkillEntries(generation: number): Promise<void> {
         const flagKey = entry.metadata?.vellum?.["feature-flag"];
         if (flagKey && !isAssistantFeatureFlagEnabled(flagKey, config))
           continue;
-        const content = buildSkillContent(fromCatalogSkill(entry));
-        seeds.push({ id: entry.id, content });
+        seeds.push({
+          id: entry.id,
+          ...buildSkillContents(fromCatalogSkill(entry)),
+        });
       }
     } catch (err) {
       log.warn(
         { err },
         "Failed to fetch catalog for uninstalled skill seeding — continuing with installed skills only",
+      );
+    }
+
+    // Seed already-indexed third-party marketplace skills under
+    // `skills/marketplace/<id>` so they are discoverable in the same
+    // embedding space. Reads only the on-disk marketplace index caches —
+    // never the network — so a machine that has never opened the marketplace
+    // seeds nothing here. Items whose id matches an installed skill (a
+    // marketplace install lands in the managed dir under the same namespaced
+    // id) or a first-party catalog skill are skipped: those are already
+    // seeded above as loadable skills. Best-effort: a failure here must not
+    // block seeding of the loadable skills.
+    try {
+      if (isMarketplaceEnabled()) {
+        const seenSuffixes = new Set(seeds.map((s) => s.id));
+        for (const item of listCachedMarketplaceItems()) {
+          if (knownSkillIds.has(item.id)) continue;
+          const suffix = marketplaceSlugSuffixFor(item.id);
+          if (!suffix || seenSuffixes.has(suffix)) continue;
+          seenSuffixes.add(suffix);
+          seeds.push({
+            id: suffix,
+            ...buildMarketplaceSkillContents({
+              id: item.id,
+              displayName: item.displayName,
+              description: item.description,
+              sourceLabel: item.sourceLabel,
+            }),
+            marketplace: true,
+          });
+        }
+      }
+    } catch (err) {
+      log.warn(
+        { err },
+        "Failed to enumerate cached marketplace skills for seeding — continuing without marketplace entries",
       );
     }
 
@@ -232,9 +313,12 @@ async function runSeedV2SkillEntries(generation: number): Promise<void> {
       input: string,
     ) => ReturnType<typeof generateSparseEmbedding> = generateSparseEmbedding;
     if (seeds.length > 0) {
+      // Embed the RICH form (`embeddingContent`) so full activation-hint and
+      // avoid-when lists carry semantic weight at retrieval time; the short
+      // `content` form is what injection renders. See `buildSkillContents`.
       const embedded = await embedWithBackend(
         config,
-        seeds.map((s) => s.content),
+        seeds.map((s) => s.embeddingContent ?? s.content),
       );
       denseVectors = await Promise.all(
         embedded.vectors.map((v) =>
@@ -275,7 +359,7 @@ async function runSeedV2SkillEntries(generation: number): Promise<void> {
           upsertConceptPageEmbedding({
             slug: skillSlugFor(seed.id),
             dense: denseVectors[i],
-            sparse: encodeSparse(seed.content),
+            sparse: encodeSparse(seed.embeddingContent ?? seed.content),
             updatedAt: now,
             kind: SKILL_PAYLOAD_KIND,
           }),
