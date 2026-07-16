@@ -32,6 +32,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router";
+import { StateBadge } from "@vellumai/design-library";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { LiveDot } from "@/components/live-dot";
@@ -340,13 +341,12 @@ function NeedsYouCard({
           {item.title}
           <span
             style={{
-              fontFamily: mono,
-              fontSize: 9.5,
-              color: C.green,
-              marginLeft: 6,
+              display: "inline-flex",
+              marginLeft: 8,
+              verticalAlign: "middle",
             }}
           >
-            READY
+            <StateBadge state="review" size="sm" />
           </span>
         </div>
         <div style={{ fontSize: 12, color: C.t2, marginTop: 2 }}>
@@ -589,6 +589,9 @@ function WorkRail({
             >
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ marginBottom: 4 }}>
+                    <StateBadge state="running" size="sm" />
+                  </div>
                   <div
                     style={{
                       fontSize: 13,
