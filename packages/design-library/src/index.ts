@@ -14,11 +14,7 @@ export {
   type CardRootProps,
 } from "./components/card";
 export { FocusCard, type FocusCardProps } from "./components/focus-card";
-export {
-  Nudge,
-  type NudgeProps,
-  type NudgeTone,
-} from "./components/nudge";
+export { Nudge, type NudgeProps, type NudgeTone } from "./components/nudge";
 export {
   Chip,
   chipVariants,
@@ -41,11 +37,7 @@ export {
   type VoiceOrbProps,
   type VoiceOrbState,
 } from "./components/voice-orb";
-export {
-  Notice,
-  type NoticeProps,
-  type NoticeTone,
-} from "./components/notice";
+export { Notice, type NoticeProps, type NoticeTone } from "./components/notice";
 export { ProgressBar, type ProgressBarProps } from "./components/progress-bar";
 export {
   ResizablePanel,
@@ -57,16 +49,31 @@ export {
   type TagProps,
   type TagTone,
 } from "./components/tag";
+export { StateBadge, type StateBadgeProps } from "./components/state-badge";
+export { AgentChip, type AgentChipProps } from "./components/agent-chip";
+export {
+  WorkLoopCard,
+  type WorkLoopCardProps,
+  type WorkLoopCardAction,
+} from "./components/work-loop-card";
+export {
+  WORK_STATE_META,
+  resolveWorkLoopState,
+  workStateMeta,
+  resolveAgentIdentity,
+  type WorkLoopState,
+  type WorkItemStatus,
+  type WorkStateInput,
+  type WorkStateMeta,
+  type AgentIdentity,
+} from "./components/work-state";
 export {
   Typography,
   type TypographyProps,
   type TypographyVariant,
   type TypographyAs,
 } from "./components/typography";
-export {
-  Popover,
-  type PopoverContentProps,
-} from "./components/popover";
+export { Popover, type PopoverContentProps } from "./components/popover";
 export {
   Input,
   Textarea,
@@ -226,10 +233,7 @@ export {
   type StatSquareProps,
   type StatSquareTone,
 } from "./components/stat-square";
-export {
-  SkillRow,
-  type SkillRowProps,
-} from "./components/skill-row";
+export { SkillRow, type SkillRowProps } from "./components/skill-row";
 export {
   ShortcutKeys,
   parseAccelerator,

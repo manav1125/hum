@@ -114,98 +114,98 @@
 
   /* Moss (cool neutral — synced with macOS Figma tokens) */
   --color-moss-950: #111214;
-  --color-moss-900: #17191C;
-  --color-moss-800: #1C2024;
-  --color-moss-700: #24292E;
-  --color-moss-600: #2D3339;
-  --color-moss-500: #444D56;
-  --color-moss-400: #71808E;
-  --color-moss-300: #A9B2BB;
-  --color-moss-200: #CFCCC9;
-  --color-moss-100: #E9E6E2;
-  --color-moss-50:  #F6F5F4;
+  --color-moss-900: #17191c;
+  --color-moss-800: #1c2024;
+  --color-moss-700: #24292e;
+  --color-moss-600: #2d3339;
+  --color-moss-500: #444d56;
+  --color-moss-400: #71808e;
+  --color-moss-300: #a9b2bb;
+  --color-moss-200: #cfccc9;
+  --color-moss-100: #e9e6e2;
+  --color-moss-50: #f6f5f4;
 
   /* Stone (warm neutral — synced with macOS Figma tokens; overrides
    * Tailwind v4's default stone scale to match the assistant palette) */
   --color-stone-950: #111214;
-  --color-stone-900: #17191C;
-  --color-stone-800: #24292E;
-  --color-stone-700: #5A6672;
-  --color-stone-600: #71808E;
-  --color-stone-500: #8D99A5;
-  --color-stone-400: #A9B2BB;
-  --color-stone-300: #CFCCC9;
-  --color-stone-200: #E9E6E2;
-  --color-stone-100: #F2F0EE;
-  --color-stone-50:  #F6F5F4;
+  --color-stone-900: #17191c;
+  --color-stone-800: #24292e;
+  --color-stone-700: #5a6672;
+  --color-stone-600: #71808e;
+  --color-stone-500: #8d99a5;
+  --color-stone-400: #a9b2bb;
+  --color-stone-300: #cfccc9;
+  --color-stone-200: #e9e6e2;
+  --color-stone-100: #f2f0ee;
+  --color-stone-50: #f6f5f4;
 
   /* Forest (green accent — synced with macOS system-positive) */
-  --color-forest-950: #0D2818;
-  --color-forest-900: #1C251F;
-  --color-forest-800: #1B5E30;
-  --color-forest-700: #277E41;
-  --color-forest-600: #2E9A4E;
-  --color-forest-500: #3DB85E;
-  --color-forest-400: #6ECF87;
-  --color-forest-300: #A4E2B5;
-  --color-forest-200: #D0F0DA;
-  --color-forest-100: #E9F2EC;
+  --color-forest-950: #0d2818;
+  --color-forest-900: #1c251f;
+  --color-forest-800: #1b5e30;
+  --color-forest-700: #277e41;
+  --color-forest-600: #2e9a4e;
+  --color-forest-500: #3db85e;
+  --color-forest-400: #6ecf87;
+  --color-forest-300: #a4e2b5;
+  --color-forest-200: #d0f0da;
+  --color-forest-100: #e9f2ec;
 
   /* Emerald (success — synced with macOS system-positive; overrides
    * Tailwind v4's default emerald scale) */
-  --color-emerald-950: #0D2818;
-  --color-emerald-900: #1C251F;
-  --color-emerald-800: #1B5E30;
-  --color-emerald-700: #277E41;
-  --color-emerald-600: #2E9A4E;
-  --color-emerald-500: #3DB85E;
-  --color-emerald-400: #6ECF87;
-  --color-emerald-300: #A4E2B5;
-  --color-emerald-200: #D0F0DA;
-  --color-emerald-100: #E9F2EC;
+  --color-emerald-950: #0d2818;
+  --color-emerald-900: #1c251f;
+  --color-emerald-800: #1b5e30;
+  --color-emerald-700: #277e41;
+  --color-emerald-600: #2e9a4e;
+  --color-emerald-500: #3db85e;
+  --color-emerald-400: #6ecf87;
+  --color-emerald-300: #a4e2b5;
+  --color-emerald-200: #d0f0da;
+  --color-emerald-100: #e9f2ec;
 
   /* Danger (error/destructive) */
-  --color-danger-950: #4E281D;
+  --color-danger-950: #4e281d;
   --color-danger-900: #803017;
-  --color-danger-800: #AB3F1C;
-  --color-danger-700: #DA491A;
-  --color-danger-600: #E86B40;
-  --color-danger-500: #F39B74;
-  --color-danger-400: #F9C0A2;
-  --color-danger-300: #F7DAC9;
-  --color-danger-200: #FFE4D5;
-  --color-danger-100: #FFF3EE;
+  --color-danger-800: #ab3f1c;
+  --color-danger-700: #da491a;
+  --color-danger-600: #e86b40;
+  --color-danger-500: #f39b74;
+  --color-danger-400: #f9c0a2;
+  --color-danger-300: #f7dac9;
+  --color-danger-200: #ffe4d5;
+  --color-danger-100: #fff3ee;
 
   /* Amber (warning — synced with macOS system-mid; overrides Tailwind v4's
    * default amber scale) */
-  --color-amber-950: #4B3D1E;
-  --color-amber-900: #6B5520;
-  --color-amber-800: #8C7225;
-  --color-amber-700: #C9990F;
-  --color-amber-600: #F1B21E;
-  --color-amber-500: #F5C94E;
-  --color-amber-400: #F9D978;
-  --color-amber-300: #FCE9A0;
-  --color-amber-200: #FCF3DD;
-  --color-amber-100: #FDF8EE;
+  --color-amber-950: #4b3d1e;
+  --color-amber-900: #6b5520;
+  --color-amber-800: #8c7225;
+  --color-amber-700: #c9990f;
+  --color-amber-600: #f1b21e;
+  --color-amber-500: #f5c94e;
+  --color-amber-400: #f9d978;
+  --color-amber-300: #fce9a0;
+  --color-amber-200: #fcf3dd;
+  --color-amber-100: #fdf8ee;
 
   /* Cue brand accent — electric blue + violet. The chrome accent (links,
    * focus rings, active/selected states) tracks --accent-cue. Green is
    * reserved for success semantics only (system-positive / emerald). */
-  --accent-cue: #3D6EE8;
-  --accent-cue-strong: #2B53C4;
-  --accent-cue-weak: #DBE4FB;
-  --accent-cue-violet: #7F77DD;
-  --accent-cue-violet-strong: #534AB7;
+  --accent-cue: #3d6ee8;
+  --accent-cue-strong: #2b53c4;
+  --accent-cue-weak: #dbe4fb;
+  --accent-cue-violet: #7f77dd;
+  --accent-cue-violet-strong: #534ab7;
 
   /* Ink hero surface — the slate "Next move" FocusCard, voice mode, and
    * meeting capture. Theme-independent on purpose: the hero stays ink in
    * light, dark, and velvet (unlike --primary-base, which inverts in dark).
    * --content-on-ink-muted is the muted blue-grey used for sub-labels on ink. */
-  --surface-ink: #1A2230;
-  --surface-ink-raised: #24303F;
-  --content-on-ink: #FFFFFF;
-  --content-on-ink-muted: #9DB4E6;
+  --surface-ink: #1a2230;
+  --surface-ink-raised: #24303f;
+  --content-on-ink: #ffffff;
+  --content-on-ink-muted: #9db4e6;
 
   /* The 8-type memory palette (SourceTag) is theme-aware — defined as
    * --mem-<type>-text / --mem-<type>-bg pairs in each theme block below
@@ -272,84 +272,93 @@
 :root,
 [data-theme="light"] {
   /* Surface */
-  --surface-base: #F6F5F4;
-  --surface-overlay: #FDFDFC;
-  --surface-active: #F2F0EE;
-  --surface-lift: #FFFFFF;
+  --surface-base: #f6f5f4;
+  --surface-overlay: #fdfdfc;
+  --surface-active: #f2f0ee;
+  --surface-lift: #ffffff;
   --surface-hover: rgba(185, 180, 172, 0.08);
 
   /* Primary */
-  --primary-base: #1A2230;
-  --primary-hover: #24303F;
-  --primary-active: #2D3A4D;
-  --primary-disabled: #F6F5F4;
-  --primary-second-hover: #B9B4AC;
+  --primary-base: #1a2230;
+  --primary-hover: #24303f;
+  --primary-active: #2d3a4d;
+  --primary-disabled: #f6f5f4;
+  --primary-second-hover: #b9b4ac;
 
   /* Border */
-  --border-base: #F2F0EE;
-  --border-disabled: #E9E6E2;
-  --border-element: #CFCCC9;
-  --border-hover: #F6F5F4;
-  --border-active: #2D3339;
+  --border-base: #f2f0ee;
+  --border-disabled: #e9e6e2;
+  --border-element: #cfccc9;
+  --border-hover: #f6f5f4;
+  --border-active: #2d3339;
 
   /* Content. The 5-step intensity ramp (emphasised > default > secondary >
    * tertiary > disabled) covers most text. `quiet`, `faint`, and `strong`
    * are platform-de-facto pairs — they exist because component code uses
    * specific shades the ramp doesn't name. See dark-mode block for full
    * pair semantics. */
-  --content-default: #24292E;
+  --content-default: #24292e;
   --content-emphasised: #161616;
-  --content-secondary: #5A6672;
-  --content-tertiary: #71808E;
-  --content-quiet: #8D99A5;     /* between tertiary and disabled */
-  --content-strong: #24292E;    /* = default in light, slightly muted in dark */
-  --content-faint: #A9B2BB;     /* lighter than disabled */
-  --content-disabled: #CFCCC9;
-  --content-inset: #FDFDFC;
+  --content-secondary: #5a6672;
+  --content-tertiary: #71808e;
+  --content-quiet: #8d99a5; /* between tertiary and disabled */
+  --content-strong: #24292e; /* = default in light, slightly muted in dark */
+  --content-faint: #a9b2bb; /* lighter than disabled */
+  --content-disabled: #cfccc9;
+  --content-inset: #fdfdfc;
 
   /* Surface (extras beyond the base/overlay/active/lift/hover ramp) */
-  --surface-sunken: #F6F5F4;    /* = surface-base in light; recessed in dark */
+  --surface-sunken: #f6f5f4; /* = surface-base in light; recessed in dark */
 
   /* Border (extras beyond base/disabled/element/hover/active/overlay) */
-  --border-subtle: #E9E6E2;     /* = border-disabled in light; soft in dark */
+  --border-subtle: #e9e6e2; /* = border-disabled in light; soft in dark */
 
   /* System */
-  --system-positive-strong: #277E41;
-  --system-positive-weak: #E9F2EC;
-  --system-negative-strong: #DA491A;
-  --system-negative-hover: #E86B40;
-  --system-negative-weak: #F7DAC9;
-  --system-mid-strong: #F1B21E;
-  --system-mid-weak: #FCF3DD;
-  --system-info-strong: #3D6EE8;
-  --system-info-weak: #DBE4FB;
+  --system-positive-strong: #277e41;
+  --system-positive-weak: #e9f2ec;
+  --system-negative-strong: #da491a;
+  --system-negative-hover: #e86b40;
+  --system-negative-weak: #f7dac9;
+  --system-mid-strong: #f1b21e;
+  --system-mid-weak: #fcf3dd;
+  --system-info-strong: #3d6ee8;
+  --system-info-weak: #dbe4fb;
 
   /* 8-type memory palette (SourceTag) — light. semantic=blue, prospective=
    * violet are fixed; the rest are mutually distinct and avoid success-green. */
-  --mem-semantic-text: #2B53C4;     --mem-semantic-bg: #DBE4FB;
-  --mem-prospective-text: #534AB7;  --mem-prospective-bg: #E7E5FB;
-  --mem-episodic-text: #8C6A0A;     --mem-episodic-bg: #F7ECCB;
-  --mem-procedural-text: #0A6E62;   --mem-procedural-bg: #CFEDE8;
-  --mem-emotional-text: #993556;    --mem-emotional-bg: #F8DCE6;
-  --mem-behavioral-text: #8A4226;   --mem-behavioral-bg: #F6DDD2;
-  --mem-narrative-text: #722B62;    --mem-narrative-bg: #F2D9EC;
-  --mem-shared-text: #424A54;       --mem-shared-bg: #E3E7EC;
+  --mem-semantic-text: #2b53c4;
+  --mem-semantic-bg: #dbe4fb;
+  --mem-prospective-text: #534ab7;
+  --mem-prospective-bg: #e7e5fb;
+  --mem-episodic-text: #8c6a0a;
+  --mem-episodic-bg: #f7eccb;
+  --mem-procedural-text: #0a6e62;
+  --mem-procedural-bg: #cfede8;
+  --mem-emotional-text: #993556;
+  --mem-emotional-bg: #f8dce6;
+  --mem-behavioral-text: #8a4226;
+  --mem-behavioral-bg: #f6ddd2;
+  --mem-narrative-text: #722b62;
+  --mem-narrative-bg: #f2d9ec;
+  --mem-shared-text: #424a54;
+  --mem-shared-bg: #e3e7ec;
 
   /* Feed identifier */
-  --feed-nudge-strong: #DB4B77;
-  --feed-nudge-weak: #F0D9E0;
-  --feed-digest-strong: #0E9B8B;
-  --feed-digest-weak: #C8E5E2;
+  --feed-nudge-strong: #db4b77;
+  --feed-nudge-weak: #f0d9e0;
+  --feed-digest-strong: #0e9b8b;
+  --feed-digest-weak: #c8e5e2;
   /* credits/coins accent (teal) */
-  --credits-accent: #0E9B8B;
-  --feed-thread-strong: #E9C91A;
-  --feed-thread-weak: #EFE8C4;
+  --credits-accent: #0e9b8b;
+  --feed-thread-strong: #e9c91a;
+  --feed-thread-weak: #efe8c4;
 
   /* Aux */
-  --aux-white: #FFFFFF;
+  --aux-white: #ffffff;
 
   /* Shadow */
-  --shadow-popover: 0 1px 3px 0 rgba(0, 0, 0, 0.10), 0 4px 12px 0 rgba(0, 0, 0, 0.10);
+  --shadow-popover:
+    0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 4px 12px 0 rgba(0, 0, 0, 0.1);
 
   /* Derived */
   --ring: color-mix(in srgb, var(--system-info-strong) 35%, transparent);
@@ -360,10 +369,34 @@
   --field-border: var(--border-element);
   --tag-bg-neutral: var(--surface-base);
 
-  /* Background / Foreground */
-  --background: #F6F5F4;
-  --foreground: #24292E;
+  /* Autonomy work-loop state tokens — the single vocabulary for the
+   * capture → run → needs-you → review → done loop (design: autonomy-states
+   * v2). Each state has an `accent` (glyph + badge) and a desaturated `weak`
+   * wash for card fills. Red is reserved for `failure` ONLY — never for
+   * paused, incomplete, or needs-you. Dark/velvet lighten each accent one
+   * step but keep the hue identical (see those blocks below). Agent identity
+   * is a parallel per-agent color set; never fake faces. */
+  --state-capture: #3d6ee8;
+  --state-capture-weak: #eaf0fd;
+  --state-running: #3d6ee8;
+  --state-running-weak: #eaf0fd;
+  --state-needsyou: #b4770f;
+  --state-needsyou-weak: #faf1de;
+  --state-review: #7f77dd;
+  --state-review-weak: #eeedfa;
+  --state-done: #277e41;
+  --state-done-weak: #e9f2ec;
+  --state-failure: #c4372b;
+  --state-failure-weak: #fbecea;
 
+  --agent-ops: #0f9488;
+  --agent-growth: #6d5ae0;
+  --agent-inbox: #3d6ee8;
+  --agent-builder: #5b6472;
+
+  /* Background / Foreground */
+  --background: #f6f5f4;
+  --foreground: #24292e;
 }
 
 /* ===== Dark mode — Figma node 2674:20730 ===== */
@@ -373,86 +406,95 @@
    * overlay (#1C2024) sat at only ~1.08:1 vs base — cards were nearly
    * invisible; overlay/lift now step up to ~1.17/1.37:1 with a perceptible
    * overlay→lift delta for nested surfaces. Hover bumped 0.06→0.08 alpha. */
-  --surface-base: #17191C;
-  --surface-overlay: #22272C;
-  --surface-active: #444D56;
-  --surface-lift: #2C3338;
+  --surface-base: #17191c;
+  --surface-overlay: #22272c;
+  --surface-active: #444d56;
+  --surface-lift: #2c3338;
   --surface-hover: rgba(233, 230, 226, 0.08);
 
   /* Primary */
-  --primary-base: #FDFDFC;
-  --primary-hover: #F2F0EE;
-  --primary-active: #E9E6E2;
-  --primary-disabled: #2D3339;
-  --primary-second-hover: #E9E6E2;
+  --primary-base: #fdfdfc;
+  --primary-hover: #f2f0ee;
+  --primary-active: #e9e6e2;
+  --primary-disabled: #2d3339;
+  --primary-second-hover: #e9e6e2;
 
   /* Border. Readability pass: card/section borders raised so they're
    * actually visible against the dark surfaces (old base #24292E was
    * 1.20:1 vs background — invisible). base/subtle now read at ~1.40/1.60:1;
    * element (field outlines) nudged up for clearer input affordance. */
-  --border-base: #2E343A;
-  --border-disabled: #1C2024;
-  --border-element: #646F7B;
-  --border-hover: #363D44;
-  --border-active: #F6F5F4;
+  --border-base: #2e343a;
+  --border-disabled: #1c2024;
+  --border-element: #646f7b;
+  --border-hover: #363d44;
+  --border-active: #f6f5f4;
 
   /* Content. See light-mode block for the rationale on quiet/faint/strong.
    * Readability pass: tertiary/faint nudged up (6.07→7.11:1 on bg) so small
    * secondary labels and eyebrows read comfortably; disabled lifted
    * 3.00→4.36:1 so it's legible without reading as active. secondary/quiet/
    * strong already clear AA and are left as-is to keep the dark hierarchy. */
-  --content-default: #F6F5F4;
-  --content-emphasised: #FDFDFC;
-  --content-secondary: #A9B2BB;
-  --content-tertiary: #9AA6B2;
-  --content-quiet: #A9B2BB;     /* = secondary in dark, lighter than tertiary in light */
-  --content-strong: #E9E6E2;
-  --content-faint: #9AA6B2;
-  --content-disabled: #73808C;
-  --content-inset: #17191C;
+  --content-default: #f6f5f4;
+  --content-emphasised: #fdfdfc;
+  --content-secondary: #a9b2bb;
+  --content-tertiary: #9aa6b2;
+  --content-quiet: #a9b2bb; /* = secondary in dark, lighter than tertiary in light */
+  --content-strong: #e9e6e2;
+  --content-faint: #9aa6b2;
+  --content-disabled: #73808c;
+  --content-inset: #17191c;
 
   /* Surface (extras). Sunken stays just above base — recessed but distinct. */
   --surface-sunken: #202327;
 
   /* Border (extras) */
-  --border-subtle: #363D44;
+  --border-subtle: #363d44;
 
   /* System */
-  --system-positive-strong: #309C50;
-  --system-positive-weak: #2C3A31;
-  --system-negative-strong: #DA491A;
-  --system-negative-hover: #AB3F1C;
-  --system-negative-weak: #4F2D24;
-  --system-mid-strong: #F1B21E;
-  --system-mid-weak: #4B3D1E;
-  --system-info-strong: #3D6EE8;
-  --system-info-weak: #2A3A50;
+  --system-positive-strong: #309c50;
+  --system-positive-weak: #2c3a31;
+  --system-negative-strong: #da491a;
+  --system-negative-hover: #ab3f1c;
+  --system-negative-weak: #4f2d24;
+  --system-mid-strong: #f1b21e;
+  --system-mid-weak: #4b3d1e;
+  --system-info-strong: #3d6ee8;
+  --system-info-weak: #2a3a50;
 
   /* 8-type memory palette (SourceTag) — dark. */
-  --mem-semantic-text: #9DBBF5;     --mem-semantic-bg: #1E2C45;
-  --mem-prospective-text: #B6AFF0;  --mem-prospective-bg: #2A2748;
-  --mem-episodic-text: #E6C257;     --mem-episodic-bg: #3A2E0C;
-  --mem-procedural-text: #4FD0C0;   --mem-procedural-bg: #0C2E2A;
-  --mem-emotional-text: #F0A0BD;    --mem-emotional-bg: #3A1A26;
-  --mem-behavioral-text: #E8987A;   --mem-behavioral-bg: #371C12;
-  --mem-narrative-text: #D98FCB;    --mem-narrative-bg: #2E1228;
-  --mem-shared-text: #AEB7C2;       --mem-shared-bg: #232A31;
+  --mem-semantic-text: #9dbbf5;
+  --mem-semantic-bg: #1e2c45;
+  --mem-prospective-text: #b6aff0;
+  --mem-prospective-bg: #2a2748;
+  --mem-episodic-text: #e6c257;
+  --mem-episodic-bg: #3a2e0c;
+  --mem-procedural-text: #4fd0c0;
+  --mem-procedural-bg: #0c2e2a;
+  --mem-emotional-text: #f0a0bd;
+  --mem-emotional-bg: #3a1a26;
+  --mem-behavioral-text: #e8987a;
+  --mem-behavioral-bg: #371c12;
+  --mem-narrative-text: #d98fcb;
+  --mem-narrative-bg: #2e1228;
+  --mem-shared-text: #aeb7c2;
+  --mem-shared-bg: #232a31;
 
   /* Feed identifier */
-  --feed-nudge-strong: #DB4B77;
-  --feed-nudge-weak: #432B33;
-  --feed-digest-strong: #0E9B8B;
-  --feed-digest-weak: #293D3B;
+  --feed-nudge-strong: #db4b77;
+  --feed-nudge-weak: #432b33;
+  --feed-digest-strong: #0e9b8b;
+  --feed-digest-weak: #293d3b;
   /* credits/coins accent (teal) */
-  --credits-accent: #0E9B8B;
-  --feed-thread-strong: #E9C91A;
+  --credits-accent: #0e9b8b;
+  --feed-thread-strong: #e9c91a;
   --feed-thread-weak: #464125;
 
   /* Aux */
-  --aux-white: #FFFFFF;
+  --aux-white: #ffffff;
 
   /* Shadow */
-  --shadow-popover: 0 1px 3px 0 rgba(0, 0, 0, 0.25), 0 4px 12px 0 rgba(0, 0, 0, 0.25);
+  --shadow-popover:
+    0 1px 3px 0 rgba(0, 0, 0, 0.25), 0 4px 12px 0 rgba(0, 0, 0, 0.25);
 
   /* Derived. Re-declared (rather than inherited from the light block) so
    * --ring tracks the dark --system-positive-strong even when data-theme is
@@ -461,96 +503,127 @@
   --border-overlay: var(--border-hover);
   --ghost-hover: var(--border-base);
   --ghost-pressed: var(--primary-active);
-  --field-bg: #2D3339;
+  --field-bg: #2d3339;
   --field-border: transparent;
   --tag-bg-neutral: var(--primary-disabled);
 
+  /* Work-loop state tokens — dark. Accents lightened one step off the light
+   * values; hue + role identical. Amber still reads calm, not alarming.
+   * Weak washes are low-alpha tints of the accent so they sit on the raised
+   * dark surface without banding. */
+  --state-capture: #5b87f0;
+  --state-capture-weak: rgba(91, 135, 240, 0.14);
+  --state-running: #5b87f0;
+  --state-running-weak: rgba(91, 135, 240, 0.14);
+  --state-needsyou: #d9a036;
+  --state-needsyou-weak: rgba(217, 160, 54, 0.16);
+  --state-review: #9b93e8;
+  --state-review-weak: rgba(155, 147, 232, 0.16);
+  --state-done: #3fa05e;
+  --state-done-weak: rgba(63, 160, 94, 0.16);
+  --state-failure: #e5675a;
+  --state-failure-weak: rgba(229, 103, 90, 0.16);
+
+  --agent-ops: #2cb8aa;
+  --agent-growth: #9184f0;
+  --agent-inbox: #5b87f0;
+  --agent-builder: #8a93a1;
+
   /* Background / Foreground */
-  --background: #17191C;
-  --foreground: #F6F5F4;
+  --background: #17191c;
+  --foreground: #f6f5f4;
 }
 
 /* ===== Velvet mode — dark with red/pink accents ===== */
 [data-theme="velvet"] {
   /* Surface */
   --surface-base: #121214;
-  --surface-overlay: #1A171B;
-  --surface-active: #30252B;
-  --surface-lift: #211D22;
+  --surface-overlay: #1a171b;
+  --surface-active: #30252b;
+  --surface-lift: #211d22;
   --surface-hover: rgba(244, 63, 94, 0.08);
 
   /* Primary */
-  --primary-base: #E83F5B;
-  --primary-hover: #F45A73;
-  --primary-active: #C92E48;
-  --primary-disabled: #30252B;
-  --primary-second-hover: #F43F5E;
+  --primary-base: #e83f5b;
+  --primary-hover: #f45a73;
+  --primary-active: #c92e48;
+  --primary-disabled: #30252b;
+  --primary-second-hover: #f43f5e;
 
   /* Border */
-  --border-base: #24292E;
-  --border-disabled: #1C2024;
+  --border-base: #24292e;
+  --border-disabled: #1c2024;
   --border-element: #735261;
-  --border-hover: #30252B;
-  --border-active: #FFB3C7;
+  --border-hover: #30252b;
+  --border-active: #ffb3c7;
 
   /* Content. Velvet inherits the dark values for quiet/faint/strong since
    * velvet's accent applies at the chrome level (primary/surface), not the
    * text ramp. Design may refine these per Velvet's own palette later. */
-  --content-default: #F6F5F4;
-  --content-emphasised: #FFF7FA;
-  --content-secondary: #C8B6BE;
-  --content-tertiary: #A98695;
-  --content-quiet: #A9B2BB;
-  --content-strong: #E9E6E2;
-  --content-faint: #8D99A5;
-  --content-disabled: #6B5962;
-  --content-inset: #FFF7FA;
+  --content-default: #f6f5f4;
+  --content-emphasised: #fff7fa;
+  --content-secondary: #c8b6be;
+  --content-tertiary: #a98695;
+  --content-quiet: #a9b2bb;
+  --content-strong: #e9e6e2;
+  --content-faint: #8d99a5;
+  --content-disabled: #6b5962;
+  --content-inset: #fff7fa;
 
   /* Surface (extras). Sunken inherits dark — design to refine if velvet
    * wants its own subdued surface. */
-  --surface-sunken: #1C2024;
+  --surface-sunken: #1c2024;
 
   /* Border (extras) */
-  --border-subtle: #2D3339;
+  --border-subtle: #2d3339;
 
   /* System */
-  --system-positive-strong: #E83F5B;
+  --system-positive-strong: #e83f5b;
   --system-positive-weak: #382027;
-  --system-negative-strong: #EF4444;
-  --system-negative-hover: #F87171;
-  --system-negative-weak: #3A2024;
-  --system-mid-strong: #F1B21E;
-  --system-mid-weak: #42321C;
-  --system-info-strong: #3D6EE8;
-  --system-info-weak: #2A3A50;
+  --system-negative-strong: #ef4444;
+  --system-negative-hover: #f87171;
+  --system-negative-weak: #3a2024;
+  --system-mid-strong: #f1b21e;
+  --system-mid-weak: #42321c;
+  --system-info-strong: #3d6ee8;
+  --system-info-weak: #2a3a50;
 
   /* 8-type memory palette (SourceTag) — velvet reuses the dark values. */
-  --mem-semantic-text: #9DBBF5;     --mem-semantic-bg: #1E2C45;
-  --mem-prospective-text: #B6AFF0;  --mem-prospective-bg: #2A2748;
-  --mem-episodic-text: #E6C257;     --mem-episodic-bg: #3A2E0C;
-  --mem-procedural-text: #4FD0C0;   --mem-procedural-bg: #0C2E2A;
-  --mem-emotional-text: #F0A0BD;    --mem-emotional-bg: #3A1A26;
-  --mem-behavioral-text: #E8987A;   --mem-behavioral-bg: #371C12;
-  --mem-narrative-text: #D98FCB;    --mem-narrative-bg: #2E1228;
-  --mem-shared-text: #AEB7C2;       --mem-shared-bg: #232A31;
+  --mem-semantic-text: #9dbbf5;
+  --mem-semantic-bg: #1e2c45;
+  --mem-prospective-text: #b6aff0;
+  --mem-prospective-bg: #2a2748;
+  --mem-episodic-text: #e6c257;
+  --mem-episodic-bg: #3a2e0c;
+  --mem-procedural-text: #4fd0c0;
+  --mem-procedural-bg: #0c2e2a;
+  --mem-emotional-text: #f0a0bd;
+  --mem-emotional-bg: #3a1a26;
+  --mem-behavioral-text: #e8987a;
+  --mem-behavioral-bg: #371c12;
+  --mem-narrative-text: #d98fcb;
+  --mem-narrative-bg: #2e1228;
+  --mem-shared-text: #aeb7c2;
+  --mem-shared-bg: #232a31;
 
   /* Feed identifier — reuses the dark palette; velvet's accent colors
    * apply at the chrome level (primary, surface) rather than swapping
    * the feed glyph colors. */
-  --feed-nudge-strong: #DB4B77;
-  --feed-nudge-weak: #432B33;
-  --feed-digest-strong: #0E9B8B;
-  --feed-digest-weak: #293D3B;
+  --feed-nudge-strong: #db4b77;
+  --feed-nudge-weak: #432b33;
+  --feed-digest-strong: #0e9b8b;
+  --feed-digest-weak: #293d3b;
   /* credits/coins accent (teal) */
-  --credits-accent: #0E9B8B;
-  --feed-thread-strong: #E9C91A;
+  --credits-accent: #0e9b8b;
+  --feed-thread-strong: #e9c91a;
   --feed-thread-weak: #464125;
 
   /* Aux */
-  --aux-white: #FFFFFF;
+  --aux-white: #ffffff;
 
   /* Shadow */
-  --shadow-popover: 0 1px 3px 0 rgba(0, 0, 0, 0.25), 0 4px 12px 0 rgba(0, 0, 0, 0.25);
+  --shadow-popover:
+    0 1px 3px 0 rgba(0, 0, 0, 0.25), 0 4px 12px 0 rgba(0, 0, 0, 0.25);
 
   /* Derived. --ring re-declared so it tracks velvet's positive accent. */
   --ring: color-mix(in srgb, var(--system-positive-strong) 30%, transparent);
@@ -561,9 +634,30 @@
   --field-border: transparent;
   --tag-bg-neutral: var(--primary-disabled);
 
+  /* Work-loop state tokens — velvet (dark base). Same lightened accents as
+   * dark; velvet's red house-accent stays clear of the reserved failure red
+   * because failure carries its own glyph + copy, not just color. */
+  --state-capture: #5b87f0;
+  --state-capture-weak: rgba(91, 135, 240, 0.14);
+  --state-running: #5b87f0;
+  --state-running-weak: rgba(91, 135, 240, 0.14);
+  --state-needsyou: #d9a036;
+  --state-needsyou-weak: rgba(217, 160, 54, 0.16);
+  --state-review: #9b93e8;
+  --state-review-weak: rgba(155, 147, 232, 0.16);
+  --state-done: #3fa05e;
+  --state-done-weak: rgba(63, 160, 94, 0.16);
+  --state-failure: #e5675a;
+  --state-failure-weak: rgba(229, 103, 90, 0.16);
+
+  --agent-ops: #2cb8aa;
+  --agent-growth: #9184f0;
+  --agent-inbox: #5b87f0;
+  --agent-builder: #8a93a1;
+
   /* Background / Foreground */
   --background: #121214;
-  --foreground: #F6F5F4;
+  --foreground: #f6f5f4;
 }
 
 /* ---------------------------------------------------------------------------
@@ -702,13 +796,25 @@
  * --------------------------------------------------------------------------- */
 
 @keyframes popoverIn {
-  0% { opacity: 0; transform: translateY(-4px) scale(0.98); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
+  0% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes bottomSheetIn {
-  0% { opacity: 0; transform: translateY(100%); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -723,15 +829,26 @@
  * --------------------------------------------------------------------------- */
 
 @utility animate-panelitem-marquee {
-  animation: panelitem-marquee var(--panelitem-marquee-duration, 4s) linear infinite;
+  animation: panelitem-marquee var(--panelitem-marquee-duration, 4s) linear
+    infinite;
 }
 
 @keyframes panelitem-marquee {
-  0%   { transform: translateX(0); }
-  10%  { transform: translateX(0); }
-  50%  { transform: translateX(calc(-1 * var(--panelitem-marquee-distance, 0px))); }
-  60%  { transform: translateX(calc(-1 * var(--panelitem-marquee-distance, 0px))); }
-  100% { transform: translateX(0); }
+  0% {
+    transform: translateX(0);
+  }
+  10% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(calc(-1 * var(--panelitem-marquee-distance, 0px)));
+  }
+  60% {
+    transform: translateX(calc(-1 * var(--panelitem-marquee-distance, 0px)));
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -740,12 +857,20 @@
  * always targets the actual content height (no JS measuring needed).
  * --------------------------------------------------------------------------- */
 @keyframes collapsible-slide-down {
-  from { height: 0; }
-  to { height: var(--radix-accordion-content-height); }
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
 }
 @keyframes collapsible-slide-up {
-  from { height: var(--radix-accordion-content-height); }
-  to { height: 0; }
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
 }
 .collapsible-content[data-state="open"] {
   animation: collapsible-slide-down var(--anim-fast) var(--anim-spring);
@@ -766,28 +891,62 @@
  * --------------------------------------------------------------------------- */
 
 @keyframes cue-aperture-look {
-  0%, 100% { transform: rotate(-16deg); }
-  50% { transform: rotate(16deg); }
+  0%,
+  100% {
+    transform: rotate(-16deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
 }
 @keyframes cue-aperture-rock {
-  0%, 100% { transform: rotate(-6deg); }
-  50% { transform: rotate(6deg); }
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(6deg);
+  }
 }
 @keyframes cue-pupil-blink {
-  0%, 90%, 100% { opacity: 1; }
-  94% { opacity: 0.15; }
+  0%,
+  90%,
+  100% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 0.15;
+  }
 }
 @keyframes cue-pupil-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.28); opacity: 0.85; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.28);
+    opacity: 0.85;
+  }
 }
 @keyframes cue-ping {
-  0% { transform: scale(1); opacity: 0.7; }
-  100% { transform: scale(1.45); opacity: 0; }
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
 }
 @keyframes cue-eq-bar {
-  0%, 100% { transform: scaleY(0.28); }
-  50% { transform: scaleY(1); }
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }
 
 @utility animate-cue-look {
@@ -821,4 +980,23 @@
   animation: cue-eq-bar 0.9s var(--anim-ease-in-out) infinite;
 }
 
+/* Work-loop running-state pulse — the small dot on a Running badge. Calm
+ * (~1.6s), and fully disabled under prefers-reduced-motion so motion signals
+ * progress without ever pulsing for users who opt out. */
+@keyframes cue-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
 
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="state-badge"] [style*="cue-pulse"] {
+    animation: none !important;
+  }
+}
