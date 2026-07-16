@@ -15,52 +15,51 @@ const log = getLogger("a2a-routes");
 // ── A2A protocol constants (duplicated to avoid cross-package import) ──
 
 const A2A_AGENT_CARD_PATH = "/.well-known/agent-card.json";
+const A2A_VERSION = "1.0";
 
 // ── Agent card builder ──────────────────────────────────────────────
+//
+// The card is served in the A2A JSON-RPC binding's **lowerCamelCase** wire
+// form. The canonical serializer lives in the assistant package
+// (`assistant/src/a2a/wire-format.ts` → `toWireCard`); this builder mirrors
+// that exact shape. The gateway and assistant are separate packages, so the
+// shape is intentionally duplicated rather than imported — keep the two in
+// sync when either changes.
 
-interface AgentCard {
-  name: string;
-  description: string;
-  version: string;
-  supported_interfaces: Array<{
-    url: string;
-    protocol_binding: string;
-    protocol_version: string;
-  }>;
-  capabilities: {
-    streaming: boolean;
-    push_notifications: boolean;
-    extended_agent_card: boolean;
-  };
-  default_input_modes: string[];
-  default_output_modes: string[];
-  skills: Array<{
-    id: string;
-    name: string;
-    description: string;
-    tags: string[];
-  }>;
-}
+/** Wire-form (camelCase) agent card. */
+type WireAgentCard = Record<string, unknown>;
 
-function buildAgentCard(baseUrl: string, assistantName: string): AgentCard {
+/**
+ * HTTP Bearer security scheme. Peers authenticate inbound A2A JSON-RPC calls
+ * with the per-connection peer token from the invite handshake, presented as
+ * `Authorization: Bearer <token>`.
+ */
+const A2A_BEARER_SECURITY_SCHEME = {
+  bearer: {
+    type: "http",
+    scheme: "bearer",
+    description:
+      "Per-connection peer token exchanged during the A2A invite handshake.",
+  },
+};
+
+function buildAgentCard(baseUrl: string, assistantName: string): WireAgentCard {
+  const endpointUrl = `${baseUrl}/a2a/message:send`;
   return {
+    protocolVersion: A2A_VERSION,
     name: assistantName,
     description: `${assistantName} — a Vellum AI assistant`,
     version: "1.0.0",
-    supported_interfaces: [
-      {
-        url: `${baseUrl}/a2a/message:send`,
-        protocol_binding: "JSONRPC",
-        protocol_version: "1.0",
-      },
-    ],
+    url: endpointUrl,
+    preferredTransport: "JSONRPC",
+    additionalInterfaces: [{ url: endpointUrl, transport: "JSONRPC" }],
     capabilities: {
       streaming: false,
-      push_notifications: true,
-      extended_agent_card: false,
+      pushNotifications: true,
+      extendedAgentCard: false,
     },
-    default_input_modes: ["text/plain"],
-    default_output_modes: ["text/plain"],
+    defaultInputModes: ["text/plain"],
+    defaultOutputModes: ["text/plain"],
     skills: [
       {
         id: "conversation",
@@ -69,6 +68,8 @@ function buildAgentCard(baseUrl: string, assistantName: string): AgentCard {
         tags: ["chat"],
       },
     ],
+    securitySchemes: A2A_BEARER_SECURITY_SCHEME,
+    security: [{ bearer: [] }],
   };
 }
 

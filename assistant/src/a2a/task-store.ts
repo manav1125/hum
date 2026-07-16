@@ -166,3 +166,74 @@ export function getPushUrl(taskId: string): string | null {
     .get();
   return row?.pushUrl ?? null;
 }
+
+/**
+ * Resolve the push URL and the peer (`senderAssistantId`) a task belongs to.
+ * The sender id lets the delivery adapter attach the correct per-peer bearer
+ * token to the push notification.
+ */
+export function getPushTarget(
+  taskId: string,
+): { pushUrl: string | null; senderAssistantId: string | null } | null {
+  const db = getDb();
+  const row = db
+    .select({
+      pushUrl: a2aTasks.pushUrl,
+      senderAssistantId: a2aTasks.senderAssistantId,
+    })
+    .from(a2aTasks)
+    .where(eq(a2aTasks.id, taskId))
+    .get();
+  if (!row) return null;
+  return {
+    pushUrl: row.pushUrl ?? null,
+    senderAssistantId: row.senderAssistantId ?? null,
+  };
+}
+
+/** Raised when a task cannot be canceled because it is already terminal. */
+export class TaskNotCancelableError extends Error {
+  constructor(taskId: string, state: string) {
+    super(
+      `Task ${taskId} is in terminal state "${state}" and cannot be canceled`,
+    );
+    this.name = "TaskNotCancelableError";
+  }
+}
+
+/** Raised when a referenced task does not exist. */
+export class TaskNotFoundError extends Error {
+  constructor(taskId: string) {
+    super(`A2A task not found: ${taskId}`);
+    this.name = "TaskNotFoundError";
+  }
+}
+
+/**
+ * Transition a task to `canceled`. Throws `TaskNotFoundError` when the task
+ * does not exist and `TaskNotCancelableError` when it is already terminal.
+ */
+export function cancelTask(taskId: string): A2ATask {
+  const db = getDb();
+  const current = db
+    .select({ state: a2aTasks.state })
+    .from(a2aTasks)
+    .where(eq(a2aTasks.id, taskId))
+    .get();
+
+  if (!current) {
+    throw new TaskNotFoundError(taskId);
+  }
+  if (TERMINAL_TASK_STATES.has(current.state as TaskState)) {
+    throw new TaskNotCancelableError(taskId, current.state);
+  }
+
+  db.update(a2aTasks)
+    .set({ state: "canceled", statusMessage: null, updatedAt: Date.now() })
+    .where(eq(a2aTasks.id, taskId))
+    .run();
+
+  return rowToTask(
+    db.select().from(a2aTasks).where(eq(a2aTasks.id, taskId)).get()!,
+  );
+}

@@ -8,6 +8,8 @@
 // ── Agent Card ──────────────────────────────────────────────────────
 
 export interface AgentCard {
+  /** A2A protocol version this agent speaks (e.g. "1.0"). */
+  protocol_version: string;
   name: string;
   description: string;
   version: string;

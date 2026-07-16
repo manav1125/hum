@@ -4,8 +4,8 @@
  * Model-facing counterpart to the inbound A2A channel: POSTs a JSON-RPC
  * `message/send` envelope to a peer agent's A2A endpoint — the exact wire
  * shape our own inbound endpoint (`gateway/src/http/routes/a2a-message-send.ts`
- * → `handleCreateA2AInboundTask` in `runtime/routes/integrations/a2a.ts`)
- * accepts, so a Cue can message a Cue.
+ * → the `integrations_a2a_rpc_post` data plane in
+ * `runtime/routes/integrations/a2a.ts`) accepts, so a Cue can message a Cue.
  *
  * DORMANT BY DEFAULT: the tool is only surfaced when the environment
  * variable `CUE_A2A_OUTBOUND=1` is set. `getA2AOutboundToolsIfEnabled()`
@@ -294,8 +294,7 @@ export async function executeA2ASend(
 
   // JSON-RPC error from the peer (may arrive with HTTP 200).
   const rpcError = body?.error as
-    | { code?: unknown; message?: unknown }
-    | undefined;
+    { code?: unknown; message?: unknown } | undefined;
   if (rpcError && typeof rpcError === "object") {
     return {
       content: JSON.stringify({

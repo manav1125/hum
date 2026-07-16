@@ -14,6 +14,8 @@ let completeWithArtifactsCalls: Array<{
   artifacts: Artifact[];
 }> = [];
 let pushUrlByTaskId: Record<string, string | null> = {};
+let senderByTaskId: Record<string, string | null> = {};
+let peerTokenBySender: Record<string, string | null> = {};
 let completeError: Error | null = null;
 
 const fetchCalls: Array<{
@@ -47,6 +49,26 @@ mock.module("../../../../a2a/task-store.js", () => ({
   getPushUrl: (taskId: string): string | null => {
     return pushUrlByTaskId[taskId] ?? null;
   },
+  getPushTarget: (
+    taskId: string,
+  ): { pushUrl: string | null; senderAssistantId: string | null } | null => {
+    if (!(taskId in pushUrlByTaskId) && !(taskId in senderByTaskId)) {
+      // Default: task exists with a sender but no push URL.
+      return {
+        pushUrl: null,
+        senderAssistantId: senderByTaskId[taskId] ?? "peer-x",
+      };
+    }
+    return {
+      pushUrl: pushUrlByTaskId[taskId] ?? null,
+      senderAssistantId: senderByTaskId[taskId] ?? "peer-x",
+    };
+  },
+}));
+
+mock.module("../../../../a2a/peer-auth.js", () => ({
+  getPeerTokenForSender: (sender: string): string | null =>
+    peerTokenBySender[sender] ?? null,
 }));
 
 mock.module("../../../../util/logger.js", () => ({
@@ -72,6 +94,8 @@ beforeEach(() => {
   completedTask = null;
   completeWithArtifactsCalls = [];
   pushUrlByTaskId = {};
+  senderByTaskId = {};
+  peerTokenBySender = {};
   completeError = null;
   fetchCalls.length = 0;
   fetchResponses = [];
@@ -222,6 +246,44 @@ describe("deliverA2AReply", () => {
       const headers = fetchCalls[0].init.headers as Record<string, string>;
       expect(headers["Content-Type"]).toBe("application/a2a+json");
       expect(headers["A2A-Version"]).toBe("1.0");
+
+      // Pushed body is spec camelCase (artifactId, not artifact_id).
+      const body = JSON.parse(fetchCalls[0].init.body as string);
+      expect(body.kind).toBe("task");
+      expect(body.artifacts[0].artifactId).toBeDefined();
+      expect(body.artifacts[0].artifact_id).toBeUndefined();
+    });
+
+    test("attaches the per-peer bearer token when one exists", async () => {
+      pushUrlByTaskId["task-123"] = "https://requester.example.com/push";
+      senderByTaskId["task-123"] = "peer-a";
+      peerTokenBySender["peer-a"] = "shared-secret";
+      fetchResponses = [{ ok: true, status: 200, body: "{}" }];
+
+      await deliverA2AReply(baseCallbackUrl, {
+        chatId: "chat-1",
+        text: "Done",
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      const headers = fetchCalls[0].init.headers as Record<string, string>;
+      expect(headers.Authorization).toBe("Bearer shared-secret");
+    });
+
+    test("omits the bearer token for legacy peers without one", async () => {
+      pushUrlByTaskId["task-123"] = "https://requester.example.com/push";
+      senderByTaskId["task-123"] = "peer-legacy";
+      // no token stored for peer-legacy
+      fetchResponses = [{ ok: true, status: 200, body: "{}" }];
+
+      await deliverA2AReply(baseCallbackUrl, {
+        chatId: "chat-1",
+        text: "Done",
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      const headers = fetchCalls[0].init.headers as Record<string, string>;
+      expect(headers.Authorization).toBeUndefined();
     });
 
     test("does not push when no push URL configured", async () => {

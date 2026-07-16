@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 
+import { generatePeerToken, storePeerToken } from "../../a2a/peer-auth.js";
 import {
   getConfig,
   invalidateConfigCache,
@@ -71,6 +72,13 @@ export const CompleteA2AInviteResultSchema = z.object({
       assistantId: z.string(),
       displayName: z.string(),
       gatewayUrl: z.string(),
+      /**
+       * Per-connection shared secret minted by the sender. The acceptor stores
+       * this on its side so both peers can authenticate each other's inbound
+       * A2A calls. Optional so older senders that predate per-peer auth still
+       * complete successfully.
+       */
+      peerToken: z.string().optional(),
     })
     .optional(),
   error: z.string().optional(),
@@ -234,23 +242,17 @@ export function completeA2AInvite(params: {
     ],
   });
 
-  // Write assistant contact metadata
-  const db = getDb();
-  const metadataJson = JSON.stringify({
+  // Mint a per-connection shared secret. Both sides store the SAME token: the
+  // sender keeps it on the acceptor's contact (to auth the acceptor's inbound
+  // calls); the acceptor stores it on the sender's contact via the returned
+  // `sender.peerToken` (see acceptA2AInvite → redeemA2AInvite).
+  const peerToken = generatePeerToken();
+  storePeerToken({
+    contactId: invite.contactId,
     assistantId: params.acceptor.assistantId,
     gatewayUrl: params.acceptor.gatewayUrl,
-  } satisfies VellumAssistantMetadata);
-  db.insert(assistantContactMetadata)
-    .values({
-      contactId: invite.contactId,
-      species: "vellum",
-      metadata: metadataJson,
-    })
-    .onConflictDoUpdate({
-      target: assistantContactMetadata.contactId,
-      set: { species: "vellum", metadata: metadataJson },
-    })
-    .run();
+    peerToken,
+  });
 
   return {
     success: true,
@@ -258,6 +260,7 @@ export function completeA2AInvite(params: {
       assistantId: params.senderAssistantId,
       displayName,
       gatewayUrl,
+      peerToken,
     },
   };
 }
@@ -269,6 +272,8 @@ export function redeemA2AInvite(params: {
     assistantId: string;
     displayName: string;
     gatewayUrl: string;
+    /** Shared per-connection token minted by the sender (see completeA2AInvite). */
+    peerToken?: string;
   };
 }): RedeemA2AInviteResult {
   // 1. Ensure A2A channel is enabled (auto-enable if needed)
@@ -283,6 +288,16 @@ export function redeemA2AInvite(params: {
     existing &&
     existing.channels.some((ch) => ch.type === "a2a" && ch.status === "active")
   ) {
+    // Refresh the stored token if the handshake supplied one (idempotent
+    // re-connect that rotates the secret).
+    if (params.sender.peerToken) {
+      storePeerToken({
+        contactId: existing.id,
+        assistantId: params.sender.assistantId,
+        gatewayUrl: params.sender.gatewayUrl,
+        peerToken: params.sender.peerToken,
+      });
+    }
     return { success: true, alreadyConnected: true, contactId: existing.id };
   }
 
@@ -302,23 +317,33 @@ export function redeemA2AInvite(params: {
     ],
   });
 
-  // 4. Write assistant contact metadata
-  const db = getDb();
-  const metadataJson = JSON.stringify({
-    assistantId: params.sender.assistantId,
-    gatewayUrl: params.sender.gatewayUrl,
-  } satisfies VellumAssistantMetadata);
-  db.insert(assistantContactMetadata)
-    .values({
+  // 4. Write assistant contact metadata (including the shared peer token when
+  //    the sender provided one — the second half of the mutual-auth exchange).
+  if (params.sender.peerToken) {
+    storePeerToken({
       contactId: contact.id,
-      species: "vellum",
-      metadata: metadataJson,
-    })
-    .onConflictDoUpdate({
-      target: assistantContactMetadata.contactId,
-      set: { species: "vellum", metadata: metadataJson },
-    })
-    .run();
+      assistantId: params.sender.assistantId,
+      gatewayUrl: params.sender.gatewayUrl,
+      peerToken: params.sender.peerToken,
+    });
+  } else {
+    const db = getDb();
+    const metadataJson = JSON.stringify({
+      assistantId: params.sender.assistantId,
+      gatewayUrl: params.sender.gatewayUrl,
+    } satisfies VellumAssistantMetadata);
+    db.insert(assistantContactMetadata)
+      .values({
+        contactId: contact.id,
+        species: "vellum",
+        metadata: metadataJson,
+      })
+      .onConflictDoUpdate({
+        target: assistantContactMetadata.contactId,
+        set: { species: "vellum", metadata: metadataJson },
+      })
+      .run();
+  }
 
   return { success: true, contactId: contact.id };
 }
@@ -433,11 +458,13 @@ export async function acceptA2AInvite(params: {
     };
   }
 
-  // 4. Extract sender display name from the complete response; use
-  //    invite-link values for assistantId and gatewayUrl (trusted source).
+  // 4. Extract sender display name + shared peer token from the complete
+  //    response; use invite-link values for assistantId and gatewayUrl
+  //    (trusted source). The peer token is the sender's half of the
+  //    mutual-auth exchange — we store it so inbound calls from the sender
+  //    can be authenticated.
   const senderFromResponse = completeData.sender as
-    | { displayName?: string }
-    | undefined;
+    { displayName?: string; peerToken?: string } | undefined;
 
   const senderIdentity = {
     assistantId: params.senderAssistantId,
@@ -446,6 +473,10 @@ export async function acceptA2AInvite(params: {
         senderFromResponse.displayName) ||
       params.senderAssistantId,
     gatewayUrl: senderGatewayUrl,
+    ...(typeof senderFromResponse?.peerToken === "string" &&
+    senderFromResponse.peerToken
+      ? { peerToken: senderFromResponse.peerToken }
+      : {}),
   };
 
   // 5. Create the sender as a local trusted contact

@@ -78,15 +78,20 @@ describe("Agent Card", () => {
 
     expect(res.status).toBe(200);
     const card = (await res.json()) as {
+      protocolVersion: string;
       name: string;
-      supported_interfaces: Array<{ url: string }>;
-      capabilities: { push_notifications: boolean };
+      url: string;
+      preferredTransport: string;
+      capabilities: { pushNotifications: boolean };
+      securitySchemes: Record<string, { scheme: string }>;
     };
     expect(card.name).toBe("Vellum Assistant");
-    expect(card.supported_interfaces[0].url).toBe(
-      "https://my-assistant.example.com/a2a/message:send",
-    );
-    expect(card.capabilities.push_notifications).toBe(true);
+    // A2A JSON-RPC binding requires lowerCamelCase on the wire.
+    expect(card.protocolVersion).toBe("1.0");
+    expect(card.url).toBe("https://my-assistant.example.com/a2a/message:send");
+    expect(card.preferredTransport).toBe("JSONRPC");
+    expect(card.capabilities.pushNotifications).toBe(true);
+    expect(card.securitySchemes.bearer.scheme).toBe("bearer");
   });
 
   it("reads assistant name from IDENTITY.md", async () => {

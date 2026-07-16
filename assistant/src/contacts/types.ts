@@ -7,6 +7,14 @@ export type AssistantSpecies = "vellum" | "openclaw";
 export interface VellumAssistantMetadata {
   assistantId: string;
   gatewayUrl: string;
+  /**
+   * Per-connection shared secret minted during the A2A invite handshake and
+   * stored on BOTH sides. Used to authenticate inbound A2A JSON-RPC calls
+   * (`Authorization: Bearer <peerToken>`) — the asserted sender id is only
+   * trusted once its Bearer token matches this value. Optional for
+   * back-compat with connections established before per-peer auth existed.
+   */
+  peerToken?: string;
 }
 
 export interface OpenClawAssistantMetadata {
@@ -49,11 +57,7 @@ export interface Contact {
 }
 
 export type ChannelStatus =
-  | "active"
-  | "pending"
-  | "revoked"
-  | "blocked"
-  | "unverified";
+  "active" | "pending" | "revoked" | "blocked" | "unverified";
 export type ChannelPolicy = "allow" | "deny" | "escalate";
 
 export interface ContactChannel {
@@ -88,10 +92,4 @@ export interface ContactWriteResult {
 }
 
 export type ChannelType =
-  | "email"
-  | "slack"
-  | "whatsapp"
-  | "phone"
-  | "telegram"
-  | "discord"
-  | "other";
+  "email" | "slack" | "whatsapp" | "phone" | "telegram" | "discord" | "other";

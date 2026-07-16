@@ -13,11 +13,15 @@ import { getDb, getSqliteFrom } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
 import type { A2AMessage, Artifact } from "../protocol-types.js";
 import {
+  cancelTask,
   completeWithArtifacts,
   createTask,
+  getPushTarget,
   getPushUrl,
   getTask,
   linkConversation,
+  TaskNotCancelableError,
+  TaskNotFoundError,
   updateState,
 } from "../task-store.js";
 
@@ -242,5 +246,68 @@ describe("a2a-task-store", () => {
 
   test("updateState throws for unknown task ID", () => {
     expect(() => updateState("nonexistent-id", "working")).toThrow(/not found/);
+  });
+
+  // ── cancelTask ────────────────────────────────────────────────
+
+  test("cancelTask transitions a non-terminal task to canceled", () => {
+    const task = createTask({
+      senderAssistantId: "assistant-123",
+      requestMessage: makeRequestMessage(),
+    });
+    updateState(task.id, "working");
+
+    const canceled = cancelTask(task.id);
+    expect(canceled.status.state).toBe("canceled");
+
+    const fetched = getTask(task.id);
+    expect(fetched!.status.state).toBe("canceled");
+  });
+
+  test("cancelTask throws TaskNotFoundError for unknown ID", () => {
+    expect(() => cancelTask("nonexistent-id")).toThrow(TaskNotFoundError);
+  });
+
+  test("cancelTask throws TaskNotCancelableError for terminal task", () => {
+    const task = createTask({
+      senderAssistantId: "assistant-123",
+      requestMessage: makeRequestMessage(),
+    });
+    updateState(task.id, "completed");
+
+    expect(() => cancelTask(task.id)).toThrow(TaskNotCancelableError);
+  });
+
+  // ── getPushTarget ─────────────────────────────────────────────
+
+  test("getPushTarget returns url + sender for a task", () => {
+    const task = createTask({
+      senderAssistantId: "assistant-xyz",
+      requestMessage: makeRequestMessage(),
+      pushUrl: "https://example.com/push",
+    });
+
+    const target = getPushTarget(task.id);
+    expect(target).toEqual({
+      pushUrl: "https://example.com/push",
+      senderAssistantId: "assistant-xyz",
+    });
+  });
+
+  test("getPushTarget returns null pushUrl when unset", () => {
+    const task = createTask({
+      senderAssistantId: "assistant-xyz",
+      requestMessage: makeRequestMessage(),
+    });
+
+    const target = getPushTarget(task.id);
+    expect(target).toEqual({
+      pushUrl: null,
+      senderAssistantId: "assistant-xyz",
+    });
+  });
+
+  test("getPushTarget returns null for unknown task ID", () => {
+    expect(getPushTarget("nonexistent-id")).toBeNull();
   });
 });

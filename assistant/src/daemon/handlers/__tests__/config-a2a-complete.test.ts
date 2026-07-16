@@ -137,10 +137,34 @@ describe("completeA2AInvite", () => {
     const metadata = getAssistantContactMetadata(invite!.contactId);
     expect(metadata).not.toBeNull();
     expect(metadata!.species).toBe("vellum");
-    expect(metadata!.metadata).toEqual({
-      assistantId: "acceptor-assistant-123",
-      gatewayUrl: "https://acceptor.example.com",
+    const stored = metadata!.metadata as {
+      assistantId: string;
+      gatewayUrl: string;
+      peerToken?: string;
+    };
+    expect(stored.assistantId).toBe("acceptor-assistant-123");
+    expect(stored.gatewayUrl).toBe("https://acceptor.example.com");
+    // A per-connection peer token is minted and persisted for inbound auth.
+    expect(typeof stored.peerToken).toBe("string");
+    expect(stored.peerToken!.length).toBeGreaterThanOrEqual(43);
+  });
+
+  test("mints a per-connection peer token and returns it to the acceptor", () => {
+    const created = createA2AInvite({});
+    const result = completeA2AInvite({
+      token: created.token!,
+      senderAssistantId: "sender-platform-id-789",
+      acceptor: ACCEPTOR,
     });
+    expect(result.success).toBe(true);
+    expect(typeof result.sender?.peerToken).toBe("string");
+
+    // The returned token matches the one persisted on the acceptor's contact,
+    // so both sides share the same secret.
+    const invite = findById(created.inviteId!);
+    const metadata = getAssistantContactMetadata(invite!.contactId);
+    const stored = metadata!.metadata as { peerToken?: string };
+    expect(result.sender!.peerToken).toBe(stored.peerToken!);
   });
 
   test("invalid token returns not_found error", () => {

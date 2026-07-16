@@ -1,20 +1,25 @@
 /**
- * A2A inbound message endpoint:
- * - POST /a2a/message:send — JSON-RPC `message/send` from a peer agent.
+ * A2A inbound JSON-RPC endpoint:
+ * - POST /a2a/message:send — `message/send`, `tasks/get`, `tasks/cancel` from a
+ *   peer agent.
  *
- * This is the counterpart to the agent card (`a2a-routes.ts`): the card
- * advertises this URL, and peers POST a JSON-RPC `message/send` here. The
- * gateway parses the envelope, asks the assistant to persist an inbound task
- * (ACL-gated on a trusted A2A contact), forwards the message through the normal
- * inbound pipeline with a `/deliver/a2a?taskId=…` reply callback, and returns
- * the submitted Task synchronously. The assistant runs the turn and pushes the
- * completed task to the requester's push URL (streaming:false, push:true).
+ * The gateway owns the public transport surface. It gates on `a2a.enabled`
+ * (mirrors the agent card), parses the JSON-RPC envelope, resolves the asserted
+ * sender id (`x-a2a-sender-id` header or `params.metadata.senderId`) and the
+ * raw `Authorization` header, then forwards all three to the assistant's
+ * authenticated data plane (`integrations_a2a_rpc_post`, over IPC). That data
+ * plane enforces **per-peer bearer auth** (the `peerToken` minted during the
+ * invite handshake) plus the trusted-contact allowlist, performs the task-store
+ * operation, and returns a spec **camelCase** JSON-RPC response — plus, for a
+ * successful `message/send`, an `enqueue` directive.
  *
- * Sender identity is self-asserted (header `x-a2a-sender-id` or
- * `params.metadata.senderId`) and gated by the trusted-contact allowlist. A
- * cryptographic sender proof (signed token / mutual auth) is a follow-up; until
- * then the trust boundary is the invite-established contact list, and the whole
- * channel is gated by the `a2a-channel` feature flag (off by default).
+ * For `message/send`, the gateway then drives the agent run through the normal
+ * inbound pipeline (`handleInbound`) with a `/deliver/a2a?taskId=…` reply
+ * callback, so the eventual reply completes the task and is pushed back via the
+ * A2A delivery adapter (streaming:false, push:true).
+ *
+ * The whole channel is gated by the `a2a-channel` feature flag / `a2a.enabled`
+ * config (off by default): flag off ⇒ this endpoint 404s and nothing else runs.
  */
 
 import type { ConfigFileCache } from "../../config-file-cache.js";
@@ -30,12 +35,10 @@ const A2A_MESSAGE_SEND_PATH = "/a2a/message:send";
 
 // ── JSON-RPC helpers ────────────────────────────────────────────────
 
-/** JSON-RPC 2.0 error codes we use (subset). */
+/** JSON-RPC 2.0 error codes we emit at the transport boundary (subset). */
 const JSONRPC = {
   ParseError: -32700,
   InvalidRequest: -32600,
-  MethodNotFound: -32601,
-  InvalidParams: -32602,
   InternalError: -32603,
 } as const;
 
@@ -49,6 +52,25 @@ function rpcError(
     { jsonrpc: "2.0", id, error: { code, message } },
     { status: httpStatus },
   );
+}
+
+/**
+ * Result shape returned by the assistant's `integrations_a2a_rpc_post` data
+ * plane (`handleA2ARpc`): the verbatim JSON-RPC response, plus an optional
+ * `enqueue` directive present only for a successful `message/send`. The
+ * `message` is the normalized internal A2A message (snake_case field names).
+ */
+interface A2ARpcRouteResult {
+  response: unknown;
+  enqueue?: {
+    taskId: string;
+    message: {
+      message_id?: string;
+      context_id?: string;
+      parts?: Array<{ kind?: string; text?: string }>;
+    };
+    senderAssistantId: string;
+  };
 }
 
 /** Join the text parts of an A2A message into a single content string. */
@@ -66,6 +88,27 @@ function extractText(parts: unknown): string {
     }
   }
   return texts.join("\n").trim();
+}
+
+/**
+ * Resolve the asserted sender id: `x-a2a-sender-id` header wins, then
+ * `params.metadata.senderId`. Self-asserted — the trust decision (per-peer
+ * bearer + trusted-contact allowlist) is enforced downstream in the assistant.
+ */
+function resolveSenderId(params: unknown, req: Request): string | null {
+  const headerId = req.headers.get("x-a2a-sender-id");
+  if (headerId && headerId.trim()) return headerId.trim();
+
+  if (params && typeof params === "object") {
+    const metadata = (params as Record<string, unknown>).metadata;
+    if (metadata && typeof metadata === "object") {
+      const senderId = (metadata as Record<string, unknown>).senderId;
+      if (typeof senderId === "string" && senderId.trim()) {
+        return senderId.trim();
+      }
+    }
+  }
+  return null;
 }
 
 // ── Handler factory ─────────────────────────────────────────────────
@@ -102,130 +145,27 @@ export function createA2AMessageSendHandler(
     if (body.jsonrpc !== "2.0") {
       return rpcError(rpcId, JSONRPC.InvalidRequest, "Expected jsonrpc 2.0");
     }
-    // The advertised binding uses `message:send`; the JSON-RPC method name is
-    // `message/send`. Accept either spelling defensively.
-    if (body.method !== "message/send" && body.method !== "message:send") {
-      return rpcError(
-        rpcId,
-        JSONRPC.MethodNotFound,
-        `Unsupported method: ${String(body.method)}`,
-      );
+    if (typeof body.method !== "string") {
+      return rpcError(rpcId, JSONRPC.InvalidRequest, "Missing method");
     }
 
-    const params = (body.params ?? {}) as {
-      message?: {
-        message_id?: unknown;
-        role?: unknown;
-        parts?: unknown;
-        context_id?: unknown;
-      };
-      configuration?: { pushNotificationConfig?: { url?: unknown } };
-      metadata?: { senderId?: unknown };
-    };
-    const message = params.message;
-    if (
-      !message ||
-      typeof message.message_id !== "string" ||
-      !message.message_id ||
-      (message.role !== "user" && message.role !== "agent") ||
-      !Array.isArray(message.parts)
-    ) {
-      return rpcError(
-        rpcId,
-        JSONRPC.InvalidParams,
-        "params.message must be a valid A2A message (message_id, role, parts)",
-      );
-    }
+    // Sender identity + raw Authorization are forwarded to the data plane; it
+    // authenticates (per-peer bearer + trusted-contact allowlist) and maps any
+    // failure to a JSON-RPC error in the returned `response`.
+    const senderAssistantId = resolveSenderId(body.params, req);
+    const authorization = req.headers.get("authorization");
 
-    // Sender identity: header wins, then message metadata. Self-asserted; the
-    // trust decision is the assistant's trusted-contact ACL below.
-    const senderAssistantId =
-      req.headers.get("x-a2a-sender-id")?.trim() ||
-      (typeof params.metadata?.senderId === "string"
-        ? params.metadata.senderId.trim()
-        : "");
-    if (!senderAssistantId) {
-      return rpcError(
-        rpcId,
-        JSONRPC.InvalidParams,
-        "sender identity required (x-a2a-sender-id header or params.metadata.senderId)",
-      );
-    }
-
-    const contextId =
-      typeof message.context_id === "string" && message.context_id
-        ? message.context_id
-        : crypto.randomUUID();
-    const pushUrl =
-      typeof params.configuration?.pushNotificationConfig?.url === "string"
-        ? params.configuration.pushNotificationConfig.url
-        : undefined;
-    const content = extractText(message.parts);
-
-    // 1. Persist the inbound task (ACL-gated on a trusted A2A contact). The
-    //    assistant returns the task id we embed in the reply callback.
-    let taskId: string;
+    let routeResult: A2ARpcRouteResult;
     try {
-      const result = (await ipcCallAssistant("integrations_a2a_inbound_post", {
+      routeResult = (await ipcCallAssistant("integrations_a2a_rpc_post", {
+        rpc: { id: rpcId, method: body.method, params: body.params },
         senderAssistantId,
-        message,
-        contextId,
-        ...(pushUrl ? { pushUrl } : {}),
-      })) as { taskId?: unknown };
-      if (!result || typeof result.taskId !== "string" || !result.taskId) {
-        throw new Error("assistant did not return a task id");
-      }
-      taskId = result.taskId;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // A trusted-contact ACL rejection surfaces here as a thrown error.
-      log.warn(
-        { err: msg, senderAssistantId },
-        "A2A inbound task creation failed",
-      );
-      return rpcError(
-        rpcId,
-        JSONRPC.InvalidRequest,
-        `A2A message rejected: ${msg}`,
-      );
-    }
-
-    // 2. Forward through the normal inbound pipeline. The reply is delivered
-    //    directly by the assistant via /deliver/a2a?taskId=… (task completion +
-    //    push), so this is fire-and-forget from the JSON-RPC caller's view.
-    const event: A2aInboundEvent = {
-      version: "v1",
-      sourceChannel: "a2a",
-      receivedAt: new Date().toISOString(),
-      message: {
-        content,
-        conversationExternalId: contextId,
-        externalMessageId: message.message_id,
-      },
-      actor: { actorExternalId: senderAssistantId },
-      source: { updateId: message.message_id },
-      raw: body,
-    };
-
-    try {
-      const result = await handleInbound(config, event, {
-        replyCallbackUrl: `${config.gatewayInternalBaseUrl}/deliver/a2a?taskId=${encodeURIComponent(taskId)}`,
-      });
-      if (result.rejected) {
-        log.warn(
-          { senderAssistantId, reason: result.rejectionReason },
-          "A2A inbound forward rejected by routing",
-        );
-        return rpcError(
-          rpcId,
-          JSONRPC.InvalidRequest,
-          `A2A message rejected: ${result.rejectionReason ?? "not routable"}`,
-        );
-      }
+        authorization,
+      })) as A2ARpcRouteResult;
     } catch (err) {
       log.error(
         { err: err instanceof Error ? err.message : String(err) },
-        "A2A inbound forward failed",
+        "A2A RPC data-plane call failed",
       );
       return rpcError(
         rpcId,
@@ -234,16 +174,81 @@ export function createA2AMessageSendHandler(
       );
     }
 
-    log.info({ taskId, senderAssistantId }, "A2A message accepted");
-    // Return the submitted Task synchronously; the result is pushed later.
-    return Response.json({
-      jsonrpc: "2.0",
-      id: rpcId,
-      result: {
-        id: taskId,
-        context_id: contextId,
-        status: { state: "submitted" },
-      },
+    // message/send: the data plane already authenticated the sender and created
+    // the task. Forward through the normal inbound pipeline; the reply is
+    // delivered directly by the assistant via /deliver/a2a?taskId=… (task
+    // completion + push).
+    if (routeResult.enqueue) {
+      const enqueue = routeResult.enqueue;
+      const message = enqueue.message;
+      const content = extractText(message.parts);
+      const contextId =
+        typeof message.context_id === "string" && message.context_id
+          ? message.context_id
+          : crypto.randomUUID();
+      const externalMessageId =
+        typeof message.message_id === "string" && message.message_id
+          ? message.message_id
+          : enqueue.taskId;
+
+      const event: A2aInboundEvent = {
+        version: "v1",
+        sourceChannel: "a2a",
+        receivedAt: new Date().toISOString(),
+        message: {
+          content,
+          conversationExternalId: contextId,
+          externalMessageId,
+        },
+        actor: { actorExternalId: enqueue.senderAssistantId },
+        source: { updateId: externalMessageId },
+        raw: body,
+      };
+
+      try {
+        const result = await handleInbound(config, event, {
+          replyCallbackUrl: `${config.gatewayInternalBaseUrl}/deliver/a2a?taskId=${encodeURIComponent(enqueue.taskId)}`,
+        });
+        if (result.rejected) {
+          log.warn(
+            {
+              senderAssistantId: enqueue.senderAssistantId,
+              reason: result.rejectionReason,
+            },
+            "A2A inbound forward rejected by routing",
+          );
+          return rpcError(
+            rpcId,
+            JSONRPC.InvalidRequest,
+            `A2A message rejected: ${result.rejectionReason ?? "not routable"}`,
+          );
+        }
+      } catch (err) {
+        log.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          "A2A inbound forward failed",
+        );
+        return rpcError(
+          rpcId,
+          JSONRPC.InternalError,
+          "Failed to process message",
+        );
+      }
+
+      log.info(
+        {
+          taskId: enqueue.taskId,
+          senderAssistantId: enqueue.senderAssistantId,
+        },
+        "A2A message accepted",
+      );
+    }
+
+    // Relay the data plane's JSON-RPC response verbatim (spec camelCase task
+    // for message/send + tasks/get + tasks/cancel; JSON-RPC error otherwise).
+    return Response.json(routeResult.response, {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
     });
   };
 }

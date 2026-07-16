@@ -120,7 +120,7 @@ describe("a2a_send risk classification", () => {
 // ---------------------------------------------------------------------------
 // Wire payload shape — mirrors the inbound validators exactly:
 // gateway/src/http/routes/a2a-message-send.ts (JSON-RPC envelope + sender
-// identity) and handleCreateA2AInboundTask in
+// identity) and the integrations_a2a_rpc_post data plane in
 // assistant/src/runtime/routes/integrations/a2a.ts (message shape).
 // ---------------------------------------------------------------------------
 

@@ -15,8 +15,10 @@ import {
   A2A_VERSION,
   A2A_VERSION_HEADER,
 } from "../../../a2a/protocol-constants.js";
+import { getPeerTokenForSender } from "../../../a2a/peer-auth.js";
 import type { Part } from "../../../a2a/protocol-types.js";
 import * as taskStore from "../../../a2a/task-store.js";
+import { toWireTask } from "../../../a2a/wire-format.js";
 import { getLogger } from "../../../util/logger.js";
 import {
   computeRetryDelay,
@@ -68,8 +70,21 @@ function buildParts(payload: ChannelReplyPayload): Part[] {
 async function pushNotification(
   pushUrl: string,
   taskJson: unknown,
+  peerToken: string | null,
 ): Promise<void> {
   let lastError: Error | null = null;
+
+  const headers: Record<string, string> = {
+    "Content-Type": A2A_CONTENT_TYPE,
+    [A2A_VERSION_HEADER]: A2A_VERSION,
+  };
+  // Attach the per-peer bearer token so the requester can authenticate the
+  // push as genuinely originating from us. Omitted (best-effort) when no
+  // per-peer token exists — e.g. a legacy connection established before
+  // per-peer auth, or a push URL that carries its own validation token.
+  if (peerToken) {
+    headers.Authorization = `Bearer ${peerToken}`;
+  }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
@@ -79,10 +94,7 @@ async function pushNotification(
     try {
       const response = await fetch(pushUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": A2A_CONTENT_TYPE,
-          [A2A_VERSION_HEADER]: A2A_VERSION,
-        },
+        headers,
         body: JSON.stringify(taskJson),
         signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
       });
@@ -141,14 +153,21 @@ export async function deliverA2AReply(
   }
 
   // Push notification — fire-and-forget
-  const pushUrl = taskStore.getPushUrl(taskId);
+  const pushTarget = taskStore.getPushTarget(taskId);
+  const pushUrl = pushTarget?.pushUrl ?? null;
   if (pushUrl) {
-    pushNotification(pushUrl, completedTask).catch((err) => {
-      log.error(
-        { taskId, pushUrl, error: String(err) },
-        "Unexpected push notification error",
-      );
-    });
+    const peerToken = pushTarget?.senderAssistantId
+      ? getPeerTokenForSender(pushTarget.senderAssistantId)
+      : null;
+    // Serialize to the spec camelCase wire form for third-party interop.
+    pushNotification(pushUrl, toWireTask(completedTask), peerToken).catch(
+      (err) => {
+        log.error(
+          { taskId, pushUrl, error: String(err) },
+          "Unexpected push notification error",
+        );
+      },
+    );
   }
 
   log.info({ taskId }, "A2A reply delivered");

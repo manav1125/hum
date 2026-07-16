@@ -109,6 +109,20 @@ describe("redeemA2AInvite", () => {
     });
   });
 
+  test("stores the sender's peer token when supplied (mutual auth)", () => {
+    const result = redeemA2AInvite({
+      sender: { ...SENDER, peerToken: "shared-secret-token" },
+    });
+    expect(result.success).toBe(true);
+
+    const metadata = getAssistantContactMetadata(result.contactId!);
+    expect(metadata!.metadata).toEqual({
+      assistantId: "sender-assistant-123",
+      gatewayUrl: "https://sender.example.com",
+      peerToken: "shared-secret-token",
+    });
+  });
+
   test("channel address uses sender.assistantId.toLowerCase()", () => {
     const senderWithUppercase = {
       ...SENDER,

@@ -95,4 +95,21 @@ describe("buildAgentCard", () => {
       "https://example.com//a2a/message:send",
     );
   });
+
+  test("declares protocol version 1.0", () => {
+    const card = buildAgentCard(BASE_PARAMS);
+    expect(card.protocol_version).toBe("1.0");
+  });
+
+  test("advertises an HTTP bearer security scheme + requirement", () => {
+    const card = buildAgentCard(BASE_PARAMS);
+    expect(card.security_schemes).toBeDefined();
+    const schemes = card.security_schemes as Record<
+      string,
+      { type: string; scheme: string }
+    >;
+    expect(schemes.bearer.type).toBe("http");
+    expect(schemes.bearer.scheme).toBe("bearer");
+    expect(card.security_requirements).toEqual([{ bearer: [] }]);
+  });
 });
