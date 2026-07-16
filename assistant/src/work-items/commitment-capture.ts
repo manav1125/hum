@@ -463,6 +463,10 @@ async function captureCommitments(
         title,
         notes,
         priorityTier: 1, // medium default — triage refines it
+        // Channel commitments are the Inbox agent's remit (message triage);
+        // attributing them here makes the roster's ownership honest and lets
+        // the surfaces show "✉ Inbox" rather than the house "Cue".
+        assignee: "Inbox",
         sourceType: args.sourceChannel,
         sourceId: args.conversationId,
         ...(commitment.dueAt != null ? { dueAt: commitment.dueAt } : {}),

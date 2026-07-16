@@ -17547,9 +17547,9 @@ paths:
       summary: Trigger home feed action
       description:
         "Execute a feed action. `mode` selects how it runs: 'smart' (default) routes off the action's category +
-        the autonomy policy; 'background' dispatches an autonomous run (shown in Activity, result card posted to Home);
-        'thread' seeds a foreground conversation. Returns the resolved mode plus a `conversationId` (thread) or
-        `workItemId` (background/needs_you)."
+        the autonomy policy; 'background' dispatches an autonomous run through the work-item runner (shown in Activity,
+        lands in the Review lane on success); 'thread' seeds a foreground conversation. Returns the resolved mode plus a
+        `conversationId` (thread) or `workItemId` (background/needs_you)."
       tags:
         - home
       responses:
@@ -19601,32 +19601,6 @@ paths:
                   - enabled
                   - activeConnections
                 additionalProperties: false
-  /v1/integrations/a2a/inbound:
-    post:
-      operationId: integrations_a2a_inbound_post
-      summary: Create an inbound A2A task
-      description:
-        Called by the gateway when a peer agent sends a message:send. Persists the task (with the requester's push
-        URL) and returns the task id for the reply callback. ACL-gated on a trusted A2A contact.
-      tags:
-        - integrations
-      responses:
-        "200":
-          description: Successful response
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  taskId:
-                    type: string
-                  state:
-                    type: string
-                    description: Initial task state (submitted)
-                required:
-                  - taskId
-                  - state
-                additionalProperties: false
   /v1/integrations/a2a/invite:
     post:
       operationId: integrations_a2a_invite_post
@@ -19713,6 +19687,8 @@ paths:
                         type: string
                       gatewayUrl:
                         type: string
+                      peerToken:
+                        type: string
                     required:
                       - assistantId
                       - displayName
@@ -19749,6 +19725,18 @@ paths:
                 required:
                   - success
                 additionalProperties: false
+  /v1/integrations/a2a/rpc:
+    post:
+      operationId: integrations_a2a_rpc_post
+      summary: A2A JSON-RPC data plane
+      description:
+        Authenticated A2A JSON-RPC handler (message/send, tasks/get, tasks/cancel). Called by the gateway's public
+        /a2a/message:send endpoint.
+      tags:
+        - integrations
+      responses:
+        "200":
+          description: Successful response
   /v1/integrations/ingress/config:
     get:
       operationId: integrations_ingress_config_get
@@ -29739,6 +29727,19 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        ranProvenance:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - auto
+                                - you_approved
+                                - manual
+                            - type: "null"
+                          description:
+                            'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
+                            approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
+                            its tool permissions; "manual" = the owner completed it themselves (Cue never ran it); null
+                            = not applicable (not yet run / not a manual completion).'
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -29769,6 +29770,7 @@ paths:
                         - sourceType
                         - sourceId
                         - approvalStatus
+                        - ranProvenance
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -37243,6 +37245,19 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        ranProvenance:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - auto
+                                - you_approved
+                                - manual
+                            - type: "null"
+                          description:
+                            'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
+                            approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
+                            its tool permissions; "manual" = the owner completed it themselves (Cue never ran it); null
+                            = not applicable (not yet run / not a manual completion).'
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -37273,6 +37288,7 @@ paths:
                         - sourceType
                         - sourceId
                         - approvalStatus
+                        - ranProvenance
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -37409,6 +37425,19 @@ paths:
                         anyOf:
                           - type: string
                           - type: "null"
+                      ranProvenance:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - auto
+                              - you_approved
+                              - manual
+                          - type: "null"
+                        description:
+                          'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
+                          approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
+                          its tool permissions; "manual" = the owner completed it themselves (Cue never ran it); null =
+                          not applicable (not yet run / not a manual completion).'
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -37439,6 +37468,7 @@ paths:
                       - sourceType
                       - sourceId
                       - approvalStatus
+                      - ranProvenance
                       - createdAt
                       - updatedAt
                     additionalProperties: false

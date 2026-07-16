@@ -35,7 +35,6 @@ import { Link, useNavigate } from "react-router";
 import { AgentChip, StateBadge } from "@vellumai/design-library";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { useCharters } from "@/pages/hq-agents/charters";
 import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -57,6 +56,8 @@ import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { CaptureBar } from "./capture-bar";
+import { HqWorkLoopBoard } from "./hq-board";
+import { useAgentFor } from "./hq-agent-identity";
 import { DriftNudge, driftFromEvents } from "./drift-nudge";
 import {
   LowConfidenceFilePrompt,
@@ -67,7 +68,6 @@ import {
 import { CompanyPanel } from "./company-panel";
 import {
   CameInErrorStrip,
-  DoneTodayChips,
   HqDeckSkeleton,
   NextMoveCard,
   QueuedScheduledSection,
@@ -84,13 +84,11 @@ import {
   C,
   HERO_GRADIENT,
   HqStyle,
-  LiveBars,
   MicroLabel,
   MODE_META,
   RING_META,
   RingsHero,
   StatusRing,
-  fmtCents,
   horizonLabel,
   missionHue,
   mono,
@@ -117,32 +115,6 @@ function monthWindow(): { from: number; to: number } {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   return { from: start.getTime(), to: usageRangeNow() };
-}
-
-/**
- * Resolve a work item's `assignee` to a named roster agent for the AgentChip.
- * Attribution rides on the free-text `assignee` string (the only agent link on
- * the work-item route): mission-planned items carry a roster name; triage/
- * inbound items default to "cue". Returns null for items owned by the user or a
- * contact — we never fake an agent identity we don't have. `emoji` is the
- * roster's self-chosen glyph; AgentChip colors known roles (Ops/Growth/Inbox)
- * and falls back to neutral for anything else.
- */
-function useAgentFor(
-  assignee: string | null | undefined,
-): { name: string; emoji?: string } | null {
-  const assistantId = useActiveAssistantId();
-  const charters = useCharters(assistantId);
-  return useMemo(() => {
-    const key = (assignee ?? "").trim().toLowerCase();
-    if (!key || key === "you") return null;
-    const match = charters.find(
-      (c) => c.name.trim().toLowerCase() === key || c.id.toLowerCase() === key,
-    );
-    if (match) return { name: match.name, emoji: match.emoji };
-    if (key === "cue") return { name: "Cue" };
-    return null;
-  }, [assignee, charters]);
 }
 
 /** Agent-identity line for a work-item card; renders nothing when unattributable. */
@@ -531,238 +503,6 @@ function MissionList({ missions }: { missions: Mission[] }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/** Right rail: agents at work (running items, live progress) + spend chips. */
-function WorkRail({
-  running,
-  missions,
-  monthUsd,
-  capUsd,
-}: {
-  running: HqWorkItem[];
-  missions: Mission[];
-  monthUsd: number;
-  capUsd: number | null;
-}) {
-  const byProject = useMemo(() => missionByProject(missions), [missions]);
-  const missionSpend = missions.reduce(
-    (sum, m) => sum + m.rollup.spentCents,
-    0,
-  );
-  const missionBudget = missions.reduce(
-    (sum, m) => sum + (m.rollup.budgetCents ?? 0),
-    0,
-  );
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <MicroLabel>Agents at work</MicroLabel>
-          {/* → the org / roster surface. */}
-          <Link
-            to={routes.hqAgents}
-            style={{
-              fontSize: 10.5,
-              color: C.blueS,
-              fontWeight: 500,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Agents ›
-          </Link>
-        </div>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontFamily: mono,
-            fontSize: 10,
-            color: running.length > 0 ? C.green : C.t3,
-          }}
-        >
-          {running.length > 0 ? (
-            <span
-              aria-hidden
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: C.green,
-                animation: "hqBlink 1.6s ease infinite",
-              }}
-            />
-          ) : null}
-          {running.length} live
-        </span>
-      </div>
-
-      {running.length === 0 ? (
-        <div
-          style={{
-            border: `1px solid ${C.line}`,
-            borderRadius: 12,
-            padding: 13,
-            marginTop: 12,
-            fontSize: 12,
-            color: C.t3,
-            background: C.surface,
-          }}
-        >
-          Nothing running this second — Cue is standing by.
-        </div>
-      ) : (
-        running.slice(0, 4).map((item) => {
-          const mission = item.projectId
-            ? (byProject.get(item.projectId) ?? null)
-            : null;
-          return (
-            <div
-              key={item.id}
-              style={{
-                background: C.surface,
-                border: `1px solid ${C.line}`,
-                borderRadius: 12,
-                padding: 13,
-                marginTop: 12,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ marginBottom: 4 }}>
-                    <StateBadge state="running" size="sm" />
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: C.ink,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {item.title}
-                  </div>
-                  {mission ? (
-                    <div
-                      style={{
-                        fontFamily: mono,
-                        fontSize: 9.5,
-                        color: C.blueS,
-                        marginTop: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {mission.title.toUpperCase()}
-                    </div>
-                  ) : null}
-                </div>
-                <LiveBars color={C.blue} />
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: C.t2,
-                  marginTop: 9,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {item.lastProgressNote ?? "Working…"}
-              </div>
-              <WorkItemAgent assignee={item.assignee} />
-            </div>
-          );
-        })
-      )}
-
-      <div
-        style={{
-          marginTop: "auto",
-          paddingTop: 16,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-        }}
-      >
-        <div
-          style={{
-            flex: 1,
-            minWidth: 110,
-            background: C.surface,
-            border: `1px solid ${C.line}`,
-            borderRadius: 10,
-            padding: 11,
-          }}
-        >
-          <MicroLabel style={{ fontSize: 9.5 }}>Spend · month</MicroLabel>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: C.ink,
-              marginTop: 2,
-            }}
-          >
-            ${monthUsd.toFixed(monthUsd >= 100 ? 0 : 2)}
-            {capUsd != null ? (
-              <span style={{ fontSize: 11, color: C.t3, fontWeight: 400 }}>
-                {" "}
-                / ${capUsd}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        {/* TIME BACK — pre-ledger "measuring…" until the act ledger is real
-            (R5·A3 option b: no number until it's true). */}
-        <TimeBackChip ledger={null} />
-        {missionBudget > 0 ? (
-          <div
-            style={{
-              flex: 1,
-              background: C.surface,
-              border: `1px solid ${C.line}`,
-              borderRadius: 10,
-              padding: 11,
-            }}
-          >
-            <MicroLabel style={{ fontSize: 9.5 }}>Mission budgets</MicroLabel>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color:
-                  missionSpend >= missionBudget && missionBudget > 0
-                    ? C.danger
-                    : C.ink,
-                marginTop: 2,
-              }}
-            >
-              {fmtCents(missionSpend)}
-              <span style={{ fontSize: 11, color: C.t3, fontWeight: 400 }}>
-                {" "}
-                / {fmtCents(missionBudget)}
-              </span>
-            </div>
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }
@@ -1670,140 +1410,109 @@ export function HqPage() {
             }
           />
         ) : (
-          <div
-            data-slot="hq-columns"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 300px",
-              gap: 26,
-              alignItems: "stretch",
-            }}
-          >
-            {/* MAIN COLUMN */}
-            <div data-slot="hq-stream" style={{ minWidth: 0 }}>
-              <CaptureBar />
-              <RingsHeroCard
-                missions={deckMissions}
-                doneToday={doneToday.length}
-                dayLabel={dayLabel}
-              />
+          <div data-slot="hq-stream" style={{ minWidth: 0 }}>
+            <CaptureBar />
+            <RingsHeroCard
+              missions={deckMissions}
+              doneToday={doneToday.length}
+              dayLabel={dayLabel}
+            />
 
-              {/* Watching line + came-in strip (error stays inside it). §4:
-                  each item's tag re-files via ReassignMenu; unfiled items get
-                  the honest LowConfidenceFilePrompt instead of a guessed tag. */}
-              <WatchingLine assistantId={assistantId} />
-              {queued.isError ? (
-                <CameInErrorStrip onRetry={() => void queued.refetch()} />
-              ) : (
-                <CameInReassignStrip
-                  items={cameIn}
-                  projects={projects}
-                  missionsByProjectId={byProject}
-                  assistantId={assistantId}
-                  onNewMission={() => setShowNewMission({ open: true })}
-                />
-              )}
-
-              {/* §6 · Drifting — honest nudge on any mission that's idling. */}
-              <MissionDriftNudges
+            {/* Inbound — the watching line + came-in strip. Reassign/teach
+                lives here; the board below picks the loop up from Running. */}
+            <WatchingLine assistantId={assistantId} />
+            {queued.isError ? (
+              <CameInErrorStrip onRetry={() => void queued.refetch()} />
+            ) : (
+              <CameInReassignStrip
+                items={cameIn}
+                projects={projects}
+                missionsByProjectId={byProject}
                 assistantId={assistantId}
-                missions={deckMissions}
+                onNewMission={() => setShowNewMission({ open: true })}
               />
+            )}
 
-              {reviewItems.length > 0 || move.hasMove ? (
-                <>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      justifyContent: "space-between",
-                      margin: "18px 0 4px",
-                    }}
-                  >
-                    <MicroLabel color={C.danger}>
-                      Needs you · {reviewItems.length + (move.hasMove ? 1 : 0)}
-                    </MicroLabel>
-                    <Link
-                      to={routes.allWork}
-                      style={{
-                        fontSize: 11.5,
-                        color: C.blueS,
-                        fontWeight: 500,
-                        textDecoration: "none",
-                      }}
-                    >
-                      See all in the queue ›
-                    </Link>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 9,
-                      marginTop: 8,
-                    }}
-                  >
-                    {/* ◆ YOUR NEXT MOVE — the emphasized card, always first. */}
-                    <NextMoveCard assistantId={assistantId} move={move} />
-                    {reviewItems.slice(0, 4).map((item) => (
-                      <NeedsYouCard
-                        key={item.id}
-                        item={item}
-                        mission={
-                          item.projectId
-                            ? (byProject.get(item.projectId) ?? null)
-                            : null
-                        }
-                      />
-                    ))}
-                  </div>
-                </>
-              ) : (
+            {/* §6 · Drifting — honest nudge on any mission that's idling. */}
+            <MissionDriftNudges
+              assistantId={assistantId}
+              missions={deckMissions}
+            />
+
+            {/* ◆ YOUR NEXT MOVE — the chief-of-staff pick, emphasized above the
+                board. reviewItems already excludes it, so it never doubles. */}
+            {move.hasMove ? (
+              <div style={{ marginTop: 16 }}>
+                <NextMoveCard assistantId={assistantId} move={move} />
+              </div>
+            ) : null}
+
+            {/* The work-loop board — Running → Needs you → Review → Done, with
+                live movement on the running cards. Inbound stays in the strip
+                above, so this is the four-lane active loop. */}
+            <HqWorkLoopBoard
+              assistantId={assistantId}
+              running={running.items}
+              review={reviewItems}
+              done={doneToday}
+              byProject={byProject}
+            />
+
+            {/* Standing schedules — what fires on its own. */}
+            <QueuedScheduledSection
+              queued={cameIn}
+              schedules={schedules}
+              missionsByProjectId={byProject}
+            />
+
+            {/* Spend + time-back — the honest cost line (from the retired rail). */}
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 16,
+              }}
+            >
+              <div
+                style={{
+                  minWidth: 140,
+                  background: C.surface,
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 10,
+                  padding: 11,
+                }}
+              >
+                <MicroLabel style={{ fontSize: 9.5 }}>Spend · month</MicroLabel>
                 <div
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 9,
-                    marginTop: 18,
-                    padding: "11px 14px",
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 10,
-                    background: C.surface,
-                    fontFamily: mono,
-                    fontSize: 12.5,
-                    color: C.t3,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: C.ink,
+                    marginTop: 2,
                   }}
                 >
-                  <span aria-hidden style={{ color: C.green }}>
-                    ✓
-                  </span>
-                  Nothing needs you
+                  $
+                  {(usage.data?.totalEstimatedCostUsd ?? 0).toFixed(
+                    (usage.data?.totalEstimatedCostUsd ?? 0) >= 100 ? 0 : 2,
+                  )}
+                  {budget.data?.monthlyCapUsd != null ? (
+                    <span
+                      style={{ fontSize: 11, color: C.t3, fontWeight: 400 }}
+                    >
+                      {" "}
+                      / ${budget.data.monthlyCapUsd}
+                    </span>
+                  ) : null}
                 </div>
-              )}
-
-              {/* Queued & scheduled — what runs next and what fires on its own. */}
-              <QueuedScheduledSection
-                queued={cameIn}
-                schedules={schedules}
-                missionsByProjectId={byProject}
-              />
-
-              {/* Done today — the receipts, as chips. */}
-              <DoneTodayChips items={done.items} todayStart={todayStart} />
-
-              <MicroLabel style={{ margin: "20px 0 10px" }}>
-                Missions · {deckMissions.length}
-              </MicroLabel>
-              <MissionList missions={deckMissions} />
+              </div>
+              <TimeBackChip ledger={null} />
             </div>
 
-            {/* RIGHT RAIL */}
-            <WorkRail
-              running={running.items}
-              missions={missions}
-              monthUsd={usage.data?.totalEstimatedCostUsd ?? 0}
-              capUsd={budget.data?.monthlyCapUsd ?? null}
-            />
+            <MicroLabel style={{ margin: "20px 0 10px" }}>
+              Missions · {deckMissions.length}
+            </MicroLabel>
+            <MissionList missions={deckMissions} />
           </div>
         )}
       </div>

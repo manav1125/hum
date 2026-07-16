@@ -28,6 +28,10 @@ import {
   listWorkItemEvents,
   recordWorkItemEvent,
 } from "../../work-items/work-item-events.js";
+import {
+  deriveRanProvenance,
+  withRanProvenance,
+} from "../../work-items/work-item-provenance.js";
 import { runWorkItemInBackground } from "../../work-items/work-item-runner.js";
 import {
   createWorkItem,
@@ -35,6 +39,7 @@ import {
   getWorkItem,
   listWorkItems,
   updateWorkItem,
+  type WorkItem,
   type WorkItemStatus,
 } from "../../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
@@ -96,9 +101,28 @@ export const workItemSchema = z.object({
   sourceType: z.string().nullable(),
   sourceId: z.string().nullable(),
   approvalStatus: z.string().nullable(),
+  ranProvenance: z
+    .enum(["auto", "you_approved", "manual"])
+    .nullable()
+    .describe(
+      "Read-time run-provenance trust signal for Done cards: " +
+        '"auto" = Cue ran it autonomously with no owner-gated approval; ' +
+        '"you_approved" = the owner approved a guardian gate during the run ' +
+        "or pre-approved its tool permissions; " +
+        '"manual" = the owner completed it themselves (Cue never ran it); ' +
+        "null = not applicable (not yet run / not a manual completion).",
+    ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
+
+/**
+ * Attach the read-time `ranProvenance` trust signal to a single work item for
+ * the route response. List endpoints use `withRanProvenance` (batched) instead.
+ */
+function annotateWorkItem(item: WorkItem) {
+  return { ...item, ranProvenance: deriveRanProvenance(item) };
+}
 
 function broadcastWorkItemStatus(id: string): void {
   const item = getWorkItem(id);
@@ -601,7 +625,7 @@ export const ROUTES: RouteDefinition[] = [
         ...(resolvedStatus ? { status: resolvedStatus } : {}),
         ...(projectId ? { projectId } : {}),
       });
-      return { items };
+      return { items: withRanProvenance(items) };
     },
   },
 
@@ -683,7 +707,7 @@ export const ROUTES: RouteDefinition[] = [
       broadcastWorkItemStatus(item.id);
       publishEvent({ type: "tasks_changed" });
 
-      return { item };
+      return { item: annotateWorkItem(item) };
     },
   },
 
@@ -703,7 +727,7 @@ export const ROUTES: RouteDefinition[] = [
       if (!item) {
         throw new NotFoundError("Work item not found");
       }
-      return { item };
+      return { item: annotateWorkItem(item) };
     },
   },
 
@@ -803,7 +827,7 @@ export const ROUTES: RouteDefinition[] = [
       broadcastWorkItemStatus(item.id);
       publishEvent({ type: "tasks_changed" });
 
-      return { item };
+      return { item: annotateWorkItem(item) };
     },
   },
 
@@ -843,7 +867,7 @@ export const ROUTES: RouteDefinition[] = [
         broadcastWorkItemStatus(item.id);
         publishEvent({ type: "tasks_changed" });
       }
-      return { item };
+      return { item: item ? annotateWorkItem(item) : null };
     },
   },
 

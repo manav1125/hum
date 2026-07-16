@@ -19,6 +19,7 @@ import {
   reorderProjects,
   updateProject,
 } from "../../work-items/project-store.js";
+import { withRanProvenance } from "../../work-items/work-item-provenance.js";
 import {
   listWorkItems,
   type WorkItemStatus,
@@ -330,7 +331,7 @@ export const ROUTES: RouteDefinition[] = [
         projectId: id,
         ...(resolvedStatus ? { status: resolvedStatus } : {}),
       });
-      return { items };
+      return { items: withRanProvenance(items) };
     },
   },
 ];
