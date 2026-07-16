@@ -57,6 +57,7 @@ import { usageRangeNow } from "@/utils/usage-window";
 
 import { CaptureBar } from "./capture-bar";
 import { HqWorkLoopBoard } from "./hq-board";
+import { HqFirstRun, useHqFirstRun } from "./hq-firstrun";
 import { useAgentFor } from "./hq-agent-identity";
 import { DriftNudge, driftFromEvents } from "./drift-nudge";
 import {
@@ -1241,6 +1242,7 @@ export function HqPage() {
   const { move } = useNextMove(assistantId);
   const { degraded, syncedLabel } = useDegradedState();
   const orientation = useHqOrientation();
+  const firstRun = useHqFirstRun();
   const todayStart = useTodayStart();
 
   const month = monthWindow();
@@ -1446,6 +1448,9 @@ export function HqPage() {
                 <NextMoveCard assistantId={assistantId} move={move} />
               </div>
             ) : null}
+
+            {/* First-run — three cards that teach the loop, once. */}
+            {firstRun.show ? <HqFirstRun onDismiss={firstRun.dismiss} /> : null}
 
             {/* The work-loop board — Running → Needs you → Review → Done, with
                 live movement on the running cards. Inbound stays in the strip
