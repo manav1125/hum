@@ -32,9 +32,10 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { StateBadge } from "@vellumai/design-library";
+import { AgentChip, StateBadge } from "@vellumai/design-library";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { useCharters } from "@/pages/hq-agents/charters";
 import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -116,6 +117,56 @@ function monthWindow(): { from: number; to: number } {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   return { from: start.getTime(), to: usageRangeNow() };
+}
+
+/**
+ * Resolve a work item's `assignee` to a named roster agent for the AgentChip.
+ * Attribution rides on the free-text `assignee` string (the only agent link on
+ * the work-item route): mission-planned items carry a roster name; triage/
+ * inbound items default to "cue". Returns null for items owned by the user or a
+ * contact — we never fake an agent identity we don't have. `emoji` is the
+ * roster's self-chosen glyph; AgentChip colors known roles (Ops/Growth/Inbox)
+ * and falls back to neutral for anything else.
+ */
+function useAgentFor(
+  assignee: string | null | undefined,
+): { name: string; emoji?: string } | null {
+  const assistantId = useActiveAssistantId();
+  const charters = useCharters(assistantId);
+  return useMemo(() => {
+    const key = (assignee ?? "").trim().toLowerCase();
+    if (!key || key === "you") return null;
+    const match = charters.find(
+      (c) => c.name.trim().toLowerCase() === key || c.id.toLowerCase() === key,
+    );
+    if (match) return { name: match.name, emoji: match.emoji };
+    if (key === "cue") return { name: "Cue" };
+    return null;
+  }, [assignee, charters]);
+}
+
+/** Agent-identity line for a work-item card; renders nothing when unattributable. */
+function WorkItemAgent({
+  assignee,
+  detail,
+  style,
+}: {
+  assignee: string | null | undefined;
+  detail?: string;
+  style?: React.CSSProperties;
+}) {
+  const agent = useAgentFor(assignee);
+  if (!agent) return null;
+  return (
+    <div style={{ marginTop: 8, ...style }}>
+      <AgentChip
+        name={agent.name}
+        emoji={agent.emoji}
+        detail={detail}
+        size="sm"
+      />
+    </div>
+  );
 }
 
 /** The one-line brief headline — derived, never fabricated. */
@@ -358,6 +409,7 @@ function NeedsYouCard({
           {" · "}Cue finished this — it waits for your yes
           {item.updatedAt ? ` · ${relativeTime(item.updatedAt)}` : ""}.
         </div>
+        <WorkItemAgent assignee={item.assignee} style={{ marginTop: 6 }} />
       </div>
       <button type="button" onClick={openReview} style={reviewBtn}>
         Review
@@ -634,6 +686,7 @@ function WorkRail({
               >
                 {item.lastProgressNote ?? "Working…"}
               </div>
+              <WorkItemAgent assignee={item.assignee} />
             </div>
           );
         })
