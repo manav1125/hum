@@ -84,6 +84,26 @@ mock.module("electron", () => ({
   shell: {
     openExternal: mock(() => Promise.resolve()),
   },
+  // tray.ts reaches cue-live-service, which transitively imports `ipcMain`.
+  // A mock.module replaces the whole module, so anything the import graph
+  // touches must be listed here or the import fails outright.
+  ipcMain: {
+    handle: mock(() => undefined),
+    on: mock(() => undefined),
+    removeAllListeners: mock(() => undefined),
+  },
+}));
+
+// tray.ts → cue-live-service → ./logger → electron-log, which calls
+// `app.isReady()` at import time. Stub the logger so the real electron-log
+// never loads (the same stub the other main-process suites use).
+mock.module("./logger", () => ({
+  default: {
+    info: mock(() => undefined),
+    warn: mock(() => undefined),
+    error: mock(() => undefined),
+    debug: mock(() => undefined),
+  },
 }));
 
 mock.module("./assets/menu-icons", () => ({
@@ -200,7 +220,8 @@ beforeEach(() => {
     intervalCallback = cb;
     return 1 as unknown as ReturnType<typeof setInterval>;
   }) as typeof setInterval;
-  globalThis.clearInterval = clearIntervalMock as unknown as typeof clearInterval;
+  globalThis.clearInterval =
+    clearIntervalMock as unknown as typeof clearInterval;
 });
 
 afterEach(() => {
@@ -262,9 +283,9 @@ describe("installTray", () => {
     expect(labels).toContain("Restart");
     expect(labels).toContain("About Cue Electron");
     expect(labels).toContain("Quit Cue Electron");
-    expect(
-      template.find((item) => item.label?.startsWith("Quit"))?.role,
-    ).toBe("quit");
+    expect(template.find((item) => item.label?.startsWith("Quit"))?.role).toBe(
+      "quit",
+    );
   });
 
   test("the Re-pair item appears only when status is authFailed", () => {
