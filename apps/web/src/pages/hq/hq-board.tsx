@@ -21,6 +21,7 @@ import {
   pendinginteractionsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { relativeTime } from "@/domains/activity/theme";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 
 import { C, LiveBars, mono, sourceBadge } from "./hq-kit";
@@ -48,6 +49,7 @@ function Lane({
   children,
   empty,
   coach,
+  order,
 }: {
   state: "capture" | "running" | "needsyou" | "review" | "done";
   label: string;
@@ -56,11 +58,13 @@ function Lane({
   empty: ReactNode;
   /** `data-coach` anchor for the guided first-step tour, when this lane is one. */
   coach?: string;
+  /** Visual order — used on mobile to sort the stream by what needs you. */
+  order?: number;
 }) {
   return (
     <div
       data-coach={coach}
-      style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
+      style={{ display: "flex", flexDirection: "column", minWidth: 0, order }}
     >
       <div
         style={{
@@ -380,6 +384,7 @@ export function HqWorkLoopBoard({
   byProject: ByProject;
 }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const interactionsQuery = useQuery({
     ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
     refetchInterval: 60_000,
@@ -398,11 +403,18 @@ export function HqWorkLoopBoard({
 
   return (
     <div style={{ marginTop: 16 }} data-coach="hq-lanes">
-      <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+      {/* Desktop reads the loop left-to-right. Mobile collapses the lanes into
+          one scannable stream ordered by what needs you (design: v2 §C) —
+          same badges, same verbs — rather than a side-scrolling board. */}
+      <div
+        style={{ overflowX: isMobile ? "visible" : "auto", paddingBottom: 4 }}
+      >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: `repeat(${inbound ? 5 : 4}, minmax(190px, 1fr))`,
+            gridTemplateColumns: isMobile
+              ? "minmax(0, 1fr)"
+              : `repeat(${inbound ? 5 : 4}, minmax(190px, 1fr))`,
             gap: 12,
             alignItems: "start",
           }}
@@ -411,6 +423,7 @@ export function HqWorkLoopBoard({
             <Lane
               state="capture"
               label="Inbound"
+              order={isMobile ? 4 : undefined}
               count={inbound.length}
               empty={
                 <LaneEmpty
@@ -428,6 +441,7 @@ export function HqWorkLoopBoard({
           <Lane
             state="running"
             label="Running"
+            order={isMobile ? 3 : undefined}
             coach="hq-agents"
             count={running.length}
             empty={
@@ -445,6 +459,7 @@ export function HqWorkLoopBoard({
           <Lane
             state="needsyou"
             label="Needs you"
+            order={isMobile ? 1 : undefined}
             count={needsYou.length}
             empty={
               <LaneEmpty
@@ -465,6 +480,7 @@ export function HqWorkLoopBoard({
           <Lane
             state="review"
             label="Review"
+            order={isMobile ? 2 : undefined}
             count={review.length}
             empty={
               <LaneEmpty
@@ -485,6 +501,7 @@ export function HqWorkLoopBoard({
           <Lane
             state="done"
             label="Done"
+            order={isMobile ? 5 : undefined}
             count={done.length}
             empty={
               <LaneEmpty
