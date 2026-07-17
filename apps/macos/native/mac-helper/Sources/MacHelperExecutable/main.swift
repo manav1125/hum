@@ -223,6 +223,12 @@ final class MacHelper: @unchecked Sendable {
             let object = (params as? [String: Any]) ?? [:]
             return self.ensureCueLive().captureScreen(params: object)
         }
+        // Prompts for Screen Recording — the only thing that puts Cue in the
+        // System Settings list (see CueLive.requestScreenRecording).
+        router.register("cuelive.requestScreenRecording") { [weak self] _ in
+            guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
+            return self.ensureCueLive().requestScreenRecording()
+        }
         router.register("cuelive.pointAt") { [weak self] params in
             guard let self else { throw JsonRpcDispatchError.internalError("Helper is shutting down") }
             guard let object = params as? [String: Any] else {

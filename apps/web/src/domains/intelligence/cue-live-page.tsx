@@ -925,11 +925,15 @@ function TakeControlCard({
   on,
   busy,
   onChange,
+  blockedReason,
 }: {
   on: boolean;
   busy: boolean;
   onChange: (next: boolean) => void;
+  /** Set when a missing macOS grant means Cue physically cannot act. */
+  blockedReason?: string | null;
 }) {
+  const blocked = Boolean(blockedReason);
   return (
     <div>
       <div style={sectionLabel}>Take control</div>
@@ -949,14 +953,32 @@ function TakeControlCard({
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 500 }}>Allow Cue to act</div>
+          {/* Blocked = a macOS grant is missing, so flipping this would switch
+              the mode to one that can't do anything. Say so instead of
+              pretending the switch worked. */}
           <Toggle
-            on={on}
-            busy={busy}
+            on={on && !blocked}
+            busy={busy || blocked}
             accent="violet"
             onChange={onChange}
             label="Allow Cue to act"
           />
         </div>
+        {blocked ? (
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "#fff",
+              background: "rgba(255,255,255,0.12)",
+              borderRadius: 8,
+              padding: "7px 9px",
+            }}
+          >
+            {blockedReason}
+          </div>
+        ) : null}
         <div
           style={{
             fontSize: 12,
@@ -1695,11 +1717,14 @@ function DesktopControlPanel() {
   const openVoiceSetup = () => setShowVoiceSetup(true);
 
   // Effective permissions: the dedicated IPC when present, else synthesize from
-  // the status flag (older preloads report only Accessibility; assume Screen
-  // Recording granted there so we don't show a banner we can't substantiate).
+  // the status flag. When we can't read Screen Recording we say NOT granted —
+  // never the reverse. Claiming a grant we haven't substantiated hid the
+  // permissions banner while capture was silently dead, which is exactly the
+  // state the banner exists to surface. An unnecessary banner is a small cost;
+  // a hidden one strands the user with a feature that quietly does nothing.
   const effectivePermissions: CueLivePermissions = permissions ?? {
     accessibilityTrusted: status.accessibilityTrusted,
-    screenRecordingGranted: true,
+    screenRecordingGranted: false,
   };
   const voiceReady = Boolean(voiceKeys?.hasAssemblyAi);
 
@@ -1871,6 +1896,13 @@ function DesktopControlPanel() {
           on={status.takeControl}
           busy={busy}
           onChange={(next) => void handleTakeControl(next)}
+          blockedReason={
+            !effectivePermissions.screenRecordingGranted
+              ? "Needs Screen Recording — grant it above and this switches on."
+              : !effectivePermissions.accessibilityTrusted
+                ? "Needs Accessibility — grant it above and this switches on."
+                : null
+          }
         />
         <HowItSeesCard />
         <TrustNote />

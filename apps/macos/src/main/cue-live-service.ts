@@ -42,6 +42,7 @@ const CUE_LIVE_SPEAK = "cuelive.speak";
 const CUE_LIVE_PERFORM_ACTION = "cuelive.performAction";
 const CUE_LIVE_ABORT = "cuelive.abort";
 const CUE_LIVE_PERMISSIONS = "cuelive.permissions";
+const CUE_LIVE_REQUEST_SCREEN_RECORDING = "cuelive.requestScreenRecording";
 const CUE_LIVE_ACT_PATH = "/cuelive/act";
 
 /** `cuelive.summoned` — cursor in AX top-left coords + optional spoken question
@@ -187,6 +188,57 @@ export const getPermissions = async (): Promise<CueLivePermissions> => {
     return fallback;
   }
 };
+
+/** `cuelive.requestScreenRecording` result. */
+const SCREEN_REQUEST_SCHEMA = z.object({
+  granted: z.boolean(),
+  prompted: z.boolean(),
+});
+
+export interface ScreenRecordingRequestResult {
+  granted: boolean;
+  /** True when macOS showed the consent prompt (first ask). */
+  prompted: boolean;
+  /** True when the helper wasn't reachable, so nothing was asked. */
+  unavailable?: boolean;
+}
+
+/**
+ * Ask macOS for Screen Recording. This is what registers Cue in the System
+ * Settings ▸ Screen & System Audio Recording list — deep-linking to the pane
+ * never does, which is why the row was missing entirely.
+ *
+ * The request must come from the helper (it owns the capture), and the helper
+ * only exists while Cue Live is started — so start it first when it's down,
+ * otherwise the ask silently no-ops. Prompting, unlike `getPermissions`.
+ */
+export const requestScreenRecording =
+  async (): Promise<ScreenRecordingRequestResult> => {
+    if (!started) {
+      try {
+        await start();
+      } catch (err) {
+        log.warn(
+          `[cue-live] start for permission ask failed: ${errMessage(err)}`,
+        );
+        return { granted: false, prompted: false, unavailable: true };
+      }
+    }
+    try {
+      const raw = await getMacHelperClient().call(
+        CUE_LIVE_REQUEST_SCREEN_RECORDING,
+      );
+      const parsed = SCREEN_REQUEST_SCHEMA.safeParse(raw);
+      if (!parsed.success) {
+        return { granted: false, prompted: false, unavailable: true };
+      }
+      lastKnownScreenRecording = parsed.data.granted;
+      return parsed.data;
+    } catch (err) {
+      log.warn(`[cue-live] screen-recording ask failed: ${errMessage(err)}`);
+      return { granted: false, prompted: false, unavailable: true };
+    }
+  };
 
 /** Last Screen-Recording grant the helper reported (cached, non-prompting). */
 export const isScreenRecordingGranted = (): boolean => lastKnownScreenRecording;

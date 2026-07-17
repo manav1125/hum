@@ -201,6 +201,16 @@ const bridge: VellumBridge = {
       ipcRenderer.invoke(
         "vellum:cueLive:permissions",
       ) as Promise<CueLivePermissions>,
+    requestScreenRecording: (): Promise<{
+      granted: boolean;
+      prompted: boolean;
+      unavailable?: boolean;
+    }> =>
+      ipcRenderer.invoke("vellum:cueLive:requestScreenRecording") as Promise<{
+        granted: boolean;
+        prompted: boolean;
+        unavailable?: boolean;
+      }>,
     openSystemSettings: (pane: CueLiveSettingsPane): Promise<void> =>
       ipcRenderer.invoke(
         "vellum:cueLive:openSystemSettings",
@@ -232,15 +242,13 @@ const bridge: VellumBridge = {
     saveGoal: (
       goal: Omit<CueLiveGoal, "id"> & { id?: string },
     ): Promise<CueLiveGoal[]> =>
-      ipcRenderer.invoke(
-        "vellum:cueLive:saveGoal",
-        goal,
-      ) as Promise<CueLiveGoal[]>,
+      ipcRenderer.invoke("vellum:cueLive:saveGoal", goal) as Promise<
+        CueLiveGoal[]
+      >,
     deleteGoal: (id: string): Promise<CueLiveGoal[]> =>
-      ipcRenderer.invoke(
-        "vellum:cueLive:deleteGoal",
-        id,
-      ) as Promise<CueLiveGoal[]>,
+      ipcRenderer.invoke("vellum:cueLive:deleteGoal", id) as Promise<
+        CueLiveGoal[]
+      >,
     onStartVoice: (callback: () => void) => {
       const handler = () => {
         callback();

@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type {
-  CueLiveGoal,
-  CueLivePermissions,
-} from "@vellumai/ipc-contract";
+import type { CueLiveGoal, CueLivePermissions } from "@vellumai/ipc-contract";
 import { BrowserWindow, shell } from "electron";
 import { z } from "zod";
 
@@ -14,6 +11,7 @@ import {
   isScreenRecordingGranted,
   isStarted,
   pushVoiceConfig,
+  requestScreenRecording,
   runTypedGoal,
   setStartVoiceDispatcher,
   start as startCueLive,
@@ -86,9 +84,7 @@ export const saveGoal = (
 ): CueLiveGoal[] => {
   const current = store.read();
   const existingIndex =
-    input.id !== undefined
-      ? current.findIndex((g) => g.id === input.id)
-      : -1;
+    input.id !== undefined ? current.findIndex((g) => g.id === input.id) : -1;
   const goal: CueLiveGoal = {
     id: input.id ?? randomUUID(),
     label: input.label,
@@ -176,6 +172,20 @@ export const installCueLiveIpc = (): void => {
     (): Promise<CueLivePermissions> => getPermissions(),
   );
 
+  // Ask macOS for Screen Recording and report what happened. This is the call
+  // that registers Cue in the Settings list at all; the renderer uses the
+  // result to say whether it's now granted or the user still has to flip the
+  // row (rather than guessing).
+  handle(
+    "vellum:cueLive:requestScreenRecording",
+    z.tuple([]),
+    async (): Promise<{
+      granted: boolean;
+      prompted: boolean;
+      unavailable?: boolean;
+    }> => requestScreenRecording(),
+  );
+
   // Deep-link the user straight to the relevant System Settings privacy pane.
   // Only the two panes Cue Live cares about are reachable — anything else is a
   // no-op so the renderer can't drive arbitrary openExternal targets.
@@ -183,6 +193,22 @@ export const installCueLiveIpc = (): void => {
     "vellum:cueLive:openSystemSettings",
     z.tuple([z.enum(["accessibility", "screenRecording"])]),
     async ([pane]): Promise<void> => {
+      // Ask BEFORE opening the pane. macOS only lists an app under Screen
+      // Recording once that app has requested it — deep-linking alone left the
+      // user staring at a list with no Cue row and no way to add one. The ask
+      // registers Cue (and may grant it outright on the first answer); opening
+      // the pane after is the fallback for a denied/stale grant.
+      if (pane === "screenRecording") {
+        try {
+          const res = await requestScreenRecording();
+          if (res.granted) return; // Nothing to do in Settings — it's on.
+        } catch (err) {
+          log.warn(
+            `[cue-live] screen-recording ask failed: ` +
+              (err instanceof Error ? err.message : String(err)),
+          );
+        }
+      }
       const url =
         pane === "accessibility"
           ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
@@ -224,10 +250,8 @@ export const installCueLiveIpc = (): void => {
 
   // Voice keys: the renderer reads presence (never the secret values) and sets
   // them. Setting re-pushes the (decrypted) config to the running helper.
-  handle(
-    "vellum:cueLive:voiceKeysStatus",
-    z.tuple([]),
-    (): VoiceKeysStatus => getVoiceKeysStatus(),
+  handle("vellum:cueLive:voiceKeysStatus", z.tuple([]), (): VoiceKeysStatus =>
+    getVoiceKeysStatus(),
   );
 
   handle(
@@ -249,10 +273,8 @@ export const installCueLiveIpc = (): void => {
 
   // Auto-run goals: a persisted list of named goals the user re-runs on demand
   // through the existing runGoal executor. CRUD over the `cueLiveGoals` setting.
-  handle(
-    "vellum:cueLive:listGoals",
-    z.tuple([]),
-    (): CueLiveGoal[] => listGoals(settingsGoalsStore),
+  handle("vellum:cueLive:listGoals", z.tuple([]), (): CueLiveGoal[] =>
+    listGoals(settingsGoalsStore),
   );
 
   handle(

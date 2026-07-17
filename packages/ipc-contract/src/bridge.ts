@@ -107,6 +107,17 @@ export interface VellumBridge {
     summon(): Promise<void>;
     /** Non-prompting read of the macOS Accessibility + Screen Recording grants. */
     permissions(): Promise<CueLivePermissions>;
+    /**
+     * PROMPTING ask for Screen Recording. Unlike `permissions()`, this is what
+     * registers Cue in the System Settings ▸ Screen Recording list — macOS only
+     * lists an app once it has requested. `prompted` is true when the consent
+     * dialog was shown; `unavailable` when the helper wasn't reachable to ask.
+     */
+    requestScreenRecording(): Promise<{
+      granted: boolean;
+      prompted: boolean;
+      unavailable?: boolean;
+    }>;
     /** Deep-link the user to a System Settings privacy pane. */
     openSystemSettings(pane: CueLiveSettingsPane): Promise<void>;
     /** Stop everything: abort any auto-run and hide the overlay (⌥ esc mirror). */

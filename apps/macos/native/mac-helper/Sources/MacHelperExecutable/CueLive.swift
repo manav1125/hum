@@ -144,6 +144,26 @@ final class CueLiveController: @unchecked Sendable {
         ]
     }
 
+    /// Ask macOS for Screen Recording — the ONLY way Cue ever appears in the
+    /// System Settings ▸ Screen & System Audio Recording list. TCC registers an
+    /// app the first time it *requests*; a deep-link to the pane does not, which
+    /// left the user with a permission they were told to grant and no row to
+    /// grant it on. This helper is posix_spawn'd by Cue.app (not launched via
+    /// LaunchServices), so TCC attributes the request to the responsible
+    /// process — Cue — and the row reads "Cue".
+    ///
+    /// Prompting is the point, so this is deliberately NOT `permissions()`.
+    /// Returns the post-request grant: `CGRequestScreenCaptureAccess()` blocks
+    /// until the user answers the first time, and returns the standing answer
+    /// (without a prompt) afterwards — so a false result means "go to Settings".
+    func requestScreenRecording() -> [String: Any] {
+        if CGPreflightScreenCaptureAccess() {
+            return ["granted": true, "prompted": false]
+        }
+        let granted = CGRequestScreenCaptureAccess()
+        return ["granted": granted, "prompted": true]
+    }
+
     /// Trigger a summon programmatically (same effect as the global hotkey):
     /// emits `cuelive.summoned` at the current cursor so the daemon runs the
     /// full read → highlight → card → guidance flow. Backs the tray fallback
