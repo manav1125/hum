@@ -296,7 +296,11 @@ const actSystemPrompt = (w: number, h: number): string =>
   '"action": {"type": "click"|"doubleclick"|"type"|"key"|"scroll"|"move"|"none", ' +
   '"x": <pixel>, "y": <pixel>, "text": <for type>, "key": <return|tab|escape|up|down|left|right|delete|space>, ' +
   '"dx": <for scroll>, "dy": <for scroll>}}\n' +
-  "x,y are the pixel center of the target in the screenshot. One action per " +
+  "x and y are SEPARATE top-level numbers holding the pixel center of the " +
+  "target — never a coordinate array. Exactly like this:\n" +
+  '{"say": "Opening Projects.", "done": false, ' +
+  '"action": {"type": "click", "x": 113, "y": 216}}\n' +
+  "One action per " +
   "step. After typing into a field, the next step is usually key=return when " +
   "submitting. When the goal is complete, set done=true with action=null.\n" +
   "If the goal is just a question rather than a task to perform, answer it in " +
@@ -306,6 +310,28 @@ const actSystemPrompt = (w: number, h: number): string =>
   "explicitly and unambiguously asks for it — in that case set done=true and " +
   "say why instead.";
 
+/**
+ * Vision models ground to a *point*, so they reach for a coordinate pair even
+ * when the schema asks for two numbers: `"x": [113, 216]` with `y` absent.
+ * That is the right click target expressed the model's native way, so accept it
+ * rather than throw the step away — the alternative is a run that gives up on
+ * step 1 and reports success. Only the unambiguous case is coerced: an `x` pair
+ * with no usable `y`.
+ */
+function normalizeActionCoords(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const action = value as Record<string, unknown>;
+  if (
+    Array.isArray(action.x) &&
+    action.x.length === 2 &&
+    action.x.every((n) => typeof n === "number") &&
+    typeof action.y !== "number"
+  ) {
+    return { ...action, x: action.x[0], y: action.x[1] };
+  }
+  return action;
+}
+
 function parseActJson(text: string): ActResultT {
   let raw = text.trim();
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -314,12 +340,25 @@ function parseActJson(text: string): ActResultT {
   const end = raw.lastIndexOf("}");
   if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
   try {
-    const parsed = ActResult.safeParse(JSON.parse(raw));
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    if (obj && typeof obj === "object" && "action" in obj) {
+      obj.action = normalizeActionCoords(obj.action);
+    }
+    const parsed = ActResult.safeParse(obj);
     if (parsed.success) return parsed.data;
+    log.warn(
+      { issues: parsed.error.issues, text: text.slice(0, 300) },
+      "Cue Live act: model reply did not match the action schema",
+    );
   } catch {
-    // fall through
+    log.warn(
+      { text: text.slice(0, 300) },
+      "Cue Live act: model reply was not valid JSON",
+    );
   }
-  // Couldn't parse a valid action — stop the run rather than flail.
+  // Couldn't parse a valid action — stop the run rather than flail. Logged
+  // above: an unreadable reply and a completed goal both land here, and
+  // silently they look identical.
   return { say: null, done: true, action: null };
 }
 
@@ -445,3 +484,5 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({ nextMove: z.string().nullable() }),
   },
 ];
+
+export const __testing = { parseActJson, parsePoints, describeLookFailure };
