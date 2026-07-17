@@ -1,11 +1,4 @@
-import {
-  Check,
-  Lock,
-  Mic,
-  MousePointer2,
-  ShieldAlert,
-  Volume2,
-} from "lucide-react";
+import { Lock, Mic, MousePointer2, ShieldAlert, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
@@ -14,7 +7,6 @@ import type {
   CueLivePermissions,
   CueLiveSettingsPane,
   CueLiveStatus,
-  CueLiveVoiceKeyField,
   CueLiveVoiceKeysStatus,
 } from "@vellumai/ipc-contract";
 
@@ -33,7 +25,6 @@ import {
   saveCueLiveGoal,
   setCueLiveEnabled,
   setCueLiveTakeControl,
-  setVoiceKey,
   stopCueLive,
   summonCueLive,
 } from "@/runtime/cue-live";
@@ -1121,161 +1112,14 @@ function TrustNote() {
 /* "Add an auto-run goal" affordances. Never fabricated.                       */
 /* -------------------------------------------------------------------------- */
 
-function SecretKeyField({
-  field,
-  icon: Icon,
-  label,
-  help,
-  link,
-  configured,
-  onSaved,
-}: {
-  field: CueLiveVoiceKeyField;
-  icon: typeof Mic;
-  label: string;
-  help: string;
-  link: string;
-  configured: boolean;
-  onSaved: (status: CueLiveVoiceKeysStatus | null) => void;
-}) {
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const save = async (next: string | null) => {
-    setBusy(true);
-    onSaved(await setVoiceKey(field, next));
-    setValue("");
-    setBusy(false);
-  };
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        border: `1px solid ${C.line}`,
-        borderRadius: 13,
-        background: C.surface,
-        padding: 14,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Icon className="size-4" style={{ color: C.blue }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
-            {label}
-          </span>
-        </div>
-        {configured && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 12,
-              fontWeight: 500,
-              color: C.blue,
-            }}
-          >
-            <Check className="size-3.5" /> Saved
-          </span>
-        )}
-      </div>
-      <p style={{ fontSize: 12, lineHeight: 1.4, color: C.t2 }}>
-        {help}{" "}
-        <a
-          href={link}
-          target="_blank"
-          rel="noreferrer"
-          style={{ color: C.blue, textDecoration: "underline" }}
-        >
-          Get a key
-        </a>
-      </p>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input
-          type="password"
-          value={value}
-          disabled={busy}
-          placeholder={configured ? "•••••••• (saved)" : "Paste API key"}
-          onChange={(e) => setValue(e.target.value)}
-          style={{
-            minWidth: 0,
-            flex: 1,
-            borderRadius: 8,
-            border: `1px solid ${C.line}`,
-            background: C.sunken,
-            padding: "6px 12px",
-            fontSize: 13,
-            color: C.t1,
-            outline: "none",
-          }}
-        />
-        <button
-          type="button"
-          disabled={busy || !value.trim()}
-          onClick={() => void save(value)}
-          style={{
-            borderRadius: 8,
-            background: C.blue,
-            color: "#fff",
-            padding: "6px 12px",
-            fontSize: 13,
-            fontWeight: 500,
-            border: "none",
-            cursor: busy || !value.trim() ? "default" : "pointer",
-            opacity: busy || !value.trim() ? 0.5 : 1,
-          }}
-        >
-          Save
-        </button>
-        {configured && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save(null)}
-            style={{
-              borderRadius: 8,
-              border: `1px solid ${C.line2}`,
-              background: C.surface,
-              padding: "6px 12px",
-              fontSize: 13,
-              color: C.t2,
-              cursor: busy ? "default" : "pointer",
-              opacity: busy ? 0.5 : 1,
-            }}
-          >
-            Clear
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function VoiceSetup({
-  status,
-  onStatus,
-}: {
-  status: CueLiveVoiceKeysStatus;
-  onStatus: (s: CueLiveVoiceKeysStatus | null) => void;
-}) {
+function VoiceSetup() {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <div style={sectionLabel}>Voice setup</div>
         <p style={{ fontSize: 12.5, color: C.t2, lineHeight: 1.5 }}>
-          Cue Live answers in the voice you set under Voice — no second key to
-          paste here. Asking out loud needs its own key, below. Until it's set,
-          summon still works: hit the hotkey and Cue shows the answer as a card.
+          Cue Live speaks and listens with the voice you set under Voice —
+          nothing to paste here. Set it once and every surface follows.
         </p>
       </div>
       <div
@@ -1295,20 +1139,33 @@ function VoiceSetup({
             Speaking — uses your Voice settings
           </div>
           <p style={{ fontSize: 12, lineHeight: 1.4, color: C.t2 }}>
-            Cue speaks answers aloud in the voice configured under Voice. Change
-            the voice there and Cue Live follows.
+            Cue answers aloud in the voice configured under Voice. Change it
+            there and Cue Live follows.
           </p>
         </div>
       </div>
-      <SecretKeyField
-        field="assemblyAi"
-        icon={Mic}
-        label="AssemblyAI — speech to text"
-        help="Lets you hold ⌃⌥ and ask out loud."
-        link="https://www.assemblyai.com/dashboard/api-keys"
-        configured={status.hasAssemblyAi}
-        onSaved={onStatus}
-      />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          border: `1px solid ${C.line}`,
+          borderRadius: 13,
+          background: C.surface,
+          padding: 14,
+        }}
+      >
+        <Mic size={16} color={C.t2} style={{ flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
+            Asking out loud — uses your Voice settings
+          </div>
+          <p style={{ fontSize: 12, lineHeight: 1.4, color: C.t2 }}>
+            Hold ⌃⌥ and speak. Cue transcribes with the speech-to-text provider
+            configured under Voice.
+          </p>
+        </div>
+      </div>
     </section>
   );
 }
@@ -1673,7 +1530,11 @@ function DesktopControlPanel() {
     accessibilityTrusted: status.accessibilityTrusted,
     screenRecordingGranted: false,
   };
-  const voiceReady = Boolean(voiceKeys?.hasAssemblyAi);
+  // Speech now runs on the assistant, so there is no local key to gate on.
+  // When the owner hasn't configured STT there, a held key still summons — Cue
+  // looks at the screen and answers the default question instead of hearing
+  // one. Degraded and visible, not a silent dead end.
+  const voiceReady = true;
 
   // The mock's status pill: "running · companion" when live. The shipped mode
   // is always Companion, so we surface that. We reflect the *real* run state.
@@ -1824,9 +1685,7 @@ function DesktopControlPanel() {
         <GoalRunner />
 
         {/* Real voice-key entry, revealed by Change / Add-goal affordances. */}
-        {showVoiceSetup && voiceKeys && (
-          <VoiceSetup status={voiceKeys} onStatus={setVoiceKeys} />
-        )}
+        {showVoiceSetup && voiceKeys && <VoiceSetup />}
       </div>
 
       {/* RIGHT RAIL */}

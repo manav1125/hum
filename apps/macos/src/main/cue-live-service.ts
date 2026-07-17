@@ -51,6 +51,13 @@ const SUMMONED_SCHEMA = z.object({
   x: z.number(),
   y: z.number(),
   question: z.string().optional(),
+  /**
+   * The recording, when the helper has no STT key of its own: it captures the
+   * mic and we transcribe through the assistant, so the owner configures
+   * speech once under Voice rather than pasting a second key here.
+   */
+  audioBase64: z.string().optional(),
+  audioMimeType: z.string().optional(),
 });
 
 /** `cuelive.run` — the ⌥R push-to-talk key (backlog #29). The helper reports
@@ -267,6 +274,41 @@ let ttsFetcher: TtsFetcher | null = null;
 export const setTtsFetcher = (fetcher: TtsFetcher | null): void => {
   ttsFetcher = fetcher;
 };
+
+/**
+ * Transcribe base64 audio through the assistant's STT, or null when it isn't
+ * reachable/configured. Injected like the other fetchers.
+ */
+export type SttFetcher = (
+  audioBase64: string,
+  mimeType: string,
+) => Promise<string | null>;
+let sttFetcher: SttFetcher | null = null;
+export const setSttFetcher = (fetcher: SttFetcher | null): void => {
+  sttFetcher = fetcher;
+};
+
+/**
+ * Turn a push-to-talk recording into a question via the assistant's STT.
+ * Returns undefined when it can't — the summon then falls back to the plain
+ * "what's on my screen" look rather than dropping what the owner said into a
+ * void.
+ */
+async function transcribeSpokenQuestion(
+  audioBase64: string,
+  mimeType: string,
+): Promise<string | undefined> {
+  if (!sttFetcher) return undefined;
+  try {
+    const text = await sttFetcher(audioBase64, mimeType);
+    const trimmed = text?.trim();
+    if (trimmed) log.info(`[cue-live] heard: "${trimmed.slice(0, 60)}"`);
+    return trimmed || undefined;
+  } catch (err) {
+    log.warn(`[cue-live] transcription failed: ${errMessage(err)}`);
+    return undefined;
+  }
+}
 
 /**
  * Say something out loud.
@@ -744,10 +786,25 @@ const runActLoop = async (
  */
 const handleSummon = async (
   client: MacHelperClient,
-  cursor: { x: number; y: number; question?: string },
+  cursor: {
+    x: number;
+    y: number;
+    question?: string;
+    audioBase64?: string;
+    audioMimeType?: string;
+  },
 ): Promise<void> => {
   // The spoken question (push-to-talk) wins; then an in-app ask; then default.
-  const spokenGoal = cursor.question?.trim();
+  // A recording instead of a transcript means the helper has no STT key and
+  // the assistant does the transcribing.
+  const spokenGoal =
+    cursor.question?.trim() ||
+    (cursor.audioBase64
+      ? await transcribeSpokenQuestion(
+          cursor.audioBase64,
+          cursor.audioMimeType ?? "audio/wav",
+        )
+      : undefined);
 
   // A spoken goal + take-control enabled → actually do the task.
   if (spokenGoal && takeControlEnabledGetter()) {

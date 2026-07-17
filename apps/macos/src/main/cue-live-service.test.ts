@@ -92,6 +92,8 @@ const {
   describeNextMove,
   setGuidanceFetcher,
   setStartVoiceDispatcher,
+  setSttFetcher,
+  setTakeControlEnabledGetter,
   setTtsFetcher,
   __resetForTesting,
 } = await import("./cue-live-service");
@@ -323,6 +325,64 @@ describe("summon → capture → look → point orchestration", () => {
 
     expect(writeFor("cuelive.speak")?.params).toEqual({ text: "Click Send." });
     setTtsFetcher(null);
+  });
+
+  test("transcribes a push-to-talk recording through the assistant", async () => {
+    process.env.CUE_LIVE_POINT_DWELL_MS = "0";
+    requestLocalDaemonMock.mockImplementation(async () => ({
+      answer: "That's the Send button.",
+      points: [],
+    }));
+    const sttMock = mock(async () => "what is that button");
+    setSttFetcher(sttMock);
+    // Take-control OFF so a spoken question runs the look flow rather than the
+    // act loop — this test is about the transcript reaching the model.
+    setTakeControlEnabledGetter(() => false);
+
+    // The helper sends audio (not a transcript) when it has no STT key.
+    void start();
+    await wait(0);
+    emit({ jsonrpc: "2.0", id: requestIdAt(0), result: { enabled: true } });
+    await wait(0);
+    emit({
+      jsonrpc: "2.0",
+      method: "cuelive.summoned",
+      params: {
+        x: 100,
+        y: 200,
+        audioBase64: "UklGRg==",
+        audioMimeType: "audio/wav",
+      },
+    });
+    await wait(0);
+    await wait(0);
+
+    expect(sttMock).toHaveBeenCalledWith("UklGRg==", "audio/wav");
+    // The transcript becomes the question the model is asked about the screen.
+    const cap = writeFor("cuelive.captureScreen");
+    expect(cap).toBeDefined();
+    emit({
+      jsonrpc: "2.0",
+      id: (cap as { id: number }).id,
+      result: {
+        ok: true,
+        data: "QkFTRTY0",
+        mediaType: "image/jpeg",
+        width: 100,
+        height: 100,
+      },
+    });
+    await wait(0);
+    const thinking = writeFor("cuelive.showCard");
+    emit({ jsonrpc: "2.0", id: (thinking as { id: number }).id, result: {} });
+    await wait(0);
+    await wait(0);
+    expect(requestLocalDaemonMock).toHaveBeenCalledWith(
+      "/cuelive/look",
+      expect.objectContaining({ question: "what is that button" }),
+    );
+    setSttFetcher(null);
+    setTakeControlEnabledGetter(() => true);
   });
 
   test("shows a permission card and skips the model when capture is denied", async () => {

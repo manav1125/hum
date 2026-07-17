@@ -34,6 +34,7 @@ import {
   isCueLiveEnabled,
   setCueLiveEnabledGetter,
   setGuidanceFetcher,
+  setSttFetcher,
   setTakeControlEnabledGetter,
   setTtsFetcher,
   setVoiceConfigProvider,
@@ -428,6 +429,15 @@ app
     // synthesized by the assistant, so its key never leaves the instance and
     // there is no second copy to keep in sync here.
     setTtsFetcher((text) => requestSelfHostBinary("/tts/synthesize", { text }));
+    // Push-to-talk is transcribed by the assistant too, so speech stays
+    // configured in one place rather than needing a key on this machine.
+    setSttFetcher(async (audioBase64, mimeType) => {
+      const res = await requestSelfHostRoute<{ text?: string }>(
+        "/stt/transcribe",
+        { audioBase64, mimeType, source: "cue-live" },
+      );
+      return res?.text ?? null;
+    });
     // Chromium exposes its accessibility tree only when an AX client is
     // detected. Cue Live reads the AX element under the cursor; enabling this
     // lets it read Cue's OWN window on the first summon (the helper coaxes

@@ -743,6 +743,16 @@ final class CueLiveController: @unchecked Sendable {
                 }
             }
         }
+        // No local STT key — send the recording for the app to transcribe.
+        voice.onAudioCaptured = { [weak self] wav in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.ensureOverlay()
+                    self.emitSummon(audioWav: wav)
+                }
+            }
+        }
         let monitor = CuePushToTalkMonitor()
         monitor.onPressed = { [weak self] in
             DispatchQueue.main.async {
@@ -802,7 +812,7 @@ final class CueLiveController: @unchecked Sendable {
     }
 
     @MainActor
-    private func emitSummon(question: String? = nil) {
+    private func emitSummon(question: String? = nil, audioWav: Data? = nil) {
         let mouse = NSEvent.mouseLocation
         let screenHeight = NSScreen.screens.first?.frame.height ?? 0
         var params: [String: Any] = [
@@ -810,6 +820,12 @@ final class CueLiveController: @unchecked Sendable {
             "y": screenHeight - mouse.y, // report AX top-left coords
         ]
         if let question, !question.isEmpty { params["question"] = question }
+        // No local STT key: the recording rides along and the app transcribes
+        // it through the assistant, which already knows the owner's provider.
+        if let audioWav, !audioWav.isEmpty {
+            params["audioBase64"] = audioWav.base64EncodedString()
+            params["audioMimeType"] = "audio/wav"
+        }
         emit("cuelive.summoned", params)
     }
 

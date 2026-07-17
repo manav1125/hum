@@ -410,11 +410,26 @@ final class CueVoiceController: @unchecked Sendable {
     private var listening = false
     private var ttsPlayer: AVAudioPlayer?
 
+    /// Mic audio captured for the daemon to transcribe, accumulated while the
+    /// user holds the key. Only used on the daemon path (no local key).
+    private var captureBuffer = Data()
+    private let captureConverter = CuePCM16AudioConverter(
+        targetSampleRate: CueVoiceController.captureSampleRate)
+    private static let captureSampleRate = 16_000.0
+    /// A held key with nothing said is common (mis-press); ~0.15s of 16-bit
+    /// 16kHz mono. Below that there is no speech to transcribe.
+    private static let minCaptureBytes = 5_000
+
     /// Called with the final transcript when the user finishes speaking.
     var onTranscript: ((String) -> Void)?
     /// Called when listening starts/stops (for overlay state).
     var onListeningChanged: ((Bool) -> Void)?
+    /// Called with recorded WAV audio when there is no local STT key — the app
+    /// transcribes it through the assistant, so no second key is needed here.
+    var onAudioCaptured: ((Data) -> Void)?
 
+    /// True only for the direct-to-AssemblyAI path. Without a key the mic is
+    /// still captured and handed to the app for the daemon to transcribe.
     var canTranscribe: Bool { (assemblyAiKey?.isEmpty == false) }
     /// True only for the direct-to-ElevenLabs path. Audio synthesized by the
     /// daemon plays regardless — see `playAudio`.
@@ -429,8 +444,9 @@ final class CueVoiceController: @unchecked Sendable {
     // MARK: Listening
 
     func startListening() {
-        guard let key = assemblyAiKey, !listening else { return }
+        guard !listening else { return }
         listening = true
+        captureBuffer.removeAll(keepingCapacity: true)
         onListeningChanged?(true)
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             guard let self else { return }
@@ -439,6 +455,12 @@ final class CueVoiceController: @unchecked Sendable {
                 self.onListeningChanged?(false)
                 FileHandle.standardError.write(
                     Data("[cue-voice] microphone permission denied\n".utf8))
+                return
+            }
+            // No local key → record and let the app transcribe through the
+            // assistant, using the STT provider configured once in Cue.
+            guard let key = self.assemblyAiKey else {
+                self.startAudioEngine()
                 return
             }
             let session = CueAssemblyAISession(
@@ -470,7 +492,50 @@ final class CueVoiceController: @unchecked Sendable {
         listening = false
         onListeningChanged?(false)
         teardownAudioEngine()
-        session?.requestFinalTranscript()
+        if session != nil {
+            session?.requestFinalTranscript()
+            return
+        }
+        // Daemon path: hand the recording up to be transcribed.
+        let pcm = captureBuffer
+        captureBuffer.removeAll(keepingCapacity: true)
+        guard pcm.count >= CueVoiceController.minCaptureBytes else {
+            // Too short to be speech — fall back to the plain screen look.
+            onTranscript?("")
+            return
+        }
+        onAudioCaptured?(
+            CueVoiceController.wavData(
+                pcm16: pcm, sampleRate: CueVoiceController.captureSampleRate))
+    }
+
+    /// Wrap raw 16-bit mono PCM in a WAV container. The daemon's
+    /// `stt/transcribe` takes a real audio file, not bare samples.
+    static func wavData(pcm16: Data, sampleRate: Double) -> Data {
+        let channels: UInt16 = 1
+        let bitsPerSample: UInt16 = 16
+        let rate = UInt32(sampleRate)
+        let byteRate = rate * UInt32(channels) * UInt32(bitsPerSample / 8)
+        let blockAlign = channels * (bitsPerSample / 8)
+        var out = Data()
+        func append<T: FixedWidthInteger>(_ value: T) {
+            var little = value.littleEndian
+            withUnsafeBytes(of: &little) { out.append(contentsOf: $0) }
+        }
+        out.append(contentsOf: Array("RIFF".utf8))
+        append(UInt32(36 + pcm16.count))
+        out.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(UInt32(16))  // PCM header size
+        append(UInt16(1))  // format = PCM
+        append(channels)
+        append(rate)
+        append(byteRate)
+        append(blockAlign)
+        append(bitsPerSample)
+        out.append(contentsOf: Array("data".utf8))
+        append(UInt32(pcm16.count))
+        out.append(pcm16)
+        return out
     }
 
     private func startAudioEngine() {
@@ -478,7 +543,13 @@ final class CueVoiceController: @unchecked Sendable {
         let format = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.session?.appendAudioBuffer(buffer)
+            guard let self else { return }
+            if let session = self.session {
+                session.appendAudioBuffer(buffer)
+            } else if let pcm = self.captureConverter.convertToPCM16Data(from: buffer) {
+                // Daemon path: accumulate; stopListening ships it as WAV.
+                self.captureBuffer.append(pcm)
+            }
         }
         audioEngine.prepare()
         do {
