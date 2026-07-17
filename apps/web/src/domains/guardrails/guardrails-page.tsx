@@ -646,6 +646,7 @@ function CheckpointsBand({
       ) : (
         <button
           type="button"
+          data-coach="guardrails-checkpoint"
           onClick={() => setComposerOpen(true)}
           style={{
             display: "flex",

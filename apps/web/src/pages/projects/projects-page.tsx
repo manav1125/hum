@@ -502,6 +502,7 @@ export function ProjectsPage() {
           </div>
           <button
             type="button"
+            data-coach="projects-new"
             onClick={() => setShowNew(true)}
             aria-label="New project"
             style={

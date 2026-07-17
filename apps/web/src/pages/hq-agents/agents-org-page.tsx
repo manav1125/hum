@@ -436,6 +436,7 @@ function HireCard({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
+      data-coach="agents-hire"
       onClick={onClick}
       style={{
         border: `1.5px dashed ${C.line2}`,

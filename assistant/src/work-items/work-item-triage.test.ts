@@ -59,6 +59,10 @@ import { getDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
 import { createTask } from "../tasks/task-store.js";
 import {
+  createStandingRule,
+  invalidateStandingRuleCache,
+} from "./standing-rules-store.js";
+import {
   createWorkItem,
   getWorkItem,
   updateWorkItem,
@@ -391,6 +395,111 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
     });
     const decision = await maybeAutoRunWorkItem(item.id);
     expect(decision).toEqual({ started: false, reason: "policy_ask" });
+    expect(runnerCalls).toEqual([]);
+  });
+});
+
+describe("maybeAutoRunWorkItem — standing-rule consult (the CONSULT correctness case)", () => {
+  initializeDb();
+
+  beforeEach(() => {
+    getDb().run("DELETE FROM work_items");
+    getDb().run("DELETE FROM tasks");
+    getDb().run("DELETE FROM standing_rules");
+    invalidateStandingRuleCache();
+    taskId = createTask({ title: "Test task", template: "do it" }).id;
+    runnerCalls = [];
+    // Policy asks for everything non-research — so a plain item parks.
+    mockPolicy = {
+      research: "auto",
+      draft: "ask",
+      send: "ask",
+      money: "ask",
+      delete: "ask",
+      other: "ask",
+    };
+  });
+
+  afterAll(() => {
+    getDb().run("DELETE FROM work_items");
+    getDb().run("DELETE FROM tasks");
+    getDb().run("DELETE FROM standing_rules");
+    invalidateStandingRuleCache();
+  });
+
+  test("a channel rule flips a would-park item into an auto-run", async () => {
+    // Baseline: no rule → the item parks on policy_ask.
+    const before = createWorkItem({
+      taskId,
+      title: "Handle the Slack ask",
+      notes: "From: Rachel via slack — please sort the vendor list",
+      sourceType: "slack",
+      // Empty snapshot → classifies ["other"] → policy 'ask' → would park.
+    });
+    expect(await maybeAutoRunWorkItem(before.id)).toEqual({
+      started: false,
+      reason: "policy_ask",
+    });
+    expect(runnerCalls).toEqual([]);
+
+    // Now the owner makes it a rule: "auto-confirm anything from Slack".
+    createStandingRule({ triggerType: "channel", triggerValue: "slack" });
+
+    const after = createWorkItem({
+      taskId,
+      title: "Handle another Slack ask",
+      notes: "From: Rachel via slack — and the renewal too",
+      sourceType: "slack",
+    });
+    // The persisted rule is CONSULTED and clears the policy_ask deferral.
+    expect(await maybeAutoRunWorkItem(after.id)).toEqual({
+      started: true,
+      reason: "started",
+    });
+    expect(runnerCalls).toEqual([after.id]);
+  });
+
+  test("a sender rule only auto-confirms items from that sender", async () => {
+    createStandingRule({ triggerType: "sender", triggerValue: "Rachel" });
+
+    const fromRachel = createWorkItem({
+      taskId,
+      title: "Rachel's request",
+      notes: "From: Rachel Kim via slack — the deck",
+      sourceType: "slack",
+    });
+    const fromMarco = createWorkItem({
+      taskId,
+      title: "Marco's request",
+      notes: "From: Marco via slack — the budget",
+      sourceType: "slack",
+    });
+
+    expect((await maybeAutoRunWorkItem(fromRachel.id)).started).toBe(true);
+    // A different sender still parks — the rule never broadens past its name.
+    expect(await maybeAutoRunWorkItem(fromMarco.id)).toEqual({
+      started: false,
+      reason: "policy_ask",
+    });
+    expect(runnerCalls).toEqual([fromRachel.id]);
+  });
+
+  test("a standing rule NEVER overrides the hard-deny safety floor", async () => {
+    // "auto-confirm anything from Slack" is in force…
+    createStandingRule({ triggerType: "channel", triggerValue: "slack" });
+    // …but the item wants to send email — a hard-denied floor tool.
+    const item = createWorkItem({
+      taskId,
+      title: "Reply to Rachel",
+      notes: "From: Rachel via slack — send her the OTP",
+      sourceType: "slack",
+      requiredTools: JSON.stringify(["send_email"]),
+    });
+    // The floor wins: the rule is not even consulted (floor returns first).
+    expect(await maybeAutoRunWorkItem(item.id)).toEqual({
+      started: false,
+      reason: "hard_denied",
+    });
     expect(runnerCalls).toEqual([]);
   });
 });

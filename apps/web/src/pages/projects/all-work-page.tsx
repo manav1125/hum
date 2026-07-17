@@ -121,6 +121,7 @@ export function AllWorkPage() {
           <div
             role="radiogroup"
             aria-label="Group by"
+            data-coach="work-view"
             style={{ display: "inline-flex", gap: 4, paddingBottom: 18 }}
           >
             {(["status", "project", "due"] as const).map((g) => (

@@ -47,15 +47,21 @@ function Lane({
   count,
   children,
   empty,
+  coach,
 }: {
   state: "capture" | "running" | "needsyou" | "review" | "done";
   label: string;
   count: number;
   children: ReactNode;
   empty: ReactNode;
+  /** `data-coach` anchor for the guided first-step tour, when this lane is one. */
+  coach?: string;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+    <div
+      data-coach={coach}
+      style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
+    >
       <div
         style={{
           display: "flex",
@@ -391,7 +397,7 @@ export function HqWorkLoopBoard({
   };
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: 16 }} data-coach="hq-lanes">
       <div style={{ overflowX: "auto", paddingBottom: 4 }}>
         <div
           style={{
@@ -422,6 +428,7 @@ export function HqWorkLoopBoard({
           <Lane
             state="running"
             label="Running"
+            coach="hq-agents"
             count={running.length}
             empty={
               <LaneEmpty

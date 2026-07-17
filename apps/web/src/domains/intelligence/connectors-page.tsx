@@ -94,6 +94,7 @@ function ConnectorRow({
   manageable,
   onConnect,
   onManage,
+  coachAnchor,
 }: {
   connector: ConnectorApp;
   busy: boolean;
@@ -101,11 +102,13 @@ function ConnectorRow({
   manageable: boolean;
   onConnect: () => void;
   onManage: () => void;
+  coachAnchor?: string;
 }) {
   const desc = CATEGORY_DESC[connector.category] ?? connector.category;
   return (
     <div
       data-slot="connector-row"
+      data-coach={coachAnchor}
       style={{
         border: `1px solid ${C.line}`,
         borderRadius: 13,
@@ -590,13 +593,14 @@ export function ConnectorsPage() {
         <>
           <div style={sectionLabel}>Available</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {availableConnectors.map((c) => (
+            {availableConnectors.map((c, i) => (
               <ConnectorRow
                 key={c.slug}
                 connector={c}
                 busy={busySlug === c.slug}
                 connectable={connectable}
                 manageable={manageable}
+                coachAnchor={i === 0 ? "connectors-add" : undefined}
                 onConnect={() => handleConnect(c.slug)}
                 onManage={() => navigate(routes.connector(c.slug))}
               />

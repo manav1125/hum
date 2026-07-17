@@ -235,6 +235,8 @@ interface VoiceInputButtonProps {
   disabled?: boolean;
   onBeforeStart?: () => boolean | Promise<boolean>;
   renderButton?: boolean;
+  /** Optional `data-coach` anchor forwarded to the button (coach-mark target). */
+  dataCoach?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +256,7 @@ export const VoiceInputButton = forwardRef<
     disabled = false,
     onBeforeStart,
     renderButton = true,
+    dataCoach,
   },
   ref,
 ) {
@@ -969,6 +972,7 @@ export const VoiceInputButton = forwardRef<
   return (
     <Button
       variant="ghost"
+      data-coach={dataCoach}
       iconOnly={
         processing ? (
           <Loader2 className="animate-spin" strokeWidth={2} />

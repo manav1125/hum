@@ -740,6 +740,7 @@ function StudioComposer({
       {/* Prompt row */}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
         <textarea
+          data-coach="create-prompt"
           value={prompt}
           onChange={(e) => onPrompt(e.target.value)}
           onKeyDown={(e) => {

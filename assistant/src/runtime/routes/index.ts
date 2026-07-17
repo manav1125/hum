@@ -136,6 +136,7 @@ import { ROUTES as SETTINGS_ROUTES } from "./settings-routes.js";
 import { ROUTES as SKILL_ROUTES } from "./skills-routes.js";
 import { ROUTES as SLACK_CHANNEL_RESOLVE_ROUTES } from "./slack-channel-routes.js";
 import { ROUTES as SOUNDS_CONFIG_ROUTES } from "./sounds-config-routes.js";
+import { ROUTES as STANDING_RULES_ROUTES } from "./standing-rules-routes.js";
 import { ROUTES as STT_ROUTES } from "./stt-routes.js";
 import { ROUTES as SUBAGENT_ROUTES } from "./subagents-routes.js";
 import { ROUTES as SUGGEST_TRUST_RULE_ROUTES } from "./suggest-trust-rule-routes.js";
@@ -226,6 +227,7 @@ export const ROUTES: RouteDefinition[] = [
   ...GROUP_ROUTES,
   ...GUARDIAN_ACTION_ROUTES,
   ...GUARDRAILS_ROUTES,
+  ...STANDING_RULES_ROUTES,
   ...HEARTBEAT_ROUTES,
   ...HOME_FEED_ROUTES,
   ...HOME_STATE_ROUTES,

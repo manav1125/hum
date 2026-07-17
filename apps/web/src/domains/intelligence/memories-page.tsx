@@ -405,6 +405,7 @@ export function MemoriesPage() {
           </button>
           <button
             type="button"
+            data-coach="memory-teach"
             onClick={onTeachCue}
             style={{
               fontSize: 12.5,

@@ -1753,6 +1753,7 @@ function DesktopControlPanel() {
           {/* Status pill doubles as the real enable/disable control. */}
           <button
             type="button"
+            data-coach="cuelive-enable"
             disabled={busy}
             onClick={() => void handleEnable(!status.enabled)}
             title={status.enabled ? "Turn Cue Live off" : "Turn Cue Live on"}

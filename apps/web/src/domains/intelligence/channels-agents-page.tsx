@@ -173,10 +173,12 @@ function ChannelRow({
   channel,
   isLast,
   onPress,
+  coachAnchor,
 }: {
   channel: MergedChannel;
   isLast: boolean;
   onPress: () => void;
+  coachAnchor?: string;
 }) {
   const tile = mIconStyle(channel.id);
   const desc = channel.ready
@@ -185,6 +187,7 @@ function ChannelRow({
   return (
     <button
       type="button"
+      data-coach={coachAnchor}
       onClick={onPress}
       aria-label={
         channel.ready
@@ -470,6 +473,7 @@ function YouMobilePage() {
             ) : channels.length === 0 ? (
               <button
                 type="button"
+                data-coach="channels-connect"
                 onClick={() => goToChannelSetup()}
                 style={{
                   width: "100%",
@@ -493,6 +497,7 @@ function YouMobilePage() {
                   channel={channel}
                   isLast={i === channels.length - 1}
                   onPress={() => goToChannelSetup(channel.id)}
+                  coachAnchor={i === 0 ? "channels-connect" : undefined}
                 />
               ))
             )}

@@ -545,6 +545,7 @@ export function VoiceModeSurface({
               capture failed (mic-denied), the circle greys out. */}
           <button
             type="button"
+            data-coach="voice-start"
             onClick={handleToggle}
             aria-label={active ? "Stop voice mode" : "Start voice mode"}
             disabled={connecting}

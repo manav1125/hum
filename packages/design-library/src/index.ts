@@ -75,6 +75,12 @@ export {
 } from "./components/typography";
 export { Popover, type PopoverContentProps } from "./components/popover";
 export {
+  Coachmark,
+  type CoachmarkProps,
+  type CoachmarkSide,
+  type CoachmarkAlign,
+} from "./components/coachmark";
+export {
   Input,
   Textarea,
   fieldVariants,

@@ -36192,6 +36192,341 @@ paths:
                 - currentThreshold
                 - intent
               additionalProperties: false
+  /v1/trust/rules:
+    get:
+      operationId: trust_rules_get
+      summary: List standing auto-confirm rules
+      description:
+        Every standing 'Make it a rule' decision, oldest-first. These loosen the per-category autonomy policy's
+        approval hold for matching inbound work (by sender / channel / category / tool).
+      tags:
+        - trust
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        triggerType:
+                          type: string
+                          enum:
+                            - sender
+                            - channel
+                            - category
+                            - tool
+                          description:
+                            "What the rule keys off: 'sender' (who it's from), 'channel' (where it arrived), 'category' (autonomy
+                            class), or 'tool'."
+                        triggerValue:
+                          type: string
+                          description:
+                            The value the trigger matches, e.g. 'Rachel' (sender), 'slack' (channel), 'draft' (category), 'web_fetch'
+                            (tool).
+                        action:
+                          type: string
+                          enum:
+                            - auto_confirm
+                          description: What the rule does when it matches. Only 'auto_confirm' today.
+                        label:
+                          type: string
+                          description: Plain-English rule name shown in the Trust console
+                        enabled:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — the rule is active
+                        sourceWorkItemId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: "Provenance: the work item the rule was minted from; null if none"
+                        sourceTaskId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: "Provenance: the task the rule was minted from; null if none"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - triggerType
+                        - triggerValue
+                        - action
+                        - label
+                        - enabled
+                        - sourceWorkItemId
+                        - sourceTaskId
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - rules
+                additionalProperties: false
+    post:
+      operationId: trust_rules_post
+      summary: Create a standing auto-confirm rule
+      description:
+        "Promote a just-confirmed one-off into a standing rule so the same class of inbound work auto-runs next
+        time instead of parking for approval. Idempotent: a duplicate (same trigger + action) returns the existing rule.
+        The rule is consulted by the work-item auto-run gate and NEVER overrides the hard-deny safety floor
+        (host/browser/purchase/send/money never auto-run)."
+      tags:
+        - trust
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      triggerType:
+                        type: string
+                        enum:
+                          - sender
+                          - channel
+                          - category
+                          - tool
+                        description:
+                          "What the rule keys off: 'sender' (who it's from), 'channel' (where it arrived), 'category' (autonomy
+                          class), or 'tool'."
+                      triggerValue:
+                        type: string
+                        description:
+                          The value the trigger matches, e.g. 'Rachel' (sender), 'slack' (channel), 'draft' (category), 'web_fetch'
+                          (tool).
+                      action:
+                        type: string
+                        enum:
+                          - auto_confirm
+                        description: What the rule does when it matches. Only 'auto_confirm' today.
+                      label:
+                        type: string
+                        description: Plain-English rule name shown in the Trust console
+                      enabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the rule is active
+                      sourceWorkItemId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Provenance: the work item the rule was minted from; null if none"
+                      sourceTaskId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Provenance: the task the rule was minted from; null if none"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - triggerType
+                      - triggerValue
+                      - action
+                      - label
+                      - enabled
+                      - sourceWorkItemId
+                      - sourceTaskId
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - rule
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                triggerType:
+                  type: string
+                  enum:
+                    - sender
+                    - channel
+                    - category
+                    - tool
+                  description:
+                    "What the rule keys off: 'sender' (who it's from), 'channel' (where it arrived), 'category' (autonomy
+                    class), or 'tool'."
+                triggerValue:
+                  type: string
+                  minLength: 1
+                action:
+                  type: string
+                  enum:
+                    - auto_confirm
+                  description: What the rule does when it matches. Only 'auto_confirm' today.
+                label:
+                  description: Override the auto-generated plain-English label
+                  type: string
+                sourceWorkItemId:
+                  description: "Provenance: the work item this was promoted from"
+                  type: string
+                sourceTaskId:
+                  description: "Provenance: the task this was promoted from"
+                  type: string
+              required:
+                - triggerType
+                - triggerValue
+              additionalProperties: false
+  /v1/trust/rules/{id}:
+    delete:
+      operationId: trust_rules_by_id_delete
+      summary: Delete a standing rule
+      description: Hard-delete a standing auto-confirm rule.
+      tags:
+        - trust
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  success:
+                    type: boolean
+                required:
+                  - id
+                  - success
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      operationId: trust_rules_by_id_patch
+      summary: Update a standing rule
+      description: Toggle a rule on/off or rename it from the Trust console.
+      tags:
+        - trust
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      triggerType:
+                        type: string
+                        enum:
+                          - sender
+                          - channel
+                          - category
+                          - tool
+                        description:
+                          "What the rule keys off: 'sender' (who it's from), 'channel' (where it arrived), 'category' (autonomy
+                          class), or 'tool'."
+                      triggerValue:
+                        type: string
+                        description:
+                          The value the trigger matches, e.g. 'Rachel' (sender), 'slack' (channel), 'draft' (category), 'web_fetch'
+                          (tool).
+                      action:
+                        type: string
+                        enum:
+                          - auto_confirm
+                        description: What the rule does when it matches. Only 'auto_confirm' today.
+                      label:
+                        type: string
+                        description: Plain-English rule name shown in the Trust console
+                      enabled:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: 0/1 — the rule is active
+                      sourceWorkItemId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Provenance: the work item the rule was minted from; null if none"
+                      sourceTaskId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: "Provenance: the task the rule was minted from; null if none"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - triggerType
+                      - triggerValue
+                      - action
+                      - label
+                      - enabled
+                      - sourceWorkItemId
+                      - sourceTaskId
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - rule
+                additionalProperties: false
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                label:
+                  type: string
+                  minLength: 1
+              additionalProperties: false
   /v1/tts/providers:
     get:
       operationId: tts_providers_get

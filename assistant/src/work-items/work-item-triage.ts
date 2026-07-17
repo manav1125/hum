@@ -41,6 +41,7 @@ import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
 import { getLogger } from "../util/logger.js";
 import { listProjects, type Project } from "./project-store.js";
+import { findAuthorizingStandingRule } from "./standing-rules-store.js";
 import {
   broadcastWorkItemStatus,
   runWorkItemInBackground,
@@ -582,11 +583,37 @@ export async function maybeAutoRunWorkItem(
   const classes = classifyWorkItemAutonomy(item);
   const blocked = classes.filter((c) => policy[c] !== "auto");
   if (blocked.length > 0) {
-    log.debug(
-      { workItemId, classes, blocked },
-      "auto-run deferred: policy asks for these categories",
+    // The per-category policy would park this item. Consult the owner's
+    // standing "Make it a rule" decisions: a rule scoped to this item's sender
+    // or channel (or its exact blocked category/tool) clears the deferral. The
+    // hard-deny floor above already ran, so a rule can never push a
+    // host/browser/purchase/send/money item into an unattended run — it only
+    // loosens the softer per-category "ask".
+    const authorizingRule = findAuthorizingStandingRule({
+      channel: item.sourceType,
+      sourceId: item.sourceId,
+      provenanceText: `${item.notes ?? ""}\n${item.sourceContext ?? ""}`,
+      classes,
+      tools: parseRequiredTools(item),
+      blockedClasses: blocked,
+    });
+    if (!authorizingRule) {
+      log.debug(
+        { workItemId, classes, blocked },
+        "auto-run deferred: policy asks for these categories",
+      );
+      return { started: false, reason: "policy_ask" };
+    }
+    log.info(
+      {
+        workItemId,
+        ruleId: authorizingRule.id,
+        triggerType: authorizingRule.triggerType,
+        triggerValue: authorizingRule.triggerValue,
+        blocked,
+      },
+      "auto-run authorized by standing rule (policy_ask cleared)",
     );
-    return { started: false, reason: "policy_ask" };
   }
 
   const running = countRunningItems();

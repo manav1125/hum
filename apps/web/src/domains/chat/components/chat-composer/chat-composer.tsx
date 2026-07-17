@@ -393,6 +393,7 @@ export function ChatComposer({
               </div>
               <textarea
                 ref={inputRef}
+                data-coach="chat-composer"
                 value={input}
                 autoComplete="off"
                 data-1p-ignore
@@ -667,6 +668,7 @@ export function ChatComposer({
                     {showVoiceInput && (
                       <VoiceInputButton
                         ref={voiceInputRef}
+                        dataCoach="chat-voice"
                         assistantId={assistantId}
                         // Mutual exclusion: an active live-voice session
                         // disables the dictation mic so the two capture flows

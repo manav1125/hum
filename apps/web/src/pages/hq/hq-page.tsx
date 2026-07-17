@@ -55,6 +55,8 @@ import {
 import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
+import { MakeItARuleCard } from "@/domains/chat/components/make-it-a-rule-card";
+
 import { CaptureBar } from "./capture-bar";
 import { HqWorkLoopBoard } from "./hq-board";
 import { HqFirstRun, useHqFirstRun } from "./hq-firstrun";
@@ -202,6 +204,7 @@ function RingsHeroCard({
   return (
     <div
       data-slot="hq-hero-card"
+      data-coach="hq-rings"
       style={{
         display: "flex",
         gap: 22,
@@ -352,24 +355,30 @@ function NeedsYouCard({
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Title truncates; the state badge is a non-shrinking sibling so it
+            never gets clipped by the ellipsis on narrow viewports. */}
         <div
           style={{
-            fontSize: 13.5,
-            fontWeight: 500,
-            color: C.ink,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            minWidth: 0,
           }}
         >
-          {item.title}
           <span
             style={{
-              display: "inline-flex",
-              marginLeft: 8,
-              verticalAlign: "middle",
+              fontSize: 13.5,
+              fontWeight: 500,
+              color: C.ink,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
             }}
           >
+            {item.title}
+          </span>
+          <span style={{ flexShrink: 0, display: "inline-flex" }}>
             <StateBadge state="review" size="sm" />
           </span>
         </div>
@@ -540,6 +549,8 @@ function PulseLayout({
   move,
   needsYou,
   cameIn,
+  running,
+  done,
   missionsByProjectId,
   userName,
   dayLabel,
@@ -550,6 +561,8 @@ function PulseLayout({
   move: NextMove;
   needsYou: HqWorkItem[];
   cameIn: HqWorkItem[];
+  running: HqWorkItem[];
+  done: HqWorkItem[];
   missionsByProjectId: Map<string, Mission>;
   userName: string | null;
   dayLabel: string;
@@ -557,6 +570,7 @@ function PulseLayout({
   onSuggest: (title: string) => void;
 }) {
   const glanceCount = needsYou.length + (move.hasMove ? 1 : 0);
+  const firstRun = useHqFirstRun();
   return (
     <div data-slot="hq-stream">
       <MicroLabel
@@ -582,23 +596,32 @@ function PulseLayout({
           : "A calm one — nothing needs you right now."}
       </div>
 
-      <div style={{ marginTop: 22, maxWidth: 640 }}>
+      <div style={{ marginTop: 22, maxWidth: 640 }} data-coach="hq-capture">
         <CaptureBar
           placeholder="Ask Cue anything, or give it a mission…"
           autoFilesChip={false}
         />
       </div>
 
+      {/* First-run — three cards that teach the loop, once. Shown on the pulse
+          path too: a zero-mission account is exactly who needs the explainer. */}
+      {firstRun.show ? <HqFirstRun onDismiss={firstRun.dismiss} /> : null}
+
+      {/* auto-fit + minmax(0,…) so the pair collapses to one column on narrow
+          viewports AND the tracks can shrink below their content's min-content
+          width — a bare `1fr` refuses to, which pushed these cards ~100px past
+          a 390px screen (the clipped-card bug). */}
       <div
         data-slot="hq-columns"
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
           gap: 30,
           marginTop: 32,
         }}
       >
-        <div>
+        <div style={{ minWidth: 0 }}>
           {glanceCount > 0 ? (
             <>
               <MicroLabel color={C.danger}>
@@ -689,7 +712,7 @@ function PulseLayout({
           ) : null}
         </div>
 
-        <div>
+        <div style={{ minWidth: 0 }}>
           <MicroLabel color={C.blueS}>Cue could take these on</MicroLabel>
           <div
             style={{
@@ -777,6 +800,17 @@ function PulseLayout({
           </div>
         </div>
       </div>
+
+      {/* The work loop doesn't depend on missions — a zero-mission account
+          still captures, runs, and reviews work, so the board belongs here
+          too (it's the whole point of the surface). */}
+      <HqWorkLoopBoard
+        assistantId={assistantId}
+        running={running}
+        review={needsYou}
+        done={done}
+        byProject={missionsByProjectId}
+      />
 
       <div
         style={{
@@ -918,6 +952,27 @@ function reassignTargets(
 }
 
 /** Full-record PATCH body for a work-item move (mirrors the task-drawer path). */
+/**
+ * Pull the sender + channel off a captured item so the "Make it a rule" offer
+ * can name a real scope. `sourceContext` is the JSON snapshot commitment-capture
+ * stamps at ingress; anything missing or malformed just means no offer — we
+ * never guess a sender.
+ */
+function senderContext(item: HqWorkItem): {
+  sender: string | null;
+  channel: string | null;
+} {
+  let sender: string | null = null;
+  try {
+    const raw = item.sourceContext ? JSON.parse(item.sourceContext) : null;
+    const s = (raw as { sender?: unknown } | null)?.sender;
+    if (typeof s === "string" && s.trim()) sender = s.trim();
+  } catch {
+    // Malformed snapshot — fall back to channel-only scope.
+  }
+  return { sender, channel: item.sourceType ?? null };
+}
+
 function moveBody(item: HqWorkItem, projectId: string | null) {
   let labels: string[] = [];
   if (item.labels) {
@@ -968,6 +1023,12 @@ function CameInReassignStrip({
   const [taught, setTaught] = useState<{ from: string; to: string } | null>(
     null,
   );
+  const [ruleOffer, setRuleOffer] = useState<{
+    sender: string | null;
+    channel: string | null;
+    workItemId: string;
+    taskId: string;
+  } | null>(null);
   const targets = useMemo(() => reassignTargets(projects), [projects]);
 
   const recent = useMemo(
@@ -989,6 +1050,13 @@ function CameInReassignStrip({
         onSuccess: () => {
           setOpenId(null);
           setTaught(dest ? { from: item.title, to: dest.title } : null);
+          // Filing a captured commitment IS the confirmation the rule offer
+          // hangs off — promote it to a standing auto-confirm if the owner
+          // wants. Only offered when we actually know the sender/channel.
+          const ctx = senderContext(item);
+          if (ctx.sender || ctx.channel) {
+            setRuleOffer({ ...ctx, workItemId: item.id, taskId: item.taskId });
+          }
         },
       },
     );
@@ -1154,6 +1222,23 @@ function CameInReassignStrip({
             destinationTitle={taught.to}
             fromTitle={null}
             onDismiss={() => setTaught(null)}
+          />
+        </div>
+      ) : null}
+      {/* "Make it a rule" — offered right after the owner confirms a captured
+          commitment, so a one-off decision can become standing policy. The
+          rule is consulted by the auto-run gate; it never widens the hard-deny
+          floor. */}
+      {ruleOffer ? (
+        <div style={{ marginTop: 10 }}>
+          <MakeItARuleCard
+            assistantId={assistantId}
+            sender={ruleOffer.sender}
+            channel={ruleOffer.channel}
+            sourceWorkItemId={ruleOffer.workItemId}
+            sourceTaskId={ruleOffer.taskId}
+            onDismiss={() => setRuleOffer(null)}
+            onRuleCreated={() => setRuleOffer(null)}
           />
         </div>
       ) : null}
@@ -1403,6 +1488,8 @@ export function HqPage() {
             move={move}
             needsYou={reviewItems}
             cameIn={cameIn}
+            running={running.items}
+            done={doneToday}
             missionsByProjectId={byProject}
             userName={stateQuery.data?.userName?.trim() || null}
             dayLabel={dayLabel}
@@ -1413,7 +1500,9 @@ export function HqPage() {
           />
         ) : (
           <div data-slot="hq-stream" style={{ minWidth: 0 }}>
-            <CaptureBar />
+            <div data-coach="hq-capture">
+              <CaptureBar />
+            </div>
             <RingsHeroCard
               missions={deckMissions}
               doneToday={doneToday.length}

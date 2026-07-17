@@ -47,6 +47,7 @@ import { retireAssistant } from "@/assistant/retire-service";
 import { setSelectedAssistant } from "@/assistant/selection";
 import { CreateAssistantDialog } from "@/components/create-assistant-dialog";
 import { CreateGallerySummonHost } from "@/components/create-gallery-summon-host";
+import { FeatureTour } from "@/components/coach/feature-tour";
 import { RetireConfirmDialog } from "@/components/retire-confirm-dialog";
 import { toast } from "@vellumai/design-library/components/toast";
 
@@ -334,6 +335,11 @@ export function RootLayout() {
           Restyle summons it over a chat-hosted asset (see
           create-gallery-summon-store). No-op until a request is pending. */}
       <CreateGallerySummonHost />
+
+      {/* Guided first-step tips ("coach marks"). Headless host: maps the
+          current route to a surface and shows each surface's tip once. No-ops
+          on auth/onboarding routes and after the user opts out. */}
+      <FeatureTour />
     </div>
   );
 }

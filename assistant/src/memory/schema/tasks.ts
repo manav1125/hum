@@ -203,6 +203,41 @@ export const guardrailCheckpoints = sqliteTable("guardrail_checkpoints", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+/**
+ * Standing auto-confirm rules — the persisted "Make it a rule" decisions behind
+ * the in-context rule card. After the owner confirms a one-off inbound
+ * commitment, they can promote that decision into a STANDING rule so the same
+ * class of item auto-runs next time instead of parking for approval:
+ *
+ *   trigger_type='sender'   trigger_value='Rachel'  → "auto-confirm anything from Rachel"
+ *   trigger_type='channel'  trigger_value='slack'   → "auto-confirm anything from Slack"
+ *   trigger_type='category' trigger_value='draft'   → "auto-confirm drafts"
+ *   trigger_type='tool'     trigger_value='web_fetch'→ "auto-confirm web fetches"
+ *
+ * `action` is always 'auto_confirm' today (a column for headroom). A rule
+ * LOOSENS the per-category autonomy policy's `policy_ask` deferral for MATCHING
+ * work items only — it is consulted by the work-item auto-run gate
+ * (work-items/work-item-triage.ts → maybeAutoRunWorkItem). It NEVER overrides
+ * the hard-deny safety floor (host/browser/purchase/send/money never auto-run,
+ * rule or no rule). Provenance columns record which one-off the rule was minted
+ * from. References are by convention (store-enforced, no FKs), matching the
+ * sibling HQ tables.
+ */
+export const standingRules = sqliteTable("standing_rules", {
+  id: text("id").primaryKey(),
+  triggerType: text("trigger_type").notNull(), // 'sender' | 'channel' | 'category' | 'tool'
+  triggerValue: text("trigger_value").notNull(), // e.g. 'Rachel' | 'slack' | 'draft' | 'web_fetch'
+  action: text("action").notNull().default("auto_confirm"), // 'auto_confirm' (headroom for future actions)
+  label: text("label").notNull(), // plain-English rule name shown in the Trust console
+  enabled: integer("enabled").notNull().default(1), // 0/1 — the rule is active
+  // Provenance: the one-off interaction this rule was promoted from (nullable —
+  // reference-by-convention to work_items.id / tasks.id).
+  sourceWorkItemId: text("source_work_item_id"),
+  sourceTaskId: text("source_task_id"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const workItemEvents = sqliteTable("work_item_events", {
   id: text("id").primaryKey(),
   workItemId: text("work_item_id")

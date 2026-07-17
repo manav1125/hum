@@ -221,6 +221,7 @@ import {
   migrateSchemaIndexesAndColumns,
   migrateScrubCorruptedImageAttachments,
   migrateSlackCompactionWatermark,
+  migrateStandingRules,
   migrateStripBaseUrlNonOpenaiCompatible,
   migrateStripIntegrationPrefixFromProviderKeys,
   migrateStripPlaceholderSentinelsFromMessages,
@@ -544,6 +545,7 @@ export function initializeDb(): void {
     migrateAgentToolScopes,
     migrateBudgetPolicies,
     migrateWorkItemLiveness,
+    migrateStandingRules,
   ];
 
   // Run each migration step, catching and logging individual failures so one
