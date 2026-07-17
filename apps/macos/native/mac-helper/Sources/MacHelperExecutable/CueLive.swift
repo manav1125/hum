@@ -500,7 +500,7 @@ final class CueLiveController: @unchecked Sendable {
             return ["ok": false, "reason": reason]
         }
         return [
-            "ok": true, "data": data, "mediaType": "image/png",
+            "ok": true, "data": data, "mediaType": "image/jpeg",
             "width": r.width, "height": r.height,
             "screenWidth": r.screenWidth, "screenHeight": r.screenHeight,
         ]
@@ -527,12 +527,20 @@ final class CueLiveController: @unchecked Sendable {
             config.showsCursor = false
             let cg = try await SCScreenshotManager.captureImage(
                 contentFilter: filter, configuration: config)
+            // JPEG, not PNG. A 1280-wide screenshot is ~1.8MB as base64 PNG,
+            // which the daemon's request path drops outright — every real
+            // "Look" died before reaching the model (the tiny synthetic
+            // fixtures in tests never tripped it). The same frame as JPEG q0.7
+            // is ~210KB — 8.6x smaller at identical resolution, and lossy
+            // artifacts are irrelevant for "read the UI and point at things".
             guard
-                let png = NSBitmapImageRep(cgImage: cg)
-                    .representation(using: .png, properties: [:])
+                let jpeg = NSBitmapImageRep(cgImage: cg)
+                    .representation(
+                        using: .jpeg,
+                        properties: [.compressionFactor: 0.7])
             else { return CaptureResult(reason: "encode-failed") }
             return CaptureResult(
-                ok: true, data: png.base64EncodedString(),
+                ok: true, data: jpeg.base64EncodedString(),
                 width: cg.width, height: cg.height,
                 screenWidth: ptW, screenHeight: ptH)
         } catch {
