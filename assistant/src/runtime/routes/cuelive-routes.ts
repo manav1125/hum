@@ -380,7 +380,10 @@ async function handleAct({
     return parseActJson(result.text);
   } catch (err) {
     log.warn({ err }, "Cue Live act generation failed");
-    return { say: null, done: true, action: null };
+    // `done: true` ends the run — it has to, since without vision there is no
+    // next action to take. Carry the reason in `say` so the run reports why it
+    // stopped instead of looking like it finished the goal.
+    return { say: describeLookFailure(err), done: true, action: null };
   }
 }
 
