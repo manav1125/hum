@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-B-mvcaJS.js";import{t}from"./brand-kit-page-B6zy-6BK.js";var n=e();function r(){return(0,n.jsx)(`div`,{style:{maxWidth:980,margin:`0 auto`,padding:`8px 4px 40px`},children:(0,n.jsx)(t,{})})}export{r as BrandSettingsPage};
