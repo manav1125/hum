@@ -84,6 +84,7 @@ import { installNativeAuth } from "./native-auth";
 import { installConnectivityProbe } from "./connectivity-probe";
 import { installNotifications } from "./notifications";
 import { installPermissionHandler } from "./permissions";
+import { requestSelfHostRoute } from "./self-host-request";
 import { installPermissionsService } from "./permissions-service";
 import { installPowerEvents } from "./power-events";
 import { installConnectivityIpc, installStatusIpc } from "./status";
@@ -409,9 +410,16 @@ app
     );
     // Hand Cue Live the (decrypted) voice keys on demand for the native helper.
     setVoiceConfigProvider(() => getVoiceConfig());
-    // Wire Stage 3 guidance: the overlay asks the local daemon for a
-    // synthesized "next move" through the host-proxy's authenticated channel.
-    setGuidanceFetcher((path, body) => requestAssistantRoute(path, body));
+    // Wire Cue Live's daemon calls (next-move guidance, vision look/act).
+    // A lockfile-registered assistant (local, then cloud) answers when there is
+    // one; otherwise fall back to the self-host instance the renderer is
+    // already signed in to. Without that last hop, a self-host install has no
+    // registered connection at all and every summon reaches nothing.
+    setGuidanceFetcher(
+      async (path, body) =>
+        (await requestAssistantRoute(path, body)) ??
+        (await requestSelfHostRoute(path, body)),
+    );
     // Chromium exposes its accessibility tree only when an AX client is
     // detected. Cue Live reads the AX element under the cursor; enabling this
     // lets it read Cue's OWN window on the first summon (the helper coaxes
