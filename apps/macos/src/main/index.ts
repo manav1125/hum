@@ -35,6 +35,7 @@ import {
   setCueLiveEnabledGetter,
   setGuidanceFetcher,
   setTakeControlEnabledGetter,
+  setTtsFetcher,
   setVoiceConfigProvider,
 } from "./cue-live-service";
 import { getDeviceId } from "./device-id";
@@ -84,7 +85,10 @@ import { installNativeAuth } from "./native-auth";
 import { installConnectivityProbe } from "./connectivity-probe";
 import { installNotifications } from "./notifications";
 import { installPermissionHandler } from "./permissions";
-import { requestSelfHostRoute } from "./self-host-request";
+import {
+  requestSelfHostBinary,
+  requestSelfHostRoute,
+} from "./self-host-request";
 import { installPermissionsService } from "./permissions-service";
 import { installPowerEvents } from "./power-events";
 import { installConnectivityIpc, installStatusIpc } from "./status";
@@ -420,6 +424,10 @@ app
         (await requestAssistantRoute(path, body)) ??
         (await requestSelfHostRoute(path, body)),
     );
+    // Cue Live speaks in the voice the owner configured once under Voice —
+    // synthesized by the assistant, so its key never leaves the instance and
+    // there is no second copy to keep in sync here.
+    setTtsFetcher((text) => requestSelfHostBinary("/tts/synthesize", { text }));
     // Chromium exposes its accessibility tree only when an AX client is
     // detected. Cue Live reads the AX element under the cursor; enabling this
     // lets it read Cue's OWN window on the first summon (the helper coaxes

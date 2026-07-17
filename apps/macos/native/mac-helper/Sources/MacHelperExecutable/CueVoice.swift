@@ -416,6 +416,8 @@ final class CueVoiceController: @unchecked Sendable {
     var onListeningChanged: ((Bool) -> Void)?
 
     var canTranscribe: Bool { (assemblyAiKey?.isEmpty == false) }
+    /// True only for the direct-to-ElevenLabs path. Audio synthesized by the
+    /// daemon plays regardless — see `playAudio`.
     var canSpeak: Bool { (elevenLabsKey?.isEmpty == false) }
 
     func setConfig(assemblyAiKey: String?, elevenLabsKey: String?, voiceId: String?) {
@@ -500,8 +502,23 @@ final class CueVoiceController: @unchecked Sendable {
         onTranscript?(trimmed)
     }
 
-    // MARK: Speaking (ElevenLabs)
+    // MARK: Speaking
 
+    /// Play audio the app already synthesized (the daemon's TTS route, using
+    /// the voice the owner configured once in Cue's Voice settings). Preferred
+    /// over `speak` — the helper then needs no ElevenLabs key of its own, and
+    /// voice stays configured in exactly one place.
+    func playAudio(_ data: Data) {
+        guard !data.isEmpty else { return }
+        DispatchQueue.main.async {
+            self.ttsPlayer?.stop()
+            self.ttsPlayer = try? AVAudioPlayer(data: data)
+            self.ttsPlayer?.play()
+        }
+    }
+
+    /// Speak via a direct ElevenLabs call. Only reachable when the owner set a
+    /// key on this machine; the daemon path above is the normal route.
     func speak(_ text: String) {
         guard let key = elevenLabsKey,
             let url = URL(

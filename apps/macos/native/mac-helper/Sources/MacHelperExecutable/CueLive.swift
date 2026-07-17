@@ -707,8 +707,18 @@ final class CueLiveController: @unchecked Sendable {
         return ["ok": true]
     }
 
-    /// Speak text aloud via ElevenLabs (no-op if no key configured).
+    /// Speak aloud. The app normally hands over `audioBase64` it synthesized
+    /// through the daemon's TTS (one voice, configured once in Cue's Voice
+    /// settings, key never leaving the instance). `text` is the legacy direct
+    /// ElevenLabs path, used only when a key was set on this machine.
     func speak(params: [String: Any]) -> [String: Any] {
+        if let audioBase64 = params["audioBase64"] as? String,
+            !audioBase64.isEmpty,
+            let data = Data(base64Encoded: audioBase64)
+        {
+            MainActor.assumeIsolated { voice.playAudio(data) }
+            return ["ok": true]
+        }
         let text = params["text"] as? String ?? ""
         MainActor.assumeIsolated {
             if !text.isEmpty { voice.speak(text) }

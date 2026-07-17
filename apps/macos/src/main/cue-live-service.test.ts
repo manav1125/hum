@@ -92,6 +92,7 @@ const {
   describeNextMove,
   setGuidanceFetcher,
   setStartVoiceDispatcher,
+  setTtsFetcher,
   __resetForTesting,
 } = await import("./cue-live-service");
 
@@ -268,6 +269,60 @@ describe("summon → capture → look → point orchestration", () => {
       .find((f) => f.method === "cuelive.showCard");
     if (answer) emit({ jsonrpc: "2.0", id: answer.id as number, result: {} });
     await wait(0);
+  });
+
+  test("speaks the answer in the voice configured under Voice, not a second local key", async () => {
+    process.env.CUE_LIVE_POINT_DWELL_MS = "0";
+    requestLocalDaemonMock.mockImplementation(async () => ({
+      answer: "Click Send to send your message.",
+      points: [],
+    }));
+    const ttsMock = mock(async () => "QVVESU8=" /* "AUDIO" */);
+    setTtsFetcher(ttsMock);
+
+    await summonAndCapture({
+      ok: true,
+      data: "QkFTRTY0",
+      mediaType: "image/jpeg",
+      width: 1280,
+      height: 800,
+    });
+    const thinking = writeFor("cuelive.showCard");
+    emit({ jsonrpc: "2.0", id: (thinking as { id: number }).id, result: {} });
+    await wait(0);
+    await wait(0);
+
+    expect(ttsMock).toHaveBeenCalledWith("Click Send to send your message.");
+    // Finished audio crosses to the helper — no `text`, so the helper never
+    // needs an ElevenLabs key of its own.
+    expect(writeFor("cuelive.speak")?.params).toEqual({
+      audioBase64: "QVVESU8=",
+    });
+    setTtsFetcher(null);
+  });
+
+  test("falls back to the helper's own voice when the assistant can't synthesize", async () => {
+    process.env.CUE_LIVE_POINT_DWELL_MS = "0";
+    requestLocalDaemonMock.mockImplementation(async () => ({
+      answer: "Click Send.",
+      points: [],
+    }));
+    setTtsFetcher(async () => null);
+
+    await summonAndCapture({
+      ok: true,
+      data: "QkFTRTY0",
+      mediaType: "image/jpeg",
+      width: 1280,
+      height: 800,
+    });
+    const thinking = writeFor("cuelive.showCard");
+    emit({ jsonrpc: "2.0", id: (thinking as { id: number }).id, result: {} });
+    await wait(0);
+    await wait(0);
+
+    expect(writeFor("cuelive.speak")?.params).toEqual({ text: "Click Send." });
+    setTtsFetcher(null);
   });
 
   test("shows a permission card and skips the model when capture is denied", async () => {

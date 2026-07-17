@@ -1268,24 +1268,37 @@ function VoiceSetup({
   status: CueLiveVoiceKeysStatus;
   onStatus: (s: CueLiveVoiceKeysStatus | null) => void;
 }) {
-  const [voiceId, setVoiceId] = useState(status.elevenLabsVoiceId ?? "");
-  const [savingVoiceId, setSavingVoiceId] = useState(false);
-
-  const saveVoiceId = async () => {
-    setSavingVoiceId(true);
-    onStatus(await setVoiceKey("elevenLabsVoiceId", voiceId || null));
-    setSavingVoiceId(false);
-  };
-
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <div style={sectionLabel}>Voice setup</div>
         <p style={{ fontSize: 12.5, color: C.t2, lineHeight: 1.5 }}>
-          Cue Live talks with you using your own API keys. Paste them once —
-          they're stored encrypted in your Keychain. Until they're set, summon
-          still works silently (it shows the answer as a card).
+          Cue Live answers in the voice you set under Voice — no second key to
+          paste here. Asking out loud needs its own key, below. Until it's set,
+          summon still works: hit the hotkey and Cue shows the answer as a card.
         </p>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          border: `1px solid ${C.line}`,
+          borderRadius: 13,
+          background: C.surface,
+          padding: 14,
+        }}
+      >
+        <Volume2 size={16} color={C.t2} style={{ flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
+            Speaking — uses your Voice settings
+          </div>
+          <p style={{ fontSize: 12, lineHeight: 1.4, color: C.t2 }}>
+            Cue speaks answers aloud in the voice configured under Voice. Change
+            the voice there and Cue Live follows.
+          </p>
+        </div>
       </div>
       <SecretKeyField
         field="assemblyAi"
@@ -1296,72 +1309,6 @@ function VoiceSetup({
         configured={status.hasAssemblyAi}
         onSaved={onStatus}
       />
-      <SecretKeyField
-        field="elevenLabs"
-        icon={Volume2}
-        label="ElevenLabs — text to speech"
-        help="Lets Cue answer back in a natural voice."
-        link="https://elevenlabs.io/app/settings/api-keys"
-        configured={status.hasElevenLabs}
-        onSaved={onStatus}
-      />
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          border: `1px solid ${C.line}`,
-          borderRadius: 13,
-          background: C.surface,
-          padding: 14,
-        }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
-          ElevenLabs voice (optional)
-        </span>
-        <p style={{ fontSize: 12, lineHeight: 1.4, color: C.t2 }}>
-          A voice ID from your ElevenLabs voice library. Leave blank for the
-          default voice.
-        </p>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            type="text"
-            value={voiceId}
-            disabled={savingVoiceId}
-            placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
-            onChange={(e) => setVoiceId(e.target.value)}
-            style={{
-              minWidth: 0,
-              flex: 1,
-              borderRadius: 8,
-              border: `1px solid ${C.line}`,
-              background: C.sunken,
-              padding: "6px 12px",
-              fontSize: 13,
-              color: C.t1,
-              outline: "none",
-            }}
-          />
-          <button
-            type="button"
-            disabled={savingVoiceId}
-            onClick={() => void saveVoiceId()}
-            style={{
-              borderRadius: 8,
-              background: C.blue,
-              color: "#fff",
-              padding: "6px 12px",
-              fontSize: 13,
-              fontWeight: 500,
-              border: "none",
-              cursor: savingVoiceId ? "default" : "pointer",
-              opacity: savingVoiceId ? 0.5 : 1,
-            }}
-          >
-            Save
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

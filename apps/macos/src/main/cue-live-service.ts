@@ -257,6 +257,50 @@ const CUE_LIVE_GUIDANCE_PATH = "/cuelive/guidance";
  */
 type GuidanceFetcher = (path: string, body: unknown) => Promise<unknown>;
 let guidanceFetcher: GuidanceFetcher | null = null;
+/**
+ * Synthesize `text` to base64 audio through the assistant's TTS, or null when
+ * it isn't reachable/configured. Injected (same DI seam as the guidance
+ * fetcher) so this module stays free of transport concerns.
+ */
+export type TtsFetcher = (text: string) => Promise<string | null>;
+let ttsFetcher: TtsFetcher | null = null;
+export const setTtsFetcher = (fetcher: TtsFetcher | null): void => {
+  ttsFetcher = fetcher;
+};
+
+/**
+ * Say something out loud.
+ *
+ * Prefers the assistant's TTS — the voice the owner configured once in Cue's
+ * Voice settings — and hands the helper finished audio. Falls back to the
+ * helper's own direct ElevenLabs path, which only fires when a key was set on
+ * this machine and otherwise no-ops. Best-effort by design: Cue Live should
+ * still show and point when it cannot speak.
+ */
+async function speakText(
+  client: ReturnType<typeof getMacHelperClient>,
+  text: string,
+): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  let audioBase64: string | null = null;
+  if (ttsFetcher) {
+    try {
+      audioBase64 = await ttsFetcher(trimmed);
+    } catch (err) {
+      log.warn(`[cue-live] tts synthesis failed: ${errMessage(err)}`);
+    }
+  }
+  try {
+    await client.call(
+      CUE_LIVE_SPEAK,
+      audioBase64 ? { audioBase64 } : { text: trimmed },
+    );
+  } catch (err) {
+    log.warn(`[cue-live] speak failed: ${errMessage(err)}`);
+  }
+}
+
 export const setGuidanceFetcher = (fetcher: GuidanceFetcher | null): void => {
   guidanceFetcher = fetcher;
 };
@@ -661,7 +705,7 @@ const runActLoop = async (
           y: cursor.y,
         })
         .catch(() => {});
-      void client.call(CUE_LIVE_SPEAK, { text: act.say }).catch(() => {});
+      void speakText(client, act.say);
     }
 
     if (act.done || !act.action || act.action.type === "none") {
@@ -822,11 +866,7 @@ const lookAndPoint = async (
   // nothing happened, not watch it stare blankly at the screen.
   if (look.error && !look.answer) {
     log.warn(`[cue-live] look failed: ${look.error}`);
-    void client
-      .call(CUE_LIVE_SPEAK, { text: look.error })
-      .catch((err: unknown) =>
-        log.warn(`[cue-live] speak failed: ${errMessage(err)}`),
-      );
+    void speakText(client, look.error);
     return;
   }
 
@@ -837,13 +877,9 @@ const lookAndPoint = async (
   );
 
   // Speak the answer (ElevenLabs, in the helper) while the cursor points —
-  // concurrent, like clicky. No-op when no TTS key is configured.
+  // concurrent, like clicky. Silent when no voice is configured anywhere.
   if (look.answer) {
-    void client
-      .call(CUE_LIVE_SPEAK, { text: look.answer })
-      .catch((err: unknown) =>
-        log.warn(`[cue-live] speak failed: ${errMessage(err)}`),
-      );
+    void speakText(client, look.answer);
   }
 
   // 3. Map points from screenshot-pixels → screen-points and fly the cursor.
