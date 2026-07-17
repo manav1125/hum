@@ -70,7 +70,7 @@ import { installLoginItem, installLoginItemIpc } from "./login-item";
 import { installLockfileWatcher } from "./lockfile-watcher";
 import {
   installHostProxyBridge,
-  requestLocalDaemon,
+  requestAssistantRoute,
 } from "./host-proxy-router";
 import "./executors/host-bash-executor"; // side-effect: registers host_bash executor
 import log from "./logger";
@@ -411,7 +411,7 @@ app
     setVoiceConfigProvider(() => getVoiceConfig());
     // Wire Stage 3 guidance: the overlay asks the local daemon for a
     // synthesized "next move" through the host-proxy's authenticated channel.
-    setGuidanceFetcher((path, body) => requestLocalDaemon(path, body));
+    setGuidanceFetcher((path, body) => requestAssistantRoute(path, body));
     // Chromium exposes its accessibility tree only when an AX client is
     // detected. Cue Live reads the AX element under the cursor; enabling this
     // lets it read Cue's OWN window on the first summon (the helper coaxes

@@ -45,6 +45,19 @@ interface AssistantConnection {
   poster: HostProxyPoster;
   /** Opaque string for detecting config changes that warrant a reconnect. */
   fingerprint: string;
+  /**
+   * How main-process features (Cue Live) reach this assistant's routes
+   * directly. Carried here rather than re-parsed out of `fingerprint`, whose
+   * cloud form embeds a URL and is therefore ambiguous to split.
+   */
+  target:
+    | { kind: "local"; assistantId: string; gatewayPort: number }
+    | {
+        kind: "cloud";
+        assistantId: string;
+        baseUrl: string;
+        organizationId?: string;
+      };
 }
 
 // ---------------------------------------------------------------------------
@@ -293,32 +306,48 @@ async function getCachedGatewayToken(
   return token;
 }
 
-/** The connected local assistant (id + gateway port), if any. */
-function activeLocalConnection(): {
-  assistantId: string;
-  gatewayPort: number;
-} | null {
-  for (const [assistantId, conn] of connections) {
-    const match = /^local:(\d+)$/.exec(conn.fingerprint);
-    if (match) return { assistantId, gatewayPort: Number(match[1]) };
+/** The connected local assistant, if any. */
+function activeLocalConnection(): Extract<
+  AssistantConnection["target"],
+  { kind: "local" }
+> | null {
+  for (const conn of connections.values()) {
+    if (conn.target.kind === "local") return conn.target;
   }
   return null;
 }
 
+/** The connected cloud assistant, if any. */
+function activeCloudConnection(): Extract<
+  AssistantConnection["target"],
+  { kind: "cloud" }
+> | null {
+  for (const conn of connections.values()) {
+    if (conn.target.kind === "cloud") return conn.target;
+  }
+  return null;
+}
+
+async function readJson<T>(res: Response | null): Promise<T | null> {
+  if (!res || !res.ok) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * POST to a route on the connected local daemon, authenticated with the same
+ * POST to a route on the connected LOCAL daemon, authenticated with the same
  * guardian→gateway token exchange the SSE/poster connection uses (short-lived
- * token cache + a single 401 re-mint). Returns the parsed JSON body, or null
- * when there is no local assistant, auth fails, or the request errors — callers
- * treat it as best-effort.
+ * token cache + a single 401 re-mint).
  */
-export async function requestLocalDaemon<T = unknown>(
+async function requestLocalRoute<T>(
+  target: Extract<AssistantConnection["target"], { kind: "local" }>,
   routePath: string,
   body: unknown,
-  timeoutMs = 9_000,
+  timeoutMs: number,
 ): Promise<T | null> {
-  const target = activeLocalConnection();
-  if (!target) return null;
   const url = `http://127.0.0.1:${target.gatewayPort}/v1/assistants/${encodeURIComponent(
     target.assistantId,
   )}${routePath}`;
@@ -361,12 +390,69 @@ export async function requestLocalDaemon<T = unknown>(
     if (!token) return null;
     res = await attempt(token);
   }
-  if (!res || !res.ok) return null;
+  return readJson<T>(res);
+}
+
+/** POST to a route on the connected CLOUD assistant, using the session token. */
+async function requestCloudRoute<T>(
+  target: Extract<AssistantConnection["target"], { kind: "cloud" }>,
+  routePath: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<T | null> {
+  const sessionToken = getSessionToken();
+  if (!sessionToken) return null;
+  const url = `${target.baseUrl}/v1/assistants/${encodeURIComponent(
+    target.assistantId,
+  )}${routePath}`;
+  const headers: Record<string, string> = {
+    "X-Session-Token": sessionToken,
+    "Content-Type": "application/json",
+  };
+  if (target.organizationId) {
+    headers["Vellum-Organization-Id"] = target.organizationId;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return (await res.json()) as T;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return await readJson<T>(res);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/**
+ * POST to a route on whichever assistant this app is connected to, for
+ * main-process features (Cue Live) that need a response body.
+ *
+ * Local is preferred when present — it is on the loopback and answers fastest.
+ * Otherwise the request goes to the connected cloud assistant. Without that
+ * fallback, Cue Live is dead for every cloud-only install: the summon reaches
+ * no daemon, and `null` surfaces as "look returned invalid payload" with no
+ * hint that the request was never sent. Returns null when nothing is connected,
+ * auth fails, or the request errors — callers treat it as best-effort.
+ */
+export async function requestAssistantRoute<T = unknown>(
+  routePath: string,
+  body: unknown,
+  timeoutMs = 9_000,
+): Promise<T | null> {
+  const local = activeLocalConnection();
+  if (local) return requestLocalRoute<T>(local, routePath, body, timeoutMs);
+  const cloud = activeCloudConnection();
+  if (cloud) return requestCloudRoute<T>(cloud, routePath, body, timeoutMs);
+  log.warn("[host-proxy-router] no assistant connected — cannot reach route", {
+    routePath,
+  });
+  return null;
 }
 
 // -- Local assistant connection ---------------------------------------------
@@ -412,6 +498,7 @@ async function connectLocalAssistant(
     sse,
     poster,
     fingerprint: localFingerprint(gatewayPort),
+    target: { kind: "local", assistantId, gatewayPort },
   });
   log.info("[host-proxy-router] connected to local assistant", {
     assistantId,
@@ -460,6 +547,7 @@ function connectCloudAssistant(
     sse,
     poster,
     fingerprint: cloudFingerprint(runtimeUrl, organizationId),
+    target: { kind: "cloud", assistantId, baseUrl, organizationId },
   });
   log.info("[host-proxy-router] connected to cloud assistant", {
     assistantId,

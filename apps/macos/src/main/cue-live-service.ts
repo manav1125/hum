@@ -1040,6 +1040,11 @@ export const start = async (): Promise<void> => {
       return;
     }
     lastKnownTrusted = parsed.data.accessibilityTrusted === true;
+    // Prime the Screen-Recording cache the moment the helper is reachable.
+    // `status` serves it from `lastKnownScreenRecording`, which starts false,
+    // so until something calls `getPermissions()` a granted machine reports
+    // "not granted". It errs safe, but only by accident — read it for real.
+    void getPermissions();
     // Hand the helper the voice keys (push-to-talk STT + TTS) now that it's up.
     void pushVoiceConfig();
     log.info(
