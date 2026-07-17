@@ -466,6 +466,8 @@ const LOOK_SCHEMA = z.object({
   points: z.array(
     z.object({ x: z.number(), y: z.number(), label: z.string() }),
   ),
+  /** Set when the look failed outright — say it rather than shrug silently. */
+  error: z.string().optional(),
 });
 
 /** Daemon `cuelive/act` response: the single next action (or done). */
@@ -814,6 +816,20 @@ const lookAndPoint = async (
     return;
   }
   if (gen !== summonGeneration) return; // a newer summon superseded this one
+
+  // A failed look carries `error` and no answer. Speaking it beats the silent
+  // return this used to do: the owner summoned Cue and deserves to hear why
+  // nothing happened, not watch it stare blankly at the screen.
+  if (look.error && !look.answer) {
+    log.warn(`[cue-live] look failed: ${look.error}`);
+    void client
+      .call(CUE_LIVE_SPEAK, { text: look.error })
+      .catch((err: unknown) =>
+        log.warn(`[cue-live] speak failed: ${errMessage(err)}`),
+      );
+    return;
+  }
+
   lastAnswer = look.answer;
   log.info(
     `[cue-live] look → "${look.answer.slice(0, 80)}" ` +

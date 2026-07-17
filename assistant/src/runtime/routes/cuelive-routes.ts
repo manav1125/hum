@@ -127,6 +127,14 @@ const LookResult = z.object({
   answer: z.string(),
   /** Where to point on screen, in screenshot-pixel coordinates. */
   points: z.array(LookPoint),
+  /**
+   * Why the look produced no answer, when it failed outright. An empty `answer`
+   * alone is ambiguous — a dead vision model and a model with nothing to say
+   * look identical, which is how a total Cue Live vision outage stayed
+   * invisible. Present only on failure, so the overlay can say something true
+   * instead of silently shrugging.
+   */
+  error: z.string().optional(),
 });
 type LookResultT = z.infer<typeof LookResult>;
 
@@ -162,6 +170,30 @@ function parsePoints(text: string): LookResultT {
 
 const MAX_LOOK_TOKENS = 320;
 const LOOK_TIMEOUT_MS = 20_000;
+
+/**
+ * Turn a look failure into one short line the overlay can show the owner.
+ * The vision model is configured separately from the brain (`cueLiveVision`),
+ * so its two operator-fixable failures — a model that can't take images, and
+ * one no provider will serve — get named rather than buried.
+ */
+function describeLookFailure(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (
+    /doesn't support image input|no endpoints found that support image/i.test(
+      message,
+    )
+  ) {
+    return "The configured vision model can't read images. Set llm.callSites.cueLiveVision to a vision-capable model.";
+  }
+  if (/no endpoints found/i.test(message)) {
+    return "No provider is serving the configured vision model right now.";
+  }
+  if (err instanceof Error && err.name === "AbortError") {
+    return "Looking at your screen timed out.";
+  }
+  return "Cue couldn't read your screen just now.";
+}
 
 async function handleLook({
   body,
@@ -210,7 +242,7 @@ async function handleLook({
     return parsePoints(result.text);
   } catch (err) {
     log.warn({ err }, "Cue Live look generation failed");
-    return { answer: "", points: [] };
+    return { answer: "", points: [], error: describeLookFailure(err) };
   }
 }
 

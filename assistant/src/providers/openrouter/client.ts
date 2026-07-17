@@ -72,10 +72,34 @@ export function extractOnlyList(config: unknown): string[] {
  *   CUE_OPENROUTER_PROVIDER_ALLOW_FALLBACKS  "0"/"false" to forbid spill
  *   CUE_OPENROUTER_PROVIDER_REQUIRE_PARAMS   "1"/"true" to require full param support
  *
+ * A provider pool is only meaningful for the model it was picked for: an
+ * `order` naming providers that don't serve `model`, plus
+ * `allow_fallbacks: false`, leaves OpenRouter with nowhere to route and it
+ * answers `404 No endpoints found` — the request never reaches a model. So the
+ * env layer applies ONLY to the operator's configured brain models
+ * (`CUE_OPENROUTER_MODEL` / `CUE_OPENROUTER_FLASH_MODEL`), which are what the
+ * pool was tuned against. A call site that deliberately overrides the model
+ * (e.g. `cueLiveVision` on a vision-capable model — the brain is text-only)
+ * routes through OpenRouter's normal provider selection instead of inheriting
+ * a pool that cannot serve it. When neither brain model is set the pin applies
+ * to every model, preserving the original blanket behaviour.
+ *
  * Returns the fields to merge into the wire `provider` object, or an empty
  * object when nothing is configured. Exported for tests.
  */
-export function envProviderRouting(): Record<string, unknown> {
+export function envProviderRouting(model?: string): Record<string, unknown> {
+  const pinnedModels = [
+    process.env.CUE_OPENROUTER_MODEL?.trim(),
+    process.env.CUE_OPENROUTER_FLASH_MODEL?.trim(),
+  ].filter((m): m is string => !!m);
+  if (
+    model &&
+    pinnedModels.length > 0 &&
+    !pinnedModels.includes(model.trim())
+  ) {
+    return {};
+  }
+
   const out: Record<string, unknown> = {};
   const order = process.env.CUE_OPENROUTER_PROVIDER_ORDER?.trim();
   if (order) {
@@ -296,7 +320,7 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
       string,
       unknown
     >;
-    const envRouting = envProviderRouting();
+    const envRouting = envProviderRouting(this.resolveEffectiveModel(options));
     const provider: Record<string, unknown> = {
       ...existingProvider,
       ...envRouting,
