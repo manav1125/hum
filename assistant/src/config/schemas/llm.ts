@@ -82,6 +82,12 @@ export const LLMCallSiteEnum = z.enum([
   "actionBoard",
   "autoDraft",
   "homeAction",
+  // Cue Live's screen-vision pass (Look / Do it). Separate from mainAgent
+  // because it REQUIRES image input: the general brain is chosen for context
+  // and cost and may be text-only (deepseek-v4-flash is), which silently broke
+  // every Look with "This model doesn't support image input". Point this at a
+  // vision-capable model; it's the only call site that can't fall back to text.
+  "cueLiveVision",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 

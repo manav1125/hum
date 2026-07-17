@@ -18,6 +18,9 @@ type CallSiteDefaultConfig = {
 
 export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
   mainAgent: { profile: "balanced" },
+  // One-shot screenshot → answer; the prompt never repeats, so caching would
+  // only ever pay the write premium.
+  cueLiveVision: { profile: "balanced", disableCache: true },
   subagentSpawn: { profile: "balanced" },
   compactionAgent: { profile: "balanced" },
   analyzeConversation: { profile: "balanced" },

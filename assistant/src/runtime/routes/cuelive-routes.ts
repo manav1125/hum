@@ -203,7 +203,7 @@ async function handleLook({
       systemPrompt: lookSystemPrompt(imageWidth, imageHeight),
       tools: [],
       maxTokens: MAX_LOOK_TOKENS,
-      callSite: "mainAgent",
+      callSite: "cueLiveVision",
       timeoutMs: LOOK_TIMEOUT_MS,
       signal: abortSignal,
     });
@@ -341,7 +341,7 @@ async function handleAct({
       systemPrompt: actSystemPrompt(imageWidth, imageHeight),
       tools: [],
       maxTokens: MAX_ACT_TOKENS,
-      callSite: "mainAgent",
+      callSite: "cueLiveVision",
       timeoutMs: ACT_TIMEOUT_MS,
       signal: abortSignal,
     });

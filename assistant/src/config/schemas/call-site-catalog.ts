@@ -335,6 +335,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Runs a Home action item as its own background agent turn when it's dispatched to run in the background.",
     domain: "agentLoop",
   },
+  cueLiveVision: {
+    id: "cueLiveVision",
+    displayName: "Cue Live vision (Look / Do it)",
+    description:
+      "Reads a screenshot of the owner's screen to answer 'what's here / what next' and to pick the next on-screen action. MUST be a vision-capable model — unlike every other call site this one cannot degrade to text, and a text-only model fails the request outright.",
+    domain: "agentLoop",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage
