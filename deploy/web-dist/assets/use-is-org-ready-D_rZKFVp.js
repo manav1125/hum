@@ -1,1 +1,0 @@
-import{c as e,r as t}from"./auth-store-W8ifVCaP.js";function n(){let n=e.use.currentOrganizationId();return!t()||n!=null}export{n as t};
