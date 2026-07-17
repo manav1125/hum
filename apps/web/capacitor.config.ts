@@ -10,16 +10,38 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // and bounces non-prod shells off their own host.
 const env = process.env.VELLUM_ENVIRONMENT ?? "dev";
 
-// Cue self-host target: the mobile shell loads the SPA from the user's own
-// Cue deployment. Defaults to the pilot Render URL but is overridable at sync
-// time via CUE_SERVER_URL once a custom domain is set:
-//   CUE_SERVER_URL=https://cue.example.com/assistant VELLUM_ENVIRONMENT=cue bunx cap sync
-const CUE_SELF_HOST_URL =
-  process.env.CUE_SERVER_URL ?? "https://manav.justcue.app/assistant/";
+// Cue self-host target: the mobile shell loads the SPA from the owner's own
+// Cue deployment, so the instance MUST be named at sync time:
+//   CUE_SERVER_URL=https://cue-ada-1234.justcue.app/assistant/ VELLUM_ENVIRONMENT=cue bunx cap sync
+//
+// There is deliberately no default. `server.url` is baked into the archived
+// binary, so a default here ships inside every copy of the app — a build with
+// one owner's instance in it points every OTHER owner at that instance. It
+// used to default to exactly that, which is why this throws instead.
+//
+// This makes a `cue` build single-instance by construction: fine for the
+// owner's own build, wrong for the App Store. Shipping to strangers needs the
+// shell to bundle the SPA and let each owner connect to their own instance at
+// runtime (the macOS app does this — see `app-config.ts`
+// `setPersistedSelfHostUrlReader` + `self-host-connect.ts`); the SPA
+// authenticates same-origin, so the WebView has to end up ON the instance
+// rather than proxying to it.
+const cueSelfHostUrl = (): string => {
+  const url = process.env.CUE_SERVER_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "VELLUM_ENVIRONMENT=cue requires CUE_SERVER_URL — the Cue instance this " +
+        "build loads (e.g. https://cue-ada-1234.justcue.app/assistant/). It is " +
+        "baked into the binary, so there is no safe default: every owner has " +
+        "their own instance.",
+    );
+  }
+  return url;
+};
 
 const SERVER_URL =
   env === "cue"
-    ? CUE_SELF_HOST_URL
+    ? cueSelfHostUrl()
     : env === "production"
       ? "https://www.vellum.ai/assistant"
       : env === "staging"

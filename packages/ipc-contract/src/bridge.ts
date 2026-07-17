@@ -65,6 +65,18 @@ export interface VellumBridge {
     versionInfo(): Promise<AppVersionInfo>;
     openWebsite(): Promise<void>;
   };
+  /**
+   * The Cue instance this install points at. Each owner runs their own
+   * deployment, so the app ships connected to nothing and the Connect screen
+   * names it once.
+   */
+  selfHost: {
+    /** Connect to (and load) an instance. Returns the resolved SPA URL, or
+     *  null when the link isn't a usable https instance. */
+    connect(link: string): Promise<string | null>;
+    /** The connected instance's SPA URL, or null when not connected yet. */
+    connected(): Promise<string | null>;
+  };
   text: {
     insertIntoFrontApp(text: string): Promise<TextInsertionResult>;
     openAutomationSettings(): Promise<void>;

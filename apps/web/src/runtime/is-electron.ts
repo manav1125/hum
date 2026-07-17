@@ -113,6 +113,14 @@ declare global {
         versionInfo(): Promise<AppVersionInfo>;
         openWebsite(): Promise<void>;
       };
+      /**
+       * Which Cue instance this install points at. Optional like the rest:
+       * an older preload predates it, and the web build has no bridge at all.
+       */
+      selfHost?: {
+        connect(link: string): Promise<string | null>;
+        connected(): Promise<string | null>;
+      };
       text?: {
         insertIntoFrontApp(text: string): Promise<TextInsertionResult>;
         openAutomationSettings(): Promise<void>;

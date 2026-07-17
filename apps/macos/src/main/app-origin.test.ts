@@ -12,11 +12,14 @@ mock.module("electron", () => ({
 }));
 
 const { isAllowedOrigin, resolveAllowedOrigin } = await import("./app-origin");
+const { setPersistedSelfHostUrlReader } = await import("./app-config");
 
 const ORIGINAL_DEV_URL = process.env.VELLUM_DEV_URL;
 const ORIGINAL_CUE_SERVER_URL = process.env.CUE_SERVER_URL;
 
 beforeEach(() => {
+  // The shipped state: no instance connected until the owner names one.
+  setPersistedSelfHostUrlReader(() => null);
   appState.isPackaged = false;
   delete process.env.VELLUM_DEV_URL;
   // Default the self-host opt-out for the legacy-path assertions; the
@@ -46,12 +49,27 @@ describe("resolveAllowedOrigin", () => {
     });
   });
 
-  test("packaged builds default to the self-host cloud origin when CUE_SERVER_URL is unset", () => {
+  test("packaged builds trust the connected instance's origin", () => {
     delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(
+      () => "https://cue-ada-1234.justcue.app/assistant/",
+    );
     appState.isPackaged = true;
     expect(resolveAllowedOrigin()).toEqual({
       protocol: "https:",
-      host: "manav.justcue.app",
+      host: "cue-ada-1234.justcue.app",
+    });
+  });
+
+  test("packaged builds trust only the bundled origin until an instance is connected", () => {
+    // No instance ⇒ the window serves the app's own Connect screen, so that
+    // is the only origin the IPC/navigation guards may accept.
+    delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(() => null);
+    appState.isPackaged = true;
+    expect(resolveAllowedOrigin()).toEqual({
+      protocol: "app:",
+      host: "vellum.ai",
     });
   });
 
@@ -98,9 +116,9 @@ describe("isAllowedOrigin", () => {
   });
 
   test("accepts an already-parsed URL navigation target", () => {
-    expect(isAllowedOrigin(new URL("http://localhost:5173/assistant"), dev)).toBe(
-      true,
-    );
+    expect(
+      isAllowedOrigin(new URL("http://localhost:5173/assistant"), dev),
+    ).toBe(true);
   });
 
   test("rejects a foreign host on the right protocol", () => {

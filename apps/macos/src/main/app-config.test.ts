@@ -4,6 +4,7 @@ import {
   getRendererBaseProd,
   getRendererRootUrl,
   resolveSelfHostUrl,
+  setPersistedSelfHostUrlReader,
 } from "./app-config";
 
 const ORIGINAL_DEV_URL = process.env.VELLUM_DEV_URL;
@@ -17,6 +18,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Back to "no instance connected" — the shipped default.
+  setPersistedSelfHostUrlReader(() => null);
   if (ORIGINAL_DEV_URL === undefined) {
     delete process.env.VELLUM_DEV_URL;
   } else {
@@ -30,10 +33,32 @@ afterEach(() => {
 });
 
 describe("resolveSelfHostUrl", () => {
-  test("defaults to the pilot Render URL when CUE_SERVER_URL is unset", () => {
+  test("connects to NOTHING until the owner names an instance", () => {
+    // The guard that matters: every owner runs their own deployment, so a
+    // build must never ship pointing at a real one. It used to default to a
+    // personal instance, which sent every other install's owner there.
     delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(() => null);
+    expect(resolveSelfHostUrl()).toBeNull();
+  });
+
+  test("uses the instance the owner connected to", () => {
+    delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(
+      () => "https://cue-ada-1234.justcue.app/assistant/",
+    );
     expect(resolveSelfHostUrl()?.toString()).toBe(
-      "https://manav.justcue.app/assistant/",
+      "https://cue-ada-1234.justcue.app/assistant/",
+    );
+  });
+
+  test("CUE_SERVER_URL overrides the connected instance (dev/QA)", () => {
+    process.env.CUE_SERVER_URL = "https://cue.example.com/assistant/";
+    setPersistedSelfHostUrlReader(
+      () => "https://cue-ada-1234.justcue.app/assistant/",
+    );
+    expect(resolveSelfHostUrl()?.toString()).toBe(
+      "https://cue.example.com/assistant/",
     );
   });
 
@@ -56,17 +81,29 @@ describe("getRendererRootUrl", () => {
     expect(getRendererRootUrl(true)).toBe("app://vellum.ai/assistant");
   });
 
-  test("packaged builds default to the self-host SPA root with a trailing slash", () => {
+  test("packaged builds load the connected instance's SPA root with a trailing slash", () => {
     delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(
+      () => "https://cue-ada-1234.justcue.app/assistant/",
+    );
     expect(getRendererRootUrl(true)).toBe(
-      "https://manav.justcue.app/assistant/",
+      "https://cue-ada-1234.justcue.app/assistant/",
     );
   });
 
-  test("getRendererBaseProd defaults to the self-host base without a trailing slash so aux windows can append a subpath", () => {
+  test("packaged builds load the BUNDLED SPA (the Connect screen) when no instance is connected", () => {
     delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(() => null);
+    expect(getRendererRootUrl(true)).toBe("app://vellum.ai/assistant");
+  });
+
+  test("getRendererBaseProd gives the connected instance's base without a trailing slash so aux windows can append a subpath", () => {
+    delete process.env.CUE_SERVER_URL;
+    setPersistedSelfHostUrlReader(
+      () => "https://cue-ada-1234.justcue.app/assistant/",
+    );
     expect(getRendererBaseProd()).toBe(
-      "https://manav.justcue.app/assistant",
+      "https://cue-ada-1234.justcue.app/assistant",
     );
   });
 

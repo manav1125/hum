@@ -36,8 +36,27 @@ export function CueConnectScreen() {
   const [connecting, setConnecting] = useState(false);
   const [showToken, setShowToken] = useState(false);
 
-  function handleConnect() {
+  async function handleConnect() {
     setError(null);
+
+    // In the desktop app this SPA is the app's own bundled copy, served from
+    // `app://` — it isn't any instance. A pasted link names which instance to
+    // load, so hand it to the main process: it remembers the instance and
+    // loads it (token and all), and the SPA that boots there seeds the session
+    // from `?cueToken=` as usual. Seeding the token into `app://` storage
+    // instead would strand it on an origin that talks to no daemon.
+    const bridge = globalThis.window?.vellum?.selfHost;
+    if (bridge && value.includes("://")) {
+      setConnecting(true);
+      const connected = await bridge.connect(value).catch(() => null);
+      if (connected) return; // main is loading the instance now
+      setConnecting(false);
+      setError(
+        "That link doesn't point at a Cue instance. Paste the full https link from your sign-in email.",
+      );
+      return;
+    }
+
     const ok = seedCueToken(value);
     if (!ok) {
       setError(

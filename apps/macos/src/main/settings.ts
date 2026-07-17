@@ -44,6 +44,14 @@ export interface AppSettings {
     goal: string;
     takeControl: boolean;
   }>;
+  /**
+   * The Cue instance this install is connected to, e.g.
+   * `https://cue-ada-1234.justcue.app/assistant/`. Set once, when the owner
+   * connects; absent means "not connected yet" and the app opens its own
+   * bundled Connect screen. Never defaulted to a real deployment — a build must
+   * not point at somebody else's instance.
+   */
+  selfHostUrl: string;
 }
 
 const schema: Schema<AppSettings> = {
@@ -97,6 +105,10 @@ const schema: Schema<AppSettings> = {
       additionalProperties: false,
     },
     default: [],
+  },
+  // No default: an unconnected install must have no instance, not a guess.
+  selfHostUrl: {
+    type: "string",
   },
 };
 

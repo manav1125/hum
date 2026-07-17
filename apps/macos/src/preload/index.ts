@@ -98,6 +98,14 @@ const bridge: VellumBridge = {
     openWebsite: (): Promise<void> =>
       ipcRenderer.invoke("vellum:app:openWebsite") as Promise<void>,
   },
+  selfHost: {
+    connect: (link: string): Promise<string | null> =>
+      ipcRenderer.invoke("vellum:selfHost:connect", link) as Promise<
+        string | null
+      >,
+    connected: (): Promise<string | null> =>
+      ipcRenderer.invoke("vellum:selfHost:connected") as Promise<string | null>,
+  },
   text: {
     insertIntoFrontApp: (text: string): Promise<TextInsertionResult> =>
       ipcRenderer.invoke(

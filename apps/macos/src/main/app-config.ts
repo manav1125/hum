@@ -26,36 +26,57 @@ export const BUNDLES_DIR_NAME = "bundles";
 const DEV_SERVER_FALLBACK_URL = "http://localhost:5173/assistant";
 
 /**
- * Self-host cloud target — the same Render-hosted Cue SPA the iOS app loads
- * (see `apps/web/capacitor.config.ts`). When set, the packaged app loads its
- * renderer directly from this remote https origin instead of serving the
- * bundled snapshot via the `app://` scheme. This is the DEFAULT for Cue: the
- * remote SPA is the `VITE_CUE_SELF_HOST=1` build (connect-screen + durable
- * token auth), so the user signs in once and localStorage persists.
+ * The Cue instance this install is connected to.
  *
- * Overridable via `CUE_SERVER_URL` (mirrors capacitor's pattern) once a custom
- * domain is set, e.g. `CUE_SERVER_URL=https://cue.example.com/assistant/`.
- * Set `CUE_SERVER_URL=` (empty) to fall back to the legacy bundle-serving
- * `app://` path + managed-platform proxy.
+ * Each owner runs their own deployment (`cue-<name>.justcue.app`, provisioned
+ * by HQ), so there is no such thing as a correct build-time default — the app
+ * learns its instance when the owner connects, and remembers it. Until then it
+ * serves the bundled SPA over `app://`, whose Connect screen collects it.
+ *
+ * `CUE_SERVER_URL` overrides for dev/QA, e.g.
+ * `CUE_SERVER_URL=https://cue.example.com/assistant/`; empty forces the
+ * bundled SPA.
  *
  * The trailing `/assistant/` suffix is deliberate (mirrors capacitor): the
  * SPA is mounted under `/assistant/`, and the SPA root needs the trailing
  * slash to avoid landing on the host's `/assistant/*` NotFound route.
  */
-const CUE_SELF_HOST_DEFAULT_URL = "https://manav.justcue.app/assistant/";
+/**
+ * Reader for the connected instance, injected by `index.ts` from persisted
+ * settings. A DI seam rather than an import so this module stays free of
+ * electron-store (and its `app.getPath` side effect at import time).
+ *
+ * Defaults to "not connected". Cue MUST NOT ship pointing at any real
+ * deployment: a build with someone's instance baked in sends every other
+ * install's owner to that instance. Each owner gets their own
+ * (`cue-<name>.justcue.app`, provisioned by HQ) and connects to it once.
+ */
+let persistedSelfHostUrlReader: () => string | null = () => null;
+
+/** Wire the persisted-instance reader. See `persistedSelfHostUrlReader`. */
+export const setPersistedSelfHostUrlReader = (
+  reader: () => string | null,
+): void => {
+  persistedSelfHostUrlReader = reader;
+};
 
 /**
- * Resolve the self-host cloud renderer URL, or `null` when self-host is
- * explicitly disabled (`CUE_SERVER_URL` set to empty). Read at call time so a
- * value injected mid-process stays authoritative — the same property the
+ * Resolve the connected Cue instance's renderer URL, or `null` when there
+ * isn't one yet — in which case the app loads its own bundled SPA, whose
+ * Connect screen is how the owner names their instance.
+ *
+ * Order: `CUE_SERVER_URL` (dev/QA override; empty string forces the bundled
+ * SPA) → the instance the owner connected to → none. Read at call time so a
+ * fresh connection takes effect without a relaunch — the same property the
  * navigation guard, IPC sender guard, and window load all rely on.
  */
 export const resolveSelfHostUrl = (): URL | null => {
   const raw = process.env.CUE_SERVER_URL;
-  // Unset → default to the pilot Render URL. Explicit empty string → opt out.
   if (raw === "") return null;
+  const candidate = raw ?? persistedSelfHostUrlReader();
+  if (!candidate) return null;
   try {
-    return new URL(raw ?? CUE_SELF_HOST_DEFAULT_URL);
+    return new URL(candidate);
   } catch {
     return null;
   }
@@ -76,17 +97,19 @@ const selfHostRendererBase = (): string | null => {
  * Renderer-base URL for the packaged app. Auxiliary windows append
  * their own subpath (`/about`, future `/conversations/<id>`, etc.).
  *
- * Defaults to the self-host cloud origin (`https://…/assistant`) so the
- * desktop app matches the phone. Falls back to the bundled `app://vellum.ai`
- * origin when self-host is disabled via `CUE_SERVER_URL=`.
+ * The connected instance's origin (`https://…/assistant`) once there is one,
+ * so the desktop app matches the phone; otherwise the bundled `app://vellum.ai`
+ * origin, which serves the Connect screen.
  */
 export const getRendererBaseProd = (): string =>
   selfHostRendererBase() ?? `${APP_PROTOCOL}://${APP_HOST}/assistant`;
 
 /**
- * Back-compat alias. Historically a constant; now a getter result so it
- * reflects `CUE_SERVER_URL` at evaluation time. Kept as a binding for the
- * auxiliary-window modules that import it.
+ * Back-compat alias, frozen at import. The connected instance is now resolved
+ * at call time (it can be set while the app runs), so this snapshot is only
+ * correct before a connection — prefer `getRendererBaseProd()`.
+ *
+ * @deprecated Call `getRendererBaseProd()` instead.
  */
 export const RENDERER_BASE_PROD = getRendererBaseProd();
 

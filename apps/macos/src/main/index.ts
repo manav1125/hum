@@ -86,6 +86,7 @@ import { installNativeAuth } from "./native-auth";
 import { installConnectivityProbe } from "./connectivity-probe";
 import { installNotifications } from "./notifications";
 import { installPermissionHandler } from "./permissions";
+import { installSelfHostConnect } from "./self-host-connect";
 import {
   requestSelfHostBinary,
   requestSelfHostRoute,
@@ -487,6 +488,8 @@ app
       openAbout: openAboutWindow,
     });
     installNativeAuth();
+    // Before the first window: the persisted instance decides what loads.
+    installSelfHostConnect();
     installMainWindow();
 
     // Dock-icon click / Cmd-Tab re-activation: bring the main window
