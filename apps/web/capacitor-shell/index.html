@@ -2,10 +2,273 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Vellum</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Cue</title>
+    <style>
+      :root {
+        --bg: #0b0b0f;
+        --surface: #16161d;
+        --border: #2a2a35;
+        --text: #f4f4f6;
+        --muted: #a0a0ad;
+        --accent: #3d6ee8;
+        --danger: #e5675b;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f6f6f8;
+          --surface: #ffffff;
+          --border: #e2e2e8;
+          --text: #17171c;
+          --muted: #6a6a76;
+          --accent: #3d6ee8;
+          --danger: #c4372b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      #boot,
+      #connect {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: max(24px, env(safe-area-inset-top)) 24px
+          max(24px, env(safe-area-inset-bottom));
+        gap: 20px;
+      }
+      #connect {
+        display: none;
+      }
+      .card {
+        width: 100%;
+        max-width: 380px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 26px;
+        letter-spacing: -0.02em;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      code {
+        color: var(--text);
+        font-size: 0.92em;
+      }
+      label {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: -8px;
+      }
+      input {
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        font-size: 16px; /* >=16px so iOS doesn't zoom on focus */
+        outline: none;
+      }
+      input:focus {
+        border-color: var(--accent);
+      }
+      button {
+        width: 100%;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+      }
+      #error {
+        color: var(--danger);
+        font-size: 14px;
+        min-height: 1em;
+        margin: 0;
+      }
+      .spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
-    Loading&hellip;
+    <!--
+      Cue mobile connect shell.
+
+      The desktop app learns its instance at runtime and navigates the window
+      onto it (see apps/macos/.../self-host-connect.ts). Mobile can't bake a
+      URL for the same reason — `server.url` is compiled into the archive, so a
+      default there points every owner at one instance. So when no instance is
+      baked, Capacitor serves THIS page from capacitor://localhost, and it does
+      the desktop job in the WebView: read the saved instance and navigate to
+      it, or collect it once.
+
+      The self-host SPA authenticates same-origin, so we NAVIGATE the WebView
+      onto the instance rather than proxy to it. The saved value is the
+      token-stripped instance origin; the emitted link's `?cueToken=` rides
+      along only on the first connect, where the instance SPA consumes it to
+      seed its own-origin session.
+    -->
+    <div id="boot"><div class="spinner"></div></div>
+
+    <form id="connect" novalidate>
+      <div class="card">
+        <h1>Connect to your Cue</h1>
+        <p>
+          Paste the sign-in link from your email, or your Cue address
+          (<code>cue-you.justcue.app</code>).
+        </p>
+        <label for="link">Sign-in link or address</label>
+        <input
+          id="link"
+          type="url"
+          inputmode="url"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="https://cue-you.justcue.app/..."
+        />
+        <p id="error"></p>
+        <button type="submit" id="go">Connect</button>
+      </div>
+    </form>
+
+    <script>
+      // Where the token-stripped instance URL is remembered between launches.
+      // localStorage at capacitor://localhost persists across app restarts,
+      // so this is the mobile mirror of the desktop `selfHostUrl` setting.
+      var STORAGE_KEY = "cue:instanceUrl";
+
+      // Normalize a connect link (or bare address) into the SPA-root URL to
+      // load. Mirrors apps/macos/.../self-host-connect.ts
+      // `normalizeInstanceUrl`: https-only, mount `/assistant/`, keep the
+      // token. Returns null for anything that isn't a plausible instance.
+      function normalizeInstanceUrl(input) {
+        var raw = (input || "").trim();
+        if (!raw) return null;
+        // A bare host ("cue-you.justcue.app") — assume https.
+        if (!/^[a-z]+:\/\//i.test(raw)) raw = "https://" + raw;
+        var url;
+        try {
+          url = new URL(raw);
+        } catch (e) {
+          return null;
+        }
+        if (url.protocol !== "https:") return null;
+        if (url.hostname.indexOf(".") === -1) return null;
+        if (!/\/assistant\/?$/.test(url.pathname)) {
+          url.pathname = url.pathname.replace(/\/+$/, "") + "/assistant/";
+        } else if (url.pathname.charAt(url.pathname.length - 1) !== "/") {
+          url.pathname = url.pathname + "/";
+        }
+        return url.toString();
+      }
+
+      // The value to remember: same instance, minus the one-time token.
+      function withoutToken(fullUrl) {
+        try {
+          var u = new URL(fullUrl);
+          u.searchParams.delete("cueToken");
+          u.searchParams.delete("cueExp");
+          return u.toString();
+        } catch (e) {
+          return fullUrl;
+        }
+      }
+
+      function show(which) {
+        document.getElementById("boot").style.display =
+          which === "boot" ? "flex" : "none";
+        document.getElementById("connect").style.display =
+          which === "connect" ? "flex" : "none";
+      }
+
+      function connect(input) {
+        var full = normalizeInstanceUrl(input);
+        if (!full) {
+          document.getElementById("error").textContent =
+            "That doesn't look like a Cue address. Paste the full https link from your sign-in email.";
+          return false;
+        }
+        // Remember the token-stripped instance for next launch, then navigate
+        // WITH the token so the instance SPA seeds this session.
+        try {
+          localStorage.setItem(STORAGE_KEY, withoutToken(full));
+        } catch (e) {}
+        show("boot");
+        window.location.replace(full);
+        return true;
+      }
+
+      // Exposed for the connect form and tests. `boot()` runs the
+      // remember-and-navigate path; the form calls `connect()`.
+      window.CueConnect = {
+        normalizeInstanceUrl: normalizeInstanceUrl,
+        withoutToken: withoutToken,
+        connect: connect,
+        STORAGE_KEY: STORAGE_KEY,
+      };
+
+      function boot() {
+        var saved = null;
+        try {
+          saved = localStorage.getItem(STORAGE_KEY);
+        } catch (e) {}
+        if (saved) {
+          window.location.replace(saved);
+          return;
+        }
+        show("connect");
+        document
+          .getElementById("connect")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            document.getElementById("error").textContent = "";
+            connect(document.getElementById("link").value);
+          });
+        document.getElementById("link").focus();
+      }
+
+      boot();
+    </script>
   </body>
 </html>

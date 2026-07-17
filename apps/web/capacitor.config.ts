@@ -10,43 +10,30 @@ import type { CapacitorConfig } from "@capacitor/cli";
 // and bounces non-prod shells off their own host.
 const env = process.env.VELLUM_ENVIRONMENT ?? "dev";
 
-// Cue self-host target: the mobile shell loads the SPA from the owner's own
-// Cue deployment, so the instance MUST be named at sync time:
-//   CUE_SERVER_URL=https://cue-ada-1234.justcue.app/assistant/ VELLUM_ENVIRONMENT=cue bunx cap sync
+// The baked `server.url` — or `null` to serve the bundled `webDir` from
+// `capacitor://localhost` instead.
 //
-// There is deliberately no default. `server.url` is baked into the archived
-// binary, so a default here ships inside every copy of the app — a build with
-// one owner's instance in it points every OTHER owner at that instance. It
-// used to default to exactly that, which is why this throws instead.
+// `server.url` is compiled into the archive, so it CANNOT be a shared build's
+// default: every owner runs their own Cue (`cue-<name>.justcue.app`), and a
+// baked URL would point every copy at one instance. So the `cue` env bakes a
+// URL ONLY when `CUE_SERVER_URL` is set at sync time — an owner building their
+// own single-instance app, or a dev pointing at a local server. With nothing
+// set, it returns null and Capacitor serves the connect shell
+// (`capacitor-shell/index.html`), which learns the instance at runtime and
+// navigates the WebView onto it — the mobile mirror of the macOS app's
+// runtime-connect (see apps/macos/.../self-host-connect.ts). The SPA
+// authenticates same-origin, so the WebView must END UP ON the instance; the
+// shell navigates there rather than proxying.
 //
-// This makes a `cue` build single-instance by construction: fine for the
-// owner's own build, wrong for the App Store. Shipping to strangers needs the
-// shell to bundle the SPA and let each owner connect to their own instance at
-// runtime (the macOS app does this — see `app-config.ts`
-// `setPersistedSelfHostUrlReader` + `self-host-connect.ts`); the SPA
-// authenticates same-origin, so the WebView has to end up ON the instance
-// rather than proxying to it.
-const cueSelfHostUrl = (): string => {
-  const url = process.env.CUE_SERVER_URL?.trim();
-  if (!url) {
-    throw new Error(
-      "VELLUM_ENVIRONMENT=cue requires CUE_SERVER_URL — the Cue instance this " +
-        "build loads (e.g. https://cue-ada-1234.justcue.app/assistant/). It is " +
-        "baked into the binary, so there is no safe default: every owner has " +
-        "their own instance.",
-    );
-  }
-  return url;
+// The internal Vellum envs stay single-origin and baked.
+const bakedServerUrl = (): string | null => {
+  if (env === "cue") return process.env.CUE_SERVER_URL?.trim() || null;
+  if (env === "production") return "https://www.vellum.ai/assistant";
+  if (env === "staging") return "https://staging-assistant.vellum.ai/assistant";
+  return "https://dev-assistant.vellum.ai/assistant";
 };
 
-const SERVER_URL =
-  env === "cue"
-    ? cueSelfHostUrl()
-    : env === "production"
-      ? "https://www.vellum.ai/assistant"
-      : env === "staging"
-        ? "https://staging-assistant.vellum.ai/assistant"
-        : "https://dev-assistant.vellum.ai/assistant";
+const SERVER_URL = bakedServerUrl();
 
 const SCHEME_NAMES: Record<string, string> = {
   production: "App",
@@ -66,13 +53,20 @@ const config: CapacitorConfig = {
   appId: "ai.vocify.vellumassistantios",
   appName: "Cue",
   webDir: "capacitor-shell",
-  server: {
-    url: SERVER_URL,
-    // Allow plain http only when the target itself is http (local dev server
-    // for the simulator, e.g. CUE_SERVER_URL=http://localhost:3000/assistant).
-    // Production https targets keep ATS enforced.
-    cleartext: SERVER_URL.startsWith("http://"),
-  },
+  // With a baked URL, load it directly. Without one (a shared `cue` build),
+  // omit `server` entirely so Capacitor serves `webDir` — the connect shell —
+  // from `capacitor://localhost`, and the shell navigates to the owner's
+  // instance at runtime.
+  ...(SERVER_URL
+    ? {
+        server: {
+          url: SERVER_URL,
+          // Allow plain http only when the target itself is http (a local dev
+          // server for the simulator). https targets keep ATS enforced.
+          cleartext: SERVER_URL.startsWith("http://"),
+        },
+      }
+    : {}),
   ios: {
     // Native iOS project lives as a peer to `apps/web/` at `apps/ios/`,
     // not nested inside the web app. This keeps the Capacitor shell
