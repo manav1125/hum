@@ -10,12 +10,12 @@ import type {
   ChannelReplyPayload,
 } from "@vellumai/gateway-client";
 
+import { getPeerTokenForSender } from "../../../a2a/peer-auth.js";
 import {
   A2A_CONTENT_TYPE,
   A2A_VERSION,
   A2A_VERSION_HEADER,
 } from "../../../a2a/protocol-constants.js";
-import { getPeerTokenForSender } from "../../../a2a/peer-auth.js";
 import type { Part } from "../../../a2a/protocol-types.js";
 import * as taskStore from "../../../a2a/task-store.js";
 import { toWireTask } from "../../../a2a/wire-format.js";

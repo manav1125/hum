@@ -14,11 +14,12 @@
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
+import { eq } from "drizzle-orm";
+
 import { findContactByAddress } from "../contacts/contact-store.js";
 import type { VellumAssistantMetadata } from "../contacts/types.js";
 import { getDb } from "../memory/db-connection.js";
 import { assistantContactMetadata } from "../memory/schema.js";
-import { eq } from "drizzle-orm";
 import { getLogger } from "../util/logger.js";
 
 const log = getLogger("a2a-peer-auth");

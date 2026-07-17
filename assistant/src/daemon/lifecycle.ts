@@ -99,8 +99,8 @@ import {
 } from "../util/platform.js";
 import { APP_VERSION } from "../version.js";
 import { seedDefaultAgentRoster } from "../work-items/default-roster-seed.js";
-import { recoverOrphanedWorkItemRuns } from "../work-items/work-item-recovery.js";
 import { startWorkItemQueueDrainer } from "../work-items/work-item-queue-drainer.js";
+import { recoverOrphanedWorkItemRuns } from "../work-items/work-item-recovery.js";
 import {
   listWorkItems,
   updateWorkItem,

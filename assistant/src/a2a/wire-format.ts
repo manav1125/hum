@@ -19,10 +19,10 @@
  */
 
 import type {
-  AgentCard,
-  Artifact,
   A2AMessage,
   A2ATask,
+  AgentCard,
+  Artifact,
   Part,
   SendMessageConfiguration,
   TaskPushNotificationConfig,
