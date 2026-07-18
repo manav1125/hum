@@ -151,9 +151,14 @@ class FakePlayer {
   enqueued: unknown[] = [];
   stopCount = 0;
   disposeCount = 0;
+  prewarmCount = 0;
   isPlaying = false;
   private drainResolvers: Array<() => void> = [];
 
+  /** Real player unlocks/resumes the AudioContext inside the user gesture. */
+  prewarm(): void {
+    this.prewarmCount++;
+  }
   enqueue(chunk: unknown): void {
     this.enqueued.push(chunk);
     this.isPlaying = true;
@@ -194,9 +199,7 @@ function pcmChunk(ms: number): ArrayBuffer {
   return new Int16Array(samples).buffer;
 }
 
-function renderController(
-  overrides: { fullDuplex?: boolean } = {},
-) {
+function renderController(overrides: { fullDuplex?: boolean } = {}) {
   const client = new FakeClient();
   const player = new FakePlayer();
   let capture!: FakeCapture;
@@ -743,3 +746,104 @@ describe("teardown", () => {
     expect(h.view.result.current.state).toBe("idle");
   });
 });
+
+describe("reconnect on unexpected drop", () => {
+  /** Render with a FRESH FakeClient per createClient() call, so a reconnect
+   *  can be observed as a new client + new connect. */
+  function renderWithFreshClients(fullDuplex = false) {
+    const clients: FakeClient[] = [];
+    const view = renderHook(() =>
+      useLiveVoice({
+        createClient: () => {
+          const c = new FakeClient();
+          clients.push(c);
+          return c as unknown as LiveVoiceChannelClient;
+        },
+        createPlayer: () => new FakePlayer() as unknown as LiveVoiceAudioPlayer,
+        createCapture: (o) =>
+          new FakeCapture(o) as unknown as LiveVoiceAudioCapture,
+        fullDuplex,
+      }),
+    );
+    return { view, clients };
+  }
+
+  async function startReady(h: ReturnType<typeof renderWithFreshClients>) {
+    await act(async () => {
+      await h.view.result.current.start("assistant-1", "conv-1");
+    });
+    await act(async () => {
+      h.clients[h.clients.length - 1].emit("ready", {
+        type: "ready",
+        seq: 1,
+        sessionId: "s1",
+        conversationId: "conv-1",
+      });
+      await Promise.resolve();
+    });
+  }
+
+  test("an unexpected close reconnects with the same conversation, not idle", async () => {
+    const h = renderWithFreshClients();
+    await startReady(h);
+    expect(h.view.result.current.state).not.toBe("idle");
+
+    // Server drops the socket mid-session (no clean end()).
+    await act(async () => {
+      h.clients[0].emit("closed", undefined);
+    });
+    // It recovers instead of ending: shows connecting, doesn't go idle.
+    expect(h.view.result.current.state).toBe("connecting");
+
+    // After the backoff, a NEW client connects with the same conversationId.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    expect(h.clients.length).toBe(2);
+    expect(h.clients[1].connectArgs?.conversationId).toBe("conv-1");
+  });
+
+  test("gives up (idle) after the attempt budget is exhausted", async () => {
+    const h = renderWithFreshClients();
+    await startReady(h);
+    // Drop each freshly-reconnected client without ever reaching `ready`,
+    // waiting past that attempt's backoff so the next client is actually
+    // created before we drop it. Backoff grows (400/1200/3000ms).
+    const BACKOFFS = [500, 1_300, 3_100];
+    for (const wait of BACKOFFS) {
+      await act(async () => {
+        h.clients[h.clients.length - 1].emit("closed", undefined);
+        await new Promise((r) => setTimeout(r, wait));
+      });
+    }
+    // Budget spent: the final drop tears down instead of reconnecting.
+    await act(async () => {
+      h.clients[h.clients.length - 1].emit("closed", undefined);
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    // Bounded clients (initial + at most MAX reconnects), and it ends up idle
+    // rather than looping forever.
+    expect(h.clients.length).toBeLessThanOrEqual(MAX_ATTEMPTS_PROBE + 1);
+    expect(h.view.result.current.state).toBe("idle");
+  });
+
+  test("a protocol error is terminal — no reconnect", async () => {
+    const h = renderWithFreshClients();
+    await startReady(h);
+    await act(async () => {
+      h.clients[0].emit("error", {
+        reason: "protocol-error",
+        message: "server refused",
+      });
+      h.clients[0].emit("closed", undefined);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    // No second client; the session failed rather than reconnecting.
+    expect(h.clients.length).toBe(1);
+    expect(h.view.result.current.state).toBe("failed");
+  });
+});
+
+// The controller's MAX_RECONNECT_ATTEMPTS (kept in sync with the source; the
+// budget test only needs an upper bound to bound the loop).
+const MAX_ATTEMPTS_PROBE = 3;

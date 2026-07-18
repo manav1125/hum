@@ -67,3 +67,25 @@ describe("serializeLlmLogPayload", () => {
     expect(parsed.nested.list[1]).toBe("small");
   });
 });
+
+test("caps the TOTAL payload when many sub-cap strings sum past the cap", () => {
+  // A long conversation: hundreds of individually-small strings (tool
+  // schemas, history) that summed to ~350KB per call on prod — the real
+  // driver of per-turn write cost + assistant.db growth. The per-string cap
+  // never fires here; the total cap must.
+  const messages = Array.from({ length: 400 }, (_, i) => ({
+    role: "user",
+    content: [{ type: "text", text: `${i}:` + "y".repeat(1_000) }],
+  }));
+  const out = serializeLlmLogPayload({ messages });
+  // Bounded well under the original ~400KB, and still valid JSON.
+  expect(out.length).toBeLessThan(200_000);
+  const parsed = JSON.parse(out) as {
+    _truncatedForLog?: boolean;
+    originalBytes?: number;
+    head?: string;
+  };
+  expect(parsed._truncatedForLog).toBe(true);
+  expect(parsed.originalBytes).toBeGreaterThan(200_000);
+  expect(typeof parsed.head).toBe("string");
+});

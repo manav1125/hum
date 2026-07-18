@@ -209,6 +209,18 @@ function resolveVoiceEngine(
 }
 
 /**
+ * Auto-recover from an UNEXPECTED live-voice drop (server closed the socket, a
+ * network blip, an idle/timeout close) — the thing that made voice "stop after
+ * a few turns and not re-engage": the client is one-shot terminal, so a dropped
+ * socket used to land the session in idle with no retry. A clean user `end()`
+ * nulls the session first, so those never reach the recovery path; and a
+ * `protocol-error` (the server saying no) is terminal and is NOT retried, so
+ * this can't mask a real refusal or storm the server.
+ */
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BACKOFF_MS = [400, 1_200, 3_000];
+
+/**
  * Mutable per-session bookkeeping that must not trigger re-renders. Lives in a
  * ref alongside the active primitives; replaced wholesale on each `start()`.
  */
@@ -276,6 +288,12 @@ export function useLiveVoice(
   const failureKind = useLiveVoiceStore.use.failureKind();
 
   const sessionRef = useRef<SessionContext | null>(null);
+  // Reconnect bookkeeping outlives the session (which is recreated on each
+  // reconnect). Reset to 0 on a successful `ready` and when attempts run out.
+  const reconnectAttemptsRef = useRef(0);
+  const startRef = useRef<
+    ((assistantId: string, conversationId?: string) => Promise<void>) | null
+  >(null);
 
   // Mute is UI-reactive state; a mirror ref lets async glue (startCapture) read
   // the latest value without re-subscribing. The mic preference persists across
@@ -333,6 +351,34 @@ export function useLiveVoice(
     useLiveVoiceStore.getState().reset();
   }, []);
 
+  /**
+   * Drop the dead session and re-establish it with the SAME conversationId so
+   * context continues, after a short backoff. Returns false (and resets the
+   * counter) once attempts are exhausted, so the caller falls through to its
+   * normal give-up path. `teardown()` nulls the session, and `start()`'s guard
+   * short-circuits on a null session, so re-entering `start()` is safe even
+   * though the store phase isn't idle.
+   */
+  const attemptReconnect = useCallback(
+    (assistantId: string, conversationId: string | undefined): boolean => {
+      const n = reconnectAttemptsRef.current;
+      if (n >= MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttemptsRef.current = 0;
+        return false;
+      }
+      reconnectAttemptsRef.current = n + 1;
+      const delay =
+        RECONNECT_BACKOFF_MS[Math.min(n, RECONNECT_BACKOFF_MS.length - 1)];
+      teardown();
+      useLiveVoiceStore.getState().setState("connecting");
+      setTimeout(() => {
+        void startRef.current?.(assistantId, conversationId);
+      }, delay);
+      return true;
+    },
+    [teardown],
+  );
+
   const stop = useCallback(async () => {
     const session = sessionRef.current;
     if (!session) {
@@ -341,6 +387,8 @@ export function useLiveVoice(
     }
     sessionRef.current = null;
     session.generation += 1;
+    // A deliberate stop ends the recovery budget too.
+    reconnectAttemptsRef.current = 0;
     useLiveVoiceStore.getState().setState("ending");
     for (const unsubscribe of session.unsubscribes) unsubscribe();
     session.unsubscribes = [];
@@ -418,6 +466,8 @@ export function useLiveVoice(
       session.unsubscribes.push(
         client.on("ready", () => {
           if (!live()) return;
+          // A healthy connection clears the reconnect budget.
+          reconnectAttemptsRef.current = 0;
           void startCapture(session, teardown, mutedRef.current);
         }),
         client.on("sttPartial", (frame) => {
@@ -484,21 +534,37 @@ export function useLiveVoice(
         }),
         client.on("error", (err: LiveVoiceClientError) => {
           if (!live()) return;
+          // Transient transport failures recover; a protocol-error is the
+          // server refusing and is terminal (never retried).
+          if (
+            (err.reason === "connection-failed" || err.reason === "timeout") &&
+            attemptReconnect(assistantId, conversationId)
+          ) {
+            return;
+          }
           finishWithError(session, teardown, err.message);
         }),
         client.on("closed", () => {
-          // A transport close after a clean end()/teardown is expected; only an
-          // unexpected close while still attached needs cleanup. teardown()
-          // resets the store to idle.
+          // A transport close after a clean end()/teardown is expected — those
+          // null the session first, so `live()` is already false. Reaching here
+          // with a live session means an UNEXPECTED drop: try to recover it
+          // before giving up. teardown() resets the store to idle.
           if (!live()) return;
+          if (attemptReconnect(assistantId, conversationId)) return;
           teardown();
         }),
       );
 
       await client.connect({ assistantId, conversationId, fullDuplex, engine });
     },
-    [teardown],
+    [teardown, attemptReconnect],
   );
+
+  // The reconnect path re-enters `start()` via this ref (start references
+  // attemptReconnect, which can't reference start directly).
+  useEffect(() => {
+    startRef.current = start;
+  }, [start]);
 
   // Release everything if the consumer unmounts mid-session. teardown() also
   // resets the store to idle so a mid-session unmount doesn't strand it in a

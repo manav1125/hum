@@ -126,6 +126,20 @@ const LOG_PAYLOAD_STRING_CAP = 65_536;
 const LOG_PAYLOAD_KEEP_PREFIX = 1_024;
 
 /**
+ * Total-size cap applied AFTER the per-string cap. The per-string cap only
+ * cuts individual base64 blobs; a long conversation's request payload is
+ * hundreds of sub-cap strings (system prompt + every tool schema + full
+ * history) that still summed to ~350KB per call on this instance. Since each
+ * call's log is written synchronously on the daemon's single event loop, that
+ * is both a per-turn write cost and the main driver of `assistant.db` /
+ * WAL growth. Bound the whole serialized payload so no single write can be
+ * large regardless of history length; the logs feed only the inspector Raw
+ * tab + ClickHouse export, so a head slice is lossless for every functional
+ * consumer. `CUE_LOG_FULL_LLM_PAYLOADS=true` still restores full payloads.
+ */
+const LOG_PAYLOAD_TOTAL_CAP = 131_072;
+
+/**
  * JSON-serialize a raw LLM payload for logging, truncating any individual
  * string longer than {@link LOG_PAYLOAD_STRING_CAP} (in practice: base64
  * media). Use this instead of bare `JSON.stringify` at every
@@ -135,13 +149,23 @@ export function serializeLlmLogPayload(value: unknown): string {
   if (getLogFullLlmPayloads()) {
     return JSON.stringify(value);
   }
-  return JSON.stringify(value, (_key, v: unknown) => {
+  const perString = JSON.stringify(value, (_key, v: unknown) => {
     if (typeof v === "string" && v.length > LOG_PAYLOAD_STRING_CAP) {
       return `${v.slice(0, LOG_PAYLOAD_KEEP_PREFIX)}…[truncated ${
         v.length - LOG_PAYLOAD_KEEP_PREFIX
       } chars for llm_request_logs]`;
     }
     return v;
+  });
+  if (perString.length <= LOG_PAYLOAD_TOTAL_CAP) return perString;
+  // Whole payload still over the cap (long history / many tools). Store a
+  // bounded, valid-JSON head slice so the write stays cheap and the table
+  // stops growing without limit. The inspector shows this raw; nothing
+  // reconstructs state from it.
+  return JSON.stringify({
+    _truncatedForLog: true,
+    originalBytes: perString.length,
+    head: perString.slice(0, LOG_PAYLOAD_TOTAL_CAP),
   });
 }
 
