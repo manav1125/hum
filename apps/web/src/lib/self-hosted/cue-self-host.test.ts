@@ -4,6 +4,7 @@ import {
   clearSelfHostMode,
   decodeActorTokenExpMs,
   getStoredActorToken,
+  isCueSelfHostDeploy,
   isSelfHostMode,
   isStoredActorTokenValid,
   rehydrateGatewayTokenFromActor,
@@ -133,5 +134,32 @@ describe("legacy migration (token seeded before the durable key existed)", () =>
     localStorage.removeItem(LS_TOKEN_KEY);
     expect(rehydrateGatewayTokenFromActor()).toBe(true);
     expect(localStorage.getItem(LS_TOKEN_KEY)).toBe(token);
+  });
+});
+
+describe("isCueSelfHostDeploy — instance-host safety net", () => {
+  function setHost(hostname: string) {
+    // happy-dom lets the whole URL be reassigned; hostname is derived from it.
+    window.location.href = `https://${hostname}/assistant/`;
+  }
+
+  test("a *.justcue.app instance is self-host even without the build flag", () => {
+    // The "Vellum page" bug: a web-dist missing VITE_CUE_SELF_HOST=1 fell
+    // through to the Vellum-Platform auth. The instance host now settles it.
+    setHost("cue-ada-1234.justcue.app");
+    expect(isCueSelfHostDeploy()).toBe(true);
+  });
+
+  test("also covers the .justcue.io instance domain", () => {
+    setHost("cue-ada-1234.justcue.io");
+    expect(isCueSelfHostDeploy()).toBe(true);
+  });
+
+  test("a non-instance host is NOT auto-detected as self-host", () => {
+    // The Vellum platform (*.vellum.ai) and HQ (justcue.ai) must not match.
+    setHost("app.vellum.ai");
+    expect(isCueSelfHostDeploy()).toBe(false);
+    setHost("justcue.ai");
+    expect(isCueSelfHostDeploy()).toBe(false);
   });
 });

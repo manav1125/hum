@@ -52,6 +52,16 @@ export function isCueSelfHostDeploy(): boolean {
   try {
     const env = import.meta.env as Record<string, string | undefined>;
     if (env.VITE_CUE_SELF_HOST === "1") return true;
+    // Safety net: every customer instance is served from a `*.justcue.app`
+    // subdomain (HQ provisions the DNS), so that host is unambiguously a Cue
+    // self-host deploy even when the web-dist was built without the flag.
+    // Without this, a build missing VITE_CUE_SELF_HOST=1 falls through to the
+    // Vellum-Platform auth — the "Vellum page" a cold visitor hit. The Vellum
+    // platform lives on *.vellum.ai and HQ on justcue.ai, so neither matches.
+    const host = window.location.hostname;
+    if (host.endsWith(".justcue.app") || host.endsWith(".justcue.io")) {
+      return true;
+    }
     // Test/escape hatch: `?cueConnect=1` forces the Connect screen on any build
     // (e.g. a local dev server) without weakening anything — it only renders a
     // token-entry form, it does not grant access.
