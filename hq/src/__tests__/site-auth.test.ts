@@ -209,6 +209,64 @@ describe("signin token lifecycle", () => {
       .join("=");
     expect(verifySessionValue(cookieValue)).toBe(c.id);
   });
+
+  test("native mode resolves the token to JSON — no redirect, no cookie", async () => {
+    // The mobile app opens the universal link and needs the instance + token
+    // as data (it navigates its own WebView), not a 302 it can't read.
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
+    const { db, handle, resendCalls } = setup();
+    const c = db.createCustomer({ email: "nat@example.com", name: "Nat Rivera", plan: "chief_of_staff" });
+    const secrets = generateInstanceSecrets();
+    secrets.guardianPrincipalId = "vellum-principal-nat";
+    const inst = db.createInstance({
+      customerId: c.id,
+      driver: "mock",
+      externalId: "mock-nat",
+      url: "http://nat.mock.local",
+      secretsJson: JSON.stringify(secrets),
+    });
+    db.transitionInstance(inst.id, "live");
+
+    await handle(jsonReq("/signin", { email: "nat@example.com" }));
+    const raw = /\/auth\?token=([0-9a-f]{64})/.exec(String(resendCalls[0].html))![1];
+    const res = await handle(
+      new Request(`http://hq.local/auth?token=${raw}&native=1`),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body.instanceUrl).toBe("http://nat.mock.local");
+    expect(typeof body.cueToken).toBe("string");
+    expect(body.name).toBe("Nat"); // first name, for the "You're in, Nat" landing
+  });
+
+  test("native mode answers JSON for a dead link — the app can show a real error", async () => {
+    process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
+    const { handle } = setup();
+    const res = await handle(
+      new Request("http://hq.local/auth?token=deadbeef&native=1"),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).ok).toBe(false);
+  });
+
+  test("serves the Apple app-site-association so the app claims the link", async () => {
+    const { handle } = setup();
+    const res = await handle(
+      new Request("http://hq.local/.well-known/apple-app-site-association"),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const aasa = (await res.json()) as {
+      applinks: { details: Array<{ appIDs: string[]; components: unknown[] }> };
+    };
+    expect(aasa.applinks.details[0].appIDs).toContain(
+      "XU8BLQACGU.com.ventureverse.cue",
+    );
+    expect(aasa.applinks.details[0].components.length).toBeGreaterThan(0);
+  });
 });
 
 describe("/account", () => {

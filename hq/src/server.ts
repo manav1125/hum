@@ -238,6 +238,36 @@ export function createHandler(
         return json({ ok: true, service: "cue-hq" });
       }
 
+      // Apple universal links: the Cue app claims the sign-in link so tapping
+      // `justcue.ai/auth?token=…` on a phone opens the app (which then resolves
+      // the token via ?native=1) instead of Safari. One stable domain covers
+      // every owner's instance — the instance identity rides inside the token,
+      // not the link host, so associated-domains needs only this one entry.
+      // App ID default is the shipping Cue iOS app; override via HQ_IOS_APP_ID.
+      if (
+        method === "GET" &&
+        path === "/.well-known/apple-app-site-association"
+      ) {
+        const appId =
+          process.env.HQ_IOS_APP_ID ?? "XU8BLQACGU.com.ventureverse.cue";
+        return new Response(
+          JSON.stringify({
+            applinks: {
+              details: [
+                {
+                  appIDs: [appId],
+                  components: [
+                    { "/": "/auth*", comment: "sign-in magic link opens the app" },
+                    { "/": "/m/*", comment: "short sign-in links" },
+                  ],
+                },
+              ],
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
+
       if (method === "GET" && path === "/plans") {
         return json(publicCatalog());
       }
@@ -296,7 +326,7 @@ export function createHandler(
       }
 
       if (method === "GET" && path === "/auth") {
-        return handleAuth(url);
+        return handleAuth(req, url);
       }
 
       if (method === "POST" && path === "/testflight") {
@@ -923,23 +953,46 @@ export function createHandler(
    * instance magic link when they have a live instance, /account otherwise.
    * Bad/expired tokens bounce to /signin.
    */
-  async function handleAuth(url: URL): Promise<Response> {
+  async function handleAuth(req: Request, url: URL): Promise<Response> {
     if (!isSessionConfigured()) {
       return json({ error: "signin not configured (HQ_SESSION_SECRET)" }, 503);
     }
+    // Native mode: the mobile app opens the universal link (applinks:justcue.ai)
+    // and resolves the token to JSON instead of following the browser 302. It
+    // then navigates its WebView onto the instance and seeds the session — so
+    // it needs the instance URL + token as data, and NO site session cookie
+    // (the site session is a browser concern). Errors answer JSON too so the
+    // app can show a real message instead of loading a redirect it can't read.
+    const native =
+      url.searchParams.get("native") === "1" ||
+      (req.headers.get("accept") ?? "").includes("application/json");
     const raw = url.searchParams.get("token")?.trim() ?? "";
     const redirectTo = (target: string, extra?: Record<string, string>) =>
       new Response(null, {
         status: 302,
         headers: { Location: target, ...(extra ?? {}) },
       });
-    if (!raw) return redirectTo("/signin");
+    const fail = (error: string) =>
+      native
+        ? json({ ok: false, error }, 400)
+        : redirectTo(`/signin?error=${error}`);
+    if (!raw) return native ? json({ ok: false, error: "missing_token" }, 400) : redirectTo("/signin");
     const consumed = db.consumeSigninToken(hashSigninToken(raw));
-    if (!consumed) return redirectTo("/signin?error=link_expired");
+    if (!consumed) return fail("link_expired");
     const customer = db.getCustomer(consumed.customerId);
-    if (!customer) return redirectTo("/signin?error=link_expired");
-    db.recordEvent("site_session_created", customer.id, {});
+    if (!customer) return fail("link_expired");
+    db.recordEvent("site_session_created", customer.id, { native });
     const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
+    if (native) {
+      if (!magic.ok) return json({ ok: false, error: "no_instance" }, 409);
+      return json({
+        ok: true,
+        instanceUrl: magic.instanceUrl,
+        cueToken: magic.cueToken,
+        name: firstNameOf(customer),
+        expiresInDays: magic.expiresInDays,
+      });
+    }
     return redirectTo(magic.ok ? magic.url : "/account", {
       "Set-Cookie": sessionSetCookieHeader(mintSessionValue(customer.id), {
         secure: publicSiteBase().startsWith("https://"),

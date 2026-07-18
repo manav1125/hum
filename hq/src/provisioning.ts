@@ -195,7 +195,19 @@ export async function provisionCustomer(
 // ── magic links ──────────────────────────────────────────────────────────
 
 export type MagicLinkOutcome =
-  | { ok: true; url: string; expiresInDays: number }
+  | {
+      ok: true;
+      /** Full browser magic link: `<instanceUrl>/assistant/?cueToken=<jwt>`. */
+      url: string;
+      /**
+       * The instance's SPA root and the actor token, split out for native
+       * clients (the mobile app) that navigate the WebView onto the instance
+       * and seed the session themselves rather than following the browser URL.
+       */
+      instanceUrl: string;
+      cueToken: string;
+      expiresInDays: number;
+    }
   | { ok: false; status: number; error: string; detail?: string; instructions?: string };
 
 /**
@@ -264,6 +276,8 @@ export async function mintMagicLinkForCustomer(
   return {
     ok: true,
     url: buildMagicLink(instance.url, token),
+    instanceUrl: instance.url.replace(/\/$/, ""),
+    cueToken: token,
     expiresInDays: 30,
   };
 }
