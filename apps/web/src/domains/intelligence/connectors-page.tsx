@@ -12,8 +12,10 @@ import {
   connectorappsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { connectorsAvailable } from "@/runtime/connectors";
 import { routes } from "@/utils/routes";
+import { haptic } from "@/utils/haptics";
 
 /**
  * Tools & Apps (Connectors) — design-matched to surfaces/Connectors.dc.html,
@@ -32,25 +34,46 @@ import { routes } from "@/utils/routes";
  * disagreed.) The Electron IPC remains only as the gate for the per-tool
  * Manage surface, which is desktop-specific.
  *
+ * THEME + MOBILE: colours come from the theme-aware `--mv1-*` token layer
+ * (`index.css`) instead of a hardcoded light palette, so the page follows the
+ * active theme like every other screen (it used to render light-on-dark in the
+ * dark app shell). On narrow viewports (`useIsMobile`) the hero stacks the
+ * headline above a full-width action row, the native `<select>` is swapped for
+ * a horizontal-scroll category chip rail, search goes full-width, and connector
+ * rows adopt 44px tap targets with press/haptic feedback — matching the "You"
+ * (`channels-agents-page`) and Memory mobile screens.
+ *
  * The dark nav + intelligence tab bar are provided by IntelligenceLayout — not
  * rebuilt here.
  */
 
 type ConnectorApp = ConnectorappsGetResponses[200]["apps"][number];
 
+/**
+ * Theme-aware palette — every slot maps to a `--mv1-*` custom property so the
+ * page resolves to the dark-v1 book hexes under dark/velvet and to the semantic
+ * light tokens in light (see `index.css`). `heroBg`/`chip` deliberately map to
+ * different vars than `t1`: the hero panel + Enable/logo chips want a dark-ish
+ * "ink" surface, while `t1` is the primary text colour (both were the same
+ * literal `#1A2230` in the old light-only palette).
+ */
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  bg: "#F4F6F9",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#9AA6B2",
-  green: "#277E41",
-  violet: "#7F77DD",
-  violetS: "#534AB7",
+  heroBg: "var(--mv1-ink)",
+  heroAccent: "var(--mv1-blue-eyebrow)",
+  chip: "var(--mv1-chip)",
+  blue: "var(--mv1-blue)",
+  card: "var(--mv1-card)",
+  bg: "var(--mv1-sunken)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  green: "var(--mv1-green)",
+  greenWash: "var(--mv1-green-wash)",
+  violet: "var(--mv1-violet)",
+  violetS: "var(--mv1-violet-strong)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
@@ -92,6 +115,7 @@ function ConnectorRow({
   busy,
   connectable,
   manageable,
+  mobile,
   onConnect,
   onManage,
   coachAnchor,
@@ -100,6 +124,7 @@ function ConnectorRow({
   busy: boolean;
   connectable: boolean;
   manageable: boolean;
+  mobile?: boolean;
   onConnect: () => void;
   onManage: () => void;
   coachAnchor?: string;
@@ -112,11 +137,12 @@ function ConnectorRow({
       style={{
         border: `1px solid ${C.line}`,
         borderRadius: 13,
-        padding: "13px 16px",
+        padding: mobile ? "12px 14px" : "13px 16px",
         display: "flex",
         alignItems: "center",
-        gap: 14,
-        background: "#fff",
+        gap: mobile ? 12 : 14,
+        background: C.card,
+        minHeight: mobile ? 60 : undefined,
       }}
     >
       <ConnectorAppLogo
@@ -125,15 +151,27 @@ function ConnectorRow({
         size={40}
         imgSize={24}
         chipStyle={{
-          background: connector.connected ? C.ink : C.sunken,
+          background: connector.connected ? C.chip : C.sunken,
           color: connector.connected ? "#fff" : C.t2,
-          border: connector.connected ? undefined : "1px solid #EDEFF3",
+          border: connector.connected ? undefined : `1px solid ${C.line}`,
           fontSize: 18,
         }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14.5, fontWeight: 600 }}>{connector.name}</div>
-        <div style={{ fontSize: 12.5, color: C.t2 }}>{desc}</div>
+        <div style={{ fontSize: 14.5, fontWeight: 600, color: C.t1 }}>
+          {connector.name}
+        </div>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: C.t2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {desc}
+        </div>
       </div>
       {connector.connected ? (
         <>
@@ -141,7 +179,7 @@ function ConnectorRow({
             style={{
               fontFamily: mono,
               fontSize: 10,
-              background: "#E2F0E7",
+              background: C.greenWash,
               color: C.green,
               padding: "3px 9px",
               borderRadius: 6,
@@ -153,13 +191,15 @@ function ConnectorRow({
           {manageable && (
             <button
               type="button"
+              className="cue-pressable"
               onClick={onManage}
               style={{
                 fontSize: 12.5,
                 border: `1px solid ${C.line2}`,
-                background: "#fff",
+                background: C.card,
                 borderRadius: 9,
-                padding: "8px 14px",
+                padding: mobile ? "10px 14px" : "8px 14px",
+                minHeight: mobile ? 40 : undefined,
                 cursor: "pointer",
                 color: C.t1,
               }}
@@ -171,6 +211,7 @@ function ConnectorRow({
       ) : (
         <button
           type="button"
+          className="cue-pressable"
           disabled={busy || !connectable}
           onClick={onConnect}
           title={
@@ -181,13 +222,15 @@ function ConnectorRow({
           style={{
             display: "inline-flex",
             alignItems: "center",
+            justifyContent: "center",
             gap: 6,
             fontSize: 13,
-            background: C.ink,
+            background: C.chip,
             color: "#fff",
             border: "none",
             borderRadius: 9,
-            padding: "8px 18px",
+            padding: mobile ? "11px 20px" : "8px 18px",
+            minHeight: mobile ? 44 : undefined,
             opacity: connectable ? 1 : 0.5,
             cursor: busy || !connectable ? "default" : "pointer",
           }}
@@ -200,8 +243,70 @@ function ConnectorRow({
   );
 }
 
+/** Horizontal-scroll category chip rail — the touch-friendly replacement for
+ *  the desktop native `<select>` on narrow viewports. */
+function CategoryChips({
+  categories,
+  active,
+  onSelect,
+}: {
+  categories: string[];
+  active: string;
+  onSelect: (value: string) => void;
+}) {
+  const chips = ["all", ...categories];
+  return (
+    <div
+      role="group"
+      aria-label="Filter connectors by category"
+      style={{
+        display: "flex",
+        gap: 8,
+        marginTop: 10,
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        scrollbarWidth: "none",
+        paddingBottom: 2,
+      }}
+    >
+      {chips.map((cat) => {
+        const isActive = active === cat;
+        return (
+          <button
+            key={cat}
+            type="button"
+            className="cue-pressable"
+            aria-pressed={isActive}
+            onClick={() => {
+              haptic.light();
+              onSelect(cat);
+            }}
+            style={{
+              flexShrink: 0,
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: "inherit",
+              background: isActive ? C.chip : C.card,
+              color: isActive ? "#fff" : C.t2,
+              border: `1px solid ${isActive ? C.chip : C.line2}`,
+              borderRadius: 999,
+              padding: "9px 15px",
+              minHeight: 38,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+            }}
+          >
+            {cat === "all" ? "All" : (CATEGORY_DESC[cat] ?? cat)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ConnectorsPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const assistantId = useActiveAssistantId();
   const queryClient = useQueryClient();
 
@@ -243,6 +348,7 @@ export function ConnectorsPage() {
   });
 
   const handleConnect = (slug: string) => {
+    haptic.light();
     setBusySlug(slug);
     setNote(null);
     connectMutation.mutate(
@@ -351,17 +457,20 @@ export function ConnectorsPage() {
         color: C.t1,
       }}
     >
-      {/* progress hero */}
+      {/* progress hero — side-by-side on desktop, stacked on mobile so the
+          serif headline never squeezes against a fixed button column. */}
       <div
         style={{
           position: "relative",
           overflow: "hidden",
-          background: C.ink,
+          background: C.heroBg,
+          border: `1px solid ${C.line}`,
           borderRadius: 16,
-          padding: "20px 24px",
+          padding: isMobile ? "20px" : "20px 24px",
           display: "flex",
-          alignItems: "center",
-          gap: 22,
+          flexDirection: isMobile ? "column" : "row",
+          alignItems: isMobile ? "stretch" : "center",
+          gap: isMobile ? 16 : 22,
         }}
       >
         <div
@@ -376,18 +485,18 @@ export function ConnectorsPage() {
           <div
             style={{
               fontFamily: serif,
-              fontSize: 24,
-              color: "#fff",
+              fontSize: isMobile ? 26 : 24,
+              color: C.t1,
               letterSpacing: "-.2px",
               lineHeight: 1.2,
             }}
           >
             The more Cue connects, the more it can{" "}
-            <span style={{ fontStyle: "italic", color: "#9DB4E6" }}>
+            <span style={{ fontStyle: "italic", color: C.heroAccent }}>
               do for you.
             </span>
           </div>
-          <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
+          <div style={{ fontSize: 13, color: C.t2, marginTop: 5 }}>
             You&apos;ve connected{" "}
             <span data-slot="connectors-connected-total">
               {connectedTotal}
@@ -400,7 +509,7 @@ export function ConnectorsPage() {
               alignItems: "center",
               gap: 10,
               marginTop: 14,
-              maxWidth: 360,
+              maxWidth: isMobile ? undefined : 360,
             }}
           >
             <span
@@ -408,7 +517,7 @@ export function ConnectorsPage() {
                 flex: 1,
                 height: 7,
                 borderRadius: 4,
-                background: "rgba(255,255,255,.12)",
+                background: C.sunken,
                 overflow: "hidden",
               }}
             >
@@ -422,7 +531,7 @@ export function ConnectorsPage() {
                 }}
               />
             </span>
-            <span style={{ fontFamily: mono, fontSize: 11, color: "#9DB4E6" }}>
+            <span style={{ fontFamily: mono, fontSize: 11, color: C.heroAccent }}>
               {pct}%
             </span>
           </div>
@@ -431,21 +540,30 @@ export function ConnectorsPage() {
           style={{
             position: "relative",
             display: "flex",
-            flexDirection: "column",
-            gap: 7,
+            flexDirection: isMobile ? "row" : "column",
+            alignItems: "center",
+            justifyContent: isMobile ? "space-between" : undefined,
+            gap: isMobile ? 12 : 7,
             flexShrink: 0,
           }}
         >
           <button
             type="button"
-            onClick={() => navigate(routes.library.root)}
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              navigate(routes.library.root);
+            }}
             style={{
               fontSize: 12.5,
+              fontWeight: 600,
               background: C.blue,
               color: "#fff",
               border: "none",
               borderRadius: 9,
-              padding: "9px 16px",
+              padding: isMobile ? "12px 18px" : "9px 16px",
+              minHeight: isMobile ? 44 : undefined,
+              flex: isMobile ? 1 : undefined,
               textAlign: "center",
               cursor: "pointer",
             }}
@@ -456,8 +574,9 @@ export function ConnectorsPage() {
             style={{
               fontFamily: mono,
               fontSize: 10.5,
-              color: "#7E8BA3",
+              color: C.t3,
               textAlign: "center",
+              whiteSpace: "nowrap",
             }}
           >
             +{availTotal} available
@@ -500,59 +619,102 @@ export function ConnectorsPage() {
         </div>
       )}
 
-      {/* search + filter */}
-      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-        <div
-          style={{
-            flex: 1,
-            border: `1px solid ${C.line2}`,
-            borderRadius: 11,
-            padding: "0 14px",
-            display: "flex",
-            alignItems: "center",
-            gap: 9,
-          }}
-        >
-          <Search className="size-4" color={C.t3} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search connectors"
+      {/* search + filter — inline search+select on desktop; on mobile the
+          search goes full-width and the category filter becomes a scrollable
+          chip rail (a native <select> crowds the 390px row). */}
+      {isMobile ? (
+        <>
+          <div
+            style={{
+              marginTop: 14,
+              border: `1px solid ${C.line2}`,
+              borderRadius: 11,
+              background: C.card,
+              padding: "0 14px",
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+            }}
+          >
+            <Search className="size-4" color={C.t3} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search connectors"
+              style={{
+                flex: 1,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                fontSize: 16,
+                color: C.t1,
+                padding: "13px 0",
+                minHeight: 44,
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+          <CategoryChips
+            categories={categories}
+            active={category}
+            onSelect={setCategory}
+          />
+        </>
+      ) : (
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <div
             style={{
               flex: 1,
-              border: "none",
-              outline: "none",
-              background: "transparent",
-              fontSize: 14,
-              color: C.t1,
-              padding: "11px 0",
-              fontFamily: "inherit",
+              border: `1px solid ${C.line2}`,
+              borderRadius: 11,
+              background: C.card,
+              padding: "0 14px",
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
             }}
-          />
+          >
+            <Search className="size-4" color={C.t3} />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search connectors"
+              style={{
+                flex: 1,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                fontSize: 14,
+                color: C.t1,
+                padding: "11px 0",
+                fontFamily: "inherit",
+              }}
+            />
+          </div>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            aria-label="Filter connectors by category"
+            style={{
+              border: `1px solid ${C.line2}`,
+              borderRadius: 11,
+              padding: "11px 16px",
+              fontSize: 13.5,
+              color: C.t2,
+              background: C.card,
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <option value="all">All categories</option>
+            {categories.map((cat) => (
+              <option key={cat} value={cat}>
+                {CATEGORY_DESC[cat] ?? cat}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          aria-label="Filter connectors by category"
-          style={{
-            border: `1px solid ${C.line2}`,
-            borderRadius: 11,
-            padding: "11px 16px",
-            fontSize: 13.5,
-            color: C.t2,
-            background: "#fff",
-            fontFamily: "inherit",
-            cursor: "pointer",
-          }}
-        >
-          <option value="all">All categories</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {CATEGORY_DESC[cat] ?? cat}
-            </option>
-          ))}
-        </select>
-      </div>
+      )}
 
       {note && (
         <div
@@ -581,6 +743,7 @@ export function ConnectorsPage() {
                 busy={busySlug === c.slug}
                 connectable={connectable}
                 manageable={manageable}
+                mobile={isMobile}
                 onConnect={() => handleConnect(c.slug)}
                 onManage={() => navigate(routes.connector(c.slug))}
               />
@@ -600,6 +763,7 @@ export function ConnectorsPage() {
                 busy={busySlug === c.slug}
                 connectable={connectable}
                 manageable={manageable}
+                mobile={isMobile}
                 coachAnchor={i === 0 ? "connectors-add" : undefined}
                 onConnect={() => handleConnect(c.slug)}
                 onManage={() => navigate(routes.connector(c.slug))}
@@ -653,6 +817,7 @@ export function ConnectorsPage() {
           </div>
           <button
             type="button"
+            className="cue-pressable"
             onClick={() =>
               connectors.length === 0
                 ? navigate(routes.library.root)
@@ -661,11 +826,13 @@ export function ConnectorsPage() {
             style={{
               marginTop: 16,
               fontSize: 12.5,
+              fontWeight: 600,
               background: C.blue,
               color: "#fff",
               border: "none",
               borderRadius: 9,
-              padding: "9px 16px",
+              padding: isMobile ? "12px 20px" : "9px 16px",
+              minHeight: isMobile ? 44 : undefined,
               cursor: "pointer",
             }}
           >
@@ -698,7 +865,7 @@ export function ConnectorsPage() {
           style={{
             fontFamily: mono,
             fontSize: 10,
-            background: "#EEEDFB",
+            background: C.sunken,
             color: C.violetS,
             padding: "2px 7px",
             borderRadius: 5,
@@ -709,7 +876,11 @@ export function ConnectorsPage() {
       </div>
       <button
         type="button"
-        onClick={() => navigate(routes.assistant)}
+        className="cue-pressable"
+        onClick={() => {
+          haptic.light();
+          navigate(routes.assistant);
+        }}
         title="Opens chat — ask Cue to add an MCP server"
         style={{
           width: "100%",
@@ -717,6 +888,7 @@ export function ConnectorsPage() {
           borderRadius: 13,
           background: C.bg,
           padding: 14,
+          minHeight: isMobile ? 52 : undefined,
           display: "flex",
           alignItems: "center",
           gap: 10,

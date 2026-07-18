@@ -39,7 +39,9 @@ import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { getBudgetConfig } from "@/lib/budget-api";
+import { haptic } from "@/utils/haptics";
 import { relativeTime } from "@/domains/activity/theme";
 import { BuildOutTiles } from "@/pages/command-center/build-out-tiles";
 import {
@@ -182,6 +184,85 @@ function StatusLabel({ mission }: { mission: Mission }) {
   );
 }
 
+/**
+ * The living aperture — Cue's "awake" mark, ported from the retired elevated
+ * Home (`cueLook`/`cuePing`/`cueBlink`). It gives the primary landing screen a
+ * breath. It always renders inside the `hq-hero-card` slot, so `HqStyle`'s
+ * `@media (prefers-reduced-motion:reduce){[data-slot^='hq-'] *{animation:none}}`
+ * rule freezes it to a composed resting state (ring at rotate(40deg), pupil lit,
+ * ping hidden) with no extra handling here. Tuned for the always-dark hero, so
+ * the ring rides translucent white and the pupil/ping ride `--mv1-blue`.
+ */
+function HqApertureMark({ size = 30 }: { size?: number }) {
+  const ring = Math.round(size * 0.58);
+  return (
+    <span
+      aria-hidden
+      style={{
+        position: "relative",
+        width: size,
+        height: size,
+        borderRadius: 9,
+        background: "rgba(255,255,255,.05)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <style
+        dangerouslySetInnerHTML={{
+          __html: [
+            "@keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}",
+            "@keyframes cueBlink{0%,90%,100%{opacity:1}94%{opacity:.15}}",
+            "@keyframes cuePing{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.6);opacity:0}}",
+          ].join(""),
+        }}
+      />
+      {/* Ping halo — resting opacity 0 so the frozen (reduced-motion) state is
+          simply invisible; the keyframe drives it from .6 → 0 while animating. */}
+      <span
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: 9,
+          border: "1.5px solid color-mix(in srgb, var(--mv1-blue) 55%, transparent)",
+          opacity: 0,
+          animation: "cuePing 2.8s ease-out infinite",
+        }}
+      />
+      <span
+        style={{
+          width: ring,
+          height: ring,
+          borderRadius: "50%",
+          boxShadow: "0 0 0 3px rgba(255,255,255,.92) inset",
+          WebkitMask: "radial-gradient(circle,transparent 56%,#000 57%)",
+          mask: "radial-gradient(circle,transparent 56%,#000 57%)",
+          transform: "rotate(40deg)",
+          animation: "cueLook 6s ease-in-out infinite",
+          position: "relative",
+          display: "block",
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            borderRadius: "50%",
+            background: "var(--mv1-blue)",
+            width: "26%",
+            height: "26%",
+            top: "8%",
+            left: "8%",
+            animation: "cueBlink 4s infinite",
+            display: "block",
+          }}
+        />
+      </span>
+    </span>
+  );
+}
+
 /** Dark hero card: concentric rings + headline + per-mission status lines. */
 function RingsHeroCard({
   missions,
@@ -193,6 +274,7 @@ function RingsHeroCard({
   dayLabel: string;
 }) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const rings = missions.map((m, i) => ({
     status: ringStatusFor(m),
     hue: missionHue(i),
@@ -201,17 +283,25 @@ function RingsHeroCard({
   const needsYou = rings.filter((r) => r.status === "needs_you").length;
   const blocked = rings.filter((r) => r.status === "blocked").length;
 
+  const openMission = (id: string) => {
+    haptic.light();
+    navigate(routes.hqMission(id));
+  };
+
   return (
     <div
       data-slot="hq-hero-card"
       data-coach="hq-rings"
       style={{
         display: "flex",
-        gap: 22,
+        // Stack on mobile so the fixed-width rings visual sits ABOVE the copy
+        // instead of cramming beside it in a non-wrapping row at 390px.
+        flexDirection: isMobile ? "column" : "row",
+        gap: isMobile ? 16 : 22,
         alignItems: "center",
         background: HERO_GRADIENT,
         borderRadius: 16,
-        padding: "22px 24px",
+        padding: isMobile ? "20px 18px" : "22px 24px",
         color: "#fff",
         marginTop: 16,
       }}
@@ -220,11 +310,23 @@ function RingsHeroCard({
         rings={rings}
         onTrack={onTrack}
         total={missions.length}
-        size={176}
+        size={isMobile ? 140 : 176}
       />
-      <div data-slot="hq-hero-lines" style={{ flex: 1, minWidth: 0 }}>
+      <div
+        data-slot="hq-hero-lines"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          width: isMobile ? "100%" : undefined,
+          textAlign: isMobile ? "center" : "left",
+        }}
+      >
         <div
           style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            justifyContent: isMobile ? "center" : "flex-start",
             fontFamily: mono,
             fontSize: 10,
             letterSpacing: "0.12em",
@@ -232,15 +334,19 @@ function RingsHeroCard({
             color: "rgba(255,255,255,.55)",
           }}
         >
-          {dayLabel}
-          {doneToday > 0 ? ` · ${doneToday} handled today` : ""}
+          {/* The living aperture — Cue is awake. */}
+          <HqApertureMark size={26} />
+          <span>
+            {dayLabel}
+            {doneToday > 0 ? ` · ${doneToday} handled today` : ""}
+          </span>
         </div>
         <div
           style={{
             fontFamily: serif,
-            fontSize: 24,
+            fontSize: isMobile ? 20 : 24,
             lineHeight: 1.15,
-            marginTop: 6,
+            marginTop: 8,
           }}
         >
           {briefHeadline(onTrack, needsYou, blocked, missions.length)}
@@ -258,11 +364,12 @@ function RingsHeroCard({
             return (
               <div
                 key={m.id}
+                className="cue-pressable"
                 role="link"
                 tabIndex={0}
-                onClick={() => navigate(routes.hqMission(m.id))}
+                onClick={() => openMission(m.id)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") navigate(routes.hqMission(m.id));
+                  if (e.key === "Enter") openMission(m.id);
                 }}
                 style={{
                   display: "flex",
@@ -270,6 +377,7 @@ function RingsHeroCard({
                   gap: 9,
                   fontSize: 12.5,
                   cursor: "pointer",
+                  textAlign: "left",
                 }}
               >
                 <span
@@ -336,6 +444,7 @@ function NeedsYouCard({
 }) {
   const navigate = useNavigate();
   const openReview = () => {
+    haptic.light();
     if (item.lastRunConversationId) {
       navigate(routes.conversation(item.lastRunConversationId));
     } else {
@@ -344,6 +453,7 @@ function NeedsYouCard({
   };
   return (
     <div
+      className="cue-pressable"
       style={{
         display: "flex",
         gap: 12,
@@ -399,7 +509,10 @@ function NeedsYouCard({
       {mission ? (
         <button
           type="button"
-          onClick={() => navigate(routes.hqMission(mission.id))}
+          onClick={() => {
+            haptic.light();
+            navigate(routes.hqMission(mission.id));
+          }}
           style={openMissionBtn}
         >
           Open mission ›
@@ -454,9 +567,13 @@ function MissionList({ missions }: { missions: Mission[] }) {
         return (
           <div
             key={m.id}
+            className="cue-pressable"
             role="button"
             tabIndex={0}
-            onClick={() => navigate(routes.hqMission(m.id))}
+            onClick={() => {
+              haptic.light();
+              navigate(routes.hqMission(m.id));
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -571,6 +688,7 @@ function PulseLayout({
 }) {
   const glanceCount = needsYou.length + (move.hasMove ? 1 : 0);
   const firstRun = useHqFirstRun();
+  const isMobile = useIsMobile();
   return (
     <div data-slot="hq-stream">
       <MicroLabel
@@ -583,7 +701,7 @@ function PulseLayout({
         data-slot="hq-title"
         style={{
           fontFamily: serif,
-          fontSize: 34,
+          fontSize: isMobile ? 26 : 34,
           lineHeight: 1.08,
           color: C.ink,
           marginTop: 8,
@@ -753,7 +871,11 @@ function PulseLayout({
                 <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
                   <button
                     type="button"
-                    onClick={() => onSuggest(s.title)}
+                    className="cue-pressable"
+                    onClick={() => {
+                      haptic.light();
+                      onSuggest(s.title);
+                    }}
                     style={{
                       fontSize: 12,
                       fontWeight: 600,
@@ -1310,8 +1432,81 @@ function MissionDriftWatcher({
   );
 }
 
+/** The header pills (Company & never-lines · New mission). Extracted so the
+ *  desktop inline row and the mobile wrapped row share one definition. */
+function HqHeaderActions({
+  workspaceMode,
+  hasMissions,
+  onOpenCompany,
+  onNewMission,
+}: {
+  workspaceMode: "observe" | "assist" | "autonomous";
+  hasMissions: boolean;
+  onOpenCompany: () => void;
+  onNewMission: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className="cue-pressable"
+        onClick={() => {
+          haptic.light();
+          onOpenCompany();
+        }}
+        title={`Workspace runs ${MODE_META[workspaceMode].label}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontFamily: mono,
+          fontSize: 11,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: C.t2,
+          padding: "4px 10px",
+          borderRadius: 999,
+          border: `1px solid ${C.line2}`,
+          background: "transparent",
+          cursor: "pointer",
+        }}
+      >
+        ☰ Company &amp; never-lines
+      </button>
+      {hasMissions ? (
+        <button
+          type="button"
+          className="cue-pressable"
+          onClick={() => {
+            haptic.light();
+            onNewMission();
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontFamily: mono,
+            fontSize: 11,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: C.blueS,
+            padding: "4px 10px",
+            borderRadius: 999,
+            border: `1px solid color-mix(in srgb, ${C.blue} 32%, transparent)`,
+            background: `color-mix(in srgb, ${C.blue} 10%, transparent)`,
+            cursor: "pointer",
+          }}
+        >
+          <Plus size={12} /> New mission
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 export function HqPage() {
   const assistantId = useActiveAssistantId();
+  const isMobile = useIsMobile();
   // SSE keeps every lane current; polls below are 60s safety-nets.
   useActivitySync(assistantId, true);
 
@@ -1394,12 +1589,14 @@ export function HqPage() {
         style={{
           maxWidth: 1100,
           margin: "0 auto",
-          padding: "28px 24px 60px",
+          padding: isMobile ? "18px 14px 60px" : "28px 24px 60px",
           opacity: degraded ? 0.72 : 1,
           transition: "opacity .3s ease",
         }}
       >
-        {/* Header: kicker + live dot + Company & New mission actions. */}
+        {/* Header: kicker + live dot + Company & New mission actions. On mobile
+            the actions drop to their own wrapped row so the long "Company &
+            never-lines" pill never collides with the kicker at 390px. */}
         <header style={{ marginBottom: 4 }}>
           <div
             style={{
@@ -1407,7 +1604,7 @@ export function HqPage() {
               alignItems: "center",
               justifyContent: "space-between",
               gap: 12,
-              marginBottom: 6,
+              marginBottom: isMobile ? 10 : 6,
             }}
           >
             <div
@@ -1421,55 +1618,38 @@ export function HqPage() {
             >
               HQ
             </div>
+            {/* Actions sit inline on desktop; on mobile only the live dot
+                stays on this row (the pills move below). */}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button
-                type="button"
-                onClick={() => setShowCompany(true)}
-                title={`Workspace runs ${MODE_META[workspaceMode].label}`}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontFamily: mono,
-                  fontSize: 11,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: C.t2,
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${C.line2}`,
-                  background: "transparent",
-                  cursor: "pointer",
-                }}
-              >
-                ☰ Company &amp; never-lines
-              </button>
-              {hasMissions ? (
-                <button
-                  type="button"
-                  onClick={() => setShowNewMission({ open: true })}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontFamily: mono,
-                    fontSize: 11,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    color: C.blueS,
-                    padding: "4px 10px",
-                    borderRadius: 999,
-                    border: `1px solid color-mix(in srgb, ${C.blue} 32%, transparent)`,
-                    background: `color-mix(in srgb, ${C.blue} 10%, transparent)`,
-                    cursor: "pointer",
-                  }}
-                >
-                  <Plus size={12} /> New mission
-                </button>
+              {!isMobile ? (
+                <HqHeaderActions
+                  workspaceMode={workspaceMode}
+                  hasMissions={hasMissions}
+                  onOpenCompany={() => setShowCompany(true)}
+                  onNewMission={() => setShowNewMission({ open: true })}
+                />
               ) : null}
               <LiveDot />
             </div>
           </div>
+          {isMobile ? (
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 6,
+              }}
+            >
+              <HqHeaderActions
+                workspaceMode={workspaceMode}
+                hasMissions={hasMissions}
+                onOpenCompany={() => setShowCompany(true)}
+                onNewMission={() => setShowNewMission({ open: true })}
+              />
+            </div>
+          ) : null}
         </header>
 
         {/* SETTING UP · N OF M — non-shaming first-run meter (self-hides). */}
