@@ -1,1 +1,0 @@
-import{o as e}from"./chunk-jRWAZmH_.js";import{t}from"./react-CrS8D-1X.js";import{d as n}from"./chunk-5KNZJZUH-Wj10BWAH.js";import{i as r}from"./routes-DYxG2IFb.js";var i=e(t(),1);function a(){let e=n();return(0,i.useEffect)(()=>{e(r.settings.general,{replace:!0})},[e]),null}export{a as DangerZoneRedirectPage};

@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-COOF1INC.js";import{L as t}from"./index-Z6fSnSZo.js";var n=e();function r(){return(0,n.jsx)(t,{})}export{r as VoiceModePage};
