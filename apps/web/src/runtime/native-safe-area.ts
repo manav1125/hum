@@ -31,6 +31,11 @@ export async function initSafeAreaBridge(): Promise<void> {
   if (typeof window === "undefined" || !Capacitor.isNativePlatform()) return;
   initialized = true;
 
+  // Mark the document as a native Capacitor session so CSS can gate the
+  // aggressive native-feel resets (e.g. `user-select: none` on chrome) that
+  // must NOT apply to desktop web, where text selection is expected.
+  document.documentElement.classList.add("cap-native");
+
   try {
     const { SafeArea } = await import("capacitor-plugin-safe-area");
 

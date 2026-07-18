@@ -7,6 +7,56 @@ body {
   color: var(--content-default);
 }
 
+/* ---------------------------------------------------------------------------
+ * Native-feel web-ism reset.
+ *
+ * A WKWebView exposes browser defaults that read as "mobile web": the gray tap
+ * flash, long-press text-selection/callout on UI chrome, and rubber-band
+ * scroll-chaining on fixed chrome. These are exactly the tells the mobile
+ * design book forbids. The harmless resets apply everywhere; the ones that
+ * would break desktop web (killing text selection) are gated to `.cap-native`,
+ * the marker set by `initSafeAreaBridge()` only inside the Capacitor shell.
+ * ------------------------------------------------------------------------- */
+
+/* Kill the gray iOS tap-highlight globally (no effect on desktop, which has
+ * no tap highlight) and stop fixed chrome from rubber-banding / scroll-chaining
+ * the page behind it. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body {
+  overscroll-behavior: none;
+}
+
+/* Native only: suppress the long-press callout menu app-wide, and stop text
+ * selection on interactive chrome (buttons, tappable rows) where a drag should
+ * scroll or press, never highlight. Content text (message bodies, memory,
+ * documents) keeps the default selectable behaviour so copy still works —
+ * only true controls are made unselectable. */
+.cap-native {
+  -webkit-touch-callout: none;
+}
+.cap-native button,
+.cap-native [role="button"],
+.cap-native .cue-pressable {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* A shared press primitive: touch-down acknowledgement on tappable rows/cards
+ * that opt in via `.cue-pressable`. Pairs with `haptic.light()` at the call
+ * site for tactile + visual feedback. Skipped under reduced-motion. */
+.cue-pressable {
+  transition: transform 120ms ease-out;
+  touch-action: manipulation;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cue-pressable:active {
+    transform: scale(0.98);
+  }
+}
+
 /* Mobile design-book palette (`--mv1-*`) — theme-aware.
  *
  * The mobile screens built from the dark-v1 design book (mobile chat, the
