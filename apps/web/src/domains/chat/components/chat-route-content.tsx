@@ -745,6 +745,7 @@ export function ChatMainPanel({
     startersSlot,
     renderAvatar,
     emptyStatePlaceholder,
+    starters: emptyStateStarters,
   } = useChatEmptyState({
     assistantId,
     isEmptyConversation,
@@ -965,6 +966,10 @@ export function ChatMainPanel({
           transcriptProps={chatTranscriptProps}
           transcriptRef={transcriptRef}
           conversationTitle={activeConversation?.title ?? null}
+          isEmptyConversation={isEmptyConversation}
+          greeting={chatEmptyStateProps.greeting}
+          starters={emptyStateStarters}
+          onSelectStarter={handleSelectStarter}
           input={input}
           setInput={setInput}
           onSubmit={submitMessage}

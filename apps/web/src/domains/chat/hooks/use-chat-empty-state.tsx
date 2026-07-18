@@ -47,6 +47,9 @@ export interface ChatEmptyStateResult {
   startersSlot: ReactNode | undefined;
   renderAvatar: (() => ReactNode) | undefined;
   emptyStatePlaceholder: string;
+  /** Raw starter objects (strongest-first) — the mobile greeting state renders
+   *  its own suggestion cards from these rather than the desktop `startersSlot`. */
+  starters: readonly ConversationStarter[];
 }
 
 // ---------------------------------------------------------------------------
@@ -156,5 +159,11 @@ export function useChatEmptyState({
     ],
   );
 
-  return { emptyStateProps, startersSlot, renderAvatar, emptyStatePlaceholder };
+  return {
+    emptyStateProps,
+    startersSlot,
+    renderAvatar,
+    emptyStatePlaceholder,
+    starters: emptyStateStarters,
+  };
 }

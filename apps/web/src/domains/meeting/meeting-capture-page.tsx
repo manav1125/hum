@@ -78,6 +78,7 @@ const D = {
 } as const;
 
 const mono = "'DM Mono', ui-monospace, monospace";
+const serif = "'Instrument Serif', Georgia, serif";
 
 /* Scoped animations. Reduced-motion holds the dot solid and the bars at mid height. */
 const ANIM_CSS = `
@@ -1458,9 +1459,11 @@ export function MeetingCapturePage() {
         </div>
         <div
           style={{
-            fontSize: 24,
-            fontWeight: 600,
+            fontFamily: serif,
+            fontSize: 32,
+            fontWeight: 400,
             letterSpacing: "-.4px",
+            lineHeight: 1.1,
             marginTop: 6,
           }}
         >

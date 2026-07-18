@@ -798,9 +798,10 @@ function RailContent({
             flex: 1,
             textAlign: "center",
             fontSize: 12.5,
-            background: "#FCEBEB",
-            color: "#DA491A",
-            border: "1px solid #F0B9AC",
+            background: "color-mix(in srgb, var(--mv1-danger) 14%, transparent)",
+            color: "var(--mv1-danger)",
+            border:
+              "1px solid color-mix(in srgb, var(--mv1-danger) 40%, transparent)",
             borderRadius: 8,
             padding: 8,
             cursor: "pointer",
@@ -897,8 +898,9 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       style={{
-        background: "#FCEBEB",
-        border: "1px solid #F0B9AC",
+        background: "color-mix(in srgb, var(--mv1-danger) 12%, transparent)",
+        border:
+          "1px solid color-mix(in srgb, var(--mv1-danger) 35%, transparent)",
         borderRadius: 12,
         padding: "14px 16px",
         display: "flex",
@@ -911,7 +913,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
           width: 20,
           height: 20,
           borderRadius: "50%",
-          background: "#DA491A",
+          background: "var(--mv1-danger)",
           color: "#fff",
           display: "flex",
           alignItems: "center",
@@ -924,10 +926,22 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
         !
       </span>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 500, color: "#8A2E12" }}>
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 500,
+            color: "var(--mv1-danger)",
+          }}
+        >
           Couldn&rsquo;t load your memories
         </div>
-        <div style={{ fontSize: 12.5, color: "#A8492B", marginTop: 2 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "var(--content-secondary)",
+            marginTop: 2,
+          }}
+        >
           The memory store didn&rsquo;t respond. Cue is running on cached recall
           only — retry to load them again.
         </div>
@@ -937,7 +951,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
         onClick={onRetry}
         style={{
           fontSize: 12,
-          background: "#DA491A",
+          background: "var(--mv1-danger)",
           color: "#fff",
           border: "none",
           borderRadius: 8,

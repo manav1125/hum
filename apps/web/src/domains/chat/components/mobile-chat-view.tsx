@@ -35,6 +35,9 @@ import {
   type VoiceInputButtonHandle,
 } from "@/domains/chat/components/voice-input-button";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
+import type { ConversationStarter } from "@/domains/chat/utils/conversation-starters";
+import { DEFAULT_EMPTY_STATE_GREETING } from "@/domains/chat/utils/empty-state-constants";
+import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 // Mobile design-book tokens — the theme-aware `--mv1-*` palette (defined in
@@ -59,6 +62,7 @@ const M = {
 } as const;
 
 const mono = "'DM Mono', ui-monospace, monospace";
+const serif = "'Instrument Serif', Georgia, serif";
 
 const MCHAT_KEYFRAMES = `
 @keyframes cueLook{0%,100%{transform:rotate(40deg)}50%{transform:rotate(64deg)}}
@@ -101,6 +105,19 @@ export interface MobileChatViewProps {
   transcriptRef: React.RefObject<TranscriptHandle | null>;
   /** Conversation title shown as the header subtitle (e.g. "Acme renewal"). */
   conversationTitle?: string | null;
+
+  // New-conversation greeting state — shown in place of the transcript while the
+  // thread is empty (the HQ direction's chat entry: serif greeting hero +
+  // tappable suggestion cards). Falls back to the composer-only screen when
+  // there are no starters yet.
+  /** True when the active conversation has no messages yet. */
+  isEmptyConversation: boolean;
+  /** Personalized greeting line (daemon-generated; falls back to a default). */
+  greeting?: string;
+  /** Strongest-first conversation starters rendered as suggestion cards. */
+  starters: readonly ConversationStarter[];
+  /** Send a starter's prompt (mirrors the desktop chip behaviour). */
+  onSelectStarter: (starter: ConversationStarter) => void;
 
   // Composer wiring — the same send path the desktop composer uses.
   input: string;
@@ -172,10 +189,115 @@ function ApertureMark() {
   );
 }
 
+/**
+ * The new-conversation greeting shown while the thread is empty — the HQ
+ * direction's chat entry. A serif editorial greeting hero over a stack of
+ * tappable suggestion cards (the same starters the desktop empty state uses).
+ * Tapping a card sends its prompt. Scrolls with momentum if the cards overflow.
+ */
+function GreetingState({
+  greeting,
+  starters,
+  onSelectStarter,
+}: {
+  greeting?: string;
+  starters: readonly ConversationStarter[];
+  onSelectStarter: (starter: ConversationStarter) => void;
+}) {
+  const visible = starters.slice(0, 4);
+  const heading = greeting?.trim() || DEFAULT_EMPTY_STATE_GREETING;
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        gap: 22,
+        padding: "24px 20px 32px",
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontFamily: mono,
+            fontSize: 11,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: M.blueEyebrow,
+            marginBottom: 10,
+          }}
+        >
+          New conversation
+        </div>
+        <h1
+          style={{
+            fontFamily: serif,
+            fontSize: 30,
+            lineHeight: 1.12,
+            fontWeight: 400,
+            color: M.t1,
+            margin: 0,
+          }}
+        >
+          {heading}
+        </h1>
+      </div>
+
+      {visible.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {visible.map((starter) => (
+            <button
+              key={starter.id}
+              type="button"
+              className="cue-pressable"
+              onClick={() => {
+                haptic.light();
+                onSelectStarter(starter);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                width: "100%",
+                textAlign: "left",
+                padding: "14px 16px",
+                borderRadius: 14,
+                border: `1px solid ${M.line}`,
+                background: M.surface,
+                color: M.t1,
+                fontFamily: "inherit",
+                fontSize: 14,
+                lineHeight: 1.35,
+                cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <span style={{ minWidth: 0 }}>{starter.label}</span>
+              <ArrowUp
+                size={16}
+                style={{ color: M.blueEyebrow, flexShrink: 0, rotate: "45deg" }}
+              />
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function MobileChatView({
   transcriptProps,
   transcriptRef,
   conversationTitle,
+  isEmptyConversation,
+  greeting,
+  starters,
+  onSelectStarter,
   input,
   setInput,
   onSubmit,
@@ -321,8 +443,10 @@ export function MobileChatView({
         </div>
       </div>
 
-      {/* THREAD — the reused live transcript (streamed output + tool/step chips
-          + subagents + surfaces + confirmations all preserved). */}
+      {/* THREAD — the new-conversation greeting state (serif hero + suggestion
+          cards) while empty; otherwise the reused live transcript (streamed
+          output + tool/step chips + subagents + surfaces + confirmations all
+          preserved). */}
       <div
         style={{
           flex: 1,
@@ -331,7 +455,15 @@ export function MobileChatView({
           flexDirection: "column",
         }}
       >
-        <Transcript ref={transcriptRef} {...transcriptProps} />
+        {isEmptyConversation ? (
+          <GreetingState
+            greeting={greeting}
+            starters={starters}
+            onSelectStarter={onSelectStarter}
+          />
+        ) : (
+          <Transcript ref={transcriptRef} {...transcriptProps} />
+        )}
       </div>
 
       {/* COMPOSER — pinned, rises to sit above the keyboard. "Message Cue…" + mic. */}

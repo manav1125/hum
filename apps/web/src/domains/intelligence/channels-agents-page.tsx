@@ -90,7 +90,7 @@ const M = {
   surface: "var(--mv1-surface)",
   blue: "var(--mv1-blue)",
   blueText: "var(--mv1-blue-eyebrow)",
-  green: "#3FB871",
+  green: "var(--mv1-green)",
   t1: "var(--mv1-t1)",
   t2: "var(--mv1-t2)",
   t3: "var(--mv1-t3)",
@@ -98,6 +98,7 @@ const M = {
 } as const;
 const M_MONO = "'DM Mono', ui-monospace, monospace";
 const M_SANS = "'DM Sans', system-ui, sans-serif";
+const M_SERIF = "'Instrument Serif', Georgia, serif";
 
 /** Channel id union from the daemon catalog (mirrors `channels-page.tsx`). */
 type ChannelId =
@@ -403,9 +404,11 @@ function YouMobilePage() {
       <div style={{ padding: "20px 0 22px" }}>
         <div
           style={{
-            fontSize: 24,
-            fontWeight: 600,
+            fontFamily: M_SERIF,
+            fontSize: 32,
+            fontWeight: 400,
             letterSpacing: "-.5px",
+            lineHeight: 1.1,
             color: M.t1,
           }}
         >

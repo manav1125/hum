@@ -28,6 +28,7 @@ import type { SkillsGetData } from "@/generated/daemon/types.gen";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { getLocalBool, setLocalBool } from "@/utils/local-settings";
+import { haptic } from "@/utils/haptics";
 import { ConfirmDialog } from "@vellumai/design-library";
 
 interface SkillsTabProps {
@@ -43,20 +44,26 @@ interface SkillsTabProps {
 const SEARCH_DEBOUNCE_MS = 300;
 const TIP_STORAGE_KEY = "vellum:skills:tipDismissed";
 
-/** Inline token palette — mirrors surfaces/Skills.dc.html exactly. */
+/**
+ * Token palette — the theme-aware `--mv1-*` layer (src/index.css). Under the
+ * dark/velvet themes these resolve to the Skills.dc.html dark-book hexes; under
+ * light they fall back to the v0.3 light literals — so the screen follows the
+ * active theme instead of pasting the light mock onto the app's dark shell.
+ */
 const C = {
-  ink: "#1A2230",
-  blue: "#3D6EE8",
-  bg: "#F4F6F9",
-  sunken: "#EEF1F6",
-  line: "#E5E9F0",
-  line2: "#D7DDE7",
-  t1: "#1A2230",
-  t2: "#5A6672",
-  t3: "#9AA6B2",
-  violet: "#7F77DD",
-  violetWash: "#B6AEF0",
-  danger: "#DA491A",
+  ink: "var(--mv1-ink)",
+  blue: "var(--mv1-blue)",
+  bg: "var(--mv1-canvas)",
+  card: "var(--mv1-card)",
+  sunken: "var(--mv1-sunken)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  violet: "var(--mv1-violet)",
+  violetWash: "var(--mv1-violet-strong)",
+  danger: "var(--mv1-danger)",
 } as const;
 const SERIF = "'Instrument Serif', Georgia, serif";
 
@@ -318,7 +325,7 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
             style={{
               fontFamily: SERIF,
               fontSize: 24,
-              color: "#fff",
+              color: C.t1,
               letterSpacing: "-.2px",
               lineHeight: 1.2,
             }}
@@ -330,7 +337,7 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
             </span>{" "}
             — and learns new ones from you.
           </div>
-          <div style={{ fontSize: 13, color: "#AEB7C7", marginTop: 5 }}>
+          <div style={{ fontSize: 13, color: C.t2, marginTop: 5 }}>
             <span data-slot="skills-active-count">{activeCount}</span>{" "}
             {activeCount === 1 ? "is" : "are"} active right now.
             Describe any task in chat and Cue will build a skill for it.
@@ -339,7 +346,11 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
         <div style={{ position: "relative", flexShrink: 0 }}>
           <button
             type="button"
-            onClick={() => void navigate("/assistant/")}
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              void navigate("/assistant/");
+            }}
             style={{
               fontSize: 12.5,
               background: C.violet,
@@ -546,7 +557,7 @@ function ErrorState() {
       style={{
         border: `1px solid ${C.line}`,
         borderRadius: 13,
-        background: "#fff",
+        background: C.card,
         padding: "48px 24px",
         textAlign: "center",
       }}
@@ -593,11 +604,15 @@ function EmptyState({
         </p>
         <button
           type="button"
-          onClick={onClearCategory}
+          className="cue-pressable"
+          onClick={() => {
+            haptic.light();
+            onClearCategory();
+          }}
           style={{
             marginTop: 16,
             fontSize: 12.5,
-            background: C.ink,
+            background: C.blue,
             color: "#fff",
             border: "none",
             borderRadius: 9,
@@ -615,7 +630,7 @@ function EmptyState({
       style={{
         border: `1px solid ${C.line}`,
         borderRadius: 13,
-        background: "#fff",
+        background: C.card,
         padding: "48px 24px",
         textAlign: "center",
       }}
@@ -641,7 +656,11 @@ function EmptyState({
       </p>
       <button
         type="button"
-        onClick={onDescribe}
+        className="cue-pressable"
+        onClick={() => {
+          haptic.light();
+          onDescribe();
+        }}
         style={{
           marginTop: 16,
           fontSize: 12.5,

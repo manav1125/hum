@@ -1,5 +1,15 @@
 # Cue iOS — Mobile Design Implementation Status
 
+> **⚠️ Superseded direction.** This doc describes the older 4-tab
+> `Today · Tasks · Voice · You` "mobile book". The shipped app has converged on
+> the **HQ direction**: the 5-item `Today · Projects · ✳ Create · Voice · You`
+> bar (`apps/web/src/components/cue-mobile-tab-bar.tsx`), Instrument-Serif
+> editorial hero titles, and the `--mv1-*` theme-aware token layer. For the
+> current mapping and what was reconciled, see
+> [`docs/cue-mobile-reconciliation.md`](../../docs/cue-mobile-reconciliation.md)
+> and [`docs/cue-mobile-fidelity-audit.md`](../../docs/cue-mobile-fidelity-audit.md).
+> Treat the code as the source of truth over the sections below.
+
 Implementation of the `CUE Mobile.dc.html` design book (dark v1 + light parity)
 into the Capacitor/WKWebView app. The iOS app renders the web SPA (`apps/web`),
 so "mobile screens" = the SPA's responsive mobile layer, themeable + native-aware.
