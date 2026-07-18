@@ -41,7 +41,13 @@ import {
 import { Dropdown } from "@vellumai/design-library/components/dropdown";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
+import type { Surface } from "@/domains/chat/types/types";
 import { useLiveVoice } from "@/domains/chat/voice/live-voice/use-live-voice";
+import {
+  useLiveVoiceStore,
+  type LiveVoiceCard,
+} from "@/domains/chat/voice/live-voice/live-voice-store";
 import { VoiceDictationSurface } from "@/domains/chat/voice/voice-dictation-surface";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { ttsProvidersGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -80,10 +86,28 @@ const safeInset = (side: "top" | "bottom" | "left" | "right") =>
 const VOICE_KEYFRAMES = `
 @keyframes cueVoiceRing { 0% { transform: scale(.9); opacity: .5 } 100% { transform: scale(1.6); opacity: 0 } }
 @keyframes cueBar { 0%,100% { transform: scaleY(.28) } 50% { transform: scaleY(1) } }
+@keyframes cueVoiceCardIn { 0% { opacity: 0; transform: translateY(6px) scale(.98) } 100% { opacity: 1; transform: none } }
+.cue-voice-card-enter { animation: cueVoiceCardIn 180ms ease-out both }
 @media (prefers-reduced-motion: reduce) {
   .cue-voice-ring, .cue-voice-bar { animation: none !important }
+  .cue-voice-card-enter { animation: none !important }
 }
 `;
+
+/**
+ * Build a `Surface` (the shape `SurfaceRouter` renders) from a live-voice card.
+ * The `card` frame carries the surface fields verbatim, so this is a 1:1 map
+ * plus the display-only completion defaults the router expects.
+ */
+function toSurface(card: LiveVoiceCard): Surface {
+  return {
+    surfaceId: card.surfaceId,
+    surfaceType: card.surfaceType,
+    data: card.data,
+    ...(card.title !== undefined ? { title: card.title } : {}),
+    ...(card.actions ? { actions: card.actions.map((a) => ({ ...a })) } : {}),
+  };
+}
 
 /** Map the live-voice session phase onto the orb's four visual states. */
 function orbState(state: string): VoiceOrbState {
@@ -162,6 +186,14 @@ export function VoiceModeSurface({
     stop,
     setMuted,
   } = useLiveVoice();
+  // Visual result cards for the current turn, driven by `card` server frames
+  // (the `ui_show` tool output). Rendered above the orb via the shared
+  // SurfaceRouter — see the card stack below.
+  const cards = useLiveVoiceStore.use.cards();
+
+  // Slice 1 cards are display-only (list/table/card), so actions don't round-trip
+  // yet; wiring to the surface-action route is a later slice.
+  const handleCardAction = useCallback(() => {}, []);
 
   const connecting = state === "connecting";
   const active =
@@ -213,15 +245,7 @@ export function VoiceModeSurface({
         await start(assistantId, conversationId ?? undefined);
       })();
     }
-  }, [
-    engine,
-    active,
-    connecting,
-    stop,
-    start,
-    assistantId,
-    conversationId,
-  ]);
+  }, [engine, active, connecting, stop, start, assistantId, conversationId]);
 
   // Auto-start once on mount when requested (in-chat overlay). Guarded on the
   // flag + a non-empty assistant id; only fires from idle so a re-render can't
@@ -539,6 +563,35 @@ export function VoiceModeSurface({
               </div>
             ) : null}
           </div>
+
+          {/* Visual result cards (GPT-Live pattern) — stacked directly above the
+              orb, rendered by the SAME SurfaceRouter chat uses. Scoped to the
+              dark theme so the router's design-token children resolve against
+              the ink panel. Cards are per-turn and replace on each new turn. */}
+          {cards.length > 0 ? (
+            <div
+              data-theme="dark"
+              style={{
+                width: "100%",
+                maxWidth: 560,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+                overflowY: "auto",
+                maxHeight: "38vh",
+                textAlign: "left",
+              }}
+            >
+              {cards.map((card) => (
+                <div key={card.surfaceId} className="cue-voice-card-enter">
+                  <SurfaceRouter
+                    surface={toSurface(card)}
+                    onAction={handleCardAction}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {/* Big central mic — aperture orb in a tappable circle. While
               listening, two offset `cueVoiceRing` halos pulse outward. When the

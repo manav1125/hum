@@ -325,6 +325,50 @@ describe("LiveVoiceServerFrameSequencer", () => {
     ).toBe(1);
   });
 
+  test("sequences a card frame, preserving its op + surface payload", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    const frame: LiveVoiceServerFrame = sequencer.next({
+      type: "card",
+      op: "show",
+      surfaceId: "surface-1",
+      surfaceType: "list",
+      title: "Late-night spots",
+      data: { items: [{ id: "a", title: "Luigi's Hot Pizza" }] },
+      actions: [{ id: "open", label: "Open", style: "primary" }],
+      turnId: "turn-1",
+    });
+
+    expect(frame).toEqual({
+      type: "card",
+      op: "show",
+      surfaceId: "surface-1",
+      surfaceType: "list",
+      title: "Late-night spots",
+      data: { items: [{ id: "a", title: "Luigi's Hot Pizza" }] },
+      actions: [{ id: "open", label: "Open", style: "primary" }],
+      turnId: "turn-1",
+      seq: 1,
+    });
+  });
+
+  test("sequences a minimal card dismiss frame (surfaceId only)", () => {
+    const sequencer = createLiveVoiceServerFrameSequencer();
+    const frame: LiveVoiceServerFrame = sequencer.next({
+      type: "card",
+      op: "dismiss",
+      surfaceId: "surface-1",
+      turnId: "turn-1",
+    });
+
+    expect(frame).toEqual({
+      type: "card",
+      op: "dismiss",
+      surfaceId: "surface-1",
+      turnId: "turn-1",
+      seq: 1,
+    });
+  });
+
   test("preserves the server frame discriminated union after sequencing", () => {
     const sequencer = createLiveVoiceServerFrameSequencer(41);
     const frame: LiveVoiceServerFrame = sequencer.next({

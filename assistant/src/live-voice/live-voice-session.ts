@@ -29,7 +29,12 @@ const LIVE_VOICE_CONTROL_PROMPT = [
   // search or a missing capability must never become a monologue.
   "If a tool fails or a capability is genuinely unavailable, say ONE short sentence about it and offer a next step or ask a question. Never read tool names, error text, or function names aloud, never apologize repeatedly, and never narrate your internal troubleshooting. Do not try to reconnect apps or manage connections during a voice call.",
   "Speak naturally and briefly, like a real conversation — usually one or two sentences, never more than three. If you need a moment to do something, say so in a few words and then do it.",
-  "Your reply is read aloud by a text-to-speech engine: write plain conversational text ONLY. No markdown, asterisks, headings, bullet points, code blocks, links, or emojis.",
+  // Visual result cards (the "GPT Live" pattern): the user is looking at a
+  // screen, so viewable results should appear as a card, not be narrated or
+  // punted. The plain-text rule below governs the SPOKEN reply only.
+  "You are on a screen the user can see. When you produce results the user would want to LOOK at — a list of options, search results, a comparison, a table, an image — show them as a visual card using the `ui_show` tool (surfaceType `list`, `table`, or `card`), then give a short one- or two-sentence spoken summary. The card is seen, not spoken, so your spoken reply must NOT read the items one by one — summarize it (e.g. 'Here are five late-night spots in Berawa — the top one's Luigi's Hot Pizza') and let the card carry the detail.",
+  "Do NOT offload viewable results to the Review lane just because this is a voice conversation. The Review lane is for background work you'll finish later, not for results you already have right now — when you have the result, show it as a card and summarize it aloud.",
+  "Your SPOKEN reply is read aloud by a text-to-speech engine: write plain conversational text ONLY — no markdown, asterisks, headings, bullet points, code blocks, links, or emojis in what you say. This applies to your spoken words, not to the visual card, which may be a structured list or table.",
 ].join(" ");
 
 /**
@@ -704,6 +709,42 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
             const activeTurn = this.activeAssistantTurn;
             if (activeTurn?.token !== token) return;
             activeTurn.assistantMessageId = messageId;
+          },
+          // Visual result cards: forward the agent loop's `ui_surface_*` events
+          // across the socket as `card` frames so lists/tables/etc. render inline
+          // above the orb. Gated by the same forwarding guard as text deltas so a
+          // barged-in / finalized turn doesn't leak stale cards.
+          ui_surface_show: (msg) => {
+            if (!this.isForwardingAssistantText(token)) return;
+            void this.sendFrame({
+              type: "card",
+              op: "show",
+              surfaceId: msg.surfaceId,
+              surfaceType: msg.surfaceType,
+              title: msg.title,
+              data: msg.data as Record<string, unknown>,
+              actions: msg.actions,
+              turnId,
+            });
+          },
+          ui_surface_update: (msg) => {
+            if (!this.isForwardingAssistantText(token)) return;
+            void this.sendFrame({
+              type: "card",
+              op: "update",
+              surfaceId: msg.surfaceId,
+              data: msg.data as Record<string, unknown>,
+              turnId,
+            });
+          },
+          ui_surface_dismiss: (msg) => {
+            if (!this.isForwardingAssistantText(token)) return;
+            void this.sendFrame({
+              type: "card",
+              op: "dismiss",
+              surfaceId: msg.surfaceId,
+              turnId,
+            });
           },
         },
         onError: (message) => {

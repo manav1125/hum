@@ -19,6 +19,7 @@ const _LIVE_VOICE_SERVER_FRAME_TYPES = [
   "tts_done",
   "metrics",
   "archived",
+  "card",
   "error",
 ] as const;
 
@@ -189,6 +190,36 @@ export interface LiveVoiceArchivedServerFrame extends LiveVoiceServerFrameBase {
   };
 }
 
+/**
+ * Visual result card produced during a live-voice turn. Carries a `ui_surface_*`
+ * event's payload verbatim across the socket so the client can hand it straight
+ * to `SurfaceRouter` (the same renderer chat uses) with zero translation.
+ *
+ * `op` collapses the three source events (`ui_surface_{show,update,dismiss}`)
+ * into one frame type; `surfaceId` is the shared correlation key across them.
+ * `data` is opaque on the wire (same contract as `ui_surface_show`, whose schema
+ * treats `data` as `z.record`).
+ */
+export interface LiveVoiceCardServerFrame extends LiveVoiceServerFrameBase {
+  readonly type: "card";
+  /** Lifecycle op — mirrors ui_surface_{show,update,dismiss}. */
+  readonly op: "show" | "update" | "dismiss";
+  /** Stable correlation key across op=show/update/dismiss (the surfaceId). */
+  readonly surfaceId: string;
+  /** Present for op=show|update. Absent for op=dismiss. */
+  readonly surfaceType?: string;
+  readonly title?: string;
+  readonly data?: Record<string, unknown>;
+  readonly actions?: ReadonlyArray<{
+    readonly id: string;
+    readonly label: string;
+    readonly style?: "primary" | "secondary" | "destructive";
+    readonly data?: Record<string, unknown>;
+  }>;
+  /** The turn this card belongs to (so the client can clear stale cards on a new turn). */
+  readonly turnId?: string;
+}
+
 export interface LiveVoiceErrorServerFrame extends LiveVoiceServerFrameBase {
   readonly type: "error";
   readonly code: LiveVoiceProtocolErrorCode;
@@ -206,6 +237,7 @@ export type LiveVoiceServerFrame =
   | LiveVoiceTtsDoneServerFrame
   | LiveVoiceMetricsServerFrame
   | LiveVoiceArchivedServerFrame
+  | LiveVoiceCardServerFrame
   | LiveVoiceErrorServerFrame;
 
 type WithoutSeq<T extends LiveVoiceServerFrameBase> = Omit<T, "seq">;
@@ -221,6 +253,7 @@ export type LiveVoiceServerFramePayload =
   | WithoutSeq<LiveVoiceTtsDoneServerFrame>
   | WithoutSeq<LiveVoiceMetricsServerFrame>
   | WithoutSeq<LiveVoiceArchivedServerFrame>
+  | WithoutSeq<LiveVoiceCardServerFrame>
   | WithoutSeq<LiveVoiceErrorServerFrame>;
 
 class LiveVoiceServerFrameSequencer {

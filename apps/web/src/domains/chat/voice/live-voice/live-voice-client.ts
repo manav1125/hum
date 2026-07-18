@@ -26,6 +26,7 @@ import {
   type LiveVoiceArchivedServerFrame,
   type LiveVoiceAssistantTextDeltaServerFrame,
   type LiveVoiceBusyServerFrame,
+  type LiveVoiceCardServerFrame,
   type LiveVoiceClientStartFrame,
   LIVE_VOICE_AUDIO_FORMAT,
   type LiveVoiceMetricsServerFrame,
@@ -67,6 +68,8 @@ export interface LiveVoiceClientEventMap {
   ttsDone: LiveVoiceTtsDoneServerFrame;
   metrics: LiveVoiceMetricsServerFrame;
   archived: LiveVoiceArchivedServerFrame;
+  /** Visual result card lifecycle (op: show/update/dismiss). */
+  card: LiveVoiceCardServerFrame;
   busy: LiveVoiceBusyServerFrame;
   error: LiveVoiceClientError;
   /** Fired exactly once when the transport closes (clean or otherwise). */
@@ -136,6 +139,7 @@ export class LiveVoiceChannelClient {
     ttsDone: new Set(),
     metrics: new Set(),
     archived: new Set(),
+    card: new Set(),
     busy: new Set(),
     error: new Set(),
     closed: new Set(),
@@ -328,6 +332,9 @@ export class LiveVoiceChannelClient {
         return;
       case "archived":
         this.emit("archived", frame);
+        return;
+      case "card":
+        this.emit("card", frame);
         return;
       case "error":
         this.fail("protocol-error", frame.message, frame.code);

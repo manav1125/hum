@@ -41,7 +41,25 @@ describe("parseServerFrame", () => {
       attachmentIds: ["a1", "a2"],
       warning: { code: "w", message: "warn" },
     },
-    { type: "error", seq: 11, code: "boom", message: "bad" },
+    {
+      type: "card",
+      seq: 11,
+      op: "show",
+      surfaceId: "surface-1",
+      surfaceType: "list",
+      title: "Late-night spots",
+      data: { items: [{ id: "a", title: "Luigi's Hot Pizza" }] },
+      actions: [{ id: "open", label: "Open", style: "primary" }],
+      turnId: "t1",
+    },
+    {
+      type: "card",
+      seq: 12,
+      op: "dismiss",
+      surfaceId: "surface-1",
+      turnId: "t1",
+    },
+    { type: "error", seq: 13, code: "boom", message: "bad" },
   ];
 
   for (const frame of frames) {

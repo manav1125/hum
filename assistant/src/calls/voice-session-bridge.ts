@@ -102,6 +102,21 @@ export interface VoiceTurnCallbacks {
   ) => void;
   persisted_user_message_id?: (messageId: string) => void;
   persisted_assistant_message_id?: (messageId: string) => void;
+  /**
+   * Visual surface events produced by the agent loop during this turn (e.g. the
+   * `ui_show` tool). Non-phone voice clients forward these to the live-voice
+   * socket as `card` frames so results render inline alongside the spoken reply.
+   * The SSE broadcast is unaffected — these callbacks are additive.
+   */
+  ui_surface_show?: (
+    msg: Extract<ServerMessage, { type: "ui_surface_show" }>,
+  ) => void;
+  ui_surface_update?: (
+    msg: Extract<ServerMessage, { type: "ui_surface_update" }>,
+  ) => void;
+  ui_surface_dismiss?: (
+    msg: Extract<ServerMessage, { type: "ui_surface_dismiss" }>,
+  ) => void;
 }
 
 export interface VoiceTurnOptions {
@@ -616,6 +631,14 @@ export async function startVoiceTurn(
             eventSink.onError(msg.userMessage);
           } else if (msg.type === "tool_use_start") {
             eventSink.onToolUse(msg.toolName, msg.input);
+          } else if (msg.type === "ui_surface_show") {
+            // Additive to the SSE broadcast above: also hand visual surfaces to
+            // the voice client so `ui_show` results render inline as cards.
+            opts.callbacks?.ui_surface_show?.(msg);
+          } else if (msg.type === "ui_surface_update") {
+            opts.callbacks?.ui_surface_update?.(msg);
+          } else if (msg.type === "ui_surface_dismiss") {
+            opts.callbacks?.ui_surface_dismiss?.(msg);
           }
           // Note: tool_use_preview_start is intentionally not handled here.
           // Voice only reacts to the definitive tool_use_start event.

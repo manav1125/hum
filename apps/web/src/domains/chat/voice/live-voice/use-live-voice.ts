@@ -494,6 +494,9 @@ export function useLiveVoice(
           session.interruptSent = false;
           const s = useLiveVoiceStore.getState();
           s.clearAssistantTranscript();
+          // Cards are per-turn and replace: drop the previous turn's stack so
+          // stale results don't pile up above the orb across turns.
+          s.clearCards();
           s.setState("thinking");
         }),
         client.on("assistantTextDelta", (frame) => {
@@ -523,6 +526,21 @@ export function useLiveVoice(
         client.on("archived", () => {
           if (!live()) return;
           // Persisted; nothing user-visible to do here.
+        }),
+        client.on("card", (frame) => {
+          if (!live()) return;
+          const s = useLiveVoiceStore.getState();
+          switch (frame.op) {
+            case "show":
+              s.showCard(frame);
+              return;
+            case "update":
+              s.updateCard(frame);
+              return;
+            case "dismiss":
+              s.dismissCard(frame.surfaceId);
+              return;
+          }
         }),
         client.on("busy", () => {
           if (!live()) return;

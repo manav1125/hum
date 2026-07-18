@@ -322,6 +322,51 @@ describe("server frame dispatch", () => {
     expect(got.archived).toHaveLength(1);
   });
 
+  test("dispatches a card frame to the card event", async () => {
+    const { client, ws } = await ready();
+
+    const cards: unknown[] = [];
+    client.on("card", (f) => cards.push(f));
+
+    ws.receive({
+      type: "card",
+      seq: 2,
+      op: "show",
+      surfaceId: "surface-1",
+      surfaceType: "list",
+      title: "Late-night spots",
+      data: { items: [{ id: "a", title: "Luigi's Hot Pizza" }] },
+      turnId: "t1",
+    });
+    ws.receive({
+      type: "card",
+      seq: 3,
+      op: "dismiss",
+      surfaceId: "surface-1",
+      turnId: "t1",
+    });
+
+    expect(cards).toEqual([
+      {
+        type: "card",
+        seq: 2,
+        op: "show",
+        surfaceId: "surface-1",
+        surfaceType: "list",
+        title: "Late-night spots",
+        data: { items: [{ id: "a", title: "Luigi's Hot Pizza" }] },
+        turnId: "t1",
+      },
+      {
+        type: "card",
+        seq: 3,
+        op: "dismiss",
+        surfaceId: "surface-1",
+        turnId: "t1",
+      },
+    ]);
+  });
+
   test("server error frame emits a protocol-error and closes", async () => {
     const { client, ws } = await ready();
     const errors: { reason: string; code?: string; message: string }[] = [];

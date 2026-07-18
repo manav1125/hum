@@ -206,6 +206,57 @@ describe("LiveVoiceSession assistant turn", () => {
     });
   });
 
+  test("forwards a ui_surface_show from the loop as a card frame", async () => {
+    const startVoiceTurn = mock(async (options: VoiceTurnOptions) => {
+      options.callbacks?.ui_surface_show?.({
+        type: "ui_surface_show",
+        conversationId: options.conversationId,
+        surfaceId: "surface-1",
+        surfaceType: "list",
+        title: "Late-night spots",
+        data: {
+          items: [{ id: "a", title: "Luigi's Hot Pizza" }],
+          selectionMode: "none",
+        },
+      });
+      options.callbacks?.message_complete?.({
+        type: "message_complete",
+        conversationId: options.conversationId,
+        messageId: "assistant-message-123",
+      });
+      return { turnId: "bridge-turn-1", abort: mock() };
+    });
+    const { frames, session, transcriber } = createSessionHarness({
+      startVoiceTurn,
+    });
+
+    await session.start();
+    transcriber.emit({ type: "final", text: "late night food" });
+    await session.handleClientFrame({ type: "ptt_release" });
+    await waitFor(() => frames.some((frame) => frame.type === "card"));
+
+    const cardFrame = frames.find((frame) => frame.type === "card");
+    expect(cardFrame).toMatchObject({
+      type: "card",
+      op: "show",
+      surfaceId: "surface-1",
+      surfaceType: "list",
+      title: "Late-night spots",
+      data: {
+        items: [{ id: "a", title: "Luigi's Hot Pizza" }],
+        selectionMode: "none",
+      },
+      turnId: "live-turn-1",
+    });
+    // The card is emitted after the `thinking` frame (during the turn), not before.
+    const cardIndex = frames.findIndex((frame) => frame.type === "card");
+    const thinkingIndex = frames.findIndex(
+      (frame) => frame.type === "thinking",
+    );
+    expect(thinkingIndex).toBeGreaterThanOrEqual(0);
+    expect(cardIndex).toBeGreaterThan(thinkingIndex);
+  });
+
   test("waits for transcriber closed before starting an assistant turn after release", async () => {
     const transcriber = new MockStreamingTranscriber();
     const startVoiceTurn = mock(async (_options: VoiceTurnOptions) => ({

@@ -25,6 +25,7 @@
 
 import { create } from "zustand";
 
+import type { LiveVoiceCardServerFrame } from "@/domains/chat/voice/live-voice/protocol";
 import { createSelectors } from "@/utils/create-selectors";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,21 @@ export type LiveVoiceSessionState =
   | "ending"
   | "failed";
 
+/**
+ * A visual result card surfaced during the current turn — the exact fields
+ * `SurfaceRouter` needs, carried verbatim from a `card` server frame. Ordered
+ * by first appearance and keyed by `surfaceId` (an `op:update` merges into the
+ * same entry; a new turn replaces the stack — see {@link LiveVoiceActions.clearCards}).
+ */
+export interface LiveVoiceCard {
+  surfaceId: string;
+  surfaceType: string;
+  title?: string;
+  data: Record<string, unknown>;
+  actions?: LiveVoiceCardServerFrame["actions"];
+  turnId?: string;
+}
+
 export interface LiveVoiceState {
   /** Current phase of the session lifecycle. */
   state: LiveVoiceSessionState;
@@ -74,6 +90,12 @@ export interface LiveVoiceState {
    * misleading mic prompt). `null` unless `state === "failed"`.
    */
   failureKind: "mic" | "session" | null;
+  /**
+   * Visual result cards for the current turn, ordered by first appearance.
+   * Replaced each turn (cleared on `thinking`) so the orb reflects one live
+   * exchange; the running history lives in the persisted chat thread.
+   */
+  cards: LiveVoiceCard[];
 }
 
 export interface LiveVoiceActions {
@@ -88,6 +110,14 @@ export interface LiveVoiceActions {
   setInputAmplitude: (amplitude: number) => void;
   /** Transition to `failed` with a message and a failure kind (default `session`). */
   fail: (message: string, kind?: "mic" | "session") => void;
+  /** Upsert a card by `surfaceId` (appends when new, replaces the entry when seen). */
+  showCard: (frame: LiveVoiceCardServerFrame) => void;
+  /** Merge `data` into an existing card by `surfaceId`; no-op if unknown. */
+  updateCard: (frame: LiveVoiceCardServerFrame) => void;
+  /** Remove a card by `surfaceId`. */
+  dismissCard: (surfaceId: string) => void;
+  /** Drop every card (called at the start of each new turn and on reset). */
+  clearCards: () => void;
   /** Reset every field back to the idle defaults. */
   reset: () => void;
 }
@@ -106,7 +136,20 @@ const INITIAL_STATE: LiveVoiceState = {
   inputAmplitude: 0,
   error: null,
   failureKind: null,
+  cards: [],
 };
+
+/** Build a `LiveVoiceCard` from a `card` server frame, defaulting opaque data. */
+function cardFromFrame(frame: LiveVoiceCardServerFrame): LiveVoiceCard {
+  return {
+    surfaceId: frame.surfaceId,
+    surfaceType: frame.surfaceType ?? "card",
+    title: frame.title,
+    data: frame.data ?? {},
+    actions: frame.actions,
+    turnId: frame.turnId,
+  };
+}
 
 const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
   ...INITIAL_STATE,
@@ -120,6 +163,33 @@ const useLiveVoiceStoreBase = create<LiveVoiceStore>()((set) => ({
   setInputAmplitude: (inputAmplitude) => set({ inputAmplitude }),
   fail: (message, kind = "session") =>
     set({ state: "failed", error: message, failureKind: kind }),
+  showCard: (frame) =>
+    set((s) => {
+      const card = cardFromFrame(frame);
+      const idx = s.cards.findIndex((c) => c.surfaceId === card.surfaceId);
+      if (idx === -1) return { cards: [...s.cards, card] };
+      const next = s.cards.slice();
+      next[idx] = card;
+      return { cards: next };
+    }),
+  updateCard: (frame) =>
+    set((s) => {
+      const idx = s.cards.findIndex((c) => c.surfaceId === frame.surfaceId);
+      if (idx === -1) return {};
+      const existing = s.cards[idx]!;
+      const next = s.cards.slice();
+      next[idx] = {
+        ...existing,
+        ...(frame.surfaceType ? { surfaceType: frame.surfaceType } : {}),
+        ...(frame.title !== undefined ? { title: frame.title } : {}),
+        data: { ...existing.data, ...(frame.data ?? {}) },
+        ...(frame.actions !== undefined ? { actions: frame.actions } : {}),
+      };
+      return { cards: next };
+    }),
+  dismissCard: (surfaceId) =>
+    set((s) => ({ cards: s.cards.filter((c) => c.surfaceId !== surfaceId) })),
+  clearCards: () => set({ cards: [] }),
   reset: () => set({ ...INITIAL_STATE }),
 }));
 
