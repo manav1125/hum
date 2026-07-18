@@ -21,11 +21,14 @@
         directly and this shell is never shown again.
 
         Design: "Gravity" (Claude Design) — the user's scattered tools fall into
-        orbit around the Cue ring. Animation is transform/opacity only, with a
-        prefers-reduced-motion fallback. The native server-origin load is the
+        orbit around the Cue ring; a comet circles while you wait; connecting is
+        a hyperspace pull that blooms into the app. Animation is transform /
+        opacity only (compositor); blurred auroras are STATIC textures that move.
+        Full prefers-reduced-motion fallback. Haptics (@capacitor/haptics) and
+        gyro parallax (deviceorientation) are progressive — guarded so they
+        no-op on web / when unavailable. The native server-origin load is the
         one piece not built yet; CueNative.connect() is the seam, and until it
-        lands the shell falls back to navigating (works in a browser + as a
-        stopgap).
+        lands the shell falls back to navigating (works in a browser + stopgap).
       */
       :root {
         --bg: #0b0b0f;
@@ -33,255 +36,513 @@
         --surface: #16161d;
         --surface-2: #1d1d26;
         --border: #2a2a35;
+        --hair: #22222c;
         --text: #f4f4f6;
         --muted: #9a9aa8;
+        --faint: #5b5b68;
         --accent: #3d6ee8;
         --accent-ink: #ffffff;
+        --accent-2: #7fa3f2;
+        --accent-3: #a79ff0;
+        --accent-4: #5f8aee;
+        --ring-stroke: var(--text);
         --good: #4bb57a;
         --danger: #e5675b;
+        /* button gradient (dark) */
+        --btn-grad: linear-gradient(160deg, #4e7cec, #3560cc);
+        --aurora-1: rgba(61, 110, 232, 0.3);
+        --aurora-2: rgba(127, 119, 221, 0.16);
       }
       @media (prefers-color-scheme: light) {
         :root {
           --bg: #f6f6f8;
-          --splash-bg: #eef0f4;
+          --splash-bg: #f6f6f8;
           --surface: #ffffff;
           --surface-2: #f0f1f4;
           --border: #e2e2e8;
+          --hair: #e2e2e8;
           --text: #17171c;
           --muted: #6a6a76;
+          --faint: #9a9aa8;
           --accent: #3d6ee8;
+          --accent-ink: #ffffff;
+          --ring-stroke: #17171c;
           --danger: #c4372b;
+          --btn-grad: linear-gradient(160deg, #4e7cec, #3560cc);
+          --aurora-1: rgba(61, 110, 232, 0.14);
+          --aurora-2: rgba(127, 119, 221, 0.09);
         }
       }
       * { box-sizing: border-box; }
       html, body {
         margin: 0; height: 100%; background: var(--bg); color: var(--text);
-        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, Roboto, sans-serif;
         -webkit-font-smoothing: antialiased; overflow: hidden;
       }
       #app { position: relative; height: 100%; width: 100%; }
+      .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 
       /* ---- screen router: one visible at a time ---- */
       .screen {
-        position: absolute; inset: 0; display: none;
+        position: absolute; inset: 0; display: none; overflow: hidden;
         flex-direction: column; align-items: center; justify-content: center;
         padding: max(28px, env(safe-area-inset-top)) 28px max(28px, env(safe-area-inset-bottom));
-        opacity: 0; transition: opacity 0.4s ease;
+        opacity: 0; transition: opacity 0.45s ease;
       }
       .screen[data-active] { display: flex; opacity: 1; }
-      .screen.splash { background: var(--splash-bg); justify-content: flex-end; gap: 0; }
-      .card { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; }
+      .screen.splash { background: var(--splash-bg); }
+      .card { position: relative; z-index: 2; width: 100%; max-width: 400px; display: flex; flex-direction: column; align-items: stretch; }
+      .card.center { align-items: center; text-align: center; }
 
-      /* ---- the Cue ring + orbit ---- */
-      .system { position: relative; width: 240px; height: 240px; display: grid; place-items: center; }
-      .system.dim { opacity: 0.5; transform: scale(0.82); }
-      .orbit {
-        position: absolute; inset: 0; border-radius: 50%;
-        border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+      /* ---- background layers (aurora + twinkle) — parallax FAR ---- */
+      .bg-layer { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; will-change: transform; }
+      .aurora { position: absolute; inset: -25%; }
+      .aurora.a1 { background: radial-gradient(40% 32% at 50% 45%, var(--aurora-1), transparent 68%); filter: blur(34px); animation: gvAur 11s ease-in-out infinite; }
+      .aurora.a2 { background: radial-gradient(30% 26% at 30% 70%, var(--aurora-2), transparent 70%); filter: blur(38px); animation: gvAur 14s ease-in-out 2s infinite reverse; }
+      .aurora.top { background: radial-gradient(44% 30% at 50% 12%, var(--aurora-1), transparent 70%); filter: blur(30px); animation: gvAur 13s ease-in-out infinite; }
+      .aurora.mid { background: radial-gradient(46% 38% at 50% 50%, var(--aurora-1), transparent 70%); filter: blur(32px); animation: gvAur 10s ease-in-out infinite; }
+      .twinkle { position: absolute; border-radius: 50%; background: #fff; animation: gvTwinkle 4s ease-in-out infinite; }
+
+      /* parallax wrappers get a JS-set translate + a smooth ease-out */
+      [data-par] { transition: transform 0.25s ease-out; will-change: transform; }
+
+      /* ---- the orbital system (Gravity) ---- */
+      .system { position: relative; width: 0; height: 0; }
+      .orbit-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(120, 150, 230, 0.16); }
+      .orbit-ring.dashed { border-style: dashed; border-color: rgba(120, 150, 230, 0.1); }
+      .spin { position: absolute; top: 0; left: 0; animation: gvSpin 26s linear infinite; }
+      .spin.rev { animation: gvSpinR 18s linear infinite; }
+      .spin.slow { animation: gvSpin 30s linear infinite; }
+      .chip {
+        display: flex; width: 30px; height: 30px; border-radius: 10px; align-items: center; justify-content: center;
+        background: rgba(22, 22, 29, 0.9); border: 1px solid var(--border);
+        box-shadow: 0 0 18px rgba(61, 110, 232, 0.25);
       }
-      .orbit.o2 { inset: 34px; border-color: color-mix(in srgb, var(--accent) 14%, transparent); }
-      .orbit-spin { position: absolute; inset: 0; animation: orbit 22s linear infinite; }
-      .orbit-spin.rev { animation: orbit-rev 30s linear infinite; }
-      @keyframes orbit { to { transform: rotate(360deg); } }
-      @keyframes orbit-rev { to { transform: rotate(-360deg); } }
-      .mote {
-        position: absolute; top: -4px; left: 50%; width: 8px; height: 8px; margin-left: -4px;
-        border-radius: 50%; background: var(--accent);
-        box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 70%, transparent);
-      }
-      .mote.sm { width: 5px; height: 5px; margin-left: -2.5px; opacity: 0.7; }
-      .ringmark { width: 96px; height: 96px; }
-      /* pathLength=360 lets the arc be specified in degrees regardless of r:
-         draw 260°, leave a 100° mouth, rotated so it opens to the lower-right
-         like the Cue "C". */
-      .ringmark circle {
-        fill: none; stroke: var(--text); stroke-width: 9; stroke-linecap: round;
-        stroke-dasharray: 260 360; transform: rotate(140deg); transform-origin: center;
-      }
-      .ringmark.draw circle { animation: draw 1.1s ease forwards; }
-      @keyframes draw { from { stroke-dashoffset: 260; } to { stroke-dashoffset: 0; } }
+      .chip svg { stroke: var(--accent-2); }
+      .arm { position: absolute; }
+      .fall { animation: gvFall2 9s cubic-bezier(.3,.7,.2,1) infinite; }
+      .counter { animation: gvSpinR 26s linear infinite; }
+      .mote { display: block; border-radius: 50%; }
+      .mote.m1 { width: 9px; height: 9px; background: var(--accent-2); box-shadow: 0 0 14px rgba(127,163,242,.9); }
+      .mote.m2 { width: 7px; height: 7px; background: var(--accent-3); box-shadow: 0 0 12px rgba(167,159,240,.9); }
+      .mote.m3 { width: 8px; height: 8px; background: var(--accent-4); box-shadow: 0 0 14px rgba(95,138,238,.9); }
+      .fallm { animation: gvFall 9s cubic-bezier(.3,.7,.2,1) infinite; }
+      .filament { position: absolute; top: -.5px; left: 66px; width: 80px; height: 1px; transform-origin: -66px center;
+        background: linear-gradient(90deg, rgba(127,163,242,.5), transparent); animation: gvFil 9s ease-in-out infinite; }
+
+      .core { position: absolute; }
+      .core-glow { position: absolute; inset: -30px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(61,110,232,.5), transparent 62%); filter: blur(20px);
+        animation: gvGlow 3.6s ease-in-out infinite; }
+      .breath { position: absolute; inset: 0; animation: gvBreathScale 5s ease-in-out infinite; }
+      .ring-svg { display: block; }
+      .ring-arc { fill: none; stroke: var(--ring-stroke); stroke-width: 42; stroke-linecap: round; stroke-dasharray: 707 236; }
+      .ring-dot { fill: var(--accent); }
+      /* first-run draw-on: arc traces itself, dot pops */
+      .draw .ring-arc { stroke-dashoffset: 707; animation: gvDraw 9s cubic-bezier(.55,0,.25,1) infinite; }
+      .draw .ring-dot { transform-origin: 392px 372px; animation: gvDot 9s ease-out infinite; }
+
+      /* ---- kinetic type ---- */
+      .kinetic { position: relative; width: 100%; height: 132px; text-align: center; margin-top: 22px; }
+      .kinetic > div { position: absolute; left: 0; right: 0; }
+      .kword { font-size: 31px; font-weight: 700; letter-spacing: -.7px; color: var(--text); }
+      .kw1 { animation: gvW1 9s cubic-bezier(.2,.8,.2,1) infinite; }
+      .kw2 { animation: gvW2 9s cubic-bezier(.2,.8,.2,1) infinite; }
+      .kw3 { animation: gvW3 9s cubic-bezier(.2,.8,.2,1) infinite; }
+      .kw4 { animation: gvW4 9s cubic-bezier(.2,.8,.2,1) infinite; }
+      .k-final { font-size: 38px; font-weight: 700; letter-spacing: -.9px;
+        background: linear-gradient(120deg, var(--text) 45%, var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .k-lede { font-size: 14.5px; color: var(--muted); margin-top: 10px; }
 
       /* ---- type ---- */
-      h1 { font-size: 26px; line-height: 1.12; letter-spacing: -0.02em; margin: 24px 0 8px; text-align: center; }
-      .sub { font-size: 15px; color: var(--muted); margin: 0; text-align: center; max-width: 30ch; }
+      h1 { font-size: 30px; line-height: 1.14; letter-spacing: -0.02em; margin: 0 0 10px; }
+      h1 .grad { background: linear-gradient(120deg, var(--text) 40%, var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .card.center h1 { text-align: center; }
+      .sub { font-size: 15.5px; color: var(--muted); margin: 0; line-height: 1.55; }
       .sub b { color: var(--text); font-weight: 600; }
-      .splash-word { font-size: 30px; font-weight: 700; letter-spacing: -0.03em; text-align: center; }
-      .splash-lede { font-size: 15px; color: var(--muted); margin: 8px 0 0; }
+
+      /* ---- glass sheet that carries the form ---- */
+      .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 40%; z-index: 1;
+        background: linear-gradient(180deg, rgba(11,11,15,0), rgba(11,11,15,.88) 18%, rgba(13,13,18,.96));
+        -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); pointer-events: none; }
+      @media (prefers-color-scheme: light) {
+        .sheet { background: linear-gradient(180deg, rgba(246,246,248,0), rgba(246,246,248,.9) 18%, rgba(246,246,248,.98)); }
+      }
+      .screen.bottom { justify-content: flex-end; }
+      .rise1 { animation: gvRise .9s cubic-bezier(.2,.8,.2,1) .1s both; }
+      .rise2 { animation: gvRise .9s cubic-bezier(.2,.8,.2,1) .3s both; }
+      .rise3 { animation: gvRise .9s cubic-bezier(.2,.8,.2,1) .5s both; }
 
       /* ---- form ---- */
-      .field { width: 100%; margin-top: 22px; }
-      .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+      .field { margin-top: 26px; }
+      .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; letter-spacing: .02em; }
       .input {
-        width: 100%; padding: 15px 16px; border-radius: 13px; font-size: 16px;
-        background: var(--surface); border: 1px solid var(--border); color: var(--text); outline: none;
+        width: 100%; padding: 16px 17px; border-radius: 17px; font-size: 16px;
+        background: rgba(22, 22, 29, 0.85); border: 1.5px solid var(--border); color: var(--text); outline: none;
         transition: border-color 0.15s, box-shadow 0.15s;
       }
-      .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
-      .input::placeholder { color: var(--muted); }
+      @media (prefers-color-scheme: light) { .input { background: var(--surface); } }
+      .input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(61,110,232,.15), 0 16px 40px -16px rgba(61,110,232,.4); }
+      .input::placeholder { color: var(--faint); }
       .suffix-wrap { display: flex; align-items: stretch; }
-      .suffix-wrap .input { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; text-align: right; }
+      .suffix-wrap .input { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; }
       .suffix {
-        display: flex; align-items: center; padding: 0 14px; font-size: 15px; color: var(--muted);
-        background: var(--surface-2); border: 1px solid var(--border);
-        border-top-right-radius: 13px; border-bottom-right-radius: 13px;
+        display: flex; align-items: center; padding: 0 15px; font-size: 16px; color: var(--faint);
+        background: var(--surface-2); border: 1.5px solid var(--border); border-left: 0;
+        border-top-right-radius: 17px; border-bottom-right-radius: 17px;
       }
+
       .btn {
-        position: relative; overflow: hidden; width: 100%; margin-top: 18px; padding: 15px 16px;
-        border-radius: 13px; border: none; font-size: 16px; font-weight: 650; cursor: pointer;
-        background: var(--accent); color: var(--accent-ink);
+        position: relative; overflow: hidden; width: 100%; margin-top: 14px; padding: 17px;
+        border-radius: 17px; border: none; font-size: 16.5px; font-weight: 600; font-family: inherit; cursor: pointer;
+        background: var(--btn-grad); color: var(--accent-ink); box-shadow: 0 18px 44px -14px rgba(61,110,232,.55);
+        -webkit-appearance: none; touch-action: manipulation;
       }
-      .btn[disabled] { opacity: 0.5; cursor: default; }
-      .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-      .btn.wide { max-width: 380px; }
+      .btn[disabled] { opacity: 0.5; cursor: default; box-shadow: none; }
+      .btn.light { background: var(--text); color: var(--splash-bg); box-shadow: 0 10px 40px -8px rgba(244,244,246,.3); }
+      @media (prefers-color-scheme: light) { .btn.light { background: #17171c; color: #fff; box-shadow: 0 12px 34px -12px rgba(23,23,28,.4); } }
+      .btn.ghost { background: rgba(22,22,29,.8); color: var(--muted); border: 1px solid var(--border); box-shadow: none; font-weight: 600; }
+      @media (prefers-color-scheme: light) { .btn.ghost { background: var(--surface); } }
       /* sheen sweep on the primary button */
-      .btn.primary::after {
-        content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
-        background: linear-gradient(100deg, transparent, rgba(255,255,255,0.28), transparent);
-        transform: skewX(-18deg); animation: sheen 3.6s ease-in-out infinite;
-      }
-      @keyframes sheen { 0%, 55% { left: -60%; } 78%, 100% { left: 130%; } }
-      .linkrow { margin-top: 18px; text-align: center; }
-      .link { font-size: 14px; font-weight: 550; color: var(--accent); background: none; border: none; cursor: pointer; }
-      .muted-link { font-size: 14px; color: var(--muted); background: none; border: none; cursor: pointer; }
-      #signin-error, #manual-error { color: var(--danger); font-size: 14px; min-height: 1.2em; margin: 10px 0 0; text-align: center; }
+      .btn .sheen { position: absolute; top: 0; bottom: 0; width: 56px;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent); animation: gvSheen 3.6s ease 1.6s infinite; }
+      .btn.light .sheen { background: linear-gradient(90deg, transparent, rgba(61,110,232,.25), transparent); }
 
-      /* ---- check email ---- */
-      .envelope { position: relative; width: 200px; height: 120px; display: grid; place-items: center; }
-      .env-glyph { font-size: 44px; }
-      .comet {
-        position: absolute; inset: 0; animation: orbit 2.6s linear infinite;
-      }
-      .comet .head {
-        position: absolute; top: 8px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
-        background: var(--accent); box-shadow: 0 0 12px 2px color-mix(in srgb, var(--accent) 80%, transparent);
-      }
-      .chip {
-        display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; padding: 8px 14px;
-        border-radius: 999px; font-size: 13px; font-weight: 550;
-        background: var(--surface); border: 1px solid var(--border); color: var(--muted);
-      }
-      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); animation: pulse 1.6s ease-in-out infinite; }
-      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      .linkrow { text-align: center; margin-top: 20px; }
+      .muted-link { font-size: 14px; color: var(--muted); background: none; border: none; border-bottom: 1px solid var(--border);
+        padding: 0 0 2px; cursor: pointer; font-family: inherit; }
+      .link { font-size: 14px; color: var(--muted); background: none; border: none; cursor: pointer; font-family: inherit; }
+      .accent-link { color: var(--accent-2); font-weight: 600; }
+      #signin-error, #manual-error { color: var(--danger); font-size: 14px; min-height: 1.2em; margin: 10px 0 0; }
 
-      /* ---- connecting ---- */
-      .streaks { position: absolute; inset: 0; overflow: hidden; }
-      .streak {
-        position: absolute; left: 50%; top: 50%; width: 2px; height: 80px;
-        background: linear-gradient(var(--accent), transparent);
-        transform-origin: top center; opacity: 0; animation: streak 1.2s ease-in infinite;
-      }
-      @keyframes streak {
-        0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--a)) translateY(30px) scaleY(0.4); }
-        40% { opacity: 0.8; }
-        100% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--a)) translateY(150px) scaleY(1.4); }
-      }
-      .progress { width: 200px; height: 4px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 22px; }
-      .progress > i { display: block; height: 100%; width: 0%; border-radius: 3px; background: var(--accent); transition: width 0.5s ease; }
-      .status { font-size: 14px; color: var(--muted); margin-top: 14px; min-height: 1.2em; }
+      /* ---- check email: comet + envelope ---- */
+      .comet-stage { position: relative; width: 210px; height: 210px; margin: 0 auto 8px; }
+      .comet-stage .guide { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(120,150,230,.18); }
+      .comet-stage .guide.inner { inset: 22px; border-style: dashed; border-color: rgba(120,150,230,.1); }
+      .comet { position: absolute; top: 50%; left: 50%; width: 0; height: 0; animation: gvSpin 2.6s linear infinite; }
+      .comet .tail { position: absolute; top: -1px; left: 69px; width: 36px; height: 2.5px; border-radius: 99px;
+        background: linear-gradient(90deg, transparent, rgba(127,163,242,.9)); }
+      .comet .head { position: absolute; top: -4px; left: 101px; width: 9px; height: 9px; border-radius: 50%;
+        background: #cfe0ff; box-shadow: 0 0 16px 4px rgba(127,163,242,.75); }
+      .env-core { position: absolute; inset: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(160deg, var(--surface-2), #101016); border: 1px solid var(--border); box-shadow: 0 24px 50px -20px rgba(0,0,0,.85); }
+      @media (prefers-color-scheme: light) { .env-core { background: linear-gradient(160deg, #fff, #eef0f4); box-shadow: 0 24px 50px -24px rgba(23,23,28,.25); } }
+
+      /* ---- connecting: streaks + sweep ring + bloom ---- */
+      .streaks { position: absolute; top: 50%; left: 50%; width: 0; height: 0; z-index: 1; }
+      .streak-wrap { position: absolute; }
+      .streak { position: absolute; top: -1px; left: 0; width: 70px; height: 2px; border-radius: 99px;
+        transform-origin: left center; opacity: 0;
+        background: linear-gradient(90deg, rgba(127,163,242,.9), transparent);
+        animation: gvStreak 1.9s cubic-bezier(.5,0,.8,.4) infinite; }
+      .sweep-stage { position: relative; width: 128px; height: 128px; margin: 0 auto; }
+      .sweep-svg { position: relative; display: block; }
+      .sweep-track { fill: none; stroke: #191922; stroke-width: 4.5; }
+      @media (prefers-color-scheme: light) { .sweep-track { stroke: #e2e2e8; } }
+      .sweep-arc { fill: none; stroke: var(--accent); stroke-width: 4.5; stroke-linecap: round;
+        stroke-dasharray: 200; stroke-dashoffset: 200; filter: drop-shadow(0 0 6px rgba(61,110,232,.7));
+        transition: stroke-dashoffset 0.5s ease; }
+      .sweep-core { position: absolute; inset: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(160deg, var(--surface-2), #101016); border: 1px solid var(--border); }
+      @media (prefers-color-scheme: light) { .sweep-core { background: linear-gradient(160deg, #fff, #eef0f4); } }
+      .bloom { position: absolute; inset: 0; border-radius: 50%; background: rgba(61,110,232,.55); filter: blur(8px); opacity: 0; }
+      .bloom.go { animation: gvBloomOnce 1s cubic-bezier(.4,0,.6,1) forwards; }
+      .status-stack { position: relative; width: 100%; height: 26px; margin-top: 12px; }
+      .status { position: absolute; left: 0; right: 0; font-size: 15px; color: var(--muted); }
       .status b { color: var(--good); }
+      .conn-host { font-size: 12.5px; color: var(--faint); margin-top: 20px; min-height: 1.1em; }
 
+      /* ---- errors ---- */
+      .err-visual { position: relative; width: 150px; height: 150px; margin: 0 auto 28px; display: none; }
+      .error[data-kind="link_expired"] .err-visual.expired,
+      .error[data-kind="not_recognised"] .err-visual.notfound,
+      .error[data-kind="offline"] .err-visual.offline,
+      .error:not([data-kind]) .err-visual.expired { display: grid; place-items: center; }
+      .err-orbit { position: absolute; inset: 0; border-radius: 50%; }
+      .err-orbit.dashed { border: 1px dashed rgba(229,103,91,.35); }
+      .err-orbit.dim { border: 1px solid rgba(120,150,230,.12); }
+      .err-orbit.grey { border: 1px solid rgba(154,154,168,.18); }
+      .err-tail { position: absolute; top: 16px; right: 8px; width: 22px; height: 2px; border-radius: 99px;
+        background: linear-gradient(90deg, transparent, rgba(229,103,91,.5)); transform: rotate(-28deg); opacity: .6; }
+      .err-frozen-dot { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+      .err-core { position: absolute; inset: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(160deg, var(--surface-2), #101016); border: 1px solid var(--border); }
+      @media (prefers-color-scheme: light) { .err-core { background: linear-gradient(160deg, #fff, #eef0f4); } }
+      #error-echo { display: none; align-items: center; justify-content: center; gap: 10px; margin-top: 22px;
+        background: rgba(22,22,29,.85); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+      @media (prefers-color-scheme: light) { #error-echo { background: var(--surface); } }
+      .error[data-kind="not_recognised"] #error-echo { display: flex; }
+      #error-echo .val { font-size: 15.5px; color: var(--text); }
+
+      /* the settled/idle system used on sign-in, manual, errors is dimmer */
+      .system.idle { opacity: .85; }
+
+      /* ================= reduced motion ================= */
       @media (prefers-reduced-motion: reduce) {
-        .orbit-spin, .orbit-spin.rev, .comet, .streak, .btn.primary::after, .dot, .ringmark.draw circle { animation: none !important; }
-        .screen { transition: none; }
+        .screen { transition: opacity .2s ease; }
+        .aurora, .spin, .spin.rev, .spin.slow, .counter, .fall, .fallm, .filament,
+        .comet, .streak, .btn .sheen, .core-glow, .breath, .twinkle,
+        .kw1, .kw2, .kw3, .kw4, .caret { animation: none !important; }
+        /* compose the orbit to a settled mid-state */
+        .draw .ring-arc { stroke-dashoffset: 0; }
+        .draw .ring-dot { transform: none; opacity: 1; }
+        /* kinetic type freezes to the final line only */
+        .kw1, .kw2, .kw3 { opacity: 0; }
+        .kw4 { opacity: 1; transform: none; }
+        .rise1, .rise2, .rise3 { animation: gvFade .2s ease both; }
+        .bloom.go { animation: none; opacity: 0; }
+        .sweep-arc { transition: none; }
       }
+
+      /* ================= keyframes (transform / opacity only) ================= */
+      @keyframes gvSpin { to { transform: rotate(360deg); } }
+      @keyframes gvSpinR { to { transform: rotate(-360deg); } }
+      @keyframes gvFall { 0% { transform: translateX(330px) scale(.6); opacity: 0; } 12% { opacity: 1; } 55% { transform: translateX(108px) scale(1); opacity: 1; } 100% { transform: translateX(108px) scale(1); opacity: 1; } }
+      @keyframes gvFall2 { 0% { transform: translateX(360px) scale(.6); opacity: 0; } 14% { opacity: .9; } 60% { transform: translateX(150px) scale(1); opacity: .9; } 100% { transform: translateX(150px) scale(1); opacity: .9; } }
+      @keyframes gvDraw { 0%, 18% { stroke-dashoffset: 707; } 62% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+      @keyframes gvDot { 0%, 58% { opacity: 0; transform: scale(0); } 68% { opacity: 1; transform: scale(1.6); } 76%, 100% { opacity: 1; transform: scale(1); } }
+      @keyframes gvW1 { 0%, 9% { opacity: 0; transform: translateY(30px) scale(1.06); } 15%, 22% { opacity: 1; transform: translateY(0) scale(1); } 28%, 100% { opacity: 0; transform: translateY(-26px) scale(.96); } }
+      @keyframes gvW2 { 0%, 31% { opacity: 0; transform: translateY(30px) scale(1.06); } 37%, 44% { opacity: 1; transform: translateY(0) scale(1); } 50%, 100% { opacity: 0; transform: translateY(-26px) scale(.96); } }
+      @keyframes gvW3 { 0%, 53% { opacity: 0; transform: translateY(30px) scale(1.06); } 59%, 66% { opacity: 1; transform: translateY(0) scale(1); } 72%, 100% { opacity: 0; transform: translateY(-26px) scale(.96); } }
+      @keyframes gvW4 { 0%, 75% { opacity: 0; transform: translateY(30px) scale(1.08); } 83%, 96% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-10px) scale(.98); } }
+      @keyframes gvFil { 0%, 55% { opacity: 0; } 68%, 86% { opacity: 1; } 100% { opacity: 0; } }
+      @keyframes gvSt1 { 0% { opacity: 0; transform: translateY(10px); } 6%, 26% { opacity: 1; transform: translateY(0); } 33%, 100% { opacity: 0; transform: translateY(-10px); } }
+      @keyframes gvSt2 { 0%, 33% { opacity: 0; transform: translateY(10px); } 40%, 60% { opacity: 1; transform: translateY(0); } 67%, 100% { opacity: 0; transform: translateY(-10px); } }
+      @keyframes gvSt3 { 0%, 67% { opacity: 0; transform: translateY(10px); } 74%, 94% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-10px); } }
+      @keyframes gvRise { 0% { opacity: 0; transform: translateY(26px); } 100% { opacity: 1; transform: translateY(0); } }
+      @keyframes gvFade { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes gvGlow { 0%, 100% { opacity: .45; transform: scale(1); } 50% { opacity: 1; transform: scale(1.22); } }
+      @keyframes gvAur { 0%, 100% { transform: translate(-10%, -5%) scale(1) rotate(0deg); } 50% { transform: translate(8%, 7%) scale(1.3) rotate(8deg); } }
+      @keyframes gvStreak { 0% { transform: translateX(300px) scaleX(.3); opacity: 0; } 10% { opacity: 1; } 70% { transform: translateX(30px) scaleX(1.4); opacity: .9; } 100% { transform: translateX(-10px) scaleX(.2); opacity: 0; } }
+      @keyframes gvBloomOnce { 0% { transform: scale(.9); opacity: 0; } 12% { opacity: .7; } 100% { transform: scale(12); opacity: 0; } }
+      @keyframes gvCaret { 0%, 45% { opacity: 1; } 50%, 95% { opacity: 0; } 100% { opacity: 1; } }
+      @keyframes gvSheen { 0% { transform: translateX(-160%) skewX(-18deg); } 55%, 100% { transform: translateX(220%) skewX(-18deg); } }
+      @keyframes gvBreathScale { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+      @keyframes gvTwinkle { 0%, 100% { opacity: .1; } 50% { opacity: .8; } }
     </style>
   </head>
   <body>
     <div id="app">
-      <!-- S · Splash (signed-out first run only) -->
+      <!-- S · Splash (signed-out first run only) — chaos falls into orbit -->
       <section class="screen splash" data-screen="splash">
-        <div class="system" style="margin-bottom: 8px;">
-          <div class="orbit"></div><div class="orbit o2"></div>
-          <div class="orbit-spin"><span class="mote"></span></div>
-          <div class="orbit-spin rev" style="inset:34px"><span class="mote sm"></span></div>
-          <svg class="ringmark draw" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" /></svg>
+        <div class="bg-layer" data-par="far" aria-hidden="true">
+          <div class="aurora a1"></div>
+          <div class="aurora a2"></div>
+          <span class="twinkle" style="top:14%;left:18%;width:2px;height:2px;animation-duration:3.4s"></span>
+          <span class="twinkle" style="top:22%;left:80%;width:1.5px;height:1.5px;background:#9db9f5;animation-delay:.9s;animation-duration:4.2s"></span>
+          <span class="twinkle" style="top:70%;left:12%;width:1.5px;height:1.5px;animation-delay:1.6s;animation-duration:3.8s"></span>
+          <span class="twinkle" style="top:80%;left:74%;width:2px;height:2px;background:#9db9f5;animation-delay:.4s;animation-duration:4.6s"></span>
+          <span class="twinkle" style="top:8%;left:52%;width:1.5px;height:1.5px;animation-delay:2.2s;animation-duration:5s"></span>
         </div>
-        <div class="splash-word" id="splash-word">One Cue.</div>
-        <p class="splash-lede">Already in motion, before you ask.</p>
-        <button class="btn primary wide" style="margin-top: 40px;" id="splash-go">Get started</button>
+
+        <div class="card center" style="flex:1; justify-content:center;">
+          <!-- orbital system — parallax NEAR -->
+          <div data-par="near" style="height:280px; display:grid; place-items:center;">
+            <div class="system">
+              <span class="orbit-ring" style="top:-108px;left:-108px;width:216px;height:216px;animation:gvRise 1s ease 4.5s both"></span>
+              <span class="orbit-ring dashed" style="top:-150px;left:-150px;width:300px;height:300px;animation:gvRise 1s ease 5s both"></span>
+              <!-- outer shell: 4 app chips falling into orbit -->
+              <div class="spin">
+                <div class="arm" style="transform:rotate(15deg)"><div class="fall"><span class="chip counter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5L12 13l8.5-6.5"/></svg></span></div></div>
+                <div class="arm" style="transform:rotate(105deg)"><div class="fall" style="animation-delay:.5s"><span class="chip counter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M8 3v4M16 3v4"/></svg></span></div></div>
+                <div class="arm" style="transform:rotate(195deg)"><div class="fall" style="animation-delay:.9s"><span class="chip counter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.6 0-3.1-.4-4.4-1.2L3 20l1.2-5.1A8.5 8.5 0 1 1 21 11.5z"/></svg></span></div></div>
+                <div class="arm" style="transform:rotate(285deg)"><div class="fall" style="animation-delay:1.3s"><span class="chip counter"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="#9db9f5" stroke="none"/><circle cx="4.5" cy="12" r="1.2" fill="#9db9f5" stroke="none"/><circle cx="4.5" cy="18" r="1.2" fill="#9db9f5" stroke="none"/></svg></span></div></div>
+              </div>
+              <!-- inner shell: 3 motes, counter-rotating -->
+              <div class="spin rev">
+                <div class="arm" style="transform:rotate(60deg)"><div class="fallm" style="animation-delay:.3s"><span class="mote m1"></span></div></div>
+                <div class="arm" style="transform:rotate(180deg)"><div class="fallm" style="animation-delay:.7s"><span class="mote m2"></span></div></div>
+                <div class="arm" style="transform:rotate(300deg)"><div class="fallm" style="animation-delay:1.1s"><span class="mote m3"></span></div></div>
+              </div>
+              <!-- gravity filaments: chips feed the core once captured -->
+              <div class="spin">
+                <span class="filament" style="transform:rotate(15deg)"></span>
+                <span class="filament" style="transform:rotate(105deg);animation-delay:.5s"></span>
+                <span class="filament" style="transform:rotate(195deg);animation-delay:.9s"></span>
+                <span class="filament" style="transform:rotate(285deg);animation-delay:1.3s"></span>
+              </div>
+              <!-- the ring core (draws itself, dot pops) -->
+              <div class="core draw" style="top:-62px;left:-62px;width:124px;height:124px">
+                <span class="core-glow"></span>
+                <div class="breath">
+                  <svg class="ring-svg" width="124" height="124" viewBox="0 0 512 512">
+                    <circle class="ring-arc" cx="232" cy="256" r="150" transform="rotate(42 232 256)" />
+                    <circle class="ring-dot" cx="392" cy="372" r="32" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- kinetic type: the beats -->
+          <div class="kinetic">
+            <div class="kword kw1">Your inbox.</div>
+            <div class="kword kw2">Your meetings.</div>
+            <div class="kword kw3">Your commitments.</div>
+            <div class="kw4">
+              <div class="k-final">One Cue.</div>
+              <div class="k-lede">Already in motion, before you ask.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="animation:gvRise 1s cubic-bezier(.2,.8,.2,1) 6.4s both;">
+          <button class="btn light" id="splash-go" type="button">Get started<span class="sheen" style="animation:gvSheen 3.2s ease 7.4s infinite"></span></button>
+        </div>
+        <p style="position:absolute;top:14px;left:0;right:0;text-align:center;font-size:12px;color:var(--faint);z-index:3;pointer-events:none;">Tap anywhere to continue</p>
       </section>
 
-      <!-- A · Sign in -->
-      <section class="screen" data-screen="signin">
-        <div class="card">
-          <div class="system dim">
-            <div class="orbit"></div><div class="orbit o2"></div>
-            <div class="orbit-spin"><span class="mote"></span></div>
-            <div class="orbit-spin rev" style="inset:34px"><span class="mote sm"></span></div>
-            <svg class="ringmark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" /></svg>
+      <!-- A · Sign in — the system idles behind the glass -->
+      <section class="screen bottom" data-screen="signin">
+        <div class="bg-layer" data-par="far" aria-hidden="true"><div class="aurora top"></div></div>
+        <!-- idle orbital system, dimmed, upper third -->
+        <div data-par="near" aria-hidden="true" style="position:absolute;top:22%;left:50%;z-index:0;">
+          <div class="system idle">
+            <span class="orbit-ring" style="top:-78px;left:-78px;width:156px;height:156px"></span>
+            <div class="spin slow">
+              <div class="arm" style="transform:rotate(30deg) translateX(78px)"><span class="mote m1" style="width:6px;height:6px"></span></div>
+              <div class="arm" style="transform:rotate(160deg) translateX(78px)"><span class="mote m2" style="width:5px;height:5px"></span></div>
+              <div class="arm" style="transform:rotate(265deg) translateX(78px)"><span class="mote m3" style="width:5px;height:5px"></span></div>
+            </div>
+            <div class="core" style="top:-44px;left:-44px;width:88px;height:88px">
+              <span class="core-glow" style="inset:-18px;filter:blur(14px)"></span>
+              <svg class="ring-svg" width="88" height="88" viewBox="0 0 512 512" style="position:relative"><circle class="ring-arc" cx="232" cy="256" r="150" transform="rotate(42 232 256)"/><circle class="ring-dot" cx="392" cy="372" r="32"/></svg>
+            </div>
           </div>
-          <h1>Sign in to Cue</h1>
-          <p class="sub">Enter your email and we'll send you a secure sign-in link.</p>
-          <form class="field" id="signin-form" novalidate>
+        </div>
+        <div class="sheet" aria-hidden="true"></div>
+        <div class="card">
+          <div class="rise1">
+            <h1>Welcome.<br><span class="grad">This one's yours.</span></h1>
+            <p class="sub">Your private Cue is waiting. Enter your email and we'll send a secure sign-in link.</p>
+          </div>
+          <form class="field rise2" id="signin-form" novalidate>
             <label for="email">Email</label>
             <input class="input" id="email" type="email" inputmode="email" autocomplete="email"
               autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="you@example.com" />
             <p id="signin-error"></p>
-            <button class="btn primary" id="signin-go" type="submit">Send sign-in link</button>
+            <button class="btn" id="signin-go" type="submit">Send sign-in link<span class="sheen"></span></button>
+            <div class="linkrow"><button type="button" class="muted-link" data-goto="manual">Enter your Cue address instead</button></div>
           </form>
-          <div class="linkrow"><button class="muted-link" data-goto="manual">Enter your Cue address instead</button></div>
         </div>
       </section>
 
-      <!-- B · Check email -->
+      <!-- B · Check email — your link is a comet -->
       <section class="screen" data-screen="check">
-        <div class="card">
-          <div class="envelope">
-            <div class="comet"><span class="head"></span></div>
-            <div class="env-glyph">✉️</div>
+        <div class="bg-layer" data-par="far" aria-hidden="true"><div class="aurora mid"></div></div>
+        <div class="card center">
+          <div data-par="near">
+            <div class="comet-stage">
+              <span class="guide"></span>
+              <span class="guide inner"></span>
+              <div class="comet"><span class="tail"></span><span class="head"></span></div>
+              <span class="env-core">
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 6.5L12 13l8.5-6.5"/></svg>
+              </span>
+            </div>
           </div>
-          <h1>Check your email</h1>
-          <p class="sub">We sent a sign-in link to <b id="check-email">you</b>. Open it on this phone and you'll drop straight into your Cue.</p>
-          <div class="chip"><span class="dot"></span> Waiting for you to tap the link</div>
-          <button class="btn secondary" id="resend" style="margin-top: 22px;">Resend link</button>
-          <div class="linkrow"><button class="muted-link" data-goto="signin">Use a different email</button></div>
+          <div class="rise1">
+            <h1>Your link is in flight</h1>
+            <p class="sub">Sent to <b id="check-email">you</b>. Tap it on this phone and you'll drop straight into your Cue.</p>
+          </div>
+          <div class="rise2" style="width:100%;margin-top:30px;">
+            <button class="btn light" id="open-mail" type="button">Open Mail</button>
+            <button class="btn ghost" id="resend" type="button">Resend link</button>
+            <div class="linkrow"><button type="button" class="muted-link" data-goto="signin">Use a different email</button></div>
+          </div>
         </div>
       </section>
 
-      <!-- C · Connecting -->
+      <!-- C · Connecting — the pull, then the bloom -->
       <section class="screen" data-screen="connecting">
+        <div class="bg-layer" aria-hidden="true"><div class="aurora mid"></div></div>
         <div class="streaks" id="streaks" aria-hidden="true"></div>
-        <div class="card">
-          <div class="system">
-            <div class="orbit-spin"><span class="mote"></span></div>
-            <svg class="ringmark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" /></svg>
+        <div class="card center">
+          <div class="sweep-stage">
+            <span class="bloom" id="bloom"></span>
+            <svg class="sweep-svg" width="128" height="128" viewBox="0 0 64 64">
+              <circle class="sweep-track" cx="32" cy="32" r="27" />
+              <circle class="sweep-arc" id="progress-bar" cx="32" cy="32" r="27" transform="rotate(-90 32 32)" />
+            </svg>
+            <span class="sweep-core">
+              <svg width="44" height="44" viewBox="0 0 512 512"><circle class="ring-arc" cx="232" cy="256" r="150" transform="rotate(42 232 256)"/><circle class="ring-dot" cx="392" cy="372" r="32"/></svg>
+            </span>
           </div>
-          <h1 id="connecting-title">Connecting to your Cue…</h1>
-          <div class="progress"><i id="progress-bar"></i></div>
-          <p class="status" id="connecting-status">Verifying your link</p>
+          <h1 id="connecting-title" style="margin-top:38px;">Opening your Cue…</h1>
+          <div class="status-stack">
+            <p class="status" id="connecting-status">Verifying your link</p>
+          </div>
+          <div class="conn-host mono" id="connecting-host"></div>
         </div>
       </section>
 
-      <!-- D · Error -->
-      <section class="screen" data-screen="error">
-        <div class="card">
-          <div class="system dim">
-            <div class="orbit" style="border-style: dashed;"></div>
-            <svg class="ringmark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" style="stroke: var(--muted);" /></svg>
+      <!-- D · Error (kind set via data-kind: link_expired | not_recognised | offline) -->
+      <section class="screen error" data-screen="error">
+        <div class="bg-layer" aria-hidden="true"><div class="aurora mid" style="--aurora-1:rgba(120,150,230,.1)"></div></div>
+        <div class="card center">
+          <!-- expired: decayed dashed orbit + burnt tail, clock -->
+          <div class="err-visual expired">
+            <span class="err-orbit dashed"></span>
+            <span class="err-tail"></span>
+            <span class="err-core"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg></span>
           </div>
-          <h1 id="error-title">Something went wrong</h1>
-          <p class="sub" id="error-body">Let's try that again.</p>
-          <button class="btn primary" id="error-primary">Try again</button>
-          <div class="linkrow"><button class="muted-link" data-goto="signin">Use a different email</button></div>
+          <!-- not recognised: empty motionless orbit, magnifier -->
+          <div class="err-visual notfound">
+            <span class="err-orbit dim"></span>
+            <span class="err-core"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg></span>
+          </div>
+          <!-- offline: frozen system, grey dots, wifi-slash -->
+          <div class="err-visual offline">
+            <span class="err-orbit grey"></span>
+            <span class="err-frozen-dot" style="top:12px;left:50%;transform:translateX(-50%)"></span>
+            <span class="err-frozen-dot" style="bottom:22px;left:22px;width:5px;height:5px"></span>
+            <span class="err-core"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.7" stroke-linecap="round"><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="var(--muted)" stroke="none"/><path d="M3 3l18 18" stroke="var(--danger)"/></svg></span>
+          </div>
+
+          <div class="rise1">
+            <h1 id="error-title">Something went wrong</h1>
+            <p class="sub" id="error-body">Let's try that again.</p>
+          </div>
+          <div id="error-echo"><span class="val" id="error-echo-val"></span><button type="button" class="link accent-link" data-goto="signin">Edit</button></div>
+          <div class="rise2" style="width:100%;">
+            <button class="btn" id="error-primary" type="button">Try again<span class="sheen"></span></button>
+            <div class="linkrow"><button type="button" class="muted-link" data-goto="signin">Use a different email</button></div>
+          </div>
         </div>
       </section>
 
-      <!-- E · Manual address -->
-      <section class="screen" data-screen="manual">
+      <!-- E · Manual address — you know the way -->
+      <section class="screen bottom" data-screen="manual">
+        <div class="bg-layer" data-par="far" aria-hidden="true"><div class="aurora top" style="--aurora-1:rgba(61,110,232,.2)"></div></div>
+        <div data-par="near" aria-hidden="true" style="position:absolute;top:20%;left:50%;z-index:0;opacity:.7;">
+          <div class="system idle">
+            <span class="orbit-ring" style="top:-64px;left:-64px;width:128px;height:128px"></span>
+            <div class="spin slow">
+              <div class="arm" style="transform:rotate(80deg) translateX(64px)"><span class="mote m1" style="width:5px;height:5px"></span></div>
+              <div class="arm" style="transform:rotate(230deg) translateX(64px)"><span class="mote m2" style="width:4px;height:4px"></span></div>
+            </div>
+            <div class="core" style="top:-34px;left:-34px;width:68px;height:68px">
+              <svg class="ring-svg" width="68" height="68" viewBox="0 0 512 512"><circle class="ring-arc" cx="232" cy="256" r="150" transform="rotate(42 232 256)"/><circle class="ring-dot" cx="392" cy="372" r="32"/></svg>
+            </div>
+          </div>
+        </div>
+        <div class="sheet" aria-hidden="true"></div>
         <div class="card">
-          <h1>Enter your Cue address</h1>
-          <p class="sub">Use this if you already know your Cue's web address.</p>
-          <form class="field" id="manual-form" novalidate>
+          <div class="rise1">
+            <h1>You know the way.</h1>
+            <p class="sub">Enter your Cue's web address and we'll take you straight there.</p>
+          </div>
+          <form class="field rise2" id="manual-form" novalidate>
             <label for="addr">Cue address</label>
             <div class="suffix-wrap">
-              <input class="input" id="addr" inputmode="url" autocapitalize="off" autocorrect="off"
+              <input class="input mono" id="addr" inputmode="url" autocapitalize="off" autocorrect="off"
                 spellcheck="false" placeholder="cue-you" />
-              <span class="suffix">.justcue.app</span>
+              <span class="suffix mono">.justcue.app</span>
             </div>
             <p id="manual-error"></p>
-            <button class="btn primary" type="submit">Connect</button>
+            <button class="btn" type="submit">Connect</button>
+            <div class="linkrow"><button type="button" class="link" data-goto="signin">← Back to email sign-in</button></div>
           </form>
-          <div class="linkrow"><button class="link" data-goto="signin">← Back to email sign-in</button></div>
         </div>
       </section>
     </div>
@@ -319,6 +580,53 @@
           catch (e) { return u; }
         }
 
+        // ---- haptics (sensory map) ------------------------------------
+        // @capacitor/haptics is bridged natively; on web / when the plugin is
+        // absent every call is a guarded no-op. Impact styles + notification
+        // types are the plugin's string enums.
+        function hapticsPlugin() {
+          try { return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) || null; }
+          catch (e) { return null; }
+        }
+        function hImpact(style) { var h = hapticsPlugin(); if (h && h.impact) { try { h.impact({ style: style }); } catch (e) {} } }
+        function hLight() { hImpact("LIGHT"); }     // orbit capture, address complete
+        function hMedium() { hImpact("MEDIUM"); }   // dot pop, link sent, deep link
+        function hSuccess() { var h = hapticsPlugin(); if (h && h.notification) { try { h.notification({ type: "SUCCESS" }); } catch (e) {} } } // bloom / entry
+
+        // ---- gyro parallax (deviceorientation) ------------------------
+        // Far layer ×0.5, near layer ×1.1, clamped ±8px, 250ms ease-out (CSS).
+        // Guarded for unavailability + honours reduced-motion. On iOS 13+ the
+        // permission is requested on the first user gesture (see leaveSplash).
+        var reduceMotion = false;
+        try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+        var parReady = false;
+        function setupParallax() {
+          if (parReady || reduceMotion) return;
+          if (!window.DeviceOrientationEvent || typeof window.addEventListener !== "function") return;
+          var far = document.querySelectorAll('[data-par="far"]');
+          var near = document.querySelectorAll('[data-par="near"]');
+          if (!far.length && !near.length) return;
+          parReady = true;
+          window.addEventListener("deviceorientation", function (ev) {
+            if (ev == null || ev.gamma == null || ev.beta == null) return;
+            var x = Math.max(-8, Math.min(8, ev.gamma * 0.5));         // left-right tilt
+            var y = Math.max(-8, Math.min(8, (ev.beta - 45) * 0.5));   // front-back, resting ~45°
+            var i;
+            for (i = 0; i < far.length; i++) far[i].style.transform = "translate(" + (x * 0.5) + "px," + (y * 0.5) + "px)";
+            for (i = 0; i < near.length; i++) near[i].style.transform = "translate(" + (x * 1.1) + "px," + (y * 1.1) + "px)";
+          });
+        }
+        function requestGyroPermission() {
+          try {
+            var DOE = window.DeviceOrientationEvent;
+            if (DOE && typeof DOE.requestPermission === "function") {
+              DOE.requestPermission().then(function (r) { if (r === "granted") setupParallax(); }).catch(function () {});
+            } else {
+              setupParallax();
+            }
+          } catch (e) {}
+        }
+
         // ---- the connect seam -----------------------------------------
         // Loading the instance as the WebView's *server origin* is the native
         // job (so the bridge is injected there). window.CueNative.connect is
@@ -338,33 +646,44 @@
 
         // ---- connecting screen: honest progress + aspirational lines ---
         // The status lines stay inspirational (owner's call) but "Picking up
-        // where you left off" is dropped — this is a FIRST sign-in. The bar
-        // reflects real steps: verify → resolve → hand to native.
+        // where you left off" is dropped — this is a FIRST sign-in. Progress
+        // drives the determinate sweep ring (verify → resolve → hand off).
         var STATUS_STEPS = [
           { at: 15, text: "Verifying your link" },
           { at: 55, text: "Waking your agents" },
           { at: 90, text: "Loading your Cue" },
         ];
         function buildStreaks() {
-          var wrap = el("streaks"); if (wrap.childElementCount) return;
-          for (var i = 0; i < 12; i++) {
+          var wrap = el("streaks"); if (!wrap || wrap.childElementCount) return;
+          var n = 12;
+          for (var i = 0; i < n; i++) {
+            var w = document.createElement("div");
+            w.className = "streak-wrap";
+            w.style.transform = "rotate(" + (i * (360 / n)) + "deg)";
             var s = document.createElement("span");
             s.className = "streak";
-            s.style.setProperty("--a", (i * 30) + "deg");
-            s.style.animationDelay = (i * 0.09) + "s";
-            wrap.appendChild(s);
+            s.style.animationDelay = ((i % 5) * 0.17) + "s";
+            w.appendChild(s);
+            wrap.appendChild(w);
           }
         }
         function setProgress(pct) {
-          el("progress-bar").style.width = Math.max(0, Math.min(100, pct)) + "%";
+          pct = Math.max(0, Math.min(100, pct));
+          var arc = el("progress-bar");                       // determinate sweep ring
+          if (arc) arc.style.strokeDashoffset = String(200 - (200 * pct) / 100);
           var line = STATUS_STEPS[0].text;
           for (var i = 0; i < STATUS_STEPS.length; i++) if (pct >= STATUS_STEPS[i].at) line = STATUS_STEPS[i].text;
           el("connecting-status").textContent = line;
         }
+        function triggerBloom() {
+          hSuccess();
+          var b = el("bloom"); if (b) b.classList.add("go");
+        }
+        function hostOf(u) { try { return new URL(u).host; } catch (e) { return ""; } }
 
         // ---- deep link → resolve token → connect ----------------------
         function resolveAndConnect(token) {
-          show("connecting"); buildStreaks(); setProgress(15);
+          show("connecting"); buildStreaks(); setProgress(15); hMedium();
           fetch(HQ + "/auth?native=1&token=" + encodeURIComponent(token), { headers: { accept: "application/json" } })
             .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
             .then(function (res) {
@@ -373,8 +692,13 @@
                 return;
               }
               setProgress(60);
+              var host = el("connecting-host"); if (host) host.textContent = hostOf(res.b.instanceUrl);
               if (res.b.name) el("connecting-title").textContent = "You're in, " + res.b.name + ".";
-              setTimeout(function () { setProgress(95); connectToInstance(res.b.instanceUrl, res.b.cueToken); }, 500);
+              setTimeout(function () {
+                setProgress(100);
+                triggerBloom();
+                setTimeout(function () { connectToInstance(res.b.instanceUrl, res.b.cueToken); }, 550);
+              }, 600);
             })
             .catch(function () { showError("offline"); });
         }
@@ -399,13 +723,15 @@
         var ERRORS = {
           link_expired: { title: "That link expired", body: "Sign-in links last 15 minutes for your safety. Send yourself a fresh one.", cta: "Send a new link", goto: "signin" },
           not_recognised: { title: "We couldn't find a Cue for that email", body: "Double-check the address, or ask whoever set up your Cue.", cta: "Try another email", goto: "signin" },
-          offline: { title: "You're offline", body: "Connect to the internet and try again.", cta: "Retry", goto: "signin" },
+          offline: { title: "You're offline", body: "The orbit's still here — connect to the internet and try again.", cta: "Retry", goto: "signin" },
         };
         function showError(kind) {
           var e = ERRORS[kind] || ERRORS.offline;
+          screens.error.setAttribute("data-kind", kind in ERRORS ? kind : "offline");
           el("error-title").textContent = e.title;
           el("error-body").textContent = e.body;
-          el("error-primary").textContent = e.cta;
+          el("error-primary").firstChild.textContent = e.cta;
+          if (kind === "not_recognised") el("error-echo-val").textContent = lastEmail || "";
           el("error-primary").onclick = function () { show(e.goto); };
           show("error");
         }
@@ -418,21 +744,37 @@
             body: JSON.stringify({ email: email }),
           }).then(function (r) { return r.ok; });
         }
+        // soft tick the moment the typed address first becomes valid
+        var emailWasValid = false;
+        el("email").addEventListener("input", function () {
+          var ok = isEmail(el("email").value.trim());
+          if (ok && !emailWasValid) hLight();
+          emailWasValid = ok;
+        });
         el("signin-form").addEventListener("submit", function (ev) {
           ev.preventDefault();
           var email = el("email").value.trim();
           el("signin-error").textContent = "";
           if (!isEmail(email)) { el("signin-error").textContent = "Enter a valid email address."; return; }
-          var btn = el("signin-go"); btn.disabled = true; btn.textContent = "Sending…";
+          var btn = el("signin-go"); btn.disabled = true; btn.firstChild.textContent = "Sending…";
           sendLink(email).then(function (ok) {
-            btn.disabled = false; btn.textContent = "Send sign-in link";
+            btn.disabled = false; btn.firstChild.textContent = "Send sign-in link";
             if (!ok) { el("signin-error").textContent = "Couldn't send the link. Try again."; return; }
             lastEmail = email; el("check-email").textContent = email;
+            hMedium();  // link sent — comet launched
             startResendCooldown(); show("check");
           }).catch(function () {
-            btn.disabled = false; btn.textContent = "Send sign-in link";
+            btn.disabled = false; btn.firstChild.textContent = "Send sign-in link";
             el("signin-error").textContent = "You appear to be offline.";
           });
+        });
+
+        // ---- open mail ------------------------------------------------
+        // Best-effort jump to the mail app (iOS Mail scheme); harmless no-op if
+        // unsupported. The magic link itself arrives via the App plugin.
+        el("open-mail").addEventListener("click", function () {
+          hLight();
+          try { window.location.href = "message://"; } catch (e) {}
         });
 
         // ---- resend cooldown ------------------------------------------
@@ -440,11 +782,11 @@
         function startResendCooldown() {
           var btn = el("resend"), left = 30;
           clearInterval(resendTimer); btn.disabled = true;
-          btn.textContent = "Resend in " + left + "s";
+          btn.textContent = "Resend link · 0:" + (left < 10 ? "0" : "") + left;
           resendTimer = setInterval(function () {
             left -= 1;
             if (left <= 0) { clearInterval(resendTimer); btn.disabled = false; btn.textContent = "Resend link"; }
-            else btn.textContent = "Resend in " + left + "s";
+            else btn.textContent = "Resend link · 0:" + (left < 10 ? "0" : "") + left;
           }, 1000);
         }
         el("resend").addEventListener("click", function () {
@@ -466,6 +808,7 @@
           var sub = parseCueSubdomain(el("addr").value);
           el("manual-error").textContent = "";
           if (!sub) { el("manual-error").textContent = "Enter your Cue address."; return; }
+          hLight();  // address complete
           // No token — the instance SPA will run its own sign-in. Connect to it.
           connectToInstance("https://" + sub + ".justcue.app", "");
         });
@@ -478,10 +821,23 @@
         document.querySelectorAll("[data-goto]").forEach(function (b) {
           b.addEventListener("click", function () { show(b.getAttribute("data-goto")); });
         });
-        el("splash-go").addEventListener("click", function () {
+
+        // ---- splash: haptic beats + leave ------------------------------
+        function scheduleSplashHaptics() {
+          var beats = [1100, 1600, 2000, 2400];  // chip captures → soft tick
+          beats.forEach(function (t) { setTimeout(function () { if (current === "splash") hLight(); }, t); });
+          setTimeout(function () { if (current === "splash") hMedium(); }, 4200);  // dot lands
+        }
+        function leaveSplash() {
           try { localStorage.setItem(SEEN_SPLASH_KEY, "1"); } catch (e) {}
-          show("signin"); setTimeout(function () { el("email").focus(); }, 350);
-        });
+          hLight();
+          requestGyroPermission();
+          show("signin");
+          setTimeout(function () { var e = el("email"); if (e && e.focus) e.focus(); }, 380);
+        }
+        el("splash-go").addEventListener("click", function (ev) { ev.stopPropagation(); leaveSplash(); });
+        // tap anywhere on the splash to skip
+        if (screens.splash) screens.splash.addEventListener("click", function () { if (current === "splash") leaveSplash(); });
 
         // ---- boot ------------------------------------------------------
         // 1. A magic link that opened the app (?token=) wins → connect.
@@ -508,8 +864,15 @@
           if (saved) { location.replace(saved); return; }
           var seen = false;
           try { seen = localStorage.getItem(SEEN_SPLASH_KEY) === "1"; } catch (e) {}
-          show(seen ? "signin" : "splash");
-          if (seen) setTimeout(function () { el("email").focus(); }, 350);
+          if (seen) {
+            show("signin");
+            setupParallax();
+            setTimeout(function () { var e = el("email"); if (e && e.focus) e.focus(); }, 380);
+          } else {
+            show("splash");
+            scheduleSplashHaptics();
+            setupParallax();
+          }
         }
         boot();
       })();
