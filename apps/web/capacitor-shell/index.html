@@ -491,6 +491,15 @@
         // 3. First run → splash; thereafter → sign-in.
         function boot() {
           if (handleUrl(location.href)) return;
+          // Cold launch via the magic link: the app may have started FROM the
+          // link, so the appUrlOpen event can fire before this listener exists.
+          // Ask the App plugin for the launch URL and handle it if it's a link.
+          var App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+          if (App && App.getLaunchUrl) {
+            App.getLaunchUrl().then(function (r) {
+              if (r && r.url && handleUrl(r.url)) return;
+            }).catch(function () {});
+          }
           var saved = null;
           try { saved = localStorage.getItem(INSTANCE_KEY); } catch (e) {}
           if (saved && window.CueNative && typeof window.CueNative.load === "function") {

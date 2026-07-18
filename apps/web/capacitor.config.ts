@@ -53,20 +53,23 @@ const config: CapacitorConfig = {
   appId: "ai.vocify.vellumassistantios",
   appName: "Cue",
   webDir: "capacitor-shell",
-  // With a baked URL, load it directly. Without one (a shared `cue` build),
-  // omit `server` entirely so Capacitor serves `webDir` — the connect shell —
-  // from `capacitor://localhost`, and the shell navigates to the owner's
-  // instance at runtime.
-  ...(SERVER_URL
-    ? {
-        server: {
-          url: SERVER_URL,
-          // Allow plain http only when the target itself is http (a local dev
-          // server for the simulator). https targets keep ATS enforced.
-          cleartext: SERVER_URL.startsWith("http://"),
-        },
-      }
-    : {}),
+  // `allowNavigation` lets the WebView stay in-app when it moves onto a Cue
+  // instance host — either the shell handing off to a freshly-connected
+  // instance (the native `CueNative.connect` → `webView.load`), or in-instance
+  // navigation. Without it Capacitor's navigation policy bounces those hosts to
+  // Safari, which is the shell's original stuck-loader failure. Every owner's
+  // instance lives under justcue.app / justcue.io.
+  //
+  // With a baked URL, load it directly. Without one (a shared `cue` build), the
+  // `server` block carries only `allowNavigation` (no `url`), so Capacitor
+  // still serves the bundled connect shell from `capacitor://localhost` and the
+  // shell navigates to the owner's instance at runtime.
+  server: {
+    allowNavigation: ["*.justcue.app", "*.justcue.io"],
+    ...(SERVER_URL
+      ? { url: SERVER_URL, cleartext: SERVER_URL.startsWith("http://") }
+      : {}),
+  },
   ios: {
     // Native iOS project lives as a peer to `apps/web/` at `apps/ios/`,
     // not nested inside the web app. This keeps the Capacitor shell

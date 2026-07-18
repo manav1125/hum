@@ -33,11 +33,52 @@ import WebKit
 /// `Main.storyboard`'s single scene uses this class instead of the stock
 /// `CAPBridgeViewController`.
 class MyViewController: CAPBridgeViewController {
+    /// Choose what the WebView loads at launch. When the owner has connected
+    /// an instance (persisted by `CueNativePlugin`), load it as the server
+    /// origin so the SPA runs as the real app (bridge injected, same-origin
+    /// auth) — the fix for the shell's stuck loader. Otherwise Capacitor serves
+    /// the bundled sign-on shell from `capacitor://localhost`.
+    ///
+    /// Navigating the shell onto a freshly-connected instance is permitted by
+    /// `server.allowNavigation` (`*.justcue.app` / `*.justcue.io`), baked in
+    /// `capacitor.config.ts`. A connected instance's own host is always allowed
+    /// once it is the `serverURL`, which also covers custom domains on return.
+    override open func instanceDescriptor() -> InstanceDescriptor {
+        let descriptor = super.instanceDescriptor()
+        if let saved = UserDefaults.standard.string(forKey: CueNativePlugin.instanceKey) {
+            descriptor.serverURL = saved
+        }
+        return descriptor
+    }
+
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(NativeAuthPlugin())
         bridge?.registerPluginInstance(NativeBiometricPlugin())
+        bridge?.registerPluginInstance(CueNativePlugin())
+        installCueNativeAliasUserScript()
         installInputZoomPreventionUserScript()
         installViewportZoomLockUserScript()
+    }
+
+    /// Expose `window.CueNative` (the shell's contract) as a thin wrapper over
+    /// the `CueNative` Capacitor plugin, so the shell code stays plain and the
+    /// alias only exists inside the native WebView.
+    private func installCueNativeAliasUserScript() {
+        guard let contentController = webView?.configuration.userContentController else { return }
+        let source = """
+        (function () {
+          function plugin() {
+            return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CueNative) || null;
+          }
+          window.CueNative = {
+            connect: function (url, token) { var p = plugin(); return p ? p.connect({ url: url, token: token || "" }) : Promise.reject("no bridge"); },
+            load: function (url) { var p = plugin(); return p ? p.load({ url: url }) : Promise.reject("no bridge"); },
+            signOut: function () { var p = plugin(); return p ? p.signOut() : Promise.reject("no bridge"); }
+          };
+        })();
+        """
+        contentController.addUserScript(WKUserScript(
+            source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
 
     // MARK: - Rotation zoom reset

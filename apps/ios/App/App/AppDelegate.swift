@@ -25,7 +25,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // so that deep links (e.g. ?app=X#/pr/...) open in-app instead of Safari.
         if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
            let url = userActivity.webpageURL {
-            navigateWebView(to: url)
+            // Sign-in magic links (justcue.ai/auth, /m/…) are handled by the web
+            // layer: the App plugin's `appUrlOpen` event (fired by the proxy
+            // below) reaches the shell, which resolves the token and connects.
+            // Navigating the WebView to the HQ URL here would instead load that
+            // page in-app — so skip it for the sign-in host.
+            if url.host?.hasSuffix("justcue.ai") != true {
+                navigateWebView(to: url)
+            }
         }
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
