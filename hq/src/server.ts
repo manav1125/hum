@@ -132,6 +132,38 @@ function json(body: unknown, status = 200): Response {
   return Response.json(body, { status });
 }
 
+// The mobile app's WebView runs at a native origin (capacitor://localhost on
+// iOS, http(s)://localhost on Android) and fetches the app-facing sign-in
+// endpoints cross-origin, so they need CORS. Scoped to the known app origins —
+// not `*` — and only the sign-in surface; the rest of HQ stays same-origin.
+const APP_ORIGINS = new Set([
+  "capacitor://localhost",
+  "ionic://localhost",
+  "http://localhost",
+  "https://localhost",
+]);
+
+function appCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin") ?? "";
+  if (!APP_ORIGINS.has(origin)) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    Vary: "Origin",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Accept",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
+/** Add app-origin CORS headers to a response when the caller is the app. */
+function withAppCors(req: Request, res: Response): Response {
+  const cors = appCorsHeaders(req);
+  if (Object.keys(cors).length === 0) return res;
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}
+
 function isAdminAuthorized(req: Request, adminToken: string): boolean {
   const header = req.headers.get("authorization");
   if (header?.toLowerCase().startsWith("bearer ")) {
@@ -233,6 +265,14 @@ export function createHandler(
       const redirect = canonicalHostRedirect(req, url, path);
       if (redirect) return redirect;
 
+      // CORS preflight for the app's cross-origin sign-in fetches.
+      if (method === "OPTIONS") {
+        const cors = appCorsHeaders(req);
+        if (Object.keys(cors).length > 0) {
+          return new Response(null, { status: 204, headers: cors });
+        }
+      }
+
       // ── public ────────────────────────────────────────────────────────
       if (method === "GET" && path === "/healthz") {
         return json({ ok: true, service: "cue-hq" });
@@ -322,11 +362,11 @@ export function createHandler(
       }
 
       if (method === "POST" && path === "/signin") {
-        return handleSignin(req);
+        return withAppCors(req, await handleSignin(req));
       }
 
       if (method === "GET" && path === "/auth") {
-        return handleAuth(req, url);
+        return withAppCors(req, await handleAuth(req, url));
       }
 
       if (method === "POST" && path === "/testflight") {

@@ -6,22 +6,46 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="dark light" />
     <title>Cue</title>
     <style>
+      /*
+        Cue mobile sign-on shell — the signed-out experience.
+
+        Served from capacitor://localhost when no instance is baked (see
+        capacitor.config.ts). Owns: splash → email sign-in → check email →
+        connecting, plus errors + a manual-address fallback. It POSTs the email
+        to HQ (/signin) and, when the magic link opens the app, resolves the
+        token (/auth?native=1) and hands the instance to the native layer to
+        load as the WebView's origin. Once connected, native loads the instance
+        directly and this shell is never shown again.
+
+        Design: "Gravity" (Claude Design) — the user's scattered tools fall into
+        orbit around the Cue ring. Animation is transform/opacity only, with a
+        prefers-reduced-motion fallback. The native server-origin load is the
+        one piece not built yet; CueNative.connect() is the seam, and until it
+        lands the shell falls back to navigating (works in a browser + as a
+        stopgap).
+      */
       :root {
         --bg: #0b0b0f;
+        --splash-bg: #030306;
         --surface: #16161d;
+        --surface-2: #1d1d26;
         --border: #2a2a35;
         --text: #f4f4f6;
-        --muted: #a0a0ad;
+        --muted: #9a9aa8;
         --accent: #3d6ee8;
+        --accent-ink: #ffffff;
+        --good: #4bb57a;
         --danger: #e5675b;
       }
       @media (prefers-color-scheme: light) {
         :root {
           --bg: #f6f6f8;
+          --splash-bg: #eef0f4;
           --surface: #ffffff;
+          --surface-2: #f0f1f4;
           --border: #e2e2e8;
           --text: #17171c;
           --muted: #6a6a76;
@@ -29,246 +53,457 @@
           --danger: #c4372b;
         }
       }
-      * {
-        box-sizing: border-box;
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; height: 100%; background: var(--bg); color: var(--text);
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased; overflow: hidden;
       }
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        background: var(--bg);
-        color: var(--text);
-        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-          sans-serif;
-        -webkit-font-smoothing: antialiased;
+      #app { position: relative; height: 100%; width: 100%; }
+
+      /* ---- screen router: one visible at a time ---- */
+      .screen {
+        position: absolute; inset: 0; display: none;
+        flex-direction: column; align-items: center; justify-content: center;
+        padding: max(28px, env(safe-area-inset-top)) 28px max(28px, env(safe-area-inset-bottom));
+        opacity: 0; transition: opacity 0.4s ease;
       }
-      #boot,
-      #connect {
-        min-height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: max(24px, env(safe-area-inset-top)) 24px
-          max(24px, env(safe-area-inset-bottom));
-        gap: 20px;
+      .screen[data-active] { display: flex; opacity: 1; }
+      .screen.splash { background: var(--splash-bg); justify-content: flex-end; gap: 0; }
+      .card { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; }
+
+      /* ---- the Cue ring + orbit ---- */
+      .system { position: relative; width: 240px; height: 240px; display: grid; place-items: center; }
+      .system.dim { opacity: 0.5; transform: scale(0.82); }
+      .orbit {
+        position: absolute; inset: 0; border-radius: 50%;
+        border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
       }
-      #connect {
-        display: none;
+      .orbit.o2 { inset: 34px; border-color: color-mix(in srgb, var(--accent) 14%, transparent); }
+      .orbit-spin { position: absolute; inset: 0; animation: orbit 22s linear infinite; }
+      .orbit-spin.rev { animation: orbit-rev 30s linear infinite; }
+      @keyframes orbit { to { transform: rotate(360deg); } }
+      @keyframes orbit-rev { to { transform: rotate(-360deg); } }
+      .mote {
+        position: absolute; top: -4px; left: 50%; width: 8px; height: 8px; margin-left: -4px;
+        border-radius: 50%; background: var(--accent);
+        box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 70%, transparent);
       }
-      .card {
-        width: 100%;
-        max-width: 380px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
+      .mote.sm { width: 5px; height: 5px; margin-left: -2.5px; opacity: 0.7; }
+      .ringmark { width: 96px; height: 96px; }
+      /* pathLength=360 lets the arc be specified in degrees regardless of r:
+         draw 260°, leave a 100° mouth, rotated so it opens to the lower-right
+         like the Cue "C". */
+      .ringmark circle {
+        fill: none; stroke: var(--text); stroke-width: 9; stroke-linecap: round;
+        stroke-dasharray: 260 360; transform: rotate(140deg); transform-origin: center;
       }
-      h1 {
-        margin: 0;
-        font-size: 26px;
-        letter-spacing: -0.02em;
+      .ringmark.draw circle { animation: draw 1.1s ease forwards; }
+      @keyframes draw { from { stroke-dashoffset: 260; } to { stroke-dashoffset: 0; } }
+
+      /* ---- type ---- */
+      h1 { font-size: 26px; line-height: 1.12; letter-spacing: -0.02em; margin: 24px 0 8px; text-align: center; }
+      .sub { font-size: 15px; color: var(--muted); margin: 0; text-align: center; max-width: 30ch; }
+      .sub b { color: var(--text); font-weight: 600; }
+      .splash-word { font-size: 30px; font-weight: 700; letter-spacing: -0.03em; text-align: center; }
+      .splash-lede { font-size: 15px; color: var(--muted); margin: 8px 0 0; }
+
+      /* ---- form ---- */
+      .field { width: 100%; margin-top: 22px; }
+      .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 7px; }
+      .input {
+        width: 100%; padding: 15px 16px; border-radius: 13px; font-size: 16px;
+        background: var(--surface); border: 1px solid var(--border); color: var(--text); outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
       }
-      p {
-        margin: 0;
-        color: var(--muted);
-        font-size: 15px;
+      .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+      .input::placeholder { color: var(--muted); }
+      .suffix-wrap { display: flex; align-items: stretch; }
+      .suffix-wrap .input { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 0; text-align: right; }
+      .suffix {
+        display: flex; align-items: center; padding: 0 14px; font-size: 15px; color: var(--muted);
+        background: var(--surface-2); border: 1px solid var(--border);
+        border-top-right-radius: 13px; border-bottom-right-radius: 13px;
       }
-      code {
-        color: var(--text);
-        font-size: 0.92em;
+      .btn {
+        position: relative; overflow: hidden; width: 100%; margin-top: 18px; padding: 15px 16px;
+        border-radius: 13px; border: none; font-size: 16px; font-weight: 650; cursor: pointer;
+        background: var(--accent); color: var(--accent-ink);
       }
-      label {
-        font-size: 13px;
-        color: var(--muted);
-        margin-bottom: -8px;
+      .btn[disabled] { opacity: 0.5; cursor: default; }
+      .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+      .btn.wide { max-width: 380px; }
+      /* sheen sweep on the primary button */
+      .btn.primary::after {
+        content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+        background: linear-gradient(100deg, transparent, rgba(255,255,255,0.28), transparent);
+        transform: skewX(-18deg); animation: sheen 3.6s ease-in-out infinite;
       }
-      input {
-        width: 100%;
-        padding: 14px 16px;
-        border-radius: 12px;
-        border: 1px solid var(--border);
-        background: var(--surface);
-        color: var(--text);
-        font-size: 16px; /* >=16px so iOS doesn't zoom on focus */
-        outline: none;
+      @keyframes sheen { 0%, 55% { left: -60%; } 78%, 100% { left: 130%; } }
+      .linkrow { margin-top: 18px; text-align: center; }
+      .link { font-size: 14px; font-weight: 550; color: var(--accent); background: none; border: none; cursor: pointer; }
+      .muted-link { font-size: 14px; color: var(--muted); background: none; border: none; cursor: pointer; }
+      #signin-error, #manual-error { color: var(--danger); font-size: 14px; min-height: 1.2em; margin: 10px 0 0; text-align: center; }
+
+      /* ---- check email ---- */
+      .envelope { position: relative; width: 200px; height: 120px; display: grid; place-items: center; }
+      .env-glyph { font-size: 44px; }
+      .comet {
+        position: absolute; inset: 0; animation: orbit 2.6s linear infinite;
       }
-      input:focus {
-        border-color: var(--accent);
+      .comet .head {
+        position: absolute; top: 8px; left: 50%; width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%;
+        background: var(--accent); box-shadow: 0 0 12px 2px color-mix(in srgb, var(--accent) 80%, transparent);
       }
-      button {
-        width: 100%;
-        padding: 14px 16px;
-        border-radius: 12px;
-        border: none;
-        background: var(--accent);
-        color: #fff;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
+      .chip {
+        display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; padding: 8px 14px;
+        border-radius: 999px; font-size: 13px; font-weight: 550;
+        background: var(--surface); border: 1px solid var(--border); color: var(--muted);
       }
-      button:disabled {
-        opacity: 0.5;
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); animation: pulse 1.6s ease-in-out infinite; }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+      /* ---- connecting ---- */
+      .streaks { position: absolute; inset: 0; overflow: hidden; }
+      .streak {
+        position: absolute; left: 50%; top: 50%; width: 2px; height: 80px;
+        background: linear-gradient(var(--accent), transparent);
+        transform-origin: top center; opacity: 0; animation: streak 1.2s ease-in infinite;
       }
-      #error {
-        color: var(--danger);
-        font-size: 14px;
-        min-height: 1em;
-        margin: 0;
+      @keyframes streak {
+        0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--a)) translateY(30px) scaleY(0.4); }
+        40% { opacity: 0.8; }
+        100% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--a)) translateY(150px) scaleY(1.4); }
       }
-      .spinner {
-        width: 28px;
-        height: 28px;
-        border: 3px solid var(--border);
-        border-top-color: var(--accent);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-      }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
+      .progress { width: 200px; height: 4px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 22px; }
+      .progress > i { display: block; height: 100%; width: 0%; border-radius: 3px; background: var(--accent); transition: width 0.5s ease; }
+      .status { font-size: 14px; color: var(--muted); margin-top: 14px; min-height: 1.2em; }
+      .status b { color: var(--good); }
+
+      @media (prefers-reduced-motion: reduce) {
+        .orbit-spin, .orbit-spin.rev, .comet, .streak, .btn.primary::after, .dot, .ringmark.draw circle { animation: none !important; }
+        .screen { transition: none; }
       }
     </style>
   </head>
   <body>
-    <!--
-      Cue mobile connect shell.
+    <div id="app">
+      <!-- S · Splash (signed-out first run only) -->
+      <section class="screen splash" data-screen="splash">
+        <div class="system" style="margin-bottom: 8px;">
+          <div class="orbit"></div><div class="orbit o2"></div>
+          <div class="orbit-spin"><span class="mote"></span></div>
+          <div class="orbit-spin rev" style="inset:34px"><span class="mote sm"></span></div>
+          <svg class="ringmark draw" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" /></svg>
+        </div>
+        <div class="splash-word" id="splash-word">One Cue.</div>
+        <p class="splash-lede">Already in motion, before you ask.</p>
+        <button class="btn primary wide" style="margin-top: 40px;" id="splash-go">Get started</button>
+      </section>
 
-      The desktop app learns its instance at runtime and navigates the window
-      onto it (see apps/macos/.../self-host-connect.ts). Mobile can't bake a
-      URL for the same reason — `server.url` is compiled into the archive, so a
-      default there points every owner at one instance. So when no instance is
-      baked, Capacitor serves THIS page from capacitor://localhost, and it does
-      the desktop job in the WebView: read the saved instance and navigate to
-      it, or collect it once.
+      <!-- A · Sign in -->
+      <section class="screen" data-screen="signin">
+        <div class="card">
+          <div class="system dim">
+            <div class="orbit"></div><div class="orbit o2"></div>
+            <div class="orbit-spin"><span class="mote"></span></div>
+            <div class="orbit-spin rev" style="inset:34px"><span class="mote sm"></span></div>
+            <svg class="ringmark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" /></svg>
+          </div>
+          <h1>Sign in to Cue</h1>
+          <p class="sub">Enter your email and we'll send you a secure sign-in link.</p>
+          <form class="field" id="signin-form" novalidate>
+            <label for="email">Email</label>
+            <input class="input" id="email" type="email" inputmode="email" autocomplete="email"
+              autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="you@example.com" />
+            <p id="signin-error"></p>
+            <button class="btn primary" id="signin-go" type="submit">Send sign-in link</button>
+          </form>
+          <div class="linkrow"><button class="muted-link" data-goto="manual">Enter your Cue address instead</button></div>
+        </div>
+      </section>
 
-      The self-host SPA authenticates same-origin, so we NAVIGATE the WebView
-      onto the instance rather than proxy to it. The saved value is the
-      token-stripped instance origin; the emitted link's `?cueToken=` rides
-      along only on the first connect, where the instance SPA consumes it to
-      seed its own-origin session.
-    -->
-    <div id="boot"><div class="spinner"></div></div>
+      <!-- B · Check email -->
+      <section class="screen" data-screen="check">
+        <div class="card">
+          <div class="envelope">
+            <div class="comet"><span class="head"></span></div>
+            <div class="env-glyph">✉️</div>
+          </div>
+          <h1>Check your email</h1>
+          <p class="sub">We sent a sign-in link to <b id="check-email">you</b>. Open it on this phone and you'll drop straight into your Cue.</p>
+          <div class="chip"><span class="dot"></span> Waiting for you to tap the link</div>
+          <button class="btn secondary" id="resend" style="margin-top: 22px;">Resend link</button>
+          <div class="linkrow"><button class="muted-link" data-goto="signin">Use a different email</button></div>
+        </div>
+      </section>
 
-    <form id="connect" novalidate>
-      <div class="card">
-        <h1>Connect to your Cue</h1>
-        <p>
-          Paste the sign-in link from your email, or your Cue address
-          (<code>cue-you.justcue.app</code>).
-        </p>
-        <label for="link">Sign-in link or address</label>
-        <input
-          id="link"
-          type="url"
-          inputmode="url"
-          autocapitalize="off"
-          autocorrect="off"
-          spellcheck="false"
-          placeholder="https://cue-you.justcue.app/..."
-        />
-        <p id="error"></p>
-        <button type="submit" id="go">Connect</button>
-      </div>
-    </form>
+      <!-- C · Connecting -->
+      <section class="screen" data-screen="connecting">
+        <div class="streaks" id="streaks" aria-hidden="true"></div>
+        <div class="card">
+          <div class="system">
+            <div class="orbit-spin"><span class="mote"></span></div>
+            <svg class="ringmark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" /></svg>
+          </div>
+          <h1 id="connecting-title">Connecting to your Cue…</h1>
+          <div class="progress"><i id="progress-bar"></i></div>
+          <p class="status" id="connecting-status">Verifying your link</p>
+        </div>
+      </section>
+
+      <!-- D · Error -->
+      <section class="screen" data-screen="error">
+        <div class="card">
+          <div class="system dim">
+            <div class="orbit" style="border-style: dashed;"></div>
+            <svg class="ringmark" viewBox="0 0 100 100"><circle cx="50" cy="50" r="37" pathLength="360" style="stroke: var(--muted);" /></svg>
+          </div>
+          <h1 id="error-title">Something went wrong</h1>
+          <p class="sub" id="error-body">Let's try that again.</p>
+          <button class="btn primary" id="error-primary">Try again</button>
+          <div class="linkrow"><button class="muted-link" data-goto="signin">Use a different email</button></div>
+        </div>
+      </section>
+
+      <!-- E · Manual address -->
+      <section class="screen" data-screen="manual">
+        <div class="card">
+          <h1>Enter your Cue address</h1>
+          <p class="sub">Use this if you already know your Cue's web address.</p>
+          <form class="field" id="manual-form" novalidate>
+            <label for="addr">Cue address</label>
+            <div class="suffix-wrap">
+              <input class="input" id="addr" inputmode="url" autocapitalize="off" autocorrect="off"
+                spellcheck="false" placeholder="cue-you" />
+              <span class="suffix">.justcue.app</span>
+            </div>
+            <p id="manual-error"></p>
+            <button class="btn primary" type="submit">Connect</button>
+          </form>
+          <div class="linkrow"><button class="link" data-goto="signin">← Back to email sign-in</button></div>
+        </div>
+      </section>
+    </div>
 
     <script>
-      // Where the token-stripped instance URL is remembered between launches.
-      // localStorage at capacitor://localhost persists across app restarts,
-      // so this is the mobile mirror of the desktop `selfHostUrl` setting.
-      var STORAGE_KEY = "cue:instanceUrl";
+      (function () {
+        "use strict";
+        // ---- config ----------------------------------------------------
+        // HQ origin the email sign-in goes through. Overridable for QA via
+        // ?hq= so this file can be exercised against a local HQ in a browser.
+        var HQ = new URLSearchParams(location.search).get("hq") || "https://justcue.ai";
+        var INSTANCE_KEY = "cue:instanceUrl";   // token-stripped, for next launch
+        var SEEN_SPLASH_KEY = "cue:seenSplash";  // splash is first-run only
 
-      // Normalize a connect link (or bare address) into the SPA-root URL to
-      // load. Mirrors apps/macos/.../self-host-connect.ts
-      // `normalizeInstanceUrl`: https-only, mount `/assistant/`, keep the
-      // token. Returns null for anything that isn't a plausible instance.
-      function normalizeInstanceUrl(input) {
-        var raw = (input || "").trim();
-        if (!raw) return null;
-        // A bare host ("cue-you.justcue.app") — assume https.
-        if (!/^[a-z]+:\/\//i.test(raw)) raw = "https://" + raw;
-        var url;
-        try {
-          url = new URL(raw);
-        } catch (e) {
-          return null;
+        // ---- screen router --------------------------------------------
+        var screens = {};
+        document.querySelectorAll(".screen").forEach(function (el) {
+          screens[el.getAttribute("data-screen")] = el;
+        });
+        var current = null;
+        function show(name) {
+          if (current === name) return;
+          Object.keys(screens).forEach(function (k) {
+            if (k === name) screens[k].setAttribute("data-active", "");
+            else screens[k].removeAttribute("data-active");
+          });
+          current = name;
         }
-        if (url.protocol !== "https:") return null;
-        if (url.hostname.indexOf(".") === -1) return null;
-        if (!/\/assistant\/?$/.test(url.pathname)) {
-          url.pathname = url.pathname.replace(/\/+$/, "") + "/assistant/";
-        } else if (url.pathname.charAt(url.pathname.length - 1) !== "/") {
-          url.pathname = url.pathname + "/";
+
+        // ---- helpers ---------------------------------------------------
+        function isEmail(v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v); }
+        function el(id) { return document.getElementById(id); }
+        function withoutToken(u) {
+          try { var x = new URL(u); x.searchParams.delete("cueToken"); x.searchParams.delete("cueExp"); return x.toString(); }
+          catch (e) { return u; }
         }
-        return url.toString();
-      }
 
-      // The value to remember: same instance, minus the one-time token.
-      function withoutToken(fullUrl) {
-        try {
-          var u = new URL(fullUrl);
-          u.searchParams.delete("cueToken");
-          u.searchParams.delete("cueExp");
-          return u.toString();
-        } catch (e) {
-          return fullUrl;
+        // ---- the connect seam -----------------------------------------
+        // Loading the instance as the WebView's *server origin* is the native
+        // job (so the bridge is injected there). window.CueNative.connect is
+        // that hook; until it ships, navigate — correct in a browser and a safe
+        // stopgap on device (the instance still loads, just bridge-less until
+        // native lands).
+        function connectToInstance(instanceUrl, cueToken) {
+          try { localStorage.setItem(INSTANCE_KEY, withoutToken(instanceUrl + "/assistant/")); } catch (e) {}
+          var full = instanceUrl.replace(/\/$/, "") + "/assistant/" +
+            (cueToken ? "?cueToken=" + encodeURIComponent(cueToken) : "");
+          if (window.CueNative && typeof window.CueNative.connect === "function") {
+            window.CueNative.connect(instanceUrl, cueToken || "");
+          } else {
+            location.replace(full);
+          }
         }
-      }
 
-      function show(which) {
-        document.getElementById("boot").style.display =
-          which === "boot" ? "flex" : "none";
-        document.getElementById("connect").style.display =
-          which === "connect" ? "flex" : "none";
-      }
+        // ---- connecting screen: honest progress + aspirational lines ---
+        // The status lines stay inspirational (owner's call) but "Picking up
+        // where you left off" is dropped — this is a FIRST sign-in. The bar
+        // reflects real steps: verify → resolve → hand to native.
+        var STATUS_STEPS = [
+          { at: 15, text: "Verifying your link" },
+          { at: 55, text: "Waking your agents" },
+          { at: 90, text: "Loading your Cue" },
+        ];
+        function buildStreaks() {
+          var wrap = el("streaks"); if (wrap.childElementCount) return;
+          for (var i = 0; i < 12; i++) {
+            var s = document.createElement("span");
+            s.className = "streak";
+            s.style.setProperty("--a", (i * 30) + "deg");
+            s.style.animationDelay = (i * 0.09) + "s";
+            wrap.appendChild(s);
+          }
+        }
+        function setProgress(pct) {
+          el("progress-bar").style.width = Math.max(0, Math.min(100, pct)) + "%";
+          var line = STATUS_STEPS[0].text;
+          for (var i = 0; i < STATUS_STEPS.length; i++) if (pct >= STATUS_STEPS[i].at) line = STATUS_STEPS[i].text;
+          el("connecting-status").textContent = line;
+        }
 
-      function connect(input) {
-        var full = normalizeInstanceUrl(input);
-        if (!full) {
-          document.getElementById("error").textContent =
-            "That doesn't look like a Cue address. Paste the full https link from your sign-in email.";
+        // ---- deep link → resolve token → connect ----------------------
+        function resolveAndConnect(token) {
+          show("connecting"); buildStreaks(); setProgress(15);
+          fetch(HQ + "/auth?native=1&token=" + encodeURIComponent(token), { headers: { accept: "application/json" } })
+            .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, b: b }; }); })
+            .then(function (res) {
+              if (!res.ok || !res.b || res.b.ok === false || !res.b.instanceUrl) {
+                showError(res.b && res.b.error === "no_instance" ? "not_recognised" : "link_expired");
+                return;
+              }
+              setProgress(60);
+              if (res.b.name) el("connecting-title").textContent = "You're in, " + res.b.name + ".";
+              setTimeout(function () { setProgress(95); connectToInstance(res.b.instanceUrl, res.b.cueToken); }, 500);
+            })
+            .catch(function () { showError("offline"); });
+        }
+
+        // Universal link comes in via the Capacitor App plugin on device;
+        // also honour ?token= directly (browser QA + a link opened in-webview).
+        function handleUrl(u) {
+          try {
+            var url = new URL(u);
+            var token = url.searchParams.get("token") || url.searchParams.get("cueToken");
+            if (token) { resolveAndConnect(token); return true; }
+          } catch (e) {}
           return false;
         }
-        // Remember the token-stripped instance for next launch, then navigate
-        // WITH the token so the instance SPA seeds this session.
-        try {
-          localStorage.setItem(STORAGE_KEY, withoutToken(full));
-        } catch (e) {}
-        show("boot");
-        window.location.replace(full);
-        return true;
-      }
-
-      // Exposed for the connect form and tests. `boot()` runs the
-      // remember-and-navigate path; the form calls `connect()`.
-      window.CueConnect = {
-        normalizeInstanceUrl: normalizeInstanceUrl,
-        withoutToken: withoutToken,
-        connect: connect,
-        STORAGE_KEY: STORAGE_KEY,
-      };
-
-      function boot() {
-        var saved = null;
-        try {
-          saved = localStorage.getItem(STORAGE_KEY);
-        } catch (e) {}
-        if (saved) {
-          window.location.replace(saved);
-          return;
-        }
-        show("connect");
-        document
-          .getElementById("connect")
-          .addEventListener("submit", function (e) {
-            e.preventDefault();
-            document.getElementById("error").textContent = "";
-            connect(document.getElementById("link").value);
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+          window.Capacitor.Plugins.App.addListener("appUrlOpen", function (data) {
+            if (data && data.url) handleUrl(data.url);
           });
-        document.getElementById("link").focus();
-      }
+        }
 
-      boot();
+        // ---- errors ----------------------------------------------------
+        var ERRORS = {
+          link_expired: { title: "That link expired", body: "Sign-in links last 15 minutes for your safety. Send yourself a fresh one.", cta: "Send a new link", goto: "signin" },
+          not_recognised: { title: "We couldn't find a Cue for that email", body: "Double-check the address, or ask whoever set up your Cue.", cta: "Try another email", goto: "signin" },
+          offline: { title: "You're offline", body: "Connect to the internet and try again.", cta: "Retry", goto: "signin" },
+        };
+        function showError(kind) {
+          var e = ERRORS[kind] || ERRORS.offline;
+          el("error-title").textContent = e.title;
+          el("error-body").textContent = e.body;
+          el("error-primary").textContent = e.cta;
+          el("error-primary").onclick = function () { show(e.goto); };
+          show("error");
+        }
+
+        // ---- email sign-in --------------------------------------------
+        var lastEmail = "";
+        function sendLink(email) {
+          return fetch(HQ + "/signin", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ email: email }),
+          }).then(function (r) { return r.ok; });
+        }
+        el("signin-form").addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var email = el("email").value.trim();
+          el("signin-error").textContent = "";
+          if (!isEmail(email)) { el("signin-error").textContent = "Enter a valid email address."; return; }
+          var btn = el("signin-go"); btn.disabled = true; btn.textContent = "Sending…";
+          sendLink(email).then(function (ok) {
+            btn.disabled = false; btn.textContent = "Send sign-in link";
+            if (!ok) { el("signin-error").textContent = "Couldn't send the link. Try again."; return; }
+            lastEmail = email; el("check-email").textContent = email;
+            startResendCooldown(); show("check");
+          }).catch(function () {
+            btn.disabled = false; btn.textContent = "Send sign-in link";
+            el("signin-error").textContent = "You appear to be offline.";
+          });
+        });
+
+        // ---- resend cooldown ------------------------------------------
+        var resendTimer = null;
+        function startResendCooldown() {
+          var btn = el("resend"), left = 30;
+          clearInterval(resendTimer); btn.disabled = true;
+          btn.textContent = "Resend in " + left + "s";
+          resendTimer = setInterval(function () {
+            left -= 1;
+            if (left <= 0) { clearInterval(resendTimer); btn.disabled = false; btn.textContent = "Resend link"; }
+            else btn.textContent = "Resend in " + left + "s";
+          }, 1000);
+        }
+        el("resend").addEventListener("click", function () {
+          if (!lastEmail) return; startResendCooldown(); sendLink(lastEmail);
+        });
+
+        // ---- manual address -------------------------------------------
+        // Pull the bare subdomain from whatever the owner types — full URL,
+        // "cue-you.justcue.app", or just "cue-you". Empty ⇒ null.
+        function parseCueSubdomain(raw) {
+          return (raw || "").trim()
+            .replace(/^https?:\/\//, "")
+            .replace(/\.justcue\.app.*$/i, "")
+            .replace(/\/.*$/, "")
+            .replace(/[^a-z0-9-]/gi, "") || null;
+        }
+        el("manual-form").addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var sub = parseCueSubdomain(el("addr").value);
+          el("manual-error").textContent = "";
+          if (!sub) { el("manual-error").textContent = "Enter your Cue address."; return; }
+          // No token — the instance SPA will run its own sign-in. Connect to it.
+          connectToInstance("https://" + sub + ".justcue.app", "");
+        });
+
+        // Pure helpers exposed for the regression test (see
+        // capacitor-shell/connect-logic.test.ts). Not used by the UI.
+        window.CueShell = { isEmail: isEmail, withoutToken: withoutToken, parseCueSubdomain: parseCueSubdomain };
+
+        // ---- nav buttons ----------------------------------------------
+        document.querySelectorAll("[data-goto]").forEach(function (b) {
+          b.addEventListener("click", function () { show(b.getAttribute("data-goto")); });
+        });
+        el("splash-go").addEventListener("click", function () {
+          try { localStorage.setItem(SEEN_SPLASH_KEY, "1"); } catch (e) {}
+          show("signin"); setTimeout(function () { el("email").focus(); }, 350);
+        });
+
+        // ---- boot ------------------------------------------------------
+        // 1. A magic link that opened the app (?token=) wins → connect.
+        // 2. A saved instance → hand straight to native (it loads the instance;
+        //    the shell only appears when signed out, so this is the returning
+        //    path before native takes over).
+        // 3. First run → splash; thereafter → sign-in.
+        function boot() {
+          if (handleUrl(location.href)) return;
+          var saved = null;
+          try { saved = localStorage.getItem(INSTANCE_KEY); } catch (e) {}
+          if (saved && window.CueNative && typeof window.CueNative.load === "function") {
+            window.CueNative.load(saved); return;
+          }
+          if (saved) { location.replace(saved); return; }
+          var seen = false;
+          try { seen = localStorage.getItem(SEEN_SPLASH_KEY) === "1"; } catch (e) {}
+          show(seen ? "signin" : "splash");
+          if (seen) setTimeout(function () { el("email").focus(); }, 350);
+        }
+        boot();
+      })();
     </script>
   </body>
 </html>

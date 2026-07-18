@@ -2,92 +2,87 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 // The connect shell is a single self-contained HTML file (it ships as `webDir`,
-// no build step), so its logic can't be imported. Load the file, pull the
+// no build step), so its logic can't be imported. Load the file, pull the last
 // `<script>` out, and eval it against a minimal window so the exact shipped
-// functions are what's under test — not a copy that can drift.
+// helpers are what's under test — not a copy that can drift. The UI wiring is
+// verified live in a browser; this locks the pure parsing rules.
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const script = html.slice(
-  html.indexOf("<script>") + "<script>".length,
+  html.lastIndexOf("<script>") + "<script>".length,
   html.lastIndexOf("</script>"),
 );
 
 function loadShell() {
   const store = new Map<string, string>();
+  const noop = () => undefined;
+  const stubEl = () => ({
+    style: { setProperty: noop, width: "" },
+    addEventListener: noop,
+    setAttribute: noop,
+    removeAttribute: noop,
+    getAttribute: () => null,
+    focus: noop,
+    appendChild: noop,
+    childElementCount: 0,
+    textContent: "",
+    value: "",
+    disabled: false,
+    onclick: null,
+  });
   const win: Record<string, unknown> = {
+    location: { search: "", href: "https://localhost/", replace: noop },
     localStorage: {
       getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
       setItem: (k: string, v: string) => void store.set(k, v),
     },
-    location: { replace: () => undefined },
-    // The shell calls boot() at the end, which touches document; stub the two
-    // reads it makes before it would branch into DOM work, and make the saved
-    // path short-circuit so it never reaches getElementById.
     document: {
-      getElementById: () => ({
-        style: {},
-        addEventListener: () => undefined,
-        focus: () => undefined,
-        textContent: "",
-        value: "",
-      }),
+      querySelectorAll: () => [],
+      getElementById: stubEl,
+      createElement: stubEl,
     },
     URL,
+    URLSearchParams,
   };
-  // Preseed a saved instance so boot()'s `location.replace(saved); return;`
-  // path runs and never touches the form DOM.
-  store.set("cue:instanceUrl", "https://preseeded.justcue.app/assistant/");
   // eslint-disable-next-line no-new-func
-  new Function("window", "localStorage", "document", "URL", `${script}`)(
-    win,
-    win.localStorage,
-    win.document,
-    URL,
-  );
-  return (win as { CueConnect: Record<string, (s: string) => unknown> })
-    .CueConnect;
+  new Function(
+    "window",
+    "document",
+    "localStorage",
+    "location",
+    "URL",
+    "URLSearchParams",
+    script,
+  )(win, win.document, win.localStorage, win.location, URL, URLSearchParams);
+  return (win as { CueShell: Record<string, (s: string) => unknown> }).CueShell;
 }
 
-describe("mobile connect shell", () => {
+describe("mobile connect shell — pure logic", () => {
   const C = loadShell();
 
-  test("keeps the token on the emailed connect link", () => {
-    expect(
-      C.normalizeInstanceUrl(
-        "https://cue-ada-1234.justcue.app/assistant/?cueToken=a.b.c",
-      ),
-    ).toBe("https://cue-ada-1234.justcue.app/assistant/?cueToken=a.b.c");
+  test("accepts valid emails, rejects junk", () => {
+    expect(C.isEmail("you@example.com")).toBe(true);
+    expect(C.isEmail("a@example.com")).toBe(true);
+    expect(C.isEmail("not-an-email")).toBe(false);
+    expect(C.isEmail("missing@domain")).toBe(false);
+    expect(C.isEmail("")).toBe(false);
   });
 
-  test("assumes https and mounts /assistant/ on a bare address", () => {
-    expect(C.normalizeInstanceUrl("cue-you.justcue.app")).toBe(
-      "https://cue-you.justcue.app/assistant/",
+  test("parses the Cue subdomain from any shape the owner types", () => {
+    expect(C.parseCueSubdomain("cue-you")).toBe("cue-you");
+    expect(C.parseCueSubdomain("cue-you.justcue.app")).toBe("cue-you");
+    expect(C.parseCueSubdomain("https://cue-you.justcue.app/assistant/")).toBe(
+      "cue-you",
     );
-  });
-
-  test("adds the trailing slash the SPA root needs", () => {
-    expect(
-      C.normalizeInstanceUrl("https://cue-you.justcue.app/assistant"),
-    ).toBe("https://cue-you.justcue.app/assistant/");
-  });
-
-  test("accepts a custom domain", () => {
-    expect(C.normalizeInstanceUrl("https://cue.example.com")).toBe(
-      "https://cue.example.com/assistant/",
-    );
-  });
-
-  test("rejects what isn't a usable instance", () => {
-    expect(C.normalizeInstanceUrl("http://cue-you.justcue.app")).toBeNull();
-    expect(C.normalizeInstanceUrl("not a url")).toBeNull();
-    expect(C.normalizeInstanceUrl("https://localhost")).toBeNull();
-    expect(C.normalizeInstanceUrl("   ")).toBeNull();
+    expect(C.parseCueSubdomain("  cue-you  ")).toBe("cue-you");
+    expect(C.parseCueSubdomain("")).toBeNull();
+    expect(C.parseCueSubdomain("   ")).toBeNull();
   });
 
   test("strips the one-time token before remembering the instance", () => {
     expect(
       C.withoutToken(
-        "https://cue-ada-1234.justcue.app/assistant/?cueToken=a.b.c&cueExp=9",
+        "https://cue-you.justcue.app/assistant/?cueToken=a.b.c&cueExp=9",
       ),
-    ).toBe("https://cue-ada-1234.justcue.app/assistant/");
+    ).toBe("https://cue-you.justcue.app/assistant/");
   });
 });

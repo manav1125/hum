@@ -252,6 +252,47 @@ describe("signin token lifecycle", () => {
     expect((await res.json()).ok).toBe(false);
   });
 
+  test("the app's cross-origin sign-in fetch gets CORS; the browser doesn't", async () => {
+    const { handle } = setup();
+    // Preflight from the iOS WebView origin.
+    const pre = await handle(
+      new Request("http://hq.local/signin", {
+        method: "OPTIONS",
+        headers: { origin: "capacitor://localhost" },
+      }),
+    );
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get("access-control-allow-origin")).toBe(
+      "capacitor://localhost",
+    );
+    // The actual POST reflects the same origin.
+    const post = await handle(
+      new Request("http://hq.local/signin", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "capacitor://localhost",
+        },
+        body: JSON.stringify({ email: "who@example.com" }),
+      }),
+    );
+    expect(post.headers.get("access-control-allow-origin")).toBe(
+      "capacitor://localhost",
+    );
+    // A random web origin gets no CORS grant.
+    const evil = await handle(
+      new Request("http://hq.local/signin", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://evil.example.com",
+        },
+        body: JSON.stringify({ email: "who@example.com" }),
+      }),
+    );
+    expect(evil.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
   test("serves the Apple app-site-association so the app claims the link", async () => {
     const { handle } = setup();
     const res = await handle(
