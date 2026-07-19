@@ -95,6 +95,9 @@ function createWorkItemFast(opts: {
     taskId: task.id,
     title: opts.title,
     priorityTier: 1,
+    // A plain to-do is a reminder the user parked, not ready work — mark it
+    // so no later auto-run pass (queue drainer, re-triage) can start it.
+    ...(opts.autoRun ? {} : { autoRunEligibility: "parked" as const }),
   });
   if (opts.autoRun) {
     // Fire-and-forget: triage + policy-gated auto-run in the background.

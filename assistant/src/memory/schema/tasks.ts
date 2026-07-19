@@ -73,6 +73,10 @@ export const workItems = sqliteTable("work_items", {
   // 'stalled' = hit the retry cap and was failed as a recovery incident.
   recoveryAttempts: integer("recovery_attempts").notNull().default(0),
   livenessState: text("liveness_state"),
+  // 305-work-item-auto-run-eligibility. null = eligible for the policy-gated
+  // auto-run path; 'parked' = user parked this task — it must never auto-run
+  // (quick-add, plain to-dos, needs-you items). Cleared on explicit run.
+  autoRunEligibility: text("auto_run_eligibility"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

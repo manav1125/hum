@@ -15,11 +15,16 @@
  * Render it as the first child of a `position: relative; overflow: hidden`
  * screen container.
  */
+import { useMv3EntranceGuard } from "./entrance-guard";
+
 export function AuroraBackdrop({
   style,
 }: {
   style?: React.CSSProperties;
 } = {}) {
+  // Every mv3 screen renders this backdrop, so it doubles as the mount point
+  // for the entrance guard (stuck play-pending entrances → snap visible).
+  useMv3EntranceGuard();
   return (
     <div
       aria-hidden

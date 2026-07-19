@@ -460,8 +460,15 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // earlier run of this item must not leak into this run's terminal note.
   clearApprovalTimeouts(workItemId);
 
-  // Set status to running
-  updateWorkItem(workItemId, { status: "running" }, { actor: "runner" });
+  // Set status to running. Dispatch also consumes any user-parked marker:
+  // reaching this point means an explicit run (Run button / came-in confirm /
+  // CLI) or a gate that already ruled the item eligible, so the item is no
+  // longer "parked" — and a later stranded-run recovery may retry it.
+  updateWorkItem(
+    workItemId,
+    { status: "running", autoRunEligibility: null },
+    { actor: "runner" },
+  );
   recordWorkItemEvent({
     workItemId,
     kind: "run_started",

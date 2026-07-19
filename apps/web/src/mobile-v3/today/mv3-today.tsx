@@ -260,8 +260,8 @@ function ReviewV3({ item, delay }: { item: HqWorkItem; delay: number }) {
   const navigate = useNavigate();
   const open = () => {
     haptic.medium();
-    // Full-bleed review pager (frame 16) — judges the work itself.
-    navigate(routes.reviewQueue);
+    // Full-bleed review pager (frame 16), seeded at THIS item (P1-4).
+    navigate(`${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`);
   };
   return (
     <GlassCard tint="violet" style={rise(delay)}>
@@ -513,13 +513,32 @@ export function Mv3Today({
     ? `Good ${dayPart()}, ${userName}.`
     : `Good ${dayPart()}.`;
 
+  // Defense-in-depth dedupe (QA night P1-12): HqPage already drops the review
+  // item whose id the next move names, but the daemon's LLM-phrased move can
+  // reference a review item WITHOUT a matching itemId (stale/paraphrased) —
+  // then the same task shows as NEXT MOVE and a REVIEW READY card. The move
+  // usually phrases itself AROUND the title ("Run: <title>"), so a reasonably
+  // long title contained in the headline counts as the same item.
+  const reviewShown = useMemo(() => {
+    if (!move.hasMove) return review;
+    const headline = move.headline.trim().toLowerCase();
+    const isTheMove = (title: string): boolean => {
+      const t = title.trim().toLowerCase();
+      if (!headline || !t) return false;
+      return t === headline || (t.length >= 12 && headline.includes(t));
+    };
+    return review.filter(
+      (item) => item.id !== move.itemId && !isTheMove(item.title),
+    );
+  }, [review, move.hasMove, move.headline, move.itemId]);
+
   // First-morning empty state (frame 22): when every slot is empty, the orbit
   // waits — dashed, still, inviting — instead of a blank card stack. The
   // early return lives BELOW the last hook (chips useMemo) per hooks rules.
   const orbitEmpty =
     !move.hasMove &&
     approvals.length === 0 &&
-    review.length === 0 &&
+    reviewShown.length === 0 &&
     running.length === 0 &&
     cameIn.length === 0;
 
@@ -641,7 +660,7 @@ export function Mv3Today({
               delay={nextDelay()}
             />
           ))}
-          {review.slice(0, 2).map((item) => (
+          {reviewShown.slice(0, 2).map((item) => (
             <ReviewV3 key={item.id} item={item} delay={nextDelay()} />
           ))}
           <WorkingNowV3 running={running} delay={nextDelay()} />

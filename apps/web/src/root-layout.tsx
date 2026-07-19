@@ -99,15 +99,32 @@ const KEYBOARD_OPEN_THRESHOLD_PX = 100;
  *
  * The legacy top chrome (hamburger / home / search pill in
  * `ChatLayoutHeader`) is hidden on mobile so v3 screens own their full
- * canvas (status bar only), EXCEPT:
- *   · conversation routes — chat still relies on that header (and its drawer)
- *     until the Chat cluster ships its own v3 nav;
- *   · /voice — the standalone voice route has no exit affordance of its own
- *     (and the tab bar also hides there), so removing the header would strand
- *     it. The Voice v3 build owns that canvas.
+ * canvas (status bar only). Conversation routes and /voice were carve-outs
+ * while those surfaces lacked their own exits; both now ship v3 nav (chat's
+ * ‹ back header, voice's ✕), so the legacy banner hides everywhere —
+ * stacking it above the v3 headers read as double chrome (mobile UAT P1-8).
  */
-function legacyChromeHidden(pathname: string): boolean {
-  return !pathname.includes("/conversations") && !pathname.endsWith("/voice");
+function legacyChromeHidden(_pathname: string): boolean {
+  return true;
+}
+
+/**
+ * Pre-app routes that render inside RootLayout but before a signed-in
+ * session is meaningful — the signed-in tab bar must not show over them
+ * (mobile UAT P1-18). The onboarding funnel (/onboarding/*) and /brief are
+ * already covered by the tab bar's own `tabBarHidden`; these standalone
+ * pre-app screens live outside that path prefix, so they're gated here.
+ */
+const PREAPP_TAB_BAR_HIDDEN = [
+  routes.welcome,
+  routes.selectAssistant,
+  routes.reviewTerms,
+];
+
+function preAppTabBarHidden(pathname: string): boolean {
+  return PREAPP_TAB_BAR_HIDDEN.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 /** Where the minimal ⋯ affordance renders — the primary v3 tab landings whose
@@ -120,9 +137,9 @@ const MV3_OVERFLOW_SURFACES = [
 ];
 
 function overflowVisible(pathname: string): boolean {
-  return MV3_OVERFLOW_SURFACES.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  // Exact-match only: detail screens (e.g. a project) carry their own ⋯ menu
+  // in the v3 grammar — a second global dots-button would double the chrome.
+  return MV3_OVERFLOW_SURFACES.some((p) => p === pathname);
 }
 
 export function RootLayout() {
@@ -351,8 +368,10 @@ export function RootLayout() {
 
       {/* Mobile primary nav: the mv3 floating glass tab bar
           (Today / Projects / + / Voice / You — docs/design/mobile-v3).
-          Desktop uses the sidebar rail instead. */}
-      {isMobile && <TabBarV3 />}
+          Desktop uses the sidebar rail instead. Suppressed on standalone
+          pre-app screens (welcome / select-assistant / review-terms) where a
+          signed-in nav bar is a lie. */}
+      {isMobile && !preAppTabBarHidden(pathname) && <TabBarV3 />}
 
       {/* Mobile v3: retire the legacy top chrome so screens own their full
           canvas (see legacyChromeHidden for the carve-outs). Style-scoped to

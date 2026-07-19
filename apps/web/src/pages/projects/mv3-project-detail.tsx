@@ -21,7 +21,7 @@
  * live + Step in instead of a dead Pause.
  */
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 
@@ -35,6 +35,7 @@ import { useActivitySync } from "@/hooks/use-activity-sync";
 import {
   AuroraBackdrop,
   CueRing,
+  SheetShell,
   StateChip,
   cardBody,
   microLabel,
@@ -56,7 +57,13 @@ import { routes } from "@/utils/routes";
 import { Mv3ProjectBrief } from "./mv3-project-brief";
 import { Mv3ProjectKnowledge } from "./mv3-project-knowledge";
 import { Mv3TaskSheet } from "./mv3-task-sheet";
-import { useProject, useProjects } from "./use-projects";
+import {
+  useDeleteProject,
+  usePatchProject,
+  useProject,
+  useProjects,
+  type ProjectView,
+} from "./use-projects";
 import { useQuickAddTask } from "./use-quick-add";
 
 /** Human line for a work-item trail event (status transitions, honest). */
@@ -457,6 +464,239 @@ function ArtifactRow({
   );
 }
 
+/**
+ * The project ⋯ menu (QA night P1-7): Rename (inline, PATCH title) + Archive
+ * (confirm-tap, PATCH status) + Delete (confirm-tap, DELETE) — the same real
+ * endpoints desktop's project management uses (`usePatchProject` /
+ * `useDeleteProject`, the writes Mv3NewProjectSheet's create sits beside).
+ */
+function Mv3ProjectMenuSheet({
+  assistantId,
+  project,
+  open,
+  onClose,
+}: {
+  assistantId: string;
+  project: ProjectView | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const patch = usePatchProject(assistantId);
+  const del = useDeleteProject(assistantId);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Re-arm everything each time the sheet opens.
+  useEffect(() => {
+    if (open) {
+      setRenaming(false);
+      setNameDraft(project?.title ?? "");
+      setConfirmArchive(false);
+      setConfirmDelete(false);
+    }
+  }, [open, project?.title]);
+
+  if (!project) return null;
+  const busy = patch.isPending || del.isPending;
+  const pathOpts = { path: { assistant_id: assistantId, id: project.id } };
+
+  const rowStyle: React.CSSProperties = {
+    width: "100%",
+    minHeight: 48,
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 14,
+    fontFamily: "inherit",
+    textAlign: "left",
+    background: "var(--mv3-btn2-bg)",
+    border: "1px solid var(--mv3-btn2-border)",
+    color: "var(--mv3-text)",
+    cursor: "pointer",
+  };
+
+  const saveRename = () => {
+    const title = nameDraft.trim();
+    if (!title || title === project.title || busy) return;
+    haptic.medium();
+    patch.mutate(
+      { ...pathOpts, body: { title } },
+      {
+        onSuccess: () => {
+          haptic.success();
+          onClose();
+        },
+      },
+    );
+  };
+
+  return (
+    <SheetShell open={open} onClose={onClose} label={`Project: ${project.title}`}>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 700,
+          color: "var(--mv3-text)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {project.emoji ? `${project.emoji} ` : ""}
+        {project.title}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+        {/* Rename — inline, in-sheet. */}
+        {renaming ? (
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              autoFocus
+              aria-label="Project name"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveRename();
+              }}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                minHeight: 44,
+                fontSize: 16,
+                color: "var(--mv3-text)",
+                background: "var(--mv3-btn2-bg)",
+                border: "1.5px solid var(--mv3-accent)",
+                borderRadius: 12,
+                padding: "10px 13px",
+                outline: "none",
+                fontFamily: "inherit",
+              }}
+            />
+            <button
+              type="button"
+              className="cue-pressable"
+              disabled={!nameDraft.trim() || busy}
+              onClick={saveRename}
+              style={{
+                minHeight: 44,
+                padding: "8px 16px",
+                borderRadius: 12,
+                border: "none",
+                background: "var(--mv3-text)",
+                color: "var(--mv3-bg)",
+                fontSize: 12.5,
+                fontWeight: 600,
+                fontFamily: "inherit",
+                cursor: "pointer",
+                opacity: nameDraft.trim() && !busy ? 1 : 0.55,
+              }}
+            >
+              {patch.isPending ? "Saving…" : "Save"}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              setRenaming(true);
+            }}
+            style={rowStyle}
+          >
+            Rename
+          </button>
+        )}
+
+        {/* Archive — confirm-tap, PATCH status → archived. */}
+        {project.status !== "archived" ? (
+          <button
+            type="button"
+            className="cue-pressable"
+            disabled={busy}
+            onClick={() => {
+              if (!confirmArchive) {
+                haptic.light();
+                setConfirmArchive(true);
+                setConfirmDelete(false);
+                return;
+              }
+              haptic.medium();
+              patch.mutate(
+                { ...pathOpts, body: { status: "archived" } },
+                {
+                  onSuccess: () => {
+                    haptic.success();
+                    onClose();
+                    navigate(routes.projects);
+                  },
+                },
+              );
+            }}
+            style={{
+              ...rowStyle,
+              color: confirmArchive ? "var(--mv3-amber)" : "var(--mv3-text)",
+              fontWeight: confirmArchive ? 600 : 400,
+            }}
+          >
+            {patch.isPending && confirmArchive
+              ? "Archiving…"
+              : confirmArchive
+                ? "Tap again to archive"
+                : "Archive"}
+          </button>
+        ) : null}
+
+        {/* Delete — confirm-tap, quiet red, the real DELETE. */}
+        <button
+          type="button"
+          className="cue-pressable"
+          disabled={busy}
+          onClick={() => {
+            if (!confirmDelete) {
+              haptic.light();
+              setConfirmDelete(true);
+              setConfirmArchive(false);
+              return;
+            }
+            haptic.medium();
+            del.mutate(pathOpts, {
+              onSuccess: () => {
+                haptic.success();
+                onClose();
+                navigate(routes.projects);
+              },
+            });
+          }}
+          style={{
+            ...rowStyle,
+            color: "#E5675B",
+            background: confirmDelete ? "rgba(229,103,91,.12)" : "transparent",
+            border: confirmDelete
+              ? "1px solid rgba(229,103,91,.3)"
+              : "1px solid var(--mv3-btn2-border)",
+            fontWeight: confirmDelete ? 600 : 400,
+          }}
+        >
+          {del.isPending
+            ? "Deleting…"
+            : confirmDelete
+              ? "Tap again to delete — tasks stay unfiled"
+              : "Delete"}
+        </button>
+      </div>
+
+      {patch.isError || del.isError ? (
+        <div style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 10 }}>
+          Couldn’t save that — try again in a moment.
+        </div>
+      ) : null}
+    </SheetShell>
+  );
+}
+
 export function Mv3ProjectDetail() {
   const assistantId = useActiveAssistantId();
   const { projectId = "" } = useParams();
@@ -469,6 +709,8 @@ export function Mv3ProjectDetail() {
   const { projects } = useProjects(assistantId);
   // Task edit sheet (due date / labels / re-file / Run-Redo) + quick-add.
   const [sheetItemId, setSheetItemId] = useState<string | null>(null);
+  // The project ⋯ menu (rename / archive / delete).
+  const [menuOpen, setMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addDraft, setAddDraft] = useState("");
   const quickAdd = useQuickAddTask(assistantId, projectId);
@@ -555,6 +797,37 @@ export function Mv3ProjectDetail() {
           haptic.light();
           navigate(routes.projects);
         }}
+        trailing={
+          <button
+            type="button"
+            aria-label="Project menu"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              setMenuOpen(true);
+            }}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: "50%",
+              border: "1px solid var(--mv3-glass-border)",
+              background: "var(--mv3-glass)",
+              backdropFilter: "blur(16px)",
+              WebkitBackdropFilter: "blur(16px)",
+              color: "var(--mv3-muted)",
+              fontSize: 16,
+              lineHeight: 1,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              WebkitTapHighlightColor: "transparent",
+              padding: 0,
+            }}
+          >
+            ⋯
+          </button>
+        }
       />
 
       {/* Header ON the aurora (frame 3). */}
@@ -692,7 +965,10 @@ export function Mv3ProjectDetail() {
                 delay={nextDelay()}
                 onOpen={() => {
                   haptic.light();
-                  navigate(routes.reviewQueue);
+                  // Seed the pager AT this artifact (QA night P1-4).
+                  navigate(
+                    `${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`,
+                  );
                 }}
               />
             ))}
@@ -1007,6 +1283,12 @@ export function Mv3ProjectDetail() {
         item={items.find((i) => i.id === sheetItemId) ?? null}
         projects={projects}
         onClose={() => setSheetItemId(null)}
+      />
+      <Mv3ProjectMenuSheet
+        assistantId={assistantId}
+        project={project}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
       />
     </div>
   );

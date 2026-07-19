@@ -34,10 +34,12 @@ import type { Schedule } from "@/domains/settings/types/schedules";
 import { WEEKDAYS } from "@/domains/settings/utils/cron-builder";
 import {
   buildCronFromChips,
+  cronZoneLabel,
   formatNextRun,
   looksLikeCron,
-  nextRunFromChips,
+  nextRunFromChipsInZone,
   parseCronToChips,
+  resolveCronZone,
   type CadenceChipId,
   type ChipCadence,
 } from "@/domains/settings/utils/cron-chips";
@@ -140,20 +142,30 @@ export function Mv3ScheduleEditorSheet({
   const customInvalid =
     cadence.chip === "custom" && cronChanged && !looksLikeCron(customCron);
 
+  // The zone the DAEMON interprets this cron in (stored IANA zone, else the
+  // daemon host's zone inferred from savedCron + nextRunAt). The picker's
+  // hour/minute are that zone's wall clock, not necessarily the browser's —
+  // the label makes that visible whenever the two differ (UAT P1-17).
+  const cronZone = useMemo(
+    () =>
+      resolveCronZone({
+        timezone: schedule.timezone ?? null,
+        savedCron,
+        nextRunAt: schedule.nextRunAt ?? null,
+      }),
+    [schedule.timezone, savedCron, schedule.nextRunAt],
+  );
+  const zoneLabel = cronZoneLabel(cronZone);
+
   // Next-run preview: the server's nextRunAt is authoritative for the saved
-  // expression; a changed simple shape is previewed in the browser timezone;
-  // a changed custom cron is honest about needing the save.
+  // expression; a changed simple shape is previewed in the daemon's zone (so
+  // the shown instant is the one that will actually fire); a changed custom
+  // cron is honest about needing the save.
   const nextRunLabel = useMemo(() => {
     if (!cronChanged) return formatNextRun(schedule.nextRunAt);
-    const next = nextRunFromChips(cadence);
+    const next = nextRunFromChipsInZone(cadence, cronZone);
     return next ? `${formatNextRun(next)} (after save)` : "computed on save";
-  }, [cronChanged, schedule.nextRunAt, cadence]);
-
-  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const tzNote =
-    schedule.timezone && schedule.timezone !== localTz
-      ? ` · ${schedule.timezone}`
-      : "";
+  }, [cronChanged, schedule.nextRunAt, cadence, cronZone]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -378,6 +390,19 @@ export function Mv3ScheduleEditorSheet({
                     }}
                   >
                     At
+                    {zoneLabel ? (
+                      /* The time field edits the cron's wall clock, which the
+                         daemon runs in this zone — not the phone's. */
+                      <span
+                        style={{
+                          fontSize: 10.5,
+                          color: "var(--mv3-faint)",
+                          marginLeft: 6,
+                        }}
+                      >
+                        {zoneLabel}
+                      </span>
+                    ) : null}
                   </span>
                   <input
                     type="time"
@@ -460,8 +485,8 @@ export function Mv3ScheduleEditorSheet({
               }}
             >
               {draftCron
-                ? `cron ${draftCron} · next run ${nextRunLabel}${tzNote}`
-                : `next run ${nextRunLabel}${tzNote}`}
+                ? `cron ${draftCron}${zoneLabel ? ` (${zoneLabel})` : ""} · next run ${nextRunLabel}`
+                : `next run ${nextRunLabel}`}
             </span>
             <button
               type="button"

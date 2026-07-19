@@ -548,6 +548,7 @@ export interface AutoRunDecision {
     | "started"
     | "disabled"
     | "not_queued"
+    | "user_parked"
     | "hard_denied"
     | "policy_ask"
     | "concurrency_cap"
@@ -563,6 +564,17 @@ export async function maybeAutoRunWorkItem(
   const item = getWorkItem(workItemId);
   if (!item || item.status !== "queued") {
     return { started: false, reason: "not_queued" };
+  }
+
+  // User-parked items never auto-run, no matter what the autonomy policy
+  // says. A quick-added project task, a plain voice to-do, or a needs-you
+  // feed item is a note the user filed — not triage-approved ready work —
+  // and the ONLY thing that may start it is an explicit run (the Run
+  // button / came-in confirm / CLI), which clears the marker at dispatch.
+  // Evaluated before every other gate so neither capture-time triage nor
+  // the periodic queue drainer can re-dispatch a parked item.
+  if (item.autoRunEligibility === "parked") {
+    return { started: false, reason: "user_parked" };
   }
 
   // Safety floor, evaluated BEFORE the policy: items whose tool snapshot

@@ -19,6 +19,7 @@ import {
   type SkillFileEntry,
   type SkillInfo,
 } from "@/domains/intelligence/skills/types";
+import { rebrandSkillProse } from "@/domains/intelligence/skills/utils";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { Button, Card, Menu, SegmentControl } from "@vellumai/design-library";
 import { SkillFileContent } from "./skill-file-content";
@@ -130,7 +131,7 @@ export function SkillDetailMobile({
           className="min-w-0 flex-1 truncate px-2 text-center text-body-medium-default"
           style={{ color: "var(--content-secondary)" }}
         >
-          {skill.name}
+          {rebrandSkillProse(skill.name)}
         </span>
         <RightAction
           available={available}
@@ -154,7 +155,7 @@ export function SkillDetailMobile({
               className="min-w-0 truncate text-title-medium"
               style={{ color: "var(--content-emphasised)" }}
             >
-              {skill.name}
+              {rebrandSkillProse(skill.name)}
             </h2>
           </div>
           <SkillOriginTag origin={skill.origin} />
@@ -163,7 +164,7 @@ export function SkillDetailMobile({
           className="text-body-medium-lighter"
           style={{ color: "var(--content-tertiary)" }}
         >
-          {skill.description}
+          {rebrandSkillProse(skill.description)}
         </p>
       </div>
 

@@ -297,9 +297,12 @@ function gatherFeedCandidates(): NextMoveCandidate[] {
  * The old ranking sorted OLDEST-first within a tier, which floated zombie
  * items forever: a task captured three weeks ago and never touched sat at the
  * top and dominated the "next move" every day. The new ranking prioritizes
- * things that are actually live — due-soon/overdue, pinned, or recently
- * active — and pushes untouched drifters to the back UNLESS they have a due
- * date (a real deadline is always worth surfacing regardless of activity).
+ * things that are actually live — due-soon/overdue-within-grace, pinned, or
+ * recently active — and pushes untouched drifters to the back UNLESS they
+ * have a LIVE due date. A deadline that expired more than {@link
+ * OVERDUE_GRACE_MS} ago no longer counts as live: it neither boosts the item
+ * nor shields it from the staleness demotion (the "9-days-past 'review
+ * BEFORE Monday' task pinned to the top" bug).
  */
 
 /** A due_at within this window (or already past) makes an item "due soon". */
@@ -308,18 +311,44 @@ const DUE_SOON_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
 /** No activity for longer than this ⇒ "stale", deprioritized unless due. */
 const STALE_AFTER_MS = 10 * 24 * 60 * 60 * 1000; // 10 days
 
-/** Whether an item has a deadline that is overdue or lands within the window. */
-function isDueSoon(c: NextMoveCandidate, now: number): boolean {
-  return c.dueAtMs != null && c.dueAtMs <= now + DUE_SOON_WINDOW_MS;
+/**
+ * Grace window AFTER a missed deadline during which the deadline still boosts
+ * the item ("overdue" pressure is real for a couple of days). Past this, the
+ * deadline's moment has clearly passed — a "review BEFORE Monday" task nine
+ * days after that Monday is not the user's next move — so the item loses the
+ * due boost AND its stale-shield, competing on activity freshness like
+ * everything else. Deliberately conservative: expired items are never hidden,
+ * only un-boosted.
+ */
+export const OVERDUE_GRACE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+/** Whether the item's deadline passed so long ago its window clearly expired. */
+function isDeadlineExpired(c: NextMoveCandidate, now: number): boolean {
+  return c.dueAtMs != null && now - c.dueAtMs > OVERDUE_GRACE_MS;
 }
 
 /**
- * Whether an item is a stale drifter: no activity in >10 days AND no deadline.
- * A due item is never treated as stale — a real deadline keeps it live even if
- * nothing has touched it in weeks.
+ * Whether an item has a LIVE deadline that is overdue-within-grace or lands
+ * within the window. An expired deadline (see {@link isDeadlineExpired}) no
+ * longer counts — otherwise the most-overdue item in the tier wins the top
+ * slot forever via the "sooner deadline first" axis.
+ */
+function isDueSoon(c: NextMoveCandidate, now: number): boolean {
+  return (
+    c.dueAtMs != null &&
+    !isDeadlineExpired(c, now) &&
+    c.dueAtMs <= now + DUE_SOON_WINDOW_MS
+  );
+}
+
+/**
+ * Whether an item is a stale drifter: no activity in >10 days AND no live
+ * deadline. A live deadline keeps an item fresh even if nothing has touched
+ * it in weeks — but an EXPIRED deadline does not: it must not shield a dead
+ * task from the staleness demotion.
  */
 function isStaleDrifter(c: NextMoveCandidate, now: number): boolean {
-  if (c.dueAtMs != null) return false;
+  if (c.dueAtMs != null && !isDeadlineExpired(c, now)) return false;
   return now - c.lastActivityAtMs > STALE_AFTER_MS;
 }
 

@@ -9,6 +9,7 @@ import {
   isRemovableSkill,
   type SkillInfo,
 } from "@/domains/intelligence/skills/types";
+import { rebrandSkillProse } from "@/domains/intelligence/skills/utils";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { formatFriendlyDate } from "@/utils/format-date";
 
@@ -190,7 +191,7 @@ export function SkillDetail({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {s.name}
+                  {rebrandSkillProse(s.name)}
                 </span>
               </button>
             );
@@ -226,7 +227,7 @@ export function SkillDetail({
                   letterSpacing: "-.3px",
                 }}
               >
-                {skill.name}
+                {rebrandSkillProse(skill.name)}
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -286,7 +287,7 @@ export function SkillDetail({
                 maxWidth: 680,
               }}
             >
-              {skill.description}
+              {rebrandSkillProse(skill.description)}
             </p>
           </div>
 

@@ -305,6 +305,14 @@ function isValidRiskThreshold(value: unknown): value is RiskThreshold {
 // than N duplicated literals. When #31994 lands and stamps these sites with
 // `state.assistantTurnId` directly, grep for `emitCannedMessageComplete` to
 // find every call site and inline-then-delete.
+/**
+ * How long after a canned (slash-command) turn completes to re-assert the
+ * idle activity state. Long enough that the send POST's response has landed
+ * on any realistic transport (mobile networks through the CF/Fly proxy
+ * chain), short enough that a stuck spinner clears before it reads as a hang.
+ */
+const CANNED_TURN_IDLE_REASSERT_MS = 2_000;
+
 function emitCannedMessageComplete(
   send: (msg: ServerMessage) => void,
   conversationId: string,
@@ -2035,9 +2043,33 @@ async function handleSendMessageImpl(
           conversationId,
           persistedAssistant.id,
         );
+        // Canonical server-authoritative turn boundary for the canned turn.
+        // The versioned activity channel is the signal clients trust for
+        // "this conversation is idle", and the agent loop emits it on every
+        // real turn — canned slash turns must too.
+        conversation.emitActivityState("idle", "message_complete");
         publishConversationMessagesChanged(conversationId, originClientId);
         conversation.setProcessing(false);
         silentlyWithLog(conversation.drainQueue(), "slash-command queue drain");
+
+        // Race repair: a canned turn completes so fast that its terminal
+        // events can reach the client BEFORE the send POST's response does
+        // (SSE rides an already-open stream; the response crosses proxies on
+        // a separate connection — ordering across the two is unguaranteed,
+        // and on proxied prod transports the events routinely win). A client
+        // that sees this turn's terminal events mid-POST treats them as
+        // leftovers of a PREVIOUS turn and re-enters its in-flight state
+        // when the POST resolves — the "/status hangs on Still working…"
+        // bug. Re-assert idle once the response has certainly landed. Safe
+        // by construction: activity versions are monotonic, idle is
+        // idempotent, and the guard skips when a newer turn owns the
+        // conversation.
+        const idleTimer = setTimeout(() => {
+          if (!conversation.isProcessing()) {
+            conversation.emitActivityState("idle", "message_complete");
+          }
+        }, CANNED_TURN_IDLE_REASSERT_MS);
+        idleTimer.unref?.();
       }, 0);
 
       cleanupDeferred = true;

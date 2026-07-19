@@ -190,7 +190,13 @@ export function Mv3TaskSheet({
   const patch = usePatchWorkItem(assistantId);
 
   const [labelDraft, setLabelDraft] = useState("");
-  useEffect(() => setLabelDraft(""), [item?.id]);
+  // Archive is confirm-tap (the schedule editor's delete pattern): first tap
+  // arms, second tap writes. Re-arms per item.
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  useEffect(() => {
+    setLabelDraft("");
+    setConfirmArchive(false);
+  }, [item?.id]);
 
   // Refresh EVERY work surface (all-work list, hq buckets, project boards,
   // review queue) after a write — the sheet is shared across them.
@@ -549,6 +555,55 @@ export function Mv3TaskSheet({
             </div>
           )}
         </div>
+
+        {/* Archive — the quiet way off the list (QA night P1-6). Confirm-tap
+            like the schedule editor's delete; PATCH status → archived. */}
+        {item.status !== "archived" ? (
+          <div style={{ marginTop: 20 }}>
+            <button
+              type="button"
+              className="cue-pressable"
+              disabled={patch.isPending}
+              onClick={() => {
+                if (!confirmArchive) {
+                  haptic.light();
+                  setConfirmArchive(true);
+                  return;
+                }
+                haptic.medium();
+                patch.mutate(
+                  { ...pathOpts, body: sheetBody(item, { status: "archived" }) },
+                  {
+                    onSuccess: () => {
+                      refreshAll();
+                      onClose();
+                    },
+                  },
+                );
+              }}
+              style={{
+                width: "100%",
+                minHeight: 44,
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontSize: 13,
+                fontWeight: confirmArchive ? 600 : 400,
+                fontFamily: "inherit",
+                cursor: patch.isPending ? "default" : "pointer",
+                background: "transparent",
+                border: "1px solid var(--mv3-btn2-border)",
+                color: confirmArchive ? "var(--mv3-amber)" : "var(--mv3-muted)",
+                opacity: patch.isPending ? 0.55 : 1,
+              }}
+            >
+              {patch.isPending && confirmArchive
+                ? "Archiving…"
+                : confirmArchive
+                  ? "Tap again to archive"
+                  : "Archive"}
+            </button>
+          </div>
+        ) : null}
 
         {/* Write status — honest, one line. */}
         <div

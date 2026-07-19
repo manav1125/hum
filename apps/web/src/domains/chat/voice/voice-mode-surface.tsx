@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { Keyboard, Mic, MicOff, Sparkles } from "lucide-react";
+import { Keyboard, Mic, MicOff, Sparkles, X } from "lucide-react";
 
 import {
   VoiceOrb,
@@ -1126,10 +1126,34 @@ function Mv3VoiceMobile({
           {engine === "gemini-live" ? "Realtime" : "Classic"}
         </Mv3QuietPill>
         {onExit ? (
-          <Mv3QuietPill onClick={onExit} ariaLabel="Return to typing">
-            <Keyboard size={12} aria-hidden />
-            Done
-          </Mv3QuietPill>
+          /* Frame 2's exit grammar: ✕ top-right, round glass. Stops any live
+             session (handleExit upstream) then hands control back — the route
+             navigates away, the in-chat overlay returns to the composer. */
+          <button
+            type="button"
+            onClick={onExit}
+            aria-label="Close voice"
+            title="Close voice"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#9A9AA8",
+              background: "rgba(255,255,255,.07)",
+              border: "1px solid rgba(255,255,255,.1)",
+              cursor: "pointer",
+              backdropFilter: "blur(10px)",
+              WebkitBackdropFilter: "blur(10px)",
+              WebkitTapHighlightColor: "transparent",
+              padding: 0,
+              flexShrink: 0,
+            }}
+          >
+            <X size={18} aria-hidden />
+          </button>
         ) : (
           <span />
         )}

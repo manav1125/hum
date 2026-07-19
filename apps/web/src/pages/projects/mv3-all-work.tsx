@@ -231,7 +231,9 @@ export function Mv3AllWork() {
   const openItem = (item: HqWorkItem) => {
     haptic.light();
     if (item.status === "running") navigate(routes.workLive(item.id));
-    else if (item.status === "awaiting_review") navigate(routes.reviewQueue);
+    else if (item.status === "awaiting_review")
+      // Seed the pager AT the tapped item (QA night P1-4).
+      navigate(`${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`);
     else setSheetItemId(item.id);
   };
 

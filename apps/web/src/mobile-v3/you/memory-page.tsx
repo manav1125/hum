@@ -20,7 +20,6 @@
  */
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
 
 import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
 
@@ -37,7 +36,8 @@ import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { GlassCard } from "../glass-card";
-import { rise } from "../mv3-kit";
+import { microLabel, rise } from "../mv3-kit";
+import { SheetShell } from "../sheet-shell";
 import { SegRail, TrustFootnote, YouScreen, shortDate } from "./you-kit";
 
 type MemorySegment = "people" | "preferences" | "work" | "life";
@@ -136,6 +136,167 @@ function PersonCard({
         </div>
       ) : null}
     </GlassCard>
+  );
+}
+
+/**
+ * PersonSheet — the v3 person detail (QA night P1-13). The old tap jumped
+ * into the legacy serif People page, crossing two design systems mid-flow;
+ * this keeps the dossier in the v3 sheet grammar. Honest interim: shows the
+ * contact's real fields (role, notes, moments) plus the memory items whose
+ * subject/statement name them — read-only until a full v3 person view lands.
+ */
+function PersonSheet({
+  contact,
+  items,
+  onClose,
+}: {
+  contact: ContactRow | null;
+  items: MemoryItem[];
+  onClose: () => void;
+}) {
+  const related = useMemo(() => {
+    if (!contact) return [];
+    const name = contact.displayName.trim().toLowerCase();
+    if (!name) return [];
+    return items
+      .filter((i) =>
+        `${i.subject} ${i.statement}`.toLowerCase().includes(name),
+      )
+      .slice(0, 8);
+  }, [contact, items]);
+
+  if (!contact) return null;
+
+  return (
+    <SheetShell open onClose={onClose} label={`Person: ${contact.displayName}`}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span
+          aria-hidden
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: avatarHue(contact.displayName),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 17,
+            fontWeight: 600,
+            color: "#fff",
+            flexShrink: 0,
+          }}
+        >
+          {contact.displayName.charAt(0).toUpperCase() || "?"}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.3px" }}>
+            {contact.displayName}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--mv3-muted)", marginTop: 2 }}>
+            {[
+              contact.role || null,
+              contact.interactionCount > 0
+                ? `${contact.interactionCount} ${
+                    contact.interactionCount === 1 ? "moment" : "moments"
+                  }`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "Cue is still getting to know them."}
+          </div>
+        </div>
+      </div>
+
+      {contact.notes ? (
+        <div style={{ marginTop: 16 }}>
+          <div
+            style={{
+              ...microLabel,
+              fontSize: 9.5,
+              color: "var(--mv3-faint)",
+              marginBottom: 7,
+            }}
+          >
+            What Cue knows
+          </div>
+          <div
+            style={{
+              fontSize: 13.5,
+              color: "var(--mv3-text)",
+              lineHeight: 1.55,
+            }}
+          >
+            {contact.notes}
+          </div>
+        </div>
+      ) : null}
+
+      {related.length > 0 ? (
+        <div style={{ marginTop: 18 }}>
+          <div
+            style={{
+              ...microLabel,
+              fontSize: 9.5,
+              color: "var(--mv3-faint)",
+              marginBottom: 7,
+            }}
+          >
+            Filed memories · {related.length}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {related.map((i) => (
+              <div
+                key={i.id}
+                style={{
+                  background: "var(--mv3-btn2-bg)",
+                  border: "1px solid var(--mv3-btn2-border)",
+                  borderRadius: 12,
+                  padding: "10px 13px",
+                }}
+              >
+                <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                  {i.statement}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: "var(--mv3-faint)",
+                    marginTop: 3,
+                  }}
+                >
+                  {i.kind} · {shortDate(i.firstSeenAt)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {!contact.notes && related.length === 0 ? (
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--mv3-muted)",
+            lineHeight: 1.55,
+            marginTop: 16,
+          }}
+        >
+          Nothing filed yet — Cue builds this dossier as you work together.
+        </div>
+      ) : null}
+
+      <div
+        style={{
+          fontSize: 10.5,
+          color: "var(--mv3-faint)",
+          marginTop: 16,
+          textAlign: "center",
+        }}
+      >
+        Edit or forget individual memories from the list behind this sheet.
+      </div>
+    </SheetShell>
   );
 }
 
@@ -349,7 +510,6 @@ function MemoryCard({
 
 export function Mv3MemoryPage() {
   const assistantId = useActiveAssistantId();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [segment, setSegment] = useState<MemorySegment>("people");
@@ -358,6 +518,10 @@ export function Mv3MemoryPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [pendingForget, setPendingForget] = useState<MemoryItem | null>(null);
+  // Person detail stays IN the v3 surface (QA night P1-13): a sheet over this
+  // page instead of a jump into the legacy serif People page. Interim until a
+  // full v3 person view exists.
+  const [personId, setPersonId] = useState<string | null>(null);
 
   const contactsQuery = useQuery({
     ...contactsGetOptions({ path: { assistant_id: assistantId } }),
@@ -573,7 +737,7 @@ export function Mv3MemoryPage() {
                 key={c.id}
                 contact={c}
                 delay={0.1 + Math.min(i, 3) * 0.15}
-                onPress={() => navigate(routes.people)}
+                onPress={() => setPersonId(c.id)}
               />
             ))
         )
@@ -619,6 +783,12 @@ export function Mv3MemoryPage() {
       <TrustFootnote>
         Stored on your instance only · tap any memory to edit or forget
       </TrustFootnote>
+
+      <PersonSheet
+        contact={contacts.find((c) => c.id === personId) ?? null}
+        items={items}
+        onClose={() => setPersonId(null)}
+      />
 
       <ConfirmDialog
         open={pendingForget !== null}

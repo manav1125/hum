@@ -23,7 +23,10 @@
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import type { Components } from "react-markdown";
+import ReactMarkdown from "react-markdown";
+import { useNavigate, useSearchParams } from "react-router";
+import remarkGfm from "remark-gfm";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { relativeTime } from "@/domains/activity/theme";
@@ -61,6 +64,137 @@ function narrowOutput(raw: unknown): {
     ? rec.highlights.filter((h): h is string => typeof h === "string")
     : [];
   return { summary, highlights };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Markdown on the paper card                                                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * The run summary arrives as markdown; render it through the app's markdown
+ * renderer (react-markdown + GFM — the same stack chat/docs use) instead of
+ * dumping `##`/`**` literals on the flagship review ritual (QA night P1-5).
+ * The canvas is ALWAYS paper-white (frame 16), so the styling uses the card's
+ * fixed ink colors rather than theme tokens. Read-only document styling.
+ */
+const CANVAS_INK = "#1A2230";
+const CANVAS_BODY = "#3A4453";
+const canvasMarkdown: Components = {
+  p: ({ children }) => (
+    <p style={{ margin: "0 0 10px", fontSize: 13.5, lineHeight: 1.6, color: CANVAS_BODY }}>
+      {children}
+    </p>
+  ),
+  strong: ({ children }) => (
+    <strong style={{ color: CANVAS_INK, fontWeight: 600 }}>{children}</strong>
+  ),
+  em: ({ children }) => <em>{children}</em>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: "#2B53C4", textDecoration: "underline" }}
+    >
+      {children}
+    </a>
+  ),
+  h1: ({ children }) => (
+    <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.3px", color: CANVAS_INK, margin: "16px 0 8px" }}>
+      {children}
+    </div>
+  ),
+  h2: ({ children }) => (
+    <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.2px", color: CANVAS_INK, margin: "14px 0 7px" }}>
+      {children}
+    </div>
+  ),
+  h3: ({ children }) => (
+    <div style={{ fontSize: 14, fontWeight: 600, color: CANVAS_INK, margin: "12px 0 6px" }}>
+      {children}
+    </div>
+  ),
+  h4: ({ children }) => (
+    <div style={{ fontSize: 13.5, fontWeight: 600, color: CANVAS_INK, margin: "10px 0 5px" }}>
+      {children}
+    </div>
+  ),
+  ul: ({ children }) => (
+    <ul style={{ margin: "0 0 10px", padding: "0 0 0 18px", fontSize: 13.5, lineHeight: 1.6, color: CANVAS_BODY }}>
+      {children}
+    </ul>
+  ),
+  ol: ({ children }) => (
+    <ol style={{ margin: "0 0 10px", padding: "0 0 0 18px", fontSize: 13.5, lineHeight: 1.6, color: CANVAS_BODY }}>
+      {children}
+    </ol>
+  ),
+  li: ({ children }) => <li style={{ marginBottom: 3 }}>{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote
+      style={{ margin: "0 0 10px", padding: "0 0 0 12px", borderLeft: "3px solid #D6DAE3", color: "#5A6672" }}
+    >
+      {children}
+    </blockquote>
+  ),
+  hr: () => (
+    <hr style={{ border: "none", borderTop: "1px solid #E4E7EE", margin: "14px 0" }} />
+  ),
+  code: ({ children }) => (
+    <code
+      style={{
+        fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
+        fontSize: "0.85em",
+        background: "#EFF1F6",
+        color: CANVAS_INK,
+        borderRadius: 4,
+        padding: "1px 5px",
+      }}
+    >
+      {children}
+    </code>
+  ),
+  pre: ({ children }) => (
+    <pre
+      style={{
+        margin: "0 0 10px",
+        padding: 12,
+        borderRadius: 8,
+        background: "#EFF1F6",
+        overflowX: "auto",
+        fontSize: "0.85em",
+      }}
+    >
+      {children}
+    </pre>
+  ),
+  table: ({ children }) => (
+    <div style={{ overflowX: "auto", margin: "0 0 10px" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12.5, color: CANVAS_BODY }}>
+        {children}
+      </table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th
+      style={{ padding: "5px 9px", textAlign: "left", fontWeight: 600, color: CANVAS_INK, borderBottom: "1px solid #D6DAE3" }}
+    >
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td style={{ padding: "5px 9px", verticalAlign: "top", borderBottom: "1px solid #EFF1F6" }}>
+      {children}
+    </td>
+  ),
+};
+
+function CanvasMarkdown({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={canvasMarkdown}>
+      {text}
+    </ReactMarkdown>
+  );
 }
 
 /**
@@ -135,32 +269,16 @@ function DeliverableCanvas({
         ) : (
           <>
             {summary ? (
-              <div
-                style={{
-                  fontSize: 13.5,
-                  lineHeight: 1.6,
-                  color: "#3A4453",
-                  marginTop: 14,
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {summary}
+              <div style={{ marginTop: 14 }}>
+                <CanvasMarkdown text={summary} />
               </div>
             ) : null}
             {highlights.length > 0 ? (
-              <ul
-                style={{
-                  margin: "14px 0 0",
-                  padding: "0 0 0 18px",
-                  fontSize: 13,
-                  lineHeight: 1.6,
-                  color: "#3A4453",
-                }}
-              >
-                {highlights.map((h, i) => (
-                  <li key={i}>{h}</li>
-                ))}
-              </ul>
+              <div style={{ marginTop: summary ? 4 : 14 }}>
+                <CanvasMarkdown
+                  text={highlights.map((h) => `- ${h}`).join("\n")}
+                />
+              </div>
             ) : null}
             {!summary && highlights.length === 0 ? (
               <div style={{ fontSize: 13, color: "#5A6672", marginTop: 14 }}>
@@ -187,8 +305,14 @@ export function ReviewQueuePage() {
     [awaiting.items],
   );
 
+  // Deep-link support (QA night P1-4): `?item=<work-item-id>` opens the pager
+  // AT that item (All-work rows, the brief's Review CTA, project artifact
+  // rows). Read once on mount — paging afterwards is local state.
+  const [searchParams] = useSearchParams();
   // Page by id (indices shift as items approve out of the bucket).
-  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [currentId, setCurrentId] = useState<string | null>(
+    () => searchParams.get("item"),
+  );
   const index = Math.max(
     0,
     currentId ? queue.findIndex((i) => i.id === currentId) : 0,

@@ -144,6 +144,33 @@ describe("empty required_tools snapshot bypass", () => {
     expect(getWorkItem(workItem.id)!.status).not.toBe("queued");
   });
 
+  test("an explicit run clears the user-parked marker", async () => {
+    const task = createTask({
+      title: "Parked task",
+      template: "Do something",
+      requiredTools: ["host_bash"],
+    });
+    const workItem = createWorkItem({
+      taskId: task.id,
+      title: "Parked quick-add",
+      requiredTools: JSON.stringify([]),
+      autoRunEligibility: "parked",
+    });
+
+    const runRoute = ROUTES.find(
+      (r) => r.endpoint === "work-items/:id/run" && r.method === "POST",
+    )!;
+    const result = (await runRoute.handler({
+      pathParams: { id: workItem.id },
+      headers: {},
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    // Dispatch consumed the parked marker: the user said "run", so the item
+    // is no longer parked (and stranded-run recovery may retry it).
+    expect(getWorkItem(workItem.id)!.autoRunEligibility).toBeNull();
+  });
+
   test("run rejects a non-existent work item with NotFoundError", () => {
     const runRoute = ROUTES.find(
       (r) => r.endpoint === "work-items/:id/run" && r.method === "POST",
@@ -233,6 +260,12 @@ describe("POST work-items (createWorkItem)", () => {
     };
     expect(sourceContext.origin).toBe("manual");
     expect(sourceContext.snippet).toBe("Keep it under 200 words");
+
+    // Quick-adds are user-parked: the durable marker keeps the queue
+    // drainer (and any other auto-run pass) from ever starting this item
+    // without an explicit run.
+    expect(result.item.autoRunEligibility).toBe("parked");
+    expect(getWorkItem(result.item.id)!.autoRunEligibility).toBe("parked");
 
     // Persisted, and round-trips through the project-filtered list the
     // board reads.

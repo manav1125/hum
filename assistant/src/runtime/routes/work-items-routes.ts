@@ -101,6 +101,13 @@ export const workItemSchema = z.object({
   sourceType: z.string().nullable(),
   sourceId: z.string().nullable(),
   approvalStatus: z.string().nullable(),
+  autoRunEligibility: z
+    .string()
+    .nullable()
+    .describe(
+      'null = eligible for policy-gated auto-run; "parked" = user parked ' +
+        "this task, so it only starts on an explicit run",
+    ),
   ranProvenance: z
     .enum(["auto", "you_approved", "manual"])
     .nullable()
@@ -696,6 +703,12 @@ export const ROUTES: RouteDefinition[] = [
           snippet,
           capturedAt: Date.now(),
         }),
+        // Durable parked marker: `skipAutoRun` below only skips the
+        // capture-time evaluation — the periodic queue drainer re-evaluates
+        // the queued lane later and would otherwise auto-start this under a
+        // permissive autonomy policy. 'parked' makes "waits for the user"
+        // hold at every auto-run entry point until an explicit run clears it.
+        autoRunEligibility: "parked",
         actor: "user",
       });
 

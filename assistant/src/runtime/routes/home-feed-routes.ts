@@ -481,6 +481,15 @@ function feedItemSource(item: FeedItem): {
 function createFeedActionWorkItem(
   item: FeedItem,
   action: { label: string; prompt: string },
+  opts?: {
+    /**
+     * Mark the item user-parked: it queues but must never auto-run (the
+     * needs_you mode — the whole point is a human decides). Without this the
+     * periodic queue drainer would re-evaluate the parked item through the
+     * policy gate and could start it under a permissive autonomy policy.
+     */
+    parked?: boolean;
+  },
 ) {
   // Prefer the item's own title ("Reply on WordPress guidance…") over the
   // action label ("Run it"/"Draft reply"), which is too generic for the
@@ -513,6 +522,7 @@ function createFeedActionWorkItem(
     title,
     notes: action.prompt,
     ...source,
+    ...(opts?.parked ? { autoRunEligibility: "parked" as const } : {}),
   });
   // Rank the fresh item so the queue is urgency-ordered. Auto-run is skipped:
   // the caller's execution-mode logic (thread/background/needs_you) owns the
@@ -592,7 +602,7 @@ export async function handlePostFeedAction({
 
   // ── Needs you: queue it, but never auto-run. ────────────────────────
   if (mode === "needs_you") {
-    const wi = createFeedActionWorkItem(item, action);
+    const wi = createFeedActionWorkItem(item, action, { parked: true });
     // Broadcast the queued item so SSE-connected clients reflect it in
     // Activity → Queued immediately, rather than waiting for the next poll.
     broadcastWorkItemStatus(wi.id);

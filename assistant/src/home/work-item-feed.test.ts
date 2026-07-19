@@ -44,6 +44,7 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
     taskBudgetCents: null,
     recoveryAttempts: 0,
     livenessState: null,
+    autoRunEligibility: null,
     context: null,
     sourceContext: null,
     lastActivityAt: null,

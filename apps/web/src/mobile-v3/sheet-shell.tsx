@@ -16,6 +16,8 @@ import { createPortal } from "react-dom";
 
 import { haptic } from "@/utils/haptics";
 
+import { useMv3EntranceGuard } from "./entrance-guard";
+
 export function SheetShell({
   open,
   onClose,
@@ -30,6 +32,10 @@ export function SheetShell({
   label: string;
   maxHeight?: string | number;
 }) {
+  // Sheets portal outside the screen container, so they carry their own
+  // entrance guard (the sheet-in/fade keyframes share the stuck-pending risk).
+  useMv3EntranceGuard();
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

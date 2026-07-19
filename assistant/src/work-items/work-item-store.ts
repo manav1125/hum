@@ -55,6 +55,13 @@ export interface WorkItem {
   recoveryAttempts: number;
   /** WS3: null = healthy; 'recovered' = requeued after a daemon-restart orphan; 'stalled' = failed at the retry cap. */
   livenessState: string | null;
+  /**
+   * null = eligible for the policy-gated auto-run path (capture triage,
+   * mission cycles, the queue drainer); 'parked' = the user parked this task
+   * (quick-add, plain to-do, needs-you item) — it must NEVER auto-run. An
+   * explicit run (Run button / came-in confirm / CLI) clears the marker.
+   */
+  autoRunEligibility: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -82,6 +89,8 @@ export function createWorkItem(opts: {
   taskBudgetCents?: number | null;
   /** JSON snapshot of where the task came from (origin + original snippet). */
   sourceContext?: string;
+  /** 'parked' = user parked this task; it must never auto-run (see WorkItem). */
+  autoRunEligibility?: "parked";
   /** Audit-trail attribution for the created event (default "system"). */
   actor?: string;
 }): WorkItem {
@@ -117,6 +126,7 @@ export function createWorkItem(opts: {
     lastProgressNote: null,
     recoveryAttempts: 0,
     livenessState: null,
+    autoRunEligibility: opts.autoRunEligibility ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -144,6 +154,8 @@ export function createWorkItemWithPermissions(opts: {
   sourceType?: string;
   sourceId?: string;
   requiredTools?: string;
+  /** 'parked' = user parked this task; it must never auto-run (see WorkItem). */
+  autoRunEligibility?: "parked";
 }): WorkItem {
   return createWorkItem(opts);
 }
@@ -206,6 +218,7 @@ export function updateWorkItem(
       | "lastProgressNote"
       | "recoveryAttempts"
       | "livenessState"
+      | "autoRunEligibility"
     >
   >,
   opts?: { actor?: string },

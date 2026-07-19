@@ -1,5 +1,27 @@
 import { type SkillFilter, type SkillInfo, isInstalledSkill } from "./types";
 
+/**
+ * Display-side Vellum→Cue rebrand for skill prose (names/descriptions that
+ * arrive from skill data — seeded SKILL.md frontmatter, marketplace catalog
+ * entries — still say "…into Vellum…", mobile UAT P1-15).
+ *
+ * Rebrand boundary: ONLY the standalone capitalized product name is display
+ * text. Lowercase `vellum` is a protocol/infra id (skill origin "vellum",
+ * `vellum://` deep links, `@vellumai/*` packages, `vellum-*` slugs) and must
+ * pass through untouched — the word-boundary + capital-V match guarantees
+ * ids, URLs and package names are never rewritten.
+ */
+export function rebrandSkillProse(text: string): string;
+export function rebrandSkillProse(
+  text: string | null | undefined,
+): string | null | undefined;
+export function rebrandSkillProse(
+  text: string | null | undefined,
+): string | null | undefined {
+  if (!text) return text;
+  return text.replace(/\bVellum\b/g, "Cue");
+}
+
 export function resolveFilterParams(filter: SkillFilter): {
   origin?: string;
   kind?: "installed" | "available";

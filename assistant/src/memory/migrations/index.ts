@@ -299,6 +299,8 @@ export { migrateAgentToolScopes } from "./301-agent-tool-scopes.js";
 export { migrateBudgetPolicies } from "./302-budget-policies.js";
 export { migrateWorkItemLiveness } from "./303-work-item-liveness.js";
 export { migrateStandingRules } from "./304-standing-rules.js";
+export { migrateWorkItemAutoRunEligibility } from "./305-work-item-auto-run-eligibility.js";
+export { migrateWorkItemsRunConversationIndex } from "./306-work-items-run-conversation-index.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

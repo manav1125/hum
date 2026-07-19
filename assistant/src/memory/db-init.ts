@@ -235,9 +235,11 @@ import {
   migrateUsageLlmCallCount,
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
+  migrateWorkItemAutoRunEligibility,
   migrateWorkItemLiveness,
   migrateWorkItemPmColumns,
   migrateWorkItemProgressNote,
+  migrateWorkItemsRunConversationIndex,
   recoverCrashedMigrations,
   runComplexMigrations,
   runLateMigrations,
@@ -546,6 +548,8 @@ export function initializeDb(): void {
     migrateBudgetPolicies,
     migrateWorkItemLiveness,
     migrateStandingRules,
+    migrateWorkItemAutoRunEligibility,
+    migrateWorkItemsRunConversationIndex,
   ];
 
   // Run each migration step, catching and logging individual failures so one

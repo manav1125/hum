@@ -125,6 +125,24 @@ describe("sweepWorkItemQueue (DB-backed)", () => {
     expect(getWorkItem(item.id)!.status).toBe("queued");
   });
 
+  test("user-parked quick-add items stay queued through the REAL gate", async () => {
+    // Regression: quick-added tasks were created with capture-time auto-run
+    // skipped, but the drainer swept them minutes later and started them
+    // through the policy gate. The parked marker must hold here too — it is
+    // checked before the policy, so this is deterministic under any policy.
+    const item = createWorkItem({
+      taskId,
+      title: "QA-NIGHT task do not run",
+      requiredTools: JSON.stringify(["web_search"]),
+      autoRunEligibility: "parked",
+    });
+    const result = await sweepWorkItemQueue(later());
+    expect(result.started).toBe(0);
+    expect(result.deferred).toBe(1);
+    expect(getWorkItem(item.id)!.status).toBe("queued");
+    expect(getWorkItem(item.id)!.autoRunEligibility).toBe("parked");
+  });
+
   test("hard-deny floor holds through the REAL gate (browser tools stay queued)", async () => {
     const item = createWorkItem({
       taskId,

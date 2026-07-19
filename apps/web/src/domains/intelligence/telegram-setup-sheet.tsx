@@ -41,6 +41,45 @@ import { haptic } from "@/utils/haptics";
 
 type Stage = "token" | "verify" | "done";
 
+interface TokenErrorInfo {
+  /** Human sentence shown in the quiet-red line. */
+  message: string;
+  /** The raw upstream payload, kept behind a "Details" disclosure. */
+  detail: string | null;
+}
+
+/**
+ * The daemon relays Telegram's API response verbatim on a bad token, e.g.
+ * `Telegram getMe failed: {"ok":false,"error_code":401,"description":
+ * "Unauthorized"}` — raw JSON in sheet copy (mobile UAT P1-16). Pull out the
+ * human part and park the payload behind a disclosure.
+ */
+function humanizeTelegramError(raw: string): TokenErrorInfo {
+  const jsonMatch = /\{[\s\S]*\}/.exec(raw);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        error_code?: number;
+        description?: string;
+      };
+      const message =
+        parsed.error_code === 401
+          ? "Telegram didn't recognize that token"
+          : typeof parsed.description === "string" && parsed.description
+            ? `Telegram said: ${parsed.description}`
+            : "Telegram rejected that token";
+      return { message, detail: raw };
+    } catch {
+      /* embedded braces but not JSON — fall through */
+    }
+  }
+  // No embedded payload: short messages are already human; long ones get the
+  // generic line with the original text as the detail.
+  return raw.length > 140
+    ? { message: "That token didn't validate", detail: raw }
+    : { message: raw, detail: null };
+}
+
 const VERIFY_TIMEOUT_MS = 90_000;
 const VERIFY_POLL_MS = 3_000;
 
@@ -155,7 +194,7 @@ export function TelegramSetupSheet({
 
   const [stage, setStage] = useState<Stage>("token");
   const [token, setToken] = useState("");
-  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenError, setTokenError] = useState<TokenErrorInfo | null>(null);
   const [botUsername, setBotUsername] = useState<string | null>(null);
   const [verifyStartedAt, setVerifyStartedAt] = useState<number | null>(null);
   const [canPaste] = useState(
@@ -252,7 +291,11 @@ export function TelegramSetupSheet({
     onError: (error) => {
       haptic.error();
       setTokenError(
-        error instanceof Error ? error.message : "That token didn't validate.",
+        humanizeTelegramError(
+          error instanceof Error
+            ? error.message
+            : "That token didn't validate.",
+        ),
       );
     },
   });
@@ -441,7 +484,32 @@ export function TelegramSetupSheet({
                       lineHeight: 1.4,
                     }}
                   >
-                    {tokenError} — check it and try again.
+                    {tokenError.message} — check it and try again.
+                    {tokenError.detail ? (
+                      <details style={{ marginTop: 4 }}>
+                        <summary
+                          style={{
+                            fontSize: 10.5,
+                            color: "var(--mv3-faint)",
+                            cursor: "pointer",
+                            listStyle: "none",
+                          }}
+                        >
+                          Details
+                        </summary>
+                        <div
+                          style={{
+                            fontFamily: mv3Mono,
+                            fontSize: 10,
+                            color: "var(--mv3-faint)",
+                            marginTop: 3,
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {tokenError.detail}
+                        </div>
+                      </details>
+                    ) : null}
                   </div>
                 ) : null}
                 <div

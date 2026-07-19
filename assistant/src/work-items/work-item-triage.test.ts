@@ -362,6 +362,25 @@ describe("maybeAutoRunWorkItem (DB-backed auto-run gate)", () => {
     }
   });
 
+  test("never auto-runs a user-parked item, even under an all-auto policy", async () => {
+    // The P1 trust hazard: a project-board quick-add ("QA-NIGHT task do not
+    // run") parked by the user must never start on its own — not from
+    // capture triage, not from the queue drainer — regardless of how
+    // permissive the autonomy policy is or how safe its tool snapshot looks.
+    const item = createWorkItem({
+      taskId,
+      title: "QA-NIGHT task do not run",
+      requiredTools: JSON.stringify(["web_search"]),
+      autoRunEligibility: "parked",
+    });
+    const decision = await maybeAutoRunWorkItem(item.id);
+    expect(decision).toEqual({ started: false, reason: "user_parked" });
+    expect(runnerCalls).toEqual([]);
+    expect(getWorkItem(item.id)!.status).toBe("queued");
+    // The marker survives the gate — only an explicit run clears it.
+    expect(getWorkItem(item.id)!.autoRunEligibility).toBe("parked");
+  });
+
   test("still auto-runs research-only items when policy allows", async () => {
     const item = createWorkItem({
       taskId,

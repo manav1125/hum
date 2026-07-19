@@ -32,6 +32,7 @@ import {
   isRemovableSkill,
   type SkillInfo,
 } from "@/domains/intelligence/skills/types";
+import { rebrandSkillProse } from "@/domains/intelligence/skills/utils";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { SkillFileContent } from "@/domains/intelligence/components/skills/skill-file-content";
 import {
@@ -420,7 +421,7 @@ function SkillManage({
               lineHeight: 1.55,
             }}
           >
-            {skill.description}
+            {rebrandSkillProse(skill.description)}
           </div>
         </GlassCard>
       ) : null}
@@ -840,7 +841,7 @@ export function Mv3SkillsPage({
                         overflow: "hidden",
                       }}
                     >
-                      {item.description}
+                      {rebrandSkillProse(item.description)}
                     </div>
                   ) : null}
                 </GlassCard>

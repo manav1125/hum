@@ -275,6 +275,13 @@ function AskBeat({
   const run = (action: BriefAskAction) => {
     haptic.medium();
     if (action.kind === "open_thread") {
+      // A review ask belongs in the review pager (frame 16), seeded at this
+      // item — its run conversation is usually empty and reads as a dead end
+      // (QA night P1-3). `ask.id` IS the work-item id for review asks.
+      if (ask.kind === "review") {
+        navigate(`${routes.reviewQueue}?item=${encodeURIComponent(ask.id)}`);
+        return;
+      }
       if (ask.conversationId)
         navigate(routes.conversation(ask.conversationId));
       return;

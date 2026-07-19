@@ -372,6 +372,27 @@ export function Mv3AiLeaf() {
   const defaultModel = config?.llm?.default?.model ?? null;
   const effort = (config?.llm?.default?.effort ?? null) as EffortOption | null;
 
+  // The model the chat brain actually resolves to — mirror the daemon's
+  // mainAgent precedence (llm-resolver.ts: default < callSites.mainAgent's
+  // profile < callSites.mainAgent < activeProfile) instead of claiming
+  // `llm.default.model` verbatim, which is a stale seed on most instances
+  // (mobile UAT P1-14 "Running on llama3.2" while the brain was deepseek).
+  // Env-level operator overrides aren't in the config document, so this is
+  // the honest best the client can state.
+  const effectiveModel = useMemo(() => {
+    const profiles = config?.llm?.profiles ?? {};
+    const activeProfileModel = activeProfile
+      ? (profiles[activeProfile]?.model ?? null)
+      : null;
+    const mainSite = config?.llm?.callSites?.mainAgent;
+    const mainSiteModel =
+      mainSite?.model ??
+      (mainSite?.profile
+        ? (profiles[mainSite.profile]?.model ?? null)
+        : null);
+    return activeProfileModel ?? mainSiteModel ?? defaultModel;
+  }, [config, activeProfile, defaultModel]);
+
   const queryComplexityRoutingEnabled =
     useAssistantFeatureFlagStore.use.queryComplexityRouting();
 
@@ -422,11 +443,13 @@ export function Mv3AiLeaf() {
     <Mv3SettingsScreen
       title="AI models"
       sub={
-        defaultModel
-          ? `Running on ${defaultModel}`
-          : isLoading
-            ? "Reading the model config…"
-            : "Which brain answers, and how hard it thinks"
+        activeProfile && effectiveModel
+          ? `Running on ${effectiveModel}`
+          : effectiveModel
+            ? `No profile selected — using the instance default (${effectiveModel})`
+            : isLoading
+              ? "Reading the model config…"
+              : "Which brain answers, and how hard it thinks"
       }
       tint="blue"
       testId="mv3-settings-ai"

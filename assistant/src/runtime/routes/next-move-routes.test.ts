@@ -211,6 +211,67 @@ describe("next-move endpoint", () => {
     expect(callNextMove().itemId).toBe(`wi:${staleButDue.id}`);
   });
 
+  test("an expired deadline (9 days past due) no longer wins the top slot", () => {
+    const task = createTask({ title: "t", template: "..." });
+    // The mobile-UAT bug: "HK LP trip Jul 6-10 … Review BEFORE Monday" was
+    // still THE next move 9+ days after its deadline passed, because any
+    // past-due date counted as "due soon" forever and the sooner-deadline
+    // axis made the MOST overdue item win. An expired deadline must not
+    // outrank live work.
+    const expired = createWorkItem({
+      taskId: task.id,
+      title: "Review BEFORE Monday (trip ended)",
+      dueAt: Date.now() - 9 * DAY,
+    });
+    setLastActivity(expired.id, Date.now() - 9 * DAY);
+
+    const fresh = createWorkItem({
+      taskId: task.id,
+      title: "Touched today, no deadline",
+    });
+    setLastActivity(fresh.id, Date.now());
+
+    __resetNextMoveCacheForTest();
+    expect(callNextMove().itemId).toBe(`wi:${fresh.id}`);
+  });
+
+  test("an expired-deadline item is demoted, never hidden", () => {
+    const task = createTask({ title: "t", template: "..." });
+    // Conservative contract: when the expired item is all there is, it still
+    // surfaces as the next move — expiry un-boosts, it does not filter.
+    const expired = createWorkItem({
+      taskId: task.id,
+      title: "Only overdue thing left",
+      dueAt: Date.now() - 9 * DAY,
+    });
+    setLastActivity(expired.id, Date.now() - 9 * DAY);
+
+    __resetNextMoveCacheForTest();
+    const res = callNextMove();
+    expect(res.hasMove).toBe(true);
+    expect(res.itemId).toBe(`wi:${expired.id}`);
+  });
+
+  test("overdue within the grace window still outranks fresh undated work", () => {
+    const task = createTask({ title: "t", template: "..." });
+    // 1 day past due (inside OVERDUE_GRACE_MS) — deadline pressure is live.
+    const justOverdue = createWorkItem({
+      taskId: task.id,
+      title: "Missed yesterday's deadline",
+      dueAt: Date.now() - DAY,
+    });
+    setLastActivity(justOverdue.id, Date.now() - 5 * DAY);
+
+    const fresh = createWorkItem({
+      taskId: task.id,
+      title: "Fresh, no deadline",
+    });
+    setLastActivity(fresh.id, Date.now());
+
+    __resetNextMoveCacheForTest();
+    expect(callNextMove().itemId).toBe(`wi:${justOverdue.id}`);
+  });
+
   test("a pinned-project item outranks an unpinned one of equal freshness", () => {
     const task = createTask({ title: "t", template: "..." });
     const pinnedProject = createProject({ title: "Pinned", pinned: true });

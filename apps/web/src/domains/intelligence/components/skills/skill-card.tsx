@@ -8,6 +8,7 @@ import {
   isRemovableSkill,
   type SkillInfo,
 } from "@/domains/intelligence/skills/types";
+import { rebrandSkillProse } from "@/domains/intelligence/skills/utils";
 
 const C = {
   line: "#E5E9F0",
@@ -95,7 +96,7 @@ export function SkillCard({
               whiteSpace: "nowrap",
             }}
           >
-            {skill.name}
+            {rebrandSkillProse(skill.name)}
           </span>
           <SkillOriginTag origin={skill.origin} />
         </div>
@@ -110,7 +111,7 @@ export function SkillCard({
             overflow: "hidden",
           }}
         >
-          {skill.description}
+          {rebrandSkillProse(skill.description)}
         </div>
       </div>
 
