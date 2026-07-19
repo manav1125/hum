@@ -630,10 +630,24 @@ export async function startVoiceTurn(
           } else if (msg.type === "conversation_error") {
             eventSink.onError(msg.userMessage);
           } else if (msg.type === "tool_use_start") {
+            // info-level so prod logs show whether the voice brain actually
+            // invokes tools (web_search, ui_show, …) vs. narrating from memory.
+            log.info(
+              { turnId, toolName: msg.toolName },
+              "Voice turn tool_use_start",
+            );
             eventSink.onToolUse(msg.toolName, msg.input);
           } else if (msg.type === "ui_surface_show") {
             // Additive to the SSE broadcast above: also hand visual surfaces to
             // the voice client so `ui_show` results render inline as cards.
+            log.info(
+              {
+                turnId,
+                surfaceType: msg.surfaceType,
+                surfaceId: msg.surfaceId,
+              },
+              "Voice turn forwarding ui_surface card",
+            );
             opts.callbacks?.ui_surface_show?.(msg);
           } else if (msg.type === "ui_surface_update") {
             opts.callbacks?.ui_surface_update?.(msg);

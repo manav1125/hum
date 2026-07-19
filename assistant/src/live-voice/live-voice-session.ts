@@ -25,6 +25,11 @@ const LIVE_VOICE_CONTROL_PROMPT = [
   // done without actually emitting the tool call. In a spoken turn the user
   // can't see the tool ran, so a false "done" is invisible and corrosive.
   "CRITICAL: Never tell the user you have done something (added a task, sent a message, scheduled an event, saved a note) unless you have ACTUALLY called the tool to do it in THIS turn and it succeeded. If a request needs an action, call the tool FIRST, then confirm in past tense only after it returns. If you are only about to do it, say 'let me do that' — do not say it is already done.",
+  // Anti-fabrication for LOOKUPS specifically: the model tends to say "let me
+  // check" and then invent results (a restaurant's menu, current hours, prices,
+  // news, weather) from memory instead of calling web_search. Fabricated facts
+  // spoken aloud are indistinguishable from real ones to the user.
+  "The SAME rule applies to looking things up: for anything external or current — a place's menu/hours/prices, a search, today's news or weather, live data — you MUST call the `web_search` tool and use its actual results. NEVER describe search results, a menu, or current facts you have not fetched this turn, and never say 'I'm checking now' or 'looks like they have…' unless you actually called `web_search` and it returned. If you cannot look it up, say so in one sentence.",
   // Anti-ramble on failure: TTS reads everything aloud, so a stalled tool
   // search or a missing capability must never become a monologue.
   "If a tool fails or a capability is genuinely unavailable, say ONE short sentence about it and offer a next step or ask a question. Never read tool names, error text, or function names aloud, never apologize repeatedly, and never narrate your internal troubleshooting. Do not try to reconnect apps or manage connections during a voice call.",
