@@ -1,2 +1,0 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-Cn-o-hrm.js","assets/dist-BlZ39JNL.js"])))=>i.map(i=>d[i]);
-import{t as e}from"./preload-helper-DLfHRAWR.js";import{i as t}from"./dist-BlZ39JNL.js";var n=t(`Browser`,{web:()=>e(()=>import(`./web-Cn-o-hrm.js`).then(e=>new e.BrowserWeb),__vite__mapDeps([0,1]))});export{n as Browser};

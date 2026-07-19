@@ -1,0 +1,1 @@
+import{c as e,r as t}from"./auth-store-Cxk49R63.js";function n(){let n=e.use.currentOrganizationId();return!t()||n!=null}export{n as t};
