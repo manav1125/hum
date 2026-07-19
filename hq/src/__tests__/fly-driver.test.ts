@@ -264,11 +264,13 @@ describe("provision happy path", () => {
       );
     expect(ipTypes).toEqual(["shared_v4", "v6"]);
 
-    // Volume mirrors render.yaml's 10GB /workspace disk, default region iad.
+    // Volume mirrors render.yaml's 10GB /workspace disk, default region iad,
+    // with Fly's automatic snapshot retention pinned (P0-5 backstop).
     expect(calls[3].body).toEqual({
       name: "workspace",
       region: "iad",
       size_gb: 10,
+      snapshot_retention: 14,
     });
 
     // Machine config: image, full env, ingress → gateway :10000, mount,
@@ -294,10 +296,28 @@ describe("provision happy path", () => {
     // v1 intentionally sets no QDRANT_URL — the daemon self-spawns qdrant
     // onto the /workspace volume and degrades gracefully if it can't.
     expect(machineBody.config.env.QDRANT_URL).toBeUndefined();
+    // 2 GB default (P0-4): 1 GB machines OOM during first boot — see the
+    // entrypoint's supervision notes; 1024 is now an explicit override only.
     expect(machineBody.config.guest).toEqual({
       cpu_kind: "shared",
       cpus: 1,
-      memory_mb: 1024,
+      memory_mb: 2048,
+    });
+    // P0-6a: a REAL health check on /readyz (gateway + daemon), so Fly can
+    // see zombie instances — /healthz alone lies.
+    expect(
+      (machineBody.config as unknown as { checks: Record<string, unknown> })
+        .checks,
+    ).toEqual({
+      readyz: {
+        type: "http",
+        port: 10000,
+        method: "GET",
+        path: "/readyz",
+        interval: "30s",
+        timeout: "10s",
+        grace_period: "300s",
+      },
     });
     expect(machineBody.config.services).toEqual([
       {

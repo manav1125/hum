@@ -82,6 +82,13 @@ export interface SigninToken {
   consumedAt: number | null;
 }
 
+/** One allowlisted alpha signin email (P0-7; may pre-date its customer row). */
+export interface InviteEmail {
+  email: string;
+  note: string;
+  createdAt: number;
+}
+
 export interface Invite {
   code: string;
   customerId: string | null;
@@ -421,6 +428,23 @@ const MIGRATIONS: { version: number; name: string; sql: string }[] = [
         ts      INTEGER NOT NULL
       );
       CREATE INDEX idx_slack_event_dedupe_ts ON slack_event_dedupe(ts)
+    `,
+  },
+  {
+    version: 8,
+    name: "alpha-invite-emails",
+    // P0-7 (alpha-readiness audit): the private-alpha signin allowlist.
+    // /signin used to answer a silent {ok:true} for strangers ("check your
+    // email" → nothing ever arrives). Emails on this list are recognized at
+    // signin even before they have a customer row; everyone else gets an
+    // honest "private alpha — request an invite" response. Managed via
+    // POST/GET/DELETE /admin/invites/emails.
+    sql: `
+      CREATE TABLE invite_emails (
+        email     TEXT PRIMARY KEY,
+        note      TEXT NOT NULL DEFAULT '',
+        createdAt INTEGER NOT NULL
+      )
     `,
   },
 ];
@@ -775,6 +799,80 @@ export class HqDb {
       uses: invite.uses + 1,
     });
     return { ...invite, uses: invite.uses + 1 };
+  }
+
+  // ── alpha invite-email allowlist (P0-7) ───────────────────────────────
+
+  /** Add (or refresh the note on) an allowlisted signin email. Idempotent. */
+  addInviteEmail(email: string, note = ""): InviteEmail {
+    const row: InviteEmail = {
+      email: email.trim().toLowerCase(),
+      note,
+      createdAt: Date.now(),
+    };
+    this.db.run(
+      `INSERT INTO invite_emails (email, note, createdAt) VALUES (?, ?, ?)
+       ON CONFLICT(email) DO UPDATE SET note = excluded.note`,
+      [row.email, row.note, row.createdAt],
+    );
+    this.recordEvent("invite_email_added", null, { email: row.email });
+    return row;
+  }
+
+  isEmailInvited(email: string): boolean {
+    return (
+      this.db
+        .query<{ n: number }, [string]>(
+          "SELECT COUNT(*) AS n FROM invite_emails WHERE email = ?",
+        )
+        .get(email.trim().toLowerCase())!.n > 0
+    );
+  }
+
+  listInviteEmails(): InviteEmail[] {
+    return this.db
+      .query<InviteEmail, []>(
+        "SELECT * FROM invite_emails ORDER BY createdAt DESC",
+      )
+      .all();
+  }
+
+  /** Returns true when the email was on the list (and is now removed). */
+  removeInviteEmail(email: string): boolean {
+    this.db.run("DELETE FROM invite_emails WHERE email = ?", [
+      email.trim().toLowerCase(),
+    ]);
+    const changed = this.db
+      .query<{ n: number }, []>("SELECT changes() AS n")
+      .get();
+    const removed = (changed?.n ?? 0) > 0;
+    if (removed) {
+      this.recordEvent("invite_email_removed", null, {
+        email: email.trim().toLowerCase(),
+      });
+    }
+    return removed;
+  }
+
+  // ── backup (P0-5, HQ half) ────────────────────────────────────────────
+
+  /**
+   * Flush the WAL into the main database file. Called at boot and before
+   * every backup so a copy of hq.db is complete on its own (the signing-key
+   * store must never depend on a sidecar -wal file surviving).
+   */
+  checkpointWal(): void {
+    this.db.run("PRAGMA wal_checkpoint(TRUNCATE);");
+  }
+
+  /**
+   * Write a consistent snapshot of the whole database to `destPath` using
+   * SQLite's VACUUM INTO (single transaction — safe against concurrent
+   * writers, no -wal/-shm sidecars in the output). Fails if the file exists.
+   */
+  backupTo(destPath: string): void {
+    this.checkpointWal();
+    this.db.run("VACUUM INTO ?", [destPath]);
   }
 
   // ── instances ─────────────────────────────────────────────────────────

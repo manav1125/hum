@@ -48,6 +48,26 @@
       </div>
     </sc-if>
 
+    <!-- INVITE REQUIRED (private alpha) -->
+    <sc-if value="{{ isInvite }}" hint-placeholder-val="{{ false }}">
+      <div id="state-invite" style="text-align:center;animation:cueLineIn .5s ease both">
+        <div style="width:66px;height:66px;border-radius:50%;background:rgba(61,110,232,.14);border:1px solid rgba(61,110,232,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:26px;color:#9DB4E6">✦</div>
+        <h1 style="font-size:clamp(24px,5vw,30px);line-height:1.1;letter-spacing:-.02em;font-weight:600;color:#fff;margin:0">Cue is in private alpha.</h1>
+        <p style="font-size:14.5px;color:#AEB7C7;margin:14px auto 0;line-height:1.65;max-width:320px"><b style="color:#E4EAF4">{{ email }}</b> isn't on the alpha list yet. Request an invite at <a href="mailto:hello@justcue.ai" style="color:#9DB4E6;text-decoration:none">hello@justcue.ai</a> or <a href="/#waitlist" style="color:#9DB4E6;text-decoration:none">join the waitlist</a>.</p>
+        <button onClick="{{ reset }}" style="margin-top:22px;background:none;border:none;color:#9DB4E6;font-size:12.5px;font-family:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px">use a different email</button>
+      </div>
+    </sc-if>
+
+    <!-- INVITED, NO ACCOUNT YET -->
+    <sc-if value="{{ isInvited }}" hint-placeholder-val="{{ false }}">
+      <div id="state-invited" style="text-align:center;animation:cueLineIn .5s ease both">
+        <div style="width:66px;height:66px;border-radius:50%;background:rgba(61,110,232,.14);border:1px solid rgba(61,110,232,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:26px;color:#9DB4E6">🎉</div>
+        <h1 style="font-size:clamp(24px,5vw,30px);line-height:1.1;letter-spacing:-.02em;font-weight:600;color:#fff;margin:0">You're invited.</h1>
+        <p style="font-size:14.5px;color:#AEB7C7;margin:14px auto 0;line-height:1.65;max-width:320px"><b style="color:#E4EAF4">{{ email }}</b> is on the alpha list — you just haven't set up your Cue yet. Finish in about a minute.</p>
+        <a href="/redeem" style="display:inline-block;margin-top:22px;background:#3D6EE8;color:#fff;border-radius:11px;padding:14px 26px;font-size:14.5px;font-weight:600;text-decoration:none;box-shadow:0 14px 30px -12px rgba(61,110,232,.7)">Set up my Cue</a>
+      </div>
+    </sc-if>
+
     <!-- SENT -->
     <sc-if value="{{ isSent }}" hint-placeholder-val="{{ false }}">
       <div id="state-sent" style="text-align:center;animation:cueLineIn .5s ease both">
@@ -65,18 +85,27 @@
 
 </x-dc>
 <script type="text/x-dc" data-dc-script>
-// Wired to Cue HQ via commerce.js: POST /signin (always answers ok — the
-// sent state shows regardless, so account existence never leaks).
+// Wired to Cue HQ via commerce.js: POST /signin. The private-alpha invite
+// gate answers status: sent | invited_no_account | invite_required, and the
+// page shows honest copy per state (invite-only alpha — existence-leak
+// paranoia is deliberately traded for honesty here). Network failures fall
+// back to the neutral "sent" state.
 class Component extends DCLogic {
-  state = { view: "default", email: "" }; // default | sent
+  state = { view: "default", email: "" }; // default | sent | invite | invited
 
   async onSubmit(e){
     e.preventDefault();
     const input = document.querySelector("#signin-form input[name=email]");
     const email = input ? input.value.trim() : "";
     if (!email || email.indexOf("@") === -1) { if (input) input.focus(); return; }
-    try { await CueCommerce.signin(email); } catch (_) { /* sent state anyway */ }
-    this.setState({ view: "sent", email });
+    let view = "sent";
+    try {
+      const res = await CueCommerce.signin(email);
+      const status = res && res.body && res.body.status;
+      if (status === "invite_required") view = "invite";
+      else if (status === "invited_no_account") view = "invited";
+    } catch (_) { /* neutral sent state */ }
+    this.setState({ view, email });
   }
 
   renderVals() {
@@ -84,6 +113,8 @@ class Component extends DCLogic {
     return {
       isDefault: v === "default",
       isSent: v === "sent",
+      isInvite: v === "invite",
+      isInvited: v === "invited",
       email: this.state.email,
       onSubmit: (e) => this.onSubmit(e),
       reset: () => this.setState({ view: "default", email: "" }),

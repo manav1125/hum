@@ -176,8 +176,10 @@ describe("auto-provision on checkout.session.completed", () => {
     const instances = db.listInstancesByCustomer(c.id);
     expect(instances.length).toBe(1);
     expect(instances[0].state).toBe("live");
-    // The welcome email was attempted (log-only mode records the event).
-    expect(db.findLatestEvent("welcome_email_sent", c.id)).not.toBeNull();
+    // The welcome email was attempted — but with no RESEND_API_KEY the
+    // audit trail must say so honestly (P0-1), never "sent".
+    expect(db.findLatestEvent("welcome_email_skipped_no_key", c.id)).not.toBeNull();
+    expect(db.findLatestEvent("welcome_email_sent", c.id)).toBeNull();
 
     const st = await statusBody(await status("cs_auto"));
     expect(st.state).toBe("ready");

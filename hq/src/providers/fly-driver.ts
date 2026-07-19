@@ -16,10 +16,16 @@
  *                        override via spec.image
  *   HQ_FLY_REGION         — default region (default "iad")
  *   HQ_FLY_VM_SIZE        — guest preset, e.g. "shared-cpu-1x" (default)
- *   HQ_FLY_VM_MEMORY_MB   — machine memory (default 1024)
+ *   HQ_FLY_VM_MEMORY_MB   — machine memory (default 2048; P0-4 of the
+ *                        alpha-readiness audit — the entrypoint documents
+ *                        OOM-kills on 1 GB machines during first boot, so
+ *                        1024 is only for dev/test overrides)
  *   HQ_FLY_VOLUME_SIZE_GB — /workspace volume size (default 10, matching
  *                        render.yaml's disk block); spec.plan like "20gb"
  *                        overrides per-provision
+ *   HQ_FLY_VOLUME_SNAPSHOT_RETENTION_DAYS — Fly automatic volume-snapshot
+ *                        retention set at volume create (default 14; Fly
+ *                        minimum is 5) — the P0-5 instance-side safety net
  *   HQ_FLY_PLACEMENT_ATTEMPTS   — max volume+machine placement tries against
  *                        Fly host-capacity rejections (default 4, clamped 1..8)
  *   HQ_FLY_PLACEMENT_BACKOFF_MS — base backoff between placement retries
@@ -332,9 +338,12 @@ export class FlyDriver implements InstanceDriver {
       );
     }
     const region = spec.region ?? process.env.HQ_FLY_REGION ?? "iad";
+    // 2 GB default (P0-4): docker-cue-app-entrypoint.sh documents OOM-kills
+    // on 1 GB machines during the first-boot burst (qdrant download +
+    // embedding worker) — 1024 remains an explicit dev override only.
     const guest = parseGuestPreset(
       process.env.HQ_FLY_VM_SIZE ?? "shared-cpu-1x",
-      Number(process.env.HQ_FLY_VM_MEMORY_MB ?? 1024),
+      Number(process.env.HQ_FLY_VM_MEMORY_MB ?? 2048),
     );
 
     const appName = await this.createAppWithUniqueName(spec.name);
@@ -429,6 +438,15 @@ export class FlyDriver implements InstanceDriver {
             name: "workspace",
             region,
             size_gb: volumeSizeGb(spec),
+            // P0-5: Fly's automatic daily volume snapshots are the instance
+            // data-loss backstop until offsite backups ship — pin retention
+            // explicitly instead of relying on the unconfigured default.
+            snapshot_retention: envInt(
+              "HQ_FLY_VOLUME_SNAPSHOT_RETENTION_DAYS",
+              14,
+              5,
+              60,
+            ),
           })) as FlyVolume;
           if (!created?.id) {
             throw new Error("Fly volume create returned no id");
@@ -494,6 +512,23 @@ export class FlyDriver implements InstanceDriver {
         ],
         mounts: [{ volume: volume.id, path: "/workspace" }],
         restart: { policy: "always" },
+        // P0-6a: a REAL health check. The gateway's /healthz answers ok
+        // unconditionally (gateway-only zombies look healthy), so the check
+        // targets /readyz, which also probes the upstream daemon — Fly then
+        // surfaces true instance health in `fly status`/checks and stops
+        // routing to a machine whose daemon is dead. Generous grace period:
+        // first boot downloads qdrant + warms the daemon.
+        checks: {
+          readyz: {
+            type: "http",
+            port: 10000,
+            method: "GET",
+            path: "/readyz",
+            interval: "30s",
+            timeout: "10s",
+            grace_period: "300s",
+          },
+        },
       },
     })) as FlyMachine;
     if (!machine?.id) {
@@ -727,6 +762,56 @@ export class FlyDriver implements InstanceDriver {
           `after update to ${image}; previous image was ${previousImage} — ` +
           `roll back by calling update again with it`,
       );
+    }
+  }
+
+  /**
+   * Write a small file into the machine's /workspace volume via the
+   * Machines exec API (P0-2: seeds connectors.json — Composio credentials —
+   * at provision time; nothing else writes that file on a fresh instance).
+   * Contents travel base64-encoded so no shell quoting can mangle a secret;
+   * `umask 077` keeps the result owner-readable only. Requires the machine
+   * to be running (call after provision's health gate passes).
+   */
+  async writeWorkspaceFile(
+    externalId: string,
+    relPath: string,
+    contents: string,
+  ): Promise<void> {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(relPath)) {
+      throw new Error(
+        `fly-driver: writeWorkspaceFile relPath must be a bare filename, got "${relPath}"`,
+      );
+    }
+    const machines = await this.listMachines(externalId);
+    if (machines.length === 0) {
+      throw new Error(
+        `fly-driver: app ${externalId} has no machines to write ${relPath} to`,
+      );
+    }
+    const b64 = Buffer.from(contents, "utf-8").toString("base64");
+    const dest = `/workspace/${relPath}`;
+    for (const machine of machines) {
+      const result = (await this.api(
+        "POST",
+        `/apps/${externalId}/machines/${machine.id}/exec`,
+        {
+          command: [
+            "/bin/sh",
+            "-c",
+            `umask 077 && printf '%s' '${b64}' | base64 -d > '${dest}'`,
+          ],
+          timeout: 30,
+        },
+      )) as { exit_code?: number; stderr?: string } | undefined;
+      const exitCode = result?.exit_code ?? 0;
+      if (exitCode !== 0) {
+        throw new Error(
+          `fly-driver: exec write ${dest} on ${machine.id} → exit ${exitCode}: ${
+            result?.stderr?.slice(0, 300) ?? ""
+          }`,
+        );
+      }
     }
   }
 

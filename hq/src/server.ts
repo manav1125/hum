@@ -9,7 +9,10 @@
  *   POST /redeem                { code, email, name, plan? } → checkout URL
  *   POST /webhooks/stripe       (raw body + Stripe-Signature)
  *   GET  /welcome/status        ?session_id= → provisioning|ready|delayed|unknown
- *   POST /signin                { email } → always {ok} (magic-link email)
+ *   POST /signin                { email } → {ok, status} — status is "sent"
+ *                               (customer, link emailed), "invited_no_account"
+ *                               (on the alpha allowlist, no instance yet), or
+ *                               "invite_required" (honest private-alpha gate)
  *   GET  /auth                  ?token= → session cookie + 302 into the
  *                               customer's instance (fresh magic link),
  *                               falling back to /account
@@ -35,6 +38,10 @@
  *
  * Admin routes (Bearer HQ_ADMIN_TOKEN, or ?token= for the browser page):
  *   GET  /admin                                 — HTML dashboard
+ *   GET  /admin/status                          — readiness report (email/
+ *                               Resend-domain probe, LLM key mode, connector
+ *                               seeding, sizing defaults, sweep/backup state)
+ *   GET/POST/DELETE /admin/invites/emails       — alpha signin allowlist
  *   POST /admin/catalog/ensure                  — idempotent Stripe catalog
  *   POST /admin/register-instance               { email, url, signingKey, guardianPrincipalId, name?, driver?, externalId?, flyUrl? }
  *   POST /admin/customers/:id/invite            { percentOff?, maxUses?, expiresDays? }
@@ -62,7 +69,14 @@ import { mintInstallState } from "./channels/slack/verify.js";
 import { adjustCredits, applyTopup, syncKeyLimitsToBalance } from "./credits.js";
 import type { CreditEntry, Customer, CustomerPlan, HqDb, Instance } from "./db.js";
 import { InvalidTransitionError } from "./db.js";
-import { sendEmail, signinEmail } from "./email.js";
+import {
+  emailReadiness,
+  logEmailReadinessAtBoot,
+  sendEmail,
+  signinEmail,
+} from "./email.js";
+import { startDbBackupScheduler } from "./db-backup.js";
+import { isOpenRouterConfigured } from "./openrouter.js";
 import { trackEvent } from "./klaviyo.js";
 import {
   TOPUPS,
@@ -72,7 +86,7 @@ import {
   resolvePlan,
   type TopupId,
 } from "./plans.js";
-import { updateFleet } from "./fleet.js";
+import { startFleetSweepScheduler, updateFleet } from "./fleet.js";
 import type { InstanceDriver } from "./providers/driver.js";
 import { UpdateNotSupportedError } from "./providers/driver.js";
 import {
@@ -444,6 +458,21 @@ export function createHandler(
 
         if (method === "POST" && path === "/admin/register-instance") {
           return handleRegisterInstance(req);
+        }
+
+        if (method === "GET" && path === "/admin/status") {
+          return handleAdminStatus(url);
+        }
+
+        // Alpha invite allowlist (P0-7): the emails /signin recognizes
+        // before they have a customer row.
+        if (path === "/admin/invites/emails") {
+          if (method === "GET") {
+            return json({ ok: true, emails: db.listInviteEmails() });
+          }
+          if (method === "POST") return handleInviteEmailsAdd(req);
+          if (method === "DELETE") return handleInviteEmailsRemove(req);
+          return json({ error: "not found" }, 404);
         }
 
         const customerAction = path.match(
@@ -869,6 +898,98 @@ export function createHandler(
   }
 
   /**
+   * POST /admin/invites/emails { emails: string[] } (or { email }, note?) —
+   * add signin-allowlist entries. Idempotent per email.
+   */
+  async function handleInviteEmailsAdd(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const note = typeof body.note === "string" ? body.note.trim() : "";
+    const raw = Array.isArray(body.emails)
+      ? body.emails
+      : typeof body.email === "string"
+        ? [body.email]
+        : [];
+    const emails = raw
+      .filter((e): e is string => typeof e === "string")
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.includes("@"));
+    if (emails.length === 0) {
+      return json({ error: "emails (array) or email is required" }, 400);
+    }
+    const added = emails.map((e) => db.addInviteEmail(e, note));
+    return json({ ok: true, added });
+  }
+
+  /** DELETE /admin/invites/emails { email } — remove an allowlist entry. */
+  async function handleInviteEmailsRemove(req: Request): Promise<Response> {
+    const body = await readJsonBody(req);
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    if (!email.includes("@")) return json({ error: "email is required" }, 400);
+    return json({ ok: true, removed: db.removeInviteEmail(email) });
+  }
+
+  /**
+   * GET /admin/status[?probe=0] — operator readiness report (P0-1/P0-6).
+   * Reports what IS, never what should be: email mode + a live Resend
+   * domain-status probe (skip with probe=0), LLM key mode, connector-seed
+   * readiness, instance sizing defaults, allowlist size, and the latest
+   * fleet-sweep / hq.db-backup audit events.
+   */
+  async function handleAdminStatus(url: URL): Promise<Response> {
+    const probe = url.searchParams.get("probe") !== "0";
+    const email = await emailReadiness({ probe, fetchImpl });
+    const lastSweep = db.findLatestEventByKindData("fleet_sweep_completed", "");
+    const lastBackupOk = db.findLatestEventByKindData("db_backup_completed", "");
+    const lastBackupFail = db.findLatestEventByKindData("db_backup_failed", "");
+    const sharedKeyPresent = !!process.env.OPENROUTER_SHARED_KEY;
+    return json({
+      ok: true,
+      service: "cue-hq",
+      now: Date.now(),
+      driver: {
+        id: driver.id,
+        configured:
+          (driver as { configured?: boolean }).configured ?? true,
+      },
+      email,
+      llm: {
+        provisioningKeyConfigured: isOpenRouterConfigured(),
+        sharedKeyPresent,
+        mode: isOpenRouterConfigured()
+          ? "per_customer_capped"
+          : sharedKeyPresent
+            ? "shared_uncapped"
+            : "none",
+      },
+      connectors: {
+        composioKeyConfigured: !!process.env.HQ_COMPOSIO_API_KEY?.trim(),
+      },
+      instanceDefaults: {
+        memoryMb: Number(process.env.HQ_FLY_VM_MEMORY_MB ?? 2048),
+        instanceDomain: process.env.HQ_INSTANCE_DOMAIN?.trim() || null,
+      },
+      invites: { allowlisted: db.listInviteEmails().length },
+      fleetSweep: {
+        disabled:
+          ["1", "true"].includes(
+            process.env.HQ_FLEET_SWEEP_DISABLED?.trim().toLowerCase() ?? "",
+          ),
+        opsAlertEmailConfigured: !!process.env.HQ_OPS_ALERT_EMAIL?.trim(),
+        lastCompletedAt: lastSweep?.ts ?? null,
+        lastResult: lastSweep ? JSON.parse(lastSweep.dataJson) : null,
+      },
+      backups: {
+        disabled:
+          ["1", "true"].includes(
+            process.env.HQ_DB_BACKUP_DISABLED?.trim().toLowerCase() ?? "",
+          ),
+        lastCompletedAt: lastBackupOk?.ts ?? null,
+        lastFailedAt: lastBackupFail?.ts ?? null,
+      },
+    });
+  }
+
+  /**
    * Mint the customer's "Add to Slack" link: /slack/install with an
    * HMAC-signed state that the OAuth callback resolves back to this
    * customer. 503 while the Slack app credentials aren't configured.
@@ -951,8 +1072,21 @@ export function createHandler(
   }
 
   /**
-   * POST /signin { email } — always answers {ok:true} (never leaks whether
-   * an account exists). Known customers get a one-time link by email.
+   * POST /signin { email } — the private-alpha invite gate (P0-7).
+   *
+   * Known customers get a one-time link by email (status:"sent"). Emails on
+   * the invite allowlist (invite_emails table or HQ_ALPHA_ALLOWLIST CSV)
+   * without a customer row yet get status:"invited_no_account". Everyone
+   * else gets an HONEST status:"invite_required" — the old behavior
+   * (unconditional {ok:true}) showed strangers "check your email" while
+   * nothing was ever going to arrive.
+   *
+   * DELIBERATE trade-off: this leaks whether an email is recognized. For a
+   * private alpha, honest UX beats enumeration resistance; revisit at GA.
+   *
+   * Email audit honesty (P0-1): `signin_email_sent` is recorded ONLY when
+   * Resend actually accepted the send; log-only mode (RESEND_API_KEY unset)
+   * records `signin_email_skipped_no_key`.
    */
   async function handleSignin(req: Request): Promise<Response> {
     if (!isSessionConfigured()) {
@@ -979,12 +1113,45 @@ export function createHandler(
         fetchImpl,
       );
       db.recordEvent(
-        result.ok ? "signin_email_sent" : "signin_email_failed",
+        !result.ok
+          ? "signin_email_failed"
+          : result.sent
+            ? "signin_email_sent"
+            : "signin_email_skipped_no_key",
         customer.id,
         result.ok ? { sent: result.sent } : { reason: result.reason },
       );
+      return json({ ok: true, status: "sent" });
     }
-    return json({ ok: true });
+    if (isEmailAllowlisted(email)) {
+      db.recordEvent("signin_invited_no_account", null, { email });
+      return json({
+        ok: true,
+        status: "invited_no_account",
+        message:
+          "You're on the alpha list, but your Cue isn't set up yet — use the invite link from your welcome email, or contact hello@justcue.ai.",
+      });
+    }
+    db.recordEvent("signin_unknown_email", null, { email });
+    return json({
+      ok: true,
+      status: "invite_required",
+      message:
+        "Cue is in private alpha — request an invite at hello@justcue.ai.",
+    });
+  }
+
+  /** Allowlist check: invite_emails table OR the HQ_ALPHA_ALLOWLIST env CSV. */
+  function isEmailAllowlisted(email: string): boolean {
+    if (db.isEmailInvited(email)) return true;
+    const csv = process.env.HQ_ALPHA_ALLOWLIST ?? "";
+    if (!csv.trim()) return false;
+    const normalized = email.trim().toLowerCase();
+    return csv
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean)
+      .includes(normalized);
   }
 
   /**
@@ -1635,4 +1802,13 @@ if (import.meta.main) {
       process.env.STRIPE_SECRET_KEY ? "configured" : "not configured"
     })`,
   );
+  // Alpha-readiness boot wiring (2026-07-19 audit):
+  //   P0-1 — scream when email is in log-only mode (no RESEND_API_KEY);
+  //   P0-6 — actually run the fleet sweep that existed but was never
+  //          scheduled (health probes + usage debits + credit freezes,
+  //          with ops-email alerting via HQ_OPS_ALERT_EMAIL);
+  //   P0-5 — WAL-checkpoint + timestamped, rotated hq.db snapshots.
+  logEmailReadinessAtBoot();
+  startFleetSweepScheduler(db, driver);
+  startDbBackupScheduler(db);
 }

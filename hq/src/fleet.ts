@@ -15,14 +15,28 @@
  *      mode the event still fires so a human can act.
  *
  * Run once:      bun run src/fleet.ts
- * Run nightly:   cron `0 3 * * *` → bun run src/fleet.ts
+ * Run scheduled: the server boot wires startFleetSweepScheduler() (P0-6 of
+ *                the alpha-readiness audit — the sweep existed but nothing
+ *                ever ran it), an in-process interval that also emails
+ *                HQ_OPS_ALERT_EMAIL when instances fail their health probe
+ *                or customers exhaust credits. `bun run src/fleet.ts` stays
+ *                available for manual/cron runs.
+ *
+ * Scheduler env contract:
+ *   HQ_FLEET_SWEEP_INTERVAL_MS      — cadence (default 21600000 = 6 h)
+ *   HQ_FLEET_SWEEP_INITIAL_DELAY_MS — first run after boot (default 120000)
+ *   HQ_FLEET_SWEEP_DISABLED         — "1"/"true" turns the scheduler off
+ *   HQ_OPS_ALERT_EMAIL              — operator inbox for failure alerts
+ *                                     (requires RESEND_API_KEY to deliver)
  */
 
 import { getBalance, syncKeyLimitsToBalance, syncUsage } from "./credits.js";
 import type { HqDb, Instance } from "./db.js";
+import { opsAlertEmail, sendEmail } from "./email.js";
 import { firstNameOf, trackEvent } from "./klaviyo.js";
 import { resolvePlan } from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
+import { publicSiteBase } from "./provisioning.js";
 
 /** Credits-low threshold: below this fraction of the plan's monthly grant. */
 export const CREDITS_LOW_FRACTION = 0.15;
@@ -186,6 +200,115 @@ export async function sweepFleet(
 }
 
 // ---------------------------------------------------------------------------
+// Scheduled sweep + operator alerting (P0-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * One scheduled sweep run: sweepFleet + an ops email when something needs a
+ * human (health-probe failures or exhausted customers). Alerting is
+ * best-effort — a Resend hiccup records `ops_alert_failed` and never throws.
+ */
+export async function sweepAndAlert(
+  db: HqDb,
+  driver: InstanceDriver,
+  opts: { fetchImpl?: typeof fetch; alertEmail?: string } = {},
+): Promise<SweepResult> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  const result = await sweepFleet(db, driver, { fetchImpl });
+
+  const needsHuman = result.failed.length > 0 || result.exhausted.length > 0;
+  const alertEmail = opts.alertEmail ?? process.env.HQ_OPS_ALERT_EMAIL?.trim();
+  if (needsHuman && alertEmail) {
+    const detailLines = [
+      ...result.failed.map((f) => `DOWN ${f.url} (instance ${f.instanceId})`),
+      ...result.exhausted.map((c) => `EXHAUSTED customer ${c}`),
+    ];
+    const sent = await sendEmail(
+      alertEmail,
+      opsAlertEmail({
+        subject: `Fleet sweep: ${result.failed.length} down, ${result.exhausted.length} exhausted`,
+        summary:
+          `${result.healthy}/${result.checked} instances healthy; ` +
+          `${result.creditsUsed} credits metered this sweep.`,
+        detailLines,
+        statusUrl: `${publicSiteBase()}/admin`,
+      }),
+      fetchImpl,
+    );
+    db.recordEvent(
+      sent.ok && sent.sent ? "ops_alert_sent" : "ops_alert_failed",
+      null,
+      sent.ok
+        ? { sent: sent.sent, failed: result.failed.length, exhausted: result.exhausted.length }
+        : { reason: sent.reason },
+    );
+  } else if (needsHuman) {
+    console.error(
+      `[hq/fleet] sweep found problems (${result.failed.length} down, ` +
+        `${result.exhausted.length} exhausted) but HQ_OPS_ALERT_EMAIL is unset — nobody was alerted`,
+    );
+  }
+  return result;
+}
+
+function isSweepDisabled(): boolean {
+  const raw = process.env.HQ_FLEET_SWEEP_DISABLED?.trim().toLowerCase();
+  return raw === "1" || raw === "true";
+}
+
+/**
+ * Boot wiring: run sweepAndAlert on an interval (default 6 h, first run
+ * shortly after boot). In-process on purpose — HQ is a single always-on
+ * machine and the sweep is idempotent, so a missed tick during a deploy
+ * just runs on the next one.
+ */
+export function startFleetSweepScheduler(
+  db: HqDb,
+  driver: InstanceDriver,
+  opts: {
+    fetchImpl?: typeof fetch;
+    intervalMs?: number;
+    initialDelayMs?: number;
+  } = {},
+): { stop: () => void } {
+  if (isSweepDisabled()) {
+    console.warn("[hq/fleet] HQ_FLEET_SWEEP_DISABLED — scheduled sweeps are OFF");
+    return { stop: () => {} };
+  }
+  const intervalMs =
+    opts.intervalMs ??
+    Number(process.env.HQ_FLEET_SWEEP_INTERVAL_MS ?? 6 * 60 * 60_000);
+  const initialDelayMs =
+    opts.initialDelayMs ??
+    Number(process.env.HQ_FLEET_SWEEP_INITIAL_DELAY_MS ?? 2 * 60_000);
+
+  let interval: ReturnType<typeof setInterval> | null = null;
+  const tick = () => {
+    void sweepAndAlert(db, driver, { fetchImpl: opts.fetchImpl }).catch((err) => {
+      db.recordEvent("fleet_sweep_crashed", null, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      console.error(`[hq/fleet] scheduled sweep crashed: ${err}`);
+    });
+  };
+  const initial = setTimeout(() => {
+    tick();
+    interval = setInterval(tick, intervalMs);
+    if (typeof interval.unref === "function") interval.unref();
+  }, initialDelayMs);
+  if (typeof initial.unref === "function") initial.unref();
+  console.info(
+    `[hq/fleet] sweep scheduled: first in ${Math.round(initialDelayMs / 1000)}s, then every ${Math.round(intervalMs / 60000)}min`,
+  );
+  return {
+    stop: () => {
+      clearTimeout(initial);
+      if (interval) clearInterval(interval);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Fleet image update (staged rollout)
 // ---------------------------------------------------------------------------
 
@@ -328,7 +451,7 @@ if (import.meta.main) {
       : process.env.HQ_DRIVER === "render" && render.configured
         ? render
         : new MockDriver();
-  const result = await sweepFleet(db, driver);
+  const result = await sweepAndAlert(db, driver);
   console.log(
     `Fleet sweep: ${result.healthy}/${result.checked} healthy, ` +
       `${result.creditsUsed} credits metered` +

@@ -71,6 +71,26 @@ export class MockDriver implements InstanceDriver {
     inst.state = "destroyed";
   }
 
+  /** Workspace files written per instance: externalId → relPath → contents. */
+  readonly workspaceFiles = new Map<string, Map<string, string>>();
+  /** Set true to make writeWorkspaceFile throw (seed-failure tests). */
+  failWorkspaceWrites = false;
+
+  async writeWorkspaceFile(
+    externalId: string,
+    relPath: string,
+    contents: string,
+  ): Promise<void> {
+    this.calls.push({ method: "writeWorkspaceFile", arg: `${externalId} ${relPath}` });
+    if (this.failWorkspaceWrites) {
+      throw new Error("mock-driver: workspace write failed (scripted)");
+    }
+    this.requireInstance(externalId);
+    const files = this.workspaceFiles.get(externalId) ?? new Map<string, string>();
+    files.set(relPath, contents);
+    this.workspaceFiles.set(externalId, files);
+  }
+
   async health(url: string): Promise<boolean> {
     this.calls.push({ method: "health", arg: url });
     const override = this.healthByUrl.get(url);

@@ -75,6 +75,19 @@ export interface InstanceDriver {
 
   /** True when the instance answers its health check. Never throws. */
   health(url: string): Promise<boolean>;
+
+  /**
+   * OPTIONAL: write a small file into the instance's persistent workspace
+   * (e.g. /workspace/connectors.json — the Composio credential seed, P0-2).
+   * `relPath` is a bare filename relative to the workspace root. Drivers
+   * without a remote-exec surface simply omit this; callers must treat its
+   * absence as "seeding unsupported" and record that, not throw.
+   */
+  writeWorkspaceFile?(
+    externalId: string,
+    relPath: string,
+    contents: string,
+  ): Promise<void>;
 }
 
 /** Thrown by drivers whose provider has no HQ-driven image-update path. */

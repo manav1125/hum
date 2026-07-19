@@ -10,6 +10,10 @@
  * Runs cleanly in "not configured" mode: without RESEND_API_KEY nothing is
  * sent — the would-be email (recipient, subject, and crucially the action
  * link) is logged at info level so dev flows are testable end to end.
+ * IMPORTANT: callers must record log-only sends DISTINCTLY (sent:false,
+ * reason "email_not_configured") — never as a "*_sent" audit event. The
+ * 2026-07-19 alpha audit found prod events claiming 11 signin emails
+ * "sent" that never left the box because the key was unset (P0-1).
  *
  * Env contract:
  *   RESEND_API_KEY — Resend secret (re_…). Unset ⇒ log-only mode.
@@ -139,6 +143,30 @@ export function creditsLowEmail(params: {
   };
 }
 
+/**
+ * OPS ALERT — plain internal notification (fleet-sweep failures, exhausted
+ * customers). Reuses the designed shell so it renders fine anywhere, but the
+ * body is operator-facing, not customer-facing.
+ */
+export function opsAlertEmail(params: {
+  subject: string;
+  summary: string;
+  detailLines?: string[];
+  statusUrl: string;
+}): EmailMessage {
+  const detail = (params.detailLines ?? []).join(" · ");
+  return {
+    subject: `[cue-hq] ${params.subject}`,
+    link: params.statusUrl,
+    html: renderEmailHtml({
+      head: params.subject,
+      body: params.summary + (detail ? ` — ${detail}` : ""),
+      button: { label: "Open HQ status", href: params.statusUrl },
+      legal: "Internal operations alert from Cue HQ.",
+    }),
+  };
+}
+
 /** 04 · PAYMENT FAILED — grace period messaging, portal link. */
 export function paymentFailedEmail(params: { portalUrl: string }): EmailMessage {
   return {
@@ -202,4 +230,93 @@ export async function sendEmail(
       reason: `resend_fetch_failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
+}
+
+// ── readiness (operator-facing; never fabricates DNS state) ──────────────
+
+export interface EmailReadiness {
+  /** RESEND_API_KEY present. */
+  configured: boolean;
+  mode: "live" | "log_only";
+  from: string;
+  /** The domain part of EMAIL_FROM (what Resend must have verified). */
+  fromDomain: string | null;
+  /**
+   * Result of a live GET /domains probe against Resend — only present when
+   * configured and the probe was requested. `status` is Resend's own value
+   * ("verified" | "pending" | "failed" | …); `found:false` means the From
+   * domain is not registered in Resend at all.
+   */
+  domainProbe?:
+    | { ok: true; found: boolean; status: string | null }
+    | { ok: false; reason: string };
+}
+
+function fromDomainOf(from: string): string | null {
+  const match = from.match(/@([A-Za-z0-9.-]+)>?\s*$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+/**
+ * Report email readiness. With `probe: true` (and a key present) it asks
+ * Resend for the From-domain's verification status — a live API read, so
+ * the operator sees the real DKIM/SPF state instead of a guess.
+ */
+export async function emailReadiness(
+  opts: { probe?: boolean; fetchImpl?: typeof fetch } = {},
+): Promise<EmailReadiness> {
+  const from = emailFrom();
+  const readiness: EmailReadiness = {
+    configured: isEmailConfigured(),
+    mode: isEmailConfigured() ? "live" : "log_only",
+    from,
+    fromDomain: fromDomainOf(from),
+  };
+  if (!opts.probe || !readiness.configured) return readiness;
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  try {
+    const res = await fetchImpl(`${RESEND_API_BASE}/domains`, {
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      readiness.domainProbe = { ok: false, reason: `resend_error_${res.status}` };
+      return readiness;
+    }
+    const body = (await res.json().catch(() => ({}))) as {
+      data?: { name?: string; status?: string }[];
+    };
+    const match = (body.data ?? []).find(
+      (d) => d.name?.toLowerCase() === readiness.fromDomain,
+    );
+    readiness.domainProbe = {
+      ok: true,
+      found: !!match,
+      status: match?.status ?? null,
+    };
+  } catch (err) {
+    readiness.domainProbe = {
+      ok: false,
+      reason: `resend_fetch_failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  return readiness;
+}
+
+/**
+ * Boot-time banner: scream when the control plane cannot actually email
+ * anyone. Called from server startup — a customer-facing HQ without
+ * RESEND_API_KEY silently eats every signin/welcome email (P0-1).
+ */
+export function logEmailReadinessAtBoot(): void {
+  if (isEmailConfigured()) {
+    console.info(`[hq/email] configured — sending as ${emailFrom()}`);
+    return;
+  }
+  console.error(
+    "[hq/email] ██ EMAIL IS IN LOG-ONLY MODE ██ RESEND_API_KEY is not set — " +
+      "NO signin or welcome email will be delivered to any customer. " +
+      "Magic links are only printed to this log. Set RESEND_API_KEY " +
+      "(and verify the From domain in Resend) before inviting users.",
+  );
 }

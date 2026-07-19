@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   creditsLowEmail,
+  emailReadiness,
+  logEmailReadinessAtBoot,
+  opsAlertEmail,
   paymentFailedEmail,
   sendEmail,
   signinEmail,
@@ -120,6 +123,18 @@ describe("sendEmail", () => {
     expect(captured!.body.subject).toBe("Your Cue is ready.");
   });
 
+  test("ops alert renders subject prefix and detail lines", () => {
+    const m = opsAlertEmail({
+      subject: "Fleet sweep: 1 down",
+      summary: "2/3 instances healthy.",
+      detailLines: ["DOWN http://x.fly.dev"],
+      statusUrl: "https://justcue.ai/admin",
+    });
+    expect(m.subject).toBe("[cue-hq] Fleet sweep: 1 down");
+    expect(m.html).toContain("DOWN http://x.fly.dev");
+    expect(m.html).toContain("https://justcue.ai/admin");
+  });
+
   test("Resend errors come back typed, never thrown", async () => {
     process.env.RESEND_API_KEY = "re_test_123";
     const fetchImpl = (async (_input: RequestInfo | URL) =>
@@ -131,5 +146,68 @@ describe("sendEmail", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toContain("resend_error_429");
+  });
+});
+
+describe("emailReadiness (P0-1 operator surface)", () => {
+  test("unconfigured: log_only mode, no fabricated domain state", async () => {
+    const readiness = await emailReadiness({ probe: true });
+    expect(readiness.configured).toBe(false);
+    expect(readiness.mode).toBe("log_only");
+    expect(readiness.fromDomain).toBe("justcue.ai"); // from the default From
+    expect(readiness.domainProbe).toBeUndefined();
+  });
+
+  test("configured + probe: reports Resend's own domain status", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.EMAIL_FROM = "Cue <hello@justcue.ai>";
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe("https://api.resend.com/domains");
+      return Response.json({
+        data: [
+          { name: "other.dev", status: "verified" },
+          { name: "justcue.ai", status: "pending" },
+        ],
+      });
+    }) as typeof fetch;
+    const readiness = await emailReadiness({ probe: true, fetchImpl });
+    expect(readiness.mode).toBe("live");
+    expect(readiness.domainProbe).toEqual({ ok: true, found: true, status: "pending" });
+  });
+
+  test("configured + probe: From domain missing from Resend is reported found:false", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.EMAIL_FROM = "Cue <hello@unregistered.dev>";
+    const fetchImpl = (async (_input: RequestInfo | URL) =>
+      Response.json({ data: [{ name: "justcue.ai", status: "verified" }] })) as typeof fetch;
+    const readiness = await emailReadiness({ probe: true, fetchImpl });
+    expect(readiness.domainProbe).toEqual({ ok: true, found: false, status: null });
+  });
+
+  test("probe API errors come back typed", async () => {
+    process.env.RESEND_API_KEY = "re_bad";
+    const fetchImpl = (async (_input: RequestInfo | URL) =>
+      new Response("unauthorized", { status: 401 })) as typeof fetch;
+    const readiness = await emailReadiness({ probe: true, fetchImpl });
+    expect(readiness.domainProbe).toEqual({ ok: false, reason: "resend_error_401" });
+  });
+
+  test("boot banner screams in log-only mode and stays quiet when configured", () => {
+    const errors: string[] = [];
+    const infos: string[] = [];
+    const origError = console.error;
+    const origInfo = console.info;
+    console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "));
+    console.info = (...args: unknown[]) => infos.push(args.map(String).join(" "));
+    try {
+      logEmailReadinessAtBoot();
+      expect(errors.some((l) => l.includes("LOG-ONLY MODE"))).toBe(true);
+      process.env.RESEND_API_KEY = "re_test";
+      logEmailReadinessAtBoot();
+      expect(infos.some((l) => l.includes("configured"))).toBe(true);
+    } finally {
+      console.error = origError;
+      console.info = origInfo;
+    }
   });
 });

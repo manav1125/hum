@@ -12,13 +12,38 @@
  *
  * Idempotency: a customer with any non-deleted instance is never
  * provisioned again — webhook retries and admin double-clicks no-op.
+ *
+ * Post-health hardening steps (2026-07-19 alpha-readiness audit, both
+ * best-effort — they record loud audit events but never fail a healthy
+ * provision):
+ *   - Connector seeding (P0-2): writes /workspace/connectors.json
+ *     ({composioApiKey, userId}) via driver.writeWorkspaceFile so the
+ *     instance's "Connect Gmail" flow works out of the box. The Composio
+ *     key is PLATFORM-level (one Composio project for the fleet); per-user
+ *     isolation comes from userId = the HQ customer id, which scopes every
+ *     Composio connected account to that customer.
+ *   - Budget defaults (P0-3): flips every seeded agent to
+ *     hardStopEnabled=true with a weekly capCents sized to the plan
+ *     (monthly COGS / 4), via the instance's PATCH /v1/agents/{id} API
+ *     using the guardian-init access token. The assistant seeds agents
+ *     with advisory-only budgets; managed instances get enforcement ON.
+ *
+ * Env contract (beyond secrets.ts / openrouter.ts):
+ *   HQ_COMPOSIO_API_KEY         — platform Composio key seeded into every
+ *                                 instance's connectors.json. Unset ⇒ the
+ *                                 connectors_seed_skipped event fires and
+ *                                 Gmail connect stays "not configured".
+ *   HQ_BUDGET_HARD_STOP_DEFAULT — "0" opts OUT of enforcing budgets on new
+ *                                 instances (default is ON).
+ *   HQ_AGENT_WEEKLY_CAP_CENTS   — per-agent weekly cap override in USD
+ *                                 cents (default: plan monthly COGS / 4).
  */
 
 import { sendEmail, welcomeEmail } from "./email.js";
 import type { Customer, HqDb, Instance } from "./db.js";
 import { firstNameOf, trackEvent } from "./klaviyo.js";
 import { provisionLlmKey } from "./openrouter.js";
-import { creditsToCogsUsd, resolvePlan } from "./plans.js";
+import { creditsToCogsUsd, resolvePlan, type PlanSpec } from "./plans.js";
 import type { InstanceDriver } from "./providers/driver.js";
 import { waitForHealthy } from "./providers/driver.js";
 import {
@@ -115,6 +140,19 @@ export async function provisionCustomer(
         ? creditsToCogsUsd(planSpec.monthlyCredits)
         : null,
   });
+  // P0-3: a shared-key provision means this customer's spend has NO
+  // provider-side cap — make that impossible to miss, per provision, both
+  // in the log and in the audit trail.
+  if (llmKey.mode === "shared") {
+    console.error(
+      `[hq/provisioning] ██ UNCAPPED LLM KEY ██ customer ${customer.id} (${customer.email}) ` +
+        "is being provisioned with the SHARED OpenRouter key — no provider-side spend limit. " +
+        "Set OPENROUTER_PROVISIONING_KEY on HQ to mint capped per-customer child keys.",
+    );
+    db.recordEvent("llm_key_shared_fallback", customer.id, {
+      warning: "shared OpenRouter key — spend capped only by instance guardrails",
+    });
+  }
 
   const provisioned = await driver.provision({
     customerId: customer.id,
@@ -166,6 +204,12 @@ export async function provisionCustomer(
     };
   }
 
+  // P0-2: seed the Composio connector credentials onto the instance's
+  // volume so "Connect Gmail" works from first boot. Best-effort with a
+  // loud audit trail — a seed failure must not throw away a healthy
+  // provision (the file can be re-seeded later via the driver).
+  await seedConnectors(deps, customer, instance.id, provisioned.externalId);
+
   // One-time guardian bootstrap: creates the guardian principal and gives
   // us its id, so magic links can be minted offline from now on.
   // Best-effort — a failure leaves the instance live but unlinked.
@@ -181,6 +225,14 @@ export async function provisionCustomer(
       instanceId: instance.id,
       guardianPrincipalId: init.guardianPrincipalId,
     });
+
+    // P0-3: flip budget enforcement ON for the seeded agent roster —
+    // best-effort, using the fresh guardian access token.
+    await applyDefaultBudgetsBestEffort(deps, customer, instance.id, {
+      instanceUrl: provisioned.url,
+      accessToken: init.accessToken,
+      planSpec,
+    });
   } catch (err) {
     db.recordEvent("guardian_bootstrap_failed", customer.id, {
       instanceId: instance.id,
@@ -190,6 +242,211 @@ export async function provisionCustomer(
 
   const live = db.transitionInstance(instance.id, "live");
   return { ok: true, instance: live, existing: false };
+}
+
+// ── connector seeding (P0-2) ─────────────────────────────────────────────
+
+/** The exact shape assistant/src/oauth/composio-oauth.ts readCreds() parses. */
+export function buildConnectorsJson(
+  composioApiKey: string,
+  userId: string,
+): string {
+  return JSON.stringify({ composioApiKey, userId });
+}
+
+async function seedConnectors(
+  deps: ProvisioningDeps,
+  customer: Customer,
+  instanceId: string,
+  externalId: string,
+): Promise<void> {
+  const { db, driver } = deps;
+  const composioApiKey = process.env.HQ_COMPOSIO_API_KEY?.trim();
+  if (!composioApiKey) {
+    console.warn(
+      `[hq/provisioning] HQ_COMPOSIO_API_KEY unset — connectors.json NOT seeded for ` +
+        `${customer.email}; Gmail/Calendar connect will report "not configured"`,
+    );
+    db.recordEvent("connectors_seed_skipped", customer.id, {
+      instanceId,
+      reason: "no_composio_key",
+    });
+    return;
+  }
+  if (!driver.writeWorkspaceFile) {
+    db.recordEvent("connectors_seed_skipped", customer.id, {
+      instanceId,
+      reason: `driver_${driver.id}_unsupported`,
+    });
+    return;
+  }
+  try {
+    await driver.writeWorkspaceFile(
+      externalId,
+      "connectors.json",
+      buildConnectorsJson(composioApiKey, customer.id),
+    );
+    db.recordEvent("connectors_seeded", customer.id, {
+      instanceId,
+      userId: customer.id,
+    });
+  } catch (err) {
+    console.error(
+      `[hq/provisioning] connectors.json seed FAILED for ${customer.email}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    db.recordEvent("connectors_seed_failed", customer.id, {
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+// ── managed budget defaults (P0-3) ───────────────────────────────────────
+
+/**
+ * Per-agent weekly hard cap in USD cents: the plan's monthly COGS budget
+ * spread over ~4 weeks (agents.cap_cents is measured over a 7-day window).
+ * Overridable via HQ_AGENT_WEEKLY_CAP_CENTS. Never below $1 so a tiny plan
+ * can't hard-stop instantly on rounding.
+ */
+export function defaultAgentWeeklyCapCents(planSpec: PlanSpec): number {
+  const override = Number(process.env.HQ_AGENT_WEEKLY_CAP_CENTS ?? "");
+  if (Number.isInteger(override) && override > 0) return override;
+  return Math.max(
+    100,
+    Math.round((creditsToCogsUsd(planSpec.monthlyCredits) / 4) * 100),
+  );
+}
+
+function budgetDefaultsDisabled(): boolean {
+  return process.env.HQ_BUDGET_HARD_STOP_DEFAULT?.trim() === "0";
+}
+
+export type BudgetDefaultsOutcome =
+  | { ok: true; updated: number; capCents: number }
+  | { ok: false; reason: string };
+
+/**
+ * Enforce spend budgets on a fresh instance's agent roster: GET /v1/agents,
+ * then PATCH each agent with { hardStopEnabled: true, capCents }. The
+ * roster seeds during daemon boot, so an empty list is retried briefly.
+ * The WS1 budget engine (assistant/src/guardrails/budget-enforcement.ts)
+ * only hard-stops when BOTH hardStopEnabled=1 AND a cap is set — flipping
+ * the flag alone would be a no-op, hence the sized cap.
+ */
+export async function applyDefaultBudgets(params: {
+  instanceUrl: string;
+  accessToken: string;
+  planSpec: PlanSpec;
+  fetchImpl?: typeof fetch;
+  /** Roster-seed poll knobs (tests use tiny values). */
+  listAttempts?: number;
+  listRetryDelayMs?: number;
+}): Promise<BudgetDefaultsOutcome> {
+  const fetchImpl = params.fetchImpl ?? fetch;
+  const base = params.instanceUrl.replace(/\/$/, "");
+  const headers = {
+    Authorization: `Bearer ${params.accessToken}`,
+    "Content-Type": "application/json",
+  };
+  const capCents = defaultAgentWeeklyCapCents(params.planSpec);
+  const attempts = params.listAttempts ?? 5;
+  const retryDelayMs = params.listRetryDelayMs ?? 3_000;
+
+  let agents: { id: string }[] = [];
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let res: Response;
+    try {
+      res = await fetchImpl(`${base}/v1/agents`, {
+        headers,
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        reason: `agents_list_fetch_failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (!res.ok) {
+      return { ok: false, reason: `agents_list_http_${res.status}` };
+    }
+    const body = (await res.json().catch(() => ({}))) as {
+      agents?: { id?: string }[];
+    };
+    agents = (body.agents ?? []).filter(
+      (a): a is { id: string } => typeof a.id === "string" && a.id.length > 0,
+    );
+    if (agents.length > 0) break;
+    if (attempt < attempts) {
+      await new Promise((r) => setTimeout(r, retryDelayMs));
+    }
+  }
+  if (agents.length === 0) {
+    return { ok: false, reason: "agent_roster_empty" };
+  }
+
+  let updated = 0;
+  for (const agent of agents) {
+    const res = await fetchImpl(
+      `${base}/v1/agents/${encodeURIComponent(agent.id)}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ hardStopEnabled: true, capCents }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    ).catch(() => null);
+    if (res?.ok) updated += 1;
+  }
+  if (updated === 0) {
+    return { ok: false, reason: "no_agent_accepted_budget_patch" };
+  }
+  return { ok: true, updated, capCents };
+}
+
+async function applyDefaultBudgetsBestEffort(
+  deps: ProvisioningDeps,
+  customer: Customer,
+  instanceId: string,
+  params: { instanceUrl: string; accessToken: string; planSpec: PlanSpec },
+): Promise<void> {
+  const { db } = deps;
+  if (budgetDefaultsDisabled()) {
+    db.recordEvent("budget_defaults_skipped", customer.id, {
+      instanceId,
+      reason: "HQ_BUDGET_HARD_STOP_DEFAULT=0",
+    });
+    return;
+  }
+  try {
+    const outcome = await applyDefaultBudgets({
+      ...params,
+      fetchImpl: deps.fetchImpl ?? fetch,
+    });
+    if (outcome.ok) {
+      db.recordEvent("budget_defaults_applied", customer.id, {
+        instanceId,
+        updated: outcome.updated,
+        capCents: outcome.capCents,
+      });
+    } else {
+      console.error(
+        `[hq/provisioning] budget defaults FAILED for ${customer.email}: ${outcome.reason} — ` +
+          "this instance's agents run with ADVISORY-ONLY budgets",
+      );
+      db.recordEvent("budget_defaults_failed", customer.id, {
+        instanceId,
+        reason: outcome.reason,
+      });
+    }
+  } catch (err) {
+    db.recordEvent("budget_defaults_failed", customer.id, {
+      instanceId,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 // ── magic links ──────────────────────────────────────────────────────────
@@ -353,8 +610,15 @@ export async function autoProvisionOnPayment(
       }),
       fetchImpl,
     );
+    // Honest audit trail (P0-1): "sent" ONLY when Resend actually accepted
+    // it. Log-only mode (no RESEND_API_KEY) records a distinct event so
+    // prod events can never again claim deliveries that never left the box.
     db.recordEvent(
-      result.ok ? "welcome_email_sent" : "welcome_email_failed",
+      !result.ok
+        ? "welcome_email_failed"
+        : result.sent
+          ? "welcome_email_sent"
+          : "welcome_email_skipped_no_key",
       customerId,
       result.ok ? { sent: result.sent } : { reason: result.reason },
     );
