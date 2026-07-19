@@ -37,7 +37,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import {
@@ -52,6 +52,8 @@ import {
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { GuardrailsGetResponse } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { Mv3LedgerPage } from "@/mobile-v3/you/ledger-page";
+import { Mv3RulesPage } from "@/mobile-v3/you/rules-page";
 import {
   CHECKPOINT_TEMPLATES,
   agentGlyph,
@@ -199,6 +201,24 @@ function modelShortName(model: string): string {
 // ---------------------------------------------------------------------------
 
 export function GuardrailsPage() {
+  // MOBILE — the mobile-v3 Rules screen (spec frame 20) with the act ledger
+  // (frame 31) at `?view=ledger` (deep-linked from the You screen's acts
+  // tile; no new route needed). Branch in a thin wrapper so the desktop
+  // body's hooks never change count across a breakpoint flip. Desktop keeps
+  // the three-band Guardrails console untouched.
+  const isMobile = useIsMobile();
+  const [searchParams] = useSearchParams();
+  if (isMobile) {
+    return searchParams.get("view") === "ledger" ? (
+      <Mv3LedgerPage />
+    ) : (
+      <Mv3RulesPage />
+    );
+  }
+  return <GuardrailsPageDesktop />;
+}
+
+function GuardrailsPageDesktop() {
   const assistantId = useActiveAssistantId();
   const isMobile = useIsMobile();
   // Week/Month window (SET 3) — one knob re-queries the whole payload.

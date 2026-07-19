@@ -25,6 +25,8 @@ export type PreChatStepId =
   | "priorAssistants"
   | "google"
   | "iosApp"
+  | "autonomy"
+  | "finish"
   | "nativeName"
   | "nativeVibe";
 
@@ -49,6 +51,12 @@ export interface WebStepCapabilities {
   canOfferGoogleStep: boolean;
   hasGoogleTool: boolean;
   showIOSAppStep: boolean;
+  /**
+   * Mobile-v3 funnel (docs/design/mobile-v3 frames 26–28): adds the autonomy
+   * pick + finish steps on mobile viewports only. Optional so existing
+   * callers/tests are unchanged; absent = desktop funnel, byte-identical.
+   */
+  mobileV3?: boolean;
 }
 
 /**
@@ -120,6 +128,19 @@ export function resolveWebSteps(caps: WebStepCapabilities): PreChatStep[] {
       id: "iosApp",
       funnelStep: ONBOARDING_FUNNEL_STEPS.controlGetApp,
       enabled: !paredDown && caps.showIOSAppStep,
+    },
+    // Mobile-v3 additions (frames 27/28). Not instrumented into the web
+    // funnel's event taxonomy (no existing events exist for them), mirroring
+    // the native steps' `funnelStep: null` treatment.
+    {
+      id: "autonomy",
+      funnelStep: null,
+      enabled: caps.mobileV3 === true,
+    },
+    {
+      id: "finish",
+      funnelStep: null,
+      enabled: caps.mobileV3 === true,
     },
   ];
   return candidates

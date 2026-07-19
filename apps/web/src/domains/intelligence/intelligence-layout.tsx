@@ -65,12 +65,27 @@ export function IntelligenceLayout() {
   const isMobile = useIsMobile();
   const setTopBarCenter = useChatLayoutSlotsStore.use.setTopBarCenter();
 
+  // Tabs whose mobile rendering is a full-bleed designed surface that paints
+  // its own background + padding (the mobile-v3 You cluster: the "You"
+  // screen on Channels & Agents, Memory, Connections, Skills). For those the
+  // outlet wrapper drops its mobile padding so the surface reaches the
+  // viewport edges — and the tab strip + top-bar title stand down too: the
+  // v3 screens carry their own `‹ You` navigation, and the remaining tabs
+  // stay reachable through the You screen's quiet footer links. Every other
+  // tab keeps the standard chrome.
+  const isFullBleedMobileTab =
+    isMobile &&
+    [routes.channels, routes.memory, routes.connectors, routes.skills].some(
+      (to) => pathname === to || pathname.startsWith(to + "/"),
+    );
+
   // On mobile the title moves out of the page body and into the shared top
   // bar — centered between the hamburger menu and the search icon — so the
   // tab row can rise directly beneath the header. Desktop keeps the in-body
-  // <h1> and leaves the top-bar center empty.
+  // <h1> and leaves the top-bar center empty. The mobile-v3 full-bleed tabs
+  // carry their own headers, so the slot stays empty there.
   useEffect(() => {
-    if (isMobile) {
+    if (isMobile && !isFullBleedMobileTab) {
       setTopBarCenter(
         <Typography
           variant="body-medium-default"
@@ -85,7 +100,7 @@ export function IntelligenceLayout() {
     return () => {
       setTopBarCenter(null);
     };
-  }, [isMobile, assistantName, setTopBarCenter]);
+  }, [isMobile, isFullBleedMobileTab, assistantName, setTopBarCenter]);
 
   const marketplace = useAssistantFeatureFlagStore.use.marketplace();
 
@@ -109,17 +124,6 @@ export function IntelligenceLayout() {
     return result;
   })();
 
-  // Tabs whose mobile rendering is a full-bleed designed surface that paints
-  // its own background + padding (the "You" screen on Channels & Agents, the
-  // Memory surface). For those the outlet wrapper drops its mobile padding so
-  // the surface reaches the viewport edges; every other tab keeps a standard
-  // gutter.
-  const isFullBleedMobileTab =
-    isMobile &&
-    [routes.channels, routes.memory].some(
-      (to) => pathname === to || pathname.startsWith(to + "/"),
-    );
-
   return (
     // On mobile the shell goes edge-to-edge (no padding): the tab strip and
     // the outlet wrapper below own their gutters so full-bleed tabs can fill
@@ -130,7 +134,10 @@ export function IntelligenceLayout() {
       </h1>
 
       <nav
-        className="mb-4 flex shrink-0 items-center overflow-x-auto border-b border-[var(--border-base)] max-md:mb-0 max-md:px-2"
+        className={cn(
+          "mb-4 flex shrink-0 items-center overflow-x-auto border-b border-[var(--border-base)] max-md:mb-0 max-md:px-2",
+          isFullBleedMobileTab && "max-md:hidden",
+        )}
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
         aria-label="About assistant sections"
       >

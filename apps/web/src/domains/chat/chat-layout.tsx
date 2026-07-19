@@ -64,6 +64,7 @@ import { requestComposerFocus } from "./composer-focus";
 
 import { LazyBoundary } from "@/components/lazy-boundary";
 import { StatusBanner } from "@/components/status-banner";
+import { Mv3ChatsIndex } from "@/mobile-v3/chats/mv3-chats-index";
 import { AssistantSideMenu } from "@/domains/chat/components/assistant-side-menu";
 import { PreferencesMenu } from "@/domains/chat/components/preferences-menu";
 import { useCommandPaletteOrchestrator } from "@/domains/chat/hooks/use-command-palette-orchestrator";
@@ -661,8 +662,7 @@ export function ChatLayout() {
                 id="chat-side-menu"
                 className="relative flex h-full w-full flex-col shadow-xl"
                 style={{
-                  background: "var(--surface-lift)",
-                  borderRight: "1px solid var(--border-base)",
+                  background: "var(--mv3-bg)",
                   zIndex: 50,
                   paddingTop:
                     "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
@@ -672,11 +672,21 @@ export function ChatLayout() {
                     "var(--safe-area-inset-left, env(safe-area-inset-left, 0px))",
                 }}
               >
-                {renderSideMenu({
-                  collapsed: false,
-                  variant: "overlay",
-                  onClose: closeDrawer,
-                })}
+                {/* Mobile v3 Chats index (spec frame 21) replaces the desktop
+                    side menu inside the mobile drawer only — the rail branch
+                    below still renders AssistantSideMenu untouched. */}
+                <Mv3ChatsIndex
+                  assistantId={assistantId}
+                  conversations={conversations}
+                  processingConversationIds={processingConversationIds}
+                  attentionConversationIds={attentionConversationIds}
+                  onSelectConversation={handleSelectConversation}
+                  onStartNewConversation={() => {
+                    startNewConversation();
+                    closeDrawer();
+                  }}
+                  onClose={closeDrawer}
+                />
               </aside>
             </div>
           ) : null}

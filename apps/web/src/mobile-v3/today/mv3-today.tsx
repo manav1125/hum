@@ -43,6 +43,7 @@ import { routes } from "@/utils/routes";
 
 import { AuroraBackdrop } from "../aurora-backdrop";
 import { CueRingHero, type OrbitChip } from "../cue-ring";
+import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
 import { LargeTitleHeader } from "../large-title-header";
 import {
@@ -259,9 +260,8 @@ function ReviewV3({ item, delay }: { item: HqWorkItem; delay: number }) {
   const navigate = useNavigate();
   const open = () => {
     haptic.medium();
-    if (item.lastRunConversationId)
-      navigate(routes.conversation(item.lastRunConversationId));
-    else navigate(routes.allWork);
+    // Full-bleed review pager (frame 16) — judges the work itself.
+    navigate(routes.reviewQueue);
   };
   return (
     <GlassCard tint="violet" style={rise(delay)}>
@@ -326,9 +326,9 @@ function WorkingNowV3({
   if (running.length === 0) return null;
   const watch = () => {
     haptic.light();
-    const first = running.find((r) => r.lastRunConversationId);
-    if (first?.lastRunConversationId)
-      navigate(routes.conversation(first.lastRunConversationId));
+    // Watch live (frame 17) — the running item's step stream.
+    const first = running[0];
+    if (first) navigate(routes.workLive(first.id));
     else navigate(routes.allWork);
   };
   return (
@@ -455,7 +455,8 @@ function CameInStripV3({
         type="button"
         onClick={() => {
           haptic.light();
-          navigate(routes.allWork);
+          // Swipe-triage surface (frame 15).
+          navigate(routes.cameIn);
         }}
         style={{
           fontSize: 12,
@@ -512,6 +513,16 @@ export function Mv3Today({
     ? `Good ${dayPart()}, ${userName}.`
     : `Good ${dayPart()}.`;
 
+  // First-morning empty state (frame 22): when every slot is empty, the orbit
+  // waits — dashed, still, inviting — instead of a blank card stack. The
+  // early return lives BELOW the last hook (chips useMemo) per hooks rules.
+  const orbitEmpty =
+    !move.hasMove &&
+    approvals.length === 0 &&
+    review.length === 0 &&
+    running.length === 0 &&
+    cameIn.length === 0;
+
   // Orbit chips = the active work streams (running items), spec hues per slot.
   const chips: OrbitChip[] = useMemo(
     () =>
@@ -525,6 +536,10 @@ export function Mv3Today({
       })),
     [running],
   );
+
+  if (orbitEmpty && !interactionsQuery.isLoading) {
+    return <EmptyOrbit />;
+  }
 
   // Stagger delays follow the spec's cadence (.1/.25/.4/.55) across whatever
   // slots actually rendered.

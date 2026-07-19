@@ -1,5 +1,5 @@
 import { lazy, useEffect, useState } from "react";
-import { Outlet, useNavigate } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { LazyBoundary } from "@/components/lazy-boundary";
 import { useAppTheme } from "@/hooks/use-app-theme";
@@ -8,6 +8,13 @@ import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { TabBarV3 } from "@/mobile-v3";
+import { Mv3OverflowMenu } from "@/mobile-v3/overflow-menu";
+import { OfflineTakeover } from "@/mobile-v3/offline-takeover";
+import {
+  clearPendingWorkspaceMode,
+  readPendingWorkspaceMode,
+} from "@/domains/onboarding/mv3-onboarding-prefs";
+import { companyprofilePut } from "@/generated/daemon/sdk.gen";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import { useAssistantLifecycle } from "@/assistant/use-lifecycle";
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
@@ -86,12 +93,44 @@ const KEYBOARD_OPEN_THRESHOLD_PX = 100;
  * - env() safe-area-inset: https://developer.mozilla.org/en-US/docs/Web/CSS/env
  * - Visual Viewport API: https://developer.mozilla.org/en-US/docs/Web/API/Visual_Viewport_API
  */
+/**
+ * Mobile v3 chrome rules (task #96, step 6).
+ *
+ * The legacy top chrome (hamburger / home / search pill in
+ * `ChatLayoutHeader`) is hidden on mobile so v3 screens own their full
+ * canvas (status bar only), EXCEPT:
+ *   · conversation routes — chat still relies on that header (and its drawer)
+ *     until the Chat cluster ships its own v3 nav;
+ *   · /voice — the standalone voice route has no exit affordance of its own
+ *     (and the tab bar also hides there), so removing the header would strand
+ *     it. The Voice v3 build owns that canvas.
+ */
+function legacyChromeHidden(pathname: string): boolean {
+  return !pathname.includes("/conversations") && !pathname.endsWith("/voice");
+}
+
+/** Where the minimal ⋯ affordance renders — the primary v3 tab landings whose
+ *  header (and its Chats/Search/Settings reachability) was removed. */
+const MV3_OVERFLOW_SURFACES = [
+  routes.hq,
+  routes.home,
+  routes.projects,
+  routes.channels,
+];
+
+function overflowVisible(pathname: string): boolean {
+  return MV3_OVERFLOW_SURFACES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+}
+
 export function RootLayout() {
   useAppTheme();
   const isMobile = useIsMobile();
   const visibleViewport = useVisibleViewport();
 
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const sessionStatus = useAuthStore.use.sessionStatus();
   const isSessionInitializing = useIsSessionInitializing();
   const hasPlatformSession = useHasPlatformSession();
@@ -125,6 +164,26 @@ export function RootLayout() {
   useEffect(() => {
     if (!assistantId || !isAssistantActive) return;
     void initPushNotifications(assistantId);
+  }, [assistantId, isAssistantActive]);
+
+  // Mobile-v3 onboarding Step 3 (frame 27) parks the autonomy pick as a
+  // pending workspace-mode when no daemon was reachable during the funnel.
+  // Apply it here — the same `PUT /company-profile` the HQ/You mode dial
+  // writes — the moment an assistant is active, then clear the pending key.
+  useEffect(() => {
+    if (!assistantId || !isAssistantActive) return;
+    const pending = readPendingWorkspaceMode();
+    if (!pending) return;
+    void companyprofilePut({
+      path: { assistant_id: assistantId },
+      body: { workspaceMode: pending },
+    })
+      .then(({ response }) => {
+        if (response?.ok) clearPendingWorkspaceMode();
+      })
+      .catch(() => {
+        /* daemon unreachable — retried on the next activation */
+      });
   }, [assistantId, isAssistantActive]);
 
   // Keep the browser favicon in sync with the assistant's avatar across
@@ -293,6 +352,25 @@ export function RootLayout() {
           (Today / Projects / + / Voice / You — docs/design/mobile-v3).
           Desktop uses the sidebar rail instead. */}
       {isMobile && <TabBarV3 />}
+
+      {/* Mobile v3: retire the legacy top chrome so screens own their full
+          canvas (see legacyChromeHidden for the carve-outs). Style-scoped to
+          this render so desktop markup/styles are byte-identical. */}
+      {isMobile && legacyChromeHidden(pathname) ? (
+        <style>{`[data-slot="chat-layout-header"] { display: none; }`}</style>
+      ) : null}
+
+      {/* The minimal ⋯ affordance replacing the removed chrome's unique
+          destinations (Chats / Search / Settings / Logs) on the primary v3
+          landings. */}
+      {isMobile && legacyChromeHidden(pathname) && overflowVisible(pathname) ? (
+        <Mv3OverflowMenu />
+      ) : null}
+
+      {/* Full-screen offline / waking-up takeover (spec frame 23). Mobile
+          only; no-ops until an assistant is active, and never over the
+          onboarding funnel (it manages its own connection states). */}
+      {isMobile && !pathname.includes("/onboarding/") && <OfflineTakeover />}
 
       {/* Portal target for mobile overlays that use `position: fixed`. */}
       <div id="viewport-overlays" />

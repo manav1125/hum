@@ -21,6 +21,7 @@ import { HqStyle, MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
 import { GoalTag, MissionTag } from "./item-card";
+import { Mv3Projects } from "./mv3-projects";
 import { NewProjectModal } from "./new-project-modal";
 import {
   CATEGORY_LABEL,
@@ -373,7 +374,16 @@ export function ProjectCard({
   );
 }
 
+/**
+ * Mobile v3 gate: narrow viewports render the frame-6 native Projects list
+ * (Mv3Projects); desktop keeps this serif deck byte-identical below.
+ */
 export function ProjectsPage() {
+  const isMobile = useIsMobile();
+  return isMobile ? <Mv3Projects /> : <ProjectsPageDesktop />;
+}
+
+function ProjectsPageDesktop() {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
   const isNarrow = useIsMobile();

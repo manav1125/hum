@@ -3,6 +3,8 @@ import { ChevronLeft, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
+import { Mv3OnboardingShell } from "@/domains/onboarding/screens/mv3/mv3-onboarding-shell";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   assistantsOauthConnectionsListOptions,
   useAssistantsOauthStartCreateMutation,
@@ -61,6 +63,7 @@ export function GoogleConnectScreen({
   const electron = isElectron();
   const queryClient = useQueryClient();
   const isNative = useIsNativePlatform();
+  const isMobile = useIsMobile();
 
   const popupRef = useRef<Window | null>(null);
   const pendingRequestRef = useRef<{ requestId: string } | null>(null);
@@ -392,6 +395,125 @@ export function GoogleConnectScreen({
 
   const assistantInlineName = assistantName || "your assistant";
   const assistantSentenceName = assistantName || "Your assistant";
+
+  // Mobile v3 restyle (spec frame 14 grammar) — same OAuth machinery
+  // (handleConnect / oauthInProgress), same skippability; only the frame
+  // changes. Desktop keeps the existing layout byte-for-byte below.
+  if (isMobile) {
+    const busy = oauthInProgress || startOAuth.isPending;
+    return (
+      <Mv3OnboardingShell
+        step="Step 2 of 4"
+        onBack={onBack}
+        onSkip={busy ? undefined : onSkip}
+        cta={busy ? "Waiting for authorization…" : "Connect Google"}
+        ctaDisabled={busy}
+        onCta={handleConnect}
+      >
+        <div
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            letterSpacing: "-0.7px",
+            lineHeight: 1.15,
+            marginTop: 6,
+          }}
+        >
+          Connect where your
+          <br />
+          digital world lives.
+        </div>
+        <div
+          style={{
+            fontSize: 14,
+            color: "var(--mv3-muted)",
+            marginTop: 8,
+            lineHeight: 1.5,
+          }}
+        >
+          A few now, more anytime. Nothing leaves without your say-so.
+        </div>
+
+        {/* Real app logos on glass cards (frame 14's connector grid — scoped
+            to what this step can actually connect: the Google trio). */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 9,
+            marginTop: 16,
+          }}
+        >
+          {GOOGLE_CONNECT_ITEMS.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                background: "var(--mv3-card)",
+                border: "1px solid var(--mv3-card-border)",
+                borderRadius: 18,
+                padding: "13px 14px",
+                backdropFilter: "blur(20px)",
+                WebkitBackdropFilter: "blur(20px)",
+                boxShadow: "var(--mv3-card-shadow)",
+              }}
+            >
+              <span
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 9,
+                  background: "#ffffff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "1px solid rgba(0,0,0,.06)",
+                }}
+              >
+                <img
+                  src={item.logoSrc}
+                  alt=""
+                  width={18}
+                  height={18}
+                  style={{ width: 18, height: 18, objectFit: "contain" }}
+                  loading="eager"
+                />
+              </span>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  marginTop: 9,
+                  color: "var(--mv3-text)",
+                }}
+              >
+                {item.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: "var(--mv3-micro)",
+                  marginTop: 2,
+                }}
+              >
+                Connect ›
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "var(--mv3-faint)",
+            marginTop: 16,
+            lineHeight: 1.55,
+          }}
+        >
+          {`${assistantSentenceName} will never send email, change calendar events, or edit files without your permission. You can disconnect at any time.`}
+        </div>
+      </Mv3OnboardingShell>
+    );
+  }
 
   return (
     <OnboardingLayout showCreatureFooter={false}>

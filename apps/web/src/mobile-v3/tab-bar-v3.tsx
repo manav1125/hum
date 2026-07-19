@@ -22,12 +22,21 @@
  * with a negative margin and re-pads itself, painting `--mv3-bg` down to the
  * physical bottom edge.
  */
+import { lazy, Suspense, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { CueRing } from "./cue-ring";
+
+// The Create sheet (spec frame 7) — lazy so the create catalogs don't ride in
+// every route's bundle; only fetched the first time the + is tapped.
+const CreateSheet = lazy(() =>
+  import("@/domains/create/create-sheet").then((m) => ({
+    default: m.CreateSheet,
+  })),
+);
 
 const SAFE_BOTTOM =
   "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))";
@@ -72,9 +81,16 @@ function YouGlyph() {
 }
 
 /** Surfaces that own their own bottom dock — bar hides there (carried over
- *  from the mv1 bar so those screens keep rendering edge-to-edge). */
+ *  from the mv1 bar so those screens keep rendering edge-to-edge). The
+ *  Morning Brief (frame 5) is a full-canvas takeover story — no bar. */
 function tabBarHidden(pathname: string): boolean {
-  return pathname.endsWith("/voice") || pathname.includes("/conversations");
+  return (
+    pathname.endsWith("/voice") ||
+    pathname.includes("/conversations") ||
+    pathname.endsWith("/brief") ||
+    // Pre-app flows own their full canvas (frames 26–28).
+    pathname.includes("/onboarding/")
+  );
 }
 
 interface V3Tab {
@@ -180,12 +196,16 @@ function TabItem({ tab, pathname }: { tab: V3Tab; pathname: string }) {
 }
 
 export function TabBarV3() {
-  const navigate = useNavigate();
   const { pathname } = useLocation();
+  // The + lifts the Create sheet over the CURRENT screen (frame 7) instead of
+  // navigating. `mounted` keeps the lazy chunk resident after first open so
+  // reopening is instant.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createMounted, setCreateMounted] = useState(false);
 
   if (tabBarHidden(pathname)) return null;
 
-  const createActive = pathname.endsWith("/create");
+  const createActive = createOpen || pathname.endsWith("/create");
 
   return (
     <nav
@@ -221,16 +241,19 @@ export function TabBarV3() {
       >
         <TabItem tab={TABS[0]} pathname={pathname} />
         <TabItem tab={TABS[1]} pathname={pathname} />
-        {/* Raised center + — capture. Routes to Create for now (the sheet
-            conversion is a later phase). */}
+        {/* Raised center + — lifts the Create sheet over the current screen
+            (frame 7). The /assistant/create page remains the desktop/fallback
+            surface. */}
         <button
           type="button"
           aria-label="Create"
+          aria-expanded={createOpen}
           aria-current={createActive ? "page" : undefined}
           className="cue-pressable"
           onClick={() => {
             haptic.light();
-            navigate(routes.create);
+            setCreateMounted(true);
+            setCreateOpen(true);
           }}
           style={{
             width: 46,
@@ -257,6 +280,16 @@ export function TabBarV3() {
         <TabItem tab={TABS[2]} pathname={pathname} />
         <TabItem tab={TABS[3]} pathname={pathname} />
       </div>
+
+      {/* Create sheet — portals into #viewport-overlays via SheetShell. */}
+      {createMounted ? (
+        <Suspense fallback={null}>
+          <CreateSheet
+            open={createOpen}
+            onClose={() => setCreateOpen(false)}
+          />
+        </Suspense>
+      ) : null}
     </nav>
   );
 }

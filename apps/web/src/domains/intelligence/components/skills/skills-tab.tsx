@@ -27,6 +27,7 @@ import { type Options } from "@/generated/daemon/sdk.gen";
 import type { SkillsGetData } from "@/generated/daemon/types.gen";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { Mv3SkillsPage } from "@/mobile-v3/you/skills-page";
 import { getLocalBool, setLocalBool } from "@/utils/local-settings";
 import { haptic } from "@/utils/haptics";
 import { ConfirmDialog } from "@vellumai/design-library";
@@ -84,6 +85,28 @@ const SERIF = "'Instrument Serif', Georgia, serif";
  * empty-state CTA ("Describe a skill in chat" → /assistant/).
  */
 export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
+  // MOBILE — the mobile-v3 Skills surface (spec frames 18 + 30: marketplace
+  // segments, the consent sheet, installed-skill manage). Branch in a thin
+  // wrapper so the desktop body's hooks never change count across a
+  // breakpoint flip. Desktop keeps the editorial grid untouched.
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <Mv3SkillsPage
+        assistantId={assistantId}
+        initialSkillId={initialSkillId}
+      />
+    );
+  }
+  return (
+    <SkillsTabDesktop
+      assistantId={assistantId}
+      initialSkillId={initialSkillId}
+    />
+  );
+}
+
+function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const navigate = useNavigate();

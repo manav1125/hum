@@ -22,6 +22,7 @@ import { HqStyle } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
 import { AddExistingPanel } from "./add-existing-panel";
+import { Mv3ProjectDetail } from "./mv3-project-detail";
 import type { BoardItem } from "./board-item";
 import { ItemCard, MissionTag, statusChip, type ItemChip } from "./item-card";
 import { BOARD_LANES, categoryLabel, laneForStatus } from "./project-kit";
@@ -109,7 +110,16 @@ function BoardRow({
   );
 }
 
+/**
+ * Mobile v3 gate: narrow viewports render the frame-3 native detail
+ * (Mv3ProjectDetail); desktop keeps this serif board byte-identical below.
+ */
 export function ProjectDetailPage() {
+  const isMobile = useIsMobile();
+  return isMobile ? <Mv3ProjectDetail /> : <ProjectDetailPageDesktop />;
+}
+
+function ProjectDetailPageDesktop() {
   const assistantId = useActiveAssistantId();
   const { projectId = "" } = useParams();
   const navigate = useNavigate();

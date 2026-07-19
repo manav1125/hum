@@ -43,6 +43,10 @@ import { Dropdown } from "@vellumai/design-library/components/dropdown";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router";
 import type { Surface } from "@/domains/chat/types/types";
+import { CueRing } from "@/mobile-v3/cue-ring";
+import { microLabel, rise } from "@/mobile-v3/mv3-kit";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { haptic } from "@/utils/haptics";
 import { useLiveVoice } from "@/domains/chat/voice/live-voice/use-live-voice";
 import {
   useLiveVoiceStore,
@@ -51,7 +55,6 @@ import {
 import { VoiceDictationSurface } from "@/domains/chat/voice/voice-dictation-surface";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { ttsProvidersGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
-// eslint-disable-next-line local/no-cross-domain-imports -- pre-existing; settings TTS types reused by the voice surface
 import { LS_TTS_PROVIDER, TTS_PROVIDERS } from "@/domains/settings/ai/ai-types";
 import { useIsOrgReady } from "@/hooks/use-is-org-ready";
 import {
@@ -71,7 +74,6 @@ const BLUE = "#3D6EE8";
 const DANGER = "#E5634B";
 const TEXT_2 = "#8A97AC";
 const TEXT_3 = "#5E6B80";
-const LINE = "rgba(255,255,255,.08)";
 const LINE_2 = "rgba(255,255,255,.14)";
 const SURFACE = "#212B3B";
 
@@ -173,6 +175,7 @@ export function VoiceModeSurface({
   const assistantId = useActiveAssistantId();
   const voiceMode = useAssistantFeatureFlagStore.use.voiceMode();
   const isOrgReady = useIsOrgReady();
+  const isMobile = useIsMobile();
   const {
     state,
     partialTranscript,
@@ -319,6 +322,38 @@ export function VoiceModeSurface({
     return <VoiceDictationSurface onExit={onExit} />;
   }
 
+  // MOBILE → the v3 native rendering (spec frames 2 + 24). Same controller,
+  // same session logic — only the presentation branches. Desktop keeps the
+  // ink-panel rendering below, byte-identical.
+  if (isMobile) {
+    return (
+      <Mv3VoiceMobile
+        state={state}
+        partialTranscript={partialTranscript}
+        finalTranscript={finalTranscript}
+        assistantTranscript={assistantTranscript}
+        error={error}
+        muted={muted}
+        cards={cards}
+        connecting={connecting}
+        active={active}
+        listening={listening}
+        denied={denied}
+        sessionFailed={sessionFailed}
+        engine={engine}
+        onToggleEngine={toggleEngine}
+        onToggle={handleToggle}
+        onStop={() => void stop()}
+        onSetMuted={setMuted}
+        onExit={onExit ? handleExit : undefined}
+        onCardAction={handleCardAction}
+        provider={provider}
+        providerOptions={providerOptions}
+        onProviderChange={handleProviderChange}
+      />
+    );
+  }
+
   return (
     <div
       style={{
@@ -411,55 +446,10 @@ export function VoiceModeSurface({
         {engine === "gemini-live" ? "Realtime" : "Classic"}
       </button>
 
-      {!voiceMode ? (
-        <div
-          style={{
-            maxWidth: 320,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-          }}
-        >
-          <div
-            style={{
-              width: 118,
-              height: 118,
-              borderRadius: "50%",
-              background: SURFACE,
-              border: `1px solid ${LINE}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: 0.6,
-            }}
-          >
-            <VoiceOrb state="idle" size={84} />
-          </div>
-          <div
-            style={{
-              fontSize: 19,
-              fontWeight: 600,
-              letterSpacing: "-0.3px",
-              marginTop: 26,
-            }}
-          >
-            Voice mode isn't enabled
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              lineHeight: 1.5,
-              color: TEXT_2,
-              marginTop: 10,
-            }}
-          >
-            Turn on voice mode for this assistant (Settings → Models &amp;
-            Services → Voice) and set a speech-to-text provider to talk to Cue
-            hands-free.
-          </div>
-        </div>
-      ) : (
-        <>
+      {/* NOTE: the old "Voice mode isn't enabled" panel that used to live here
+          was unreachable dead code — the `!voiceMode` early return above always
+          routes to the dictation surface first — and has been removed. */}
+      <>
           {/* Status eyebrow (DM Mono) — the design's top-of-screen state line. */}
           <div
             style={{
@@ -822,7 +812,909 @@ export function VoiceModeSurface({
               />
             </div>
           ) : null}
+      </>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mobile v3 rendering (spec frames 2 + 24) — presentation only. All session
+// logic (useLiveVoice, reconnect, engine toggle, TTS picker persistence) stays
+// in VoiceModeSurface above; this component just draws the v3 native frames.
+// ---------------------------------------------------------------------------
+
+/**
+ * Scoped v3-voice CSS:
+ *  · the transcription caret blink (opacity-only)
+ *  · result cards: `SurfaceRouter` content is kept verbatim; its
+ *    SurfaceContainer chrome (`.rounded-lg.border` root) is retinted to the
+ *    v3 glass material (frame 24 card: rgba(28,32,44,.85) · hairline ·
+ *    radius 20 · blur 20) so the cards read as GlassCards without forking
+ *    the surface components.
+ * Reduced motion is handled by the shared `[data-mv3]` rule in mv3.css.
+ */
+const MV3_VOICE_CSS = `
+@keyframes mv3vCaret { 0%,45%{opacity:1} 50%,100%{opacity:0} }
+.cue-mv3-voice .mv3-voice-cards .rounded-lg.border {
+  border-radius: 20px;
+  background: rgba(28,32,44,.85);
+  border-color: rgba(255,255,255,.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 20px 44px -22px rgba(0,0,0,.7);
+}
+`;
+
+/** Frame 2 waveform: 16 gradient bars under the ring while listening. */
+const IDLE_WAVE_HEIGHTS = [
+  12, 20, 28, 16, 24, 32, 18, 26, 14, 22, 30, 17, 25, 13, 21, 27,
+];
+
+function Mv3ListeningWave() {
+  return (
+    <div
+      aria-hidden
+      style={{
+        display: "flex",
+        gap: 4,
+        alignItems: "center",
+        height: 34,
+        marginTop: 34,
+        ...rise(0),
+      }}
+    >
+      {IDLE_WAVE_HEIGHTS.map((h, i) => (
+        <span
+          key={i}
+          style={{
+            width: 3.5,
+            height: h,
+            borderRadius: 99,
+            background: "linear-gradient(180deg, #7FA3F2, #3D6EE8)",
+            transformOrigin: "center",
+            animation: `mv3Bar ${0.7 + (i % 4) * 0.12}s ease-in-out ${
+              (i % 5) * 0.09
+            }s infinite`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Frame 24 pill-bar waveform: 5 short bars beside the live mic. */
+const PILL_WAVE = [12, 20, 9, 17, 11];
+
+function Mv3PillWave({ animate }: { animate: boolean }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: "flex",
+        gap: 3,
+        alignItems: "center",
+        height: 20,
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
+      {PILL_WAVE.map((h, i) => (
+        <span
+          key={i}
+          style={{
+            width: 3,
+            height: h,
+            borderRadius: 99,
+            background: "#7FA3F2",
+            transformOrigin: "center",
+            opacity: animate ? 1 : 0.35,
+            animation: animate
+              ? `mv3Bar .8s ease-in-out ${i * 0.15}s infinite`
+              : "none",
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Quiet v3 pill button (engine toggle / Done) — mono microlabel chrome. */
+function Mv3QuietPill({
+  onClick,
+  active = false,
+  children,
+  ariaLabel,
+  title,
+}: {
+  onClick: () => void;
+  active?: boolean;
+  children: React.ReactNode;
+  ariaLabel: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      title={title}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        fontFamily: "var(--mv3-mono)",
+        fontSize: 10.5,
+        letterSpacing: "0.1em",
+        textTransform: "uppercase",
+        color: active ? "#7FA3F2" : "#9A9AA8",
+        background: active ? "rgba(61,110,232,.22)" : "rgba(255,255,255,.07)",
+        border: `1px solid ${
+          active ? "rgba(61,110,232,.45)" : "rgba(255,255,255,.1)"
+        }`,
+        borderRadius: 99,
+        padding: "0 14px",
+        minHeight: 44,
+        cursor: "pointer",
+        backdropFilter: "blur(10px)",
+        WebkitBackdropFilter: "blur(10px)",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface Mv3VoiceMobileProps {
+  state: string;
+  partialTranscript: string;
+  finalTranscript: string;
+  assistantTranscript: string;
+  error: string | null;
+  muted: boolean;
+  cards: LiveVoiceCard[];
+  connecting: boolean;
+  active: boolean;
+  listening: boolean;
+  denied: boolean;
+  sessionFailed: boolean;
+  engine: "cascade" | "gemini-live";
+  onToggleEngine: () => void;
+  onToggle: () => void;
+  onStop: () => void;
+  onSetMuted: (muted: boolean) => void;
+  onExit?: () => void;
+  onCardAction: (
+    surfaceId: string,
+    actionId: string,
+    data?: Record<string, unknown>,
+  ) => void;
+  provider: string;
+  providerOptions: Array<{ value: string; label: string }>;
+  onProviderChange: (value: string) => void;
+}
+
+function Mv3VoiceMobile({
+  state,
+  partialTranscript,
+  finalTranscript,
+  assistantTranscript,
+  error,
+  muted,
+  cards,
+  connecting,
+  active,
+  listening,
+  denied,
+  sessionFailed,
+  engine,
+  onToggleEngine,
+  onToggle,
+  onStop,
+  onSetMuted,
+  onExit,
+  onCardAction,
+  provider,
+  providerOptions,
+  onProviderChange,
+}: Mv3VoiceMobileProps) {
+  // Frame 24 ("results") takes over once the conversation has produced
+  // anything — a finalized utterance, a reply, cards, or the brain thinking.
+  // A brand-new session that is merely listening stays on frame 2's hero.
+  const inConversation =
+    active &&
+    (cards.length > 0 ||
+      assistantTranscript.length > 0 ||
+      finalTranscript.length > 0 ||
+      state === "thinking" ||
+      state === "speaking");
+  const idle = !active && !connecting;
+  const ringDimmed = denied || sessionFailed;
+
+  const handleRingTap = () => {
+    if (connecting) return;
+    if (active) haptic.medium();
+    else haptic.light();
+    onToggle();
+  };
+
+  const handleEnd = () => {
+    haptic.medium();
+    onStop();
+  };
+
+  const pillLabel =
+    muted && active
+      ? "muted"
+      : state === "listening" || state === "transcribing"
+        ? "listening"
+        : state === "thinking"
+          ? "thinking…"
+          : state === "speaking"
+            ? "speaking"
+            : state === "connecting"
+              ? "connecting…"
+              : "";
+
+  const spokenLine = [finalTranscript, partialTranscript]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div
+      data-mv3
+      data-theme="dark"
+      className="cue-mv3-voice"
+      style={{
+        height: "100%",
+        position: "relative",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        background: "#050508",
+        color: "#F4F4F6",
+        fontFamily: "var(--mv3-font)",
+      }}
+    >
+      <style>{MV3_VOICE_CSS}</style>
+
+      {/* Aurora — brightens while listening, sinks low behind the card canvas
+          (frame 2: 50% 46% · frame 24: 50% 80%). Static blur, transform-only
+          drift. */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: "-20%",
+          background: `radial-gradient(46% 38% at 50% ${
+            inConversation ? "80%" : "46%"
+          }, rgba(61,110,232,.35), transparent 68%)`,
+          filter: "blur(34px)",
+          animation: "mv3Aur 10s ease-in-out infinite",
+          opacity: listening || inConversation ? 1 : 0.62,
+          transition: "opacity .6s",
+          pointerEvents: "none",
+          willChange: "transform",
+        }}
+      />
+
+      {/* Top controls — engine toggle (kept: required behavior) + Done. */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 18px 0",
+          position: "relative",
+          zIndex: 5,
+        }}
+      >
+        <Mv3QuietPill
+          onClick={onToggleEngine}
+          active={engine === "gemini-live"}
+          ariaLabel={`Voice engine: ${
+            engine === "gemini-live" ? "Realtime" : "Classic"
+          }. Tap to switch.`}
+          title={
+            engine === "gemini-live"
+              ? "Realtime engine (Gemini Live). Tap for Classic."
+              : "Classic engine (full assistant). Tap for Realtime."
+          }
+        >
+          <Sparkles size={12} aria-hidden />
+          {engine === "gemini-live" ? "Realtime" : "Classic"}
+        </Mv3QuietPill>
+        {onExit ? (
+          <Mv3QuietPill onClick={onExit} ariaLabel="Return to typing">
+            <Keyboard size={12} aria-hidden />
+            Done
+          </Mv3QuietPill>
+        ) : (
+          <span />
+        )}
+      </div>
+
+      {inConversation ? (
+        /* ── Frame 24 · results layout ─────────────────────────────────── */
+        <>
+          {/* Transcript strip — the spoken ask, italic. */}
+          {spokenLine ? (
+            <div
+              style={{
+                padding: "8px 26px 0",
+                flexShrink: 0,
+                position: "relative",
+                zIndex: 2,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#9A9AA8",
+                  lineHeight: 1.5,
+                  fontStyle: "italic",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+              >
+                &ldquo;{spokenLine}&rdquo;
+              </div>
+            </div>
+          ) : null}
+
+          {/* Result canvas — the spoken reply + cards rising in. */}
+          <div
+            className="mv3-voice-cards"
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              padding: "16px 18px 8px",
+              position: "relative",
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: 10 }}
+            >
+              {assistantTranscript ? (
+                <div
+                  style={{
+                    fontSize: 16.5,
+                    fontWeight: 600,
+                    lineHeight: 1.45,
+                    letterSpacing: "-0.2px",
+                    ...rise(0),
+                  }}
+                >
+                  {assistantTranscript}
+                </div>
+              ) : state === "thinking" ? (
+                <div
+                  style={{
+                    ...microLabel,
+                    color: "#7FA3F2",
+                    ...rise(0),
+                  }}
+                >
+                  Thinking…
+                </div>
+              ) : null}
+              {cards.map((card, i) => (
+                <div key={card.surfaceId} style={rise(0.2 + 0.2 * Math.min(i, 3))}>
+                  <SurfaceRouter
+                    surface={toSurface(card)}
+                    onAction={onCardAction}
+                  />
+                </div>
+              ))}
+              {/* Quick-reply chips (frame 24) are intentionally omitted: the
+                  live-voice channel has no text-send path yet, and faking one
+                  is off the table. */}
+            </div>
+          </div>
+
+          {/* Live mic pill bar — mic (tap = mute), waveform, state, ✕ end. */}
+          <div
+            style={{
+              flexShrink: 0,
+              padding: `10px 18px calc(10px + ${safeInset("bottom")})`,
+              position: "relative",
+              zIndex: 5,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                background: "rgba(22,26,36,.9)",
+                border: "1px solid rgba(61,110,232,.4)",
+                borderRadius: 26,
+                padding: "6px 8px 6px 8px",
+                backdropFilter: "blur(24px)",
+                WebkitBackdropFilter: "blur(24px)",
+                boxShadow: "0 0 0 4px rgba(61,110,232,.1)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  haptic.light();
+                  onSetMuted(!muted);
+                }}
+                aria-label={muted ? "Unmute microphone" : "Mute microphone"}
+                aria-pressed={muted}
+                style={{
+                  position: "relative",
+                  width: 44,
+                  height: 44,
+                  flexShrink: 0,
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                <span
+                  style={{
+                    position: "relative",
+                    width: 34,
+                    height: 34,
+                    borderRadius: "50%",
+                    background: muted
+                      ? "rgba(255,255,255,.12)"
+                      : "linear-gradient(160deg, #4E7CEC, #3560CC)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {listening && !muted ? (
+                    <span
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        inset: -4,
+                        borderRadius: "50%",
+                        border: "1.5px solid rgba(61,110,232,.6)",
+                        animation: "mv3Ping 1.8s ease-out infinite",
+                      }}
+                    />
+                  ) : null}
+                  {muted ? (
+                    <MicOff size={15} color="#F4F4F6" aria-hidden />
+                  ) : (
+                    <Mic size={15} color="#fff" aria-hidden />
+                  )}
+                </span>
+              </button>
+              <Mv3PillWave animate={listening && !muted} />
+              <span
+                style={{ fontSize: 12, color: "#9A9AA8", flexShrink: 0 }}
+              >
+                {pillLabel}
+              </span>
+              <button
+                type="button"
+                onClick={handleEnd}
+                aria-label="End voice session"
+                style={{
+                  width: 44,
+                  height: 44,
+                  flexShrink: 0,
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                <span
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "50%",
+                    background: "rgba(255,255,255,.08)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    color: "#F4F4F6",
+                  }}
+                  aria-hidden
+                >
+                  ✕
+                </span>
+              </button>
+            </div>
+          </div>
         </>
+      ) : (
+        /* ── Frame 2 · idle / first-listen layout ──────────────────────── */
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            zIndex: 2,
+            padding: `0 32px calc(10px + ${safeInset("bottom")})`,
+            textAlign: "center",
+          }}
+        >
+          {/* The ring IS the mic. */}
+          <button
+            type="button"
+            data-coach="voice-start"
+            onClick={handleRingTap}
+            disabled={connecting}
+            aria-label={active ? "Stop listening" : "Start listening"}
+            style={{
+              position: "relative",
+              width: 190,
+              height: 190,
+              flexShrink: 0,
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: connecting ? "default" : "pointer",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            {listening && !muted ? (
+              <>
+                {[0, 0.7, 1.4].map((delay, i) => (
+                  <span
+                    key={delay}
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      borderRadius: "50%",
+                      border: `1.5px solid rgba(61,110,232,${
+                        [0.7, 0.45, 0.25][i]
+                      })`,
+                      animation: `mv3Ping 2.2s cubic-bezier(.2,.6,.35,1) ${delay}s infinite`,
+                    }}
+                  />
+                ))}
+              </>
+            ) : null}
+            {!ringDimmed ? (
+              <span
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  inset: -26,
+                  borderRadius: "50%",
+                  background:
+                    "radial-gradient(circle, rgba(61,110,232,.5), transparent 62%)",
+                  filter: "blur(22px)",
+                  animation: "mv3Glow 3.4s ease-in-out infinite",
+                  opacity: active ? 1 : 0.7,
+                  transition: "opacity .5s",
+                }}
+              />
+            ) : null}
+            <span
+              style={{
+                position: "absolute",
+                inset: 22,
+                borderRadius: "50%",
+                background: "linear-gradient(160deg, #1D1D26, #101016)",
+                border: "1px solid #2A2A35",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 30px 60px -24px rgba(0,0,0,.9)",
+                opacity: ringDimmed ? 0.75 : 1,
+              }}
+            >
+              <CueRing
+                size={64}
+                stroke={ringDimmed ? "#9A9AA8" : "#F4F4F6"}
+                dotColor={ringDimmed ? "#5B5B68" : "#3D6EE8"}
+              />
+            </span>
+          </button>
+
+          {connecting ? (
+            <div
+              style={{
+                ...microLabel,
+                color: "#7FA3F2",
+                marginTop: 30,
+              }}
+            >
+              Connecting…
+            </div>
+          ) : null}
+
+          {listening ? (
+            /* Frame 2, listening: waveform + live transcription + status. */
+            <>
+              <Mv3ListeningWave />
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 600,
+                  letterSpacing: "-0.4px",
+                  textAlign: "center",
+                  marginTop: 22,
+                  lineHeight: 1.35,
+                  minHeight: 30,
+                  ...rise(0.1),
+                }}
+              >
+                {partialTranscript || finalTranscript ? (
+                  <>
+                    &ldquo;{finalTranscript}
+                    {finalTranscript && partialTranscript ? " " : ""}
+                    {partialTranscript}
+                    <span
+                      aria-hidden
+                      style={{
+                        display: "inline-block",
+                        width: 2.5,
+                        height: 22,
+                        background: "#3D6EE8",
+                        marginLeft: 4,
+                        verticalAlign: -3,
+                        animation: "mv3vCaret 1s step-end infinite",
+                      }}
+                    />
+                  </>
+                ) : muted ? (
+                  <span style={{ color: "#9A9AA8" }}>
+                    Muted — unmute to talk.
+                  </span>
+                ) : null}
+              </div>
+              <div
+                style={{
+                  fontSize: 13.5,
+                  color: "#7FA3F2",
+                  marginTop: 16,
+                  ...rise(0.2),
+                }}
+              >
+                Listening — tap to stop
+              </div>
+              {active ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.light();
+                    onSetMuted(!muted);
+                  }}
+                  aria-pressed={muted}
+                  style={{
+                    marginTop: 18,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontSize: 12.5,
+                    color: muted ? "#F4F4F6" : "#9A9AA8",
+                    background: muted
+                      ? "rgba(255,255,255,.14)"
+                      : "rgba(255,255,255,.07)",
+                    border: "1px solid rgba(255,255,255,.1)",
+                    borderRadius: 99,
+                    padding: "0 16px",
+                    minHeight: 44,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  {muted ? (
+                    <MicOff size={13} aria-hidden />
+                  ) : (
+                    <Mic size={13} aria-hidden />
+                  )}
+                  {muted ? "Unmute" : "Mute"}
+                </button>
+              ) : null}
+            </>
+          ) : denied ? (
+            /* Mic unavailable — the frame-23 "quiet failure" pattern: greyed
+               ring, plain words, one white recovery button. No red. */
+            <>
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 700,
+                  letterSpacing: "-0.6px",
+                  marginTop: 38,
+                  lineHeight: 1.25,
+                }}
+              >
+                Cue can&rsquo;t hear you
+              </div>
+              <div
+                style={{
+                  fontSize: 14,
+                  color: "#9A9AA8",
+                  marginTop: 14,
+                  lineHeight: 1.55,
+                }}
+              >
+                We couldn&rsquo;t reach your microphone.
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    window.location.href = "app-settings:";
+                  } catch {
+                    /* unsupported host */
+                  }
+                }}
+                style={{
+                  marginTop: 24,
+                  width: "100%",
+                  maxWidth: 300,
+                  background: "#F4F4F6",
+                  color: "#050508",
+                  border: "none",
+                  borderRadius: 15,
+                  padding: 15,
+                  minHeight: 48,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                Enable microphone in Settings
+              </button>
+            </>
+          ) : sessionFailed ? (
+            <>
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 700,
+                  letterSpacing: "-0.6px",
+                  marginTop: 38,
+                  lineHeight: 1.25,
+                }}
+              >
+                Voice couldn&rsquo;t connect
+              </div>
+              <div
+                style={{
+                  fontSize: 14,
+                  color: "#9A9AA8",
+                  marginTop: 14,
+                  lineHeight: 1.55,
+                  maxWidth: 300,
+                }}
+              >
+                {error ?? "Cue couldn't respond just now."}
+              </div>
+              <button
+                type="button"
+                onClick={handleRingTap}
+                style={{
+                  marginTop: 24,
+                  width: "100%",
+                  maxWidth: 300,
+                  background: "#F4F4F6",
+                  color: "#050508",
+                  border: "none",
+                  borderRadius: 15,
+                  padding: 15,
+                  minHeight: 48,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                Try again
+              </button>
+            </>
+          ) : idle ? (
+            /* Frame 2, idle hero. */
+            <>
+              <div
+                style={{
+                  fontSize: 26,
+                  fontWeight: 700,
+                  letterSpacing: "-0.6px",
+                  textAlign: "center",
+                  marginTop: 38,
+                  lineHeight: 1.25,
+                }}
+              >
+                What should I
+                <br />
+                take off your plate?
+              </div>
+              <div
+                style={{ fontSize: 14, color: "#9A9AA8", marginTop: 14 }}
+              >
+                Tap the ring and just talk.
+              </div>
+              {/* Suggestion chips — the live-voice channel is audio-only (no
+                  text-turn path), so a chip tap starts listening for you to
+                  say it rather than sending text. */}
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  justifyContent: "center",
+                  marginTop: 26,
+                  maxWidth: 300,
+                }}
+              >
+                {["Plan my week", "Catch me up", "Draft a reply"].map(
+                  (label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={handleRingTap}
+                      style={{
+                        fontSize: 12.5,
+                        color: "#C9C9D4",
+                        background: "rgba(255,255,255,.07)",
+                        border: "1px solid rgba(255,255,255,.1)",
+                        borderRadius: 99,
+                        padding: "0 14px",
+                        minHeight: 44,
+                        backdropFilter: "blur(10px)",
+                        WebkitBackdropFilter: "blur(10px)",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        WebkitTapHighlightColor: "transparent",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ),
+                )}
+              </div>
+              {/* Voice (TTS provider) picker — same persisted setting. */}
+              <div
+                style={{
+                  marginTop: 30,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 6,
+                  width: 220,
+                }}
+              >
+                <span style={{ ...microLabel, color: "#5B5B68" }}>Voice</span>
+                <Dropdown
+                  value={provider}
+                  onChange={onProviderChange}
+                  options={providerOptions}
+                  aria-label="Voice provider"
+                  menuAlign="start"
+                  style={{ width: "100%" }}
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
       )}
     </div>
   );

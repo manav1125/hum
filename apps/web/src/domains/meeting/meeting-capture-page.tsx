@@ -1,6 +1,6 @@
 import { ApertureAvatar } from "@vellumai/design-library/components/aperture-avatar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import {
@@ -9,6 +9,9 @@ import {
 } from "@/generated/daemon/sdk.gen";
 import type { MeetingsRecapPostResponses } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { AuroraBackdrop, CueRing, mv3Mono, rise } from "@/mobile-v3";
+import { sectionMicro } from "@/mobile-v3/work-kit";
+import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 /** The structured recap returned by POST /v1/meetings/recap. */
@@ -313,115 +316,307 @@ function pillButton(primary: boolean): React.CSSProperties {
   };
 }
 
-/**
- * Full-width, ≥44pt touch target for the mobile bottom-third controls.
- * `tone`: primary (blue) · neutral (glass) · danger (stop).
- */
-function mobileButton(
-  tone: "primary" | "neutral" | "danger",
-): React.CSSProperties {
-  const bg =
-    tone === "primary"
-      ? D.blue
-      : tone === "danger"
-        ? "rgba(229,99,75,.16)"
-        : "rgba(255,255,255,.06)";
-  const border =
-    tone === "primary"
-      ? `1px solid ${D.blue}`
-      : tone === "danger"
-        ? `1px solid rgba(229,99,75,.55)`
-        : `1px solid ${D.line2}`;
-  return {
-    fontFamily: "'DM Sans', system-ui, sans-serif",
-    fontSize: 15,
+/* ==========================================================================
+ * Mobile v3 reskin (spec frame 25 — "Cue sits in the room"). The mobile
+ * branch renders in the mv3 native language: teal-tinted aurora, mono
+ * CAPTURING header with the honest red recording dot, CAUGHT-SO-FAR
+ * extraction cards typed by owner (↴ COMMITMENT · YOU blue / ◷ THEIRS violet
+ * / ◈ DECISION teal), and the ■ End & summarize control. Desktop keeps the
+ * original v0.3 two-column layout byte-identical below.
+ *
+ * DELTA vs the frame (noted for the coordinator): extraction in the shipped
+ * meeting MVP is POST-HOC (record → transcribe → recap) — there is no live
+ * extraction or live transcript stream, so the caught cards rise from the
+ * recap once "End & summarize" completes rather than mid-call, and the
+ * frame's "Flag moment" control is omitted (no marker backend exists).
+ * MediaRecorder.pause()/resume() is real, so Pause IS wired.
+ * ======================================================================== */
+
+/** The v3 recording-red (frame 25; reserved for the honest capture dot). */
+const V3_REC = "#E5675B";
+
+/** Full-width v3 control button. */
+function v3Btn(tone: "primary" | "neutral" | "danger"): React.CSSProperties {
+  const base: React.CSSProperties = {
+    fontFamily: "inherit",
+    fontSize: 13.5,
     fontWeight: 600,
-    letterSpacing: ".01em",
-    border,
-    background: bg,
-    color: tone === "danger" ? "#FFD9CF" : "#fff",
+    border: "none",
     borderRadius: 14,
-    minHeight: 52,
-    padding: "0 18px",
-    width: "100%",
+    padding: 13,
+    minHeight: 48,
+    flex: 1,
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
   };
+  if (tone === "primary")
+    return {
+      ...base,
+      background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
+      color: "#fff",
+      boxShadow: "var(--mv3-primary-btn-shadow)",
+    };
+  if (tone === "danger") return { ...base, background: V3_REC, color: "#fff" };
+  return {
+    ...base,
+    background: "var(--mv3-btn2-bg)",
+    color: "var(--mv3-text)",
+    border: "1px solid var(--mv3-btn2-border)",
+  };
 }
 
 /**
- * The mobile phone shell: a full-bleed dark ink gradient with safe-area
- * insets. `content` fills the upper area (scrollable); `controls` is pinned to
- * the bottom third for thumb reach (README-MOBILE §3.6 / §1).
+ * The v3 meeting shell: teal aurora (frame 25's capture tint), a header
+ * block on the aurora, scrollable body, controls pinned in thumb reach.
  */
-function MobileShell({
-  topBar,
-  content,
+function V3Shell({
+  header,
+  children,
   controls,
 }: {
-  topBar: React.ReactNode;
-  content: React.ReactNode;
+  header: React.ReactNode;
+  children: React.ReactNode;
   controls: React.ReactNode;
 }) {
   return (
     <div
+      data-mv3
+      data-slot="mv3-meeting-capture"
       style={{
-        minHeight: "100dvh",
-        background: `linear-gradient(180deg, ${D.ink} 0%, ${D.inkDeep} 72%, ${D.inkBottom} 100%)`,
-        color: D.t1,
+        position: "relative",
+        height: "100dvh",
+        overflow: "hidden",
         display: "flex",
         flexDirection: "column",
-        fontFamily: "'DM Sans', system-ui, sans-serif",
+        background: "var(--mv3-bg)",
+        color: "var(--mv3-text)",
+        fontFamily: "var(--mv3-font)",
       }}
     >
       <style>{ANIM_CSS}</style>
-      {/* top bar — eyebrow + REC indicator, padded for the notch */}
+      <AuroraBackdrop
+        style={{
+          background:
+            "radial-gradient(46% 36% at 50% 20%, rgba(14,140,140,.2), transparent 68%)",
+        }}
+      />
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "calc(env(safe-area-inset-top, 0px) + 16px) 20px 8px",
+          padding: "calc(env(safe-area-inset-top, 0px) + 10px) 24px 0",
           flexShrink: 0,
+          position: "relative",
+          zIndex: 2,
         }}
       >
-        {topBar}
+        {header}
       </div>
-
-      {/* scrollable capture / recap body */}
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
-          padding: "8px 20px 12px",
-          display: "flex",
-          flexDirection: "column",
+          padding: "16px 18px 12px",
+          position: "relative",
+          zIndex: 2,
         }}
       >
-        {content}
+        {children}
       </div>
-
-      {/* bottom-third controls — pinned within thumb reach */}
       <div
         style={{
           flexShrink: 0,
+          padding:
+            "10px 18px calc(env(safe-area-inset-bottom, 0px) + 10px)",
+          position: "relative",
+          zIndex: 5,
           display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          padding: "14px 20px calc(env(safe-area-inset-bottom, 0px) + 18px)",
-          borderTop: `1px solid ${D.line}`,
-          background: "rgba(12,16,24,.55)",
+          gap: 9,
         }}
       >
         {controls}
       </div>
     </div>
   );
+}
+
+/** The frame-25 capture header: red ping dot · CAPTURING · MM:SS · Pause. */
+function V3CaptureHeader({
+  label,
+  elapsed,
+  paused,
+  onTogglePause,
+  sub,
+}: {
+  label: string;
+  elapsed: number | null;
+  paused?: boolean;
+  onTogglePause?: () => void;
+  sub: string;
+}) {
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        {elapsed != null ? (
+          <span
+            aria-hidden
+            style={{
+              position: "relative",
+              width: 9,
+              height: 9,
+              borderRadius: "50%",
+              background: V3_REC,
+              flexShrink: 0,
+              opacity: paused ? 0.5 : 1,
+            }}
+          >
+            {!paused ? (
+              <span
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  background: V3_REC,
+                  animation: "mv3Ping 1.6s ease-out infinite",
+                }}
+              />
+            ) : null}
+          </span>
+        ) : null}
+        <span
+          style={{
+            fontFamily: mv3Mono,
+            fontSize: 10.5,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--mv3-muted)",
+          }}
+        >
+          {label}
+          {elapsed != null ? ` · ${formatDuration(elapsed)}` : ""}
+        </span>
+        {onTogglePause ? (
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={onTogglePause}
+            style={{
+              marginLeft: "auto",
+              fontSize: 13,
+              color: "var(--mv3-micro)",
+              background: "none",
+              border: "none",
+              padding: "10px 4px",
+              margin: "-10px 0 -10px auto",
+              minHeight: 44,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            {paused ? "Resume" : "Pause"}
+          </button>
+        ) : null}
+      </div>
+      <div
+        style={{
+          fontSize: 24,
+          fontWeight: 700,
+          letterSpacing: "-0.6px",
+          marginTop: 10,
+        }}
+      >
+        Meeting capture
+      </div>
+      <div style={{ fontSize: 12.5, color: "var(--mv3-muted)", marginTop: 3 }}>
+        {sub}
+      </div>
+    </>
+  );
+}
+
+type CaughtType = "commitment" | "theirs" | "decision";
+
+const CAUGHT_META: Record<
+  CaughtType,
+  { border: string; color: string; glyph: string; label: string }
+> = {
+  commitment: {
+    border: "#3D6EE8",
+    color: "var(--mv3-micro)",
+    glyph: "↴",
+    label: "COMMITMENT",
+  },
+  theirs: {
+    border: "#7F77DD",
+    color: "var(--mv3-violet)",
+    glyph: "◷",
+    label: "THEIRS",
+  },
+  decision: {
+    border: "var(--mv3-teal)",
+    color: "var(--mv3-teal)",
+    glyph: "◈",
+    label: "DECISION",
+  },
+};
+
+/** One typed extraction card (frame 25): accent left border + mono eyebrow. */
+function CaughtCard({
+  type,
+  owner,
+  text,
+  delay,
+}: {
+  type: CaughtType;
+  owner?: string | null;
+  text: string;
+  delay: number;
+}) {
+  const meta = CAUGHT_META[type];
+  return (
+    <div
+      style={{
+        background: "var(--mv3-card)",
+        border: "1px solid var(--mv3-card-border)",
+        borderLeft: `3px solid ${meta.border}`,
+        borderRadius: 16,
+        padding: "12px 14px",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        ...rise(delay),
+      }}
+    >
+      <div
+        style={{
+          fontFamily: mv3Mono,
+          fontSize: 9,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: meta.color,
+        }}
+      >
+        {meta.glyph} {meta.label}
+        {owner ? ` · ${owner}` : ""}
+      </div>
+      <div style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.4 }}>
+        {text}
+      </div>
+    </div>
+  );
+}
+
+/** Owner routing: "you"/"me"/empty reads as YOUR commitment; else THEIRS. */
+function caughtTypeFor(owner: string | null | undefined): {
+  type: CaughtType;
+  owner: string | null;
+} {
+  const o = owner?.trim() ?? "";
+  if (!o || /^(you|me|myself)$/i.test(o))
+    return { type: "commitment", owner: "YOU" };
+  return { type: "theirs", owner: o.toUpperCase() };
 }
 
 function LiveCapture({
@@ -436,6 +631,8 @@ function LiveCapture({
   const [supported] = useState<boolean>(() => recordingSupported());
   const [status, setStatus] = useState<CaptureStatus>("idle");
   const [elapsed, setElapsed] = useState(0);
+  /** True while the recorder is paused (MediaRecorder.pause() — mobile v3). */
+  const [paused, setPaused] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -511,6 +708,7 @@ function LiveCapture({
     setError(null);
     setTranscript("");
     setElapsed(0);
+    setPaused(false);
     chunksRef.current = [];
 
     let stream: MediaStream;
@@ -558,6 +756,7 @@ function LiveCapture({
   }, [supported, clearTimer, releaseStream, transcribe]);
 
   const handleStop = useCallback(() => {
+    setPaused(false);
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       recorder.stop(); // onstop assembles + transcribes
@@ -566,6 +765,31 @@ function LiveCapture({
       releaseStream();
     }
   }, [clearTimer, releaseStream]);
+
+  /** Pause/resume the live capture (real MediaRecorder API; timer follows). */
+  const handleTogglePause = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return;
+    if (recorder.state === "recording") {
+      try {
+        recorder.pause();
+      } catch {
+        return;
+      }
+      clearTimer();
+      setPaused(true);
+    } else if (recorder.state === "paused") {
+      try {
+        recorder.resume();
+      } catch {
+        return;
+      }
+      timerRef.current = setInterval(() => {
+        setElapsed((prev) => prev + 1);
+      }, 1000);
+      setPaused(false);
+    }
+  }, [clearTimer]);
 
   const handleCreateRecap = useCallback(async () => {
     if (!transcript) return;
@@ -600,13 +824,15 @@ function LiveCapture({
     setStatus("idle");
     setTranscript("");
     setElapsed(0);
+    setPaused(false);
     setError(null);
   }, []);
 
   // =====================================================================
-  // Mobile (README-MOBILE §3.6): full-bleed dark phone shell, the flow
-  // record → live transcript → recap, REC indicator up top, Stop & Save
-  // controls pinned in the bottom third for thumb reach.
+  // Mobile v3 (spec frame 25): teal aurora, CAPTURING header + honest red
+  // dot + real Pause, then ■ End & summarize → transcribe → recap. Live
+  // extraction is post-hoc in the shipped MVP, so the caught cards land on
+  // the recap screen (delta noted at the top of the v3 block).
   // =====================================================================
   if (mobile) {
     const recording = status === "recording";
@@ -614,30 +840,13 @@ function LiveCapture({
     const reviewing = status === "transcribed" || status === "creating-recap";
     const creating = status === "creating-recap";
 
-    const topBar = (
-      <>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <span
-            style={{
-              fontFamily: mono,
-              fontSize: 11,
-              letterSpacing: ".12em",
-              color: D.t2,
-            }}
-          >
-            CUE · MEETING
-          </span>
-        </div>
-        {recording ? <RecPill elapsed={elapsed} mobile /> : null}
-      </>
-    );
-
     const errorNote = error ? (
       <div
+        role="alert"
         style={{
           marginTop: 14,
           fontSize: 12.5,
-          color: "#F3B8AC",
+          color: V3_REC,
           textAlign: "center",
           lineHeight: 1.45,
         }}
@@ -649,276 +858,259 @@ function LiveCapture({
     // ---- Unsupported ----
     if (!supported) {
       return (
-        <MobileShell
-          topBar={topBar}
-          content={
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                gap: 16,
-                padding: "0 8px",
-              }}
-            >
-              <ApertureAvatar size={96} />
-              <div
-                style={{
-                  fontSize: 14,
-                  color: D.t2,
-                  lineHeight: 1.5,
-                  maxWidth: 280,
-                }}
-              >
-                Recording isn&apos;t supported here. Open Meeting capture on
-                your phone to record the room.
-              </div>
-            </div>
+        <V3Shell
+          header={
+            <V3CaptureHeader
+              label="Cue · Meeting"
+              elapsed={null}
+              sub="Recording isn't supported here — open this on your phone."
+            />
           }
           controls={
             <button
               type="button"
               disabled
-              style={{
-                ...mobileButton("neutral"),
-                opacity: 0.55,
-                cursor: "default",
-              }}
+              style={{ ...v3Btn("neutral"), opacity: 0.55, cursor: "default" }}
             >
               Recording unavailable
             </button>
           }
-        />
+        >
+          <div style={{ textAlign: "center", paddingTop: 40 }}>
+            <CueRing size={96} stroke="var(--mv3-text)" />
+          </div>
+        </V3Shell>
       );
     }
 
-    // ---- Recording ----
+    // ---- Recording (frame 25) ----
     if (recording) {
       return (
-        <MobileShell
-          topBar={topBar}
-          content={
+        <V3Shell
+          header={
+            <V3CaptureHeader
+              label={paused ? "Paused" : "Capturing"}
+              elapsed={elapsed}
+              paused={paused}
+              onTogglePause={() => {
+                haptic.light();
+                handleTogglePause();
+              }}
+              sub="Cue is listening on this phone"
+            />
+          }
+          controls={
+            <button
+              type="button"
+              className="cue-pressable"
+              onClick={() => {
+                haptic.medium();
+                handleStop();
+              }}
+              style={v3Btn("danger")}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 2,
+                  background: "#fff",
+                }}
+              />
+              End &amp; summarize
+            </button>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <div style={sectionMicro}>
+              Caught so far — confirm after the call
+            </div>
+            {/* The shipped MVP extracts post-hoc — while capturing, the room
+                is honest about what's happening rather than faking live
+                cards. Extraction lands after End & summarize. */}
             <div
               style={{
-                flex: 1,
+                background: "var(--mv3-card)",
+                border: "1px solid var(--mv3-card-border)",
+                borderRadius: 16,
+                padding: "18px 14px",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                gap: 22,
+                gap: 14,
+                backdropFilter: "blur(16px)",
+                WebkitBackdropFilter: "blur(16px)",
               }}
             >
-              <ApertureAvatar state="listening" size={132} />
               <div
                 style={{
                   display: "flex",
                   alignItems: "flex-end",
                   gap: 6,
-                  height: 30,
+                  height: 26,
+                  opacity: paused ? 0.35 : 1,
                 }}
               >
                 {[0, 1, 2, 3, 4].map((i) => (
                   <span
                     key={i}
-                    className="mc-bar"
-                    style={{ width: 5, borderRadius: 3, background: "#fff" }}
+                    className={paused ? undefined : "mc-bar"}
+                    style={{
+                      width: 5,
+                      height: 14,
+                      borderRadius: 3,
+                      background: "var(--mv3-teal)",
+                    }}
                   />
                 ))}
               </div>
-              <div style={{ fontSize: 14, color: D.t2, lineHeight: 1.5 }}>
-                Listening &amp; transcribing the room…
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "var(--mv3-muted)",
+                  textAlign: "center",
+                  lineHeight: 1.5,
+                }}
+              >
+                {paused
+                  ? "Paused — resume when the room does."
+                  : "Listening & transcribing the room… commitments, decisions and to-dos land here after you end."}
               </div>
             </div>
-          }
-          controls={
-            <button
-              type="button"
-              onClick={handleStop}
-              style={mobileButton("danger")}
-            >
-              <span
-                style={{
-                  width: 11,
-                  height: 11,
-                  borderRadius: 3,
-                  background: D.danger,
-                }}
-              />
-              Stop &amp; transcribe
-            </button>
-          }
-        />
+            {errorNote}
+          </div>
+        </V3Shell>
       );
     }
 
     // ---- Transcribing ----
     if (transcribing) {
       return (
-        <MobileShell
-          topBar={topBar}
-          content={
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                gap: 18,
-              }}
-            >
-              <Spinner size={34} />
-              <div style={{ fontSize: 14, color: D.t2 }}>
-                Transcribing your capture…
-              </div>
-            </div>
+        <V3Shell
+          header={
+            <V3CaptureHeader
+              label="Cue · Meeting"
+              elapsed={null}
+              sub="Transcribing your capture…"
+            />
           }
           controls={
             <button
               type="button"
               disabled
-              style={{
-                ...mobileButton("neutral"),
-                opacity: 0.6,
-                cursor: "default",
-              }}
+              style={{ ...v3Btn("neutral"), opacity: 0.6, cursor: "default" }}
             >
-              Transcribing…
+              <Spinner size={16} /> Transcribing…
             </button>
           }
-        />
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 18,
+              paddingTop: 60,
+            }}
+          >
+            <Spinner size={34} />
+          </div>
+        </V3Shell>
       );
     }
 
-    // ---- Transcript ready → create recap ----
+    // ---- Transcript ready → summarize ----
     if (reviewing) {
       return (
-        <MobileShell
-          topBar={topBar}
-          content={
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                paddingTop: 4,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: mono,
-                  fontSize: 11,
-                  letterSpacing: ".06em",
-                  color: D.t3,
-                }}
-              >
-                TRANSCRIPT
-              </div>
-              <div
-                style={{
-                  background: D.surface,
-                  border: `1px solid ${D.line}`,
-                  borderLeft: `3px solid ${D.blue}`,
-                  borderRadius: 16,
-                  padding: "14px 16px",
-                  fontSize: 14,
-                  lineHeight: 1.55,
-                  color: "#E7ECF6",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                {transcript}
-              </div>
-              {errorNote}
-            </div>
+        <V3Shell
+          header={
+            <V3CaptureHeader
+              label="Cue · Meeting"
+              elapsed={null}
+              sub="Transcript ready — turn it into the recap"
+            />
           }
           controls={
             <>
               <button
                 type="button"
-                onClick={handleCreateRecap}
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.medium();
+                  void handleCreateRecap();
+                }}
                 disabled={creating}
                 style={{
-                  ...mobileButton("primary"),
+                  ...v3Btn("primary"),
                   opacity: creating ? 0.75 : 1,
                   cursor: creating ? "default" : "pointer",
                 }}
               >
-                {creating ? <Spinner size={18} /> : null}
+                {creating ? <Spinner size={16} /> : null}
                 {creating ? "Saving recap to memory…" : "Save recap to memory"}
               </button>
               {!creating ? (
                 <button
                   type="button"
+                  className="cue-pressable"
                   onClick={handleReset}
-                  style={mobileButton("neutral")}
+                  style={{ ...v3Btn("neutral"), flex: 0.6 }}
                 >
                   Discard
                 </button>
               ) : null}
             </>
           }
-        />
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <div style={sectionMicro}>Transcript</div>
+            <div
+              style={{
+                background: "color-mix(in srgb, var(--mv3-text) 4%, transparent)",
+                border: "1px solid var(--mv3-card-border)",
+                borderRadius: 14,
+                padding: "11px 13px",
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                color: "var(--mv3-muted)",
+                fontStyle: "italic",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {transcript}
+            </div>
+            {errorNote}
+          </div>
+        </V3Shell>
       );
     }
 
     // ---- Idle ----
     return (
-      <MobileShell
-        topBar={topBar}
-        content={
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              textAlign: "center",
-              gap: 18,
-              padding: "0 6px",
-            }}
-          >
-            <ApertureAvatar size={132} />
-            <div
-              style={{
-                fontSize: 21,
-                fontWeight: 600,
-                letterSpacing: "-.3px",
-                lineHeight: 1.25,
-              }}
-            >
-              Capture the room
-            </div>
-            <div
-              style={{
-                fontSize: 14,
-                color: D.t2,
-                lineHeight: 1.5,
-                maxWidth: 290,
-              }}
-            >
-              Cue records, transcribes live, then writes a recap — summary,
-              action items, decisions — into memory.
-            </div>
-            {errorNote}
-          </div>
+      <V3Shell
+        header={
+          <V3CaptureHeader
+            label="Cue · Meeting"
+            elapsed={null}
+            sub="Cue records, transcribes, then writes the recap into memory"
+          />
         }
         controls={
           <button
             type="button"
-            onClick={handleStart}
-            style={mobileButton("primary")}
+            className="cue-pressable"
+            onClick={() => {
+              haptic.medium();
+              void handleStart();
+            }}
+            style={v3Btn("primary")}
           >
             <span
+              aria-hidden
               style={{
-                width: 11,
-                height: 11,
+                width: 10,
+                height: 10,
                 borderRadius: "50%",
                 background: "#fff",
               }}
@@ -926,7 +1118,32 @@ function LiveCapture({
             Start recording
           </button>
         }
-      />
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
+            gap: 16,
+            paddingTop: 40,
+          }}
+        >
+          <CueRing size={110} stroke="var(--mv3-text)" />
+          <div
+            style={{
+              fontSize: 13.5,
+              color: "var(--mv3-muted)",
+              lineHeight: 1.5,
+              maxWidth: 290,
+            }}
+          >
+            Commitments, decisions and to-dos are caught and typed by owner —
+            yours, theirs, decided — then land in your work loop.
+          </div>
+          {errorNote}
+        </div>
+      </V3Shell>
     );
   }
 
@@ -1387,48 +1604,124 @@ function Recap({
   );
 }
 
+/**
+ * Mobile v3 recap (frame 25's "caught" grammar, post-call): the extraction
+ * cards typed by owner, the summary, and the door into the meeting thread.
+ */
+function V3RecapScreen({
+  recap,
+  onReset,
+}: {
+  recap: RecapJson;
+  onReset: () => void;
+}) {
+  const navigate = useNavigate();
+  let slot = 0;
+  const nextDelay = () => 0.1 + 0.12 * slot++;
+  return (
+    <V3Shell
+      header={
+        <V3CaptureHeader
+          label="Cue · Recap"
+          elapsed={null}
+          sub="Saved to memory — confirm anything Cue caught"
+        />
+      }
+      controls={
+        <>
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.medium();
+              navigate(routes.conversation(recap.conversationId));
+            }}
+            style={v3Btn("primary")}
+          >
+            Open meeting conversation
+          </button>
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              onReset();
+            }}
+            style={{ ...v3Btn("neutral"), flex: 0.7 }}
+          >
+            Capture another
+          </button>
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <div style={sectionMicro}>Caught — confirm after the call</div>
+        {recap.actionItems.map((item, i) => {
+          const routed = caughtTypeFor(item.owner);
+          return (
+            <CaughtCard
+              key={`a${i}`}
+              type={routed.type}
+              owner={routed.owner}
+              text={item.text}
+              delay={nextDelay()}
+            />
+          );
+        })}
+        {recap.decisions.map((d, i) => (
+          <CaughtCard
+            key={`d${i}`}
+            type="decision"
+            text={d}
+            delay={nextDelay()}
+          />
+        ))}
+        {recap.actionItems.length === 0 && recap.decisions.length === 0 ? (
+          <div
+            style={{
+              fontSize: 13,
+              color: "var(--mv3-muted)",
+              padding: "6px 2px",
+            }}
+          >
+            Nothing actionable was caught in this one.
+          </div>
+        ) : null}
+
+        {recap.summary ? (
+          <>
+            <div style={{ ...sectionMicro, marginTop: 8 }}>Summary</div>
+            <div
+              style={{
+                background: "var(--mv3-card)",
+                border: "1px solid var(--mv3-card-border)",
+                borderRadius: 16,
+                padding: "12px 14px",
+                fontSize: 13,
+                lineHeight: 1.5,
+                color: "var(--mv3-muted)",
+                ...rise(nextDelay()),
+              }}
+            >
+              {recap.summary}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </V3Shell>
+  );
+}
+
 export function MeetingCapturePage() {
   const [recap, setRecap] = useState<RecapJson | null>(null);
   const isMobile = useIsMobile();
 
-  // ---- Mobile: full-bleed dark phone surface ------------------------------
+  // ---- Mobile: the v3 native capture surface (spec frame 25) --------------
   if (isMobile) {
-    // Before a recap exists, LiveCapture owns the whole dark shell (record →
-    // transcript → save). Once a recap lands, render it in a matching dark
-    // shell with a bottom-third "Capture another meeting" control.
     if (!recap) {
       return <LiveCapture onRecap={setRecap} mobile />;
     }
-    return (
-      <MobileShell
-        topBar={
-          <span
-            style={{
-              fontFamily: mono,
-              fontSize: 11,
-              letterSpacing: ".12em",
-              color: D.t2,
-            }}
-          >
-            CUE · RECAP
-          </span>
-        }
-        content={
-          <div style={{ paddingTop: 4 }}>
-            <Recap recap={recap} mobile />
-          </div>
-        }
-        controls={
-          <button
-            type="button"
-            onClick={() => setRecap(null)}
-            style={mobileButton("neutral")}
-          >
-            Capture another meeting
-          </button>
-        }
-      />
-    );
+    return <V3RecapScreen recap={recap} onReset={() => setRecap(null)} />;
   }
 
   // ---- Desktop: the original two-column light layout ----------------------

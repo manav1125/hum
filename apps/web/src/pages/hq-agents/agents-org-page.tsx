@@ -21,9 +21,12 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
+
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { C, mono, serif } from "@/domains/activity/theme";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { Mv3AgentsPage } from "@/mobile-v3/you/agents-page";
 import { HqStyle, LiveBars, MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
@@ -487,6 +490,17 @@ function HireCard({ onClick }: { onClick: () => void }) {
 // ---------------------------------------------------------------------------
 
 export function AgentsOrgPage() {
+  // MOBILE — the mobile-v3 Agents manage screen (spec frame 32). Branch in a
+  // thin wrapper so the desktop body's hooks never change count across a
+  // breakpoint flip. Desktop keeps the org grid untouched.
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return <Mv3AgentsPage />;
+  }
+  return <AgentsOrgPageDesktop />;
+}
+
+function AgentsOrgPageDesktop() {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
   const isNarrow = useIsMobile();
@@ -504,6 +518,9 @@ export function AgentsOrgPage() {
   const [editing, setEditing] = useState<AgentCharter | null>(null);
   const [trustFor, setTrustFor] = useState<AgentCharter | null>(null);
   const [hiring, setHiring] = useState(false);
+  const [pendingRetire, setPendingRetire] = useState<AgentCharter | null>(
+    null,
+  );
 
   const activeCount = useMemo(
     () => charters.filter((c) => !c.paused).length,
@@ -650,18 +667,9 @@ export function AgentsOrgPage() {
                 charterActions.update(c.id, { paused: !c.paused })
               }
               onOpenTrust={() => setTrustFor(c)}
-              onRetire={() => {
-                // Permanent removal — a browser confirm is the honest gate
-                // until a styled dialog exists (retire deletes the registry
-                // row; the ledger's past acts remain).
-                if (
-                  window.confirm(
-                    `Retire ${c.name}? Its charter and settings are removed permanently; past work in the ledger is kept.`,
-                  )
-                ) {
-                  charterActions.retire(c.id);
-                }
-              }}
+              // Permanent removal — gated by the styled confirm dialog below
+              // (retire deletes the registry row; past acts remain).
+              onRetire={() => setPendingRetire(c)}
             />
           ))}
           <HireCard onClick={() => setHiring(true)} />
@@ -707,6 +715,24 @@ export function AgentsOrgPage() {
           onHired={() => setHiring(false)}
         />
       ) : null}
+      <ConfirmDialog
+        open={pendingRetire !== null}
+        title="Retire this agent?"
+        message={
+          pendingRetire
+            ? `Retire ${pendingRetire.name}? Its charter and settings are removed permanently; past work in the ledger is kept.`
+            : ""
+        }
+        confirmLabel="Retire"
+        destructive
+        onConfirm={() => {
+          if (pendingRetire) {
+            charterActions.retire(pendingRetire.id);
+            setPendingRetire(null);
+          }
+        }}
+        onCancel={() => setPendingRetire(null)}
+      />
     </div>
   );
 }
