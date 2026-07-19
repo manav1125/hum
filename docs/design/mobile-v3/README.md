@@ -11,6 +11,9 @@ Light exemplars: 12 Today · 13 Morning Brief · 13b Chat
 Flows: 14 Onboarding connect + payoff · 15 Triage swipes · 16 Review · 17 Watch live
 Trust: 18 Skills + consent sheet · 19 Brand kit · 20 Rules + make-a-rule
 Index/states: 21 Chats · 22 First-morning empty · 23 Offline
+Voice/meetings: 24 Voice results (live cards mid-conversation) · 25 Meeting capture (live extraction)
+Onboarding full: 26 Step 1 welcome/identity · 14 Step 2 connect · 27 Step 3 autonomy pick · 28 Step 4 finish
+Trust deep: 29 Failure exemplar (only red) · 30 Installed-skill manage · 31 Act ledger + act detail · 32 Agents manage (charter/pause/re-charter)
 
 ## Design DNA (non-negotiable)
 - SF Pro (system font) only. Large-title physics, ‹ back chevrons, sheets with grabbers, floating glass tab bar (Today / Projects / + / Voice / You) with raised center +.
@@ -26,7 +29,7 @@ Index/states: 21 Chats · 22 First-morning empty · 23 Offline
 - Glows → soft shadows; aurora opacity halves; borders rgba(255,255,255,.1) → rgba(0,0,0,.06)
 
 ## What Claude Code may extrapolate vs not
-- MAY: light re-tones per the rules above; longer lists; additional projects/memories/skills repeating designed card patterns; settings leaf rows.
+- MAY: light re-tones per the rules above; longer lists; additional projects/memories/skills repeating designed card patterns; settings leaf rows; connector detail leaf (from frame 11's rows); Today later-in-day greeting variants; chat create-run done state (creating card → ◱ review handoff per taxonomy).
 - MAY NOT: new layouts, new colors, new copy tone, new state treatments, closed-circle logos, web-style cards. If a needed pattern isn't in this file, ask design.
 
 ## Build rules
