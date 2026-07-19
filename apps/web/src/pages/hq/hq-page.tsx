@@ -35,6 +35,7 @@ import { Link, useNavigate } from "react-router";
 import { AgentChip, StateBadge } from "@vellumai/design-library";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { Mv3Today } from "@/mobile-v3";
 import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -1578,6 +1579,24 @@ export function HqPage() {
   const doneToday = done.items.filter(
     (item) => (item.updatedAt ?? item.createdAt) >= todayStart,
   );
+
+  // MOBILE → the v3 native Today screen (docs/design/mobile-v3, frame 1).
+  // Same stores, new skin: next-move → NEXT MOVE card, approvals → NEEDS
+  // YOUR OK, awaiting_review → REVIEW READY, running → WORKING NOW, pending
+  // → the came-in strip. Desktop keeps the serif HQ deck below, untouched.
+  if (isMobile) {
+    return (
+      <Mv3Today
+        assistantId={assistantId}
+        userName={stateQuery.data?.userName?.trim() || null}
+        move={move}
+        review={reviewItems}
+        running={running.items}
+        cameIn={cameIn}
+        degraded={degraded}
+      />
+    );
+  }
 
   return (
     <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>

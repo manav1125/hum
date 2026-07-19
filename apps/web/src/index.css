@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "@vellumai/design-library/tokens.css";
+/* Mobile v3 native design system — `--mv3-*` tokens + keyframes (additive;
+ * consumed only by src/mobile-v3/ components, all mobile-gated). */
+@import "./mobile-v3/mv3.css";
 @source "../node_modules/@vellumai/design-library/src/**/*.tsx";
 
 /* Base element styles — theme-aware defaults inherited by all descendants. */

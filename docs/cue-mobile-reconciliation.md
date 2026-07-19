@@ -1,5 +1,14 @@
 # Cue mobile — design reconciliation map
 
+> **SUPERSEDED FOR MOBILE (2026-07-19): mobile now follows the v3 native
+> spec — `docs/design/mobile-v3/` (README + `cue-mobile-v3.html`).** The
+> serif "HQ direction" below no longer applies on mobile: mobile surfaces
+> convert to the SF-Pro/glass/aurora `--mv3-*` system
+> (`apps/web/src/mobile-v3/` — TabBarV3 + the converted Today are live;
+> remaining screens convert per the v3 frame index). **Desktop keeps the
+> serif HQ direction unchanged** — this document still governs desktop and
+> any mobile screen not yet converted to v3.
+
 _Date: 2026-07-19. Companion to `docs/cue-mobile-fidelity-audit.md` (Phase 5)._
 
 ## The decision

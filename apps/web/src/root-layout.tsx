@@ -7,7 +7,7 @@ import { useEventBusInit } from "@/hooks/use-event-bus-init";
 import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
-import { CueMobileTabBar } from "@/components/cue-mobile-tab-bar";
+import { TabBarV3 } from "@/mobile-v3";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import { useAssistantLifecycle } from "@/assistant/use-lifecycle";
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
@@ -289,10 +289,10 @@ export function RootLayout() {
         <Outlet />
       </div>
 
-      {/* Mobile primary nav: collapses the desktop three-column layout to a
-          bottom tab bar (Today / Memory / Voice / Tasks). Desktop uses the
-          sidebar rail instead. */}
-      {isMobile && <CueMobileTabBar />}
+      {/* Mobile primary nav: the mv3 floating glass tab bar
+          (Today / Projects / + / Voice / You — docs/design/mobile-v3).
+          Desktop uses the sidebar rail instead. */}
+      {isMobile && <TabBarV3 />}
 
       {/* Portal target for mobile overlays that use `position: fixed`. */}
       <div id="viewport-overlays" />
