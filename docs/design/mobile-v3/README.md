@@ -14,6 +14,9 @@ Index/states: 21 Chats · 22 First-morning empty · 23 Offline
 Voice/meetings: 24 Voice results (live cards mid-conversation) · 25 Meeting capture (live extraction)
 Onboarding full: 26 Step 1 welcome/identity · 14 Step 2 connect · 27 Step 3 autonomy pick · 28 Step 4 finish
 Trust deep: 29 Failure exemplar (only red) · 30 Installed-skill manage · 31 Act ledger + act detail · 32 Agents manage (charter/pause/re-charter)
+Create studio: 33 Fill & build fielded form (pattern for all 18 desktop forms) · 34 Canvas image edit (marquee + action tiles) · 35 Video style sub-tabs · 36 Reference "make it look like this" chip
+Thread + docs: 37 In-thread voice orb (decision: BOTH — Voice tab full-duplex AND per-conversation orb; voice turns = italic 🎙 bubbles) · 38 Doc editing (decision: conversational edits on mobile — select region + tell Cue; deep edits via always-present "Continue on desktop" handoff; same pattern for generated apps)
+Setup: 39 Channel setup (Telegram 3-step token + live verify; re-skin for WhatsApp/email) · 40 Schedule editor (plain-language chips + time, cron as mono footnote) · 41 Project brief + knowledge pane · 42 Structured new-project sheet
 
 ## Design DNA (non-negotiable)
 - SF Pro (system font) only. Large-title physics, ‹ back chevrons, sheets with grabbers, floating glass tab bar (Today / Projects / + / Voice / You) with raised center +.
