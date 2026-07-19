@@ -178,13 +178,65 @@ export function pruneOldConversationsJob(
       ? job.payload.retentionDays
       : config.memory.cleanup.conversationRetentionDays;
 
+  pruneConversationsCore({
+    retentionDays,
+    backgroundOnly: false,
+    reEnqueueType: "prune_old_conversations",
+    logLabel: "Pruned old conversations",
+  });
+}
+
+/**
+ * Delete stale system-generated background conversations
+ * (`conversation_type = 'background'`: heartbeat runs, watcher/background
+ * jobs) and their dependent rows. These accumulate one conversation per
+ * background run — a heartbeat every 30–60 minutes persists ~25–50
+ * conversations/day, each dragging messages (+FTS), memory_segments,
+ * activation_state, and a large memory_v2_activation_logs row along.
+ * User conversations (`conversation_type = 'standard'`) are never touched.
+ *
+ * Uses the same batched, re-checked transaction shape as
+ * {@link pruneOldConversationsJob} with a type filter.
+ */
+export function pruneOldBackgroundConversationsJob(
+  job: MemoryJob,
+  config: AssistantConfig,
+): void {
+  const retentionDays =
+    typeof job.payload.retentionDays === "number" &&
+    Number.isFinite(job.payload.retentionDays) &&
+    job.payload.retentionDays >= 0
+      ? job.payload.retentionDays
+      : config.memory.cleanup.backgroundConversationRetentionDays;
+
+  pruneConversationsCore({
+    retentionDays,
+    backgroundOnly: true,
+    reEnqueueType: "prune_old_background_conversations",
+    logLabel: "Pruned old background conversations",
+  });
+}
+
+function pruneConversationsCore(args: {
+  retentionDays: number;
+  backgroundOnly: boolean;
+  reEnqueueType:
+    | "prune_old_conversations"
+    | "prune_old_background_conversations";
+  logLabel: string;
+}): void {
+  const { retentionDays, backgroundOnly, reEnqueueType, logLabel } = args;
+
   // 0 means disabled
   if (retentionDays === 0) return;
 
   const cutoffMs = Date.now() - retentionDays * 86_400_000;
+  const typeFilter = backgroundOnly
+    ? ` AND conversation_type = 'background'`
+    : "";
 
   const stale = rawAll<{ id: string }>(
-    `SELECT id FROM conversations WHERE updated_at < ? ORDER BY updated_at ASC LIMIT ?`,
+    `SELECT id FROM conversations WHERE updated_at < ?${typeFilter} ORDER BY updated_at ASC LIMIT ?`,
     cutoffMs,
     PRUNE_BATCH_LIMIT,
   );
@@ -208,6 +260,11 @@ export function pruneOldConversationsJob(
       rawRun(`DELETE FROM tool_invocations WHERE conversation_id = ?`, id);
       rawRun(`DELETE FROM messages WHERE conversation_id = ?`, id);
       rawRun(`DELETE FROM skill_loaded_events WHERE conversation_id = ?`, id);
+      rawRun(
+        `DELETE FROM memory_v2_activation_logs WHERE conversation_id = ?`,
+        id,
+      );
+      rawRun(`DELETE FROM memory_recall_logs WHERE conversation_id = ?`, id);
       // Conversation row deletion cascades to remaining dependent tables
       rawRun(`DELETE FROM conversations WHERE id = ?`, id);
       pruned++;
@@ -215,7 +272,7 @@ export function pruneOldConversationsJob(
   }
 
   if (stale.length === PRUNE_BATCH_LIMIT) {
-    enqueueMemoryJob("prune_old_conversations", { retentionDays });
+    enqueueMemoryJob(reEnqueueType, { retentionDays });
   }
 
   log.info(
@@ -225,6 +282,71 @@ export function pruneOldConversationsJob(
       retentionDays,
       cutoffMs,
     },
-    "Pruned old conversations",
+    logLabel,
+  );
+}
+
+/**
+ * Delete memory-v2 activation telemetry (`memory_v2_activation_logs`) and
+ * recall telemetry (`memory_recall_logs`) older than the configured
+ * retention. Both tables are inspector/debug-only — no runtime state is
+ * reconstructed from them — yet activation rows average ~100KB+ each when
+ * `ann_candidate_limit` is unlimited, making the table the single largest
+ * driver of assistant.db growth. Neither table has an FK cascade, so
+ * time-based pruning is the only bound for rows whose conversation
+ * outlives the retention window.
+ *
+ * Same async dispatch + integer inlining shape as
+ * {@link pruneOldLlmRequestLogsJob}; re-enqueues itself while either
+ * table still has a full batch to drain.
+ */
+export async function pruneOldActivationLogsJob(
+  job: MemoryJob,
+  config: AssistantConfig,
+): Promise<void> {
+  const rawRetention = job.payload.retentionDays;
+  const retentionDays =
+    typeof rawRetention === "number" &&
+    Number.isFinite(rawRetention) &&
+    rawRetention >= 0
+      ? rawRetention
+      : config.memory.cleanup.activationLogRetentionDays;
+
+  // 0 means disabled
+  if (retentionDays === 0) return;
+
+  const cutoffMs = Math.floor(Date.now() - retentionDays * 86_400_000);
+  if (!Number.isFinite(cutoffMs)) return;
+
+  let deletedTotal = 0;
+  let saturated = false;
+  for (const table of ["memory_v2_activation_logs", "memory_recall_logs"]) {
+    const result = await runAsyncSqlite(
+      `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE created_at < ${cutoffMs} LIMIT ${PRUNE_LOG_BATCH_LIMIT});
+SELECT changes();`,
+    );
+    if (!result.ok) {
+      log.warn(
+        { error: result.error, backend: result.backend, table },
+        "pruneOldActivationLogsJob: DELETE failed",
+      );
+      continue;
+    }
+    const deleted = parseDeletedCount(result.stdout);
+    deletedTotal += deleted;
+    if (deleted >= PRUNE_LOG_BATCH_LIMIT) saturated = true;
+  }
+
+  if (saturated) {
+    enqueueMemoryJob("prune_old_activation_logs", { retentionDays });
+  }
+
+  log.info(
+    {
+      deleted: deletedTotal,
+      retentionDays,
+      cutoffMs,
+    },
+    "Pruned old memory-v2 activation/recall telemetry",
   );
 }

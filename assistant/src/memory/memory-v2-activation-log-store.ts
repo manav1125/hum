@@ -115,6 +115,48 @@ export interface MemoryV2ConfigSnapshot {
   epsilon: number;
 }
 
+/**
+ * Fallback cap on the number of concept rows serialized per activation-log
+ * row when the caller does not pass `maxConcepts` (config:
+ * `memory.v2.activation_log_max_concepts`). With an unlimited
+ * `ann_candidate_limit`, `telemetryRows` covers the ENTIRE concept-page
+ * collection every turn — observed at ~114KB average / 579KB max per row in
+ * production, the single largest driver of assistant.db growth. Nothing
+ * reconstructs state from these rows (inspector + debug aggregation only),
+ * so dropping the lowest-activation `not_injected` tail is lossless for
+ * every functional consumer.
+ */
+export const DEFAULT_ACTIVATION_LOG_MAX_CONCEPTS = 300;
+
+/**
+ * Bound the telemetry rows serialized into one activation-log row.
+ * Rows whose status is anything other than `not_injected` (injected,
+ * in_context, page_missing, corrupt) are always kept — they are the
+ * meaningful outcomes and are bounded by top_k. The remaining budget is
+ * filled with the highest-`finalActivation` `not_injected` candidates.
+ * Original relative order is preserved for the kept rows.
+ */
+export function capConceptRowsForLog(
+  concepts: MemoryV2ConceptRowRecord[],
+  maxConcepts: number | null,
+): MemoryV2ConceptRowRecord[] {
+  if (maxConcepts === null || concepts.length <= maxConcepts) return concepts;
+  const keep = new Set<MemoryV2ConceptRowRecord>();
+  for (const row of concepts) {
+    if (row.status !== "not_injected") keep.add(row);
+  }
+  if (keep.size < maxConcepts) {
+    const rejected = concepts
+      .filter((row) => !keep.has(row))
+      .sort((a, b) => b.finalActivation - a.finalActivation);
+    for (const row of rejected) {
+      if (keep.size >= maxConcepts) break;
+      keep.add(row);
+    }
+  }
+  return concepts.filter((row) => keep.has(row));
+}
+
 export interface RecordMemoryV2ActivationLogParams {
   conversationId: string;
   turn: number;
@@ -134,12 +176,25 @@ export interface RecordMemoryV2ActivationLogParams {
   mode: "context-load" | "per-turn" | "errored" | "router" | "v3_shadow";
   concepts: MemoryV2ConceptRowRecord[];
   config: MemoryV2ConfigSnapshot;
+  /**
+   * Cap on serialized concept rows (see {@link capConceptRowsForLog}).
+   * Callers with an `AssistantConfig` in hand should pass
+   * `config.memory.v2.activation_log_max_concepts`; omitted, the
+   * {@link DEFAULT_ACTIVATION_LOG_MAX_CONCEPTS} fallback applies.
+   * `null` = unlimited.
+   */
+  maxConcepts?: number | null;
 }
 
 export function recordMemoryV2ActivationLog(
   params: RecordMemoryV2ActivationLogParams,
 ): void {
   const db = getDb();
+  const maxConcepts =
+    params.maxConcepts === undefined
+      ? DEFAULT_ACTIVATION_LOG_MAX_CONCEPTS
+      : params.maxConcepts;
+  const concepts = capConceptRowsForLog(params.concepts, maxConcepts);
   // Skills now live as concept rows under `slug: "skills/<id>"`, so the
   // separate `skills_json` column is always written empty. The column itself
   // remains in the schema for backwards-compat with prior log rows; the
@@ -152,7 +207,7 @@ export function recordMemoryV2ActivationLog(
       messageId: null,
       turn: params.turn,
       mode: params.mode,
-      conceptsJson: JSON.stringify(params.concepts),
+      conceptsJson: JSON.stringify(concepts),
       skillsJson: "[]",
       configJson: JSON.stringify(params.config),
       createdAt: Date.now(),

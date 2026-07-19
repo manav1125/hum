@@ -18,8 +18,10 @@ export type MemoryJobType =
   | "embed_segment"
   | "embed_summary"
   | "prune_old_conversations"
+  | "prune_old_background_conversations"
   | "prune_old_llm_request_logs"
   | "prune_old_trace_events"
+  | "prune_old_activation_logs"
   | "build_conversation_summary"
   | "conversation_analyze"
   | "backfill"
@@ -479,6 +481,73 @@ export function enqueuePruneOldConversationsJob(
       ? { retentionDays }
       : {};
   return enqueueMemoryJob("prune_old_conversations", payload);
+}
+
+/**
+ * Shared dedupe-aware enqueue for the day-granularity prune jobs added
+ * after the original three (which keep their hand-rolled copies): if a
+ * pending/running job of `type` exists, refresh its `retentionDays`
+ * payload in place instead of enqueueing a duplicate.
+ */
+function enqueueDedupedRetentionDaysJob(
+  type: MemoryJobType,
+  retentionDays?: number,
+): string {
+  const db = getDb();
+  const existing = db
+    .select()
+    .from(memoryJobs)
+    .where(
+      and(
+        eq(memoryJobs.type, type),
+        inArray(memoryJobs.status, ["pending", "running"]),
+      ),
+    )
+    .orderBy(asc(memoryJobs.createdAt))
+    .get();
+  const validRetention =
+    typeof retentionDays === "number" &&
+    Number.isFinite(retentionDays) &&
+    retentionDays >= 0;
+  if (existing) {
+    if (existing.status === "pending" && validRetention) {
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(existing.payload) as Record<string, unknown>;
+      } catch {
+        payload = {};
+      }
+      if (payload.retentionDays !== retentionDays) {
+        db.update(memoryJobs)
+          .set({
+            payload: JSON.stringify({ ...payload, retentionDays }),
+            updatedAt: Date.now(),
+          })
+          .where(eq(memoryJobs.id, existing.id))
+          .run();
+      }
+    }
+    return existing.id;
+  }
+  return enqueueMemoryJob(type, validRetention ? { retentionDays } : {});
+}
+
+export function enqueuePruneOldBackgroundConversationsJob(
+  retentionDays?: number,
+): string {
+  return enqueueDedupedRetentionDaysJob(
+    "prune_old_background_conversations",
+    retentionDays,
+  );
+}
+
+export function enqueuePruneOldActivationLogsJob(
+  retentionDays?: number,
+): string {
+  return enqueueDedupedRetentionDaysJob(
+    "prune_old_activation_logs",
+    retentionDays,
+  );
 }
 
 export function enqueuePruneOldTraceEventsJob(retentionDays?: number): string {

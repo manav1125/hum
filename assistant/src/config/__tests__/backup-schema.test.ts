@@ -14,8 +14,35 @@ describe("BackupConfigSchema", () => {
       intervalHours: 6,
       retention: 3,
       offsite: { enabled: true, destinations: null },
+      db: {
+        enabled: true,
+        retention: 7,
+        windowStartHourUtc: 3,
+        windowEndHourUtc: 6,
+        minIntervalHours: 20,
+        directory: null,
+      },
       localDirectory: null,
     });
+  });
+
+  test("db snapshot defaults: enabled ON, keep 7, 03:00-06:00 UTC window", () => {
+    const parsed = BackupConfigSchema.parse({});
+    expect(parsed.db.enabled).toBe(true);
+    expect(parsed.db.retention).toBe(7);
+    expect(parsed.db.windowStartHourUtc).toBe(3);
+    expect(parsed.db.windowEndHourUtc).toBe(6);
+    expect(parsed.db.minIntervalHours).toBe(20);
+    expect(parsed.db.directory).toBeNull();
+  });
+
+  test("rejects db.retention: 0 and db.windowStartHourUtc: 24", () => {
+    expect(BackupConfigSchema.safeParse({ db: { retention: 0 } }).success).toBe(
+      false,
+    );
+    expect(
+      BackupConfigSchema.safeParse({ db: { windowStartHourUtc: 24 } }).success,
+    ).toBe(false);
   });
 
   test("default retention is 3 (ATL-193 — snapshots are full copies, not incremental)", () => {
@@ -53,6 +80,14 @@ describe("BackupConfigSchema", () => {
         destinations: [{ path: "/mnt/backups", encrypt: true }],
       },
       localDirectory: "/var/backups/vellum",
+      db: {
+        enabled: false,
+        retention: 14,
+        windowStartHourUtc: 22,
+        windowEndHourUtc: 2,
+        minIntervalHours: 44,
+        directory: "/data/backups/db",
+      },
     };
     const parsed = BackupConfigSchema.parse(input);
     expect(parsed).toEqual(input);
@@ -112,6 +147,14 @@ describe("BackupConfigSchema", () => {
       intervalHours: 6,
       retention: 3,
       offsite: { enabled: true, destinations: null },
+      db: {
+        enabled: true,
+        retention: 7,
+        windowStartHourUtc: 3,
+        windowEndHourUtc: 6,
+        minIntervalHours: 20,
+        directory: null,
+      },
       localDirectory: null,
     });
   });

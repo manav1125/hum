@@ -140,6 +140,136 @@ describe("memory-v2-activation-log-store", () => {
     expect(result).toBeNull();
   });
 
+  test("caps serialized concepts at maxConcepts, always keeping non-not_injected rows", () => {
+    const conversationId = "conv-cap";
+    const messageId = "msg-cap";
+
+    const makeRow = (
+      slug: string,
+      finalActivation: number,
+      status: MemoryV2ConceptRowRecord["status"],
+    ): MemoryV2ConceptRowRecord => ({
+      slug,
+      finalActivation,
+      ownActivation: 0,
+      priorActivation: 0,
+      simUser: 0,
+      simAssistant: 0,
+      simNow: 0,
+      simUserRerankBoost: 0,
+      simAssistantRerankBoost: 0,
+      inRerankPool: false,
+      spreadContribution: 0,
+      source: "ann_top50",
+      status,
+    });
+
+    // 10 candidates: 2 meaningful outcomes buried at LOW activation, 8
+    // not_injected fillers at higher activation. Cap of 5 must keep both
+    // meaningful rows plus the 3 highest-activation fillers.
+    const concepts: MemoryV2ConceptRowRecord[] = [
+      ...Array.from({ length: 8 }, (_, i) =>
+        makeRow(`filler-${i}`, 0.9 - i * 0.1, "not_injected"),
+      ),
+      makeRow("kept-injected", 0.01, "injected"),
+      makeRow("kept-corrupt", 0.005, "corrupt"),
+    ];
+
+    recordMemoryV2ActivationLog({
+      conversationId,
+      turn: 1,
+      mode: "context-load",
+      concepts,
+      config: sampleConfig,
+      maxConcepts: 5,
+    });
+
+    backfillMemoryV2ActivationMessageId(conversationId, messageId);
+    const result = getMemoryV2ActivationLogByMessageIds([messageId]);
+    expect(result).not.toBeNull();
+    expect(result!.concepts).toHaveLength(5);
+    const slugs = result!.concepts.map((c) => c.slug);
+    expect(slugs).toContain("kept-injected");
+    expect(slugs).toContain("kept-corrupt");
+    // Highest-activation not_injected fillers survive; the tail is dropped.
+    expect(slugs).toContain("filler-0");
+    expect(slugs).toContain("filler-1");
+    expect(slugs).toContain("filler-2");
+  });
+
+  test("maxConcepts: null preserves every concept row", () => {
+    const conversationId = "conv-uncapped";
+
+    const concepts: MemoryV2ConceptRowRecord[] = Array.from(
+      { length: 400 },
+      (_, i) => ({
+        slug: `c-${i}`,
+        finalActivation: 0,
+        ownActivation: 0,
+        priorActivation: 0,
+        simUser: 0,
+        simAssistant: 0,
+        simNow: 0,
+        simUserRerankBoost: 0,
+        simAssistantRerankBoost: 0,
+        inRerankPool: false,
+        spreadContribution: 0,
+        source: "ann_top50",
+        status: "not_injected",
+      }),
+    );
+
+    recordMemoryV2ActivationLog({
+      conversationId,
+      turn: 1,
+      mode: "context-load",
+      concepts,
+      config: sampleConfig,
+      maxConcepts: null,
+    });
+
+    const db = getDb();
+    const rows = db.select().from(memoryV2ActivationLogs).all();
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.conceptsJson)).toHaveLength(400);
+  });
+
+  test("omitted maxConcepts applies the default cap", () => {
+    const conversationId = "conv-default-cap";
+
+    const concepts: MemoryV2ConceptRowRecord[] = Array.from(
+      { length: 400 },
+      (_, i) => ({
+        slug: `c-${i}`,
+        finalActivation: 400 - i,
+        ownActivation: 0,
+        priorActivation: 0,
+        simUser: 0,
+        simAssistant: 0,
+        simNow: 0,
+        simUserRerankBoost: 0,
+        simAssistantRerankBoost: 0,
+        inRerankPool: false,
+        spreadContribution: 0,
+        source: "ann_top50",
+        status: "not_injected",
+      }),
+    );
+
+    recordMemoryV2ActivationLog({
+      conversationId,
+      turn: 1,
+      mode: "context-load",
+      concepts,
+      config: sampleConfig,
+    });
+
+    const db = getDb();
+    const rows = db.select().from(memoryV2ActivationLogs).all();
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]!.conceptsJson)).toHaveLength(300);
+  });
+
   test("backfill only updates rows with NULL messageId", () => {
     const conversationId = "conv-2";
 

@@ -114,6 +114,19 @@ export const MemoryV2ConfigSchema = z
       .describe(
         "Number of top-activation entries (concept pages and skills combined) considered for injection per turn. Skills are scored alongside concepts in the same pool; this cap covers both.",
       ),
+    activation_log_max_concepts: z
+      .number({
+        error: "memory.v2.activation_log_max_concepts must be a number",
+      })
+      .int("memory.v2.activation_log_max_concepts must be an integer")
+      .positive(
+        "memory.v2.activation_log_max_concepts must be a positive integer",
+      )
+      .nullable()
+      .default(300)
+      .describe(
+        "Cap on the number of per-candidate telemetry rows serialized into each memory_v2_activation_logs row. With an unlimited ann_candidate_limit the candidate pool is the entire concept-page collection, so an uncapped log row grows with the collection (hundreds of KB per turn). Rows with a non-'not_injected' status are always kept; the remainder is filled with the highest-activation candidates. `null` = unlimited (previous behavior).",
+      ),
     ann_candidate_limit: z
       .number({ error: "memory.v2.ann_candidate_limit must be a number" })
       .int("memory.v2.ann_candidate_limit must be an integer")

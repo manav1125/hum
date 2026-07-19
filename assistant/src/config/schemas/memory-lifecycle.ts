@@ -125,6 +125,38 @@ export const MemoryCleanupConfigSchema = z
       .describe(
         "Number of days to retain conversation data before cleanup (0 disables pruning)",
       ),
+    backgroundConversationRetentionDays: z
+      .number({
+        error:
+          "memory.cleanup.backgroundConversationRetentionDays must be a number",
+      })
+      .int(
+        "memory.cleanup.backgroundConversationRetentionDays must be an integer",
+      )
+      .nonnegative(
+        "memory.cleanup.backgroundConversationRetentionDays must be non-negative",
+      )
+      .max(
+        365,
+        "memory.cleanup.backgroundConversationRetentionDays must be <= 365 days",
+      )
+      .default(30)
+      .describe(
+        "Number of days to retain system-generated background conversations (heartbeat runs, background jobs — conversation_type='background') before pruning them with their dependent rows. User conversations (conversation_type='standard') are never touched by this setting. 0 disables pruning.",
+      ),
+    activationLogRetentionDays: z
+      .number({
+        error: "memory.cleanup.activationLogRetentionDays must be a number",
+      })
+      .int("memory.cleanup.activationLogRetentionDays must be an integer")
+      .nonnegative(
+        "memory.cleanup.activationLogRetentionDays must be non-negative",
+      )
+      .max(365, "memory.cleanup.activationLogRetentionDays must be <= 365 days")
+      .default(14)
+      .describe(
+        "Number of days to retain memory-v2 activation telemetry (memory_v2_activation_logs) and recall telemetry (memory_recall_logs) before pruning. These tables feed the inspector and debug routes only — no runtime state is reconstructed from them. 0 disables pruning.",
+      ),
     llmRequestLogRetentionMs: z
       .number({
         error: "memory.cleanup.llmRequestLogRetentionMs must be a number",

@@ -500,6 +500,7 @@ async function finalizeInjection(args: {
         mode,
         concepts: conceptRowsForLog,
         config: configSnapshot(config),
+        maxConcepts: config.memory.v2.activation_log_max_concepts,
       });
     } catch (telemetryErr) {
       log.warn(

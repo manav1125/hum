@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { maybeRunDbSnapshot } from "../backup/db-snapshot.js";
 import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
 import { getConfig } from "../config/loader.js";
 import type { AssistantConfig } from "../config/types.js";
@@ -18,6 +19,7 @@ import {
   markScheduledCleanupEnqueued,
 } from "./cleanup-schedule-state.js";
 import { conversationAnalyzeJob } from "./conversation-analyze-job.js";
+import { getSqlite } from "./db-connection.js";
 import { maybeRunDbMaintenance } from "./db-maintenance.js";
 import { bootstrapFromHistory } from "./graph/bootstrap.js";
 import { runConsolidation } from "./graph/consolidation.js";
@@ -31,6 +33,8 @@ import { runNarrativeRefinement } from "./graph/narrative.js";
 import { runPatternScan } from "./graph/pattern-scan.js";
 import { backfillJob } from "./job-handlers/backfill.js";
 import {
+  pruneOldActivationLogsJob,
+  pruneOldBackgroundConversationsJob,
   pruneOldConversationsJob,
   pruneOldLlmRequestLogsJob,
   pruneOldTraceEventsJob,
@@ -63,6 +67,8 @@ import {
   deferMemoryJob,
   EMBED_JOB_TYPES,
   enqueueMemoryJob,
+  enqueuePruneOldActivationLogsJob,
+  enqueuePruneOldBackgroundConversationsJob,
   enqueuePruneOldConversationsJob,
   enqueuePruneOldLlmRequestLogsJob,
   enqueuePruneOldTraceEventsJob,
@@ -285,7 +291,9 @@ export async function runMemoryJobsOnce(
     }
     maybeEnqueueGraphMaintenanceJobs(config);
     maybePruneOldMemoryJobs();
+    maybeCheckpointWal();
     await maybeRunDbMaintenance();
+    await maybeRunDbSnapshot();
     return 0;
   }
 
@@ -340,8 +348,40 @@ export async function runMemoryJobsOnce(
   }
   maybeEnqueueGraphMaintenanceJobs(config);
   maybePruneOldMemoryJobs();
+  maybeCheckpointWal();
   await maybeRunDbMaintenance();
+  await maybeRunDbSnapshot();
   return slowProcessed + fastProcessed + embedProcessed;
+}
+
+// ── WAL checkpoint ─────────────────────────────────────────────────
+
+/** Minimum interval between periodic PASSIVE WAL checkpoints. */
+const WAL_CHECKPOINT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+let lastWalCheckpointMs = 0;
+
+/**
+ * Periodic PASSIVE WAL checkpoint on the daemon's own in-process
+ * connection. The autocheckpoint (1000 pages) stalls behind any
+ * long-lived reader, and once stalled the WAL grows without bound until
+ * the next clean shutdown (observed at 265MB in production, with every
+ * write paying the oversized-WAL cost). A periodic PASSIVE checkpoint
+ * makes whatever progress the current reader set allows — it never
+ * blocks, never takes conflicting locks, and (unlike TRUNCATE) can never
+ * unlink the WAL out from under peer connections, so it is safe to run
+ * on the live connection per the WAL rules in assistant/CLAUDE.md.
+ * In-memory throttle (not a durable checkpoint): an extra checkpoint
+ * after a daemon restart is free.
+ */
+export function maybeCheckpointWal(nowMs = Date.now()): void {
+  if (nowMs - lastWalCheckpointMs < WAL_CHECKPOINT_INTERVAL_MS) return;
+  lastWalCheckpointMs = nowMs;
+  try {
+    getSqlite().exec("PRAGMA wal_checkpoint(PASSIVE)");
+  } catch (err) {
+    log.warn({ err }, "Periodic PASSIVE WAL checkpoint failed");
+  }
 }
 
 // ── memory_jobs reaper ─────────────────────────────────────────────
@@ -598,11 +638,17 @@ async function processJob(
     case "prune_old_conversations":
       pruneOldConversationsJob(job, config);
       return;
+    case "prune_old_background_conversations":
+      pruneOldBackgroundConversationsJob(job, config);
+      return;
     case "prune_old_llm_request_logs":
       await pruneOldLlmRequestLogsJob(job, config);
       return;
     case "prune_old_trace_events":
       await pruneOldTraceEventsJob(job, config);
+      return;
+    case "prune_old_activation_logs":
+      await pruneOldActivationLogsJob(job, config);
       return;
     case "build_conversation_summary":
       // Stale rows enqueued before v2 was enabled must not consume the
@@ -725,6 +771,12 @@ function maybeEnqueueScheduledCleanupJobs(
     cleanup.conversationRetentionDays > 0
       ? enqueuePruneOldConversationsJob(cleanup.conversationRetentionDays)
       : null;
+  const pruneBackgroundConversationsJobId =
+    cleanup.backgroundConversationRetentionDays > 0
+      ? enqueuePruneOldBackgroundConversationsJob(
+          cleanup.backgroundConversationRetentionDays,
+        )
+      : null;
   const pruneLlmRequestLogsJobId =
     cleanup.llmRequestLogRetentionMs !== null
       ? enqueuePruneOldLlmRequestLogsJob(cleanup.llmRequestLogRetentionMs)
@@ -733,16 +785,25 @@ function maybeEnqueueScheduledCleanupJobs(
     cleanup.traceEventRetentionDays > 0
       ? enqueuePruneOldTraceEventsJob(cleanup.traceEventRetentionDays)
       : null;
+  const pruneActivationLogsJobId =
+    cleanup.activationLogRetentionDays > 0
+      ? enqueuePruneOldActivationLogsJob(cleanup.activationLogRetentionDays)
+      : null;
   markScheduledCleanupEnqueued(nowMs);
   log.debug(
     {
       pruneConversationsJobId,
+      pruneBackgroundConversationsJobId,
       pruneLlmRequestLogsJobId,
       pruneTraceEventsJobId,
+      pruneActivationLogsJobId,
       enqueueIntervalMs: cleanup.enqueueIntervalMs,
       conversationRetentionDays: cleanup.conversationRetentionDays,
+      backgroundConversationRetentionDays:
+        cleanup.backgroundConversationRetentionDays,
       llmRequestLogRetentionMs: cleanup.llmRequestLogRetentionMs,
       traceEventRetentionDays: cleanup.traceEventRetentionDays,
+      activationLogRetentionDays: cleanup.activationLogRetentionDays,
     },
     "Enqueued scheduled memory cleanup jobs",
   );

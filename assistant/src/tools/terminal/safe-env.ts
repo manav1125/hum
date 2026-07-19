@@ -85,6 +85,13 @@ export const SAFE_ENV_VARS = [
   "CUE_DISABLE_COMMITMENT_CAPTURE",
   "CUE_COMMITMENT_CAPTURE_CHANNELS",
   "CUE_A2A_OUTBOUND",
+  // Backup offsite target coordinates (non-secret). The access key pair
+  // (CUE_BACKUP_S3_ACCESS_KEY_ID / CUE_BACKUP_S3_SECRET_ACCESS_KEY) is
+  // deliberately NOT forwarded — credential material stays daemon-only.
+  "CUE_BACKUP_S3_BUCKET",
+  "CUE_BACKUP_S3_ENDPOINT",
+  "CUE_BACKUP_S3_REGION",
+  "CUE_BACKUP_S3_PREFIX",
 ] as const;
 
 export const KATA_SAFE_ENV_VARS = [
