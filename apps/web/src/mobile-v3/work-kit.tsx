@@ -213,7 +213,10 @@ export function BackRow({
         display: "flex",
         alignItems: "center",
         gap: 10,
-        padding: "4px 20px 0",
+        // Top inset: these screens render full-bleed with the legacy mobile
+        // header hidden, so the back row owns the status-bar/island area.
+        padding:
+          "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 4px) 20px 0",
         flexShrink: 0,
         position: "relative",
         zIndex: 2,

@@ -272,7 +272,10 @@ export function Mv3YouPage() {
       header={
         <div
           style={{
-            padding: "12px 22px 12px",
+            // Topmost element on the root You screen — owns the status-bar
+            // inset (no back row renders above it).
+            padding:
+              "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px) 22px 12px",
             flexShrink: 0,
             position: "relative",
             zIndex: 2,

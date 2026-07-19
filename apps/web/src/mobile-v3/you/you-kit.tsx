@@ -84,7 +84,9 @@ export function YouScreen({
             display: "flex",
             alignItems: "center",
             gap: 10,
-            padding: "6px 20px 0",
+            // Topmost row on full-bleed screens — owns the status-bar inset.
+            padding:
+              "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 6px) 20px 0",
             flexShrink: 0,
             position: "relative",
             zIndex: 2,
@@ -127,7 +129,12 @@ export function YouScreen({
         (title ? (
           <div
             style={{
-              padding: "6px 22px 12px",
+              // When no back row renders above (the root You page), the title
+              // is the topmost element and absorbs the status-bar inset.
+              padding:
+                back || trailing
+                  ? "6px 22px 12px"
+                  : "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 6px) 22px 12px",
               flexShrink: 0,
               position: "relative",
               zIndex: 2,

@@ -76,7 +76,11 @@ export function LargeTitleHeader({
     <div
       data-mv3
       style={{
-        padding: "6px 22px 0",
+        // Top inset: with the legacy mobile header hidden, v3 screens own the
+        // area under the status bar / Dynamic Island. The bridge-provided
+        // var wins on device; env() covers plain browsers.
+        padding:
+          "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 6px) 22px 0",
         flexShrink: 0,
         position: "relative",
         zIndex: 2,
@@ -92,7 +96,9 @@ export function LargeTitleHeader({
           position: "absolute",
           left: 0,
           right: 0,
-          top: 4,
+          // Mirrors the padded top inset — absolute position is measured from
+          // the border box, so the inset must be re-added here.
+          top: "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 4px)",
           textAlign: "center",
           fontSize: 16,
           fontWeight: 600,
