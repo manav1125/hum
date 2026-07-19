@@ -82,7 +82,7 @@ interface EmailSummary {
   date: string;
 }
 
-interface EventSummary {
+export interface EventSummary {
   summary: string;
   start: string;
   end: string;
@@ -207,7 +207,7 @@ async function fetchUnreadEmails(
   return out;
 }
 
-async function fetchTodaysEvents(
+export async function fetchTodaysEvents(
   conn: OAuthConnection,
   now: Date,
   signal?: AbortSignal,

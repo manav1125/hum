@@ -107,6 +107,7 @@ import { ROUTES as MEMORY_V3_ROUTES } from "./memory-v3-routes.js";
 import { ROUTES as MIGRATION_ROLLBACK_ROUTES } from "./migration-rollback-routes.js";
 import { ROUTES as MIGRATION_ROUTES } from "./migration-routes.js";
 import { ROUTES as MISSION_ROUTES } from "./missions-routes.js";
+import { ROUTES as MORNING_BRIEF_ROUTES } from "./morning-brief-routes.js";
 import { ROUTES as NEXT_MOVE_ROUTES } from "./next-move-routes.js";
 import { ROUTES as NOTIFICATION_ROUTES } from "./notification-routes.js";
 import { ROUTES as OAUTH_APPS_ROUTES } from "./oauth-apps.js";
@@ -259,6 +260,7 @@ export const ROUTES: RouteDefinition[] = [
   ...MIGRATION_ROLLBACK_ROUTES,
   ...MIGRATION_ROUTES,
   ...MISSION_ROUTES,
+  ...MORNING_BRIEF_ROUTES,
   ...NEXT_MOVE_ROUTES,
   ...VOICE_INTAKE_ROUTES,
   ...NOTIFICATION_ROUTES,
