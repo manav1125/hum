@@ -486,6 +486,15 @@ export const ConversationMessageSchema = z.object({
   subagentNotification: ConversationSubagentNotificationSchema.optional(),
   slackMessage: ConversationSlackMessageSchema.optional(),
   /**
+   * True when this user row originated as a spoken voice turn (a live-voice
+   * session or a phone call). Stamped in message metadata at persist time by
+   * the daemon's voice paths and surfaced here so clients can keep the voice
+   * treatment (e.g. the mobile 🎙 bubble) across history reloads. Only user
+   * rows carry it; absent on typed turns and on rows persisted by older
+   * daemons.
+   */
+  voiceTurn: z.boolean().optional(),
+  /**
    * True when this assistant turn died without finishing (the daemon was
    * restarted or crashed mid-generation) and boot recovery marked it. Any
    * partially-streamed content the row holds is still shipped; clients

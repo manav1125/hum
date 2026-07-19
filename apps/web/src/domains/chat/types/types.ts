@@ -131,6 +131,14 @@ export interface DisplayMessage {
    * inline "response was interrupted" notice with a retry affordance.
    */
   interrupted?: boolean;
+  /**
+   * True when this user row originated as a spoken voice turn (wire
+   * `ConversationMessage.voiceTurn`, stamped in message metadata by the
+   * daemon's voice paths). The mobile v3 transcript renders these with the
+   * frame-37 voice treatment (italic 🎙 blue-tint bubble) so voice turns stay
+   * identifiable after a history reload; desktop ignores it.
+   */
+  voiceTurn?: boolean;
 }
 
 /**

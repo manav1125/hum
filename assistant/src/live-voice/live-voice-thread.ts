@@ -68,7 +68,14 @@ export async function persistLiveVoiceTurn(
   const a = assistantText.trim();
   if (!u && !a) return;
   try {
-    if (u) await addMessage(conversationId, "user", textBlocks(u));
+    // `voiceTurn` is the durable voice marker (same key the cascade path
+    // stamps via the voice-session bridge) so reloaded history can render
+    // spoken turns distinctly.
+    if (u) {
+      await addMessage(conversationId, "user", textBlocks(u), {
+        metadata: { voiceTurn: true },
+      });
+    }
     if (a) await addMessage(conversationId, "assistant", textBlocks(a));
   } catch (err) {
     log.warn({ err, conversationId }, "persistLiveVoiceTurn failed");

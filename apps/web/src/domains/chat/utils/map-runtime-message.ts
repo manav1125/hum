@@ -161,6 +161,7 @@ export function mapRuntimeToDisplayMessage(
   if (m.subagentNotification) msg.isSubagentNotification = true;
   if (m.slackMessage) msg.slackMessage = m.slackMessage;
   if (m.interrupted) msg.interrupted = true;
+  if (m.voiceTurn) msg.voiceTurn = true;
   if (toolCalls) msg.toolCalls = toolCalls;
   if (timestamp != null) msg.timestamp = timestamp;
 

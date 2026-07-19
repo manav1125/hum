@@ -739,6 +739,7 @@ export function handleListMessages({
     let sentAt: number | undefined;
     let interrupted: boolean | undefined;
     let interruptedAt: number | undefined;
+    let voiceTurn: boolean | undefined;
     let subagentNotification:
       | {
           subagentId: string;
@@ -759,6 +760,11 @@ export function handleListMessages({
           if (typeof meta.interruptedAt === "number") {
             interruptedAt = meta.interruptedAt;
           }
+        }
+        // Durable voice marker stamped by the voice-session bridge / the
+        // live-voice thread writer. Only user rows carry it.
+        if (meta.voiceTurn === true && msg.role === "user") {
+          voiceTurn = true;
         }
         if (meta.subagentNotification) {
           const n = meta.subagentNotification;
@@ -803,6 +809,7 @@ export function handleListMessages({
       sentAt,
       interrupted,
       interruptedAt,
+      voiceTurn,
       subagentNotification,
       slackMessage,
       clientMessageId: msg.clientMessageId ?? undefined,
@@ -959,6 +966,7 @@ export function handleListMessages({
         ? { contentOrder: alignedContentOrder }
         : {}),
       ...(contentBlocks.length > 0 ? { contentBlocks } : {}),
+      ...(m.voiceTurn ? { voiceTurn: true } : {}),
       ...(m.subagentNotification
         ? { subagentNotification: m.subagentNotification }
         : {}),

@@ -356,7 +356,14 @@ export function TranscriptMessageBody({
       slot.kind === "raw" ? (
         <Fragment key={`user-slot-${i}`}>{slot.node}</Fragment>
       ) : (
-        <div key={`user-bubble-${bubbleIndex++}`} className={userBubbleClass}>
+        <div
+          key={`user-bubble-${bubbleIndex++}`}
+          className={userBubbleClass}
+          // Style hook only (no desktop styles attach to it): the mobile v3
+          // chat retints voice-originated turns (wire `voiceTurn`) to the
+          // frame-37 🎙 treatment via scoped CSS in MobileChatView.
+          data-voice-turn={message.voiceTurn ? "true" : undefined}
+        >
           {slot.nodes}
         </div>
       ),

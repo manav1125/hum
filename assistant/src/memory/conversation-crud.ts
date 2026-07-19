@@ -135,6 +135,14 @@ export const messageMetadataSchema = z
     provenanceGuardianExternalUserId: z.string().optional(),
     provenanceRequesterIdentifier: z.string().optional(),
     automated: z.boolean().optional(),
+    /**
+     * True when this user message originated as a spoken voice turn (a
+     * live-voice session or a phone call). Stamped at persist time by the
+     * voice-session bridge and the Gemini live-voice thread writer; surfaced
+     * on the messages wire so clients can render voice turns distinctly
+     * after a history reload. Display marker only.
+     */
+    voiceTurn: z.boolean().optional(),
     forkSourceMessageId: z.string().optional(),
     /** Image source paths from desktop attachments, keyed by filename. */
     imageSourcePaths: z.record(z.string(), z.string()).optional(),

@@ -257,3 +257,26 @@ describe("mapRuntimeToDisplayMessage", () => {
     });
   });
 });
+
+describe("voice-turn marker", () => {
+  test("carries the wire voiceTurn flag onto the display row", () => {
+    const m = makeMessage({
+      id: "msg-voice",
+      role: "user",
+      ...wireTextBody("Spoken words"),
+      voiceTurn: true,
+    });
+
+    expect(mapRuntimeToDisplayMessage(m).voiceTurn).toBe(true);
+  });
+
+  test("omits voiceTurn for ordinary typed rows", () => {
+    const m = makeMessage({
+      id: "msg-typed",
+      role: "user",
+      ...wireTextBody("Typed words"),
+    });
+
+    expect(mapRuntimeToDisplayMessage(m).voiceTurn).toBeUndefined();
+  });
+});

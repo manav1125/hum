@@ -56,6 +56,7 @@ import {
 import {
   MobileThreadVoice,
   ThreadVoiceActiveChip,
+  VOICE_BUBBLE_LOOK,
 } from "@/domains/chat/components/mobile-thread-voice";
 import {
   SLASH_PREFIX_RE,
@@ -110,6 +111,30 @@ const MCHAT_TRANSCRIPT_THEME = `
   color: #fff !important;
   border-radius: 20px 20px 6px 20px !important;
   box-shadow: 0 10px 24px -12px rgba(61, 110, 232, 0.5);
+}
+/* Voice-originated user turn (wire \`voiceTurn\`, marked by the transcript's
+   user bubble as data-voice-turn) → the frame-37 live-voice treatment: italic
+   🎙 blue-tint bubble, sourced from the same VOICE_BUBBLE_LOOK values
+   MobileThreadVoice renders live turns with. Placed after the gradient rule
+   above so the equal-specificity override wins by order. */
+.cue-mchat .self-end [data-voice-turn="true"],
+.cue-mchat .items-end > [data-voice-turn="true"] {
+  background: ${VOICE_BUBBLE_LOOK.background} !important;
+  border: ${VOICE_BUBBLE_LOOK.border};
+  border-radius: ${VOICE_BUBBLE_LOOK.borderRadius} !important;
+  color: ${VOICE_BUBBLE_LOOK.color} !important;
+  font-style: ${VOICE_BUBBLE_LOOK.fontStyle};
+  box-shadow: none;
+}
+/* The bubble's text runs carry their own size utility (text-[15px]) — bring
+   them down to the frame-37 type scale; italic inherits from the bubble. */
+.cue-mchat [data-voice-turn="true"] .break-words {
+  font-size: ${VOICE_BUBBLE_LOOK.fontSize}px;
+  line-height: ${VOICE_BUBBLE_LOOK.lineHeight};
+}
+/* 🎙 prefix on the first prose line (the live strip renders it in JSX). */
+.cue-mchat [data-voice-turn="true"] p:first-of-type::before {
+  content: "🎙 ";
 }
 /* Approval card (needs-you) → the amber chat citizen (frames 8 + 13b).
    Retint in place: same component, same actions — the accent/primary tokens it

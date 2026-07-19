@@ -5023,6 +5023,146 @@ paths:
                 - source
                 - ref
               additionalProperties: false
+  /v1/brief/morning:
+    get:
+      operationId: brief_morning_get
+      summary: Get the three-beat morning brief
+      description:
+        "The Morning Brief surface's single data source: work items completed since the lookback window (overnight
+        wins, review vs done), the one highest-priority item needing the user (pending approval or top awaiting-review
+        item), and today's schedule (calendar events when reachable, merged with due-today work items). Read-only
+        re-slice of the work-item / approval / calendar stores."
+      tags:
+        - activity
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt:
+                    type: string
+                  since:
+                    type: string
+                  overnight:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        project:
+                          type: string
+                        agent:
+                          type: string
+                        state:
+                          type: string
+                          enum:
+                            - review
+                            - done
+                        kind:
+                          type: string
+                          const: work_item
+                        completedAt:
+                          type: string
+                      required:
+                        - id
+                        - title
+                        - state
+                        - kind
+                        - completedAt
+                      additionalProperties: false
+                  ask:
+                    anyOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                          kind:
+                            type: string
+                            enum:
+                              - approval
+                              - review
+                          title:
+                            type: string
+                          project:
+                            type: string
+                          agent:
+                            type: string
+                          actions:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                kind:
+                                  type: string
+                                  enum:
+                                    - approve
+                                    - decline
+                                    - open_thread
+                                endpoint:
+                                  type: string
+                                method:
+                                  type: string
+                              required:
+                                - id
+                                - label
+                                - kind
+                                - endpoint
+                                - method
+                              additionalProperties: false
+                          conversationId:
+                            type: string
+                        required:
+                          - id
+                          - kind
+                          - title
+                          - actions
+                        additionalProperties: false
+                      - type: "null"
+                  day:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        time:
+                          type: string
+                        title:
+                          type: string
+                        kind:
+                          type: string
+                          enum:
+                            - event
+                            - work_item
+                      required:
+                        - title
+                        - kind
+                      additionalProperties: false
+                  calendarAvailable:
+                    type: boolean
+                required:
+                  - generatedAt
+                  - since
+                  - overnight
+                  - ask
+                  - day
+                  - calendarAvailable
+                additionalProperties: false
+      parameters:
+        - name: sinceHours
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Lookback window for the overnight beat, in hours (default 24, max 72).
   /v1/browser/execute:
     post:
       operationId: browser_execute_post
@@ -13444,6 +13584,8 @@ paths:
                         - y
                         - label
                       additionalProperties: false
+                  error:
+                    type: string
                 required:
                   - answer
                   - points
@@ -24031,6 +24173,8 @@ paths:
                             - channelId
                             - channelTs
                           additionalProperties: false
+                        voiceTurn:
+                          type: boolean
                         interrupted:
                           type: boolean
                         interruptedAt:

@@ -479,6 +479,8 @@ describe("voice-session-bridge", () => {
       assistantMessageChannel: "phone",
       userMessageInterface: "phone",
       assistantMessageInterface: "phone",
+      // Durable voice marker — lets clients restyle voice turns after reload.
+      voiceTurn: true,
     });
   });
 
@@ -565,6 +567,8 @@ describe("voice-session-bridge", () => {
       assistantMessageChannel: "vellum",
       userMessageInterface: "macos",
       assistantMessageInterface: "macos",
+      // Durable voice marker — lets clients restyle voice turns after reload.
+      voiceTurn: true,
     });
   });
 

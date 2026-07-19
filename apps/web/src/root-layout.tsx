@@ -8,6 +8,7 @@ import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { TabBarV3 } from "@/mobile-v3";
+import { LiveActivityBridge } from "@/mobile-v3/live-activity-bridge";
 import { Mv3OverflowMenu } from "@/mobile-v3/overflow-menu";
 import { OfflineTakeover } from "@/mobile-v3/offline-takeover";
 import {
@@ -378,6 +379,14 @@ export function RootLayout() {
       {/* Headless: keeps daemon config.ui.detectedTimezone fresh on
           focus/zone change. No-ops until an assistant id resolves. */}
       <TimezoneSync />
+
+      {/* Headless: drives the iOS Live Activity / Dynamic Island (mobile-v3
+          frame 4) from running work items. Renders null off the Capacitor
+          shell and on native builds without the run-activity methods. */}
+      <LiveActivityBridge
+        assistantId={assistantId}
+        isAssistantActive={isAssistantActive}
+      />
       <GlobalPushToTalkBridge assistantId={assistantId} />
 
       {feedbackOpen ? (

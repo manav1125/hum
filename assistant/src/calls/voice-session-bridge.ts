@@ -462,6 +462,12 @@ export async function startVoiceTurn(
     const persistResult = await conversation.persistUserMessage({
       content: persistedContent,
       requestId,
+      // Durable voice marker: every user turn that enters through the voice
+      // bridge (live-voice sessions and phone calls) is stamped so clients
+      // can render voice-originated turns distinctly after a history reload.
+      // Metadata only — capability resolution stays driven by the
+      // channel/interface contexts above.
+      metadata: { voiceTurn: true },
     });
     messageId = persistResult.id;
   } catch (err) {

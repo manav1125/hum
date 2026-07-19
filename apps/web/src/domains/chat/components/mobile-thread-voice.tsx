@@ -49,18 +49,28 @@ import { haptic } from "@/utils/haptics";
 // Frame-37 literals (inspected from docs/design/mobile-v3/cue-mobile-v3.html)
 // ---------------------------------------------------------------------------
 
-/** Voice user bubble — italic 🎙, blue tint (frame 37). */
-const VOICE_BUBBLE: React.CSSProperties = {
-  alignSelf: "flex-end",
-  maxWidth: "78%",
+/**
+ * The frame-37 voice "look" (surface + type treatment), split from the
+ * strip-local layout below so MobileChatView can retint PERSISTED voice turns
+ * (wire `voiceTurn`) in the reused transcript with the exact same values —
+ * single source, no drift between live and reloaded voice bubbles.
+ */
+export const VOICE_BUBBLE_LOOK = {
   background: "rgba(61,110,232,.2)",
   border: "1px solid rgba(61,110,232,.35)",
   borderRadius: "18px 18px 6px 18px",
-  padding: "10px 14px",
   fontSize: 13.5,
   lineHeight: 1.45,
   fontStyle: "italic",
   color: "#C7D6F5",
+} as const;
+
+/** Voice user bubble — italic 🎙, blue tint (frame 37). */
+const VOICE_BUBBLE: React.CSSProperties = {
+  alignSelf: "flex-end",
+  maxWidth: "78%",
+  padding: "10px 14px",
+  ...VOICE_BUBBLE_LOOK,
 };
 
 /** Assistant reply bubble (frame 37). */

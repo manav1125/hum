@@ -232,6 +232,47 @@ describe("TranscriptMessageBody", () => {
     ).not.toBeNull();
   });
 
+  test("marks voice-originated user bubbles with data-voice-turn for the mobile retint", () => {
+    const { container } = render(
+      <TranscriptMessageBody
+        message={{
+          id: "m-user-voice",
+          role: "user",
+          voiceTurn: true,
+          contentBlocks: [textBlock("spoken words")],
+          timestamp: 1_000,
+        }}
+        onSurfaceAction={noop}
+      />,
+    );
+
+    const bubble = container.querySelector(
+      ".bg-\\[var\\(--surface-lift\\)\\]",
+    );
+    expect(bubble).not.toBeNull();
+    expect(bubble!.getAttribute("data-voice-turn")).toBe("true");
+  });
+
+  test("omits data-voice-turn on ordinary typed user bubbles", () => {
+    const { container } = render(
+      <TranscriptMessageBody
+        message={{
+          id: "m-user-typed",
+          role: "user",
+          contentBlocks: [textBlock("typed words")],
+          timestamp: 1_000,
+        }}
+        onSurfaceAction={noop}
+      />,
+    );
+
+    const bubble = container.querySelector(
+      ".bg-\\[var\\(--surface-lift\\)\\]",
+    );
+    expect(bubble).not.toBeNull();
+    expect(bubble!.hasAttribute("data-voice-turn")).toBe(false);
+  });
+
   test("uses the latest tool completion as the message activity timestamp", () => {
     const toolCall: ChatMessageToolCall = {
       id: "tc-1",
