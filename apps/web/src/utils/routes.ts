@@ -105,6 +105,18 @@ export const routes = {
   projects: r("/assistant/projects"),
   project: (id: string) => dyn(r("/assistant/projects"), id),
   allWork: r("/assistant/work"),
+  // Mobile v3 surfaces (docs/design/mobile-v3/). Registered centrally here so
+  // the parallel cluster builds never edit this file or routes.tsx.
+  // Morning Brief — the 7:30 three-beat ritual (frame 5).
+  brief: r("/assistant/brief"),
+  // Came in today — inbound triage with swipe confirm/dismiss (frame 15).
+  cameIn: r("/assistant/came-in"),
+  // Watch live — a running work item's step stream (frame 17).
+  workLive: (id: string) => `${dyn(r("/assistant/work"), id)}/live`,
+  // Review pager — full-bleed deliverable review queue (frame 16).
+  reviewQueue: r("/assistant/review-queue"),
+  // Brand kit — palette/type/logos/voice + apply-everywhere (frame 19).
+  brandKit: r("/assistant/brand"),
   // "What do you want to get done?" template / asset-creation picker.
   create: r("/assistant/create"),
   // v0.3 flagship surfaces. Demoted off the primary nav rail (per the clean-rail

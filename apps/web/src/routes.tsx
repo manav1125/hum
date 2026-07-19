@@ -765,6 +765,60 @@ export const routeTree = [
                             ),
                         },
                       },
+                      // -- Mobile v3 surfaces (docs/design/mobile-v3/) -------
+                      // Registered here centrally; the cluster builds own the
+                      // page modules under src/mobile-v3/ and never edit this
+                      // file. Paths mirror utils/routes.ts.
+                      {
+                        // Morning Brief — the 7:30 three-beat ritual (frame 5).
+                        path: "brief",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/brief/brief-page").then(
+                              (m) => m.BriefPage,
+                            ),
+                        },
+                      },
+                      {
+                        // Came in today — swipe triage (frame 15).
+                        path: "came-in",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/triage/came-in-page").then(
+                              (m) => m.CameInPage,
+                            ),
+                        },
+                      },
+                      {
+                        // Watch live — running work-item step stream (frame 17).
+                        path: "work/:workItemId/live",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/watch/watch-live-page").then(
+                              (m) => m.WatchLivePage,
+                            ),
+                        },
+                      },
+                      {
+                        // Review pager — full-bleed deliverable queue (frame 16).
+                        path: "review-queue",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/review/review-queue-page").then(
+                              (m) => m.ReviewQueuePage,
+                            ),
+                        },
+                      },
+                      {
+                        // Brand kit (frame 19).
+                        path: "brand",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/brand/brand-kit-page").then(
+                              (m) => m.BrandKitPage,
+                            ),
+                        },
+                      },
                       {
                         path: "hq/:id",
                         lazy: {
