@@ -74,6 +74,9 @@ targetTemplates:
         optional: true
         type: folder
         buildPhase: resources
+      # Types shared with the CueWidgets extension (ActivityKit attributes —
+      # both sides compile their own copy, the standard Live Activity pattern).
+      - path: Shared
     settings:
       configs:
         Debug:
@@ -120,6 +123,28 @@ targets:
     configFiles:
       Debug: App/Config/App.xcconfig
       Release: App/Config/App.xcconfig
+    settings:
+      configs:
+        Release:
+          # Distribution signing pinned per-target (the widget pins its own
+          # profile below). Archive WITHOUT global CLI signing flags — a CLI
+          # PROVISIONING_PROFILE_SPECIFIER would override BOTH targets and
+          # misapply this profile to the extension's bundle id.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          DEVELOPMENT_TEAM: XU8BLQACGU
+          PROVISIONING_PROFILE_SPECIFIER: Cue App Store
+    dependencies:
+      # Live Activities / Dynamic Island (mobile-v3 frame 4). Prod-only:
+      # the Dev/Staging targets ship without the widget extension.
+      #
+      # ESCAPE HATCH — if the extension ever blocks an archive (e.g. its
+      # App Store provisioning profile doesn't exist yet under automatic
+      # signing), delete these two lines and re-run `xcodegen generate`
+      # (or `bun run ios:setup` from apps/web): the App target builds and
+      # archives exactly as before, just without Live Activities.
+      - target: CueWidgets
+        embed: true
 
   "App Staging":
     templates: [AppEnvironment]
@@ -136,3 +161,41 @@ targets:
     configFiles:
       Debug: App/Config/App-Dev.xcconfig
       Release: App/Config/App-Dev.xcconfig
+
+  # WidgetKit extension hosting the Cue run Live Activity (Dynamic Island +
+  # Lock Screen — mobile-v3 spec frame 4). Embedded only by the prod `App`
+  # target (see its dependencies for the escape hatch). ASC registration:
+  # bundle id `com.ventureverse.cue.widgets` (458Q6ZMD86) + the
+  # "Cue Widgets App Store" profile exist; Release signing is pinned
+  # per-target below (automatic covers Debug/simulator).
+  CueWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.2"
+    sources:
+      - path: CueWidgets
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ventureverse.cue.widgets
+        BUNDLE_DISPLAY_NAME: Cue Widgets
+        INFOPLIST_FILE: CueWidgets/Info.plist
+        DEVELOPMENT_TEAM: XU8BLQACGU
+        CODE_SIGN_STYLE: Automatic
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: 1,2
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
+          # Distribution signing for the extension. The archive recipe passes
+          # CODE_SIGN_IDENTITY/PROVISIONING_PROFILE_SPECIFIER on the CLI for
+          # the App target only via xcconfig-level overrides; the widget pins
+          # its own App Store profile here so a global specifier can't
+          # misapply the app's profile to this bundle id.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: Apple Distribution
+          PROVISIONING_PROFILE_SPECIFIER: Cue Widgets App Store

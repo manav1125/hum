@@ -1,5 +1,6 @@
 import Capacitor
 import UIKit
+import UserNotifications
 import WebKit
 
 /// Custom `CAPBridgeViewController` subclass that:
@@ -55,9 +56,27 @@ class MyViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NativeAuthPlugin())
         bridge?.registerPluginInstance(NativeBiometricPlugin())
         bridge?.registerPluginInstance(CueNativePlugin())
+        installNotificationTapRouting()
         installCueNativeAliasUserScript()
         installInputZoomPreventionUserScript()
         installViewportZoomLockUserScript()
+    }
+
+    /// Re-chain `CueNotificationRouter` in front of Capacitor's notification
+    /// delegate (which replaced it during bridge init) and hand it the WebView
+    /// seam. Any deep link that arrived during a cold start is flushed the
+    /// moment the navigator lands. See `CueNotificationRouter` for the full
+    /// delegate-ownership story.
+    private func installNotificationTapRouting() {
+        let router = CueNotificationRouter.shared
+        let center = UNUserNotificationCenter.current()
+        if center.delegate !== router {
+            router.forwardTarget = center.delegate
+            center.delegate = router
+        }
+        router.navigator = { [weak self] url in
+            self?.bridge?.webView?.load(URLRequest(url: url))
+        }
     }
 
     /// Expose `window.CueNative` (the shell's contract) as a thin wrapper over

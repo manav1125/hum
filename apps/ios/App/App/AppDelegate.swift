@@ -1,4 +1,5 @@
 import UIKit
+import UserNotifications
 import Capacitor
 
 @UIApplicationMain
@@ -7,6 +8,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Claim the notification-center delegate before launch completes so a
+        // cold-start push tap (the notification launched the app) is delivered.
+        // Capacitor's bridge takes the delegate over during its init;
+        // MyViewController.capacitorDidLoad re-chains our router in front of it.
+        UNUserNotificationCenter.current().delegate = CueNotificationRouter.shared
         return true
     }
 
