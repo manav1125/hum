@@ -58,10 +58,16 @@ interface Props {
   conversationId: string | undefined;
 }
 
-export function ComposerSettingsMenu({ assistantId, conversationId }: Props) {
-  const isMobile = useIsMobile();
+/**
+ * All server state + mutation logic behind the composer settings surface
+ * (Assistant Access threshold presets + Model Profile picker), extracted so
+ * the desktop popover / design-library bottom sheet (ComposerSettingsMenu
+ * below) and the mobile-v3 sheet (mobile-chat-menus.tsx) share ONE source of
+ * truth for reads, optimistic updates, and persistence. Pure logic move — no
+ * behavioural change to the desktop path.
+ */
+export function useComposerSettings({ assistantId, conversationId }: Props) {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
 
   // Managed (Cue-hosted) instances never expose the per-conversation model
   // profile picker — profiles name vendor models, and managed customers must
@@ -343,17 +349,48 @@ export function ComposerSettingsMenu({ assistantId, conversationId }: Props) {
     [orderedProfileEntries, profileActiveKey, queryComplexityRoutingEnabled],
   );
 
+  const existingProfileNames = useMemo(
+    () => Array.from(new Set([...profileOrder, ...Object.keys(profiles)])),
+    [profileOrder, profiles],
+  );
+
+  return {
+    activePreset,
+    isOverride,
+    serverGlobalInteractive,
+    handleSelect,
+    showModelProfileSection,
+    profilesLoaded,
+    visibleProfileEntries,
+    profileActiveKey,
+    handleProfileSelect,
+    existingProfileNames,
+  };
+}
+
+export function ComposerSettingsMenu({ assistantId, conversationId }: Props) {
+  const isMobile = useIsMobile();
+  const [open, setOpen] = useState(false);
+
+  const {
+    activePreset,
+    isOverride,
+    serverGlobalInteractive,
+    handleSelect,
+    showModelProfileSection,
+    profilesLoaded,
+    visibleProfileEntries,
+    profileActiveKey,
+    handleProfileSelect,
+    existingProfileNames,
+  } = useComposerSettings({ assistantId, conversationId });
+
   // Quick-add is owned by the top-level ProfileQuickAddProvider (chat must not
   // import settings directly — see local/no-cross-domain-imports). The provider
   // renders the ProfileEditorModal in create mode, persists the new profile,
   // and toasts; we hand it the current profile names and an onCreated callback
   // so the new profile is autoselected for this thread once it persists.
   const { openProfileQuickAdd } = useProfileQuickAdd();
-
-  const existingProfileNames = useMemo(
-    () => Array.from(new Set([...profileOrder, ...Object.keys(profiles)])),
-    [profileOrder, profiles],
-  );
 
   // The "+" quick-add affordance rendered in both the desktop Menu.Label and
   // the mobile SectionLabel. Closes the popover/sheet, then opens the modal.

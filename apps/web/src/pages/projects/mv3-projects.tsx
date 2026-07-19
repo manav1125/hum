@@ -500,6 +500,66 @@ export function Mv3Projects() {
                   </span>
                 </button>
               ) : null}
+
+              {/* All work — the flat, groupable list (/assistant/work),
+                  parity audit §3 P0: previously unreachable on mobile. */}
+              <button
+                type="button"
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.light();
+                  navigate(routes.allWork);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  background: "var(--mv3-card)",
+                  border: "1px solid var(--mv3-card-border)",
+                  borderRadius: 16,
+                  padding: "12px 15px",
+                  minHeight: 48,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  textAlign: "left",
+                  ...rise(0.62),
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{ fontSize: 13, color: "var(--mv3-micro)" }}
+                >
+                  ⌗
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: "var(--mv3-text)",
+                    }}
+                  >
+                    All work
+                  </span>
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: 11,
+                      color: "var(--mv3-faint)",
+                      marginTop: 1,
+                    }}
+                  >
+                    Everything Cue is tracking, one list
+                  </span>
+                </span>
+                <span
+                  aria-hidden
+                  style={{ fontSize: 15, color: "var(--mv3-faint)" }}
+                >
+                  ›
+                </span>
+              </button>
             </>
           )}
         </div>

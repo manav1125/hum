@@ -53,7 +53,9 @@ import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
-import { useProject } from "./use-projects";
+import { Mv3TaskSheet } from "./mv3-task-sheet";
+import { useProject, useProjects } from "./use-projects";
+import { useQuickAddTask } from "./use-quick-add";
 
 /** Human line for a work-item trail event (status transitions, honest). */
 function stepLabel(e: {
@@ -461,6 +463,13 @@ export function Mv3ProjectDetail() {
   const [now] = useState(() => Date.now());
 
   const { project } = useProject(assistantId, projectId);
+  // Full projects list — the task sheet's Filed-to reassign targets.
+  const { projects } = useProjects(assistantId);
+  // Task edit sheet (due date / labels / re-file / Run-Redo) + quick-add.
+  const [sheetItemId, setSheetItemId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addDraft, setAddDraft] = useState("");
+  const quickAdd = useQuickAddTask(assistantId, projectId);
   // Sheet rows ride the same typed bucket the HQ surfaces consume, scoped to
   // this project client-side (keeps the exact HqWorkItem shape the cards need).
   const all = useHqWorkItems(assistantId);
@@ -686,15 +695,32 @@ export function Mv3ProjectDetail() {
               />
             ))}
 
-            {/* Queued + recent done — the designed row patterns, repeated. */}
+            {/* Queued + recent done — the designed row patterns, repeated.
+                Rows are now tappable: they open the task edit sheet. */}
             {queued.slice(0, 4).map((item) => (
               <div
                 key={item.id}
+                role="button"
+                tabIndex={0}
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.light();
+                  setSheetItemId(item.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    haptic.light();
+                    setSheetItemId(item.id);
+                  }
+                }}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   padding: "6px 4px",
+                  minHeight: 44,
+                  cursor: "pointer",
                   ...rise(nextDelay()),
                 }}
               >
@@ -733,12 +759,28 @@ export function Mv3ProjectDetail() {
             {done.slice(0, 3).map((item) => (
               <div
                 key={item.id}
+                role="button"
+                tabIndex={0}
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.light();
+                  setSheetItemId(item.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    haptic.light();
+                    setSheetItemId(item.id);
+                  }
+                }}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   padding: "6px 4px",
+                  minHeight: 44,
                   opacity: 0.75,
+                  cursor: "pointer",
                   ...rise(nextDelay()),
                 }}
               >
@@ -772,6 +814,132 @@ export function Mv3ProjectDetail() {
                 automatically.
               </div>
             ) : null}
+
+            {/* Quick-add — the board's `useQuickAddTask` (POST work-items
+                { title, projectId }), as an inline v3 row. */}
+            {addOpen ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const title = addDraft.trim();
+                  if (!title || quickAdd.isPending) return;
+                  quickAdd.add(title, {
+                    onSuccess: () => {
+                      haptic.success();
+                      setAddDraft("");
+                      setAddOpen(false);
+                    },
+                  });
+                }}
+                style={{ display: "flex", flexDirection: "column", gap: 6 }}
+              >
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    type="text"
+                    autoFocus
+                    aria-label="New task title"
+                    placeholder="What should Cue take on?"
+                    value={addDraft}
+                    onChange={(e) => setAddDraft(e.target.value)}
+                    style={{
+                      flex: 1,
+                      minHeight: 44,
+                      fontSize: 16,
+                      padding: "8px 13px",
+                      borderRadius: 12,
+                      background: "var(--mv3-btn2-bg)",
+                      border: "1px solid var(--mv3-btn2-border)",
+                      color: "var(--mv3-text)",
+                      fontFamily: "inherit",
+                      outline: "none",
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    className="cue-pressable"
+                    disabled={!addDraft.trim() || quickAdd.isPending}
+                    style={{
+                      minHeight: 44,
+                      padding: "8px 16px",
+                      borderRadius: 12,
+                      border: "none",
+                      background: "var(--mv3-text)",
+                      color: "var(--mv3-bg)",
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                      cursor:
+                        addDraft.trim() && !quickAdd.isPending
+                          ? "pointer"
+                          : "default",
+                      opacity:
+                        addDraft.trim() && !quickAdd.isPending ? 1 : 0.55,
+                    }}
+                  >
+                    {quickAdd.isPending ? "Adding…" : "Add"}
+                  </button>
+                  <button
+                    type="button"
+                    className="cue-pressable"
+                    aria-label="Cancel adding a task"
+                    onClick={() => {
+                      haptic.light();
+                      quickAdd.reset();
+                      setAddDraft("");
+                      setAddOpen(false);
+                    }}
+                    style={{
+                      minHeight: 44,
+                      padding: "8px 12px",
+                      borderRadius: 12,
+                      background: "var(--mv3-btn2-bg)",
+                      border: "1px solid var(--mv3-btn2-border)",
+                      color: "var(--mv3-muted)",
+                      fontSize: 12.5,
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                {quickAdd.isError ? (
+                  <div style={{ fontSize: 11.5, color: "var(--mv3-amber)" }}>
+                    Couldn’t add that task — try again.
+                  </div>
+                ) : null}
+              </form>
+            ) : (
+              <button
+                type="button"
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.light();
+                  setAddOpen(true);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  border:
+                    "1.5px dashed color-mix(in srgb, var(--mv3-text) 16%, transparent)",
+                  borderRadius: 14,
+                  padding: "10px 13px",
+                  minHeight: 44,
+                  color: "var(--mv3-muted)",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                  textAlign: "left",
+                }}
+              >
+                <span aria-hidden style={{ color: "var(--mv3-micro)" }}>
+                  ＋
+                </span>
+                Add a task
+              </button>
+            )}
 
             {/* Ask about this project… — opens a fresh conversation (no
                 project-scoped chat exists yet; noted for the coordinator). */}
@@ -815,6 +983,13 @@ export function Mv3ProjectDetail() {
           </div>
         </div>
       </div>
+
+      <Mv3TaskSheet
+        assistantId={assistantId}
+        item={items.find((i) => i.id === sheetItemId) ?? null}
+        projects={projects}
+        onClose={() => setSheetItemId(null)}
+      />
     </div>
   );
 }

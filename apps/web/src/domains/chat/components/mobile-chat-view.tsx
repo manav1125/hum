@@ -29,7 +29,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { ArrowUp, ChevronLeft, Plus, Square } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronLeft,
+  MoreHorizontal,
+  Plus,
+  SlidersHorizontal,
+  Square,
+} from "lucide-react";
 
 import {
   Transcript,
@@ -41,6 +48,17 @@ import {
   type VoiceInputButtonHandle,
 } from "@/domains/chat/components/voice-input-button";
 import { ChatAttachmentsStrip } from "@/domains/chat/components/chat-attachments/chat-attachments";
+import {
+  MobileComposerSettingsSheet,
+  MobileConversationActionsSheet,
+} from "@/domains/chat/components/mobile-chat-menus";
+import {
+  SLASH_PREFIX_RE,
+  filteredCommands,
+  selectedInputText,
+  type SlashCommand,
+} from "@/domains/chat/components/chat-composer/slash-command-catalog";
+import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
 import { useComposerStore } from "@/domains/chat/composer-store";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import type { ConversationStarter } from "@/domains/chat/utils/conversation-starters";
@@ -100,6 +118,14 @@ const MCHAT_TRANSCRIPT_THEME = `
   border-left-color: var(--mv3-amber) !important;
   border-radius: 18px;
   box-shadow: var(--mv3-amber-card-shadow);
+}
+/* Slash-command list rising above the composer (transform/opacity only). */
+@keyframes mchatRise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cue-mchat [data-mchat-rise] { animation: none !important; }
 }
 `;
 
@@ -338,6 +364,11 @@ export function MobileChatView({
   const inputElRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Power-feature sheets (composer settings ⋅ conversation actions) — the
+  // v3-skinned mounts of the desktop menus (mobile-chat-menus.tsx).
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+
   const activeConversationId = useConversationStore.use.activeConversationId();
 
   // ── Live status line: "working on N things" (frame 8's header). Same
@@ -431,15 +462,51 @@ export function MobileChatView({
     void onSubmit();
   }, [canStopGenerating, onStopGenerating, canSend, onSubmit]);
 
+  // ── Slash commands — the SAME derived-from-input mechanism the desktop
+  // composer uses (useTextPopup + slash-command-catalog), rendered as a v3
+  // glass list rising above the composer.
+  const slash = useTextPopup({
+    text: input,
+    trigger: SLASH_PREFIX_RE,
+    search: filteredCommands,
+  });
+  const slashDismiss = slash.dismiss;
+  const handleSlashSelect = useCallback(
+    (command: SlashCommand) => {
+      haptic.light();
+      const next = selectedInputText(command);
+      if (command.selectionBehavior === "autoSend") {
+        // submitMessage(override) sends the command text and clears the
+        // shared composer-store input — same net effect as the desktop
+        // flushSync(setInput) + submit dance.
+        slashDismiss();
+        void onSubmit(next);
+      } else {
+        setInput(next);
+        inputElRef.current?.focus();
+      }
+    },
+    [slashDismiss, onSubmit, setInput],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Enter sends (no Shift) — matches the native single-line composer feel.
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
+        // With the slash list open, Enter selects the highlighted command
+        // (hardware-keyboard parity with the desktop composer).
+        if (slash.show) {
+          const cmd = slash.items[slash.selectedIndex];
+          if (cmd) {
+            handleSlashSelect(cmd);
+            return;
+          }
+        }
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, slash.show, slash.items, slash.selectedIndex, handleSlashSelect],
   );
 
   // Auto-grow the textarea up to a few lines.
@@ -558,6 +625,37 @@ export function MobileChatView({
             </div>
           ) : null}
         </div>
+        {/* ⋯ — conversation actions (v3 sheet mount of the desktop header
+            menu). Only meaningful once the conversation exists. */}
+        {activeConversationId ? (
+          <button
+            type="button"
+            onClick={() => {
+              haptic.light();
+              setActionsOpen(true);
+            }}
+            aria-label="Conversation actions"
+            aria-haspopup="dialog"
+            aria-expanded={actionsOpen}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 44,
+              height: 44,
+              border: "none",
+              background: "transparent",
+              color: "var(--mv3-micro)",
+              cursor: "pointer",
+              padding: 0,
+              marginRight: -12,
+              flexShrink: 0,
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            <MoreHorizontal size={20} aria-hidden />
+          </button>
+        ) : null}
       </div>
 
       {/* THREAD — v3 greeting while empty; otherwise the reused live
@@ -659,6 +757,76 @@ export function MobileChatView({
             onRemove={removeAttachment}
           />
         ) : null}
+        {/* SLASH COMMANDS — rising v3 glass list (desktop SlashCommandPopup
+            equivalent; same catalog + selection behaviour). */}
+        {slash.show ? (
+          <div
+            role="listbox"
+            aria-label="Commands"
+            data-mchat-rise
+            style={{
+              marginBottom: 8,
+              borderRadius: 18,
+              overflow: "hidden",
+              background: "var(--mv3-glass)",
+              border: "1px solid var(--mv3-glass-border)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              boxShadow: "var(--mv3-glass-shadow)",
+              animation: "mchatRise .18s ease both",
+            }}
+          >
+            {slash.items.map((cmd, i) => (
+              <button
+                key={cmd.name}
+                type="button"
+                role="option"
+                aria-selected={i === slash.selectedIndex}
+                className="cue-pressable"
+                onClick={() => handleSlashSelect(cmd)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  width: "100%",
+                  minHeight: 44,
+                  padding: "10px 16px",
+                  border: "none",
+                  background:
+                    i === slash.selectedIndex
+                      ? "var(--mv3-btn2-bg)"
+                      : "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--mv3-mono)",
+                    fontSize: 13,
+                    color: "var(--mv3-accent)",
+                    flexShrink: 0,
+                  }}
+                >
+                  /{cmd.name}
+                </span>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "var(--mv3-muted)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {cmd.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div
           style={{
             display: "flex",
@@ -702,6 +870,37 @@ export function MobileChatView({
               minWidth: 0,
             }}
           />
+
+          {/* Tune — composer settings (model profile + autonomy threshold),
+              the v3 sheet mount of the desktop ComposerSettingsMenu. */}
+          {assistantId ? (
+            <button
+              type="button"
+              onClick={() => {
+                haptic.light();
+                setSettingsOpen(true);
+              }}
+              aria-label="Conversation settings"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              style={{
+                width: 44,
+                height: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                flexShrink: 0,
+                color: "var(--mv3-muted)",
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <SlidersHorizontal size={17} aria-hidden />
+            </button>
+          ) : null}
 
           {/* "+" — attach (hidden picker into the shared composer store). */}
           <input
@@ -837,6 +1036,21 @@ export function MobileChatView({
           )}
         </div>
       </div>
+
+      {/* POWER-FEATURE SHEETS — portal into #viewport-overlays (SheetShell). */}
+      {assistantId ? (
+        <MobileComposerSettingsSheet
+          assistantId={assistantId}
+          conversationId={activeConversationId ?? undefined}
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
+      <MobileConversationActionsSheet
+        assistantId={assistantId}
+        open={actionsOpen}
+        onClose={() => setActionsOpen(false)}
+      />
     </div>
   );
 }

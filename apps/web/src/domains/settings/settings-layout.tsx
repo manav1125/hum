@@ -3,6 +3,8 @@ import { useMemo } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
+import { MobileSettingsLayout } from "@/domains/settings/mobile/mobile-settings";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { isLocalMode } from "@/lib/local-mode";
@@ -30,6 +32,7 @@ export function SettingsLayout() {
   const billingGate = usePlatformGate();
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   // Hide logout in pure local mode unless a platform session exists.
   const hasPlatformSession = useHasPlatformSession();
   const showLogout = !isLocalMode() || hasPlatformSession;
@@ -96,6 +99,17 @@ export function SettingsLayout() {
     if (match) return match.label;
     return "Settings";
   }, [pathname]);
+
+  // MOBILE (task #101): the phone gets the native v3 settings tree — a
+  // grouped index at the root plus touch-adapted / shell-wrapped leafs —
+  // instead of the desktop SidebarShell. Branch after every hook so the
+  // hook count never changes across a breakpoint flip; desktop markup
+  // below stays byte-identical.
+  if (isMobile) {
+    return (
+      <MobileSettingsLayout items={filteredItems} showLogout={showLogout} />
+    );
+  }
 
   return (
     <SidebarShell

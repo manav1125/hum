@@ -17,7 +17,9 @@ import {
   type WorkItemView,
 } from "@/domains/activity/use-work-items";
 import { useActivitySync } from "@/hooks/use-activity-sync";
+import { useIsMobile } from "@/hooks/use-is-mobile";
 
+import { Mv3AllWork } from "./mv3-all-work";
 import { useProjects } from "./use-projects";
 
 type Grouping = "status" | "project" | "due";
@@ -42,7 +44,16 @@ function dueBucket(item: WorkItemView, now: number): string {
 
 const DUE_ORDER = ["Overdue", "Today", "This week", "Later", "No date"];
 
+/**
+ * Mobile renders the v3 native list (Mv3AllWork); desktop keeps the Activity
+ * list below byte-identical — the same split projects-page.tsx uses.
+ */
 export function AllWorkPage() {
+  const isMobile = useIsMobile();
+  return isMobile ? <Mv3AllWork /> : <AllWorkPageDesktop />;
+}
+
+function AllWorkPageDesktop() {
   const assistantId = useActiveAssistantId();
   useActivitySync(assistantId, true);
   const [grouping, setGrouping] = useState<Grouping>("status");

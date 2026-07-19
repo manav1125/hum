@@ -55,6 +55,10 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import { Mv3LedgerPage } from "@/mobile-v3/you/ledger-page";
 import { Mv3RulesPage } from "@/mobile-v3/you/rules-page";
 import {
+  Mv3AgentScopesScreen,
+  Mv3GuardrailsBar,
+} from "@/domains/guardrails/mobile-guardrails";
+import {
   CHECKPOINT_TEMPLATES,
   agentGlyph,
   dollars,
@@ -203,16 +207,35 @@ function modelShortName(model: string): string {
 export function GuardrailsPage() {
   // MOBILE — the mobile-v3 Rules screen (spec frame 20) with the act ledger
   // (frame 31) at `?view=ledger` (deep-linked from the You screen's acts
-  // tile; no new route needed). Branch in a thin wrapper so the desktop
-  // body's hooks never change count across a breakpoint flip. Desktop keeps
-  // the three-band Guardrails console untouched.
+  // tile) and the agent-scope editor (desktop's AGENT SCOPES band) at
+  // `?view=scopes` — the target the v3 Agents screen's "Adjust scope"
+  // deep-link lands on (task #101; it navigates to the plain guardrails URL,
+  // where the pinned bar below the Rules screen is one tap away). The bar
+  // also restores the "+ Add a checkpoint" composer as a v3 sheet. No new
+  // routes; branch in a thin wrapper so the desktop body's hooks never
+  // change count across a breakpoint flip. Desktop keeps the three-band
+  // Guardrails console untouched.
   const isMobile = useIsMobile();
   const [searchParams] = useSearchParams();
   if (isMobile) {
-    return searchParams.get("view") === "ledger" ? (
-      <Mv3LedgerPage />
-    ) : (
-      <Mv3RulesPage />
+    const view = searchParams.get("view");
+    if (view === "ledger") return <Mv3LedgerPage />;
+    if (view === "scopes") return <Mv3AgentScopesScreen />;
+    return (
+      <div
+        style={{
+          height: "100%",
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--mv3-bg)",
+        }}
+      >
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <Mv3RulesPage />
+        </div>
+        <Mv3GuardrailsBar />
+      </div>
     );
   }
   return <GuardrailsPageDesktop />;

@@ -1,10 +1,15 @@
 /**
  * Create sheet — the mobile v3 "+" surface (spec frame 7): a SheetShell lifted
- * over the CURRENT screen instead of a navigation. Prompt first, mode chips
- * (Slides / Doc / Image / Data), a template strip reusing the existing
- * template data, "Create it →" submitting through the EXISTING create/run
- * flow (draft conversation seeded with `?prompt=`, design contract compiled
- * by `applyCreateIntent`, provenance stamped) — then dismiss + a success tick.
+ * over the CURRENT screen instead of a navigation. Prompt first, a horizontal
+ * mode rail covering the full desktop Create breadth (Slides / Doc / Image /
+ * Data / Research / Video / Canvas / Sheets / Audio / Leads), per-mode
+ * quick-start prompt cards (the desktop `CREATE_MODES[].templates`), a
+ * template strip reusing the existing template data (slides get the desktop
+ * gallery's category tabs + search; video gets the 6 `VIDEO_STYLE_SPECS` with
+ * a live/animated kind label; canvas gets the 4 self-seeding
+ * `CANVAS_ACTION_SPECS`), and "Create it →" submitting through the EXISTING
+ * create/run flow (draft conversation seeded with `?prompt=`, design contract
+ * compiled by `applyCreateIntent`, provenance stamped) — then dismiss.
  *
  * The full /assistant/create page keeps working for desktop and as fallback;
  * this sheet is only mounted by the mobile tab bar's "+".
@@ -25,19 +30,34 @@ import { publicAsset } from "@/utils/public-asset";
 import { routes } from "@/utils/routes";
 
 import { applyCreateIntent, type CreateIntent } from "./create-intent";
+import { CREATE_MODES } from "./create-templates";
 import {
+  CANVAS_ACTION_SPECS,
   DATA_FORMAT_SPECS,
   DOC_TYPE_SPECS,
   IMAGE_STYLE_SPECS,
   TEMPLATE_SPECS,
+  VIDEO_STYLE_SPECS,
+  getCanvasActionSpec,
+  type TemplateSpec,
 } from "./studio-specs";
 import { useActiveBrand } from "./use-active-brand";
 
 /* ------------------------------------------------------------------------- */
-/* Mode chips — the sheet's four (spec frame 7), mapped to existing modes.   */
+/* Mode chips — the full desktop Create breadth, mapped to existing modes.   */
 /* ------------------------------------------------------------------------- */
 
-type SheetModeId = "slides" | "docs" | "images" | "data";
+type SheetModeId =
+  | "slides"
+  | "docs"
+  | "images"
+  | "data"
+  | "research"
+  | "video"
+  | "canvas"
+  | "sheets"
+  | "audio"
+  | "leads";
 
 const GLYPH = {
   width: 20,
@@ -91,7 +111,84 @@ const MODES: Array<{ id: SheetModeId; label: string; glyph: React.ReactNode }> =
         </svg>
       ),
     },
+    {
+      id: "research",
+      label: "Research",
+      glyph: (
+        <svg {...GLYPH} aria-hidden>
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20.5 20.5L16 16" />
+        </svg>
+      ),
+    },
+    {
+      id: "video",
+      label: "Video",
+      glyph: (
+        <svg {...GLYPH} aria-hidden>
+          <rect x="3" y="5" width="18" height="14" rx="3" />
+          <path d="M10.5 9.5l4.5 2.5-4.5 2.5z" />
+        </svg>
+      ),
+    },
+    {
+      id: "canvas",
+      label: "Canvas",
+      glyph: (
+        <svg {...GLYPH} aria-hidden>
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <path d="M8 16l6.5-6.5 2 2L10 18H8z" />
+        </svg>
+      ),
+    },
+    {
+      id: "sheets",
+      label: "Sheets",
+      glyph: (
+        <svg {...GLYPH} aria-hidden>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 10h18M9 4v16" />
+        </svg>
+      ),
+    },
+    {
+      id: "audio",
+      label: "Audio",
+      glyph: (
+        <svg {...GLYPH} aria-hidden>
+          <path d="M9 18V6l10-2v12" />
+          <circle cx="7" cy="18" r="2" />
+          <circle cx="17" cy="16" r="2" />
+        </svg>
+      ),
+    },
+    {
+      id: "leads",
+      label: "Leads",
+      glyph: (
+        <svg {...GLYPH} aria-hidden>
+          <circle cx="9" cy="8.5" r="3.5" />
+          <path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" />
+          <circle cx="17" cy="9.5" r="2.5" />
+          <path d="M16.5 14.5c2.2.3 3.6 1.8 4 4" />
+        </svg>
+      ),
+    },
   ];
+
+/** Per-mode prompt placeholder (kept short — the field is single-line). */
+const PLACEHOLDERS: Record<SheetModeId, string> = {
+  slides: "Deck for the renewal call…",
+  docs: "PRD for the new onboarding…",
+  images: "Hero image for the launch page…",
+  data: "Dashboard of Q3 signups…",
+  research: "Scan our top 3 competitors…",
+  video: "A 5-second product teaser…",
+  canvas: "Or describe an edit…",
+  sheets: "3-year SaaS model in Excel…",
+  audio: "Upbeat 30s intro track…",
+  leads: "50 heads of ops in fintech…",
+};
 
 /* ------------------------------------------------------------------------- */
 /* Template strip data — reuses the existing spec catalogs per mode.         */
@@ -102,9 +199,25 @@ interface StripPick {
   label: string;
   /** Thumbnail image (publicAsset path) when the catalog carries one. */
   thumbnail?: string;
-  /** Fallback swatch when there is no image (docs / data). */
+  /** Fallback swatch when there is no image (docs / data / canvas). */
   swatch?: { from: string; to: string };
+  /** Small kind badge over the tile (video: Live / Animated). */
+  kindLabel?: string;
+  /** Centered glyph over the swatch (canvas action tiles). */
+  glyphChar?: string;
+  /** Slides only — the template's gallery category (for the tab rail). */
+  category?: TemplateSpec["category"];
+  /** Longer description surfaced as the tile's title attribute. */
+  description?: string;
 }
+
+const CANVAS_SWATCHES: Record<string, { from: string; to: string; glyph: string }> =
+  {
+    create_new: { from: "#2A3A5C", to: "#3D6EE8", glyph: "+" },
+    edit_image: { from: "#3B2E58", to: "#7F77DD", glyph: "✎" },
+    upscale: { from: "#1E3D33", to: "#2FA47A", glyph: "⤢" },
+    remove_background: { from: "#40312A", to: "#D08A4B", glyph: "⬚" },
+  };
 
 function stripForMode(mode: SheetModeId): StripPick[] {
   switch (mode) {
@@ -114,12 +227,14 @@ function stripForMode(mode: SheetModeId): StripPick[] {
         label: t.name,
         thumbnail: t.thumbnail,
         swatch: { from: t.palette.primary, to: t.palette.bg },
+        category: t.category,
       }));
     case "docs":
       return DOC_TYPE_SPECS.map((d) => ({
         id: d.id,
         label: d.name,
         swatch: { from: "#232C3D", to: "#141B27" },
+        description: d.description,
       }));
     case "images":
       return IMAGE_STYLE_SPECS.map((s) => ({
@@ -132,9 +247,60 @@ function stripForMode(mode: SheetModeId): StripPick[] {
         id: f.id,
         label: f.label,
         swatch: { from: "#1A2230", to: "#3D6EE8" },
+        description: f.description,
       }));
+    case "video":
+      // Flat list of the 6 video styles with a live/animated kind label (the
+      // live/animated TAB grouping is a B-list design item — not invented here).
+      return VIDEO_STYLE_SPECS.map((s) => ({
+        id: s.id,
+        label: s.label,
+        thumbnail: s.thumbnail,
+        kindLabel: s.videoKind === "animated" ? "Animated" : "Live",
+      }));
+    case "canvas":
+      // The 4 self-seeding canvas actions (Create new · Edit · Upscale ·
+      // Remove bg) — same specs the desktop gallery renders; each carries its
+      // own promptSeed, so picking one works without the B-list image-source
+      // pattern (the seeds ask for the attachment in-thread).
+      return CANVAS_ACTION_SPECS.map((a) => ({
+        id: a.id,
+        label: a.label,
+        swatch: CANVAS_SWATCHES[a.id] ?? { from: "#232C3D", to: "#141B27" },
+        glyphChar: CANVAS_SWATCHES[a.id]?.glyph,
+        description: a.description,
+      }));
+    // Research / Sheets / Audio / Leads have no visual catalog on desktop
+    // either — their breadth is the quick-start prompts.
+    case "research":
+    case "sheets":
+    case "audio":
+    case "leads":
+      return [];
   }
 }
+
+/** Per-mode micro-caption over the template strip. */
+const STRIP_CAPTIONS: Partial<Record<SheetModeId, string>> = {
+  slides: "Templates",
+  docs: "Document types",
+  images: "Styles",
+  data: "Output formats",
+  video: "Styles",
+  canvas: "Actions",
+};
+
+/** Slides category tabs — mirrors the desktop gallery's rail exactly. */
+const SLIDES_CATEGORIES: Array<{
+  id: TemplateSpec["category"] | "all";
+  label: string;
+}> = [
+  { id: "all", label: `All ${TEMPLATE_SPECS.length}` },
+  { id: "startup", label: "Pitch" },
+  { id: "minimal", label: "Minimal" },
+  { id: "editorial", label: "Editorial" },
+  { id: "bold", label: "Bold" },
+];
 
 /** Perceptual-ish distance between two hex colors (for brand matching). */
 function colorDistance(a: string, b: string): number {
@@ -169,6 +335,35 @@ function newDraftConversationId(): string {
     : `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/** Shared style for a horizontally-scrolling strip (momentum, no scrollbar). */
+const H_SCROLL: React.CSSProperties = {
+  display: "flex",
+  overflowX: "auto",
+  WebkitOverflowScrolling: "touch",
+  scrollbarWidth: "none",
+  margin: "0 -2px",
+  padding: "0 2px",
+};
+
+function StripCaption({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.09em",
+        textTransform: "uppercase",
+        color: "var(--mv3-muted)",
+        marginTop: 15,
+        marginBottom: 7,
+        padding: "0 2px",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------------- */
 /* Sheet                                                                     */
 /* ------------------------------------------------------------------------- */
@@ -185,6 +380,9 @@ export function CreateSheet({
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<SheetModeId>("slides");
   const [pickId, setPickId] = useState<string | null>(null);
+  const [slidesCategory, setSlidesCategory] =
+    useState<(typeof SLIDES_CATEGORIES)[number]["id"]>("all");
+  const [slidesSearch, setSlidesSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const brandPick = useMemo(
@@ -192,15 +390,35 @@ export function CreateSheet({
     [mode, brand],
   );
   // Brand-matched pick leads the strip (frame 7 shows the pre-selected pick
-  // first); the rest keep catalog order.
+  // first); the rest keep catalog order. Slides also honor the gallery's
+  // category tabs + search (same filter as the desktop overlay).
   const strip = useMemo(() => {
-    const picks = stripForMode(mode);
+    let picks = stripForMode(mode);
+    if (mode === "slides") {
+      const q = slidesSearch.trim().toLowerCase();
+      picks = picks.filter((p) => {
+        const catOk =
+          slidesCategory === "all" || p.category === slidesCategory;
+        const qOk =
+          !q ||
+          p.label.toLowerCase().includes(q) ||
+          (p.category ?? "").includes(q);
+        return catOk && qOk;
+      });
+    }
     if (!brandPick) return picks;
     return [
       ...picks.filter((p) => p.id === brandPick),
       ...picks.filter((p) => p.id !== brandPick),
     ];
-  }, [mode, brandPick]);
+  }, [mode, brandPick, slidesCategory, slidesSearch]);
+
+  // The active mode's quick-start prompt cards — the REAL desktop
+  // `CREATE_MODES[].templates` (mode ids match 1:1).
+  const quickStarts = useMemo(
+    () => CREATE_MODES.find((m) => m.id === mode)?.templates ?? [],
+    [mode],
+  );
 
   // Pre-select the brand-matched pick (slides + real brand only) when the
   // sheet opens or the mode flips; otherwise nothing is pre-selected.
@@ -214,14 +432,27 @@ export function CreateSheet({
     if (open) {
       setPrompt("");
       setMode("slides");
+      setSlidesCategory("all");
+      setSlidesSearch("");
     }
   }, [open]);
+
+  const switchMode = (id: SheetModeId) => {
+    haptic.light();
+    setMode(id);
+    setSlidesCategory("all");
+    setSlidesSearch("");
+  };
 
   const inBrand = Boolean(brand) && mode === "slides" && pickId === brandPick;
 
   const submit = () => {
     const text = prompt.trim();
-    if (!text) {
+    // Canvas actions are self-seeding (desktop parity): a picked action
+    // carries its own promptSeed, so it submits even with an empty field.
+    const canvasAction =
+      mode === "canvas" && pickId ? getCanvasActionSpec(pickId) : undefined;
+    if (!text && !canvasAction) {
       inputRef.current?.focus();
       return;
     }
@@ -232,11 +463,18 @@ export function CreateSheet({
       ...(mode === "slides" || mode === "docs"
         ? { templateId: pickId ?? undefined }
         : {}),
-      ...(mode === "images" ? { styleId: pickId ?? undefined } : {}),
+      ...(mode === "images" || mode === "video"
+        ? { styleId: pickId ?? undefined }
+        : {}),
       ...(mode === "data" ? { formatId: pickId ?? undefined } : {}),
       brandKitId: inBrand ? (brand?.id ?? null) : null,
     };
-    const finalPrompt = applyCreateIntent(text, intent, inBrand ? brand : null);
+    const content = canvasAction
+      ? text
+        ? `${canvasAction.promptSeed}\n\n${text}`
+        : canvasAction.promptSeed
+      : text;
+    const finalPrompt = applyCreateIntent(content, intent, inBrand ? brand : null);
     useViewerStore.getState().setMainView("chat");
     const id = newDraftConversationId();
     useConversationStore.getState().setActiveConversationId(id);
@@ -284,7 +522,7 @@ export function CreateSheet({
             onKeyDown={(e) => {
               if (e.key === "Enter") submit();
             }}
-            placeholder="Deck for the renewal call…"
+            placeholder={PLACEHOLDERS[mode]}
             aria-label="What should I make?"
             style={{
               flex: 1,
@@ -300,27 +538,30 @@ export function CreateSheet({
           />
         </div>
 
-        {/* Mode chips. */}
-        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        {/* Mode rail — all 10 desktop modes, horizontal momentum scroll. */}
+        <div
+          role="tablist"
+          aria-label="Create modes"
+          style={{ ...H_SCROLL, gap: 8, marginTop: 14 }}
+        >
           {MODES.map((m) => {
             const active = m.id === mode;
             return (
               <button
                 key={m.id}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 className="cue-pressable"
-                aria-pressed={active}
-                onClick={() => {
-                  haptic.light();
-                  setMode(m.id);
-                }}
+                onClick={() => switchMode(m.id)}
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
                   gap: 6,
-                  flex: 1,
-                  padding: "12px 0",
+                  flexShrink: 0,
+                  minWidth: 74,
+                  padding: "12px 10px",
                   minHeight: 44,
                   borderRadius: 16,
                   cursor: "pointer",
@@ -339,6 +580,7 @@ export function CreateSheet({
                   style={{
                     fontSize: 11,
                     fontWeight: active ? 600 : 400,
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {m.label}
@@ -348,78 +590,274 @@ export function CreateSheet({
           })}
         </div>
 
-        {/* Template strip — horizontal scroll of the mode's real catalog. */}
-        <div
-          style={{
-            display: "flex",
-            gap: 9,
-            marginTop: 14,
-            overflowX: "auto",
-            WebkitOverflowScrolling: "touch",
-            scrollbarWidth: "none",
-            margin: "14px -2px 0",
-            padding: "0 2px",
-          }}
-        >
-          {strip.map((pick) => {
-            const selected = pick.id === pickId;
-            return (
-              <button
-                key={pick.id}
-                type="button"
-                className="cue-pressable"
-                aria-pressed={selected}
-                onClick={() => {
-                  haptic.light();
-                  setPickId((prev) => (prev === pick.id ? null : pick.id));
-                }}
-                style={{
-                  flexShrink: 0,
-                  width: 118,
-                  borderRadius: 13,
-                  overflow: "hidden",
-                  padding: 0,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  textAlign: "left",
-                  background: "var(--mv3-card)",
-                  border: selected
-                    ? "1.5px solid var(--mv3-accent)"
-                    : "1px solid var(--mv3-card-border)",
-                  boxShadow: selected
-                    ? "0 8px 20px -8px color-mix(in srgb, var(--mv3-accent) 50%, transparent)"
-                    : "none",
-                }}
+        {/* Quick starts — the desktop mode's prefilled prompt cards. */}
+        {quickStarts.length > 0 ? (
+          <>
+            <StripCaption>Quick starts</StripCaption>
+            <div style={{ ...H_SCROLL, gap: 9 }}>
+              {quickStarts.map((t) => {
+                const selected = prompt === t.prompt;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="cue-pressable"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      haptic.light();
+                      setPrompt(t.prompt);
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      width: 196,
+                      minHeight: 62,
+                      textAlign: "left",
+                      borderRadius: 14,
+                      padding: "10px 12px",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      background: selected
+                        ? "color-mix(in srgb, var(--mv3-accent) 12%, var(--mv3-card))"
+                        : "var(--mv3-card)",
+                      border: selected
+                        ? "1.5px solid var(--mv3-accent)"
+                        : "1px solid var(--mv3-card-border)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "var(--mv3-text)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {t.title}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        lineHeight: 1.35,
+                        marginTop: 3,
+                        color: "var(--mv3-muted)",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {t.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+
+        {/* Slides gallery controls — the desktop overlay's tabs + search. */}
+        {mode === "slides" ? (
+          <>
+            <StripCaption>Templates</StripCaption>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                background: "var(--mv3-btn2-bg)",
+                border: "1px solid var(--mv3-btn2-border)",
+                borderRadius: 13,
+                padding: "0 12px",
+              }}
+            >
+              <svg
+                {...GLYPH}
+                width={15}
+                height={15}
+                aria-hidden
+                style={{ flexShrink: 0, color: "var(--mv3-muted)" }}
               >
-                <div
-                  aria-hidden
-                  style={{
-                    height: 66,
-                    background: pick.thumbnail
-                      ? `center / cover no-repeat url("${publicAsset(pick.thumbnail)}")`
-                      : `linear-gradient(160deg, ${pick.swatch?.from ?? "#232C3D"}, ${pick.swatch?.to ?? "#141B27"})`,
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20.5 20.5L16 16" />
+              </svg>
+              <input
+                value={slidesSearch}
+                onChange={(e) => setSlidesSearch(e.target.value)}
+                placeholder="Search templates"
+                aria-label="Search templates"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 16,
+                  padding: "11px 0",
+                  background: "transparent",
+                  border: "none",
+                  outline: "none",
+                  color: "var(--mv3-text)",
+                  fontFamily: "inherit",
+                }}
+              />
+            </div>
+            <div style={{ ...H_SCROLL, gap: 7, marginTop: 9 }}>
+              {SLIDES_CATEGORIES.map((cat) => {
+                const active = cat.id === slidesCategory;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    className="cue-pressable"
+                    aria-pressed={active}
+                    onClick={() => {
+                      haptic.light();
+                      setSlidesCategory(cat.id);
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      minHeight: 40,
+                      padding: "10px 15px",
+                      borderRadius: 99,
+                      fontSize: 12,
+                      fontWeight: active ? 600 : 400,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                      background: active
+                        ? "color-mix(in srgb, var(--mv3-accent) 18%, transparent)"
+                        : "var(--mv3-btn2-bg)",
+                      border: active
+                        ? "1px solid color-mix(in srgb, var(--mv3-ring-active) 50%, transparent)"
+                        : "1px solid var(--mv3-btn2-border)",
+                      color: active ? "var(--mv3-micro)" : "var(--mv3-muted)",
+                    }}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : STRIP_CAPTIONS[mode] ? (
+          <StripCaption>{STRIP_CAPTIONS[mode]}</StripCaption>
+        ) : null}
+
+        {/* Template strip — horizontal scroll of the mode's real catalog. */}
+        {strip.length > 0 ? (
+          <div
+            style={{
+              ...H_SCROLL,
+              gap: 9,
+              marginTop: mode === "slides" ? 10 : 0,
+            }}
+          >
+            {strip.map((pick) => {
+              const selected = pick.id === pickId;
+              return (
+                <button
+                  key={pick.id}
+                  type="button"
+                  className="cue-pressable"
+                  aria-pressed={selected}
+                  title={pick.description}
+                  onClick={() => {
+                    haptic.light();
+                    setPickId((prev) => (prev === pick.id ? null : pick.id));
                   }}
-                />
-                <div
                   style={{
-                    fontSize: 10,
-                    padding: "6px 9px",
-                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    width: 118,
+                    borderRadius: 13,
                     overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    color: selected ? "var(--mv3-micro)" : "var(--mv3-muted)",
-                    background: selected
-                      ? "color-mix(in srgb, var(--mv3-accent) 15%, transparent)"
-                      : "transparent",
+                    padding: 0,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    textAlign: "left",
+                    background: "var(--mv3-card)",
+                    border: selected
+                      ? "1.5px solid var(--mv3-accent)"
+                      : "1px solid var(--mv3-card-border)",
+                    boxShadow: selected
+                      ? "0 8px 20px -8px color-mix(in srgb, var(--mv3-accent) 50%, transparent)"
+                      : "none",
                   }}
                 >
-                  {pick.label}
-                  {selected ? " ✓" : ""}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "relative",
+                      height: 66,
+                      display: "grid",
+                      placeItems: "center",
+                      background: pick.thumbnail
+                        ? `center / cover no-repeat url("${publicAsset(pick.thumbnail)}")`
+                        : `linear-gradient(160deg, ${pick.swatch?.from ?? "#232C3D"}, ${pick.swatch?.to ?? "#141B27"})`,
+                    }}
+                  >
+                    {pick.glyphChar ? (
+                      <span
+                        style={{
+                          fontSize: 22,
+                          lineHeight: 1,
+                          color: "rgba(255,255,255,.75)",
+                        }}
+                      >
+                        {pick.glyphChar}
+                      </span>
+                    ) : null}
+                    {pick.kindLabel ? (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 6,
+                          left: 6,
+                          fontSize: 8.5,
+                          fontWeight: 600,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "rgba(255,255,255,.92)",
+                          background: "rgba(10,13,20,.55)",
+                          backdropFilter: "blur(6px)",
+                          WebkitBackdropFilter: "blur(6px)",
+                          borderRadius: 6,
+                          padding: "3px 6px",
+                        }}
+                      >
+                        {pick.kindLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      padding: "6px 9px",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      color: selected ? "var(--mv3-micro)" : "var(--mv3-muted)",
+                      background: selected
+                        ? "color-mix(in srgb, var(--mv3-accent) 15%, transparent)"
+                        : "transparent",
+                    }}
+                  >
+                    {pick.label}
+                    {selected ? " ✓" : ""}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : mode === "slides" ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--mv3-muted)",
+              padding: "12px 2px 4px",
+            }}
+          >
+            No templates match.
+          </div>
+        ) : null}
 
         {/* Brand chip + go. */}
         <div
