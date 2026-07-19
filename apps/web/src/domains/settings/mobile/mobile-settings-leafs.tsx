@@ -1,12 +1,13 @@
 /**
  * Mobile-v3 settings leafs (task #101) — the touch-adapted screens for the
  * highest-value settings pages (parity-audit §7 priority): AI models,
- * Privacy, Schedules (list), Voice, Sounds, Appearance.
+ * Privacy, Schedules (list + the frame-40 editor sheet), Voice, Sounds,
+ * Appearance.
  *
  * Each leaf renders the SAME stores/mutations its desktop page uses (config
  * PATCH, device settings, `settings/client` KV, sounds config PUT, schedule
- * toggle) in You-cluster row grammar. Anything a phone can't sensibly edit
- * (cron editor, provider keys, PTT hotkey capture, per-event sound files)
+ * toggle/PATCH/DELETE) in You-cluster row grammar. Anything a phone can't
+ * sensibly edit (provider keys, PTT hotkey capture, per-event sound files)
  * stays on desktop and says so in a footnote. Desktop pages untouched.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -81,6 +82,7 @@ import {
   Mv3SettingsNote,
   Mv3SettingsScreen,
 } from "@/domains/settings/mobile/mobile-settings-kit";
+import { Mv3ScheduleEditorSheet } from "@/domains/settings/mobile/mobile-schedule-editor";
 
 type SoundsConfig = SoundsConfigGetResponse;
 
@@ -666,8 +668,81 @@ export function Mv3PrivacyLeaf() {
 }
 
 // ---------------------------------------------------------------------------
-// Schedules (settings/schedules) — LIST + enable/disable. Editor = desktop.
+// Schedules (settings/schedules) — list + toggle; rows open the v3 editor
+// sheet (spec frame 40 — plain-language chips + time, cron as mono footnote).
 // ---------------------------------------------------------------------------
+
+/**
+ * Schedule row: the row body opens the editor sheet; the ON/OFF chip stays a
+ * one-tap pause/resume (a real nested button, so the outer press target is a
+ * div[role=button] rather than a button-in-button).
+ */
+function ScheduleRow({
+  schedule,
+  isLast,
+  onOpen,
+  onToggle,
+}: {
+  schedule: Schedule;
+  isLast: boolean;
+  onOpen: () => void;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Edit ${schedule.name}`}
+      className="cue-pressable"
+      onClick={() => {
+        haptic.light();
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          haptic.light();
+          onOpen();
+        }
+      }}
+      style={{ ...rowShell(isLast), cursor: "pointer" }}
+    >
+      <RowText
+        name={schedule.name}
+        line={schedule.cadenceDescription || schedule.description || undefined}
+      />
+      <button
+        type="button"
+        role="switch"
+        aria-checked={schedule.enabled}
+        aria-label={
+          schedule.enabled
+            ? `Pause ${schedule.name}`
+            : `Resume ${schedule.name}`
+        }
+        onClick={(e) => {
+          e.stopPropagation();
+          haptic.light();
+          onToggle();
+        }}
+        style={{
+          background: "none",
+          border: "none",
+          // Small visual chip, ≥44pt hit area via padding + margin offset.
+          padding: "14px 0 14px 14px",
+          margin: "-14px 0",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        <StateChip on={schedule.enabled} />
+      </button>
+      <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+        ›
+      </span>
+    </div>
+  );
+}
 
 export function Mv3SchedulesLeaf() {
   const assistantId = useActiveAssistantId();
@@ -682,6 +757,10 @@ export function Mv3SchedulesLeaf() {
 
   // Mount-time snapshot (matches the desktop page's one-shot boundary).
   const [now] = useState(() => Date.now());
+
+  // The v3 editor sheet (frame 40) — tracked by id so the open sheet follows
+  // cache updates (optimistic toggle, post-save refetch).
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
@@ -709,17 +788,20 @@ export function Mv3SchedulesLeaf() {
 
   const renderRows = (rows: Schedule[]) =>
     rows.map((s, i) => (
-      <ToggleRow
+      <ScheduleRow
         key={s.id}
-        name={s.name}
-        line={s.cadenceDescription || s.description || undefined}
-        on={s.enabled}
+        schedule={s}
         isLast={i === rows.length - 1}
+        onOpen={() => setEditingId(s.id)}
         onToggle={() =>
           toggleMutation.mutate({ id: s.id, enabled: !s.enabled })
         }
       />
     ));
+
+  const editingSchedule = editingId
+    ? (list.find((s) => s.id === editingId) ?? null)
+    : null;
 
   return (
     <Mv3SettingsScreen
@@ -727,7 +809,7 @@ export function Mv3SchedulesLeaf() {
       sub={
         isLoading
           ? "Reading your schedules…"
-          : `${recurring.length + upcomingOneTime.length} live · tap to pause or resume`
+          : `${recurring.length + upcomingOneTime.length} live · tap a schedule to edit`
       }
       tint="teal"
       testId="mv3-settings-schedules"
@@ -772,9 +854,17 @@ export function Mv3SchedulesLeaf() {
         </Mv3SettingsNote>
       ) : null}
       <Mv3SettingsNote>
-        Creating schedules and editing cadence, prompts or run history isn&rsquo;t
-        touch-adapted yet — use desktop Settings → Schedules.
+        Creating schedules and run history live on desktop — or ask Cue in
+        chat (&ldquo;every weekday at 8, brief me&rdquo;).
       </Mv3SettingsNote>
+
+      {editingSchedule ? (
+        <Mv3ScheduleEditorSheet
+          schedule={editingSchedule}
+          assistantId={assistantId}
+          onClose={() => setEditingId(null)}
+        />
+      ) : null}
     </Mv3SettingsScreen>
   );
 }

@@ -17,6 +17,20 @@
  * Brand: "In your brand ✓" renders ONLY when a real active Brand Kit exists
  * (useActiveBrand); the brand-matched template pick (nearest palette primary)
  * is then pre-selected. No brand → no chip, no fake pre-selection.
+ *
+ * Create-studio wave (spec frames 33–36):
+ *   33 — form templates (create-form-templates.ts) surface as a "Fill &
+ *        build" strip; tapping one pushes CreateSheetForm inside the sheet.
+ *   34 — Canvas mode swaps the old 4-action strip for CanvasComposer: an
+ *        image source (photo library + real recent-outputs History) and the
+ *        6 action tiles; with an image picked, submit stages the run into
+ *        the chat composer so the image actually rides the message
+ *        (create-composer-seed.ts). Marquee selection deferred — see
+ *        create-sheet-canvas.tsx.
+ *   35 — Live-action/Animated segmented sub-tabs re-filter the video style
+ *        strip by videoKind (replacing the flat kind badges).
+ *   36 — SheetReferencePicker: "make it look like this" reference riding
+ *        exactly one generation via CreateIntent.reference.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -24,21 +38,38 @@ import { useNavigate } from "react-router";
 import { SheetShell } from "@/mobile-v3";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useCreateProvenanceStore } from "@/stores/create-provenance-store";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import { haptic } from "@/utils/haptics";
 import { publicAsset } from "@/utils/public-asset";
 import { routes } from "@/utils/routes";
 
-import { applyCreateIntent, type CreateIntent } from "./create-intent";
+import { stageComposerSeed } from "./create-composer-seed";
+import {
+  templatesForMode,
+  type TemplateDefinition,
+} from "./create-form-templates";
+import {
+  applyCreateIntent,
+  type CreateIntent,
+  type CreateReference,
+} from "./create-intent";
+import {
+  CanvasComposer,
+  canvasTileSeed,
+  getCanvasTile,
+  type CanvasImagePick,
+  type CanvasTileId,
+} from "./create-sheet-canvas";
+import { CreateSheetForm } from "./create-sheet-form";
+import { SheetReferencePicker } from "./create-sheet-reference";
 import { CREATE_MODES } from "./create-templates";
 import {
-  CANVAS_ACTION_SPECS,
   DATA_FORMAT_SPECS,
   DOC_TYPE_SPECS,
   IMAGE_STYLE_SPECS,
   TEMPLATE_SPECS,
   VIDEO_STYLE_SPECS,
-  getCanvasActionSpec,
   type TemplateSpec,
 } from "./studio-specs";
 import { useActiveBrand } from "./use-active-brand";
@@ -201,23 +232,13 @@ interface StripPick {
   thumbnail?: string;
   /** Fallback swatch when there is no image (docs / data / canvas). */
   swatch?: { from: string; to: string };
-  /** Small kind badge over the tile (video: Live / Animated). */
-  kindLabel?: string;
-  /** Centered glyph over the swatch (canvas action tiles). */
-  glyphChar?: string;
   /** Slides only — the template's gallery category (for the tab rail). */
   category?: TemplateSpec["category"];
+  /** Video only — live | animated (frame 35 sub-tab filtering). */
+  videoKind?: "live" | "animated";
   /** Longer description surfaced as the tile's title attribute. */
   description?: string;
 }
-
-const CANVAS_SWATCHES: Record<string, { from: string; to: string; glyph: string }> =
-  {
-    create_new: { from: "#2A3A5C", to: "#3D6EE8", glyph: "+" },
-    edit_image: { from: "#3B2E58", to: "#7F77DD", glyph: "✎" },
-    upscale: { from: "#1E3D33", to: "#2FA47A", glyph: "⤢" },
-    remove_background: { from: "#40312A", to: "#D08A4B", glyph: "⬚" },
-  };
 
 function stripForMode(mode: SheetModeId): StripPick[] {
   switch (mode) {
@@ -250,26 +271,17 @@ function stripForMode(mode: SheetModeId): StripPick[] {
         description: f.description,
       }));
     case "video":
-      // Flat list of the 6 video styles with a live/animated kind label (the
-      // live/animated TAB grouping is a B-list design item — not invented here).
+      // The 6 video styles; the sheet filters them through the frame-35
+      // Live-action/Animated segmented sub-tabs (videoKind).
       return VIDEO_STYLE_SPECS.map((s) => ({
         id: s.id,
         label: s.label,
         thumbnail: s.thumbnail,
-        kindLabel: s.videoKind === "animated" ? "Animated" : "Live",
+        videoKind: s.videoKind,
       }));
+    // Canvas renders the frame-34 CanvasComposer (image source + action
+    // tiles) instead of a template strip.
     case "canvas":
-      // The 4 self-seeding canvas actions (Create new · Edit · Upscale ·
-      // Remove bg) — same specs the desktop gallery renders; each carries its
-      // own promptSeed, so picking one works without the B-list image-source
-      // pattern (the seeds ask for the attachment in-thread).
-      return CANVAS_ACTION_SPECS.map((a) => ({
-        id: a.id,
-        label: a.label,
-        swatch: CANVAS_SWATCHES[a.id] ?? { from: "#232C3D", to: "#141B27" },
-        glyphChar: CANVAS_SWATCHES[a.id]?.glyph,
-        description: a.description,
-      }));
     // Research / Sheets / Audio / Leads have no visual catalog on desktop
     // either — their breadth is the quick-start prompts.
     case "research":
@@ -280,15 +292,20 @@ function stripForMode(mode: SheetModeId): StripPick[] {
   }
 }
 
-/** Per-mode micro-caption over the template strip. */
+/** Per-mode micro-caption over the template strip. Video gets the frame-35
+ * segmented sub-tabs instead; canvas gets the frame-34 composer block. */
 const STRIP_CAPTIONS: Partial<Record<SheetModeId, string>> = {
   slides: "Templates",
   docs: "Document types",
   images: "Styles",
   data: "Output formats",
-  video: "Styles",
-  canvas: "Actions",
 };
+
+/** Frame 35 — the two video sub-tabs (segment order per the frame). */
+const VIDEO_SUBTABS: Array<{ id: "live" | "animated"; label: string }> = [
+  { id: "live", label: "Live-action" },
+  { id: "animated", label: "Animated" },
+];
 
 /** Slides category tabs — mirrors the desktop gallery's rail exactly. */
 const SLIDES_CATEGORIES: Array<{
@@ -377,12 +394,24 @@ export function CreateSheet({
 }) {
   const navigate = useNavigate();
   const { brand } = useActiveBrand();
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<SheetModeId>("slides");
   const [pickId, setPickId] = useState<string | null>(null);
   const [slidesCategory, setSlidesCategory] =
     useState<(typeof SLIDES_CATEGORIES)[number]["id"]>("all");
   const [slidesSearch, setSlidesSearch] = useState("");
+  // Frame 33 — the pushed fielded form (null = the main sheet).
+  const [formTemplate, setFormTemplate] = useState<TemplateDefinition | null>(
+    null,
+  );
+  // Frame 35 — video sub-tab.
+  const [videoTab, setVideoTab] = useState<"live" | "animated">("live");
+  // Frame 36 — per-generation reference (rides exactly ONE submit).
+  const [reference, setReference] = useState<CreateReference | null>(null);
+  // Frame 34 — canvas action tile + source image.
+  const [canvasTile, setCanvasTile] = useState<CanvasTileId | null>(null);
+  const [canvasImage, setCanvasImage] = useState<CanvasImagePick | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const brandPick = useMemo(
@@ -406,12 +435,19 @@ export function CreateSheet({
         return catOk && qOk;
       });
     }
+    // Frame 35 — the video sub-tab re-filters the style strip by videoKind.
+    if (mode === "video") {
+      picks = picks.filter((p) => p.videoKind === videoTab);
+    }
     if (!brandPick) return picks;
     return [
       ...picks.filter((p) => p.id === brandPick),
       ...picks.filter((p) => p.id !== brandPick),
     ];
-  }, [mode, brandPick, slidesCategory, slidesSearch]);
+  }, [mode, brandPick, slidesCategory, slidesSearch, videoTab]);
+
+  // Frame 33 — the mode's form templates ("Fill & build" strip).
+  const formPicks = useMemo(() => templatesForMode(mode), [mode]);
 
   // The active mode's quick-start prompt cards — the REAL desktop
   // `CREATE_MODES[].templates` (mode ids match 1:1).
@@ -434,6 +470,14 @@ export function CreateSheet({
       setMode("slides");
       setSlidesCategory("all");
       setSlidesSearch("");
+      setFormTemplate(null);
+      setVideoTab("live");
+      setReference(null);
+      setCanvasTile(null);
+      setCanvasImage((prev) => {
+        if (prev) URL.revokeObjectURL(prev.previewUrl);
+        return null;
+      });
     }
   }, [open]);
 
@@ -442,22 +486,60 @@ export function CreateSheet({
     setMode(id);
     setSlidesCategory("all");
     setSlidesSearch("");
+    setVideoTab("live");
+  };
+
+  const setCanvasImagePick = (pick: CanvasImagePick | null) => {
+    setCanvasImage((prev) => {
+      if (prev && prev.previewUrl !== pick?.previewUrl) {
+        URL.revokeObjectURL(prev.previewUrl);
+      }
+      return pick;
+    });
   };
 
   const inBrand = Boolean(brand) && mode === "slides" && pickId === brandPick;
 
+  /**
+   * Shared run seeding — draft conversation, provenance stamp, then either
+   * the `?prompt=` auto-send path (no file) or the composer-staging path
+   * (canvas image: prompt + attachment land in the chat composer, the user
+   * taps send so the image actually rides the message).
+   */
+  const seedRun = (finalPrompt: string, intent: CreateIntent, file?: File) => {
+    useViewerStore.getState().setMainView("chat");
+    const id = newDraftConversationId();
+    useConversationStore.getState().setActiveConversationId(id);
+    useCreateProvenanceStore.getState().stampIntent(id, intent);
+    haptic.success();
+    // The reference rides exactly ONE generation.
+    setReference(null);
+    onClose();
+    if (file && assistantId) {
+      stageComposerSeed({
+        conversationId: id,
+        assistantId,
+        prompt: finalPrompt,
+        file,
+      });
+      void navigate(routes.conversation(id));
+      return;
+    }
+    void navigate(
+      `${routes.conversation(id)}?prompt=${encodeURIComponent(finalPrompt)}`,
+    );
+  };
+
   const submit = () => {
     const text = prompt.trim();
-    // Canvas actions are self-seeding (desktop parity): a picked action
-    // carries its own promptSeed, so it submits even with an empty field.
-    const canvasAction =
-      mode === "canvas" && pickId ? getCanvasActionSpec(pickId) : undefined;
-    if (!text && !canvasAction) {
+    // Canvas tiles are self-seeding (desktop parity): a picked tile carries
+    // its action's promptSeed, so it submits even with an empty field.
+    const tileSeed =
+      mode === "canvas" && canvasTile ? canvasTileSeed(canvasTile) : undefined;
+    if (!text && !tileSeed) {
       inputRef.current?.focus();
       return;
     }
-    // Same seeding path as CreatePage.handleRunPrompt — draft conversation,
-    // provenance stamp, navigate with ?prompt= (auto-sent by the chat route).
     const intent: CreateIntent = {
       mode,
       ...(mode === "slides" || mode === "docs"
@@ -468,23 +550,52 @@ export function CreateSheet({
         : {}),
       ...(mode === "data" ? { formatId: pickId ?? undefined } : {}),
       brandKitId: inBrand ? (brand?.id ?? null) : null,
+      // The reference picker is hidden on canvas (its image source owns that
+      // affordance) — never let a reference set in another mode ride a
+      // canvas submit invisibly.
+      ...(mode !== "canvas" && reference ? { reference } : {}),
     };
-    const content = canvasAction
+    const content = tileSeed
       ? text
-        ? `${canvasAction.promptSeed}\n\n${text}`
-        : canvasAction.promptSeed
+        ? `${tileSeed}\n\n${text}`
+        : tileSeed
       : text;
     const finalPrompt = applyCreateIntent(content, intent, inBrand ? brand : null);
-    useViewerStore.getState().setMainView("chat");
-    const id = newDraftConversationId();
-    useConversationStore.getState().setActiveConversationId(id);
-    useCreateProvenanceStore.getState().stampIntent(id, intent);
-    haptic.success();
-    onClose();
-    void navigate(
-      `${routes.conversation(id)}?prompt=${encodeURIComponent(finalPrompt)}`,
+    seedRun(
+      finalPrompt,
+      intent,
+      mode === "canvas" ? canvasImage?.file : undefined,
     );
   };
+
+  /** Frame 33 — the fielded form's submit: desktop-composed prompt + brand. */
+  const submitForm = (composed: string) => {
+    if (!formTemplate) return;
+    const intent: CreateIntent = {
+      mode: formTemplate.mode,
+      brandKitId: brand?.id ?? null,
+    };
+    seedRun(applyCreateIntent(composed, intent, brand), intent);
+  };
+
+  if (formTemplate) {
+    // Frame 33 — the pushed "Fill & build" fielded form (same SheetShell).
+    return (
+      <SheetShell open={open} onClose={onClose} label="Create">
+        <CreateSheetForm
+          key={formTemplate.id}
+          template={formTemplate}
+          brandActive={Boolean(brand)}
+          onBack={() => {
+            setFormTemplate(null);
+            // "Just describe it" escapes to the free prompt.
+            setTimeout(() => inputRef.current?.focus(), 0);
+          }}
+          onSubmit={submitForm}
+        />
+      </SheetShell>
+    );
+  }
 
   return (
     <SheetShell open={open} onClose={onClose} label="Create">
@@ -657,6 +768,81 @@ export function CreateSheet({
           </>
         ) : null}
 
+        {/* Fill & build — form templates (frame 33): tap → fielded sheet. */}
+        {formPicks.length > 0 ? (
+          <>
+            <StripCaption>Fill &amp; build</StripCaption>
+            <div style={{ ...H_SCROLL, gap: 9 }}>
+              {formPicks.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="cue-pressable"
+                  onClick={() => {
+                    haptic.light();
+                    setFormTemplate(t);
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    width: 196,
+                    minHeight: 62,
+                    textAlign: "left",
+                    borderRadius: 14,
+                    padding: "10px 12px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    background: "var(--mv3-card)",
+                    border: "1px solid var(--mv3-card-border)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "var(--mv3-text)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {t.title}
+                    </span>
+                    <span
+                      aria-hidden
+                      style={{ fontSize: 12, color: "var(--mv3-micro)" }}
+                    >
+                      ›
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      lineHeight: 1.35,
+                      marginTop: 3,
+                      color: "var(--mv3-muted)",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {t.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+
         {/* Slides gallery controls — the desktop overlay's tabs + search. */}
         {mode === "slides" ? (
           <>
@@ -738,6 +924,63 @@ export function CreateSheet({
               })}
             </div>
           </>
+        ) : mode === "video" ? (
+          /* Frame 35 — Live-action / Animated segmented sub-tabs. */
+          <div
+            role="tablist"
+            aria-label="Video style kind"
+            style={{
+              display: "flex",
+              gap: 4,
+              background: "var(--mv3-track)",
+              borderRadius: 12,
+              padding: 4,
+              marginTop: 15,
+            }}
+          >
+            {VIDEO_SUBTABS.map((seg) => {
+              const active = seg.id === videoTab;
+              return (
+                <button
+                  key={seg.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className="cue-pressable"
+                  onClick={() => {
+                    haptic.light();
+                    setVideoTab(seg.id);
+                    // A pick hidden by the new tab no longer applies.
+                    setPickId((prev) =>
+                      prev &&
+                      VIDEO_STYLE_SPECS.find((s) => s.id === prev)
+                        ?.videoKind !== seg.id
+                        ? null
+                        : prev,
+                    );
+                  }}
+                  style={{
+                    flex: 1,
+                    minHeight: 40,
+                    textAlign: "center",
+                    fontSize: 12.5,
+                    fontWeight: active ? 600 : 400,
+                    fontFamily: "inherit",
+                    cursor: "pointer",
+                    color: active ? "#ffffff" : "var(--mv3-muted)",
+                    background: active
+                      ? "linear-gradient(160deg, #4E7CEC, #3560CC)"
+                      : "transparent",
+                    border: "none",
+                    borderRadius: 9,
+                    padding: "8px 0",
+                  }}
+                >
+                  {seg.label}
+                </button>
+              );
+            })}
+          </div>
         ) : STRIP_CAPTIONS[mode] ? (
           <StripCaption>{STRIP_CAPTIONS[mode]}</StripCaption>
         ) : null}
@@ -748,7 +991,7 @@ export function CreateSheet({
             style={{
               ...H_SCROLL,
               gap: 9,
-              marginTop: mode === "slides" ? 10 : 0,
+              marginTop: mode === "slides" ? 10 : mode === "video" ? 12 : 0,
             }}
           >
             {strip.map((pick) => {
@@ -793,40 +1036,7 @@ export function CreateSheet({
                         ? `center / cover no-repeat url("${publicAsset(pick.thumbnail)}")`
                         : `linear-gradient(160deg, ${pick.swatch?.from ?? "#232C3D"}, ${pick.swatch?.to ?? "#141B27"})`,
                     }}
-                  >
-                    {pick.glyphChar ? (
-                      <span
-                        style={{
-                          fontSize: 22,
-                          lineHeight: 1,
-                          color: "rgba(255,255,255,.75)",
-                        }}
-                      >
-                        {pick.glyphChar}
-                      </span>
-                    ) : null}
-                    {pick.kindLabel ? (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 6,
-                          left: 6,
-                          fontSize: 8.5,
-                          fontWeight: 600,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                          color: "rgba(255,255,255,.92)",
-                          background: "rgba(10,13,20,.55)",
-                          backdropFilter: "blur(6px)",
-                          WebkitBackdropFilter: "blur(6px)",
-                          borderRadius: 6,
-                          padding: "3px 6px",
-                        }}
-                      >
-                        {pick.kindLabel}
-                      </span>
-                    ) : null}
-                  </div>
+                  />
                   <div
                     style={{
                       fontSize: 10,
@@ -857,6 +1067,45 @@ export function CreateSheet({
           >
             No templates match.
           </div>
+        ) : null}
+
+        {/* Canvas (frame 34) — image source + the 6 action tiles. */}
+        {mode === "canvas" ? (
+          <>
+            <StripCaption>Image</StripCaption>
+            <CanvasComposer
+              image={canvasImage}
+              tile={canvasTile}
+              onImage={setCanvasImagePick}
+              onClearImage={() => setCanvasImagePick(null)}
+              onTile={setCanvasTile}
+            />
+          </>
+        ) : null}
+
+        {/* Reference (frame 36) — "make it look like this", one generation.
+            Hidden on canvas, whose own image source owns that affordance. */}
+        {mode !== "canvas" ? (
+          <>
+            <div
+              style={{
+                fontFamily: "var(--mv3-mono)",
+                fontSize: 9.5,
+                letterSpacing: "0.1em",
+                color: "var(--mv3-muted)",
+                marginTop: 16,
+                marginBottom: 8,
+                padding: "0 2px",
+              }}
+            >
+              MAKE IT LOOK LIKE THIS
+            </div>
+            <SheetReferencePicker
+              reference={reference}
+              onReference={setReference}
+              onClear={() => setReference(null)}
+            />
+          </>
         ) : null}
 
         {/* Brand chip + go. */}
@@ -923,7 +1172,16 @@ export function CreateSheet({
               boxShadow: "var(--mv3-primary-btn-shadow)",
             }}
           >
-            Create it →
+            {/* Selected canvas tile relabels the CTA (frame 34). */}
+            {mode === "canvas" && canvasTile
+              ? `${getCanvasTile(canvasTile).label} →`
+              : "Create it →"}
+            {reference && mode !== "canvas" ? (
+              <span style={{ fontWeight: 400, opacity: 0.8 }}>
+                {" "}
+                1 reference riding
+              </span>
+            ) : null}
           </button>
         </div>
       </div>

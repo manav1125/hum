@@ -17,6 +17,9 @@
   "src/domains/chat/voice/voice-mode-surface.tsx": [
     "settings"
   ],
+  "src/domains/create/create-composer-seed.ts": [
+    "chat"
+  ],
   "src/domains/dashboard/use-dashboard-query.ts": [
     "chat"
   ],

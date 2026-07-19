@@ -1,6 +1,6 @@
 import { Loader2, Search } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useBlocker, useNavigate } from "react-router";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -14,6 +14,7 @@ import {
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { Mv3ConnectionsPage } from "@/mobile-v3/you/connections-page";
+import { TelegramSetupSheet } from "@/domains/intelligence/telegram-setup-sheet";
 import { connectorsAvailable } from "@/runtime/connectors";
 import { routes } from "@/utils/routes";
 import { haptic } from "@/utils/haptics";
@@ -311,9 +312,53 @@ export function ConnectorsPage() {
   // breakpoint flip. Desktop keeps the progress-hero layout untouched.
   const isMobile = useIsMobile();
   if (isMobile) {
-    return <Mv3ConnectionsPage />;
+    return <ConnectorsPageMobile />;
   }
   return <ConnectorsPageDesktop />;
+}
+
+/**
+ * Mobile wrapper: renders the (read-only) mv3 Connections screen and gives
+ * its "Messaging channels" row an on-device destination. That row deep-links
+ * the desktop contacts workbench (`/assistant/contacts`) — a dead end on a
+ * phone — so a navigation blocker intercepts exactly that transition and
+ * opens the v3 Telegram setup sheet (spec frame 39) instead. "Other
+ * channels" inside the sheet proceeds to the workbench for real.
+ */
+function ConnectorsPageMobile() {
+  const navigate = useNavigate();
+  const [telegramOpen, setTelegramOpen] = useState(false);
+  const allowWorkbenchRef = useRef(false);
+
+  const blocker = useBlocker(
+    ({ nextLocation }) =>
+      !allowWorkbenchRef.current &&
+      nextLocation.pathname === routes.contacts.root,
+  );
+  useEffect(() => {
+    if (blocker.state === "blocked") {
+      blocker.reset();
+      setTelegramOpen(true);
+    }
+  }, [blocker]);
+
+  return (
+    <>
+      <Mv3ConnectionsPage />
+      {/* Mounted only while open so a re-open starts the 3 steps fresh. */}
+      {telegramOpen ? (
+        <TelegramSetupSheet
+          open
+          onClose={() => setTelegramOpen(false)}
+          onOpenWorkbench={() => {
+            allowWorkbenchRef.current = true;
+            setTelegramOpen(false);
+            void navigate(routes.contacts.root);
+          }}
+        />
+      ) : null}
+    </>
+  );
 }
 
 function ConnectorsPageDesktop() {

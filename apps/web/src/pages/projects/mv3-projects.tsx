@@ -35,6 +35,7 @@ import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { Mv3NewProjectSheet } from "./mv3-new-project-sheet";
 import { useProjects, type ProjectView } from "./use-projects";
 
 type Segment = "active" | "done";
@@ -295,6 +296,9 @@ export function Mv3Projects() {
   useActivitySync(assistantId, true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [segment, setSegment] = useState<Segment>("active");
+  // Structured new-project sheet (spec frame 42); the sheet itself keeps the
+  // "Just tell Cue instead ›" escape to the conversational + Create surface.
+  const [newOpen, setNewOpen] = useState(false);
 
   const { projects, isLoading, isError } = useProjects(assistantId);
   const runningItems = useHqWorkItems(assistantId, "running");
@@ -453,14 +457,14 @@ export function Mv3Projects() {
                 </div>
               ) : null}
 
-              {/* Conversational add — routes to the + Create surface. */}
+              {/* Add — opens the structured new-project sheet (frame 42). */}
               {segment === "active" ? (
                 <button
                   type="button"
                   className="cue-pressable"
                   onClick={() => {
                     haptic.light();
-                    navigate(routes.create);
+                    setNewOpen(true);
                   }}
                   style={{
                     display: "flex",
@@ -564,6 +568,12 @@ export function Mv3Projects() {
           )}
         </div>
       </div>
+
+      <Mv3NewProjectSheet
+        assistantId={assistantId}
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+      />
     </div>
   );
 }

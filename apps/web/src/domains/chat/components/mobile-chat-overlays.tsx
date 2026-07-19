@@ -66,15 +66,6 @@ export function MobileChatOverlays() {
     useViewerStore.getState().closeDocument();
   }, []);
 
-  const handleDocumentSubmitFeedback = useCallback(() => {
-    const docState = useViewerStore.getState().openedDocumentState;
-    if (!docState) return;
-    const prompt = `Please review and address my comments on "${docState.documentName}".`;
-    navigate(
-      `${routes.conversation(docState.conversationId)}?prompt=${encodeURIComponent(prompt)}`,
-    );
-  }, [navigate]);
-
   const handleCloseSubagentDetail = useCallback(() => {
     useViewerStore.getState().closeSubagentDetail();
   }, []);
@@ -156,7 +147,6 @@ export function MobileChatOverlays() {
         }
         assistantId={assistantId}
         onClose={handleCloseDocument}
-        onSubmitFeedback={handleDocumentSubmitFeedback}
       />
       <MobileSubagentDetailOverlay
         entry={

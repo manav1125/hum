@@ -83,6 +83,10 @@ export async function createSchedule(
 
 export interface UpdateSchedulePayload {
   timeoutMs?: number | null;
+  /** New cron/RRULE expression — the daemon recomputes nextRunAt. */
+  expression?: string;
+  /** The message body executed on each fire (the schedule's prompt). */
+  message?: string;
 }
 
 export async function updateSchedule(

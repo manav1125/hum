@@ -53,6 +53,8 @@ import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { Mv3ProjectBrief } from "./mv3-project-brief";
+import { Mv3ProjectKnowledge } from "./mv3-project-knowledge";
 import { Mv3TaskSheet } from "./mv3-task-sheet";
 import { useProject, useProjects } from "./use-projects";
 import { useQuickAddTask } from "./use-quick-add";
@@ -940,6 +942,22 @@ export function Mv3ProjectDetail() {
                 Add a task
               </button>
             )}
+
+            {/* Brief + knowledge pane (spec frame 41) — the project's real
+                `context` field and its knowledge store, both of which the
+                runner reads into every run's preamble. Delays capped so the
+                pane never waits out a long row stagger. */}
+            <Mv3ProjectBrief
+              assistantId={assistantId}
+              projectId={projectId}
+              brief={project?.context ?? null}
+              delay={Math.min(nextDelay(), 0.7)}
+            />
+            <Mv3ProjectKnowledge
+              assistantId={assistantId}
+              projectId={projectId}
+              delay={Math.min(nextDelay(), 0.8)}
+            />
 
             {/* Ask about this project… — opens a fresh conversation (no
                 project-scoped chat exists yet; noted for the coordinator). */}

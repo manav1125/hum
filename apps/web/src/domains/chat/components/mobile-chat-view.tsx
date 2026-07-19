@@ -31,6 +31,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import {
   ArrowUp,
+  AudioLines,
   ChevronLeft,
   MoreHorizontal,
   Plus,
@@ -53,6 +54,10 @@ import {
   MobileConversationActionsSheet,
 } from "@/domains/chat/components/mobile-chat-menus";
 import {
+  MobileThreadVoice,
+  ThreadVoiceActiveChip,
+} from "@/domains/chat/components/mobile-thread-voice";
+import {
   SLASH_PREFIX_RE,
   filteredCommands,
   selectedInputText,
@@ -74,6 +79,7 @@ import { FailureCard } from "@/mobile-v3/failure-card";
 import { GlassCard } from "@/mobile-v3/glass-card";
 import { microLabel } from "@/mobile-v3/mv3-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
+import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { useConversationStore } from "@/stores/conversation-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -371,6 +377,27 @@ export function MobileChatView({
 
   const activeConversationId = useConversationStore.use.activeConversationId();
 
+  // ── In-thread voice orb (spec frame 37). The session is BOUND to this
+  // conversation (start(assistantId, conversationId) — spoken turns persist
+  // into the same thread). `keyboard` flips back to typing WITHOUT ending the
+  // session (⌨); ✕ ends it. Gated on the same `voice-mode` flag the Voice
+  // tab / desktop overlay use, and on an existing conversation to bind to.
+  const voiceModeFlag = useAssistantFeatureFlagStore.use.voiceMode();
+  const [threadVoiceOpen, setThreadVoiceOpen] = useState(false);
+  const [threadVoiceKeyboard, setThreadVoiceKeyboard] = useState(false);
+  const canThreadVoice = Boolean(
+    voiceModeFlag && assistantId && activeConversationId,
+  );
+  const handleStartThreadVoice = useCallback(() => {
+    haptic.medium();
+    setThreadVoiceKeyboard(false);
+    setThreadVoiceOpen(true);
+  }, []);
+  const handleThreadVoiceEnded = useCallback(() => {
+    setThreadVoiceOpen(false);
+    setThreadVoiceKeyboard(false);
+  }, []);
+
   // ── Live status line: "working on N things" (frame 8's header). Same
   // work-item source HQ/Today use; TanStack dedupes across consumers.
   const runningQuery = useQuery({
@@ -383,8 +410,12 @@ export function MobileChatView({
     staleTime: 15_000,
   });
   const runningCount = (runningQuery.data?.items ?? []).length;
-  const statusLine =
-    runningCount > 0
+  // Frame 37: while the in-thread voice session is alive the header status
+  // becomes "voice active in this chat" (microlabel blue), superseding the
+  // working-on-N line.
+  const statusLine = threadVoiceOpen
+    ? "voice active in this chat"
+    : runningCount > 0
       ? `working on ${runningCount} ${runningCount === 1 ? "thing" : "things"}`
       : (conversationTitle ?? null);
 
@@ -720,9 +751,36 @@ export function MobileChatView({
         </div>
       ) : null}
 
-      {/* COMPOSER — v3 glass field + "+" + mic/send (frames 8 + 13b). */}
+      {/* IN-THREAD VOICE (frame 37) — live strip + voice bar. Mounted while
+          the session is open (it owns the single useLiveVoice controller);
+          the bar hides on the ⌨ flip but the session + strip persist. */}
+      {threadVoiceOpen && assistantId && activeConversationId ? (
+        <div
+          style={{
+            flexShrink: 0,
+            position: "relative",
+            zIndex: 5,
+            paddingBottom: threadVoiceKeyboard
+              ? 0
+              : "calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
+          }}
+        >
+          <MobileThreadVoice
+            assistantId={assistantId}
+            conversationId={activeConversationId}
+            keyboardMode={threadVoiceKeyboard}
+            onFlipToKeyboard={() => setThreadVoiceKeyboard(true)}
+            onEnded={handleThreadVoiceEnded}
+          />
+        </div>
+      ) : null}
+
+      {/* COMPOSER — v3 glass field + "+" + mic/send (frames 8 + 13b). Hidden
+          while the voice bar is showing (frame 37); the ⌨ flip brings it back
+          with the session still alive. */}
       <div
         style={{
+          display: threadVoiceOpen && !threadVoiceKeyboard ? "none" : undefined,
           flexShrink: 0,
           padding: "10px 16px",
           paddingBottom: keyboardOpen
@@ -950,6 +1008,46 @@ export function MobileChatView({
             </span>
           </button>
 
+          {/* Voice orb entry (frame 37) — starts a live-voice session bound
+              to THIS conversation. Distinct from the dictation mic below;
+              gated on the voice-mode flag like the desktop overlay entry. */}
+          {canThreadVoice && !threadVoiceOpen ? (
+            <button
+              type="button"
+              onClick={handleStartThreadVoice}
+              aria-label="Talk in this chat (voice)"
+              style={{
+                width: 44,
+                height: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                flexShrink: 0,
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <span
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: "var(--mv3-btn2-bg)",
+                  border: "1px solid var(--mv3-btn2-border)",
+                  color: "var(--mv3-micro)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <AudioLines size={16} aria-hidden />
+              </span>
+            </button>
+          ) : null}
+
           {showSend ? (
             <button
               type="button"
@@ -1009,6 +1107,17 @@ export function MobileChatView({
                 )}
               </span>
             </button>
+          ) : threadVoiceOpen ? (
+            /* Voice session alive but the user flipped to typing (⌨) — the
+               mic slot becomes the "voice active" orb chip that returns to
+               the voice bar. Dictation is unavailable during a live session
+               (single audio owner), so it can't collide. */
+            <ThreadVoiceActiveChip
+              onClick={() => {
+                haptic.light();
+                setThreadVoiceKeyboard(false);
+              }}
+            />
           ) : (
             <div
               style={{
