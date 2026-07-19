@@ -1,1 +1,0 @@
-import{c as e,r as t}from"./auth-store-BRKkcX-B.js";function n(){let n=e.use.currentOrganizationId();return!t()||n!=null}export{n as t};
