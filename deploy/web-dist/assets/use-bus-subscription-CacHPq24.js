@@ -1,1 +1,0 @@
-import{o as e}from"./chunk-jRWAZmH_.js";import{t}from"./react-CrS8D-1X.js";import{n}from"./event-bus-De_PCbQV.js";var r=e(t(),1);function i(e,t){let i=(0,r.useRef)(t);(0,r.useLayoutEffect)(()=>{i.current=t}),(0,r.useEffect)(()=>n(e,e=>{i.current(e)}),[e])}export{i as t};

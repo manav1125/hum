@@ -1,0 +1,1 @@
+import{u as e}from"./sdk.gen-DmuLUMMT.js";var t=new Map;function n(e,t){return`${e}::${t}`}function r(r,i){let a=n(r,i),o=t.get(a);return o??(o=e({path:{assistant_id:r,id:i},throwOnError:!0}).then(e=>e.data.html).catch(e=>{throw t.delete(a),e}),t.set(a,o)),o}function i(e,r,i){t.set(n(e,r),Promise.resolve(i))}function a(e,r){t.delete(n(e,r))}export{r as n,i as r,a as t};

@@ -1,0 +1,1 @@
+import{r as e}from"./chunk-5KNZJZUH-Wj10BWAH.js";import{t}from"./jsx-runtime-COOF1INC.js";import{i as n}from"./routes-ZkSHtfbY.js";var r=t();function i(){return(0,r.jsx)(e,{to:n.account.login,replace:!0})}export{i as PasswordResetPage};
