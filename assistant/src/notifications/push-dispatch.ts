@@ -67,7 +67,12 @@ function shouldThrottle(key: string, now: number): boolean {
   return false;
 }
 
-async function sendToAllDevices(alert: ApnsAlert): Promise<void> {
+/**
+ * Fan an APNs alert out to every registered iOS device, pruning tokens
+ * Apple reports invalid. Shared by the hub-event mirrors below and the
+ * morning-brief push job (`morning-brief-push.ts`). Never throws.
+ */
+export async function sendAlertToAllDevices(alert: ApnsAlert): Promise<void> {
   const devices = listPushDevices("ios");
   if (devices.length === 0) return;
 
@@ -127,7 +132,7 @@ export async function dispatchPushForServerMessage(
       const { getWorkItem } = await import("../work-items/work-item-store.js");
       const title = getWorkItem(msg.workItemId)?.title ?? "a background task";
 
-      await sendToAllDevices({
+      await sendAlertToAllDevices({
         title: "Cue finished a task",
         body: `Cue finished: ${title} — ready for your review`,
         collapseId: `wi-${msg.workItemId}`.slice(0, 64),
@@ -153,7 +158,7 @@ export async function dispatchPushForServerMessage(
       const conversationKey = `conf-conv:${msg.conversationId ?? "unknown"}`;
       if (shouldThrottle(conversationKey, now)) return;
 
-      await sendToAllDevices({
+      await sendAlertToAllDevices({
         title: "Cue needs your approval",
         body: `Cue needs a decision: ${msg.toolName}`,
         collapseId: `conf-${msg.requestId}`.slice(0, 64),

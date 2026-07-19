@@ -62,6 +62,7 @@ import { rotateToolInvocations } from "../memory/tool-usage-store.js";
 import { sweepConceptPageFrontmatter } from "../memory/v2/frontmatter-sweep.js";
 import { MissionOrchestrator } from "../missions/mission-orchestrator.js";
 import { emitNotificationSignal } from "../notifications/emit-signal.js";
+import { startMorningBriefScheduler } from "../notifications/morning-brief-push.js";
 import { backfillManualTokenConnections } from "../oauth/manual-token-connection.js";
 import { seedOAuthProviders } from "../oauth/seed-providers.js";
 import { ensurePromptFiles } from "../prompts/system-prompt.js";
@@ -1038,6 +1039,11 @@ export async function runDaemon(): Promise<void> {
       // configured morning hour if the user hasn't opened Home yet today.
       // Timers are unref'd, so no shutdown plumbing is needed.
       startActionBoardScheduler();
+
+      // Daily ~7:30 Morning Brief push — deep-links into /assistant/brief.
+      // Same contract as the action-board tick: unref'd timers, failures
+      // log + skip, durable per-day dedupe via the notification pipeline.
+      startMorningBriefScheduler();
 
       // Seed capability graph nodes (new memory graph system)
       try {
