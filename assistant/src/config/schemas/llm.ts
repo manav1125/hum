@@ -489,10 +489,52 @@ const ToolPruningSchema = z
 
 export type ToolPruningConfig = z.infer<typeof ToolPruningSchema>;
 
+/**
+ * Flash-tier routing for structurally trivial mainAgent turns.
+ *
+ * When enabled, a turn that passes a purely structural classifier (short
+ * user text, no attachments, no recent tool activity — see
+ * `agent/flash-tier.ts`) is sent to a designated cheaper/faster model
+ * instead of the mainAgent model. The flash call still carries the full
+ * (pruned) tool set and the unchanged system prompt, so a misclassified
+ * turn degrades to "same turn on a cheaper model", never a broken turn.
+ * Default OFF — flip `llm.flashTier.enabled` only with eval numbers in hand.
+ */
+const FlashTierSchema = z
+  .object({
+    enabled: z
+      .boolean()
+      .default(false)
+      .describe(
+        "When true, structurally trivial mainAgent turns are routed to the flash-tier model. Default false (no behavior change).",
+      ),
+    model: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Model id for flash-tier turns. Must be servable by the mainAgent provider (the transport is not re-routed). When unset, falls back to the resolved flash call-site model (conversationTitle's resolution, which honors CUE_OPENROUTER_FLASH_MODEL on self-host).",
+      ),
+    maxUserChars: z
+      .number()
+      .int()
+      .positive()
+      .default(280)
+      .describe(
+        "Maximum length (characters) of the user's own text — runtime injections excluded — for a turn to qualify as trivial.",
+      ),
+  })
+  .describe(
+    "Flash-tier routing of structurally trivial turns to a cheaper/faster model",
+  );
+
+export type FlashTierConfig = z.infer<typeof FlashTierSchema>;
+
 export const LLMSchema = z
   .object({
     default: LLMConfigBase.default(LLMConfigBase.parse({})),
     toolPruning: ToolPruningSchema.default(ToolPruningSchema.parse({})),
+    flashTier: FlashTierSchema.default(FlashTierSchema.parse({})),
     profiles: z.record(z.string().min(1), ProfileEntry).default({}),
     // Presentation-only order for named profiles. The resolver ignores this;
     // clients use it to render profile pickers consistently.

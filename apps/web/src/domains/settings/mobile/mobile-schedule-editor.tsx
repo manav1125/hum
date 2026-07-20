@@ -45,6 +45,93 @@ import {
 } from "@/domains/settings/utils/cron-chips";
 import { formatTimestamp } from "@/domains/settings/utils/schedule-formatters";
 
+/**
+ * Plain-language summary for the common RRULE shapes (FREQ / INTERVAL /
+ * BYDAY / BYHOUR·BYMINUTE / COUNT / UNTIL). Anything it can't read returns
+ * null and the caller falls back to the daemon's cadence description.
+ */
+export function summarizeRrule(expression: string | null): string | null {
+  if (!expression) return null;
+  const ruleLine =
+    expression
+      .split(/\n/)
+      .map((l) => l.trim())
+      .find((l) => l.toUpperCase().includes("FREQ=")) ?? null;
+  if (!ruleLine) return null;
+  const body = ruleLine.toUpperCase().replace(/^RRULE:/, "");
+  const parts = new Map<string, string>();
+  for (const pair of body.split(";")) {
+    const eq = pair.indexOf("=");
+    if (eq > 0) parts.set(pair.slice(0, eq), pair.slice(eq + 1));
+  }
+  const freq = parts.get("FREQ");
+  if (!freq) return null;
+
+  const interval = Number(parts.get("INTERVAL") ?? "1");
+  const unitByFreq: Record<string, [string, string]> = {
+    MINUTELY: ["minute", "minutes"],
+    HOURLY: ["hour", "hours"],
+    DAILY: ["day", "days"],
+    WEEKLY: ["week", "weeks"],
+    MONTHLY: ["month", "months"],
+    YEARLY: ["year", "years"],
+  };
+  const unit = unitByFreq[freq];
+  if (!unit) return null;
+  let cadence =
+    interval > 1 ? `Every ${interval} ${unit[1]}` : `Every ${unit[0]}`;
+  if (interval <= 1 && freq === "DAILY") cadence = "Daily";
+  if (interval <= 1 && freq === "WEEKLY") cadence = "Weekly";
+
+  const dayNames: Record<string, string> = {
+    MO: "Mon",
+    TU: "Tue",
+    WE: "Wed",
+    TH: "Thu",
+    FR: "Fri",
+    SA: "Sat",
+    SU: "Sun",
+  };
+  const byday = parts.get("BYDAY");
+  if (byday) {
+    const days = byday
+      .split(",")
+      // Ordinal prefixes (1MO, -1FR) keep the day, drop the ordinal.
+      .map((d) => dayNames[d.replace(/^-?\d+/, "")])
+      .filter(Boolean);
+    if (days.length === 5 && !byday.includes("SA") && !byday.includes("SU")) {
+      cadence = interval > 1 ? `${cadence} on weekdays` : "Every weekday";
+    } else if (days.length > 0) {
+      cadence += ` on ${days.join(", ")}`;
+    }
+  }
+
+  const hour = Number(parts.get("BYHOUR") ?? NaN);
+  if (Number.isFinite(hour)) {
+    const minute = Number(parts.get("BYMINUTE") ?? "0");
+    const h12 = hour % 12 === 0 ? 12 : hour % 12;
+    const mm = String(Number.isFinite(minute) ? minute : 0).padStart(2, "0");
+    cadence += ` at ${h12}:${mm} ${hour < 12 ? "AM" : "PM"}`;
+  }
+
+  const count = Number(parts.get("COUNT") ?? NaN);
+  if (Number.isFinite(count)) {
+    cadence += ` · ${count} ${count === 1 ? "time" : "times"}`;
+  }
+  const until = parts.get("UNTIL");
+  if (until) {
+    const m = /^(\d{4})(\d{2})(\d{2})/.exec(until);
+    if (m) {
+      const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      cadence += ` · until ${d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      })}`;
+    }
+  }
+  return cadence;
+}
+
 const WHEN_CHIPS: ReadonlyArray<{ id: CadenceChipId; label: string }> = [
   { id: "weekday", label: "Every weekday" },
   { id: "daily", label: "Daily" },
@@ -425,10 +512,36 @@ export function Mv3ScheduleEditorSheet({
               )}
             </>
           ) : (
-            <div style={{ fontSize: 12, color: "var(--mv3-muted)" }}>
-              {schedule.isOneShot
-                ? `One-time — runs ${formatTimestamp(schedule.nextRunAt)}`
-                : "This schedule's timing isn't a simple cron — adjust it in chat or on desktop."}
+            /* One-shot / RRULE: an honest read-only cadence line (timing for
+               these shapes is edited in chat / on desktop). */
+            <div>
+              <SectionLabel>When</SectionLabel>
+              <div style={fieldCard}>
+                <div
+                  style={{
+                    fontSize: 14.5,
+                    fontWeight: 600,
+                    color: "var(--mv3-text)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {schedule.isOneShot
+                    ? `Runs once · ${formatTimestamp(schedule.nextRunAt)}`
+                    : (summarizeRrule(schedule.expression) ??
+                      (schedule.cadenceDescription ||
+                        schedule.expression ||
+                        "Custom recurrence"))}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: "var(--mv3-faint)",
+                    marginTop: 4,
+                  }}
+                >
+                  Timing is read-only here — adjust it in chat or on desktop.
+                </div>
+              </div>
             </div>
           )}
 

@@ -222,6 +222,33 @@ describe("listWorkItems status filter", () => {
     const queued = listByStatus("queued");
     expect(queued.some((i) => i.id === wi.id)).toBe(true);
   });
+
+  test("a below-confidence stamp serializes for UNFILED items (the amber '?' wire shape)", () => {
+    // The auto-file sweep stamps auto_file_confidence on a sub-threshold item
+    // while project_id and auto_filed_by stay null. Clients feature-detect
+    // exactly that trio (work-kit's isBelowConfidence), so the list DTO must
+    // carry the confidence even though the item is unfiled.
+    const task = createTask({ title: "Unsure task", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Unsure task" });
+    updateWorkItem(wi.id, { autoFileConfidence: 0.35 });
+
+    const result = listRoute.handler({
+      queryParams: { status: "pending" },
+      headers: {},
+    }) as {
+      items: Array<{
+        id: string;
+        projectId: string | null;
+        autoFiledBy: string | null;
+        autoFileConfidence: number | null;
+      }>;
+    };
+    const served = result.items.find((i) => i.id === wi.id)!;
+    expect(served).toBeDefined();
+    expect(served.projectId).toBeNull();
+    expect(served.autoFiledBy).toBeNull();
+    expect(served.autoFileConfidence).toBe(0.35);
+  });
 });
 
 describe("POST work-items (createWorkItem)", () => {

@@ -56,29 +56,6 @@ const C = {
   green: "var(--mv1-green)",
   red: "var(--mv1-danger)",
 } as const;
-/**
- * Dark mobile tokens (README-MOBILE §1). The phone shell is full-bleed dark
- * on mobile, so the recap card and chrome read against the ink gradient rather
- * than the light desktop page. Accents (blue/lilac) are theme-invariant.
- */
-const D = {
-  ink: "#1A2230",
-  inkDeep: "#11161F",
-  inkBottom: "#0C1018",
-  surface: "#212B3B",
-  surface2: "#2A3547",
-  blue: "#3D6EE8",
-  blueS: "#2B53C4",
-  blueW: "rgba(61,110,232,.18)",
-  lilac: "#7F77DD",
-  t1: "#FFFFFF",
-  t2: "#8A97AC",
-  t3: "#5E6B80",
-  green: "#3FB871",
-  danger: "#E5634B",
-  line: "rgba(255,255,255,.08)",
-  line2: "rgba(255,255,255,.14)",
-} as const;
 
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
@@ -222,8 +199,9 @@ function CaptureFrame({
 
 /**
  * The blinking-REC pill, now driven by the live timer. On mobile it's a
- * larger danger-tinted chip with the danger-red (`#E5634B`) dot and a DM-Mono
- * timer, per README-MOBILE §3.6.
+ * larger danger-tinted chip with the recording-red dot and a DM-Mono timer
+ * (theme-aware via the `--mv3-*` layer; the mobile capture flow itself runs
+ * through the v3 shell, so this leg only serves any future mobile caller).
  */
 function RecPill({
   elapsed,
@@ -242,9 +220,9 @@ function RecPill({
           fontFamily: mono,
           fontSize: 12.5,
           letterSpacing: ".08em",
-          color: "#fff",
-          background: "rgba(229,99,75,.16)",
-          border: `1px solid rgba(229,99,75,.5)`,
+          color: "var(--mv3-text)",
+          background: `color-mix(in srgb, ${V3_REC} 16%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${V3_REC} 50%, transparent)`,
           padding: "6px 12px",
           borderRadius: 999,
         }}
@@ -255,7 +233,7 @@ function RecPill({
             width: 9,
             height: 9,
             borderRadius: "50%",
-            background: D.danger,
+            background: V3_REC,
           }}
         />
         REC {formatDuration(elapsed)}
@@ -1384,23 +1362,24 @@ function Recap({
     recap.tone ? `tone: ${recap.tone}` : null,
   ].filter(Boolean);
 
-  // Theme bundle: dark surfaces/text on mobile, the original light palette on
-  // desktop. The JSX below is identical for both — only these values swap.
+  // Theme bundle: the mv3 token layer on mobile (theme-aware — dark frames
+  // unchanged in dark), the original light palette on desktop. The JSX below
+  // is identical for both — only these values swap.
   const tk = mobile
     ? {
-        surface: D.surface,
-        line: D.line,
-        t1: D.t1,
-        t2: D.t2,
-        t3: D.t3,
-        blue: D.blue,
-        blueW: D.blueW,
-        blueS: "#9CB7FF",
-        violet: D.lilac,
-        nestBg: D.surface2,
-        nestLine: D.line,
-        noteBg: D.surface,
-        radius: mobile ? 18 : 14,
+        surface: "var(--mv3-card)",
+        line: "var(--mv3-line)",
+        t1: "var(--mv3-text)",
+        t2: "var(--mv3-muted)",
+        t3: "var(--mv3-faint)",
+        blue: "var(--mv3-accent)",
+        blueW: "color-mix(in srgb, var(--mv3-accent) 18%, transparent)",
+        blueS: "var(--mv3-micro)",
+        violet: "var(--mv3-violet)",
+        nestBg: "var(--mv3-btn2-bg)",
+        nestLine: "var(--mv3-line)",
+        noteBg: "var(--mv3-card)",
+        radius: 18,
       }
     : {
         surface: C.surface,
@@ -1518,7 +1497,7 @@ function Recap({
                 marginTop: 10,
                 fontFamily: mono,
                 fontSize: 11,
-                color: mobile ? "#9CB7FF" : C.green,
+                color: mobile ? "var(--mv3-micro)" : C.green,
                 textDecoration: "none",
               }}
             >

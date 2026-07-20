@@ -161,6 +161,7 @@ function TabItem({ tab, pathname }: { tab: V3Tab; pathname: string }) {
         haptic.light();
         navigate(tab.to);
       }}
+      aria-label={tab.label}
       aria-current={active ? "page" : undefined}
       className="cue-pressable"
       style={{

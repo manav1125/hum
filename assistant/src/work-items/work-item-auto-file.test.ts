@@ -22,6 +22,8 @@ import {
   AUTO_FILED_BY_CUE,
   type AutoFileAssignment,
   buildAutoFilePrompt,
+  classifyTitlesForPreview,
+  MAX_CLASSIFY_PREVIEW_TITLES,
   MAX_ITEMS_PER_SWEEP,
   parseAutoFileResponse,
   sweepUnfiledWorkItems,
@@ -213,5 +215,208 @@ describe("sweepUnfiledWorkItems", () => {
     expect(result.filed).toBe(0);
     expect(result.skipped).toBe(1);
     expect(getWorkItem(item.id)!.projectId).toBeNull();
+  });
+});
+
+describe("below-confidence stamping", () => {
+  test("stamps the best-guess confidence WITHOUT filing", async () => {
+    const project = createProject({ title: "Ops" });
+    const unsure = makeItem("Maybe ops?");
+
+    const result = await sweepUnfiledWorkItems(async () => [
+      { id: unsure.id, projectId: project.id, confidence: 0.45 },
+    ]);
+    expect(result.filed).toBe(0);
+    expect(result.belowThreshold).toBe(1);
+    expect(result.stamped).toBe(1);
+
+    // The exact shape the web's isBelowConfidence feature-detects: confidence
+    // set while project_id AND auto_filed_by stay null.
+    const after = getWorkItem(unsure.id)!;
+    expect(after.projectId).toBeNull();
+    expect(after.autoFiledBy).toBeNull();
+    expect(after.autoFileConfidence).toBe(0.45);
+  });
+
+  test("a scored no-fit (projectId null) is stamped too", async () => {
+    createProject({ title: "Ops" });
+    const noFit = makeItem("Buy milk");
+    const result = await sweepUnfiledWorkItems(async () => [
+      { id: noFit.id, projectId: null, confidence: 0 },
+    ]);
+    expect(result.stamped).toBe(1);
+    expect(getWorkItem(noFit.id)!.autoFileConfidence).toBe(0);
+    expect(getWorkItem(noFit.id)!.projectId).toBeNull();
+  });
+
+  test("an unscored item (scorer miss) is NOT stamped", async () => {
+    createProject({ title: "Ops" });
+    const missed = makeItem("Overlooked");
+    const result = await sweepUnfiledWorkItems(async () => []);
+    expect(result.skipped).toBe(1);
+    expect(result.stamped).toBe(0);
+    expect(getWorkItem(missed.id)!.autoFileConfidence).toBeNull();
+  });
+
+  test("a stamped unfiled item is not re-offered next sweep (no re-score churn)", async () => {
+    const project = createProject({ title: "Ops" });
+    const unsure = makeItem("Maybe ops?");
+    await sweepUnfiledWorkItems(async () => [
+      { id: unsure.id, projectId: project.id, confidence: 0.3 },
+    ]);
+    expect(getWorkItem(unsure.id)!.autoFileConfidence).toBe(0.3);
+
+    const seen: string[] = [];
+    const second = await sweepUnfiledWorkItems(async (items) => {
+      seen.push(...items.map((i) => i.id));
+      return [];
+    });
+    expect(seen).toHaveLength(0);
+    expect(second.scanned).toBe(0);
+  });
+
+  test("editing the title clears the stamp and re-opens candidacy", async () => {
+    const project = createProject({ title: "Ops" });
+    const unsure = makeItem("Maybe ops?");
+    await sweepUnfiledWorkItems(async () => [
+      { id: unsure.id, projectId: project.id, confidence: 0.3 },
+    ]);
+
+    // A title edit invalidates the old judgment (store-level guard).
+    updateWorkItem(unsure.id, { title: "Rotate the ops on-call schedule" });
+    expect(getWorkItem(unsure.id)!.autoFileConfidence).toBeNull();
+
+    const seen: string[] = [];
+    await sweepUnfiledWorkItems(async (items) => {
+      seen.push(...items.map((i) => i.id));
+      return [];
+    });
+    expect(seen).toEqual([unsure.id]);
+  });
+
+  test("an auto-FILED item keeps its provenance confidence across a title edit", async () => {
+    const project = createProject({ title: "Ops" });
+    const filed = makeItem("Ops thing");
+    await sweepUnfiledWorkItems(async () => [
+      { id: filed.id, projectId: project.id, confidence: 0.9 },
+    ]);
+    updateWorkItem(filed.id, { title: "Ops thing, renamed" });
+    const after = getWorkItem(filed.id)!;
+    expect(after.autoFiledBy).toBe(AUTO_FILED_BY_CUE);
+    expect(after.autoFileConfidence).toBe(0.9);
+  });
+
+  test("a mid-flight user filing wins over the stamp", async () => {
+    const project = createProject({ title: "Ops" });
+    const userPick = createProject({ title: "Personal" });
+    const item = makeItem("Race me");
+
+    const result = await sweepUnfiledWorkItems(async (items) => {
+      updateWorkItem(items[0].id, { projectId: userPick.id });
+      return [{ id: item.id, projectId: project.id, confidence: 0.2 }];
+    });
+    expect(result.stamped).toBe(0);
+    const after = getWorkItem(item.id)!;
+    expect(after.projectId).toBe(userPick.id);
+    expect(after.autoFileConfidence).toBeNull();
+  });
+});
+
+describe("classifyTitlesForPreview", () => {
+  test("returns one suggestion per unique non-blank title, mapped from the scorer", async () => {
+    const ops = createProject({ title: "Ops" });
+    const growth = createProject({ title: "Growth" });
+
+    const suggestions = await classifyTitlesForPreview(
+      ["  Fix the pager  ", "", "Draft the launch tweet", "Fix the pager"],
+      async (items, projects) => {
+        expect(projects.map((p) => p.id).sort()).toEqual(
+          [ops.id, growth.id].sort(),
+        );
+        return items.map((i, idx) => ({
+          id: i.id,
+          projectId: idx === 0 ? ops.id : growth.id,
+          confidence: idx === 0 ? 0.9 : 0.5,
+        }));
+      },
+    );
+    // Blank dropped, duplicate collapsed, titles trimmed, order preserved.
+    expect(suggestions).toEqual([
+      { title: "Fix the pager", projectId: ops.id, confidence: 0.9 },
+      {
+        title: "Draft the launch tweet",
+        projectId: growth.id,
+        confidence: 0.5,
+      },
+    ]);
+  });
+
+  test("caps the batch at MAX_CLASSIFY_PREVIEW_TITLES", async () => {
+    createProject({ title: "Ops" });
+    const titles = Array.from(
+      { length: MAX_CLASSIFY_PREVIEW_TITLES + 10 },
+      (_, i) => `Task ${i}`,
+    );
+    let offered = 0;
+    const suggestions = await classifyTitlesForPreview(
+      titles,
+      async (items) => {
+        offered = items.length;
+        return items.map((i) => ({ id: i.id, projectId: null, confidence: 0 }));
+      },
+    );
+    expect(offered).toBe(MAX_CLASSIFY_PREVIEW_TITLES);
+    expect(suggestions).toHaveLength(MAX_CLASSIFY_PREVIEW_TITLES);
+  });
+
+  test("scorer failure (null) degrades to an empty array", async () => {
+    createProject({ title: "Ops" });
+    expect(
+      await classifyTitlesForPreview(["A task"], async () => null),
+    ).toEqual([]);
+  });
+
+  test("a throwing scorer degrades to an empty array", async () => {
+    createProject({ title: "Ops" });
+    expect(
+      await classifyTitlesForPreview(["A task"], async () => {
+        throw new Error("boom");
+      }),
+    ).toEqual([]);
+  });
+
+  test("no projects → empty array without calling the scorer", async () => {
+    let called = 0;
+    const suggestions = await classifyTitlesForPreview(["A task"], async () => {
+      called++;
+      return [];
+    });
+    expect(called).toBe(0);
+    expect(suggestions).toEqual([]);
+  });
+
+  test("a title the scorer skipped comes back as no-fit with confidence 0", async () => {
+    createProject({ title: "Ops" });
+    const suggestions = await classifyTitlesForPreview(
+      ["Scored", "Skipped"],
+      async (items) => [{ id: items[0].id, projectId: null, confidence: 0.1 }],
+    );
+    expect(suggestions).toEqual([
+      { title: "Scored", projectId: null, confidence: 0.1 },
+      { title: "Skipped", projectId: null, confidence: 0 },
+    ]);
+  });
+
+  test("scores NOTHING into the database — no persistence, no side effects", async () => {
+    const ops = createProject({ title: "Ops" });
+    const existing = makeItem("Pre-existing unfiled");
+    await classifyTitlesForPreview(["Pre-existing unfiled"], async (items) => [
+      { id: items[0].id, projectId: ops.id, confidence: 0.99 },
+    ]);
+    // The real work item with the same title is untouched.
+    const after = getWorkItem(existing.id)!;
+    expect(after.projectId).toBeNull();
+    expect(after.autoFiledBy).toBeNull();
+    expect(after.autoFileConfidence).toBeNull();
   });
 });

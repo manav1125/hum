@@ -4,8 +4,10 @@
  * right updating live per keystroke, with the SAME per-row assignment grammar
  * as mobile frame 43: confident → pre-filled "X ✓" chip, ambiguous → open
  * chip row + "＋ New", no signal → the italic "Leave unfiled" default.
- * Suggestions come from the shared heuristic in `filing-kit.ts`
- * (TODO(daemon-classifier) lives there).
+ * Suggestions come from the shared kit in `filing-kit.ts`: the client-side
+ * heuristic paints instantly, and the daemon's `classify-preview` scorer
+ * (debounced, feature-detected — see `useServerSuggestions`) overrides it a
+ * beat later.
  *
  * Mounted globally in ChatLayout (beside the command palette) and driven by
  * `useAddTasksStore` (⌘⇧A anywhere + All-work's "＋ Add tasks" button).
@@ -23,7 +25,12 @@ import { C, mono, serif } from "@/domains/activity/theme";
 import { workitemsPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useAddTasksStore } from "@/stores/add-tasks-store";
 
-import { parseTaskLines, suggestProjectFor } from "./filing-kit";
+import {
+  parseTaskLines,
+  resolveSuggestionFor,
+  type ServerSuggestion,
+  useServerSuggestions,
+} from "./filing-kit";
 import { NewProjectModal } from "./new-project-modal";
 import { useProjects, type ProjectView } from "./use-projects";
 
@@ -77,6 +84,7 @@ const chipUnfiled: React.CSSProperties = {
 function RowAssignment({
   line,
   projects,
+  serverSuggestions,
   overrides,
   expanded,
   disabled,
@@ -86,6 +94,8 @@ function RowAssignment({
 }: {
   line: string;
   projects: ProjectView[];
+  /** Debounced daemon classify-preview results (heuristic fallback inside). */
+  serverSuggestions: ReadonlyMap<string, ServerSuggestion>;
   overrides: ReadonlyMap<string, string | null>;
   expanded: boolean;
   disabled: boolean;
@@ -100,8 +110,8 @@ function RowAssignment({
   }, [projects]);
 
   const suggestion = useMemo(
-    () => suggestProjectFor(line, projects),
-    [line, projects],
+    () => resolveSuggestionFor(line, projects, serverSuggestions),
+    [line, projects, serverSuggestions],
   );
   const override = overrides.get(line);
   const touched = overrides.has(line);
@@ -252,9 +262,17 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
   const activeProjects = projects.filter((p) => p.status === "active");
   const canSubmit = lines.length > 0 && !submitting;
 
+  // Daemon classify-preview (debounced 600ms, 404-feature-detected); the
+  // client heuristic stays the instant first paint + offline fallback.
+  const serverSuggestions = useServerSuggestions(
+    assistantId,
+    lines,
+    activeProjects,
+  );
+
   const assignmentFor = (line: string): string | null => {
     if (overrides.has(line)) return overrides.get(line) ?? null;
-    const s = suggestProjectFor(line, activeProjects);
+    const s = resolveSuggestionFor(line, activeProjects, serverSuggestions);
     return s.kind === "confident" ? s.projectId : null;
   };
 
@@ -545,6 +563,7 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
                         <RowAssignment
                           line={line}
                           projects={activeProjects}
+                          serverSuggestions={serverSuggestions}
                           overrides={overrides}
                           expanded={expandedLine === line}
                           disabled={submitting || state === "done"}

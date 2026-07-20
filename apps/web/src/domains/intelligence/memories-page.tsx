@@ -23,7 +23,13 @@ import { formatFriendlyDate } from "@/utils/format-date";
 import { Mv3MemoryPage } from "@/mobile-v3/you/memory-page";
 
 import { useMemoryItemsQuery } from "./memories/hooks/use-memory-items-query";
-import { MemoryRow, kindColors, kindLabel } from "./memories/memory-row";
+import {
+  MEMORY_KIND_SCOPE,
+  MemoryKindStyles,
+  MemoryRow,
+  kindColors,
+  kindLabel,
+} from "./memories/memory-row";
 import { sourceTypeLabel, type MemoryItem } from "./memories/types";
 
 const MONO = "'DM Mono', monospace";
@@ -233,6 +239,7 @@ function MemoriesPageDesktop() {
     // stacked column — the list first, the provenance detail as a full-width
     // section pinned beneath it (never overlapping absolute columns).
     <div
+      className={MEMORY_KIND_SCOPE}
       style={{
         display: "grid",
         gridTemplateColumns: isMobile
@@ -248,6 +255,7 @@ function MemoriesPageDesktop() {
         lineHeight: 1.5,
       }}
     >
+      <MemoryKindStyles />
       {/* ── CENTER COLUMN ─────────────────────────────────────────── */}
       <div
         style={{

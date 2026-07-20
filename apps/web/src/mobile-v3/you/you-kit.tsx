@@ -254,6 +254,7 @@ export function NavRow({
   return (
     <button
       type="button"
+      aria-label={meta ? `${label} — ${meta}` : label}
       className="cue-pressable"
       onClick={() => {
         haptic.light();

@@ -3,23 +3,74 @@ import type { MemoryType } from "@vellumai/design-library";
 import { sourceTypeLabel, type MemoryItem } from "./types";
 
 /**
- * Per-memory-type color tokens, taken verbatim from surfaces/Memory.dc.html.
- * `dot` is the chip/card dot, `text` the (sometimes darkened) DM Mono label
- * color, and `wash` the soft background used by the "N sources" chip.
+ * Per-memory-type color tokens. Light values are taken verbatim from
+ * surfaces/Memory.dc.html (the faithful mock port); under the dark/velvet
+ * themes each triplet swaps to a dark-book leg (lightened `text`, translucent
+ * `wash`) via the scoped CSS below — the failure-card pattern. `dot` is the
+ * chip/card dot, `text` the DM Mono label color, and `wash` the soft
+ * background used by the "N sources" chip.
+ *
+ * Consumers must render inside `.cue-memory-kinds` (MemoryRow scopes itself;
+ * the memories page scopes its root for the filter chips + provenance rail)
+ * and mount `<MemoryKindStyles />` once (duplicate <style> tags are inert).
  */
+const kindVars = (kind: string) => ({
+  dot: `var(--memk-${kind}-dot)`,
+  text: `var(--memk-${kind}-text)`,
+  wash: `var(--memk-${kind}-wash)`,
+});
+
 export const TYPE_COLORS: Record<
   MemoryType,
   { dot: string; text: string; wash: string }
 > = {
-  semantic: { dot: "#3D6EE8", text: "#2B53C4", wash: "#DBE4FB" },
-  prospective: { dot: "#7F77DD", text: "#534AB7", wash: "#EEEDFB" },
-  procedural: { dot: "#0E8C8C", text: "#0E8C8C", wash: "#E0F0EF" },
-  episodic: { dot: "#C98A1B", text: "#9A6A14", wash: "#FBF0DA" },
-  emotional: { dot: "#E24B4A", text: "#E24B4A", wash: "#FBE3E3" },
-  behavioral: { dot: "#5A57C4", text: "#5A57C4", wash: "#E7E7F7" },
-  narrative: { dot: "#B5683A", text: "#B5683A", wash: "#F3E4DB" },
-  shared: { dot: "#B0479B", text: "#B0479B", wash: "#F5E2F0" },
+  semantic: kindVars("semantic"),
+  prospective: kindVars("prospective"),
+  procedural: kindVars("procedural"),
+  episodic: kindVars("episodic"),
+  emotional: kindVars("emotional"),
+  behavioral: kindVars("behavioral"),
+  narrative: kindVars("narrative"),
+  shared: kindVars("shared"),
 };
+
+/** Scope class the kind vars resolve under. */
+export const MEMORY_KIND_SCOPE = "cue-memory-kinds";
+
+/**
+ * Scoped theme legs for the kind triplets. Light = the Memory.dc.html mock
+ * literals unchanged; dark/velvet follow the `--mv1-*` dark-book convention
+ * (accent text lightens for contrast on ink, washes become translucent
+ * accent tints).
+ */
+const MEMORY_KIND_CSS = `
+.cue-memory-kinds {
+  --memk-semantic-dot: #3d6ee8; --memk-semantic-text: #2b53c4; --memk-semantic-wash: #dbe4fb;
+  --memk-prospective-dot: #7f77dd; --memk-prospective-text: #534ab7; --memk-prospective-wash: #eeedfb;
+  --memk-procedural-dot: #0e8c8c; --memk-procedural-text: #0e8c8c; --memk-procedural-wash: #e0f0ef;
+  --memk-episodic-dot: #c98a1b; --memk-episodic-text: #9a6a14; --memk-episodic-wash: #fbf0da;
+  --memk-emotional-dot: #e24b4a; --memk-emotional-text: #e24b4a; --memk-emotional-wash: #fbe3e3;
+  --memk-behavioral-dot: #5a57c4; --memk-behavioral-text: #5a57c4; --memk-behavioral-wash: #e7e7f7;
+  --memk-narrative-dot: #b5683a; --memk-narrative-text: #b5683a; --memk-narrative-wash: #f3e4db;
+  --memk-shared-dot: #b0479b; --memk-shared-text: #b0479b; --memk-shared-wash: #f5e2f0;
+}
+[data-theme="dark"] .cue-memory-kinds,
+[data-theme="velvet"] .cue-memory-kinds {
+  --memk-semantic-text: #86a9f2; --memk-semantic-wash: rgba(61, 110, 232, 0.18);
+  --memk-prospective-text: #a9a2f0; --memk-prospective-wash: rgba(127, 119, 221, 0.18);
+  --memk-procedural-text: #4fc7c7; --memk-procedural-wash: rgba(14, 140, 140, 0.2);
+  --memk-episodic-text: #d9a84e; --memk-episodic-wash: rgba(201, 138, 27, 0.18);
+  --memk-emotional-text: #eb7a79; --memk-emotional-wash: rgba(226, 75, 74, 0.16);
+  --memk-behavioral-text: #9b99e5; --memk-behavioral-wash: rgba(90, 87, 196, 0.2);
+  --memk-narrative-text: #d89a6e; --memk-narrative-wash: rgba(181, 104, 58, 0.18);
+  --memk-shared-text: #d97fc6; --memk-shared-wash: rgba(176, 71, 155, 0.18);
+}
+`;
+
+/** Injects the kind-triplet theme legs. Duplicate mounts are inert. */
+export function MemoryKindStyles() {
+  return <style>{MEMORY_KIND_CSS}</style>;
+}
 
 const KIND_LABELS: Record<MemoryType, string> = {
   semantic: "Semantic",
@@ -99,6 +150,7 @@ export function MemoryRow({
 
   return (
     <div
+      className={MEMORY_KIND_SCOPE}
       onClick={() => onSelect(item)}
       style={{
         border: `1px solid ${selected ? "var(--accent-cue)" : "var(--border-base)"}`,
@@ -110,6 +162,7 @@ export function MemoryRow({
         cursor: "pointer",
       }}
     >
+      <MemoryKindStyles />
       {/* Top row: dot + TYPE + confidence */}
       <div
         style={{
@@ -293,7 +346,7 @@ export function MemoryRow({
               }}
               style={{
                 fontSize: 11.5,
-                color: "#DA491A",
+                color: "var(--mv1-danger)",
                 background: "transparent",
                 border: "none",
                 padding: 0,

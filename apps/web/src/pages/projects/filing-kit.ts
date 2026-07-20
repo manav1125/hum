@@ -3,15 +3,22 @@
  * used by BOTH batch-capture surfaces (mobile frame 43's Mv3AddTasksSheet and
  * desktop frame D1's AddTasksModal).
  *
- * Suggestions are a CHEAP CLIENT-SIDE HEURISTIC (title tokens vs. project
- * names). TODO(daemon-classifier): when the daemon grows a classify/preview
- * route for batch entry (the background auto-filer's scorer exposed at
- * capture time — none exists as of 2026-07-20; `work-items-routes.ts` has no
- * classify/suggest endpoint), replace `suggestProjectFor` call sites with a
- * debounced call to it and keep this as the offline fallback. The semantics
- * contract stays the same either way: confident → pre-filled chip, ambiguous
- * → open chip row, no signal → "Leave unfiled — Cue will sort it".
+ * Suggestions are LAYERED:
+ *   1. The cheap client-side heuristic (title tokens vs. project names) paints
+ *      instantly on every keystroke and is the offline fallback.
+ *   2. `useServerSuggestions` debounces (600ms) a call to the daemon's
+ *      `POST work-items/classify-preview` — the background auto-filer's flash
+ *      scorer exposed at capture time (no persistence, no side effects). Its
+ *      answers override the heuristic per title via `resolveSuggestionFor`.
+ *      Feature-detected: a 404 (older daemon) disables the calls for the
+ *      session and the heuristic keeps the wheel.
+ *
+ * The semantics contract is the same either way: confident → pre-filled chip,
+ * ambiguous → open chip row, no signal → "Leave unfiled — Cue will sort it".
  */
+import { useEffect, useRef, useState } from "react";
+
+import { client } from "@/generated/daemon/client.gen";
 
 export interface SuggestableProject {
   id: string;
@@ -91,4 +98,159 @@ export function suggestProjectFor(
   if (scored[0].score >= scored[1].score + 2)
     return { kind: "confident", projectId: scored[0].id };
   return { kind: "ambiguous", candidateIds: scored.slice(0, 3).map((s) => s.id) };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Daemon classifier (classify-preview) — debounced, feature-detected         */
+/* -------------------------------------------------------------------------- */
+
+/** One scored title off the daemon's classify-preview route. */
+export interface ServerSuggestion {
+  projectId: string | null;
+  /** The auto-filer scorer's 0–1 confidence for that project. */
+  confidence: number;
+}
+
+/** ≥ this → confident pre-fill ("X ✓"); mirrors the auto-filer's default. */
+export const SERVER_CONFIDENT_MIN = 0.7;
+/** ≥ this (but below confident) → ambiguous candidate chips. */
+export const SERVER_AMBIGUOUS_MIN = 0.4;
+
+const CLASSIFY_DEBOUNCE_MS = 600;
+/** The daemon caps the batch at 30 titles — don't send more. */
+const CLASSIFY_MAX_TITLES = 30;
+const CLASSIFY_PREVIEW_URL =
+  "/v1/assistants/{assistant_id}/work-items/classify-preview";
+
+/**
+ * Session-wide feature detect: an older daemon 404s the route; once seen,
+ * stop asking and let the heuristic keep the wheel.
+ */
+let classifyPreviewUnavailable = false;
+
+const EMPTY_SUGGESTIONS: ReadonlyMap<string, ServerSuggestion> = new Map();
+
+/**
+ * Debounced (600ms) daemon classification of the parsed lines. Returns a map
+ * keyed by title (the lines are already trimmed by `parseTaskLines`, matching
+ * the daemon's trim). Both batch-add surfaces feed the result into
+ * `resolveSuggestionFor`, so the heuristic still paints instantly and the
+ * server's judgment lands a beat later. Network failures and 404s are silent
+ * — suggestions are a nicety, never an error state.
+ */
+export function useServerSuggestions(
+  assistantId: string,
+  lines: readonly string[],
+  projects: readonly SuggestableProject[],
+): ReadonlyMap<string, ServerSuggestion> {
+  const [suggestions, setSuggestions] =
+    useState<ReadonlyMap<string, ServerSuggestion>>(EMPTY_SUGGESTIONS);
+  /** Monotonic request id so a slow stale response never wins over a newer one. */
+  const generation = useRef(0);
+
+  // Value-stable deps: the arrays are rebuilt every render upstream.
+  const linesKey = lines.join("\n");
+  const haveProjects = projects.length > 0;
+
+  useEffect(() => {
+    if (classifyPreviewUnavailable || !assistantId || !haveProjects) return;
+    const titles = linesKey
+      .split("\n")
+      .filter(Boolean)
+      .slice(0, CLASSIFY_MAX_TITLES);
+    if (titles.length === 0) return;
+
+    const gen = ++generation.current;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          // TData is hey-api's per-status map; 200 carries the route's body.
+          const res = await client.post<
+            { 200: { suggestions?: unknown } },
+            unknown,
+            false
+          >({
+            url: CLASSIFY_PREVIEW_URL,
+            path: { assistant_id: assistantId },
+            body: { titles },
+          });
+          if (res.response?.status === 404) {
+            classifyPreviewUnavailable = true;
+            return;
+          }
+          if (gen !== generation.current) return; // superseded
+          const raw = res.data?.suggestions;
+          if (!Array.isArray(raw)) return;
+          const next = new Map<string, ServerSuggestion>();
+          for (const entry of raw) {
+            const s = entry as {
+              title?: unknown;
+              projectId?: unknown;
+              confidence?: unknown;
+            };
+            if (typeof s?.title !== "string") continue;
+            next.set(s.title, {
+              projectId: typeof s.projectId === "string" ? s.projectId : null,
+              confidence:
+                typeof s.confidence === "number" ? s.confidence : 0,
+            });
+          }
+          setSuggestions(next);
+        } catch {
+          // Offline / transport failure — the heuristic keeps working.
+        }
+      })();
+    }, CLASSIFY_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [assistantId, linesKey, haveProjects]);
+
+  return suggestions;
+}
+
+/**
+ * The per-row suggestion both surfaces render: the daemon's judgment when it
+ * has one (confidence mapped onto the frame-43/D1 grammar), the client
+ * heuristic otherwise (instant first paint + offline fallback).
+ *
+ *   · ≥ {@link SERVER_CONFIDENT_MIN} → confident pre-fill ("X ✓")
+ *   · ≥ {@link SERVER_AMBIGUOUS_MIN} → ambiguous chips, server's pick first
+ *     (heuristic candidates fill the remaining slots)
+ *   · below / no fit → none ("Leave unfiled — Cue will sort it")
+ */
+export function resolveSuggestionFor(
+  line: string,
+  projects: readonly SuggestableProject[],
+  server?: ReadonlyMap<string, ServerSuggestion>,
+): ProjectSuggestion {
+  const scored = server?.get(line);
+  if (scored) {
+    const projectId =
+      scored.projectId != null &&
+      projects.some((p) => p.id === scored.projectId)
+        ? scored.projectId
+        : null;
+    if (projectId != null && scored.confidence >= SERVER_CONFIDENT_MIN) {
+      return { kind: "confident", projectId };
+    }
+    if (projectId != null && scored.confidence >= SERVER_AMBIGUOUS_MIN) {
+      const heuristic = suggestProjectFor(line, projects);
+      const alsoPlausible =
+        heuristic.kind === "ambiguous"
+          ? heuristic.candidateIds
+          : heuristic.kind === "confident"
+            ? [heuristic.projectId]
+            : [];
+      return {
+        kind: "ambiguous",
+        candidateIds: [
+          projectId,
+          ...alsoPlausible.filter((id) => id !== projectId),
+        ].slice(0, 3),
+      };
+    }
+    // The daemon scored it and found no clear home — honest "none" beats a
+    // lexical guess (leaving unfiled hands it to the auto-file sweep).
+    return { kind: "none" };
+  }
+  return suggestProjectFor(line, projects);
 }

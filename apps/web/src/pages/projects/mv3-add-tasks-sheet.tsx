@@ -9,10 +9,11 @@
  *     change"
  *   · ambiguous → an open chip row of candidates + "＋ New"
  *   · no signal → the italic "Leave unfiled — Cue will sort it" default
- * Suggestions come from the shared client-side heuristic in `filing-kit.ts`
- * (TODO(daemon-classifier) lives there — no classify/preview route exists on
- * the daemon yet). "＋ New" reuses the EXISTING Mv3NewProjectSheet flow,
- * returning here with the new project assigned to that row.
+ * Suggestions come from the shared kit in `filing-kit.ts`: the client-side
+ * heuristic paints instantly, and the daemon's `classify-preview` scorer
+ * (debounced, feature-detected — see `useServerSuggestions`) overrides it a
+ * beat later. "＋ New" reuses the EXISTING Mv3NewProjectSheet flow, returning
+ * here with the new project assigned to that row.
  *
  * ENDPOINT — one `POST /work-items { title, projectId? }` per line (the same
  * quick-add write the project board uses). The daemon creates each item
@@ -29,7 +30,12 @@ import { SheetShell, mv3Mono, primaryBtn } from "@/mobile-v3";
 import { UndoToast, type Mv3Toast } from "@/mobile-v3/undo-toast";
 import { haptic } from "@/utils/haptics";
 
-import { parseTaskLines, suggestProjectFor } from "./filing-kit";
+import {
+  parseTaskLines,
+  resolveSuggestionFor,
+  type ServerSuggestion,
+  useServerSuggestions,
+} from "./filing-kit";
 import { Mv3NewProjectSheet } from "./mv3-new-project-sheet";
 import { useProjects, type ProjectView } from "./use-projects";
 
@@ -95,6 +101,7 @@ const chipUnfiled: React.CSSProperties = {
 function RowAssignment({
   line,
   projects,
+  serverSuggestions,
   overrides,
   expanded,
   disabled,
@@ -104,6 +111,8 @@ function RowAssignment({
 }: {
   line: string;
   projects: ProjectView[];
+  /** Debounced daemon classify-preview results (heuristic fallback inside). */
+  serverSuggestions: ReadonlyMap<string, ServerSuggestion>;
   overrides: Overrides;
   expanded: boolean;
   disabled: boolean;
@@ -118,8 +127,8 @@ function RowAssignment({
   }, [projects]);
 
   const suggestion = useMemo(
-    () => suggestProjectFor(line, projects),
-    [line, projects],
+    () => resolveSuggestionFor(line, projects, serverSuggestions),
+    [line, projects, serverSuggestions],
   );
   const override = overrides.get(line);
   const touched = overrides.has(line);
@@ -324,10 +333,18 @@ export function Mv3AddTasksSheet({
   const activeProjects = projects.filter((p) => p.status === "active");
   const canSubmit = lines.length > 0 && !submitting;
 
+  // Daemon classify-preview (debounced 600ms, 404-feature-detected); the
+  // client heuristic stays the instant first paint + offline fallback.
+  const serverSuggestions = useServerSuggestions(
+    assistantId,
+    lines,
+    activeProjects,
+  );
+
   /** The projectId a line will POST with (override else confident suggestion). */
   const assignmentFor = (line: string): string | null => {
     if (overrides.has(line)) return overrides.get(line) ?? null;
-    const s = suggestProjectFor(line, activeProjects);
+    const s = resolveSuggestionFor(line, activeProjects, serverSuggestions);
     return s.kind === "confident" ? s.projectId : null;
   };
 
@@ -529,6 +546,7 @@ export function Mv3AddTasksSheet({
                     <RowAssignment
                       line={line}
                       projects={activeProjects}
+                      serverSuggestions={serverSuggestions}
                       overrides={overrides}
                       expanded={expandedLine === line}
                       disabled={submitting || state === "done"}

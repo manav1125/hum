@@ -15,6 +15,7 @@
  * - conversation-usage.ts        — recordUsage
  */
 
+import { resolveFlashTierRouteForTurn } from "../agent/flash-tier.js";
 import type { AgentLoopConfig, ResolvedSystemPrompt } from "../agent/loop.js";
 import { AgentLoop } from "../agent/loop.js";
 import type { AssistantActivityStateEvent } from "../api/events/assistant-activity-state.js";
@@ -664,7 +665,7 @@ export class Conversation {
     const resolvedModel: string | undefined = modelOverride;
 
     const resolveSystemPromptCallback = (
-      _history: Message[],
+      history: Message[],
     ): ResolvedSystemPrompt => {
       const resolved: ResolvedSystemPrompt = {
         systemPrompt: this.hasSystemPromptOverride
@@ -683,6 +684,32 @@ export class Conversation {
       }
       if (resolvedModel !== undefined) {
         resolved.model = resolvedModel;
+      } else {
+        // Flash-tier routing (llm.flashTier, default OFF): pin structurally
+        // trivial mainAgent rounds to the flash model. The per-call model
+        // override wins over call-site resolution downstream, but transport,
+        // tools, and system prompt are unchanged — a misclassified turn is
+        // just a cheaper model, and the per-round re-classification escalates
+        // back to the main model once tool blocks appear in history.
+        const flashRoute = resolveFlashTierRouteForTurn({
+          llm: getConfig().llm,
+          history,
+          callSite: this.currentCallSite,
+          overrideProfile:
+            this.currentTurnOverrideProfile ?? this.toolRoutedProfile,
+          selectionSeed: this.conversationId,
+        });
+        if (flashRoute != null) {
+          resolved.model = flashRoute.model;
+          log.debug(
+            {
+              conversationId: this.conversationId,
+              model: flashRoute.model,
+              reason: flashRoute.reason,
+            },
+            "flash_tier_routed",
+          );
+        }
       }
       return resolved;
     };

@@ -11,6 +11,11 @@
  *                install: plan → the consent sheet → confirm.
  *  · Installed — installed + bundled skills (`skillsGet`); tap → the frame-30
  *                manage screen.
+ *
+ * A horizontal category chip row (the desktop rail's `skillsCategoriesGet`
+ * taxonomy) filters whichever daemon-skill list the segment shows — the
+ * Installed segment and the catalog Explore fallback. Marketplace items carry
+ * no category, so the row honestly hides for marketplace results.
  *  · Sources   — the real marketplace source registry (add/remove/toggle).
  *
  * The consent sheet renders the skill's DECLARED capability manifest from the
@@ -33,6 +38,7 @@ import {
   type SkillInfo,
 } from "@/domains/intelligence/skills/types";
 import { rebrandSkillProse } from "@/domains/intelligence/skills/utils";
+import { useSkillCategories } from "@/domains/intelligence/skills/use-skill-categories";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { SkillFileContent } from "@/domains/intelligence/components/skills/skill-file-content";
 import {
@@ -591,6 +597,8 @@ export function Mv3SkillsPage({
     initialSkillId ?? null,
   );
   const [newSource, setNewSource] = useState("");
+  // Category filter (the desktop rail's categories as a horizontal chip row).
+  const [category, setCategory] = useState<string | null>(null);
 
   // Installed + bundled + catalog skills (the daemon skills store).
   const skillsQuery = useQuery({
@@ -613,6 +621,12 @@ export function Mv3SkillsPage({
     () => allSkills.filter((s) => s.kind === "catalog"),
     [allSkills],
   );
+
+  // The same daemon category taxonomy the desktop rail filters by. Only
+  // daemon skills carry a category (marketplace items don't declare one), so
+  // the chip row renders where that data exists: the Installed segment and
+  // the catalog Explore fallback.
+  const { data: categories = [] } = useSkillCategories(assistantId);
 
   // Marketplace: sources + per-source items + install plan flow.
   const { sources } = useMarketplaceSources(assistantId);
@@ -712,6 +726,29 @@ export function Mv3SkillsPage({
 
   const exploreFromMarketplace = allItems.length > 0 || marketLoading;
 
+  // Category chips apply to whichever daemon-skill list the segment shows.
+  const categoryList =
+    segment === "installed"
+      ? installedSkills
+      : segment === "explore" && !exploreFromMarketplace
+        ? catalogSkills
+        : null;
+  const categoryCounts = new Map<string, number>();
+  if (categoryList) {
+    for (const s of categoryList) {
+      const slug = s.category || "system";
+      categoryCounts.set(slug, (categoryCounts.get(slug) ?? 0) + 1);
+    }
+  }
+  // A selection that no longer matches the visible list quietly reads as All.
+  const activeCategory =
+    category !== null && categoryCounts.has(category) ? category : null;
+  const byCategory = (s: SkillInfo) =>
+    activeCategory === null || (s.category || "system") === activeCategory;
+  const visibleInstalled = installedSkills.filter(byCategory);
+  const visibleCatalog = catalogSkills.filter(byCategory);
+  const categoryChips = categories.filter((c) => categoryCounts.has(c.slug));
+
   return (
     <YouScreen
       tint="violet"
@@ -749,6 +786,22 @@ export function Mv3SkillsPage({
               ]}
             />
           </div>
+          {categoryList && categoryChips.length > 0 ? (
+            <div style={{ marginTop: 8 }}>
+              <SegRail<string>
+                ariaLabel="Filter skills by category"
+                value={activeCategory ?? "all"}
+                onChange={(v) => setCategory(v === "all" ? null : v)}
+                items={[
+                  { value: "all", label: `All · ${categoryList.length}` },
+                  ...categoryChips.map((c) => ({
+                    value: c.slug,
+                    label: `${c.label} · ${categoryCounts.get(c.slug) ?? 0}`,
+                  })),
+                ]}
+              />
+            </div>
+          ) : null}
         </div>
       }
     >
@@ -848,7 +901,7 @@ export function Mv3SkillsPage({
               ))
             )
           ) : catalogSkills.length > 0 ? (
-            catalogSkills.slice(0, 40).map((skill, i) => (
+            visibleCatalog.slice(0, 40).map((skill, i) => (
               <GlassCard
                 key={skill.id}
                 padding="14px 16px"
@@ -932,10 +985,11 @@ export function Mv3SkillsPage({
           </GlassCard>
         ) : (
           <GlassCard padding={0} radius={20} style={{ overflow: "hidden", ...rise(0.1) }}>
-            {installedSkills.map((skill, i) => (
+            {visibleInstalled.map((skill, i) => (
               <button
                 key={skill.id}
                 type="button"
+                aria-label={`Manage ${skill.name}`}
                 className="cue-pressable"
                 onClick={() => {
                   haptic.light();
@@ -952,7 +1006,7 @@ export function Mv3SkillsPage({
                   background: "transparent",
                   border: "none",
                   borderBottom:
-                    i === installedSkills.length - 1
+                    i === visibleInstalled.length - 1
                       ? "none"
                       : "1px solid var(--mv3-line)",
                   cursor: "pointer",

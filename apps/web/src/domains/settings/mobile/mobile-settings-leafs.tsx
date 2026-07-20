@@ -1,19 +1,28 @@
 /**
- * Mobile-v3 settings leafs (task #101) — the touch-adapted screens for the
- * highest-value settings pages (parity-audit §7 priority): AI models,
- * Privacy, Schedules (list + the frame-40 editor sheet), Voice, Sounds,
- * Appearance.
+ * Mobile-v3 settings leafs (task #101 + the P2 polish sweep) — the
+ * touch-adapted screens for the highest-value settings pages (parity-audit
+ * §7 priority): AI models, Privacy, Schedules (list + the frame-40 editor
+ * sheet), Voice, Sounds, Appearance, Integrations, Brand, Archive.
  *
  * Each leaf renders the SAME stores/mutations its desktop page uses (config
  * PATCH, device settings, `settings/client` KV, sounds config PUT, schedule
- * toggle/PATCH/DELETE) in You-cluster row grammar. Anything a phone can't
+ * toggle/PATCH/DELETE, OAuth providers/connections, brand-profile activate,
+ * conversation unarchive) in You-cluster row grammar. Anything a phone can't
  * sensibly edit (provider keys, PTT hotkey capture, per-event sound files)
  * stays on desktop and says so in a footnote. Desktop pages untouched.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
+import { getAssistant, type Assistant } from "@/assistant/api";
 import {
   AUTO_PROFILE_NAME,
   gateAutoProfile,
@@ -21,6 +30,8 @@ import {
   visibleProfilesForPicker,
 } from "@/assistant/profile-pickers";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import { IntegrationIcon } from "@/components/integrations/integration-icon";
+import { IntegrationDetailModal } from "@/domains/settings/components/integration-detail-modal";
 import { buildOrderedProfiles } from "@/domains/settings/ai/ai-utils";
 import {
   fetchSchedules,
@@ -41,21 +52,34 @@ import {
   writeStoredThemePreference,
   type ThemePreference,
 } from "@/domains/settings/utils/theme-preferences";
+import { assistantsOauthConnectionsListOptions } from "@/generated/api/@tanstack/react-query.gen";
+import type { OAuthConnection } from "@/generated/api/types.gen";
 import {
   configGetOptions,
   configGetSetQueryData,
+  oauthProvidersGetOptions,
   soundsConfigGetOptions,
   soundsConfigGetSetQueryData,
   soundsConfigPutMutation,
   useConfigPatchMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
-import { settingsClientPut } from "@/generated/daemon/sdk.gen";
+import {
+  conversationsByIdUnarchivePost,
+  settingsClientPut,
+} from "@/generated/daemon/sdk.gen";
 import type { SoundsConfigGetResponse } from "@/generated/daemon/types.gen";
+import { useArchivedConversationListQuery } from "@/hooks/conversation-queries";
+import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { captureError } from "@/lib/sentry/capture-error";
 import { assistantSchedulesQueryKey } from "@/lib/sync/query-tags";
 import { GlassCard } from "@/mobile-v3/glass-card";
 import { microLabel, rise } from "@/mobile-v3/mv3-kit";
-import { Eyebrow } from "@/mobile-v3/you/you-kit";
+import { Eyebrow, NavRow } from "@/mobile-v3/you/you-kit";
+import {
+  useActivateBrandProfile,
+  useBrandProfiles,
+  type BrandProfile,
+} from "@/pages/brand-kit/use-brand-kit";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { useHasPlatformSession } from "@/stores/auth-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
@@ -72,6 +96,8 @@ import {
   setLocalSetting,
 } from "@/utils/local-settings";
 import { savePreferenceToggle } from "@/utils/onboarding-cleanup";
+import type { Conversation } from "@/types/conversation-types";
+import { invalidateConversationQueries } from "@/utils/conversation-cache";
 import { routes } from "@/utils/routes";
 import {
   LS_VOICE_INPUT_DEVICE,
@@ -1256,6 +1282,834 @@ export function Mv3SoundsLeaf() {
 }
 
 // ---------------------------------------------------------------------------
+// Integrations (settings/integrations) — the same providers/connections
+// queries + detail modal the desktop page uses, in v3 row grammar.
+// ---------------------------------------------------------------------------
+
+type IntegrationFilter = "all" | "enabled" | "not-enabled";
+
+const INTEGRATION_FILTERS: ReadonlyArray<{
+  value: IntegrationFilter;
+  label: string;
+}> = [
+  { value: "all", label: "All" },
+  { value: "enabled", label: "Enabled" },
+  { value: "not-enabled", label: "Not enabled" },
+];
+
+function connectionForProvider(
+  connections: OAuthConnection[] | undefined,
+  providerKey: string,
+): OAuthConnection | null {
+  return connections?.find((c) => c.provider === providerKey) ?? null;
+}
+
+export function Mv3IntegrationsLeaf() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const platformGate = usePlatformGate();
+
+  const [assistant, setAssistant] = useState<Assistant | null>(null);
+  const [assistantLoading, setAssistantLoading] = useState(true);
+  // Self-host fallback: `getAssistant()` resolves from the resolved-assistants
+  // LIST, which stays empty on a self-host gateway session (the lifecycle
+  // short-circuit only sets the active id). The queries below need just the
+  // id, so fall back to the store's active id rather than dead-ending on
+  // "no assistant found".
+  const storeAssistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const assistantId = assistant?.id ?? storeAssistantId;
+  const [searchText, setSearchText] = useState("");
+  const [filter, setFilter] = useState<IntegrationFilter>("all");
+  const [selectedProviderKey, setSelectedProviderKey] = useState<
+    string | null
+  >(null);
+  // OAuth-callback outcome, shown inline (v3 grammar) instead of a toast.
+  const [oauthNotice, setOauthNotice] = useState<{
+    tone: "ok" | "error";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const result = await getAssistant();
+        if (active && result.ok) setAssistant(result.data);
+      } catch (error) {
+        captureError(error, { context: "integrations.getAssistant" });
+      } finally {
+        if (active) setAssistantLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const {
+    data: providers,
+    isLoading: providersLoading,
+    isError: providersError,
+  } = useQuery({
+    ...oauthProvidersGetOptions({
+      path: { assistant_id: assistantId ?? "" },
+    }),
+    select: (data) => data.providers,
+    enabled: !!assistantId,
+  });
+
+  const { data: connections, isLoading: connectionsLoading } = useQuery({
+    ...assistantsOauthConnectionsListOptions({
+      path: { assistant_id: assistantId ?? "" },
+    }),
+    enabled: !!assistantId && platformGate === "full",
+  });
+
+  // OAuth callback query params → inline notice (same codes as desktop).
+  useEffect(() => {
+    const oauthStatus = searchParams.get("oauth_status");
+    if (!oauthStatus) return;
+    const oauthProvider = searchParams.get("oauth_provider");
+    const providerLabel = oauthProvider
+      ? oauthProvider.charAt(0).toUpperCase() + oauthProvider.slice(1)
+      : null;
+    if (oauthStatus === "connected") {
+      haptic.success();
+      setOauthNotice({
+        tone: "ok",
+        text: providerLabel
+          ? `${providerLabel} account connected.`
+          : "Account connected.",
+      });
+    } else if (oauthStatus === "error") {
+      const code = searchParams.get("oauth_code") ?? "unknown";
+      const messages: Record<string, string> = {
+        denied: "Authorization was denied. Please try again.",
+        state_invalid: "Authorization state was invalid. Please try again.",
+        state_expired: "Authorization expired. Please try again.",
+        exchange_failed: "Failed to complete authorization. Please try again.",
+        identity_failed: "Failed to verify account identity. Please try again.",
+      };
+      haptic.error();
+      setOauthNotice({
+        tone: "error",
+        text:
+          messages[code] ??
+          (providerLabel
+            ? `Failed to connect ${providerLabel}.`
+            : "Failed to connect. Please try again."),
+      });
+    }
+    navigate(routes.settings.integrations, { replace: true });
+  }, [searchParams, navigate]);
+
+  const managedProviders = useMemo(
+    () => providers?.filter((p) => p.supports_managed_mode) ?? [],
+    [providers],
+  );
+
+  const filteredProviders = useMemo(() => {
+    const needle = searchText.trim().toLowerCase();
+    let list = managedProviders.filter((provider) => {
+      if (!needle) return true;
+      const name = (
+        provider.display_name ?? provider.provider_key
+      ).toLowerCase();
+      const description = (provider.description ?? "").toLowerCase();
+      return name.includes(needle) || description.includes(needle);
+    });
+    if (filter !== "all") {
+      list = list.filter((provider) => {
+        const connected = Boolean(
+          connectionForProvider(connections, provider.provider_key)?.connected,
+        );
+        return filter === "enabled" ? connected : !connected;
+      });
+    }
+    return [...list].sort((a, b) => {
+      const aEnabled = Boolean(
+        connectionForProvider(connections, a.provider_key)?.connected,
+      );
+      const bEnabled = Boolean(
+        connectionForProvider(connections, b.provider_key)?.connected,
+      );
+      if (aEnabled !== bEnabled) return aEnabled ? -1 : 1;
+      const aName = (a.display_name ?? a.provider_key).toLowerCase();
+      const bName = (b.display_name ?? b.provider_key).toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  }, [managedProviders, connections, searchText, filter]);
+
+  const loading =
+    (assistantLoading && !assistantId) || providersLoading || connectionsLoading;
+  const connectedCount = managedProviders.filter((p) =>
+    Boolean(connectionForProvider(connections, p.provider_key)?.connected),
+  ).length;
+
+  const selectedProvider = useMemo(
+    () =>
+      selectedProviderKey
+        ? (managedProviders.find(
+            (p) => p.provider_key === selectedProviderKey,
+          ) ?? null)
+        : null,
+    [managedProviders, selectedProviderKey],
+  );
+
+  return (
+    <Mv3SettingsScreen
+      title="Integrations"
+      sub={
+        loading
+          ? "Loading your integrations…"
+          : connectedCount > 0
+            ? `${connectedCount} connected · tap one to manage`
+            : "Connect the tools Cue works through"
+      }
+      tint="blue"
+      testId="mv3-settings-integrations"
+    >
+      {oauthNotice ? (
+        <GlassCard padding="12px 14px" radius={16} style={rise(0.05)}>
+          <button
+            type="button"
+            onClick={() => setOauthNotice(null)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              width: "100%",
+              textAlign: "left",
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                color:
+                  oauthNotice.tone === "ok" ? "var(--mv3-green)" : "#E5675B",
+                fontSize: 12,
+              }}
+            >
+              {oauthNotice.tone === "ok" ? "✓" : "✕"}
+            </span>
+            <span
+              style={{ fontSize: 12.5, color: "var(--mv3-text)", flex: 1 }}
+            >
+              {oauthNotice.text}
+            </span>
+            <span style={{ fontSize: 11, color: "var(--mv3-faint)" }}>
+              dismiss
+            </span>
+          </button>
+        </GlassCard>
+      ) : null}
+
+      <div style={rise(0.1)}>
+        <input
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Search integrations"
+          aria-label="Search integrations"
+          style={{
+            width: "100%",
+            fontSize: 16,
+            fontFamily: "inherit",
+            color: "var(--mv3-text)",
+            background: "var(--mv3-btn2-bg)",
+            border: "1px solid var(--mv3-btn2-border)",
+            borderRadius: 13,
+            padding: "11px 14px",
+            minHeight: 44,
+            outline: "none",
+          }}
+        />
+        <div
+          role="radiogroup"
+          aria-label="Filter integrations"
+          style={{ display: "flex", gap: 7, marginTop: 9 }}
+        >
+          {INTEGRATION_FILTERS.map((opt) => {
+            const active = filter === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => {
+                  haptic.light();
+                  setFilter(opt.value);
+                }}
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: active ? 600 : 400,
+                  fontFamily: "inherit",
+                  color: active ? "var(--mv3-bg)" : "var(--mv3-muted)",
+                  background: active
+                    ? "var(--mv3-text)"
+                    : "var(--mv3-btn2-bg)",
+                  border: active
+                    ? "1px solid transparent"
+                    : "1px solid var(--mv3-btn2-border)",
+                  borderRadius: 99,
+                  padding: "7px 14px",
+                  minHeight: 36,
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {loading ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
+            Loading integrations…
+          </div>
+        </GlassCard>
+      ) : providersError ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "#E5675B" }}>
+            Couldn&rsquo;t load integrations — check the connection and try
+            again.
+          </div>
+        </GlassCard>
+      ) : !assistantId ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
+            No assistant found — hatch an assistant to connect integrations.
+          </div>
+        </GlassCard>
+      ) : filteredProviders.length === 0 ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
+            {searchText.trim()
+              ? `Nothing matched “${searchText.trim()}”.`
+              : filter === "enabled"
+                ? "Nothing connected yet — pick an integration to enable it."
+                : filter === "not-enabled"
+                  ? "Everything available is already connected."
+                  : "No integrations available."}
+          </div>
+        </GlassCard>
+      ) : (
+        <div style={rise(0.2)}>
+          <GlassCard padding={0} radius={20} style={{ overflow: "hidden" }}>
+            {filteredProviders.map((provider, i) => {
+              const connected = Boolean(
+                connectionForProvider(connections, provider.provider_key)
+                  ?.connected,
+              );
+              const name = provider.display_name ?? provider.provider_key;
+              return (
+                <button
+                  key={provider.provider_key}
+                  type="button"
+                  className="cue-pressable"
+                  aria-label={
+                    connected ? `Manage ${name}` : `Enable ${name}`
+                  }
+                  onClick={() => {
+                    haptic.light();
+                    setSelectedProviderKey(provider.provider_key);
+                  }}
+                  style={{
+                    ...rowShell(i === filteredProviders.length - 1),
+                    minHeight: 56,
+                    cursor: "pointer",
+                  }}
+                >
+                  <IntegrationIcon
+                    providerKey={provider.provider_key}
+                    displayName={name}
+                    logoUrl={provider.logo_url}
+                    size={30}
+                  />
+                  <RowText name={name} line={provider.description} />
+                  {connected ? (
+                    <StateChip on onText="ON" />
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--mv3-micro)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Enable
+                    </span>
+                  )}
+                  <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+                    ›
+                  </span>
+                </button>
+              );
+            })}
+          </GlassCard>
+        </div>
+      )}
+
+      <Mv3SettingsNote>
+        Tip: you can also enable integrations by mentioning them in chat.
+      </Mv3SettingsNote>
+
+      {selectedProvider && assistantId ? (
+        <IntegrationDetailModal
+          assistantId={assistantId}
+          providerKey={selectedProvider.provider_key}
+          displayName={
+            selectedProvider.display_name ?? selectedProvider.provider_key
+          }
+          description={selectedProvider.description}
+          logoUrl={selectedProvider.logo_url}
+          platformGate={platformGate}
+          onClose={() => setSelectedProviderKey(null)}
+        />
+      ) : null}
+    </Mv3SettingsScreen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Brand (settings/brand) — saved kits as v3 rows (activate = the real
+// mutation); the capture/edit studio opens on demand inside the same shell.
+// ---------------------------------------------------------------------------
+
+// Lazy: the studio (chooser → path → review) is a heavy flow the row view
+// doesn't need; fetched only when the user opens it (or has no brand yet).
+const BrandKitStudioLazy = lazy(() =>
+  import("@/pages/brand-kit/brand-kit-page").then((m) => ({
+    default: m.BrandKitStudio,
+  })),
+);
+
+/** One saved brand kit as a v3 row — tap applies it everywhere. */
+function BrandKitRow({
+  profile,
+  isLast,
+  pending,
+  onActivate,
+}: {
+  profile: BrandProfile;
+  isLast: boolean;
+  pending: boolean;
+  onActivate: () => void;
+}) {
+  const applied = profile.isActive === 1;
+  const swatches = [
+    profile.palette?.primary,
+    profile.palette?.accent,
+    profile.palette?.bg,
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={applied}
+      aria-label={
+        applied ? `${profile.name} — applied` : `Apply ${profile.name}`
+      }
+      disabled={pending}
+      onClick={() => {
+        if (applied) return;
+        haptic.medium();
+        onActivate();
+      }}
+      style={{
+        ...rowShell(isLast),
+        minHeight: 56,
+        cursor: applied ? "default" : "pointer",
+        opacity: pending ? 0.6 : 1,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{ display: "flex", gap: 3, flexShrink: 0 }}
+      >
+        {swatches.length > 0 ? (
+          swatches.map((hex, i) => (
+            <span
+              key={`${hex}-${i}`}
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 4,
+                background: hex,
+                border: "1px solid var(--mv3-card-border)",
+              }}
+            />
+          ))
+        ) : (
+          <span
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: 4,
+              background: "var(--mv3-btn2-bg)",
+              border: "1px solid var(--mv3-btn2-border)",
+            }}
+          />
+        )}
+      </span>
+      <RowText
+        name={profile.name}
+        line={
+          [
+            profile.fonts?.heading,
+            profile.voice?.tone && profile.voice.tone.trim().length > 0
+              ? profile.voice.tone
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+      />
+      {applied ? (
+        <StateChip on onText="APPLIED" />
+      ) : (
+        <span
+          style={{ fontSize: 12, color: "var(--mv3-micro)", flexShrink: 0 }}
+        >
+          {pending ? "Applying…" : "Apply"}
+        </span>
+      )}
+    </button>
+  );
+}
+
+export function Mv3BrandLeaf() {
+  const assistantId = useActiveAssistantId();
+  const navigate = useNavigate();
+  const { profiles, isLoading } = useBrandProfiles(assistantId);
+  const activate = useActivateBrandProfile(assistantId);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  // No saved kit → straight into the capture flow (nothing to list); the
+  // studio also opens on demand for edits/additions.
+  const showStudio = studioOpen || (!isLoading && profiles.length === 0);
+
+  return (
+    <Mv3SettingsScreen
+      title="Brand"
+      sub={
+        isLoading
+          ? "Opening your brand…"
+          : profiles.length > 0
+            ? "Applied to every deck, doc & image Cue makes"
+            : "Teach Cue your colors, fonts, logo and voice"
+      }
+      tint="lavender"
+      testId="mv3-settings-brand"
+    >
+      {showStudio ? (
+        <>
+          {studioOpen ? (
+            <div style={{ padding: "0 2px" }}>
+              <button
+                type="button"
+                className="cue-pressable"
+                onClick={() => {
+                  haptic.light();
+                  setStudioOpen(false);
+                }}
+                style={{
+                  fontSize: 13,
+                  color: "var(--mv3-micro)",
+                  background: "none",
+                  border: "none",
+                  padding: "6px 0",
+                  minHeight: 44,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                ‹ Your brands
+              </button>
+            </div>
+          ) : null}
+          {/* Desktop-styled studio flow (chooser → extraction → review)
+              inside the v3 push — functional on touch, full v3 adaptation
+              pending. */}
+          <div data-slot="mv3-brand-studio" style={{ paddingBottom: 8 }}>
+            <Suspense
+              fallback={
+                <GlassCard>
+                  <div
+                    style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}
+                  >
+                    Opening the brand studio…
+                  </div>
+                </GlassCard>
+              }
+            >
+              <BrandKitStudioLazy
+                compact
+                onDone={() => setStudioOpen(false)}
+              />
+            </Suspense>
+          </div>
+        </>
+      ) : isLoading ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
+            Loading your brand kits…
+          </div>
+        </GlassCard>
+      ) : (
+        <>
+          <SectionCard eyebrow="Your brands" delay={0.1}>
+            <div role="radiogroup" aria-label="Active brand">
+              {profiles.map((profile, i) => (
+                <BrandKitRow
+                  key={profile.id}
+                  profile={profile}
+                  isLast={i === profiles.length - 1}
+                  pending={activate.isPending && pendingId === profile.id}
+                  onActivate={() => {
+                    setPendingId(profile.id);
+                    activate.mutate({
+                      path: { assistant_id: assistantId, bid: profile.id },
+                    } as never);
+                  }}
+                />
+              ))}
+            </div>
+          </SectionCard>
+          {activate.isError ? (
+            <GlassCard>
+              <div style={{ fontSize: 12.5, color: "#E5675B" }}>
+                Couldn&rsquo;t apply that brand — try again.
+              </div>
+            </GlassCard>
+          ) : null}
+
+          <div style={rise(0.25)}>
+            <GlassCard padding={0} radius={20} style={{ overflow: "hidden" }}>
+              <NavRow
+                icon={<span style={{ fontSize: 14 }}>✳</span>}
+                iconBg="color-mix(in srgb, var(--mv3-accent) 14%, transparent)"
+                label="View brand kit"
+                meta="preview"
+                onPress={() => navigate(routes.brandKit)}
+              />
+              <NavRow
+                icon={<span style={{ fontSize: 14 }}>＋</span>}
+                iconBg="color-mix(in srgb, var(--mv3-violet-fill, #7F77DD) 16%, transparent)"
+                label="Add or edit a brand"
+                isLast
+                onPress={() => setStudioOpen(true)}
+              />
+            </GlassCard>
+          </div>
+          <Mv3SettingsNote>
+            Applying a brand restyles every future deck, doc, dashboard and
+            image.
+          </Mv3SettingsNote>
+        </>
+      )}
+    </Mv3SettingsScreen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Archive (settings/archive) — archived conversations, one-tap unarchive
+// (the same daemon route + cache invalidation the desktop page uses).
+// ---------------------------------------------------------------------------
+
+function archiveMeta(conversation: Conversation): string | undefined {
+  const ts = conversation.createdAt;
+  const date =
+    ts != null && !Number.isNaN(new Date(ts).getTime())
+      ? new Date(ts).toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : null;
+  const source = conversation.source ?? "vellum-assistant";
+  return [date, source].filter(Boolean).join(" · ") || undefined;
+}
+
+export function Mv3ArchiveLeaf() {
+  const queryClient = useQueryClient();
+  const assistantId = useActiveAssistantId();
+
+  const {
+    conversations: archived,
+    isLoading,
+    isError,
+    refetch,
+  } = useArchivedConversationListQuery(assistantId);
+
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [unarchiveError, setUnarchiveError] = useState(false);
+
+  const handleUnarchive = useCallback(
+    async (conversationId: string) => {
+      setPendingId(conversationId);
+      setUnarchiveError(false);
+      try {
+        await conversationsByIdUnarchivePost({
+          path: { assistant_id: assistantId, id: conversationId },
+          throwOnError: true,
+        });
+        haptic.success();
+        // Unarchiving moves a row back into the active sidebar list, so
+        // invalidate all conversation caches (same as desktop).
+        void invalidateConversationQueries(queryClient, assistantId);
+      } catch (error) {
+        haptic.error();
+        captureError(error, {
+          context: "archive_settings_unarchive_conversation",
+        });
+        setUnarchiveError(true);
+      } finally {
+        setPendingId(null);
+      }
+    },
+    [assistantId, queryClient],
+  );
+
+  return (
+    <Mv3SettingsScreen
+      title="Archive"
+      sub={
+        isLoading
+          ? "Reading the archive…"
+          : archived.length > 0
+            ? `${archived.length} archived conversation${
+                archived.length === 1 ? "" : "s"
+              }`
+            : "Conversations you archive land here"
+      }
+      tint="teal"
+      testId="mv3-settings-archive"
+    >
+      {isError ? (
+        <GlassCard>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: "#E5675B",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <span style={{ flex: 1 }}>
+              Couldn&rsquo;t load archived conversations.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                haptic.light();
+                refetch();
+              }}
+              style={{
+                fontSize: 12,
+                color: "var(--mv3-micro)",
+                background: "none",
+                border: "none",
+                padding: "6px 0",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        </GlassCard>
+      ) : isLoading ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
+            Loading archived conversations…
+          </div>
+        </GlassCard>
+      ) : archived.length === 0 ? (
+        <GlassCard>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: "var(--mv3-muted)",
+              lineHeight: 1.5,
+            }}
+          >
+            No archived conversations — archive a chat from its ⋯ menu and it
+            shows up here.
+          </div>
+        </GlassCard>
+      ) : (
+        <div style={rise(0.1)}>
+          <GlassCard padding={0} radius={20} style={{ overflow: "hidden" }}>
+            {archived.map((conversation, i) => {
+              const title =
+                conversation.title && conversation.title.trim().length > 0
+                  ? conversation.title
+                  : "Untitled conversation";
+              const pending = pendingId === conversation.conversationId;
+              return (
+                <div
+                  key={conversation.conversationId}
+                  style={rowShell(i === archived.length - 1)}
+                >
+                  <RowText name={title} line={archiveMeta(conversation)} />
+                  <button
+                    type="button"
+                    disabled={pending}
+                    aria-label={`Unarchive ${title}`}
+                    onClick={() => {
+                      haptic.light();
+                      void handleUnarchive(conversation.conversationId);
+                    }}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "var(--mv3-micro)",
+                      background: "none",
+                      border: "none",
+                      // Small label, ≥44pt hit area via padding offsets.
+                      padding: "14px 0 14px 14px",
+                      margin: "-14px 0",
+                      cursor: pending ? "default" : "pointer",
+                      fontFamily: "inherit",
+                      flexShrink: 0,
+                      opacity: pending ? 0.6 : 1,
+                    }}
+                  >
+                    {pending ? "Unarchiving…" : "Unarchive"}
+                  </button>
+                </div>
+              );
+            })}
+          </GlassCard>
+        </div>
+      )}
+      {unarchiveError ? (
+        <GlassCard>
+          <div style={{ fontSize: 12.5, color: "#E5675B" }}>
+            Couldn&rsquo;t unarchive that conversation — try again.
+          </div>
+        </GlassCard>
+      ) : null}
+      <Mv3SettingsNote>
+        Unarchiving returns a conversation to your chat list on every device.
+      </Mv3SettingsNote>
+    </Mv3SettingsScreen>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Route → adapted leaf map (consumed by MobileSettingsLayout).
 // ---------------------------------------------------------------------------
 
@@ -1266,4 +2120,7 @@ export const MOBILE_LEAF_PAGES: Record<string, () => React.JSX.Element> = {
   [routes.settings.schedules]: Mv3SchedulesLeaf,
   [routes.settings.voice]: Mv3VoiceLeaf,
   [routes.settings.sounds]: Mv3SoundsLeaf,
+  [routes.settings.integrations]: Mv3IntegrationsLeaf,
+  [routes.settings.brand]: Mv3BrandLeaf,
+  [routes.settings.archive]: Mv3ArchiveLeaf,
 };

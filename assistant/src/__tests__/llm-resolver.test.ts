@@ -257,6 +257,7 @@ describe("resolveCallSiteConfig", () => {
       profileSession: { defaultTtlSeconds: 1800, maxTtlSeconds: 43200 },
       pricingOverrides: [],
       toolPruning: { enabled: true, keepTools: [] },
+      flashTier: { enabled: false, maxUserChars: 280 },
     };
     expect(() => resolveCallSiteConfig("mainAgent", llm)).toThrow(
       /references undefined profile "nonexistent"/,
@@ -483,6 +484,7 @@ describe("resolveCallSiteConfig", () => {
       profileSession: { defaultTtlSeconds: 1800, maxTtlSeconds: 43200 },
       pricingOverrides: [],
       toolPruning: { enabled: true, keepTools: [] },
+      flashTier: { enabled: false, maxUserChars: 280 },
     };
     const resolved = resolveCallSiteConfig("mainAgent", llm);
     // Falls through to default.

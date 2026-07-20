@@ -74,7 +74,12 @@ export interface WorkItem {
    * deliberately cleared `projectId` — the auto-filer must never re-file it.
    */
   autoFiledBy: string | null;
-  /** The auto-filer's 0–1 confidence; set only alongside autoFiledBy='cue'. */
+  /**
+   * The auto-filer's 0–1 confidence. Two shapes: alongside autoFiledBy='cue'
+   * it's the provenance of a filing; on an UNFILED item (projectId and
+   * autoFiledBy both null) it's the below-confidence stamp — the sweep scored
+   * the item but wasn't sure, which clients render as the amber "?" card.
+   */
   autoFileConfidence: number | null;
   createdAt: number;
   updatedAt: number;
@@ -249,10 +254,28 @@ export function updateWorkItem(
   // here).
   const existing = getWorkItem(id);
   const now = Date.now();
+  const applied: typeof updates = { ...updates };
+  // A below-confidence stamp (autoFileConfidence set while unfiled and not
+  // auto-filed) is a judgment about a specific TITLE. When the title changes,
+  // the judgment is stale — clear the stamp so the auto-file sweep re-scores
+  // the item (its no-re-score guard skips stamped items). Auto-filed items
+  // (autoFiledBy='cue') keep their provenance confidence; explicit
+  // autoFileConfidence updates in the same call win.
+  if (
+    existing &&
+    applied.title !== undefined &&
+    applied.title !== existing.title &&
+    applied.autoFileConfidence === undefined &&
+    existing.projectId == null &&
+    existing.autoFiledBy == null &&
+    existing.autoFileConfidence != null
+  ) {
+    applied.autoFileConfidence = null;
+  }
   // Any mutation counts as activity — bump last_activity_at so next-move
   // ranking treats the item as fresh and stops de-prioritizing it as stale.
   db.update(workItems)
-    .set({ ...updates, updatedAt: now, lastActivityAt: now })
+    .set({ ...applied, updatedAt: now, lastActivityAt: now })
     .where(eq(workItems.id, id))
     .run();
   if (

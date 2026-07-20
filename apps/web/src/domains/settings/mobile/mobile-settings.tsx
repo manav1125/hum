@@ -8,12 +8,12 @@
  *   · Mv3SettingsIndex — a native grouped "Settings" list (You-cluster row
  *     grammar) at the settings root; rows push the leaf routes.
  *   · MOBILE_LEAF_PAGES — the touch-adapted v3 leafs (AI models, Privacy,
- *     Schedules, Voice, Sounds, Appearance) rendered INSTEAD of the desktop
- *     page component at their route (see `mobile-settings-leafs.tsx`).
- *   · Everything else (Integrations, Brand, Billing, Budget, Archive,
- *     Devices, Debug, Advanced, Notifications, schedule detail) keeps its
- *     existing page, wrapped in the v3 screen shell so the push flow +
- *     back chevron still hold.
+ *     Schedules, Voice, Sounds, Appearance, Integrations, Brand, Archive)
+ *     rendered INSTEAD of the desktop page component at their route (see
+ *     `mobile-settings-leafs.tsx`).
+ *   · Everything else (Billing, Budget, Devices, Debug, Advanced,
+ *     Notifications, schedule detail) keeps its existing page, wrapped in
+ *     the v3 screen shell so the push flow + back chevron still hold.
  *
  * Desktop keeps `SidebarShell` byte-identical — `SettingsLayout` branches on
  * `useIsMobile()` before any desktop markup renders. mv3 foundation is

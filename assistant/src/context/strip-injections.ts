@@ -88,8 +88,13 @@ export const NOW_SCRATCHPAD_STRIP_PREFIXES: InjectionMatcher[] = [
   "<now_scratchpad>",
 ];
 
-/** Matchers stripped by the pipeline (order doesn't matter — single pass). */
-const RUNTIME_INJECTION_PREFIXES: InjectionMatcher[] = [
+/**
+ * Matchers stripped by the pipeline (order doesn't matter — single pass).
+ * Exported for read-only reuse by classifiers that need to distinguish
+ * user-authored text from runtime-injected blocks (e.g. the flash-tier
+ * triviality classifier in `agent/flash-tier.ts`).
+ */
+export const RUNTIME_INJECTION_PREFIXES: InjectionMatcher[] = [
   "<channel_capabilities>",
   "<channel_command_context>",
   "<disk_pressure_warning>",

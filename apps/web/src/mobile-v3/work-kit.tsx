@@ -120,11 +120,11 @@ export function isAutoFiled(item: HqWorkItem): boolean {
 /**
  * Below-confidence arrival (frame 44/D2's amber "?" card): the daemon SCORED
  * the item but left it unfiled because confidence fell below its threshold.
- * Feature-detected — today's auto-filer writes nothing on below-threshold
- * items (they stay unfiled with no marker), so this returns false and the
- * surfaces keep their current rendering until the daemon stamps a marker
- * (`autoFileConfidence` on an unfiled item, or an explicit
- * `autoFileStatus: "below_confidence"`).
+ * Feature-detected — the auto-file sweep stamps `autoFileConfidence` on
+ * below-threshold items while `projectId` and `autoFiledBy` stay null (that
+ * exact shape is this check); an explicit `autoFileStatus:
+ * "below_confidence"` is honored too. Older daemons write neither marker, so
+ * this returns false and the surfaces keep the plain rendering.
  */
 export function isBelowConfidence(item: HqWorkItem): boolean {
   if (item.projectId != null) return false;

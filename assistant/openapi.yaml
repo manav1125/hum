@@ -29909,7 +29909,10 @@ paths:
                           anyOf:
                             - type: number
                             - type: "null"
-                          description: The auto-filer's 0-1 confidence for its project assignment; set only when autoFiledBy = "cue".
+                          description:
+                            The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
+                            item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep
+                            scored the item but was not sure (clients render the amber "?" triage card).
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -37792,7 +37795,10 @@ paths:
                           anyOf:
                             - type: number
                             - type: "null"
-                          description: The auto-filer's 0-1 confidence for its project assignment; set only when autoFiledBy = "cue".
+                          description:
+                            The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
+                            item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep
+                            scored the item but was not sure (clients render the amber "?" triage card).
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -38002,7 +38008,10 @@ paths:
                         anyOf:
                           - type: number
                           - type: "null"
-                        description: The auto-filer's 0-1 confidence for its project assignment; set only when autoFiledBy = "cue".
+                        description:
+                          The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
+                          item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep scored
+                          the item but was not sure (clients render the amber "?" triage card).
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -38544,6 +38553,63 @@ paths:
           required: true
           schema:
             type: string
+  /v1/work-items/classify-preview:
+    post:
+      operationId: workitems_classifypreview_post
+      summary: Preview project classification for titles
+      description:
+        "Score task titles against active projects with the SAME batch scorer the background auto-filer uses (same
+        flash call site, same prompt shape) — no persistence, no side effects: nothing is created, filed, or stamped.
+        Backs the batch-add surfaces' per-row suggestions. Blank and duplicate titles are dropped and the batch is
+        capped at 30; scorer failures/timeouts return an empty suggestions array, never an error."
+      tags:
+        - work-items
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                        projectId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        confidence:
+                          type: number
+                      required:
+                        - title
+                        - projectId
+                        - confidence
+                      additionalProperties: false
+                required:
+                  - suggestions
+                additionalProperties: false
+        "400":
+          description: titles must be an array of strings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                titles:
+                  type: array
+                  items:
+                    type: string
+                  description: Task titles to classify (blank/duplicate entries dropped; first 30 scored)
+              required:
+                - titles
+              additionalProperties: false
   /v1/workspace-files:
     get:
       operationId: workspacefiles_get

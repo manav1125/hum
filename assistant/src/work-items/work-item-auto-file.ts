@@ -11,6 +11,20 @@
  * can render an honest "auto-filed" chip; everything else is left alone for
  * the normal came-in triage (that's the design, not a failure).
  *
+ * Below-threshold items are NOT filed, but they are no longer invisible:
+ * the sweep stamps the scorer's best-guess `auto_file_confidence` while
+ * `project_id` and `auto_filed_by` stay null — the exact shape clients
+ * feature-detect for the amber "?" below-confidence card (frame 44/D2's
+ * "scored, not guessed"). A stamped-but-unfiled item is skipped by later
+ * sweeps (no re-score churn) until its title changes, which clears the stamp
+ * (see `updateWorkItem` in work-item-store.ts).
+ *
+ * The same batched scorer is exposed at capture time via
+ * {@link classifyTitlesForPreview} (the `work-items/classify-preview` route):
+ * score a handful of typed titles against active projects with no
+ * persistence and no side effects, so batch-add surfaces can pre-fill
+ * per-row suggestions.
+ *
  * Hard rules:
  *   - FILING IS NOT PERMISSION TO RUN. `auto_run_eligibility` is never
  *     touched — a parked item stays parked after filing.
@@ -85,9 +99,22 @@ function clip(text: string, max: number): string {
   return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
 }
 
+/**
+ * The slice of a work item the scorer actually reads. Persisted `WorkItem`s
+ * satisfy this structurally; the classify-preview route builds ephemeral ones
+ * from raw titles (no DB row involved).
+ */
+export interface ScorableItem {
+  id: string;
+  title: string;
+  notes?: string | null;
+  context?: string | null;
+  sourceType?: string | null;
+}
+
 /** Exported for tests; production callers go through {@link sweepUnfiledWorkItems}. */
 export function buildAutoFilePrompt(
-  items: WorkItem[],
+  items: ScorableItem[],
   projects: Project[],
 ): string {
   const projectLines = projects.map((p) => {
@@ -96,6 +123,8 @@ export function buildAutoFilePrompt(
   });
   const itemLines = items.map((i) => {
     const detail = i.notes ?? i.context ?? "";
+    // (WorkItem's nullable fields and ScorableItem's optional ones both land
+    // here as ""-when-absent.)
     const suffix = detail ? ` — ${clip(detail, ITEM_SNIPPET_CHARS)}` : "";
     const source = i.sourceType ? ` (from ${i.sourceType})` : "";
     return `  - ${i.id}: ${i.title}${source}${suffix}`;
@@ -186,12 +215,12 @@ export function parseAutoFileResponse(
  * CUE_OPENROUTER_FLASH_MODEL / llm.callSites overrides apply unchanged).
  */
 export type AutoFileScorer = (
-  items: WorkItem[],
+  items: ScorableItem[],
   projects: Project[],
 ) => Promise<AutoFileAssignment[] | null>;
 
 async function scoreWithFlashLlm(
-  items: WorkItem[],
+  items: ScorableItem[],
   projects: Project[],
 ): Promise<AutoFileAssignment[] | null> {
   try {
@@ -221,6 +250,94 @@ async function scoreWithFlashLlm(
   }
 }
 
+/**
+ * Race a scorer call against {@link SCORER_DEADLINE_MS} — the one deadline the
+ * sweep and the classify-preview route share. On deadline the caller sees the
+ * same `null` a scorer failure produces (degrade to "suggest/file nothing");
+ * the abandoned promise is left to settle on its own — it holds no locks and
+ * writes nothing; only its return value is used.
+ */
+async function raceScorerDeadline(
+  scoring: Promise<AutoFileAssignment[] | null>,
+): Promise<AutoFileAssignment[] | null> {
+  return Promise.race([
+    scoring,
+    new Promise<null>((resolve) => {
+      const t = setTimeout(() => resolve(null), SCORER_DEADLINE_MS);
+      if (typeof t === "object") t.unref?.();
+    }),
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Classify preview (capture-time suggestions, no persistence)
+// ---------------------------------------------------------------------------
+
+/** At most this many titles are scored per classify-preview call. */
+export const MAX_CLASSIFY_PREVIEW_TITLES = 30;
+
+export interface ClassifyPreviewSuggestion {
+  title: string;
+  projectId: string | null;
+  /** The scorer's 0–1 confidence; 0 when the scorer skipped the title. */
+  confidence: number;
+}
+
+/**
+ * Score raw task titles against the user's active projects with the EXACT
+ * batch scorer the auto-file sweep uses (same flash call site, same prompt
+ * shape) — but with no persistence and no side effects: nothing is created,
+ * filed, or stamped. Backs `POST work-items/classify-preview` so batch-add
+ * surfaces can pre-fill per-row project suggestions while the user types.
+ *
+ * Battle-hardened by design: blank/duplicate titles are dropped, the batch is
+ * capped at {@link MAX_CLASSIFY_PREVIEW_TITLES}, the scorer runs under the
+ * sweep's shared {@link SCORER_DEADLINE_MS}, and every failure mode (no
+ * titles, no projects, scorer miss/deadline/throw) degrades to an empty
+ * array — never an error. `scorer` is injectable for deterministic tests.
+ */
+export async function classifyTitlesForPreview(
+  titles: string[],
+  scorer: AutoFileScorer = scoreWithFlashLlm,
+): Promise<ClassifyPreviewSuggestion[]> {
+  try {
+    const seen = new Set<string>();
+    const cleaned: string[] = [];
+    for (const raw of titles) {
+      const title = raw.trim();
+      if (!title || seen.has(title)) continue;
+      seen.add(title);
+      cleaned.push(title);
+      if (cleaned.length >= MAX_CLASSIFY_PREVIEW_TITLES) break;
+    }
+    if (cleaned.length === 0) return [];
+
+    const projects = listProjects();
+    if (projects.length === 0) return [];
+
+    // Ephemeral ids — these items exist only for this one scorer call.
+    const items: ScorableItem[] = cleaned.map((title, i) => ({
+      id: `preview-${i}`,
+      title,
+    }));
+    const assignments = await raceScorerDeadline(scorer(items, projects));
+    if (!assignments) return [];
+
+    const byId = new Map(assignments.map((a) => [a.id, a]));
+    return items.map((item) => {
+      const assignment = byId.get(item.id);
+      return {
+        title: item.title,
+        projectId: assignment?.projectId ?? null,
+        confidence: assignment?.confidence ?? 0,
+      };
+    });
+  } catch (err) {
+    log.warn({ err: String(err) }, "classify-preview scoring failed (empty)");
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Sweep
 // ---------------------------------------------------------------------------
@@ -232,17 +349,34 @@ export interface AutoFileSweepResult {
   filed: number;
   /** Scored but left unfiled: no project or confidence below the threshold. */
   belowThreshold: number;
+  /**
+   * Below-threshold items whose best-guess confidence was stamped (the amber
+   * "?" marker: `autoFileConfidence` set, `projectId`/`autoFiledBy` null).
+   */
+  stamped: number;
   /** Candidates skipped: raced to filed/user-unfiled mid-sweep, or scorer miss. */
   skipped: number;
 }
 
 function emptyResult(): AutoFileSweepResult {
-  return { scanned: 0, filed: 0, belowThreshold: 0, skipped: 0 };
+  return { scanned: 0, filed: 0, belowThreshold: 0, stamped: 0, skipped: 0 };
 }
 
 /** An item the sweep may consider: unfiled and not deliberately unfiled. */
 function isAutoFileCandidate(item: WorkItem): boolean {
   return item.projectId == null && item.autoFiledBy !== AUTO_FILE_USER_UNFILED;
+}
+
+/**
+ * An item worth sending to the scorer: a candidate that has NOT already been
+ * scored. A below-threshold stamp (`autoFileConfidence` set while unfiled)
+ * means a previous sweep already judged this item — re-scoring it every 5
+ * minutes would burn LLM calls to reach the same answer, so it stays skipped
+ * until its title changes (the store clears the stamp on a title edit, which
+ * re-opens candidacy).
+ */
+function isSweepCandidate(item: WorkItem): boolean {
+  return isAutoFileCandidate(item) && item.autoFileConfidence == null;
 }
 
 /**
@@ -262,7 +396,7 @@ export async function sweepUnfiledWorkItems(
 
     // Cheap pre-checks: no unfiled items or no projects → no LLM call at all.
     const unfiled = listWorkItems({ status: "queued" })
-      .filter(isAutoFileCandidate)
+      .filter(isSweepCandidate)
       .sort((a, b) => a.createdAt - b.createdAt)
       .slice(0, MAX_ITEMS_PER_SWEEP);
     if (unfiled.length === 0) return result;
@@ -271,16 +405,8 @@ export async function sweepUnfiledWorkItems(
     if (projects.length === 0) return result;
 
     result.scanned = unfiled.length;
-    // Deadline-raced: a stalled provider resolution must not wedge the sweep
-    // (the abandoned promise is left to settle on its own — it holds no locks
-    // and writes nothing; only its return value is used, and only here).
-    const assignments = await Promise.race([
-      scorer(unfiled, projects),
-      new Promise<null>((resolve) => {
-        const t = setTimeout(() => resolve(null), SCORER_DEADLINE_MS);
-        if (typeof t === "object") t.unref?.();
-      }),
-    ]);
+    // Deadline-raced: a stalled provider resolution must not wedge the sweep.
+    const assignments = await raceScorerDeadline(scorer(unfiled, projects));
     if (!assignments) {
       result.skipped = unfiled.length;
       return result;
@@ -289,14 +415,45 @@ export async function sweepUnfiledWorkItems(
     const byId = new Map(assignments.map((a) => [a.id, a]));
     for (const item of unfiled) {
       const assignment = byId.get(item.id);
+      if (!assignment) {
+        // The scorer never judged this item — leave it untouched (no stamp)
+        // so the next sweep offers it again.
+        result.skipped++;
+        continue;
+      }
       if (
-        !assignment ||
         assignment.projectId == null ||
         assignment.confidence < cfg.confidenceThreshold
       ) {
-        // Below-threshold / no-fit items stay unfiled by design — the
-        // came-in triage (LowConfidenceFilePrompt) owns the ambiguous ones.
+        // Below-threshold / no-fit items stay UNFILED by design — the came-in
+        // triage owns the ambiguous ones. But the judgment itself is recorded:
+        // stamp the best-guess confidence while projectId and autoFiledBy stay
+        // null. That exact shape is what clients feature-detect for the amber
+        // "?" card ("scored, not guessed"), and it doubles as the no-re-score
+        // guard (isSweepCandidate skips stamped items).
         result.belowThreshold++;
+        try {
+          const fresh = getWorkItem(item.id);
+          // Mid-flight user decisions win here too; an already-stamped item
+          // is not re-stamped.
+          if (
+            fresh &&
+            isAutoFileCandidate(fresh) &&
+            fresh.autoFileConfidence == null
+          ) {
+            updateWorkItem(
+              item.id,
+              { autoFileConfidence: assignment.confidence },
+              { actor: "auto-file" },
+            );
+            result.stamped++;
+          }
+        } catch (err) {
+          log.warn(
+            { err: String(err), workItemId: item.id },
+            "auto-file: stamping below-confidence failed (skipped)",
+          );
+        }
         continue;
       }
       try {
@@ -330,9 +487,10 @@ export async function sweepUnfiledWorkItems(
       }
     }
 
-    if (result.filed > 0) {
+    if (result.filed > 0 || result.stamped > 0) {
       // Project boards and task lists refetch on tasks_changed; the per-item
-      // work_item_status_changed broadcasts above carry the item ids.
+      // work_item_status_changed broadcasts above carry the item ids. Stamped
+      // items ride the same refetch so the amber "?" card lights up live.
       broadcastMessage({ type: "tasks_changed" });
     }
     if (result.scanned > 0) {

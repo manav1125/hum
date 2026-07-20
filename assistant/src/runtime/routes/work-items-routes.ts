@@ -23,6 +23,7 @@ import {
 import { createAbortReason } from "../../util/abort-reasons.js";
 import { truncate } from "../../util/truncate.js";
 import { resolveRequiredTools } from "../../work-items/resolve-required-tools.js";
+import { classifyTitlesForPreview } from "../../work-items/work-item-auto-file.js";
 import {
   cycleTimeMs,
   listWorkItemEvents,
@@ -140,8 +141,11 @@ export const workItemSchema = z.object({
     .number()
     .nullable()
     .describe(
-      "The auto-filer's 0-1 confidence for its project assignment; set only " +
-        'when autoFiledBy = "cue".',
+      'The auto-filer\'s 0-1 confidence. With autoFiledBy = "cue" it is the ' +
+        "provenance of a filing; on an UNFILED item (projectId and " +
+        "autoFiledBy both null) it is the below-confidence stamp — the " +
+        "sweep scored the item but was not sure (clients render the amber " +
+        '"?" triage card).',
     ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
@@ -762,6 +766,57 @@ export const ROUTES: RouteDefinition[] = [
       publishEvent({ type: "tasks_changed" });
 
       return { item: annotateWorkItem(item) };
+    },
+  },
+
+  {
+    operationId: "classifyPreviewWorkItems",
+    endpoint: "work-items/classify-preview",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Preview project classification for titles",
+    description:
+      "Score task titles against active projects with the SAME batch scorer " +
+      "the background auto-filer uses (same flash call site, same prompt " +
+      "shape) — no persistence, no side effects: nothing is created, filed, " +
+      "or stamped. Backs the batch-add surfaces' per-row suggestions. Blank " +
+      "and duplicate titles are dropped and the batch is capped at 30; " +
+      "scorer failures/timeouts return an empty suggestions array, never an " +
+      "error.",
+    tags: ["work-items"],
+    additionalResponses: {
+      "400": { description: "titles must be an array of strings" },
+    },
+    requestBody: z.object({
+      titles: z.array(z.string()).describe(
+        // Cap mirrors MAX_CLASSIFY_PREVIEW_TITLES (not interpolated: this
+        // module and work-item-auto-file.ts import-cycle through the
+        // runner, so a load-time const access would hit the TDZ).
+        "Task titles to classify (blank/duplicate entries dropped; first 30 scored)",
+      ),
+    }),
+    responseBody: z.object({
+      suggestions: z.array(
+        z.object({
+          title: z.string(),
+          projectId: z.string().nullable(),
+          confidence: z.number(),
+        }),
+      ),
+    }),
+    handler: async ({ body }) => {
+      const { titles } = (body ?? {}) as { titles?: unknown };
+      if (!Array.isArray(titles) || titles.some((t) => typeof t !== "string")) {
+        throw new BadRequestError("titles must be an array of strings");
+      }
+      // Read-only despite the POST verb (a query with a request body); all
+      // hardening (empty/dup filtering, the 30-title cap, the shared 90s
+      // scorer deadline, failure → []) lives in classifyTitlesForPreview.
+      const suggestions = await classifyTitlesForPreview(titles as string[]);
+      return { suggestions };
     },
   },
 
