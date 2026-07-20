@@ -1,6 +1,7 @@
 # Cue HQ filing — batch add · provenance · dismiss (all surfaces)
 
-One self-contained file: **cue-hq-filing.html**. Six frames: D1–D3 desktop (macOS app; web app is identical inside browser chrome) + 43–45 iPhone (same frames also live in Cue Mobile V3).
+One self-contained file: **cue-hq-filing.html**. Seven frames: D1–D4 desktop (macOS app; web app is identical inside browser chrome) + 43–45 iPhone (same frames also live in Cue Mobile V3; gap-round frames 46–52 are in Mobile V3).
+- **D4 — Batch partial failure**: modal never closes; ✓ summary + red draft rows (#C24E42 on cream) with inline reason; "Retry N failed" retries only failures, "Keep in draft" defers losslessly.
 
 ## Frames
 - **D1 / 43 — Batch "Add tasks"**: multiline entry live-parses into rows. Per-row project assignment: confident → pre-filled chip "X ✓ (tap to change)"; ambiguous → open chip row + ＋ New project; no signal → italic "Leave unfiled — Cue will sort it" (default). Desktop is a two-pane ⌘⇧A modal; mobile a sheet. Footnote at entry: shield + "Added parked — nothing runs or spends until you say so."
