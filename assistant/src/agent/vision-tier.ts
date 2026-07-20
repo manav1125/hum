@@ -68,12 +68,15 @@ const log = getLogger("vision-tier");
 /**
  * The vision fallback model for OpenRouter deploys when neither
  * `llm.visionTier.model` nor a usable `cueLiveVision` resolution provides
- * one. Chosen because it is the model the Cue Live vision saga PROVED works
- * on the prod OpenRouter key (Anthropic/OpenAI/Gemini routes are ToS-blocked
- * there; qwen2.5-vl-32b and pixtral had no endpoints). Deliberately not in
- * the model catalog — catalog-unknown models pass the provider-compat check.
+ * one. Must support BOTH image input and tool calling: agent-loop rounds
+ * carry the tool set, and OpenRouter 404s ("No endpoints found that support
+ * tool use") on vision models whose endpoints lack tools — qwen2.5-vl-72b
+ * (the Cue Live pick) fails exactly that way. qwen3.6-flash was probe-
+ * verified on the prod key with an image + tools payload. Deliberately not
+ * in the model catalog — catalog-unknown models pass the provider-compat
+ * check.
  */
-export const DEFAULT_OPENROUTER_VISION_MODEL = "qwen/qwen2.5-vl-72b-instruct";
+export const DEFAULT_OPENROUTER_VISION_MODEL = "qwen/qwen3.6-flash";
 
 /**
  * True when any message in the request history carries an image content
