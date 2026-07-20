@@ -68,6 +68,7 @@ import { Mv3ChatsIndex } from "@/mobile-v3/chats/mv3-chats-index";
 import { AssistantSideMenu } from "@/domains/chat/components/assistant-side-menu";
 import { PreferencesMenu } from "@/domains/chat/components/preferences-menu";
 import { useCommandPaletteOrchestrator } from "@/domains/chat/hooks/use-command-palette-orchestrator";
+import { useAddTasksStore } from "@/stores/add-tasks-store";
 import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
 import { ChatConversationHeader } from "./chat-conversation-header";
 import { ChatLayoutHeader } from "./chat-layout-header";
@@ -76,6 +77,14 @@ import { RenameDialogFromStore } from "./rename-dialog-from-store";
 const CommandPalette = lazy(() =>
   import("@/components/command-palette/command-palette").then((m) => ({
     default: m.CommandPalette,
+  })),
+);
+
+// Frame D1's ⌘⇧A batch "Add tasks" modal — desktop-only, mounted beside the
+// command palette so it inherits the same global-shortcut lifecycle.
+const AddTasksModal = lazy(() =>
+  import("@/pages/projects/add-tasks-modal").then((m) => ({
+    default: m.AddTasksModal,
   })),
 );
 
@@ -393,6 +402,7 @@ export function ChatLayout() {
   // -------------------------------------------------------------------------
   // Command palette — sections, item dispatch
   // -------------------------------------------------------------------------
+  const addTasksOpen = useAddTasksStore.use.isOpen();
   const { commandPalette, mergedSections, handleItemSelect } =
     useCommandPaletteOrchestrator({
       assistantId,
@@ -729,6 +739,11 @@ export function ChatLayout() {
             onItemSelect={handleItemSelect}
             onKeyDown={commandPalette.handleKeyDown}
           />
+        </LazyBoundary>
+      ) : null}
+      {addTasksOpen && !isMobile ? (
+        <LazyBoundary>
+          <AddTasksModal />
         </LazyBoundary>
       ) : null}
     </>

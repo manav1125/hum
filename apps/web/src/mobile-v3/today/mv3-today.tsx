@@ -46,6 +46,7 @@ import { CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
 import { LargeTitleHeader } from "../large-title-header";
+import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
 import {
   cardBody,
   cardTitle,
@@ -256,7 +257,18 @@ function NeedsOkV3({
 }
 
 /** REVIEW READY — an awaiting_review work item, violet. */
-function ReviewV3({ item, delay }: { item: HqWorkItem; delay: number }) {
+function ReviewV3({
+  item,
+  delay,
+  leaving,
+  onDismiss,
+}: {
+  item: HqWorkItem;
+  delay: number;
+  /** Mid-collapse (the 150ms dismiss leave). */
+  leaving: boolean;
+  onDismiss: () => void;
+}) {
   const navigate = useNavigate();
   const open = () => {
     haptic.medium();
@@ -264,9 +276,21 @@ function ReviewV3({ item, delay }: { item: HqWorkItem; delay: number }) {
     navigate(`${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`);
   };
   return (
-    <GlassCard tint="violet" style={rise(delay)}>
-      <div style={{ ...microLabel, color: "var(--mv3-violet)" }}>
+    <GlassCard tint="violet" style={{ ...rise(delay), ...dismissLeave(leaving) }}>
+      <div
+        style={{
+          ...microLabel,
+          color: "var(--mv3-violet)",
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
         ◱ Review ready
+        <DismissX
+          title={item.title}
+          onDismiss={onDismiss}
+          style={{ marginLeft: "auto", marginRight: -14, marginTop: -12 }}
+        />
       </div>
       <div style={{ ...cardTitle, fontSize: 15.5 }}>{item.title}</div>
       <div style={{ ...cardBody, fontSize: 12.5 }}>
@@ -499,6 +523,9 @@ export function Mv3Today({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // One-tap ✕ dismiss on review cards, with the shared 5s undo pill.
+  const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
+
   // Real pending approvals (same source as the HQ board's Needs-you lane).
   const interactionsQuery = useQuery({
     ...pendinginteractionsGetOptions({ path: { assistant_id: assistantId } }),
@@ -520,17 +547,18 @@ export function Mv3Today({
   // usually phrases itself AROUND the title ("Run: <title>"), so a reasonably
   // long title contained in the headline counts as the same item.
   const reviewShown = useMemo(() => {
-    if (!move.hasMove) return review;
+    const visible = review.filter((item) => !gone.has(item.id));
+    if (!move.hasMove) return visible;
     const headline = move.headline.trim().toLowerCase();
     const isTheMove = (title: string): boolean => {
       const t = title.trim().toLowerCase();
       if (!headline || !t) return false;
       return t === headline || (t.length >= 12 && headline.includes(t));
     };
-    return review.filter(
+    return visible.filter(
       (item) => item.id !== move.itemId && !isTheMove(item.title),
     );
-  }, [review, move.hasMove, move.headline, move.itemId]);
+  }, [review, gone, move.hasMove, move.headline, move.itemId]);
 
   // First-morning empty state (frame 22): when every slot is empty, the orbit
   // waits — dashed, still, inviting — instead of a blank card stack. The
@@ -557,7 +585,13 @@ export function Mv3Today({
   );
 
   if (orbitEmpty && !interactionsQuery.isLoading) {
-    return <EmptyOrbit />;
+    // Keep the undo pill alive if dismissing the last card emptied the orbit.
+    return (
+      <>
+        <EmptyOrbit />
+        {toastNode}
+      </>
+    );
   }
 
   // Stagger delays follow the spec's cadence (.1/.25/.4/.55) across whatever
@@ -661,12 +695,19 @@ export function Mv3Today({
             />
           ))}
           {reviewShown.slice(0, 2).map((item) => (
-            <ReviewV3 key={item.id} item={item} delay={nextDelay()} />
+            <ReviewV3
+              key={item.id}
+              item={item}
+              delay={nextDelay()}
+              leaving={leavingId === item.id}
+              onDismiss={() => dismiss(item)}
+            />
           ))}
           <WorkingNowV3 running={running} delay={nextDelay()} />
           <CameInStripV3 items={cameIn} delay={nextDelay()} />
         </div>
       </div>
+      {toastNode}
     </div>
   );
 }

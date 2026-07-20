@@ -23,8 +23,9 @@ import type { WorkItem } from "./work-item-store.js";
  *    run, or pre-approved the item's tool permissions before it ran.
  *  - `"auto"` — the item ran to completion with no owner-gated approval (an
  *    autonomous background run).
- *  - `"manual"` — the item reached `done` without Cue ever running it (the
- *    owner did the work / checked it off themselves).
+ *  - `"manual"` — the owner did the work themselves: the item reached `done`
+ *    without Cue ever running it, or carries the explicit `completedElsewhere`
+ *    marker (which wins even when a prior run exists).
  *  - `null` — not applicable: the item has not run and is not a manual
  *    completion (e.g. still queued, running, failed, or cancelled).
  */
@@ -68,6 +69,11 @@ function classify(
   convId: string | null,
   isApprovedConversation: (conversationId: string) => boolean,
 ): RanProvenance {
+  // The owner said the work happened outside Cue ("completed elsewhere").
+  // Always "manual" — even when an earlier run left a conversation behind,
+  // the terminal outcome is the human's, so no "Cue finished this" claim.
+  if (item.completedElsewhere) return "manual";
+
   // Never ran under Cue. A terminal `done` item that produced no run is a
   // human completion; anything non-terminal simply hasn't run yet.
   if (!convId) {

@@ -32,7 +32,11 @@ export type WorkItemEventKind =
   // A permission prompt raised during this item's headless run expired without
   // an answer and auto-resolved DENY — the step was silently skipped. Durable
   // marker so review surfaces can flag "finished, but with skipped steps".
-  | "approval_timeout";
+  | "approval_timeout"
+  // The owner marked the item done as "completed elsewhere" — the work
+  // happened outside Cue. Distinct from "approved" (which signs off on a run
+  // Cue performed) so the act/ledger never credits Cue with the outcome.
+  | "completed_elsewhere";
 
 export interface WorkItemEvent {
   id: string;

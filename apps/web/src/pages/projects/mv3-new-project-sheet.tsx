@@ -32,10 +32,17 @@ export function Mv3NewProjectSheet({
   assistantId,
   open,
   onClose,
+  onCreated,
 }: {
   assistantId: string;
   open: boolean;
   onClose: () => void;
+  /**
+   * When set, the sheet hands the created project back to the caller instead
+   * of navigating into it (the batch add-tasks flow returns to its own sheet
+   * with the new project selected).
+   */
+  onCreated?: (project: { id: string; title: string }) => void;
 }) {
   const navigate = useNavigate();
   const create = useCreateProject(assistantId);
@@ -66,8 +73,10 @@ export function Mv3NewProjectSheet({
         onSuccess: (res) => {
           haptic.success();
           onClose();
-          const id = res?.project?.id;
-          if (id) navigate(routes.project(id));
+          const project = res?.project;
+          if (!project) return;
+          if (onCreated) onCreated({ id: project.id, title: project.title });
+          else navigate(routes.project(project.id));
         },
       },
     );

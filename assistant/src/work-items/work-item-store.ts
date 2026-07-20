@@ -62,6 +62,20 @@ export interface WorkItem {
    * explicit run (Run button / came-in confirm / CLI) clears the marker.
    */
   autoRunEligibility: string | null;
+  /**
+   * 0/1 — the owner marked this task done as "completed elsewhere": the work
+   * happened outside Cue, so nothing here was produced by a run. Terminal
+   * exactly like a normal `done`; ran-provenance reads it as "manual".
+   */
+  completedElsewhere: number;
+  /**
+   * Auto-file provenance: null = user-filed or never filed; 'cue' = the
+   * background auto-filer assigned `projectId`; 'user_unfiled' = the user
+   * deliberately cleared `projectId` — the auto-filer must never re-file it.
+   */
+  autoFiledBy: string | null;
+  /** The auto-filer's 0–1 confidence; set only alongside autoFiledBy='cue'. */
+  autoFileConfidence: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -127,6 +141,9 @@ export function createWorkItem(opts: {
     recoveryAttempts: 0,
     livenessState: null,
     autoRunEligibility: opts.autoRunEligibility ?? null,
+    completedElsewhere: 0,
+    autoFiledBy: null,
+    autoFileConfidence: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -219,6 +236,9 @@ export function updateWorkItem(
       | "recoveryAttempts"
       | "livenessState"
       | "autoRunEligibility"
+      | "completedElsewhere"
+      | "autoFiledBy"
+      | "autoFileConfidence"
     >
   >,
   opts?: { actor?: string },

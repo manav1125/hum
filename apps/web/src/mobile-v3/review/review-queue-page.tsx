@@ -350,7 +350,7 @@ export function ReviewQueuePage() {
   const doApprove = (target: HqWorkItem) => {
     haptic.medium();
     approve.mutate(
-      { path: { assistant_id: assistantId, id: target.id } },
+      { path: { assistant_id: assistantId, id: target.id }, body: {} },
       { onSuccess: () => advance(target) },
     );
   };

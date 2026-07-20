@@ -100,6 +100,7 @@ import {
 } from "../util/platform.js";
 import { APP_VERSION } from "../version.js";
 import { seedDefaultAgentRoster } from "../work-items/default-roster-seed.js";
+import { startWorkItemAutoFiler } from "../work-items/work-item-auto-file.js";
 import { startWorkItemQueueDrainer } from "../work-items/work-item-queue-drainer.js";
 import { recoverOrphanedWorkItemRuns } from "../work-items/work-item-recovery.js";
 import {
@@ -644,6 +645,19 @@ export async function runDaemon(): Promise<void> {
             "Queue drainer failed to start — continuing startup",
           );
         }
+      }
+
+      // Periodic auto-filer: files unfiled queued tasks into matching active
+      // projects via one batched flash-LLM call per sweep. Filing never
+      // grants run permission. Config: workItems.autoFile.* (enabled is
+      // re-checked at every sweep).
+      try {
+        startWorkItemAutoFiler();
+      } catch (err) {
+        log.warn(
+          { err },
+          "Work-item auto-filer failed to start — continuing startup",
+        );
       }
 
       // Default agent roster: staff Ops/Growth/Inbox when the registry is

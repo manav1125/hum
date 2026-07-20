@@ -24,11 +24,20 @@ import {
   workitemsByIdCompletePostMutation,
   workitemsByIdRunPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
-import { SheetShell, StateChip, microLabel, type Mv3State } from "@/mobile-v3";
+import { client } from "@/generated/daemon/client.gen";
+import {
+  SheetShell,
+  StateChip,
+  microLabel,
+  primaryBtn,
+  type Mv3State,
+} from "@/mobile-v3";
+import { isAutoFiled } from "@/mobile-v3/work-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { Mv3RefileSheet } from "./mv3-refile-sheet";
 import { usePatchWorkItem, type ProjectView } from "./use-projects";
 
 /* ------------------------------ data helpers ------------------------------ */
@@ -100,14 +109,28 @@ function fromDateInput(value: string, prev: number | null): number | null {
   return next.getTime();
 }
 
-function chipFor(status: string): { state: Mv3State; label: string } {
-  switch (status) {
+/**
+ * Feature-detected "completed outside Cue" read-side marker: the daemon's
+ * `ranProvenance: "manual"` trust signal (already shipped) or the incoming
+ * `completedElsewhere` completion marker, whichever the daemon carries.
+ */
+function wasDoneElsewhere(item: HqWorkItem): boolean {
+  if (item.status !== "done") return false;
+  const rec = item as unknown as Record<string, unknown>;
+  return rec.ranProvenance === "manual" || rec.completedElsewhere === true;
+}
+
+function chipFor(item: HqWorkItem): { state: Mv3State; label: string } {
+  switch (item.status) {
     case "running":
       return { state: "running", label: "Running" };
     case "awaiting_review":
       return { state: "review", label: "Ready · review" };
     case "done":
-      return { state: "done", label: "Done" };
+      return {
+        state: "done",
+        label: wasDoneElsewhere(item) ? "Done · elsewhere" : "Done",
+      };
     case "failed":
       return { state: "needs_you", label: "Failed" };
     default:
@@ -133,17 +156,44 @@ const fieldShell: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
-function ActionBtn({
+/**
+ * One row of frame 45's stacked action list — full-width, text-left.
+ * `primary` = the blue-gradient CTA; `quiet` = the borderless faint row
+ * ("✕ Not relevant — archive").
+ */
+function StackBtn({
   label,
+  caption,
   primary = false,
+  quiet = false,
   disabled = false,
+  color,
   onClick,
 }: {
-  label: string;
+  label: React.ReactNode;
+  /** Right-aligned faint note ("complete, not Cue's work"). */
+  caption?: string;
   primary?: boolean;
+  quiet?: boolean;
   disabled?: boolean;
+  /** Label color override (the archive amber confirm state). */
+  color?: string;
   onClick: () => void;
 }) {
+  const chrome: React.CSSProperties = primary
+    ? { ...primaryBtn, flex: "initial", borderRadius: 11 }
+    : quiet
+      ? {
+          background: "none",
+          border: "none",
+          color: color ?? "var(--mv3-faint)",
+        }
+      : {
+          background: "var(--mv3-btn2-bg)",
+          border: "1px solid var(--mv3-btn2-border)",
+          color: color ?? "var(--mv3-text)",
+          borderRadius: 11,
+        };
   return (
     <button
       type="button"
@@ -151,21 +201,34 @@ function ActionBtn({
       disabled={disabled}
       onClick={onClick}
       style={{
-        flex: 1,
+        width: "100%",
         minHeight: 44,
-        borderRadius: 12,
-        padding: "10px 12px",
-        fontSize: 13,
-        fontWeight: 600,
+        padding: quiet ? "9px 13px" : "11px 13px",
+        fontSize: quiet ? 12 : 12.5,
+        fontWeight: primary ? 600 : 400,
         fontFamily: "inherit",
+        textAlign: "left",
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.55 : 1,
-        border: primary ? "none" : "1px solid var(--mv3-btn2-border)",
-        background: primary ? "var(--mv3-text)" : "var(--mv3-btn2-bg)",
-        color: primary ? "var(--mv3-bg)" : "var(--mv3-text)",
+        ...chrome,
       }}
     >
-      {label}
+      <span style={{ flex: caption ? "initial" : 1 }}>{label}</span>
+      {caption ? (
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: 9,
+            color: "var(--mv3-faint)",
+            fontWeight: 400,
+          }}
+        >
+          {caption}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -193,9 +256,12 @@ export function Mv3TaskSheet({
   // Archive is confirm-tap (the schedule editor's delete pattern): first tap
   // arms, second tap writes. Re-arms per item.
   const [confirmArchive, setConfirmArchive] = useState(false);
+  // Frame 44's "Where does this belong?" — the 📁 action's sheet.
+  const [refileOpen, setRefileOpen] = useState(false);
   useEffect(() => {
     setLabelDraft("");
     setConfirmArchive(false);
+    setRefileOpen(false);
   }, [item?.id]);
 
   // Refresh EVERY work surface (all-work list, hq buckets, project boards,
@@ -214,10 +280,44 @@ export function Mv3TaskSheet({
     onSuccess: refreshAll,
   });
 
+  /**
+   * "Done elsewhere" — you handled it yourself; Cue never runs it. Uses the
+   * REAL complete endpoint, carrying the `completedElsewhere: true` marker
+   * (daemons that don't know the field ignore body fields on this route).
+   * Older daemons gate /complete to awaiting_review, so non-review statuses
+   * fall back to the sheet's full-record PATCH (status → done) on rejection.
+   */
+  const doneElsewhere = useMutation({
+    mutationFn: async () => {
+      if (!item) return;
+      const path = { assistant_id: assistantId, id: item.id };
+      try {
+        await client.post({
+          url: "/v1/assistants/{assistant_id}/work-items/{id}/complete",
+          path,
+          body: { completedElsewhere: true },
+          throwOnError: true,
+        });
+      } catch (err) {
+        if (item.status === "awaiting_review") throw err;
+        await client.patch({
+          url: "/v1/assistants/{assistant_id}/work-items/{id}",
+          path,
+          body: sheetBody(item, { status: "done" }),
+          throwOnError: true,
+        });
+      }
+    },
+    onSuccess: () => {
+      refreshAll();
+      onClose();
+    },
+  });
+
   if (!item) return null;
 
   const pathOpts = { path: { assistant_id: assistantId, id: item.id } };
-  const chip = chipFor(item.status);
+  const chip = chipFor(item);
   const labels = parseLabels(item.labels);
 
   const patchItem = (p: Parameters<typeof sheetBody>[1]) => {
@@ -277,12 +377,23 @@ export function Mv3TaskSheet({
           {item.sourceType ? ` · from ${item.sourceType}` : ""}
         </div>
 
-        {/* Actions — the drawer's exact status-gated set. */}
-        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        {/* Actions — frame 45's stacked order: ▶ Have Cue handle it ·
+            📁 File to a project · ✓ Done elsewhere · ✕ Not relevant — archive.
+            Same wiring as ever (run / refile PATCH / complete + 409→PATCH
+            fallback / archive PATCH); review keeps its Approve/Redo pair in
+            the primary slot. */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 5,
+            marginTop: 14,
+          }}
+        >
           {(item.status === "queued" || item.status === "pending") && (
-            <ActionBtn
-              label={run.isPending ? "Starting…" : "Run now"}
+            <StackBtn
               primary
+              label={run.isPending ? "Starting…" : "▶ Have Cue handle it"}
               disabled={run.isPending}
               onClick={() => {
                 haptic.medium();
@@ -292,17 +403,17 @@ export function Mv3TaskSheet({
           )}
           {item.status === "awaiting_review" && (
             <>
-              <ActionBtn
-                label={approve.isPending ? "Approving…" : "Approve"}
+              <StackBtn
                 primary
+                label={approve.isPending ? "Approving…" : "✓ Approve & finish"}
                 disabled={approve.isPending}
                 onClick={() => {
                   haptic.medium();
-                  approve.mutate(pathOpts);
+                  approve.mutate({ ...pathOpts, body: {} });
                 }}
               />
-              <ActionBtn
-                label={run.isPending ? "Redoing…" : "Redo"}
+              <StackBtn
+                label={run.isPending ? "Redoing…" : "▶ Redo"}
                 disabled={run.isPending}
                 onClick={() => {
                   haptic.medium();
@@ -312,8 +423,8 @@ export function Mv3TaskSheet({
             </>
           )}
           {item.status === "done" && (
-            <ActionBtn
-              label={run.isPending ? "Running…" : "Run again"}
+            <StackBtn
+              label={run.isPending ? "Running…" : "▶ Run again"}
               disabled={run.isPending}
               onClick={() => {
                 haptic.medium();
@@ -321,8 +432,73 @@ export function Mv3TaskSheet({
               }}
             />
           )}
+
+          <StackBtn
+            label="📁 File to a project"
+            onClick={() => {
+              haptic.light();
+              setRefileOpen(true);
+            }}
+          />
+
+          {item.status === "queued" ||
+          item.status === "pending" ||
+          item.status === "awaiting_review" ? (
+            <StackBtn
+              label={
+                <>
+                  <span aria-hidden style={{ color: "var(--mv3-green)" }}>
+                    ✓
+                  </span>{" "}
+                  {doneElsewhere.isPending ? "Marking done…" : "Done elsewhere"}
+                </>
+              }
+              caption="complete, not Cue's work"
+              disabled={doneElsewhere.isPending}
+              onClick={() => {
+                haptic.medium();
+                doneElsewhere.mutate();
+              }}
+            />
+          ) : null}
+
+          {item.status !== "archived" ? (
+            <StackBtn
+              quiet
+              label={
+                patch.isPending && confirmArchive
+                  ? "Archiving…"
+                  : confirmArchive
+                    ? "✕ Tap again to archive"
+                    : "✕ Not relevant — archive"
+              }
+              color={confirmArchive ? "var(--mv3-amber)" : undefined}
+              disabled={patch.isPending}
+              onClick={() => {
+                if (!confirmArchive) {
+                  haptic.light();
+                  setConfirmArchive(true);
+                  return;
+                }
+                haptic.medium();
+                patch.mutate(
+                  {
+                    ...pathOpts,
+                    body: sheetBody(item, { status: "archived" }),
+                  },
+                  {
+                    onSuccess: () => {
+                      refreshAll();
+                      onClose();
+                    },
+                  },
+                );
+              }}
+            />
+          ) : null}
+
           {item.lastRunConversationId ? (
-            <ActionBtn
+            <StackBtn
               label="Open thread"
               onClick={() => {
                 haptic.light();
@@ -332,6 +508,26 @@ export function Mv3TaskSheet({
             />
           ) : null}
         </div>
+
+        {/* The ledger-honest line under Done elsewhere (frame 45 / D3). */}
+        {item.status === "queued" ||
+        item.status === "pending" ||
+        item.status === "awaiting_review" ? (
+          <div
+            style={{
+              fontSize: 11,
+              color: doneElsewhere.isError
+                ? "var(--mv3-amber)"
+                : "var(--mv3-faint)",
+              marginTop: 6,
+              lineHeight: 1.5,
+            }}
+          >
+            {doneElsewhere.isError
+              ? "Couldn’t mark it done — try again."
+              : "Done elsewhere completes it for progress — the ledger says completed by you."}
+          </div>
+        ) : null}
 
         {/* Due date — native picker, 16px so iOS doesn't zoom. */}
         <div style={{ marginTop: 20 }}>
@@ -536,7 +732,9 @@ export function Mv3TaskSheet({
                           color: "var(--mv3-micro)",
                         }}
                       >
-                        Current
+                        {/* ✨ = Cue auto-filed it here (feature-detected);
+                            moving it is the same refile as ever. */}
+                        {isAutoFiled(item) ? "✨ Auto-filed" : "Current"}
                       </span>
                     ) : null}
                   </button>
@@ -556,55 +754,6 @@ export function Mv3TaskSheet({
           )}
         </div>
 
-        {/* Archive — the quiet way off the list (QA night P1-6). Confirm-tap
-            like the schedule editor's delete; PATCH status → archived. */}
-        {item.status !== "archived" ? (
-          <div style={{ marginTop: 20 }}>
-            <button
-              type="button"
-              className="cue-pressable"
-              disabled={patch.isPending}
-              onClick={() => {
-                if (!confirmArchive) {
-                  haptic.light();
-                  setConfirmArchive(true);
-                  return;
-                }
-                haptic.medium();
-                patch.mutate(
-                  { ...pathOpts, body: sheetBody(item, { status: "archived" }) },
-                  {
-                    onSuccess: () => {
-                      refreshAll();
-                      onClose();
-                    },
-                  },
-                );
-              }}
-              style={{
-                width: "100%",
-                minHeight: 44,
-                borderRadius: 12,
-                padding: "10px 12px",
-                fontSize: 13,
-                fontWeight: confirmArchive ? 600 : 400,
-                fontFamily: "inherit",
-                cursor: patch.isPending ? "default" : "pointer",
-                background: "transparent",
-                border: "1px solid var(--mv3-btn2-border)",
-                color: confirmArchive ? "var(--mv3-amber)" : "var(--mv3-muted)",
-                opacity: patch.isPending ? 0.55 : 1,
-              }}
-            >
-              {patch.isPending && confirmArchive
-                ? "Archiving…"
-                : confirmArchive
-                  ? "Tap again to archive"
-                  : "Archive"}
-            </button>
-          </div>
-        ) : null}
-
         {/* Write status — honest, one line. */}
         <div
           style={{
@@ -621,6 +770,15 @@ export function Mv3TaskSheet({
               : ""}
         </div>
       </div>
+
+      {/* 📁 File to a project → frame 44's "Where does this belong?". */}
+      <Mv3RefileSheet
+        assistantId={assistantId}
+        item={refileOpen ? item : null}
+        projects={projects}
+        onClose={() => setRefileOpen(false)}
+        onMoved={() => refreshAll()}
+      />
     </SheetShell>
   );
 }

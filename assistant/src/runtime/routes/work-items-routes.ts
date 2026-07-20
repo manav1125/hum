@@ -116,8 +116,32 @@ export const workItemSchema = z.object({
         '"auto" = Cue ran it autonomously with no owner-gated approval; ' +
         '"you_approved" = the owner approved a guardian gate during the run ' +
         "or pre-approved its tool permissions; " +
-        '"manual" = the owner completed it themselves (Cue never ran it); ' +
+        '"manual" = the owner completed it themselves (Cue never ran it, ' +
+        "or the item carries the completedElsewhere marker); " +
         "null = not applicable (not yet run / not a manual completion).",
+    ),
+  completedElsewhere: z
+    .boolean()
+    .describe(
+      'True when the owner marked this task done as "completed elsewhere" — ' +
+        "the work happened outside Cue, so no run output is claimed. " +
+        'Terminal exactly like done; never say "Cue finished this" for it.',
+    ),
+  autoFiledBy: z
+    .string()
+    .nullable()
+    .describe(
+      '"cue" = the background auto-filer assigned projectId (show the ' +
+        'auto-filed chip); "user_unfiled" = the user deliberately unfiled ' +
+        "the item (the auto-filer will not re-file it); null = user-filed " +
+        "or never filed.",
+    ),
+  autoFileConfidence: z
+    .number()
+    .nullable()
+    .describe(
+      "The auto-filer's 0-1 confidence for its project assignment; set only " +
+        'when autoFiledBy = "cue".',
     ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
@@ -125,10 +149,27 @@ export const workItemSchema = z.object({
 
 /**
  * Attach the read-time `ranProvenance` trust signal to a single work item for
- * the route response. List endpoints use `withRanProvenance` (batched) instead.
+ * the route response, and convert the stored 0/1 `completedElsewhere` marker
+ * to the wire boolean. List endpoints use {@link annotateWorkItems} instead.
  */
 function annotateWorkItem(item: WorkItem) {
-  return { ...item, ranProvenance: deriveRanProvenance(item) };
+  return {
+    ...item,
+    completedElsewhere: item.completedElsewhere === 1,
+    ranProvenance: deriveRanProvenance(item),
+  };
+}
+
+/**
+ * Batched wire-shaping for list endpoints: `ranProvenance` via a single
+ * guardian-ledger query plus the 0/1 → boolean `completedElsewhere` mapping.
+ * Shared with the projects routes so every surface returns one DTO shape.
+ */
+export function annotateWorkItems(items: WorkItem[]) {
+  return withRanProvenance(items).map((item) => ({
+    ...item,
+    completedElsewhere: item.completedElsewhere === 1,
+  }));
 }
 
 function broadcastWorkItemStatus(id: string): void {
@@ -632,7 +673,7 @@ export const ROUTES: RouteDefinition[] = [
         ...(resolvedStatus ? { status: resolvedStatus } : {}),
         ...(projectId ? { projectId } : {}),
       });
-      return { items: withRanProvenance(items) };
+      return { items: annotateWorkItems(items) };
     },
   },
 
@@ -819,7 +860,15 @@ export const ROUTES: RouteDefinition[] = [
       if (status !== undefined) updates.status = status;
       if (priorityTier !== undefined) updates.priorityTier = priorityTier;
       if (sortIndex !== undefined) updates.sortIndex = sortIndex;
-      if (projectId !== undefined) updates.projectId = projectId;
+      if (projectId !== undefined) {
+        updates.projectId = projectId;
+        // A user's filing decision must stick. Moving/filing clears any
+        // auto-filed provenance (the chip disappears — it's user-filed now);
+        // a deliberate unfile (projectId: null) stamps the 'user_unfiled'
+        // guard so the background auto-filer never re-files this item.
+        updates.autoFiledBy = projectId === null ? "user_unfiled" : null;
+        updates.autoFileConfidence = null;
+      }
       if (dueAt !== undefined) updates.dueAt = dueAt;
       if (labels !== undefined) updates.labels = JSON.stringify(labels);
       if (assignee !== undefined) updates.assignee = assignee;
@@ -853,14 +902,70 @@ export const ROUTES: RouteDefinition[] = [
       allowedPrincipalTypes: ACTOR_PRINCIPALS,
     },
     summary: "Complete a work item",
-    description: "Transition a work item from awaiting_review to done.",
+    description:
+      "Transition a work item to done. Without a body this is the review " +
+      "sign-off path (awaiting_review → done, recorded as 'approved'). With " +
+      "completedElsewhere: true the owner is saying the work happened " +
+      "outside Cue — the item is marked done from queued or awaiting_review " +
+      "with the completedElsewhere marker stamped, no approval is recorded, " +
+      "and no run output is claimed.",
     tags: ["work-items"],
-    handler: ({ pathParams }) => {
+    requestBody: z.object({
+      completedElsewhere: z
+        .boolean()
+        .optional()
+        .describe(
+          "True = the owner completed this task outside Cue. Stamps the " +
+            "durable completedElsewhere marker instead of recording a " +
+            "review approval; ranProvenance reads 'manual'.",
+        ),
+    }),
+    handler: ({ pathParams, body }) => {
       const id = pathParams!.id;
       const existing = getWorkItem(id);
       if (!existing) {
         throw new NotFoundError(`Work item not found: ${id}`);
       }
+
+      const completedElsewhere =
+        (body as { completedElsewhere?: boolean } | undefined)
+          ?.completedElsewhere === true;
+
+      if (completedElsewhere) {
+        // "I did this myself" applies to a task Cue never ran (queued) as
+        // well as one whose run is parked in review. Running items must be
+        // cancelled first; terminal items have nothing left to complete.
+        if (
+          existing.status !== "queued" &&
+          existing.status !== "awaiting_review"
+        ) {
+          throw new ConflictError(
+            `Cannot complete work item as done elsewhere: status is '${existing.status}', expected 'queued' or 'awaiting_review'`,
+          );
+        }
+        const item =
+          updateWorkItem(
+            id,
+            { status: "done", completedElsewhere: 1 },
+            { actor: "user" },
+          ) ?? null;
+        if (item) {
+          // Deliberately NOT "approved": the owner did the work, they are not
+          // signing off on a run Cue performed — the ledger must never credit
+          // Cue with this outcome.
+          recordWorkItemEvent({
+            workItemId: id,
+            kind: "completed_elsewhere",
+            fromStatus: existing.status,
+            toStatus: "done",
+            actor: "user",
+          });
+          broadcastWorkItemStatus(item.id);
+          publishEvent({ type: "tasks_changed" });
+        }
+        return { item: item ? annotateWorkItem(item) : null };
+      }
+
       if (existing.status !== "awaiting_review") {
         throw new ConflictError(
           `Cannot complete work item: status is '${existing.status}', expected 'awaiting_review'`,

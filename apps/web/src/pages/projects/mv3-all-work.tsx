@@ -24,11 +24,13 @@ import {
   rise,
   type Mv3State,
 } from "@/mobile-v3";
-import { dueLabel } from "@/mobile-v3/work-kit";
+import { DismissX, dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
+import { dueLabel, isAutoFiled } from "@/mobile-v3/work-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { Mv3AddTasksSheet } from "./mv3-add-tasks-sheet";
 import { Mv3TaskSheet } from "./mv3-task-sheet";
 import { useProjects } from "./use-projects";
 
@@ -75,13 +77,18 @@ function WorkRow({
   projectName,
   now,
   delay,
+  leaving,
   onOpen,
+  onDismiss,
 }: {
   item: HqWorkItem;
   projectName: string | null;
   now: number;
   delay: number;
+  /** Mid-collapse (the 150ms dismiss leave). */
+  leaving: boolean;
   onOpen: () => void;
+  onDismiss: () => void;
 }) {
   return (
     <div
@@ -107,6 +114,7 @@ function WorkRow({
         minHeight: 52,
         cursor: "pointer",
         ...rise(delay),
+        ...dismissLeave(leaving),
       }}
     >
       <StateChip state={stateFor(item.status)} label="" size="sm" />
@@ -134,6 +142,8 @@ function WorkRow({
               whiteSpace: "nowrap",
             }}
           >
+            {/* ✨ = Cue filed it (feature-detected auto-file provenance). */}
+            {isAutoFiled(item) ? "✨ " : ""}
             {projectName}
           </div>
         ) : null}
@@ -157,6 +167,7 @@ function WorkRow({
       <span aria-hidden style={{ fontSize: 15, color: "var(--mv3-faint)" }}>
         ›
       </span>
+      <DismissX title={item.title} onDismiss={onDismiss} />
     </div>
   );
 }
@@ -170,6 +181,9 @@ export function Mv3AllWork() {
   // Stable reference time (purity rule: no Date.now() in render).
   const [now] = useState(() => Date.now());
   const [sheetItemId, setSheetItemId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  // One-tap ✕ dismiss with the shared 5s undo pill.
+  const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
 
   // Full records (the typed hq bucket) so the sheet can assemble the daemon's
   // full-record PATCH body straight off the row it opened from.
@@ -184,9 +198,12 @@ export function Mv3AllWork() {
   const items = useMemo(
     () =>
       all.items.filter(
-        (i) => i.status !== "archived" && i.status !== "cancelled",
+        (i) =>
+          i.status !== "archived" &&
+          i.status !== "cancelled" &&
+          !gone.has(i.id),
       ),
-    [all.items],
+    [all.items, gone],
   );
 
   // Desktop's grouping logic, verbatim.
@@ -256,7 +273,41 @@ export function Mv3AllWork() {
       }}
     >
       <AuroraBackdrop />
-      <LargeTitleHeader title="All work" scrollRef={scrollRef} />
+      <LargeTitleHeader
+        title="All work"
+        scrollRef={scrollRef}
+        trailing={
+          <button
+            type="button"
+            aria-label="Add tasks"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              setAddOpen(true);
+            }}
+            style={{
+              width: 44,
+              height: 44,
+              margin: "-5px -8px -5px 0",
+              borderRadius: "50%",
+              border: "none",
+              background: "transparent",
+              color: "var(--mv3-micro)",
+              fontSize: 20,
+              lineHeight: 1,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              WebkitTapHighlightColor: "transparent",
+              padding: 0,
+              fontFamily: "inherit",
+            }}
+          >
+            ＋
+          </button>
+        }
+      />
 
       {/* Group-by segment pills — the desktop toggle, in v3 grammar. */}
       <div
@@ -360,7 +411,9 @@ export function Mv3AllWork() {
                     }
                     now={now}
                     delay={nextDelay()}
+                    leaving={leavingId === item.id}
                     onOpen={() => openItem(item)}
+                    onDismiss={() => dismiss(item)}
                   />
                 ))}
                 {group.items.length > 20 ? (
@@ -386,6 +439,12 @@ export function Mv3AllWork() {
         projects={projects}
         onClose={() => setSheetItemId(null)}
       />
+      <Mv3AddTasksSheet
+        assistantId={assistantId}
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+      />
+      {toastNode}
     </div>
   );
 }

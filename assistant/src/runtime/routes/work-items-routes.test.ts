@@ -74,6 +74,7 @@ import { createProject } from "../../work-items/project-store.js";
 import {
   createWorkItem,
   getWorkItem,
+  updateWorkItem,
   type WorkItem,
 } from "../../work-items/work-item-store.js";
 import { preflightWorkItem, ROUTES } from "./work-items-routes.js";
@@ -300,6 +301,121 @@ describe("POST work-items (createWorkItem)", () => {
   });
 });
 
+describe("POST work-items/:id/complete", () => {
+  const completeRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items/:id/complete" && r.method === "POST",
+  )!;
+
+  function makeItem(status?: string) {
+    const task = createTask({ title: "Complete me", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Complete me" });
+    if (status && status !== "queued") {
+      updateWorkItem(wi.id, {
+        status: status as Parameters<typeof updateWorkItem>[1]["status"],
+      });
+    }
+    return getWorkItem(wi.id)!;
+  }
+
+  test("without the flag: awaiting_review → done, no completedElsewhere marker", () => {
+    const wi = makeItem("awaiting_review");
+    const result = completeRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+    }) as { item: { status: string; completedElsewhere: boolean } };
+
+    expect(result.item.status).toBe("done");
+    // Wire DTO carries the field, and it is honestly false: Cue's run was
+    // reviewed and signed off — the plain complete path is unchanged.
+    expect(result.item.completedElsewhere).toBe(false);
+    expect(getWorkItem(wi.id)!.completedElsewhere).toBe(0);
+  });
+
+  test("without the flag: still 409s on a queued item", () => {
+    const wi = makeItem();
+    expect(() =>
+      completeRoute.handler({ pathParams: { id: wi.id }, headers: {} }),
+    ).toThrow("expected 'awaiting_review'");
+  });
+
+  test("completedElsewhere: true completes a queued item and stamps the marker", () => {
+    const wi = makeItem();
+    const result = completeRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+      body: { completedElsewhere: true },
+    }) as {
+      item: {
+        status: string;
+        completedElsewhere: boolean;
+        ranProvenance: string | null;
+      };
+    };
+
+    expect(result.item.status).toBe("done");
+    expect(result.item.completedElsewhere).toBe(true);
+    // The owner did the work — never "Cue finished this".
+    expect(result.item.ranProvenance).toBe("manual");
+    expect(getWorkItem(wi.id)!.completedElsewhere).toBe(1);
+  });
+
+  test("completedElsewhere: true from awaiting_review is manual, not approved", () => {
+    const wi = makeItem("awaiting_review");
+    // Simulate a prior run so the classifier would otherwise say auto.
+    updateWorkItem(wi.id, {
+      lastRunConversationId: "conv-x",
+      lastRunStatus: "completed",
+    });
+
+    const result = completeRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+      body: { completedElsewhere: true },
+    }) as { item: { completedElsewhere: boolean; ranProvenance: string } };
+
+    expect(result.item.completedElsewhere).toBe(true);
+    // The elsewhere marker wins over the run conversation: the terminal
+    // outcome is the human's.
+    expect(result.item.ranProvenance).toBe("manual");
+
+    // The audit trail records completed_elsewhere, NOT the review sign-off
+    // "approved" kind — the ledger must not credit Cue.
+    const eventsRoute = ROUTES.find(
+      (r) => r.endpoint === "work-items/:id/events" && r.method === "GET",
+    )!;
+    const { events } = eventsRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+    }) as { events: Array<{ kind: string }> };
+    expect(events.some((e) => e.kind === "completed_elsewhere")).toBe(true);
+    expect(events.some((e) => e.kind === "approved")).toBe(false);
+  });
+
+  test("completedElsewhere: true 409s on running and terminal items", () => {
+    for (const status of ["running", "done", "cancelled"]) {
+      const wi = makeItem(status);
+      expect(() =>
+        completeRoute.handler({
+          pathParams: { id: wi.id },
+          headers: {},
+          body: { completedElsewhere: true },
+        }),
+      ).toThrow("Cannot complete work item as done elsewhere");
+    }
+  });
+
+  test("completedElsewhere: false behaves exactly like no body", () => {
+    const wi = makeItem();
+    expect(() =>
+      completeRoute.handler({
+        pathParams: { id: wi.id },
+        headers: {},
+        body: { completedElsewhere: false },
+      }),
+    ).toThrow("expected 'awaiting_review'");
+  });
+});
+
 describe("PATCH work-items/:id", () => {
   const patchRoute = ROUTES.find(
     (r) => r.endpoint === "work-items/:id" && r.method === "PATCH",
@@ -332,5 +448,41 @@ describe("PATCH work-items/:id", () => {
     expect(result.item.id).toBe(wi.id);
     expect(result.item.title).toBe("Patched title");
     expect(result.item.priorityTier).toBe(0);
+  });
+
+  test("an explicit unfile stamps the user_unfiled guard; a user filing clears auto provenance", () => {
+    const project = createProject({ title: "Ops" });
+    const task = createTask({ title: "Filed by cue", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Filed by cue" });
+    // Simulate the auto-filer's stamp.
+    updateWorkItem(wi.id, {
+      projectId: project.id,
+      autoFiledBy: "cue",
+      autoFileConfidence: 0.9,
+    });
+
+    // User deliberately unfiles → guard stamped so the auto-filer never
+    // re-files this item, confidence cleared.
+    patchRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+      body: { projectId: null },
+    });
+    let after = getWorkItem(wi.id)!;
+    expect(after.projectId).toBeNull();
+    expect(after.autoFiledBy).toBe("user_unfiled");
+    expect(after.autoFileConfidence).toBeNull();
+
+    // User later files it by hand → it's a user decision now, no auto chip
+    // and no lingering guard.
+    patchRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+      body: { projectId: project.id },
+    });
+    after = getWorkItem(wi.id)!;
+    expect(after.projectId).toBe(project.id);
+    expect(after.autoFiledBy).toBeNull();
+    expect(after.autoFileConfidence).toBeNull();
   });
 });

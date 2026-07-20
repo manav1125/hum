@@ -28,21 +28,21 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import {
-  workitemsByIdPatchMutation,
-  workitemsByIdRunPostMutation,
-} from "@/generated/daemon/@tanstack/react-query.gen";
+import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { AuroraBackdrop, LargeTitleHeader, cardBody, mv3Mono } from "@/mobile-v3";
+import { useDismissTask } from "@/mobile-v3/undo-toast";
 import {
   BackRow,
   clockTime,
   dueLabel,
-  fullPatchBody,
+  isAutoFiled,
+  isBelowConfidence,
   senderOf,
 } from "@/mobile-v3/work-kit";
 import { sourceBadge } from "@/pages/hq/hq-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
+import { Mv3RefileSheet } from "@/pages/projects/mv3-refile-sheet";
 import { useProjects } from "@/pages/projects/use-projects";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -83,6 +83,7 @@ function TriageCard({
   dim,
   onConfirm,
   onDismiss,
+  onRefile,
 }: {
   item: HqWorkItem;
   projectTitle: string | null;
@@ -90,6 +91,8 @@ function TriageCard({
   dim?: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
+  /** Opens the "Where does this belong?" sheet (✨ Move › / amber File ›). */
+  onRefile?: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -154,6 +157,10 @@ function TriageCard({
   const provenance = [sender, channel, clockTime(item.createdAt)]
     .filter(Boolean)
     .join(" · ");
+  const autoFiled = projectTitle != null && isAutoFiled(item);
+  // Feature-detected daemon marker; absent → the plain rendering (frame 44's
+  // amber "?" grammar only when the daemon says "scored but not confident").
+  const belowConfidence = isBelowConfidence(item);
 
   return (
     <div
@@ -225,7 +232,9 @@ function TriageCard({
           // bleeds through: the card tint painted over the solid canvas.
           background:
             "linear-gradient(var(--mv3-card), var(--mv3-card)), var(--mv3-bg)",
-          border: "1px solid var(--mv3-card-border)",
+          border: belowConfidence
+            ? "1px solid color-mix(in srgb, var(--mv3-amber) 30%, transparent)"
+            : "1px solid var(--mv3-card-border)",
           borderRadius: 20,
           padding: "14px 16px",
           touchAction: "pan-y",
@@ -233,24 +242,47 @@ function TriageCard({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span
-            aria-hidden
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: 7,
-              background: badge.tint,
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            {sender ? sender.charAt(0).toUpperCase() : badge.glyph}
-          </span>
+          {belowConfidence ? (
+            // Frame 44's amber "?" — the honest "scored, not guessed" tile.
+            <span
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 7,
+                background:
+                  "color-mix(in srgb, var(--mv3-amber) 15%, transparent)",
+                color: "var(--mv3-amber)",
+                fontSize: 11,
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              ?
+            </span>
+          ) : (
+            <span
+              aria-hidden
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 7,
+                background: badge.tint,
+                color: "#fff",
+                fontSize: 10,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {sender ? sender.charAt(0).toUpperCase() : badge.glyph}
+            </span>
+          )}
           <span
             style={{
               fontSize: 11.5,
@@ -258,10 +290,37 @@ function TriageCard({
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
+              flex: 1,
+              minWidth: 0,
             }}
           >
             {provenance || "Captured"}
           </span>
+          {belowConfidence && onRefile ? (
+            <button
+              type="button"
+              className="cue-pressable"
+              onClick={(e) => {
+                e.stopPropagation();
+                haptic.light();
+                onRefile();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                fontSize: 11,
+                color: "var(--mv3-micro)",
+                background: "none",
+                border: "none",
+                padding: "8px 2px",
+                margin: "-8px 0",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                flexShrink: 0,
+              }}
+            >
+              File ›
+            </button>
+          ) : null}
         </div>
         <div
           style={{
@@ -275,7 +334,14 @@ function TriageCard({
         >
           {sender ? `“${item.title}”` : item.title}
         </div>
-        {(item.dueAt != null || projectTitle) && (
+        {belowConfidence ? (
+          <div
+            style={{ fontSize: 10, color: "var(--mv3-muted)", marginTop: 2 }}
+          >
+            Not sure where this goes — you sort it
+          </div>
+        ) : null}
+        {(item.dueAt != null || (projectTitle && !autoFiled)) && (
           <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
             {item.dueAt != null ? (
               <MonoChip
@@ -283,7 +349,7 @@ function TriageCard({
                 label={dueLabel(item.dueAt, now)}
               />
             ) : null}
-            {projectTitle ? (
+            {projectTitle && !autoFiled ? (
               <MonoChip
                 color="var(--mv3-micro)"
                 label={`→ ${projectTitle.toUpperCase()}`}
@@ -291,6 +357,69 @@ function TriageCard({
             ) : null}
           </div>
         )}
+        {/* ✨ provenance — frame 44's inline pill: destination said out loud,
+            one-tap Move (moving teaches Cue). */}
+        {autoFiled ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 10,
+              padding: "7px 10px",
+              background:
+                "color-mix(in srgb, var(--mv3-accent) 10%, transparent)",
+              border:
+                "1px solid color-mix(in srgb, var(--mv3-accent) 25%, transparent)",
+              borderRadius: 10,
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 11 }}>
+              ✨
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--mv3-muted)",
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              auto-filed →{" "}
+              <b style={{ color: "var(--mv3-text)" }}>{projectTitle}</b>
+            </span>
+            {onRefile ? (
+              <button
+                type="button"
+                className="cue-pressable"
+                aria-label={`Move "${item.title}" to another project`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  haptic.light();
+                  onRefile();
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  fontSize: 10.5,
+                  color: "var(--mv3-micro)",
+                  fontWeight: 500,
+                  background: "none",
+                  border: "none",
+                  padding: "8px 2px",
+                  margin: "-8px 0",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  flexShrink: 0,
+                }}
+              >
+                Move ›
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -304,6 +433,8 @@ export function CameInPage() {
   const [showLow, setShowLow] = useState(false);
   // Items animated off locally while the PATCH lands (optimistic hide).
   const [gone, setGone] = useState<Set<string>>(new Set());
+  // The task the "Where does this belong?" sheet is re-filing (✨ Move ›).
+  const [refileId, setRefileId] = useState<string | null>(null);
 
   const pending = useHqWorkItems(assistantId, "pending");
   const { projects } = useProjects(assistantId);
@@ -314,21 +445,24 @@ export function CameInPage() {
   }, [projects]);
 
   const queryClient = useQueryClient();
-  const patch = useMutation({
-    ...workitemsByIdPatchMutation(),
-    onSettled: () => void queryClient.invalidateQueries(),
-  });
   const run = useMutation({
     ...workitemsByIdRunPostMutation(),
     onSettled: () => void queryClient.invalidateQueries(),
   });
+  // Shared dismiss flow (archive PATCH + the 5s undo pill). The swipe itself
+  // already animated the card off, so dismissals commit `immediate`.
+  const {
+    dismiss: dismissTask,
+    gone: dismissed,
+    toastNode,
+  } = useDismissTask(assistantId);
 
   const items = useMemo(
     () =>
       [...pending.items]
-        .filter((i) => !gone.has(i.id))
+        .filter((i) => !gone.has(i.id) && !dismissed.has(i.id))
         .sort((a, b) => b.createdAt - a.createdAt),
-    [pending.items, gone],
+    [pending.items, gone, dismissed],
   );
   // Filed = confident; unfiled = the lower-confidence collapse (same split
   // HQ's LowConfidenceFilePrompt draws).
@@ -347,11 +481,9 @@ export function CameInPage() {
     );
   };
   const dismiss = (item: HqWorkItem) => {
-    hide(item.id);
-    patch.mutate({
-      path: { assistant_id: assistantId, id: item.id },
-      body: fullPatchBody(item, { status: "archived" }),
-    });
+    // The shared flow hides the card via its own `dismissed` set (and can
+    // bring it back on Undo), so no local hide() here.
+    dismissTask(item, { immediate: true });
   };
   const confirmAll = () => {
     haptic.medium();
@@ -428,6 +560,7 @@ export function CameInPage() {
               dim={i > 1}
               onConfirm={() => confirm(item)}
               onDismiss={() => dismiss(item)}
+              onRefile={() => setRefileId(item.id)}
             />
           ))}
 
@@ -463,6 +596,7 @@ export function CameInPage() {
                 dim
                 onConfirm={() => confirm(item)}
                 onDismiss={() => dismiss(item)}
+                onRefile={() => setRefileId(item.id)}
               />
             ))
           )}
@@ -521,6 +655,15 @@ export function CameInPage() {
           ) : null}
         </div>
       </div>
+      {toastNode}
+
+      {/* Frame 44's "Where does this belong?" — ✨ Move › / amber File ›. */}
+      <Mv3RefileSheet
+        assistantId={assistantId}
+        item={items.find((i) => i.id === refileId) ?? null}
+        projects={projects}
+        onClose={() => setRefileId(null)}
+      />
     </div>
   );
 }

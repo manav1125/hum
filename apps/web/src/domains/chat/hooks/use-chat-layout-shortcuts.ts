@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { openCommandPaletteWindow } from "@/runtime/command-palette-window";
+import { useAddTasksStore } from "@/stores/add-tasks-store";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 
 /**
@@ -39,6 +40,7 @@ function shouldHandleShortcut(
  * - Ctrl/Cmd+K → toggle command palette
  * - Ctrl/Cmd+[ → navigate back
  * - Ctrl/Cmd+] → navigate forward
+ * - Ctrl/Cmd+Shift+A → toggle the "Add tasks" batch modal (frame D1)
  */
 export function useChatLayoutShortcuts({
   toggleSidebar,
@@ -62,6 +64,15 @@ export function useChatLayoutShortcuts({
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // ⌘⇧A — batch "Add tasks" (event.key is "A" with shift held).
+      if (
+        event.shiftKey &&
+        shouldHandleShortcut(event, document.activeElement, ["a", "A"])
+      ) {
+        event.preventDefault();
+        useAddTasksStore.getState().toggle();
+        return;
+      }
       if (shouldHandleShortcut(event, document.activeElement, "\\")) {
         event.preventDefault();
         toggleSidebar();

@@ -125,7 +125,7 @@ function ReviewRow({
           <RowButton
             label={approve.isPending ? "Approving…" : "Approve"}
             disabled={mutating}
-            onClick={() => approve.mutate(pathOpts)}
+            onClick={() => approve.mutate({ ...pathOpts, body: {} })}
           />
           <RowButton
             label={redo.isPending ? "Redoing…" : "Redo"}

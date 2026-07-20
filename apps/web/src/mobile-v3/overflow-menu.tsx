@@ -22,7 +22,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -33,6 +35,11 @@ export function Mv3OverflowMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const toggleCommandPalette = useCommandPaletteStore.use.toggle();
+  // Batch task capture ("Add tasks"). This menu renders outside the
+  // ActiveAssistantGate, so read the raw store and only offer the item once
+  // an assistant is actually active.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const [addTasksOpen, setAddTasksOpen] = useState(false);
 
   // Dismiss on outside tap.
   useEffect(() => {
@@ -47,6 +54,14 @@ export function Mv3OverflowMenu() {
   }, [open]);
 
   const items: Array<{ label: string; run: () => void }> = [
+    ...(assistantId
+      ? [
+          {
+            label: "Add tasks",
+            run: () => setAddTasksOpen(true),
+          },
+        ]
+      : []),
     {
       label: "Chats",
       run: () => navigate(routes.assistant),
@@ -159,6 +174,16 @@ export function Mv3OverflowMenu() {
             </button>
           ))}
         </div>
+      ) : null}
+
+      {/* Batch task capture — the SheetShell portals itself, so mounting it
+          here keeps the whole flow inside the one global affordance. */}
+      {assistantId ? (
+        <Mv3AddTasksSheet
+          assistantId={assistantId}
+          open={addTasksOpen}
+          onClose={() => setAddTasksOpen(false)}
+        />
       ) : null}
     </div>
   );

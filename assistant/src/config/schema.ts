@@ -58,6 +58,7 @@ import {
 } from "./schemas/timeouts.js";
 import { ToolApisConfigSchema } from "./schemas/tool-apis.js";
 import { ToolsConfigSchema } from "./schemas/tools.js";
+import { WorkItemsConfigSchema } from "./schemas/work-items.js";
 import { WorkspaceGitConfigSchema } from "./schemas/workspace-git.js";
 
 export const AssistantConfigSchema = z
@@ -89,6 +90,9 @@ export const AssistantConfigSchema = z
     llm: LLMSchema.default(LLMSchema.parse({})),
     llmRequestLogs: LlmRequestLogsConfigSchema,
     filing: FilingConfigSchema.default(FilingConfigSchema.parse({})),
+    // Work-item (task queue) hygiene: the background auto-filer that assigns
+    // unfiled queued tasks to matching active projects (workItems.autoFile.*).
+    workItems: WorkItemsConfigSchema.default(WorkItemsConfigSchema.parse({})),
     heartbeat: HeartbeatConfigSchema.default(HeartbeatConfigSchema.parse({})),
     hostBrowser: HostBrowserConfigSchema.default(
       HostBrowserConfigSchema.parse({}),
@@ -129,7 +133,9 @@ export const AssistantConfigSchema = z
     toolApis: ToolApisConfigSchema.default(ToolApisConfigSchema.parse({})),
     // Config-as-code export (WS5). Default OFF: with the flag off the
     // exporter never runs and no repo is created.
-    configRepo: ConfigRepoConfigSchema.default(ConfigRepoConfigSchema.parse({})),
+    configRepo: ConfigRepoConfigSchema.default(
+      ConfigRepoConfigSchema.parse({}),
+    ),
     // Per-plugin config blocks keyed by plugin name. The schema is intentionally
     // permissive — each plugin's manifest supplies its own validator which the
     // plugin bootstrap (`external-plugins-bootstrap.ts`) runs against the raw

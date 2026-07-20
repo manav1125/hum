@@ -77,6 +77,15 @@ export const workItems = sqliteTable("work_items", {
   // auto-run path; 'parked' = user parked this task — it must never auto-run
   // (quick-add, plain to-dos, needs-you items). Cleared on explicit run.
   autoRunEligibility: text("auto_run_eligibility"),
+  // 307-work-item-hygiene. completedElsewhere: 0/1 — the owner marked this
+  // task done as "completed elsewhere" (the work happened outside Cue; no
+  // output/run is claimed). autoFiledBy: null | 'cue' | 'user_unfiled' —
+  // auto-file provenance ('cue' = the background auto-filer set project_id;
+  // 'user_unfiled' = the user deliberately unfiled, never re-file).
+  // autoFileConfidence: the auto-filer's 0–1 confidence, set with 'cue'.
+  completedElsewhere: integer("completed_elsewhere").notNull().default(0),
+  autoFiledBy: text("auto_filed_by"),
+  autoFileConfidence: real("auto_file_confidence"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

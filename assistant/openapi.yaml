@@ -29871,6 +29871,13 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        autoRunEligibility:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            null = eligible for policy-gated auto-run; "parked" = user parked this task, so it only starts on an
+                            explicit run
                         ranProvenance:
                           anyOf:
                             - type: string
@@ -29882,8 +29889,27 @@ paths:
                           description:
                             'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
                             approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
-                            its tool permissions; "manual" = the owner completed it themselves (Cue never ran it); null
-                            = not applicable (not yet run / not a manual completion).'
+                            its tool permissions; "manual" = the owner completed it themselves (Cue never ran it, or the
+                            item carries the completedElsewhere marker); null = not applicable (not yet run / not a
+                            manual completion).'
+                        completedElsewhere:
+                          type: boolean
+                          description:
+                            True when the owner marked this task done as "completed elsewhere" — the work happened outside Cue, so no
+                            run output is claimed. Terminal exactly like done; never say "Cue finished this" for it.
+                        autoFiledBy:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            '"cue" = the background auto-filer assigned projectId (show the auto-filed chip); "user_unfiled" = the user
+                            deliberately unfiled the item (the auto-filer will not re-file it); null = user-filed or
+                            never filed.'
+                        autoFileConfidence:
+                          anyOf:
+                            - type: number
+                            - type: "null"
+                          description: The auto-filer's 0-1 confidence for its project assignment; set only when autoFiledBy = "cue".
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -29914,7 +29940,11 @@ paths:
                         - sourceType
                         - sourceId
                         - approvalStatus
+                        - autoRunEligibility
                         - ranProvenance
+                        - completedElsewhere
+                        - autoFiledBy
+                        - autoFileConfidence
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -37724,6 +37754,13 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        autoRunEligibility:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            null = eligible for policy-gated auto-run; "parked" = user parked this task, so it only starts on an
+                            explicit run
                         ranProvenance:
                           anyOf:
                             - type: string
@@ -37735,8 +37772,27 @@ paths:
                           description:
                             'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
                             approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
-                            its tool permissions; "manual" = the owner completed it themselves (Cue never ran it); null
-                            = not applicable (not yet run / not a manual completion).'
+                            its tool permissions; "manual" = the owner completed it themselves (Cue never ran it, or the
+                            item carries the completedElsewhere marker); null = not applicable (not yet run / not a
+                            manual completion).'
+                        completedElsewhere:
+                          type: boolean
+                          description:
+                            True when the owner marked this task done as "completed elsewhere" — the work happened outside Cue, so no
+                            run output is claimed. Terminal exactly like done; never say "Cue finished this" for it.
+                        autoFiledBy:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            '"cue" = the background auto-filer assigned projectId (show the auto-filed chip); "user_unfiled" = the user
+                            deliberately unfiled the item (the auto-filer will not re-file it); null = user-filed or
+                            never filed.'
+                        autoFileConfidence:
+                          anyOf:
+                            - type: number
+                            - type: "null"
+                          description: The auto-filer's 0-1 confidence for its project assignment; set only when autoFiledBy = "cue".
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -37767,7 +37823,11 @@ paths:
                         - sourceType
                         - sourceId
                         - approvalStatus
+                        - autoRunEligibility
                         - ranProvenance
+                        - completedElsewhere
+                        - autoFiledBy
+                        - autoFileConfidence
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -37904,6 +37964,13 @@ paths:
                         anyOf:
                           - type: string
                           - type: "null"
+                      autoRunEligibility:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          null = eligible for policy-gated auto-run; "parked" = user parked this task, so it only starts on an
+                          explicit run
                       ranProvenance:
                         anyOf:
                           - type: string
@@ -37915,8 +37982,27 @@ paths:
                         description:
                           'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
                           approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
-                          its tool permissions; "manual" = the owner completed it themselves (Cue never ran it); null =
-                          not applicable (not yet run / not a manual completion).'
+                          its tool permissions; "manual" = the owner completed it themselves (Cue never ran it, or the
+                          item carries the completedElsewhere marker); null = not applicable (not yet run / not a manual
+                          completion).'
+                      completedElsewhere:
+                        type: boolean
+                        description:
+                          True when the owner marked this task done as "completed elsewhere" — the work happened outside Cue, so no
+                          run output is claimed. Terminal exactly like done; never say "Cue finished this" for it.
+                      autoFiledBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          '"cue" = the background auto-filer assigned projectId (show the auto-filed chip); "user_unfiled" = the user
+                          deliberately unfiled the item (the auto-filer will not re-file it); null = user-filed or never
+                          filed.'
+                      autoFileConfidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: The auto-filer's 0-1 confidence for its project assignment; set only when autoFiledBy = "cue".
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -37947,7 +38033,11 @@ paths:
                       - sourceType
                       - sourceId
                       - approvalStatus
+                      - autoRunEligibility
                       - ranProvenance
+                      - completedElsewhere
+                      - autoFiledBy
+                      - autoFileConfidence
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -38142,7 +38232,11 @@ paths:
     post:
       operationId: workitems_by_id_complete_post
       summary: Complete a work item
-      description: Transition a work item from awaiting_review to done.
+      description:
+        "Transition a work item to done. Without a body this is the review sign-off path (awaiting_review → done,
+        recorded as 'approved'). With completedElsewhere: true the owner is saying the work happened outside Cue — the
+        item is marked done from queued or awaiting_review with the completedElsewhere marker stamped, no approval is
+        recorded, and no run output is claimed."
       tags:
         - work-items
       responses:
@@ -38154,6 +38248,19 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                completedElsewhere:
+                  description:
+                    True = the owner completed this task outside Cue. Stamps the durable completedElsewhere marker instead of
+                    recording a review approval; ranProvenance reads 'manual'.
+                  type: boolean
+              additionalProperties: false
   /v1/work-items/{id}/events:
     get:
       operationId: workitems_by_id_events_get

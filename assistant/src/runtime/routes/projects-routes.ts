@@ -19,7 +19,6 @@ import {
   reorderProjects,
   updateProject,
 } from "../../work-items/project-store.js";
-import { withRanProvenance } from "../../work-items/work-item-provenance.js";
 import {
   listWorkItems,
   type WorkItemStatus,
@@ -29,7 +28,7 @@ import { assistantEventHub } from "../assistant-event-hub.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { BadRequestError, NotFoundError } from "./errors.js";
 import type { RouteDefinition } from "./types.js";
-import { workItemSchema } from "./work-items-routes.js";
+import { annotateWorkItems, workItemSchema } from "./work-items-routes.js";
 
 function publishEvent(msg: ServerMessage): void {
   void assistantEventHub.publish(buildAssistantEvent(msg));
@@ -331,7 +330,7 @@ export const ROUTES: RouteDefinition[] = [
         projectId: id,
         ...(resolvedStatus ? { status: resolvedStatus } : {}),
       });
-      return { items: withRanProvenance(items) };
+      return { items: annotateWorkItems(items) };
     },
   },
 ];

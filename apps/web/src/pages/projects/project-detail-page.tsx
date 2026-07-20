@@ -18,10 +18,13 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { C, mono, serif } from "@/domains/activity/theme";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { dismissLeave } from "@/mobile-v3/undo-toast";
 import { HqStyle } from "@/pages/hq/hq-kit";
+import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { routes } from "@/utils/routes";
 
 import { AddExistingPanel } from "./add-existing-panel";
+import { FilingKitStyle, HoverX, useDesktopDismiss } from "./filing-desktop";
 import { Mv3ProjectDetail } from "./mv3-project-detail";
 import type { BoardItem } from "./board-item";
 import { ItemCard, MissionTag, statusChip, type ItemChip } from "./item-card";
@@ -45,15 +48,22 @@ const LIVE_STATUSES = new Set([
   "awaiting_review",
 ]);
 
-/** One board row in the one-card language (badge · title · chip · note). */
+/** One board row in the one-card language (badge · title · chip · note).
+ *  Wrapped in `data-filing-row` so the frame-D3 hover ✕ reveals on hover. */
 function BoardRow({
   item,
   now,
+  leaving = false,
   onOpen,
+  onDismiss,
 }: {
   item: BoardItem;
   now: number;
+  /** Mid-collapse (the 150ms dismiss leave). */
+  leaving?: boolean;
   onOpen: () => void;
+  /** Frame D3's hover ✕ — archive with undo. */
+  onDismiss?: () => void;
 }) {
   const running = item.status === "running";
   const done = item.status === "done";
@@ -90,23 +100,41 @@ function BoardRow({
         : null;
 
   return (
-    <ItemCard
-      sourceType={done ? null : item.sourceType}
-      title={item.title}
-      chip={done ? null : chip}
-      note={done ? null : note}
-      live={running}
-      emphasis={
-        done
-          ? "done"
-          : running
-            ? "next"
-            : review || dueSoon
-              ? "blocked"
-              : "none"
-      }
-      onOpen={onOpen}
-    />
+    <div
+      data-filing-row
+      style={{ position: "relative", ...dismissLeave(leaving) }}
+    >
+      <ItemCard
+        sourceType={done ? null : item.sourceType}
+        title={item.title}
+        chip={done ? null : chip}
+        note={done ? null : note}
+        live={running}
+        emphasis={
+          done
+            ? "done"
+            : running
+              ? "next"
+              : review || dueSoon
+                ? "blocked"
+                : "none"
+        }
+        onOpen={onOpen}
+      />
+      {onDismiss && !done ? (
+        <span
+          style={{
+            position: "absolute",
+            top: "50%",
+            right: 10,
+            transform: "translateY(-50%)",
+            display: "inline-flex",
+          }}
+        >
+          <HoverX title={item.title} onDismiss={onDismiss} />
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -138,6 +166,8 @@ function ProjectDetailPageDesktop() {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   // Stable reference time for due-pressure emphasis (no Date.now() in render).
   const [now] = useState(() => Date.now());
+  // Frame D3 — hover ✕ on board rows → archive + the ink undo pill (⌘Z).
+  const { dismiss, gone, leavingId, pillNode } = useDesktopDismiss(assistantId);
 
   const byLane = useMemo(() => {
     const map: Record<string, BoardItem[]> = {
@@ -147,11 +177,12 @@ function ProjectDetailPageDesktop() {
       done: [],
     };
     for (const it of items) {
+      if (gone.has(it.id)) continue;
       const lane = laneForStatus(it.status);
       if (lane) map[lane].push(it);
     }
     return map;
-  }, [items]);
+  }, [items, gone]);
 
   const openTask = openTaskId
     ? (items.find((i) => i.id === openTaskId) ?? null)
@@ -183,6 +214,7 @@ function ProjectDetailPageDesktop() {
   return (
     <div style={{ height: "100%", overflowY: "auto", background: C.bg }}>
       <HqStyle />
+      <FilingKitStyle />
       <div
         style={{
           maxWidth: 1080,
@@ -500,7 +532,14 @@ function ProjectDetailPageDesktop() {
                         key={it.id}
                         item={it}
                         now={now}
+                        leaving={leavingId === it.id}
                         onOpen={() => setOpenTaskId(it.id)}
+                        onDismiss={() =>
+                          // BoardItem and HqWorkItem share the daemon's
+                          // work-item DTO shape (annotateWorkItems is shared
+                          // across both routes).
+                          dismiss(it as unknown as HqWorkItem)
+                        }
                       />
                     ))
                   )}
@@ -510,6 +549,8 @@ function ProjectDetailPageDesktop() {
           </div>
         )}
       </div>
+
+      {pillNode}
 
       {openTask ? (
         <TaskDrawer

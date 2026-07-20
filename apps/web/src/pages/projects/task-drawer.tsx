@@ -17,7 +17,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { DueChip } from "@/domains/activity/due-chip";
@@ -27,6 +27,7 @@ import {
   workitemsByIdEventsGetOptions,
   workitemsByIdRunPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
+import { client } from "@/generated/daemon/client.gen";
 import { MicroLabel } from "@/pages/hq/hq-kit";
 import {
   ReassignMenu,
@@ -148,6 +149,87 @@ export function TaskDrawer({
     onSettled: invalidate,
   });
   const pathOpts = { path: { assistant_id: assistantId, id: item.id } };
+
+  /**
+   * "Done elsewhere" (frame D3) — you handled it yourself; completes for
+   * progress, the ledger says "completed by you", never credits Cue. The REAL
+   * complete endpoint carrying `completedElsewhere: true`; older daemons gate
+   * /complete to awaiting_review, so other statuses fall back to the
+   * full-record PATCH (status → done) on rejection — the same 409→PATCH
+   * fallback the mobile sheet ships.
+   */
+  const doneElsewhere = useMutation({
+    mutationFn: async () => {
+      const path = { assistant_id: assistantId, id: item.id };
+      try {
+        await client.post({
+          url: "/v1/assistants/{assistant_id}/work-items/{id}/complete",
+          path,
+          body: { completedElsewhere: true },
+          throwOnError: true,
+        });
+      } catch (err) {
+        if (item.status === "awaiting_review") throw err;
+        await client.patch({
+          url: "/v1/assistants/{assistant_id}/work-items/{id}",
+          path,
+          body: fullBody(item, { status: "done" }),
+          throwOnError: true,
+        });
+      }
+    },
+    onSettled: invalidate,
+  });
+
+  /** "Not relevant — archive" (frame D3) — archive, never delete; close after. */
+  const archive = () =>
+    patch.mutate(
+      { ...pathOpts, body: fullBody(item, { status: "archived" }) },
+      { onSuccess: onClose },
+    );
+
+  const filedToRef = useRef<HTMLDivElement>(null);
+  const scrollToFiledTo = () =>
+    filedToRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const canRun = item.status === "queued" || item.status === "pending";
+  const canDoneElsewhere =
+    item.status === "queued" ||
+    item.status === "pending" ||
+    item.status === "awaiting_review";
+
+  // Frame D3's popover shortcuts: ↵ run/approve · F file · D done elsewhere ·
+  // ⌫ archive. Active while the drawer is up and focus isn't in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (el?.getAttribute("contenteditable") === "true") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Enter") {
+        if (item.status === "awaiting_review") {
+          e.preventDefault();
+          approve.mutate({ ...pathOpts, body: {} });
+        } else if (canRun) {
+          e.preventDefault();
+          run.mutate(pathOpts);
+        }
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        scrollToFiledTo();
+      } else if ((e.key === "d" || e.key === "D") && canDoneElsewhere) {
+        e.preventDefault();
+        doneElsewhere.mutate();
+      } else if (e.key === "Backspace" && item.status !== "archived") {
+        e.preventDefault();
+        archive();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-arm per item/status only
+  }, [item.id, item.status]);
 
   const source = parseSource(item.sourceContext);
   const cycleTime = events.data?.cycleTimeMs ?? null;
@@ -293,13 +375,25 @@ export function TaskDrawer({
           </div>
         ) : null}
 
-        {/* Actions */}
+        {/* Actions — frame D3's order + shortcuts: ▶ Have Cue handle it ↵ ·
+            📁 File to a project F · ✓ Done elsewhere D · ✕ archive ⌫. */}
         <div
-          style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            marginTop: 14,
+            border: `1px solid ${C.line}`,
+            borderRadius: 12,
+            padding: 6,
+          }}
         >
-          {(item.status === "queued" || item.status === "pending") && (
-            <ActionBtn
-              label={run.isPending ? "Starting…" : "Run now"}
+          {canRun && (
+            <DrawerAction
+              glyph="▶"
+              glyphColor={C.blue}
+              label={run.isPending ? "Starting…" : "Have Cue handle it"}
+              kbd="↵"
               primary
               disabled={run.isPending}
               onClick={() => run.mutate(pathOpts)}
@@ -307,13 +401,18 @@ export function TaskDrawer({
           )}
           {item.status === "awaiting_review" && (
             <>
-              <ActionBtn
-                label={approve.isPending ? "Approving…" : "Approve"}
+              <DrawerAction
+                glyph="✓"
+                glyphColor={C.blue}
+                label={approve.isPending ? "Approving…" : "Approve & finish"}
+                kbd="↵"
                 primary
                 disabled={approve.isPending}
-                onClick={() => approve.mutate(pathOpts)}
+                onClick={() => approve.mutate({ ...pathOpts, body: {} })}
               />
-              <ActionBtn
+              <DrawerAction
+                glyph="▶"
+                glyphColor={C.t2}
                 label={run.isPending ? "Redoing…" : "Redo"}
                 disabled={run.isPending}
                 onClick={() => run.mutate(pathOpts)}
@@ -321,16 +420,47 @@ export function TaskDrawer({
             </>
           )}
           {item.status === "done" && (
-            <ActionBtn
+            <DrawerAction
+              glyph="▶"
+              glyphColor={C.t2}
               label={run.isPending ? "Running…" : "Run again"}
               disabled={run.isPending}
               onClick={() => run.mutate(pathOpts)}
             />
           )}
+          <DrawerAction
+            glyph="📁"
+            label="File to a project"
+            kbd="F"
+            onClick={scrollToFiledTo}
+          />
+          {canDoneElsewhere && (
+            <DrawerAction
+              glyph="✓"
+              glyphColor={C.green}
+              label={doneElsewhere.isPending ? "Marking done…" : "Done elsewhere"}
+              caption="complete, not Cue's work"
+              kbd="D"
+              disabled={doneElsewhere.isPending}
+              onClick={() => doneElsewhere.mutate()}
+            />
+          )}
+          {item.status !== "archived" && (
+            <DrawerAction
+              glyph="✕"
+              glyphColor={C.t2}
+              label="Not relevant — archive"
+              kbd="⌫"
+              muted
+              disabled={patch.isPending}
+              onClick={archive}
+            />
+          )}
           {item.lastRunConversationId ? (
-            <ActionBtn
+            <DrawerAction
+              glyph={<ExternalLink size={12} />}
               label="Open thread"
-              icon={<ExternalLink size={12} />}
+              muted
               onClick={() =>
                 navigate(
                   `/assistant/conversations/${item.lastRunConversationId}`,
@@ -339,9 +469,16 @@ export function TaskDrawer({
             />
           ) : null}
         </div>
+        {doneElsewhere.isError ? (
+          <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>
+            Couldn’t mark it done — try again.
+          </div>
+        ) : null}
 
         {/* FILED TO — the §4 reassign menu: tap a row to re-file, and the
-            move is confirmed as a lesson (ReassignTeachToast). */}
+            move is confirmed as a lesson (ReassignTeachToast). The F action
+            above scrolls here. */}
+        <div ref={filedToRef}>
         <Section label="Filed to">
           {taught ? (
             <div style={{ marginBottom: 10 }}>
@@ -384,6 +521,7 @@ export function TaskDrawer({
             Moving teaches Cue — same rule as re-filing inbound on HQ.
           </div>
         </Section>
+        </div>
 
         {/* Per-task context */}
         <Section label="Context">
@@ -592,17 +730,29 @@ function Section({
   );
 }
 
-function ActionBtn({
+/**
+ * One row of frame D3's action list — glyph · label · faint caption · mono
+ * kbd hint. `primary` wears the blue wash; `muted` reads quiet.
+ */
+function DrawerAction({
+  glyph,
+  glyphColor,
   label,
+  caption,
+  kbd,
   primary = false,
+  muted = false,
   disabled = false,
-  icon,
   onClick,
 }: {
+  glyph: React.ReactNode;
+  glyphColor?: string;
   label: string;
+  caption?: string;
+  kbd?: string;
   primary?: boolean;
+  muted?: boolean;
   disabled?: boolean;
-  icon?: React.ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -611,22 +761,66 @@ function ActionBtn({
       onClick={onClick}
       disabled={disabled}
       style={{
-        display: "inline-flex",
+        display: "flex",
         alignItems: "center",
-        gap: 6,
-        fontSize: 12,
-        fontWeight: 500,
-        padding: "7px 13px",
-        borderRadius: 9,
+        gap: 10,
+        width: "100%",
+        padding: "9px 11px",
+        borderRadius: 10,
+        border: "none",
+        background: primary
+          ? `color-mix(in srgb, ${C.blue} 8%, transparent)`
+          : "transparent",
+        color: muted ? C.t2 : C.t1,
+        textAlign: "left",
         cursor: disabled ? "default" : "pointer",
         opacity: disabled ? 0.55 : 1,
-        border: primary ? "none" : `1px solid ${C.line2}`,
-        background: primary ? C.ink : C.sunken,
-        color: primary ? C.bg : C.t2,
+        fontFamily: "inherit",
       }}
     >
-      {icon}
-      {label}
+      <span
+        aria-hidden
+        style={{
+          fontSize: 12,
+          color: glyphColor,
+          display: "inline-flex",
+          alignItems: "center",
+          flexShrink: 0,
+        }}
+      >
+        {glyph}
+      </span>
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: primary ? 600 : 400,
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </span>
+      {caption ? (
+        <span style={{ fontSize: 10, color: C.t3, flexShrink: 0 }}>
+          {caption}
+        </span>
+      ) : null}
+      {kbd ? (
+        <span
+          aria-hidden
+          style={{
+            fontFamily: mono,
+            fontSize: 9.5,
+            color: C.t3,
+            flexShrink: 0,
+          }}
+        >
+          {kbd}
+        </span>
+      ) : null}
     </button>
   );
 }

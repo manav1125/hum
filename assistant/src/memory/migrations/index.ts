@@ -301,6 +301,7 @@ export { migrateWorkItemLiveness } from "./303-work-item-liveness.js";
 export { migrateStandingRules } from "./304-standing-rules.js";
 export { migrateWorkItemAutoRunEligibility } from "./305-work-item-auto-run-eligibility.js";
 export { migrateWorkItemsRunConversationIndex } from "./306-work-items-run-conversation-index.js";
+export { migrateWorkItemHygiene } from "./307-work-item-hygiene.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

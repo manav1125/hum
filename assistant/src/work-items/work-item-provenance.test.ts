@@ -121,6 +121,29 @@ describe("deriveRanProvenance", () => {
     expect(deriveRanProvenance(item)).toBe("manual");
   });
 
+  test('completedElsewhere is always "manual", even with a completed run', () => {
+    // The owner said the work happened outside Cue — that wins over the run
+    // conversation the item still carries. Never "Cue finished this".
+    const item = seedItem({
+      status: "done",
+      lastRunConversationId: "conv-elsewhere",
+      lastRunStatus: "completed",
+      completedElsewhere: 1,
+    })!;
+    expect(deriveRanProvenance(item)).toBe("manual");
+  });
+
+  test('completedElsewhere wins over an approved guardian gate ("manual", not "you_approved")', () => {
+    seedApprovedGuardianRequest("conv-elsewhere-approved");
+    const item = seedItem({
+      status: "done",
+      lastRunConversationId: "conv-elsewhere-approved",
+      lastRunStatus: "completed",
+      completedElsewhere: 1,
+    })!;
+    expect(deriveRanProvenance(item)).toBe("manual");
+  });
+
   test("a queued item that never ran is null", () => {
     const item = seedItem({ status: "queued" })!;
     expect(deriveRanProvenance(item)).toBeNull();

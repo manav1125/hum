@@ -90,6 +90,51 @@ export function senderOf(item: HqWorkItem): {
 }
 
 /**
+ * Auto-file provenance marker (feature-detected: the daemon stamps
+ * `autoFiledBy: "cue"` + `autoFileConfidence` when its background auto-filer
+ * assigned `projectId`; older daemons carry neither and degrade to a plain
+ * project chip). `autoFiledBy: "user_unfiled"` is the daemon's "the user
+ * deliberately unfiled this" guard — NOT auto-filed. Checks the item record
+ * itself and the triage-stamped `sourceContext` snapshot. Only meaningful
+ * alongside a non-null `projectId` — gate at the call site.
+ */
+export function isAutoFiled(item: HqWorkItem): boolean {
+  const rec = item as unknown as Record<string, unknown>;
+  if (rec.autoFiledBy === "cue") return true;
+  if (rec.autoFiled === true) return true;
+  try {
+    const ctx = item.sourceContext
+      ? (JSON.parse(item.sourceContext) as unknown)
+      : null;
+    if (ctx && typeof ctx === "object") {
+      const c = ctx as Record<string, unknown>;
+      if (c.autoFiledBy === "cue") return true;
+      if (c.autoFiled === true) return true;
+    }
+  } catch {
+    // Malformed snapshot — no marker.
+  }
+  return false;
+}
+
+/**
+ * Below-confidence arrival (frame 44/D2's amber "?" card): the daemon SCORED
+ * the item but left it unfiled because confidence fell below its threshold.
+ * Feature-detected — today's auto-filer writes nothing on below-threshold
+ * items (they stay unfiled with no marker), so this returns false and the
+ * surfaces keep their current rendering until the daemon stamps a marker
+ * (`autoFileConfidence` on an unfiled item, or an explicit
+ * `autoFileStatus: "below_confidence"`).
+ */
+export function isBelowConfidence(item: HqWorkItem): boolean {
+  if (item.projectId != null) return false;
+  const rec = item as unknown as Record<string, unknown>;
+  if (rec.autoFiledBy === "user_unfiled") return false; // deliberate unfile
+  if (rec.autoFileStatus === "below_confidence") return true;
+  return typeof rec.autoFileConfidence === "number";
+}
+
+/**
  * Rebuild the FULL work-item PATCH body (the daemon requires every field even
  * for a one-field change) — mirrors hq-page's `moveBody`.
  */

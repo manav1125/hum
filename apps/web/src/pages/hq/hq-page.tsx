@@ -59,6 +59,12 @@ import { routes } from "@/utils/routes";
 import { usageRangeNow } from "@/utils/usage-window";
 
 import { MakeItARuleCard } from "@/domains/chat/components/make-it-a-rule-card";
+import { isAutoFiled } from "@/mobile-v3/work-kit";
+import {
+  AutoFiledPill,
+  FilingKitStyle,
+  RefilePopover,
+} from "@/pages/projects/filing-desktop";
 
 import { CaptureBar } from "./capture-bar";
 import { HqWorkLoopBoard } from "./hq-board";
@@ -1195,6 +1201,7 @@ function CameInReassignStrip({
         marginTop: 10,
       }}
     >
+      <FilingKitStyle />
       <div
         style={{
           display: "flex",
@@ -1234,8 +1241,12 @@ function CameInReassignStrip({
           const tagLabel = mission?.title ?? project?.title ?? null;
           const isOpen = openId === item.id;
           const unfiled = !item.projectId;
+          // Frame D2: Cue-filed rows carry the ✨ provenance pill (hover
+          // "Move ›" → the anchored "Where does this belong?" popover);
+          // user-filed rows keep the plain FILED tag + reassign menu.
+          const autoFiled = !unfiled && isAutoFiled(item);
           return (
-            <div key={item.id} style={{ position: "relative" }}>
+            <div key={item.id} data-filing-row style={{ position: "relative" }}>
               <div
                 style={{
                   display: "flex",
@@ -1274,7 +1285,12 @@ function CameInReassignStrip({
                 >
                   {item.title}
                 </span>
-                {unfiled ? null : (
+                {unfiled ? null : autoFiled ? (
+                  <AutoFiledPill
+                    projectTitle={tagLabel ?? "project"}
+                    onMove={() => setOpenId(isOpen ? null : item.id)}
+                  />
+                ) : (
                   <button
                     type="button"
                     onClick={() => setOpenId(isOpen ? null : item.id)}
@@ -1317,22 +1333,40 @@ function CameInReassignStrip({
                 </div>
               ) : null}
               {isOpen ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    right: 0,
-                    top: "calc(100% + 6px)",
-                    zIndex: 20,
-                  }}
-                >
-                  <ReassignMenu
+                autoFiled ? (
+                  // Frame D2's anchored popover — current pick marked, ＋ New
+                  // project, the 🧠 teaching close.
+                  <RefilePopover
                     targets={targets}
                     currentId={item.projectId}
                     busy={patch.isPending}
                     onPick={(pid) => move(item, pid)}
                     onNew={onNewMission}
+                    onClose={() => setOpenId(null)}
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: "calc(100% + 8px)",
+                    }}
                   />
-                </div>
+                ) : (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: "calc(100% + 6px)",
+                      zIndex: 20,
+                    }}
+                  >
+                    <ReassignMenu
+                      targets={targets}
+                      currentId={item.projectId}
+                      busy={patch.isPending}
+                      onPick={(pid) => move(item, pid)}
+                      onNew={onNewMission}
+                    />
+                  </div>
+                )
               ) : null}
             </div>
           );

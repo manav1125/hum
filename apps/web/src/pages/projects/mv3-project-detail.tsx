@@ -42,6 +42,7 @@ import {
   mv3Mono,
   rise,
 } from "@/mobile-v3";
+import { DismissX, dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
 import {
   BackRow,
   Grabber,
@@ -335,6 +336,7 @@ function NeedsYouCard({
           haptic.medium();
           approve.mutate({
             path: { assistant_id: assistantId, id: item.id },
+            body: {},
           });
         }}
         style={{
@@ -716,10 +718,13 @@ export function Mv3ProjectDetail() {
   const quickAdd = useQuickAddTask(assistantId, projectId);
   // Sheet rows ride the same typed bucket the HQ surfaces consume, scoped to
   // this project client-side (keeps the exact HqWorkItem shape the cards need).
+  // One-tap ✕ dismiss with the shared 5s undo pill.
+  const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
   const all = useHqWorkItems(assistantId);
   const items = useMemo(
-    () => all.items.filter((i) => i.projectId === projectId),
-    [all.items, projectId],
+    () =>
+      all.items.filter((i) => i.projectId === projectId && !gone.has(i.id)),
+    [all.items, projectId, gone],
   );
 
   const running = useMemo(
@@ -1000,6 +1005,7 @@ export function Mv3ProjectDetail() {
                   minHeight: 44,
                   cursor: "pointer",
                   ...rise(nextDelay()),
+                  ...dismissLeave(leavingId === item.id),
                 }}
               >
                 <StateChip state="picked_up" label="" size="sm" />
@@ -1032,6 +1038,7 @@ export function Mv3ProjectDetail() {
                     {dueLabel(item.dueAt, now)}
                   </span>
                 ) : null}
+                <DismissX title={item.title} onDismiss={() => dismiss(item)} />
               </div>
             ))}
             {done.slice(0, 3).map((item) => (
@@ -1060,6 +1067,7 @@ export function Mv3ProjectDetail() {
                   opacity: 0.75,
                   cursor: "pointer",
                   ...rise(nextDelay()),
+                  ...dismissLeave(leavingId === item.id),
                 }}
               >
                 <span aria-hidden style={{ color: "var(--mv3-green)", fontSize: 12 }}>
@@ -1083,6 +1091,7 @@ export function Mv3ProjectDetail() {
                     {relativeTime(item.updatedAt)}
                   </span>
                 ) : null}
+                <DismissX title={item.title} onDismiss={() => dismiss(item)} />
               </div>
             ))}
 
@@ -1290,6 +1299,7 @@ export function Mv3ProjectDetail() {
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
       />
+      {toastNode}
     </div>
   );
 }

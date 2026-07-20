@@ -183,6 +183,7 @@ export function WorkItemsWidget({ assistantId }: { assistantId: string }) {
                 onClick={() =>
                   complete.mutate({
                     path: { assistant_id: assistantId, id: item.id },
+                    body: {},
                   })
                 }
                 style={secondary}
