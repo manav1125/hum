@@ -1,0 +1,1 @@
+import{c as e,r as t}from"./auth-store-DHK60cGH.js";function n(){let n=e.use.currentOrganizationId();return!t()||n!=null}export{n as t};

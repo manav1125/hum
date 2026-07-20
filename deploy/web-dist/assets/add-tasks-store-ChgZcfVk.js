@@ -1,1 +1,0 @@
-import{n as e,t}from"./create-selectors-Bg1LOKfl.js";var n=t(e((e,t)=>({isOpen:!1,open:()=>e({isOpen:!0}),close:()=>e({isOpen:!1}),toggle:()=>e({isOpen:!t().isOpen})})));export{n as t};

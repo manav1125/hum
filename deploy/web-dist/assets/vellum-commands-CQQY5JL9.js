@@ -1,0 +1,1 @@
+import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{W as t}from"./design-library-DlFS81Mf.js";import{t as n}from"./is-electron-BEG-Nd3J.js";var r=e(t(),1);function i(e){let t=(0,r.useRef)(e);(0,r.useLayoutEffect)(()=>{t.current=e}),(0,r.useEffect)(()=>{if(!n())return;let e=window.vellum;if(e)return e.commands.on(e=>{t.current[e.kind]?.(e)})},[])}export{i as t};
