@@ -152,13 +152,15 @@ async function checkHeartbeat() {
   const runs = (await (await api("heartbeat/runs?limit=10")).json()) as {
     runs: Array<{ status: string; finishedAt: number | null }>;
   };
-  const lastCompleted = runs.runs.find((r) => r.status === "completed");
+  // Heartbeat runs finish with status "ok" (see heartbeat-run-store.ts) —
+  // the old "completed" expectation matched nothing and always warned.
+  const lastCompleted = runs.runs.find((r) => r.status === "ok");
   const dayMs = 24 * 60 * 60 * 1000;
   if (!lastCompleted) {
     return record(
       "heartbeat",
       "warn",
-      `enabled (interval ${cfg.intervalMs / 60000}m) but no completed run in last 10 — verify after first scheduled tick`,
+      `enabled (interval ${cfg.intervalMs / 60000}m) but no ok run in last 10 — verify after first scheduled tick`,
     );
   }
   const age = Date.now() - (lastCompleted.finishedAt ?? 0);
@@ -241,14 +243,22 @@ async function checkLiveTurn() {
   });
   if (send.status >= 300)
     return record("live-turn", "fail", `POST messages → ${send.status}`);
-  const deadline = Date.now() + 150_000;
+  // Poll at 1s: a 10s interval quantized every latency measurement to a
+  // 0-10s overstatement, hiding real turn-latency movement behind the poll
+  // grid. 1s keeps the reported duration honest to ~1s.
+  const started = Date.now();
+  const deadline = started + 150_000;
   while (Date.now() < deadline) {
-    await Bun.sleep(10_000);
+    await Bun.sleep(1_000);
     const res = await api("messages?conversationKey=qa-prod-smoke&limit=5");
     if (res.status !== 200) continue;
     const text = await res.text();
     if (/"role"\s*:\s*"assistant"/.test(text) && /OK/.test(text)) {
-      return record("live-turn", "pass", "assistant replied");
+      return record(
+        "live-turn",
+        "pass",
+        `assistant replied in ~${((Date.now() - started) / 1000).toFixed(1)}s`,
+      );
     }
   }
   record("live-turn", "fail", "no assistant reply within 150s (hung turn?)");
@@ -407,7 +417,11 @@ async function fileFailures(failed: CheckResult[]) {
 async function checkMarketplace() {
   const res = await api("marketplace/sources");
   if (res.status === 404)
-    return record("marketplace", "warn", "marketplace flag OFF on this instance");
+    return record(
+      "marketplace",
+      "warn",
+      "marketplace flag OFF on this instance",
+    );
   if (res.status !== 200)
     return record("marketplace", "fail", `marketplace/sources → ${res.status}`);
   const { sources } = (await res.json()) as { sources: unknown[] };

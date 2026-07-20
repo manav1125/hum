@@ -7,10 +7,8 @@ import {
 } from "@/lib/onboarding-middleware";
 import { RootLayout } from "@/root-layout";
 import { AccountLayout } from "@/domains/account/account-layout";
-import { ChatLayout } from "@/domains/chat/chat-layout";
-import { ChatPage } from "@/domains/chat/chat-page";
-import { ConversationRedirect } from "@/domains/chat/conversation-redirect";
 import { NotFound } from "@/components/not-found";
+import type { PrefetchableSurface } from "@/lib/route-prefetch";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { RootHydrateFallback } from "@/components/root-hydrate-fallback";
 import { ActiveAssistantGate } from "@/components/layout/active-assistant-gate";
@@ -30,6 +28,21 @@ function OAuthDesktopCompleteRedirect() {
       replace
     />
   );
+}
+
+/**
+ * Fire-and-forget query prefetch for a main surface. React Router resolves
+ * a route's static `loader` in parallel with its `lazy` component, so this
+ * starts the surface's primary API reads while the route chunk is still
+ * downloading — killing the chunk→data serial chain. Never blocks the
+ * navigation: the prefetch module is itself dynamically imported and the
+ * loader returns immediately. See `lib/route-prefetch.ts`.
+ */
+function surfaceLoader(surface: PrefetchableSurface) {
+  return () => {
+    void import("@/lib/route-prefetch").then((m) => m.prefetchRoute(surface));
+    return null;
+  };
 }
 
 // Route tree — no basename, routes are absolute browser paths.
@@ -681,7 +694,16 @@ export const routeTree = [
           },
 
           {
-            Component: ChatLayout,
+            // ChatLayout (and the chat domain behind it) was statically
+            // imported, putting the entire chat transcript sub-tree in the
+            // main chunk for every surface. Lazy like the sibling routes;
+            // the loader warms the sidebar's conversation-list query in
+            // parallel with the chunk download.
+            lazy: {
+              Component: () =>
+                import("@/domains/chat/chat-layout").then((m) => m.ChatLayout),
+            },
+            loader: surfaceLoader("chats"),
             children: [
               // Inner pathless wrapper: catches every error from chat-side
               // routes (home, library, identity, inspector, etc.) one layer
@@ -698,10 +720,23 @@ export const routeTree = [
                   // (loading screens, hatching, version-selection, errors) and
                   // must render in every assistant state — they are NOT placed
                   // under <ActiveAssistantGate>.
-                  { index: true, Component: ConversationRedirect },
+                  {
+                    index: true,
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/chat/conversation-redirect").then(
+                          (m) => m.ConversationRedirect,
+                        ),
+                    },
+                  },
                   {
                     path: "conversations/:conversationId",
-                    Component: ChatPage,
+                    lazy: {
+                      Component: () =>
+                        import("@/domains/chat/chat-page").then(
+                          (m) => m.ChatPage,
+                        ),
+                    },
                   },
                   {
                     path: "documents/:surfaceId",
@@ -736,6 +771,7 @@ export const routeTree = [
                         // Home modules (next move · queued & scheduled ·
                         // watching · done today) + agents-at-work.
                         path: "hq",
+                        loader: surfaceLoader("hq"),
                         lazy: {
                           Component: () =>
                             import("@/pages/hq/hq-page").then((m) => m.HqPage),
@@ -830,6 +866,7 @@ export const routeTree = [
                       },
                       {
                         path: "projects",
+                        loader: surfaceLoader("projects"),
                         lazy: {
                           Component: () =>
                             import("@/pages/projects/projects-page").then(
@@ -988,6 +1025,7 @@ export const routeTree = [
                           },
                           {
                             path: "channels",
+                            loader: surfaceLoader("channels"),
                             lazy: {
                               Component: () =>
                                 import("@/domains/intelligence/channels-agents-page").then(
@@ -1015,6 +1053,7 @@ export const routeTree = [
                           },
                           {
                             path: "skills",
+                            loader: surfaceLoader("skills"),
                             lazy: {
                               Component: () =>
                                 import("@/domains/intelligence/skills-page").then(

@@ -72,7 +72,13 @@ export function useHomeFeedQuery(assistantId: string | null) {
       return data;
     },
     enabled: Boolean(assistantId),
-    staleTime: 30_000,
+    // SSE keeps this fresh (`home_feed_updated` → invalidate in
+    // use-stream-event-handler) and the `app.resume` subscription above
+    // already invalidates on foregrounding with real time-away — a focus
+    // refetch on top just re-downloads the ~39 KB feed on every
+    // navigation/focus for nothing.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const updateStatus = useMutation({

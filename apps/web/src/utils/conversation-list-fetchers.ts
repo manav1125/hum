@@ -14,7 +14,7 @@
  * - https://tanstack.com/query/latest/docs/eslint/prefer-query-options
  */
 
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { captureError } from "@/lib/sentry/capture-error";
 import { conversationsGet } from "@/generated/daemon/sdk.gen";
 import {
@@ -122,6 +122,138 @@ async function fetchConversationList(
 }
 
 // ---------------------------------------------------------------------------
+// First-page-then-background-drain (foreground hot path)
+//
+// The foreground list is mounted on effectively every surface (sidebar,
+// HQ, mobile Today, command palette), so its queryFn is on the cold-boot
+// and focus critical path. Draining every page before resolving meant the
+// list rendered nothing until ~8 sequential round-trips finished (~2.2 s
+// at 360 conversations). Instead the queryFn resolves with page 0 in one
+// round-trip and the remaining pages stream into the cache in the
+// background via `setQueryData`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reconcile one fetched first page into a cached newest-first list.
+ *
+ * - `hasMore === false`: the page is the complete list — replace the cache.
+ * - Otherwise the fresh rows win, and cached rows absent from the page
+ *   survive only when they sort strictly below the page's window (older
+ *   than the oldest non-pinned fresh row). A cached row whose timestamp
+ *   falls inside the window but is missing from the page no longer lives
+ *   there (deleted or archived), so it is dropped. Pinned rows are
+ *   excluded from the cutoff because the daemon appends every pinned
+ *   conversation to page 1 regardless of age — an ancient pinned row
+ *   would otherwise collapse the cutoff and drop live rows.
+ * - Client-local draft rows always survive; the server doesn't know them.
+ *
+ * The fresh window leads the result; surviving rows keep their existing
+ * relative order.
+ *
+ * Lives here (rather than `conversation-cache-mutations.ts`, which
+ * re-exports it) so the first-page queryFn below can reuse it without an
+ * import cycle.
+ *
+ * @internal Exported for testing.
+ */
+export function mergeListFirstPage(
+  prev: Conversation[],
+  page: ConversationListPage,
+): Conversation[] {
+  if (!page.hasMore) return page.conversations;
+  const nonPinned = page.conversations.filter((c) => c.isPinned !== true);
+  if (nonPinned.length === 0) return prev;
+  const cutoff = Math.min(...nonPinned.map((c) => c.lastMessageAt ?? 0));
+  const freshIds = new Set(page.conversations.map((c) => c.conversationId));
+  const kept = prev.filter(
+    (c) =>
+      !freshIds.has(c.conversationId) &&
+      (c.draft === true || (c.lastMessageAt ?? 0) < cutoff),
+  );
+  return [...page.conversations, ...kept];
+}
+
+/** In-flight background drains, keyed by assistantId — never stack two. */
+const activeListDrains = new Set<string>();
+
+/**
+ * Fetch pages 1..N in the background and merge the tail into the cached
+ * foreground list. Runs after the queryFn has already resolved with page 0
+ * so the sidebar paints in one round-trip while the backlog streams in.
+ *
+ * Completion merge semantics (`authoritative` = page 0 + drained tail, the
+ * complete server list as of the drain):
+ * - Rows present in both take whichever version has the newer
+ *   `lastMessageAt` (SSE may have refreshed the cached window mid-drain).
+ * - Cache-only rows survive when they are client-local drafts or newer
+ *   than the drain start (created/updated mid-drain, e.g. via SSE).
+ * - Everything else absent from the authoritative list was deleted or
+ *   archived server-side and is dropped — the drain keeps the cache from
+ *   accumulating stale rows.
+ */
+function drainRemainingPagesInBackground(
+  queryClient: QueryClient,
+  assistantId: string,
+  firstPage: ConversationListPage,
+): void {
+  if (!firstPage.hasMore || activeListDrains.has(assistantId)) return;
+  activeListDrains.add(assistantId);
+  const drainStartedAt = Date.now();
+
+  void (async () => {
+    try {
+      const tail: Conversation[] = [];
+      for (let page = 1; page < CONVERSATION_LIST_MAX_PAGES; page++) {
+        const { conversations, hasMore } = await fetchConversationListPage(
+          assistantId,
+          page * CONVERSATION_LIST_PAGE_SIZE,
+        );
+        tail.push(...conversations);
+        if (!hasMore || conversations.length === 0) break;
+      }
+
+      const authoritative = new Map<string, Conversation>();
+      for (const c of [...firstPage.conversations, ...tail]) {
+        if (!authoritative.has(c.conversationId)) {
+          authoritative.set(c.conversationId, c);
+        }
+      }
+
+      queryClient.setQueryData<Conversation[]>(
+        conversationsQueryKey(assistantId),
+        (prev) => {
+          const merged = new Map(authoritative);
+          for (const c of prev ?? []) {
+            const auth = merged.get(c.conversationId);
+            if (auth) {
+              if ((c.lastMessageAt ?? 0) > (auth.lastMessageAt ?? 0)) {
+                merged.set(c.conversationId, c);
+              }
+            } else if (
+              c.draft === true ||
+              (c.lastMessageAt ?? 0) >= drainStartedAt
+            ) {
+              merged.set(c.conversationId, c);
+            }
+          }
+          return [...merged.values()].sort(byTimestampDesc("lastMessageAt"));
+        },
+      );
+    } catch (err) {
+      // Best-effort: the visible window (page 0) already rendered; the tail
+      // retries on the next fetch. Never surface a background-drain failure.
+      captureError(err, {
+        context: "conversation-list.background-drain",
+        level: "warning",
+        extra: { assistantId },
+      });
+    } finally {
+      activeListDrains.delete(assistantId);
+    }
+  })();
+}
+
+// ---------------------------------------------------------------------------
 // Merged list (foreground + background, deduplicated)
 // ---------------------------------------------------------------------------
 
@@ -195,12 +327,31 @@ async function fetchMergedConversationList(
  * once the user expands the Background/Scheduled sidebar sections, so a large
  * background backlog never blocks the initial chat render (the conversation
  * the user actually opened).
+ *
+ * Hot-path shape: resolves after **one** round-trip with the newest page
+ * merged over whatever the cache already holds (so a refetch never shrinks
+ * a fully-drained list back to 50 rows), then streams the remaining pages
+ * into the cache in the background when a `queryClient` is provided. When
+ * no `queryClient` is available (non-TQ callers), it falls back to the
+ * full serial drain so the returned list is always complete.
  */
 export async function listConversations(
   assistantId: string,
+  queryClient?: QueryClient,
 ): Promise<Conversation[]> {
-  const foreground = await fetchConversationList(assistantId);
-  return [...foreground].sort(byTimestampDesc("lastMessageAt"));
+  if (!queryClient) {
+    const foreground = await fetchConversationList(assistantId);
+    return [...foreground].sort(byTimestampDesc("lastMessageAt"));
+  }
+
+  const firstPage = await listConversationsFirstPage(assistantId);
+  drainRemainingPagesInBackground(queryClient, assistantId, firstPage);
+
+  if (!firstPage.hasMore) return firstPage.conversations;
+  const prev = queryClient.getQueryData<Conversation[]>(
+    conversationsQueryKey(assistantId),
+  );
+  return prev ? mergeListFirstPage(prev, firstPage) : firstPage.conversations;
 }
 
 /**
@@ -327,14 +478,28 @@ export async function listScheduledConversationsFirstPage(
 const QUERY_STALE_TIME_MS = 30_000;
 
 /**
+ * Foreground list staleness: the `conversations:list` sync tag (SSE) keeps
+ * this cache fresh via `refreshConversationListWindows`, and reconnect gaps
+ * are swept by `use-conversation-sync`. Focus/navigation refetches are
+ * therefore redundant belt-and-braces that used to re-trigger the full
+ * pagination walk on every window focus — hence the long staleTime and
+ * `refetchOnWindowFocus: false`.
+ */
+const FOREGROUND_LIST_STALE_TIME_MS = 5 * 60_000;
+
+/**
  * Query options for the foreground conversation list. Spread into
  * `useQuery()` and override `enabled` at the hook level.
+ *
+ * The queryFn resolves with page 0 in one round-trip and background-drains
+ * the remaining pages into the cache — see `listConversations`.
  */
 export function conversationListOptions(assistantId: string) {
   return queryOptions({
     queryKey: conversationsQueryKey(assistantId),
-    queryFn: () => listConversations(assistantId),
-    staleTime: QUERY_STALE_TIME_MS,
+    queryFn: ({ client }) => listConversations(assistantId, client),
+    staleTime: FOREGROUND_LIST_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -200,7 +200,9 @@ async function computeClientSideMove(assistantId: string): Promise<NextMove> {
   }
 }
 
-async function fetchNextMove(assistantId: string): Promise<NextMove> {
+// Exported so the HQ route loader can prefetch the hero move in parallel
+// with the route chunk (see `lib/route-prefetch.ts`).
+export async function fetchNextMove(assistantId: string): Promise<NextMove> {
   // 1) Prefer the daemon's LLM-reasoned move when the route is reachable.
   try {
     const { data, error, response } = await client.get<

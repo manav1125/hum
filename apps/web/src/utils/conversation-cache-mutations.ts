@@ -35,10 +35,10 @@ import {
   scheduledConversationsQueryKey,
 } from "@/lib/sync/query-tags";
 import {
-  type ConversationListPage,
   listBackgroundConversationsFirstPage,
   listConversationsFirstPage,
   listScheduledConversationsFirstPage,
+  mergeListFirstPage,
 } from "@/utils/conversation-list-fetchers";
 import {
   ConversationNotFoundError,
@@ -248,41 +248,10 @@ export async function refreshConversationRow(
   ]);
 }
 
-/**
- * Reconcile one fetched first page into a cached newest-first list.
- *
- * - `hasMore === false`: the page is the complete list — replace the cache.
- * - Otherwise the fresh rows win, and cached rows absent from the page
- *   survive only when they sort strictly below the page's window (older
- *   than the oldest non-pinned fresh row). A cached row whose timestamp
- *   falls inside the window but is missing from the page no longer lives
- *   there (deleted or archived), so it is dropped. Pinned rows are
- *   excluded from the cutoff because the daemon appends every pinned
- *   conversation to page 1 regardless of age — an ancient pinned row
- *   would otherwise collapse the cutoff and drop live rows.
- * - Client-local draft rows always survive; the server doesn't know them.
- *
- * The fresh window leads the result; surviving rows keep their existing
- * relative order.
- *
- * @internal Exported for testing.
- */
-export function mergeListFirstPage(
-  prev: Conversation[],
-  page: ConversationListPage,
-): Conversation[] {
-  if (!page.hasMore) return page.conversations;
-  const nonPinned = page.conversations.filter((c) => c.isPinned !== true);
-  if (nonPinned.length === 0) return prev;
-  const cutoff = Math.min(...nonPinned.map((c) => c.lastMessageAt ?? 0));
-  const freshIds = new Set(page.conversations.map((c) => c.conversationId));
-  const kept = prev.filter(
-    (c) =>
-      !freshIds.has(c.conversationId) &&
-      (c.draft === true || (c.lastMessageAt ?? 0) < cutoff),
-  );
-  return [...page.conversations, ...kept];
-}
+// `mergeListFirstPage` moved to `conversation-list-fetchers.ts` so the
+// first-page queryFn can reuse it without an import cycle; re-exported here
+// for existing consumers and tests.
+export { mergeListFirstPage } from "@/utils/conversation-list-fetchers";
 
 const LIST_WINDOW_BUCKETS = [
   {

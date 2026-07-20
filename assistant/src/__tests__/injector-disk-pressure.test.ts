@@ -255,11 +255,13 @@ Do not work on unrelated tasks until enough space is freed to clear the lock or 
       ...makeContext(),
     });
 
+    // Disk-pressure prepends (topmost); the workspace + turn-context blocks
+    // append after the user text (volatile blocks trail stable content).
     expect(tailTexts(result.messages).slice(0, 4)).toEqual([
       DISK_PRESSURE_WARNING_PROMPT,
+      "clean up space",
       workspace,
       turnContext,
-      "clean up space",
     ]);
     expect(
       result.blocks.injectorChainBlock?.startsWith(
@@ -285,8 +287,8 @@ Do not work on unrelated tasks until enough space is freed to clear the lock or 
 
     expect(tailTexts(result.messages)).toEqual([
       DISK_PRESSURE_WARNING_PROMPT,
-      turnContext,
       "status",
+      turnContext,
     ]);
   });
 

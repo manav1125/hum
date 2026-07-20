@@ -17,6 +17,7 @@ import {
   NOW_SCRATCHPAD_STRIP_PREFIXES,
   stripSpotlightInjections,
   stripUserTextBlocksByPrefix,
+  stripWorkspaceInjections,
 } from "../context/strip-injections.js";
 import { getDocumentsForConversation } from "../documents/document-store.js";
 import {
@@ -2176,6 +2177,19 @@ export async function applyRuntimeInjections(
   // With the v3 flag off no spotlight blocks exist and this is a content
   // no-op, keeping the v2 path bit-for-bit identical.
   let runMessagesForAssembly = stripSpotlightInjections(runMessages);
+
+  // `<workspace>` strip-and-replace: the workspace top-level listing is
+  // ephemeral by contract (see the `workspace-context` injector). Whenever
+  // the chain produced a fresh block this turn, remove every previous copy
+  // from history so exactly one current listing rides the tail and the
+  // volatile bytes never sit mid-prefix. When the injector produced nothing
+  // (minimal mode, empty render), any persisted copy is left as grounding.
+  const workspaceBlockProduced = chainBlocks.some(
+    (b) => b.id === "workspace-context" && b.text.length > 0,
+  );
+  if (workspaceBlockProduced) {
+    runMessagesForAssembly = stripWorkspaceInjections(runMessagesForAssembly);
+  }
 
   // v2 suppression: when the `memory-v3-live` flag is on AND the v3 injector
   // produced a block this turn (possibly empty-text on an all-repeat turn), v3

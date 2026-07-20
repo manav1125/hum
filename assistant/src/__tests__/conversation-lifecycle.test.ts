@@ -247,13 +247,11 @@ describe("loadFromDb metadata injection rehydration", () => {
 
     expect(messages).toHaveLength(3);
     // m1 is historical (not tail) — all three blocks should rehydrate in the
-    // documented shape: [<turn_context>, <memory>, <system_reminder>, ...original]
+    // documented shape: [<memory>, <system_reminder>, ...original,
+    // <turn_context>] (turn context appends, matching the live injector's
+    // append-user-tail placement).
     expect(messages[0].role).toBe("user");
     expect(messages[0].content).toEqual([
-      {
-        type: "text",
-        text: "<turn_context>\nctx payload\n</turn_context>",
-      },
       {
         type: "text",
         text: "<memory>\nmem payload\n</memory>",
@@ -263,6 +261,10 @@ describe("loadFromDb metadata injection rehydration", () => {
         text: "<system_reminder>\npkb payload\n</system_reminder>",
       },
       { type: "text", text: "First turn" },
+      {
+        type: "text",
+        text: "<turn_context>\nctx payload\n</turn_context>",
+      },
     ]);
   });
 
@@ -796,9 +798,12 @@ describe("loadFromDb metadata injection rehydration", () => {
     // AND `<info>` blocks), so the v3 block — spliced last and itself
     // `<memory>`-wrapped — lands AFTER the `<info>` static block but before
     // now-md's earlier splice:
-    //   [<workspace>, <turn_context>, <memory>dynamic</memory>,
+    //   [<memory>dynamic</memory>,
     //    <info>v2static</info>, <memory>v3cards</memory>, <NOW.md>,
-    //    <system_reminder>, <knowledge_base>, ...original]
+    //    <system_reminder>, <knowledge_base>, ...original, <turn_context>]
+    // (`<turn_context>` appends at the end, matching the live injector's
+    // append-user-tail placement; `<workspace>` is ephemeral —
+    // strip-and-replaced at the live tail each turn — and not rehydrated.)
     // Rehydration must reproduce this byte-for-byte or every daemon restart
     // busts the provider prefix cache for the whole conversation history.
     // (`memoryInjectedBlock` and the v3 key are mutually exclusive on real
@@ -841,8 +846,6 @@ describe("loadFromDb metadata injection rehydration", () => {
 
     expect(messages).toHaveLength(3);
     expect(messages[0].content).toEqual([
-      { type: "text", text: "<workspace>\nworkspace body\n</workspace>" },
-      { type: "text", text: "<turn_context>\nctx payload\n</turn_context>" },
       { type: "text", text: "<memory>\nmem payload\n</memory>" },
       {
         type: "text",
@@ -859,6 +862,7 @@ describe("loadFromDb metadata injection rehydration", () => {
       },
       { type: "text", text: "<knowledge_base>\nkb body\n</knowledge_base>" },
       { type: "text", text: "First turn" },
+      { type: "text", text: "<turn_context>\nctx payload\n</turn_context>" },
     ]);
   });
 

@@ -29,10 +29,11 @@
  * and is silent on error — a failed background sync must never toast.
  */
 import { useCallback, useEffect, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { client } from "@/generated/api/client.gen";
+import { configGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useBusSubscription } from "@/hooks/use-bus-subscription";
 import { getBrowserTimezone } from "@/utils/browser-timezone";
 import { useEffectiveTimezone } from "@/utils/use-effective-timezone";
@@ -43,6 +44,7 @@ export function TimezoneSync(): null {
   // imperatively inside `trySync` from `getBrowserTimezone()`.
   const effectiveTz = useEffectiveTimezone();
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const queryClient = useQueryClient();
 
   const { mutateAsync: patchTimezone } = useMutation({
     mutationFn: async (vars: {
@@ -109,7 +111,27 @@ export function TimezoneSync(): null {
 
     // Fire-and-forget background sync, silent on error. Record the key only
     // on success; on settle, drain any newer target requested while in flight.
-    patchTimezone({ assistantId: currentAssistantId, detectedTimezone })
+    //
+    // Boot dedupe: before writing, read the server's current value through
+    // the shared config query cache (the boot burst fetches /config anyway,
+    // so this dedupes to zero extra requests) and skip the PATCH when the
+    // zone is already correct. `lastSyncedRef` is in-memory, so without
+    // this check every page load re-PATCHed an unchanged zone. Any read
+    // failure falls through to the PATCH — the write path is authoritative.
+    (async () => {
+      try {
+        const config = await queryClient.ensureQueryData(
+          configGetOptions({ path: { assistant_id: currentAssistantId } }),
+        );
+        const serverZone = (
+          config as { ui?: { detectedTimezone?: string } } | undefined
+        )?.ui?.detectedTimezone;
+        if (serverZone === detectedTimezone) return;
+      } catch {
+        // Unreadable config — PATCH anyway (previous behavior).
+      }
+      await patchTimezone({ assistantId: currentAssistantId, detectedTimezone });
+    })()
       .then(() => {
         lastSyncedRef.current = key;
       })
@@ -124,7 +146,7 @@ export function TimezoneSync(): null {
         pendingKeyRef.current = null;
         if (pending && pending !== key) trySyncRef.current();
       });
-  }, [patchTimezone]);
+  }, [patchTimezone, queryClient]);
 
   // Keep the drain indirection pointed at the latest `trySync`. Assigned in an
   // effect (never during render) for the same "no refs during render" reason.

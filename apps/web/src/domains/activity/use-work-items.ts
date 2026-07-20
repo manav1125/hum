@@ -121,7 +121,12 @@ export function useWorkItems(
       query: status ? { status } : {},
     }),
     refetchInterval: 60_000,
-    staleTime: 15_000,
+    // SSE events (see above) + the 60 s interval safety-net keep this
+    // fresh; a focus refetch on top re-fired every status bucket on each
+    // window focus. The interval is the freshness floor, so nothing can
+    // go stale-forever.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const raw = query.data?.items ?? [];

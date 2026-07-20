@@ -132,9 +132,9 @@ export const MemoryV2ConfigSchema = z
       .int("memory.v2.ann_candidate_limit must be an integer")
       .positive("memory.v2.ann_candidate_limit must be a positive integer")
       .nullable()
-      .default(null)
+      .default(512)
       .describe(
-        "Per-channel cap on the unrestricted ANN candidate query (dense and sparse each return up to this many hits before they are unioned and fed into the activation pipeline). `null` = unlimited (every page in the v2 collection is eligible). Increase or null this out to surface more candidates at the cost of higher per-turn embedding/scoring work.",
+        "Per-channel cap on the unrestricted ANN candidate query (dense and sparse each return up to this many hits before they are unioned and fed into the activation pipeline). Defaults to 512 — generous next to top_k=25 while bounding the per-turn scoring cost and the size of memory_v2_activation_logs rows, both of which grow with the whole collection when unbounded. Set `null` for unlimited (every page in the v2 collection is eligible) at the cost of higher per-turn embedding/scoring work.",
       ),
     epsilon: z
       .number({ error: "memory.v2.epsilon must be a number" })

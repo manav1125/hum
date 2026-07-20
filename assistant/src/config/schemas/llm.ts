@@ -462,9 +462,37 @@ type LLMCallSiteConfig = z.infer<typeof LLMCallSiteConfig>;
 // Top-level LLM schema
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-turn wire tool-set pruning. When enabled, connector-origin (MCP) tool
+ * schemas are withheld from the LLM request unless the conversation has
+ * already discovered or used them — the `tool_search` meta-tool activates
+ * gated tools on demand. Execution is never gated by pruning: a gated tool
+ * called by name still runs. `keepTools` entries are exact tool names, or
+ * prefixes when the entry ends with `*` (e.g. `mcp__composio__GMAIL_*`).
+ */
+const ToolPruningSchema = z
+  .object({
+    enabled: z
+      .boolean()
+      .default(true)
+      .describe(
+        "When true (default), MCP/connector tool schemas are pruned from LLM requests and discovered on demand via the tool_search meta-tool. Set false for an instant rollback to sending every tool schema on every call.",
+      ),
+    keepTools: z
+      .array(z.string())
+      .default([])
+      .describe(
+        "Tool names that are always kept on the wire even when pruning is enabled. Exact names, or prefix patterns ending in `*`.",
+      ),
+  })
+  .describe("Per-turn LLM tool-schema pruning configuration");
+
+export type ToolPruningConfig = z.infer<typeof ToolPruningSchema>;
+
 export const LLMSchema = z
   .object({
     default: LLMConfigBase.default(LLMConfigBase.parse({})),
+    toolPruning: ToolPruningSchema.default(ToolPruningSchema.parse({})),
     profiles: z.record(z.string().min(1), ProfileEntry).default({}),
     // Presentation-only order for named profiles. The resolver ignores this;
     // clients use it to render profile pickers consistently.

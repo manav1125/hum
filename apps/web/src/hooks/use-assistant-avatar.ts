@@ -13,7 +13,6 @@ import { useSupportsAvatarStateManifest } from "@/lib/backwards-compat/avatar-st
 import { avatarQueryKey } from "@/lib/sync/query-tags";
 
 interface AvatarData {
-  components: CharacterComponents | null;
   traits: CharacterTraits | null;
   customImageUrl: string | null;
 }
@@ -89,24 +88,38 @@ export function useAssistantAvatar(assistantId: string | null) {
   const queryClient = useQueryClient();
   const supportsManifest = useSupportsAvatarStateManifest();
 
+  // Character components (~46 KB) are independent of the render-mode
+  // resolution path, so they live under a stable key WITHOUT the
+  // `supportsManifest` segment. The manifest-support flag flips false→true
+  // when the assistant version resolves shortly after boot; when the
+  // components shared the flag-keyed query they were re-downloaded on every
+  // boot for nothing. Both queries share the `avatarQueryKey` prefix so all
+  // existing invalidations (upload/remove/regenerate, SSE `avatar_updated`,
+  // reconnect sweep) hit both.
+  const componentsQuery = useQuery<CharacterComponents>({
+    queryKey: [...avatarQueryKey(assistantId ?? ""), "components"],
+    queryFn: async () => {
+      const components = await fetchCharacterComponents(assistantId!);
+      // Throw (rather than resolve null) so React Query keeps previously
+      // cached components on a transient failure and retries — mirrors the
+      // avatar-state error semantics above.
+      if (!components) throw new Error("Failed to fetch character components");
+      return components;
+    },
+    enabled: Boolean(assistantId),
+    staleTime: Infinity,
+    structuralSharing: false,
+    retry: 1,
+    retryOnMount: false,
+  });
+
   const { data, isLoading } = useQuery<AvatarData>({
-    queryKey: [...avatarQueryKey(assistantId ?? ""), supportsManifest],
+    queryKey: [...avatarQueryKey(assistantId ?? ""), "mode", supportsManifest],
     queryFn: async () => {
       const id = assistantId!;
-      const [components, { traits, imageUrl }] = await Promise.all([
-        fetchCharacterComponents(id),
-        supportsManifest
-          ? fetchAvatarViaManifest(id)
-          : fetchAvatarViaLegacyFiles(id),
-      ]);
-
-      // Character components are needed for the animated SVG avatar but NOT
-      // for custom uploaded images — ChatAvatar renders those via a plain
-      // <img> tag. Only treat null components as a failure when there is no
-      // image to fall back on; otherwise the partial result is usable.
-      if (!components && !imageUrl) {
-        throw new Error("Failed to fetch character components");
-      }
+      const { traits, imageUrl } = supportsManifest
+        ? await fetchAvatarViaManifest(id)
+        : await fetchAvatarViaLegacyFiles(id);
 
       const prev = activeBlobUrls.get(id);
       if (prev && prev !== imageUrl) {
@@ -118,7 +131,7 @@ export function useAssistantAvatar(assistantId: string | null) {
         activeBlobUrls.delete(id);
       }
 
-      return { components, traits, customImageUrl: imageUrl };
+      return { traits, customImageUrl: imageUrl };
     },
     enabled: Boolean(assistantId),
     staleTime: Infinity,
@@ -152,10 +165,10 @@ export function useAssistantAvatar(assistantId: string | null) {
   }, [assistantId, queryClient]);
 
   return {
-    components: data?.components ?? null,
+    components: componentsQuery.data ?? null,
     traits: data?.traits ?? null,
     customImageUrl: data?.customImageUrl ?? null,
-    isLoading,
+    isLoading: isLoading || componentsQuery.isLoading,
     invalidate,
   };
 }

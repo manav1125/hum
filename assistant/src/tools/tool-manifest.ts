@@ -30,6 +30,7 @@ import { skillSearchTool } from "./skills/search.js";
 import { notifyParentTool } from "./subagent/notify-parent.js";
 import { requestSystemPermissionTool } from "./system/request-permission.js";
 import { shellTool } from "./terminal/shell.js";
+import { toolSearchTool } from "./tool-search.js";
 import type { ToolDefinition } from "./types.js";
 
 // ── Eager side-effect modules ───────────────────────────────────────
@@ -67,6 +68,7 @@ export const eagerModuleToolNames: string[] = [
   "skill_execute",
   "skill_load",
   "skill_search",
+  "tool_search",
   "request_system_permission",
   "notify_parent",
 ];
@@ -90,6 +92,7 @@ export const explicitTools: ToolDefinition[] = [
   skillExecuteTool,
   skillLoadTool,
   skillSearchTool,
+  toolSearchTool,
   requestSystemPermissionTool,
   // Always-explicit tools
   rememberTool,

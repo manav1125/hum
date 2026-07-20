@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -25,7 +26,10 @@ import { stripCommentLines } from "../util/strip-comment-lines.js";
 import { cleanupBootstrapFiles } from "./bootstrap-cleanup.js";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./cache-boundary.js";
 import { resolveGuardianPersona, resolveUserSlug } from "./persona-resolver.js";
-import { renderWorkspaceSections } from "./sections.js";
+import {
+  getWorkspaceSystemPromptDir,
+  renderWorkspaceSections,
+} from "./sections.js";
 import { isTemplateContent } from "./template-detection.js";
 
 export { isTemplateContent };
@@ -368,6 +372,7 @@ export function buildSystemPrompt(options?: BuildSystemPromptOptions): string {
   // earlier, at `setOnboardingContext`, so the activation session is recorded
   // before the agent loop resolves tools on the first turn; this call is a
   // harmless idempotent backstop for prompt builds outside that path.
+  // Runs BEFORE the memo check below so the side effect fires on every call.
   const bootstrapTemplate = options?.onboardingContext?.bootstrapTemplate;
   if (bootstrapTemplate) {
     applyBootstrapTemplate(bootstrapTemplate, options?.conversationId);
@@ -413,6 +418,32 @@ export function buildSystemPrompt(options?: BuildSystemPromptOptions): string {
     channelSlug,
   };
 
+  // ── Render memoization ────────────────────────────────────────────
+  // `buildSystemPrompt` runs on EVERY agent-loop round of every turn (the
+  // conversation's resolveSystemPrompt callback rebuilds it so workspace
+  // edits are picked up), and each render re-reads a dozen workspace files.
+  // Memoize the render keyed on the render-relevant options plus an mtime
+  // fingerprint of the contributing workspace files, with a short TTL that
+  // bounds staleness of the non-file-backed dynamic sections (connected
+  // services, guardian channels). A hit returns byte-identical output —
+  // which is also what keeps the prompt prefix provider-cacheable
+  // turn-over-turn.
+  const memoKey = systemPromptMemoKey(ctx);
+  const fingerprint = systemPromptFileFingerprint(
+    ctx.workspaceDir,
+    userSlug,
+    channelSlug,
+  );
+  const cached = systemPromptMemo.get(memoKey);
+  const now = Date.now();
+  if (
+    cached &&
+    cached.fingerprint === fingerprint &&
+    now - cached.renderedAt < SYSTEM_PROMPT_MEMO_TTL_MS
+  ) {
+    return cached.value;
+  }
+
   // Every system-prompt block flows through the bundled section
   // pipeline — including runtime-computed entries like
   // `14-connected-services` whose body is derived from live OAuth
@@ -423,10 +454,123 @@ export function buildSystemPrompt(options?: BuildSystemPromptOptions): string {
   // splits into independently cached system blocks and other providers
   // strip.  Empty blocks are dropped so the marker never dangles at
   // either end of the prompt.
-  return renderWorkspaceSections(ctx)
+  const rendered = renderWorkspaceSections(ctx)
     .map((block) => block.join("\n\n"))
     .filter((block) => block.length > 0)
     .join(SYSTEM_PROMPT_CACHE_BOUNDARY);
+
+  if (systemPromptMemo.size >= SYSTEM_PROMPT_MEMO_MAX_ENTRIES) {
+    systemPromptMemo.clear();
+  }
+  systemPromptMemo.set(memoKey, {
+    value: rendered,
+    fingerprint,
+    renderedAt: now,
+  });
+  return rendered;
+}
+
+// ── buildSystemPrompt memoization internals ───────────────────────────
+
+/** TTL bounding staleness of the non-file-backed dynamic sections. */
+const SYSTEM_PROMPT_MEMO_TTL_MS = 30_000;
+/** Bound on distinct option-key entries before the memo is reset. */
+const SYSTEM_PROMPT_MEMO_MAX_ENTRIES = 64;
+
+interface SystemPromptMemoEntry {
+  value: string;
+  fingerprint: string;
+  renderedAt: number;
+}
+
+const systemPromptMemo = new Map<string, SystemPromptMemoEntry>();
+
+/** Drop all memoized renders. Exposed for tests. */
+export function __clearSystemPromptMemoForTesting(): void {
+  systemPromptMemo.clear();
+}
+
+/**
+ * Serialize every render-relevant input of the section pipeline. Object
+ * inputs that templates can branch on (`trustContext`,
+ * `channelCapabilities`, `personaOverride`) influence the render only via
+ * the derived slugs / pins already on `ctx`, so their presence booleans
+ * plus the derived fields fully key the output; `onboardingContext` is
+ * consumed structurally by the bootstrap section and is serialized whole.
+ */
+function systemPromptMemoKey(ctx: {
+  hasNoClient?: boolean;
+  excludeBootstrap?: boolean;
+  excludeCustomPrefix?: boolean;
+  onboardingContext?: OnboardingContext;
+  conversationId?: string;
+  isContainerized: boolean;
+  workspaceDir: string;
+  userSlug: string;
+  channelSlug: string;
+  trustContext?: TrustContext;
+  channelCapabilities?: ChannelCapabilities;
+}): string {
+  return JSON.stringify([
+    ctx.hasNoClient ?? false,
+    ctx.excludeBootstrap ?? false,
+    ctx.excludeCustomPrefix ?? false,
+    ctx.onboardingContext ?? null,
+    ctx.conversationId ?? null,
+    ctx.isContainerized,
+    ctx.workspaceDir,
+    ctx.userSlug,
+    ctx.channelSlug,
+    ctx.trustContext != null,
+    ctx.channelCapabilities != null,
+  ]);
+}
+
+/**
+ * mtime+size fingerprint of every workspace file that can contribute to the
+ * rendered prompt: the per-section override dir
+ * (`<workspace>/system-prompt/*.md`) and the file-backed section sources
+ * (IDENTITY/SOUL/VOICE/BOOTSTRAP + the resolved persona files). A missing
+ * file contributes a stable "absent" marker, so create/delete transitions
+ * bust the memo like edits do.
+ */
+function systemPromptFileFingerprint(
+  workspaceDir: string,
+  userSlug: string,
+  channelSlug: string,
+): string {
+  const parts: string[] = [];
+  const stampFile = (path: string): void => {
+    try {
+      const s = statSync(path);
+      parts.push(`${path}:${s.mtimeMs}:${s.size}`);
+    } catch {
+      parts.push(`${path}:absent`);
+    }
+  };
+
+  const overrideDir = getWorkspaceSystemPromptDir();
+  try {
+    for (const entry of readdirSync(overrideDir).sort()) {
+      stampFile(join(overrideDir, entry));
+    }
+  } catch {
+    parts.push(`${overrideDir}:absent`);
+  }
+
+  for (const file of [
+    "IDENTITY.md",
+    "SOUL.md",
+    "VOICE.md",
+    "BOOTSTRAP.md",
+    join("users", `${userSlug}.md`),
+    join("users", "default.md"),
+    join("channels", `${channelSlug}.md`),
+  ]) {
+    stampFile(join(workspaceDir, file));
+  }
+
+  return parts.join("|");
 }
 
 // Re-export from shared util so existing importers don't break.

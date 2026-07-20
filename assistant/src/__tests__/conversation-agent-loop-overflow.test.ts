@@ -90,6 +90,7 @@ const defaultLlmConfig: LLMConfig = {
   callSites: {},
   profileSession: { defaultTtlSeconds: 1800, maxTtlSeconds: 43200 },
   pricingOverrides: [],
+  toolPruning: { enabled: true, keepTools: [] },
 };
 
 let mockLlmConfig: LLMConfig = structuredClone(defaultLlmConfig);

@@ -426,12 +426,12 @@ describe("injector chain", () => {
     // channel, workspace context + unified-turn + PKB + NOW + subagent
     // all active. The expected final tail content ordering is:
     //
-    //   [workspace]            ← prepend order 10 (topmost)
-    //   [unified-turn]         ← prepend order 20
     //   [now-md]               ← after-memory-prefix order 40 (highest order, closest to memory)
     //   [pkb-reminder]         ← after-memory-prefix order 35
     //   [pkb-context]          ← after-memory-prefix order 30
     //   [user text]
+    //   [workspace]            ← append order 10 (volatile blocks trail the stable content)
+    //   [unified-turn]         ← append order 20
     //   [subagent]             ← append order 50
     //
     // No memory prefix blocks in this scenario, so after-memory-prefix
@@ -477,17 +477,19 @@ describe("injector chain", () => {
 
     // Positional assertions — each block lands where the injector's
     // placement says it does.
-    expect(texts[0]).toBe(workspaceText); // prepend order 10
-    expect(texts[1]).toBe(unifiedTurn); // prepend order 20
     // NOW, pkb-reminder and pkb-context are all after-memory-prefix; higher
     // order splices closer to the memory prefix, so NOW sits above the
     // reminder, which sits above the knowledge_base.
-    expect(texts[2]).toBe(
+    expect(texts[0]).toBe(
       `<NOW.md Always keep this up to date; keep under 10 lines>\n${nowContent}\n</NOW.md>`,
     );
-    expect(texts[3]).toBe(buildPkbReminder([])); // pkb-reminder order 35
-    expect(texts[4]).toBe(`<knowledge_base>\n${pkbContent}\n</knowledge_base>`);
-    expect(texts[5]).toBe("What next?"); // user's typed text
+    expect(texts[1]).toBe(buildPkbReminder([])); // pkb-reminder order 35
+    expect(texts[2]).toBe(`<knowledge_base>\n${pkbContent}\n</knowledge_base>`);
+    expect(texts[3]).toBe("What next?"); // user's typed text
+    // Appends in ascending order: the volatile per-turn blocks trail the
+    // stable message content.
+    expect(texts[4]).toBe(workspaceText); // append order 10
+    expect(texts[5]).toBe(unifiedTurn); // append order 20
     expect(texts[6]).toBe(subagentBlock); // append order 50
     expect(texts).toHaveLength(7);
 
@@ -616,7 +618,7 @@ describe("injector chain", () => {
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text);
 
-    expect(texts).toEqual([minimalTurnBlock, "hi"]);
+    expect(texts).toEqual(["hi", minimalTurnBlock]);
     expect(result.blocks.unifiedTurnContext).toBe(minimalTurnBlock);
     expect(result.blocks.workspaceBlock).toBeUndefined();
     expect(result.blocks.pkbContextBlock).toBeUndefined();

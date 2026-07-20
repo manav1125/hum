@@ -17,7 +17,9 @@ describe("MemoryV2ConfigSchema", () => {
       hops: 2,
       top_k: 25,
       activation_log_max_concepts: 300,
-      ann_candidate_limit: null,
+      // Bounded by default: top_k is 25, so 512 candidates is generous while
+      // keeping the per-turn Qdrant scan and activation-log rows bounded.
+      ann_candidate_limit: 512,
       epsilon: 0.01,
       dense_weight: 0.85,
       sparse_weight: 0.15,

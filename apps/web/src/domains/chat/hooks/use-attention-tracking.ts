@@ -109,8 +109,10 @@ export function useAttentionTracking({
       if (!assistantId) return;
       let pendingKeys: Set<string>;
       try {
-        pendingKeys =
-          await listConversationIdsWithPendingInteractions(assistantId);
+        pendingKeys = await listConversationIdsWithPendingInteractions(
+          assistantId,
+          queryClient,
+        );
       } catch {
         // See `decideGraduationDispatches` — null signals "do nothing".
         return;
@@ -138,6 +140,7 @@ export function useAttentionTracking({
     processingConversationIds,
     activeConversationId,
     assistantId,
+    queryClient,
   ]);
 
   // -------------------------------------------------------------------------

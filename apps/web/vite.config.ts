@@ -143,6 +143,34 @@ export default defineConfig(({ mode }) => {
       // reach the deployed artifact. Without the token, skip generation
       // entirely to avoid shipping maps in non-Sentry builds.
       sourcemap: sentryUploadEnabled ? "hidden" : false,
+      rollupOptions: {
+        output: {
+          // Split the always-loaded boot JS so route chunks stop
+          // re-bundling shared vendor code and the main chunk parses
+          // faster on mid-tier devices (perf audit 2026-07-20 §3).
+          // Function form keeps everything not matched on Rollup's
+          // default heuristics (route-level code-splitting).
+          manualChunks(id: string) {
+            // The workspace design library (symlinked via node_modules
+            // with preserveSymlinks, so match both path shapes).
+            if (id.includes("design-library")) return "design-library";
+            if (!id.includes("node_modules")) return undefined;
+            // React runtime + router: one cohesive, rarely-changing chunk.
+            if (
+              /node_modules\/(react|react-dom|scheduler|react-router)\//.test(
+                id,
+              )
+            ) {
+              return "react-vendor";
+            }
+            if (id.includes("@sentry")) return "sentry";
+            if (/node_modules\/(framer-motion|motion|motion-dom|motion-utils)\//.test(id)) {
+              return "motion";
+            }
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

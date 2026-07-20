@@ -2080,13 +2080,14 @@ describe("applyRuntimeInjections with unifiedTurnContext", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].content).toHaveLength(2);
-    const injected = (result[0].content[0] as { type: "text"; text: string })
-      .text;
-    expect(injected).toBe(sampleBlock);
-    // Original content preserved
-    expect((result[0].content[1] as { type: "text"; text: string }).text).toBe(
+    // The turn-context block appends after the original content so the
+    // volatile per-turn bytes trail the stable message text.
+    expect((result[0].content[0] as { type: "text"; text: string }).text).toBe(
       "Hello there",
     );
+    const injected = (result[0].content[1] as { type: "text"; text: string })
+      .text;
+    expect(injected).toBe(sampleBlock);
   });
 
   test("does not inject when the timestamp snapshot is absent", async () => {

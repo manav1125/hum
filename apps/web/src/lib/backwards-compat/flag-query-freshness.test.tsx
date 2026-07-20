@@ -33,6 +33,7 @@ describe("useFlagQueryFreshness", () => {
     expect(result.current).toEqual({
       staleTime: 5_000,
       refetchInterval: 5_000,
+      refetchOnWindowFocus: true,
     });
   });
 
@@ -42,6 +43,7 @@ describe("useFlagQueryFreshness", () => {
     expect(result.current).toEqual({
       staleTime: 5_000,
       refetchInterval: 5_000,
+      refetchOnWindowFocus: true,
     });
   });
 
@@ -49,8 +51,9 @@ describe("useFlagQueryFreshness", () => {
     setVersion("0.8.5");
     const { result } = renderHook(() => useFlagQueryFreshness(), { wrapper });
     expect(result.current).toEqual({
-      staleTime: 60_000,
+      staleTime: 300_000,
       refetchInterval: false,
+      refetchOnWindowFocus: false,
     });
   });
 
@@ -60,6 +63,6 @@ describe("useFlagQueryFreshness", () => {
     expect(result.current.refetchInterval).toBe(5_000);
     act(() => setVersion("0.8.5"));
     expect(result.current.refetchInterval).toBe(false);
-    expect(result.current.staleTime).toBe(60_000);
+    expect(result.current.staleTime).toBe(300_000);
   });
 });

@@ -150,6 +150,31 @@ const RUNTIME_INJECTION_PREFIXES: InjectionMatcher[] = [
 ];
 
 /**
+ * Matchers for the `<workspace>` top-level block (current wrapper shape plus
+ * the legacy `<workspace_top_level>` tag). Shared by the per-turn
+ * strip-and-replace ({@link stripWorkspaceInjections}) and the
+ * `workspace-context` injector so the two sides recognize exactly the same
+ * wrapper. Full `{ prefix, suffix }` shape so user-authored text merely
+ * starting with `<workspace>\n` is never mistaken for an injection.
+ */
+export const WORKSPACE_BLOCK_MATCHERS: readonly InjectionMatcher[] = [
+  { prefix: "<workspace>\n", suffix: "\n</workspace>" },
+  "<workspace_top_level>",
+];
+
+/**
+ * Remove `<workspace>` top-level blocks from every user message — and ONLY
+ * those blocks. The workspace listing is ephemeral by contract: runtime
+ * assembly strip-and-replaces it each turn at the message tail, so the
+ * volatile directory snapshot never sits mid-history invalidating the
+ * provider's prompt-cache prefix, and the model always sees exactly one
+ * fresh copy on the current turn.
+ */
+export function stripWorkspaceInjections(messages: Message[]): Message[] {
+  return stripUserTextBlocksByPrefix(messages, [...WORKSPACE_BLOCK_MATCHERS]);
+}
+
+/**
  * Strip all runtime-injected context from message history in a single pass.
  *
  * Used only during compaction and overflow recovery — not on normal turns.

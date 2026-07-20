@@ -5,9 +5,12 @@
  * confirmations, contact lookups, user questions, and trust rules.
  */
 
+import type { QueryClient } from "@tanstack/react-query";
+
 import type { ConfirmationDecision } from "@/types/event-types";
 import type { QuestionSubmission } from "@/domains/chat/api/event-types";
 import { client } from "@/generated/api/client.gen";
+import { pendinginteractionsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import {
   confirmPost,
   pendinginteractionsGet,
@@ -60,10 +63,27 @@ export async function getPendingInteractions(
  * conversation on mount / poll. The returned set contains every conversation
  * key that has at least one pending interaction; callers reconcile against
  * their own state. Conversation key equals conversation id in the web client.
+ *
+ * When a `queryClient` is provided the fetch goes through the shared
+ * generated query cache (`pendinginteractionsGetOptions`, no conversation
+ * filter) — the same cache entry the HQ "Needs you" section reads — so a
+ * boot that mounts both pays ONE request instead of two. The short
+ * `staleTime` only spans the boot burst; SSE `interaction_*` events drive
+ * ongoing freshness.
  */
 export async function listConversationIdsWithPendingInteractions(
   assistantId: string,
+  queryClient?: QueryClient,
 ): Promise<Set<string>> {
+  if (queryClient) {
+    const data = await queryClient.fetchQuery({
+      ...pendinginteractionsGetOptions({
+        path: { assistant_id: assistantId },
+      }),
+      staleTime: 10_000,
+    });
+    return extractPendingConversationIds(data);
+  }
   const { data, error, response } = await pendinginteractionsGet({
     path: { assistant_id: assistantId },
     throwOnError: false,
@@ -77,6 +97,12 @@ export async function listConversationIdsWithPendingInteractions(
     }
     return new Set();
   }
+  return extractPendingConversationIds(data);
+}
+
+function extractPendingConversationIds(
+  data: PendinginteractionsGetResponse | undefined,
+): Set<string> {
   const keys = new Set<string>();
   for (const interaction of data?.interactions ?? []) {
     if (interaction.conversationId) {

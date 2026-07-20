@@ -64,11 +64,13 @@ function makeSurfaceState(
 const sampleContext =
   "<workspace>\nRoot: /sandbox\nDirectories: src, lib, tests\n</workspace>";
 
-// The workspace-context default injector emits the workspace block as a
-// `prepend-user-tail` placement during `applyRuntimeInjections`. It sources
-// the rendered block from the per-conversation workspace registry and
-// (re)injects only when the block is absent from the working messages, so the
-// suite seeds the registry and exercises that end-to-end path.
+// The workspace-context default injector emits the workspace block as an
+// EPHEMERAL `append-user-tail` placement during `applyRuntimeInjections`:
+// each full-mode assembly strips any previous `<workspace>` copy from history
+// and appends one fresh block to the current user tail, so the volatile
+// directory listing never sits mid-history invalidating the provider's
+// prompt-cache prefix. The suite seeds the registry and exercises that
+// end-to-end path.
 
 describe("applyRuntimeInjections — workspace top-level context", () => {
   afterEach(() => {
@@ -84,8 +86,8 @@ describe("applyRuntimeInjections — workspace top-level context", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].content).toHaveLength(2);
-    expect((result[0].content[0] as { text: string }).text).toBe(sampleContext);
-    expect((result[0].content[1] as { text: string }).text).toBe("Hello");
+    expect((result[0].content[0] as { text: string }).text).toBe("Hello");
+    expect((result[0].content[1] as { text: string }).text).toBe(sampleContext);
   });
 
   test("does not inject when no workspace context is registered", async () => {
@@ -98,24 +100,28 @@ describe("applyRuntimeInjections — workspace top-level context", () => {
     expect(result[0].content).toHaveLength(1);
   });
 
-  test("does not re-inject when the workspace block is already present", async () => {
-    // GIVEN the registry holds a workspace block AND the working messages
-    // already carry that block (a normal cached turn, post-injection).
+  test("strip-and-replaces a stale workspace block onto the current tail", async () => {
+    // GIVEN the registry holds a workspace block AND an EARLIER message
+    // already carries an (older) copy of that block.
     seedWorkspaceContext(sampleContext);
-    const messages: Message[] = [userMsg(sampleContext), userMsg("Hello")];
+    const staleContext =
+      "<workspace>\nRoot: /sandbox\nDirectories: old-listing\n</workspace>";
+    const messages: Message[] = [userMsg(staleContext), userMsg("Hello")];
 
     // WHEN injections are applied
     const { messages: result } = await applyRuntimeInjections(messages, {
       conversationId: FALLBACK_CONVERSATION_ID,
     });
 
-    // THEN presence detection skips the block to keep the prefix stable.
-    expect(result).toHaveLength(2);
-    expect(result[1].content).toHaveLength(1);
-    expect((result[1].content[0] as { text: string }).text).toBe("Hello");
+    // THEN the stale historical copy is stripped and exactly one fresh copy
+    // rides the current tail — the history prefix carries no volatile bytes.
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toHaveLength(2);
+    expect((result[0].content[0] as { text: string }).text).toBe("Hello");
+    expect((result[0].content[1] as { text: string }).text).toBe(sampleContext);
   });
 
-  test("workspace context appears before active surface context in content", async () => {
+  test("workspace context appears after active surface context in content", async () => {
     registerFallbackConversation({
       workspaceTopLevelContext: sampleContext,
       workspaceTopLevelDirty: false,
@@ -127,15 +133,14 @@ describe("applyRuntimeInjections — workspace top-level context", () => {
       conversationId: FALLBACK_CONVERSATION_ID,
     });
 
-    // Workspace is injected last (in applyRuntimeInjections order) so it
-    // prepends to whatever was already prepended by activeSurface.
-    // Result: [workspace, activeSurface, original]
+    // activeSurface prepends; workspace appends.
+    // Result: [activeSurface, original, workspace]
     expect(result[0].content).toHaveLength(3);
-    expect((result[0].content[0] as { text: string }).text).toBe(sampleContext);
-    expect((result[0].content[1] as { text: string }).text).toContain(
+    expect((result[0].content[0] as { text: string }).text).toContain(
       "<active_workspace>",
     );
-    expect((result[0].content[2] as { text: string }).text).toBe("Hello");
+    expect((result[0].content[1] as { text: string }).text).toBe("Hello");
+    expect((result[0].content[2] as { text: string }).text).toBe(sampleContext);
   });
 
   test("app-backed active surface tells the model to load app-builder with the right argument", async () => {
@@ -209,9 +214,9 @@ describe("applyRuntimeInjections — minimal mode skips workspace blocks", () =>
     });
 
     expect(result[0].content).toHaveLength(3);
-    expect((result[0].content[0] as { text: string }).text).toBe(sampleContext);
-    expect((result[0].content[1] as { text: string }).text).toContain(
+    expect((result[0].content[0] as { text: string }).text).toContain(
       "<active_workspace>",
     );
+    expect((result[0].content[2] as { text: string }).text).toBe(sampleContext);
   });
 });

@@ -58,7 +58,11 @@ export function useAssistantIdentityInit({
     queryKey: assistantIdentityQueryKey(assistantId),
     queryFn: () => fetchAssistantIdentity(assistantId as string),
     enabled: canFetchIdentity,
-    staleTime: 30_000,
+    // The `assistant:self:identity` sync tag (SSE) invalidates this cache
+    // the moment the daemon reports an identity change, and the reconnect
+    // sweep covers stream gaps — focus refetches are redundant.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   // Clear the store whenever the assistant context changes (tenant

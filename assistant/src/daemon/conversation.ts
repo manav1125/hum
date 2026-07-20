@@ -94,6 +94,7 @@ import {
 } from "../telemetry/activation-funnel.js";
 import { ToolExecutor } from "../tools/executor.js";
 import { getAllToolDefinitions } from "../tools/registry.js";
+import type { ToolPruningScanCache } from "../tools/tool-pruning.js";
 import type { ToolLifecycleEvent } from "../tools/types.js";
 import type { OnboardingContext } from "../types/onboarding-context.js";
 import type { AbortReason } from "../util/abort-reasons.js";
@@ -271,6 +272,24 @@ export class Conversation {
   /** @internal */ coreToolNames: Set<string>;
   /** @internal */ readonly skillProjectionState = new Map<string, string>();
   /** @internal */ readonly skillProjectionCache: SkillProjectionCache = {};
+  /**
+   * Incremental history-scan cache for wire tool pruning — see
+   * `tools/tool-pruning.ts`. Conversation-scoped, like
+   * {@link skillProjectionCache}.
+   * @internal
+   */
+  readonly toolPruningScanCache: ToolPruningScanCache = {
+    messageCount: 0,
+    firstMessage: undefined,
+    names: new Set<string>(),
+  };
+  /**
+   * Sticky set of connector tools activated by this conversation (via
+   * `tool_search` markers or direct calls) so wire pruning keeps them
+   * visible across compaction for the conversation's in-memory lifetime.
+   * @internal
+   */
+  readonly wireLoadedToolNames = new Set<string>();
   /** @internal */ usageStats: UsageStats = {
     inputTokens: 0,
     outputTokens: 0,
@@ -943,9 +962,13 @@ export class Conversation {
           // v3 card block is `<memory>`-wrapped and splices LAST, landing
           // at the memory boundary after the `<info>` block but before
           // now-md's earlier splice):
-          //   [<workspace>, <turn_context>, <memory>dynamic</memory>,
+          //   [<memory>dynamic</memory>,
           //    <info>v2static</info>, <memory>v3cards</memory>, <NOW.md>,
-          //    <system_reminder>, <knowledge_base>, ...original]
+          //    <system_reminder>, <knowledge_base>, ...original,
+          //    <turn_context>]
+          // (`<turn_context>` appends at the end, matching the live
+          // injector's append-user-tail placement; `<workspace>` is
+          // ephemeral and not rehydrated at all.)
           // The v2 static block is replayed verbatim from stored metadata,
           // so rows may carry either `<info>…</info>` or `<memory>…</memory>`
           // depending on when they were persisted.
@@ -1044,19 +1067,22 @@ export class Conversation {
             ];
           }
 
+          // Appended (not prepended) to match the live injector's
+          // append-user-tail placement, so rehydrated rows stay
+          // byte-positionally identical to the history the provider saw
+          // before the reload.
           if (!isTail && typeof meta.turnContextBlock === "string") {
             content = [
-              { type: "text" as const, text: meta.turnContextBlock },
               ...content,
+              { type: "text" as const, text: meta.turnContextBlock },
             ];
           }
 
-          if (!isTail && typeof meta.workspaceBlock === "string") {
-            content = [
-              { type: "text" as const, text: meta.workspaceBlock },
-              ...content,
-            ];
-          }
+          // `meta.workspaceBlock` is intentionally NOT rehydrated: the
+          // `<workspace>` listing is ephemeral (strip-and-replaced at the
+          // tail each turn by runtime assembly), so historical rows carry no
+          // workspace copy in live history. The metadata key is still
+          // persisted per turn for auditability.
         } catch {
           /* ignore parse errors — metadata may be malformed */
         }

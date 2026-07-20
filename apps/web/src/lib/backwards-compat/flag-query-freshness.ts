@@ -14,20 +14,29 @@ import { useAssistantSupports } from "@/lib/backwards-compat/utils";
 const MIN_VERSION = "0.8.5";
 
 const POLL_INTERVAL_MS = 5_000;
-const PUSH_STALE_MS = 60_000;
+const PUSH_STALE_MS = 5 * 60_000;
 
 export interface FlagQueryFreshness {
   staleTime: number;
   refetchInterval: number | false;
+  refetchOnWindowFocus: boolean;
 }
 
 export function useFlagQueryFreshness(): FlagQueryFreshness {
   const supportsPush = useAssistantSupports(MIN_VERSION);
   if (supportsPush) {
-    return { staleTime: PUSH_STALE_MS, refetchInterval: false };
+    // Push-capable daemons broadcast both feature-flag sync tags and the
+    // `sse.opened` reconnect sweep re-invalidates after stream gaps, so
+    // neither focus refetches nor short staleness buy any freshness.
+    return {
+      staleTime: PUSH_STALE_MS,
+      refetchInterval: false,
+      refetchOnWindowFocus: false,
+    };
   }
   return {
     staleTime: POLL_INTERVAL_MS,
     refetchInterval: POLL_INTERVAL_MS,
+    refetchOnWindowFocus: true,
   };
 }

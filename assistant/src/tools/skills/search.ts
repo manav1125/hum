@@ -34,6 +34,11 @@ import {
 import type { MarketplaceItem } from "../../skills/marketplace/types.js";
 import { getLogger } from "../../util/logger.js";
 import { registerTool } from "../registry.js";
+import {
+  bareMcpToolName,
+  collectGatedConnectorToolDefs,
+  loadedToolMarker,
+} from "../tool-pruning.js";
 import type { ToolDefinition, ToolExecutionResult } from "../types.js";
 
 const log = getLogger("skill-search");
@@ -350,6 +355,64 @@ function oneLine(text: string, maxLength = 200): string {
   return line.length > maxLength ? `${line.slice(0, maxLength - 1)}…` : line;
 }
 
+/** Maximum gated connector tools surfaced (and activated) per skill_search. */
+const CONNECTOR_HIT_LIMIT = 5;
+
+/**
+ * Rank wire-pruned connector (MCP) tools against the query and render them as
+ * an additional results section, activating each hit via a
+ * `<loaded_tool …/>` marker (honored by the pruning scan for skill_search
+ * results — see `tools/tool-pruning.ts`). skill_search is the model's first
+ * discovery instinct, so connector actions must surface here too — otherwise
+ * a pruned Gmail/Calendar/Notion tool is only findable by models that think
+ * to call `tool_search`. Returns [] when pruning is off (schemas are already
+ * on the wire) or nothing matches.
+ */
+function buildConnectorToolSection(query: string): string[] {
+  let enabled = false;
+  let keepTools: readonly string[] = [];
+  try {
+    const pruning = getConfig().llm?.toolPruning;
+    enabled = pruning?.enabled ?? false;
+    keepTools = pruning?.keepTools ?? [];
+  } catch {
+    return [];
+  }
+  if (!enabled) return [];
+
+  const candidates: SkillSearchCandidate[] = collectGatedConnectorToolDefs(
+    keepTools,
+  ).map(({ name, description }) => ({
+    id: name,
+    name: bareMcpToolName(name),
+    displayName: bareMcpToolName(name).replaceAll("_", " "),
+    description,
+    availability: "installed",
+  }));
+  if (candidates.length === 0) return [];
+
+  const ranked = rankSkillSearchCandidates(
+    candidates,
+    query,
+    CONNECTOR_HIT_LIMIT,
+  );
+  if (ranked.length === 0) return [];
+
+  const lines = [
+    "",
+    `Connector tools matching "${query.trim()}" (now ACTIVE — full schemas available from your next step; call them directly by name instead of loading a setup skill):`,
+  ];
+  ranked.forEach((result, index) => {
+    const name = result.candidate.id;
+    lines.push(`${index + 1}. ${name}`);
+    if (result.candidate.description) {
+      lines.push(`   ${oneLine(result.candidate.description)}`);
+    }
+    lines.push(`   ${loadedToolMarker(name)}`);
+  });
+  return lines;
+}
+
 function formatResult(result: RankedSkillSearchResult, index: number): string {
   const { candidate } = result;
   const lines: string[] = [];
@@ -432,8 +495,9 @@ export const skillSearchTool = {
 
     const candidates = await collectCandidates();
     const ranked = rankSkillSearchCandidates(candidates, query, limit);
+    const connectorSection = buildConnectorToolSection(query);
 
-    if (ranked.length === 0) {
+    if (ranked.length === 0 && connectorSection.length === 0) {
       return {
         content:
           `No skills matched "${query.trim()}" across ${candidates.length} known skills ` +
@@ -444,11 +508,14 @@ export const skillSearchTool = {
       };
     }
 
-    const header = `Found ${ranked.length} skill${ranked.length === 1 ? "" : "s"} matching "${query.trim()}":`;
+    const header =
+      ranked.length === 0
+        ? `No skills matched "${query.trim()}", but connector tools did:`
+        : `Found ${ranked.length} skill${ranked.length === 1 ? "" : "s"} matching "${query.trim()}":`;
     const body = ranked.map((result, index) => formatResult(result, index));
 
     return {
-      content: [header, "", ...body].join("\n"),
+      content: [header, "", ...body, ...connectorSection].join("\n"),
       isError: false,
     };
   },

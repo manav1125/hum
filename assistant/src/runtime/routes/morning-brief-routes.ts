@@ -290,22 +290,46 @@ export function pickAsk(): BriefAsk | null {
 // ---------------------------------------------------------------------------
 
 const CALENDAR_TIMEOUT_MS = 3_500;
+/**
+ * How long the request path is willing to wait on the live Google Calendar
+ * call. The calendar round-trip measured ~1.3 s in prod, which made
+ * `/brief/morning` the slowest read in the app — the brief must render on
+ * app open, so past this budget the response falls back to the last-known
+ * events (or `calendarAvailable: false`) while the live fetch keeps running
+ * in the background to refresh the cache for the next request.
+ */
+const CALENDAR_BUDGET_MS = 400;
+/** Last-known events are served for at most this long. */
+const CALENDAR_CACHE_TTL_MS = 15 * 60_000;
 const MAX_DAY_ENTRIES = 12;
 const ACTIVE_STATUSES = new Set(["queued", "running", "awaiting_review"]);
 
+let calendarCache: { events: EventSummary[]; fetchedAt: number } | null = null;
+
+/** @internal Test-only reset of the calendar last-known cache. */
+export function resetCalendarCacheForTests(): void {
+  calendarCache = null;
+}
+
 /**
- * Today's calendar events via the action board's fetcher. Null (vs empty)
- * when no calendar is reachable, so the response can say so honestly.
- * Bounded by a hard timeout — the brief must render fast on app open.
+ * The live calendar fetch (connection resolution + events), bounded by the
+ * hard abort timeout. Refreshes the last-known cache on success. Null when
+ * no calendar is reachable.
  */
-async function gatherCalendarEvents(now: Date): Promise<EventSummary[] | null> {
+async function fetchCalendarEventsLive(
+  now: Date,
+): Promise<EventSummary[] | null> {
   try {
     const conn = await resolveOAuthConnection("google");
-    return await fetchTodaysEvents(
+    const events = await fetchTodaysEvents(
       conn,
       now,
       AbortSignal.timeout(CALENDAR_TIMEOUT_MS),
     );
+    if (events) {
+      calendarCache = { events, fetchedAt: Date.now() };
+    }
+    return events;
   } catch (err) {
     log.info(
       { err: String(err) },
@@ -313,6 +337,36 @@ async function gatherCalendarEvents(now: Date): Promise<EventSummary[] | null> {
     );
     return null;
   }
+}
+
+/**
+ * Today's calendar events with a tight request-path budget. Null (vs empty)
+ * when no calendar answer is available in time, so the response can say so
+ * honestly (`calendarAvailable: false`). When the live call overruns the
+ * budget it continues in the background and lands in `calendarCache`, so
+ * the next brief request gets fresh-enough events instantly.
+ */
+async function gatherCalendarEvents(now: Date): Promise<EventSummary[] | null> {
+  const live = fetchCalendarEventsLive(now);
+
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<"budget">((resolve) => {
+    budgetTimer = setTimeout(() => resolve("budget"), CALENDAR_BUDGET_MS);
+  });
+
+  const result = await Promise.race([live, budget]);
+  clearTimeout(budgetTimer);
+  if (result !== "budget") return result;
+
+  // Over budget: `live` keeps running (it never rejects) and refreshes the
+  // cache when it settles. Serve last-known events when fresh enough.
+  const cached = calendarCache;
+  if (cached && Date.now() - cached.fetchedAt <= CALENDAR_CACHE_TTL_MS) {
+    log.info("morning-brief: calendar over budget; serving last-known events");
+    return cached.events;
+  }
+  log.info("morning-brief: calendar over budget; day is work items only");
+  return null;
 }
 
 /** Due-today work items, in the daemon's local timezone (v1 caveat). */
@@ -365,14 +419,21 @@ export async function buildMorningBrief(opts?: {
   const sinceMs =
     now.getTime() - (opts?.sinceHours ?? DEFAULT_SINCE_HOURS) * 60 * 60 * 1000;
 
-  const events = await gatherCalendarEvents(now);
+  // Kick the calendar fetch first so the (synchronous) store reads below
+  // overlap with its network time instead of queueing behind it.
+  const eventsPromise = gatherCalendarEvents(now);
+  const overnight = gatherOvernight(sinceMs);
+  const ask = pickAsk();
+  const dueToday = gatherDueToday(now);
+  const events = await eventsPromise;
+
   const day: DayEntry[] = [
     ...(events ?? []).map((e) => ({
       ...(e.start ? { time: e.start } : {}),
       title: e.summary,
       kind: "event" as const,
     })),
-    ...gatherDueToday(now),
+    ...dueToday,
   ]
     // Timed entries in chronological order; untimed (all-day) entries first.
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
@@ -381,8 +442,8 @@ export async function buildMorningBrief(opts?: {
   return {
     generatedAt: now.toISOString(),
     since: new Date(sinceMs).toISOString(),
-    overnight: gatherOvernight(sinceMs),
-    ask: pickAsk(),
+    overnight,
+    ask,
     day,
     calendarAvailable: events != null,
   };

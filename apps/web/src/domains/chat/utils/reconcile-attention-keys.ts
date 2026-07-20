@@ -42,7 +42,12 @@ export async function reconcileAttentionKeys(
 ): Promise<void> {
   let pendingKeys: Set<string>;
   try {
-    pendingKeys = await listConversationIdsWithPendingInteractions(assistantId);
+    // Routed through the shared query cache so the boot sweep dedupes with
+    // the HQ "Needs you" section's identical fetch.
+    pendingKeys = await listConversationIdsWithPendingInteractions(
+      assistantId,
+      queryClient,
+    );
   } catch {
     return; // Best-effort — SSE events will catch subsequent transitions.
   }

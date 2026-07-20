@@ -608,12 +608,22 @@ export async function runAgentLoopImpl(
       return;
     }
 
-    // Ensure workspace git repo is initialized before any tools run.
+    // Kick workspace git initialization in the background. Nothing on the
+    // turn's critical path reads the repo directly — every git consumer
+    // (turn-commit, checkpoint/restore) awaits `ensureInitialized()` itself,
+    // and the service serializes init behind a promise guard — so the first
+    // turn of a fresh workspace must not stall for seconds behind
+    // `git init` + the initial commit of the whole workspace tree.
     try {
       const getWorkspaceGitServiceFn =
         ctx.getWorkspaceGitService ?? getWorkspaceGitService;
       const gitService = getWorkspaceGitServiceFn(ctx.workingDir);
-      await gitService.ensureInitialized();
+      void gitService.ensureInitialized().catch((err) => {
+        rlog.warn(
+          { err },
+          "Failed to initialize workspace git repo (non-fatal)",
+        );
+      });
     } catch (err) {
       rlog.warn({ err }, "Failed to initialize workspace git repo (non-fatal)");
     }

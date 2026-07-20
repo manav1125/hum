@@ -28,6 +28,10 @@ import {
 } from "../tools/schema-transforms.js";
 import { resolveToolInvocationAlias } from "../tools/tool-name-aliases.js";
 import {
+  pruneWireToolDefs,
+  type ToolPruningScanCache,
+} from "../tools/tool-pruning.js";
+import {
   isDiskPressureCleanupToolName,
   type ProxyApprovalCallback,
   type ProxyApprovalRequest,
@@ -469,6 +473,20 @@ export interface SkillProjectionContext {
    * telemetry attributes the provider/model/profile the turn actually ran on.
    */
   currentCallSite?: LLMCallSite;
+  /**
+   * Incremental history-scan cache for wire tool pruning (see
+   * `tools/tool-pruning.ts`). Conversation-scoped, like
+   * {@link skillProjectionCache}. Absent (minimal test contexts) disables
+   * incremental scanning but not pruning itself.
+   */
+  toolPruningScanCache?: ToolPruningScanCache;
+  /**
+   * Sticky set of tool names activated by this conversation (via
+   * `tool_search` markers or direct calls). Unioned with the history scan
+   * so activations survive compaction for the conversation's in-memory
+   * lifetime. Absent contexts fall back to the pure history derivation.
+   */
+  wireLoadedToolNames?: Set<string>;
 }
 
 // ── Conditional tool sets ────────────────────────────────────────────
@@ -763,7 +781,12 @@ export function createResolveToolsCallback(
 
     // Re-read MCP tool definitions from the registry each turn so conversations
     // automatically pick up tools added/removed by `vellum mcp reload`.
-    const currentMcpDefs = getMcpToolDefinitions();
+    // Sorted by name so the serialized tool block is byte-stable across
+    // daemon restarts and MCP reconnect order — provider-side prompt caching
+    // depends on a byte-identical prefix.
+    const currentMcpDefs = getMcpToolDefinitions().sort((a, b) =>
+      (a.name ?? "").localeCompare(b.name ?? ""),
+    );
     log.debug(
       {
         coreCount: scopedCoreDefs.length,
@@ -833,7 +856,42 @@ export function createResolveToolsCallback(
     }
 
     ctx.allowedToolNames = turnAllowed;
-    const baseDefs = injectActivityField(allBaseDefs, ACTIVITY_SKIP_SET);
+
+    // ── Wire tool pruning ────────────────────────────────────────────
+    // Withhold connector (MCP) schemas the conversation hasn't discovered or
+    // used from the DEFINITIONS sent to the provider. Execution stays gated
+    // by `turnAllowed` above — computed from the UNPRUNED set — so a gated
+    // tool invoked by name still runs. Skipped when a subagent wire
+    // allowlist or a guardrails tool-scope filter is active: those runs
+    // already narrowed the surface deliberately, and hiding a granted tool
+    // from a non-interactive run would add a discovery round for no saving.
+    // Defensive read: minimal test configs may lack `llm` entirely — fail
+    // open (pruning off) so the full tool surface is sent. Real configs
+    // always carry the schema default (`enabled: true`).
+    const pruningConfig = getConfig().llm?.toolPruning ?? {
+      enabled: false,
+      keepTools: [],
+    };
+    const pruningApplicable =
+      wireAllowlist === undefined && scopeFilter == null;
+    const pruned = pruneWireToolDefs(allBaseDefs, {
+      enabled: pruningConfig.enabled && pruningApplicable,
+      keepTools: pruningConfig.keepTools,
+      history,
+      scanCache: ctx.toolPruningScanCache,
+      stickyLoadedToolNames: ctx.wireLoadedToolNames,
+    });
+    if (pruned.prunedCount > 0) {
+      log.debug(
+        {
+          wireCount: pruned.defs.length,
+          prunedCount: pruned.prunedCount,
+          gatedCandidateCount: pruned.gatedCandidateCount,
+        },
+        "Wire tool pruning applied",
+      );
+    }
+    const baseDefs = injectActivityField(pruned.defs, ACTIVITY_SKIP_SET);
 
     const config = getConfig();
     if (

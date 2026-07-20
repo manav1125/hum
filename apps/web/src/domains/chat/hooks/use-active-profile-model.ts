@@ -42,7 +42,12 @@ export function useActiveProfileModel(
   const { data: config } = useQuery({
     ...configGetOptions({ path: { assistant_id: assistantId ?? "" } }),
     enabled: !!assistantId,
-    staleTime: 30_000,
+    // The `assistant:self:config` sync tag (SSE) invalidates the shared
+    // config cache on every daemon-side change, and local mutations write
+    // through `configGetSetQueryData` — refetching the ~21 KB config on
+    // every focus/navigation is redundant.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: convData } = useQuery({

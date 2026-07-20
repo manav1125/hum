@@ -162,54 +162,39 @@ function isPkbInjectionSilencedByV2(): boolean {
 }
 
 /**
- * Matchers that mark a persisted `<workspace>` top-level injection. Uses the
- * `{ prefix, suffix }` wrapper shape so user-authored text merely starting with
- * `<workspace>\n` is never mistaken for an injection — matching the full-wrapper
- * requirement the compaction strip uses for this block. The legacy
- * `<workspace_top_level>` tag (pre-rename history) counts as present too.
- */
-const WORKSPACE_BLOCK_MATCHERS: readonly InjectionMatcher[] = [
-  { prefix: "<workspace>\n", suffix: "\n</workspace>" },
-  "<workspace_top_level>",
-];
-
-/**
- * `workspace-context` injector — order 10, prepend-user-tail.
+ * `workspace-context` injector — order 10, append-user-tail (ephemeral).
  *
- * Injects the workspace top-level directory context at the very top of the
- * user tail's content so the assistant sees a workspace grounding block before
- * any other per-turn context.
+ * Injects the workspace top-level directory context at the tail of the
+ * current user message. The block is EPHEMERAL by contract, like the
+ * memory-v3 spotlight: runtime assembly strips any previous copy from
+ * history (`stripWorkspaceInjections`) whenever this injector produces a
+ * fresh one, so the volatile directory listing never sits mid-history
+ * invalidating the provider's prompt-cache prefix — the stable prefix stays
+ * system + tools + raw history, and the fresh snapshot rides only the
+ * current turn's tail. This also means the model always sees a CURRENT
+ * listing rather than the first turn's stale one.
  *
  * Sources the dirty-guarded top-level cache itself via
- * {@link resolveWorkspaceTopLevelContext} (keyed by conversation id) rather than
- * having the agent loop compute and thread it. Decides inject/skip by presence
- * detection: the block is (re)injected only when it is absent from the working
- * messages — true on the first turn and right after compaction strips it — and
- * skipped on normal cached turns where it already persists in history. This
- * keeps the conversation prefix stable for Anthropic's prefix caching.
+ * {@link resolveWorkspaceTopLevelContext} (keyed by conversation id) rather
+ * than having the agent loop compute and thread it.
  *
  * Gating:
- *  - `mode === "full"` (skipped in minimal mode).
+ *  - `mode === "full"` (skipped in minimal mode — any persisted copy in
+ *    history is left alone on those turns).
  *  - the rendered workspace context is a non-null, non-empty string.
- *  - no `<workspace>` block is already present in `runMessages`.
  */
 const workspaceContextInjector: Injector = {
   name: "workspace-context",
   order: DEFAULT_INJECTOR_ORDER.workspaceContext,
-  async produce(
-    ctx: TurnContext,
-    runMessages?: Message[],
-  ): Promise<InjectionBlock | null> {
+  async produce(ctx: TurnContext): Promise<InjectionBlock | null> {
     const mode = ctx.mode ?? "full";
     if (mode !== "full") return null;
     const text = resolveWorkspaceTopLevelContext(ctx.conversationId);
     if (!text) return null;
-    if (hasInjectedUserTextBlock(runMessages, WORKSPACE_BLOCK_MATCHERS))
-      return null;
     return {
       id: "workspace-context",
       text,
-      placement: "prepend-user-tail",
+      placement: "append-user-tail",
     };
   },
 };
@@ -247,13 +232,18 @@ const backgroundTurnInjector: Injector = {
 };
 
 /**
- * `unified-turn-context` injector — order 20, prepend-user-tail.
+ * `unified-turn-context` injector — order 20, append-user-tail.
  *
  * Injects the `<turn_context>` block that combines temporal, actor, channel,
  * and interface context. The orchestrator resolves the block's inputs onto the
  * per-turn {@link TurnContext}; this injector builds the text from them
  * via `buildUnifiedTurnContextBlock`. Emits nothing when no `timestamp` is
  * present (the inputs were not resolved for this turn).
+ *
+ * Appended to the user tail (rather than prepended) so the volatile
+ * per-turn bytes — the fresh `current_time` timestamp above all — trail the
+ * message's stable content. Historical copies still persist in history for
+ * temporal grounding; only the position within each message changed.
  *
  * Active in both `full` and `minimal` mode — unified turn context is
  * safety-critical grounding that must survive injection downgrade.
@@ -278,7 +268,7 @@ const unifiedTurnContextInjector: Injector = {
     return {
       id: "unified-turn-context",
       text,
-      placement: "prepend-user-tail",
+      placement: "append-user-tail",
     };
   },
 };

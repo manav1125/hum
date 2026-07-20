@@ -176,6 +176,46 @@ function OvernightRow({
 /* Beats                                                                     */
 /* ------------------------------------------------------------------------- */
 
+/**
+ * Calm loading shimmer shown while GET /brief/morning is in flight — the
+ * page previously rendered `null` here, leaving a blank screen for the
+ * whole round-trip on the flagship morning surface. Same silhouette as the
+ * overnight beat (micro label, headline, three rows) so the real content
+ * lands without a layout jump. Motion is opacity-only (`mv3BriefShimmer`)
+ * and frozen by the shared [data-mv3] reduced-motion rule.
+ */
+function BriefSkeleton() {
+  const bar = (
+    width: string | number,
+    height: number,
+    radius = 10,
+    delay = 0,
+  ): React.CSSProperties => ({
+    width,
+    height,
+    borderRadius: radius,
+    background: "var(--mv3-card)",
+    border: "1px solid var(--mv3-card-border)",
+    animation: `mv3BriefShimmer 1.6s ease-in-out ${delay}s infinite`,
+  });
+  return (
+    <div aria-hidden>
+      <div style={{ ...microLabel, fontSize: 11, letterSpacing: "0.16em", color: "var(--mv3-micro)" }}>
+        Morning brief
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
+        <div style={bar("72%", 38, 12, 0)} />
+        <div style={bar("48%", 38, 12, 0.15)} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 28 }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={bar("100%", 46, 16, 0.3 + i * 0.15)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OvernightBeat({ items }: { items: OvernightItem[] }) {
   const n = items.length;
   return (
@@ -568,6 +608,7 @@ export function BriefPage() {
           transform/opacity; frozen by the shared [data-mv3] reduced-motion rule. */}
       <style>{`
         @keyframes mv3BriefTwinkle { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
+        @keyframes mv3BriefShimmer { 0%, 100% { opacity: .35; } 50% { opacity: .75; } }
         .mv3-brief-star { display: none; }
         [data-theme="dark"] .mv3-brief-star,
         [data-theme="velvet"] .mv3-brief-star { display: block; }
@@ -640,7 +681,9 @@ export function BriefPage() {
           zIndex: 2,
         }}
       >
-        {isLoading || !assistantId ? null : isError || !brief ? (
+        {isLoading || !assistantId ? (
+          <BriefSkeleton />
+        ) : isError || !brief ? (
           <div onClick={(e) => e.stopPropagation()}>
             <div style={{ ...microLabel, fontSize: 11, letterSpacing: "0.16em", color: "var(--mv3-micro)" }}>
               Morning brief

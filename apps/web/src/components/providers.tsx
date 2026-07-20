@@ -23,9 +23,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@vellumai/design-library";
 import { Toaster } from "@vellumai/design-library/components/toast";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { ProfileQuickAddProvider } from "@/components/profile-quick-add-provider";
+import { setRoutePrefetchQueryClient } from "@/lib/route-prefetch";
 import { useAuthStore, useIsAuthenticated } from "@/stores/auth-store";
 import { useOrganizationStore } from "@/stores/organization-store";
 import { queryRetryDelay, shouldRetryQuery } from "@/utils/query-retry";
@@ -58,6 +59,14 @@ function RequestScopedQueryClientProvider({
   children: ReactNode;
 }) {
   const [queryClient] = useState(() => createQueryClient());
+  // Expose the innermost (request-scoped) client to route loaders so lazy
+  // surfaces can prefetch their primary query in parallel with the route
+  // chunk. Cleared on unmount so a swapped scope (login/logout/org switch)
+  // never leaves loaders writing into a retired cache.
+  useEffect(() => {
+    setRoutePrefetchQueryClient(queryClient);
+    return () => setRoutePrefetchQueryClient(null);
+  }, [queryClient]);
   return (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
