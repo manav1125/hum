@@ -137,10 +137,7 @@ describe("morning brief endpoint", () => {
     expect(brief.overnight.map((o) => o.id)).not.toContain(askId);
     const otherReviewId =
       askId === reviewTop.id ? reviewOther.id : reviewTop.id;
-    expect(brief.overnight.map((o) => o.id)).toEqual([
-      otherReviewId,
-      done.id,
-    ]);
+    expect(brief.overnight.map((o) => o.id)).toEqual([otherReviewId, done.id]);
     expect(brief.overnight[0].state).toBe("review");
     expect(brief.overnight[1]).toMatchObject({
       title: "14 emails triaged & filed",

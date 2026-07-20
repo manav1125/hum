@@ -93,9 +93,7 @@ describe("archiveProjectWorkItems", () => {
 });
 
 describe("updateProject route archive transition", () => {
-  const patchRoute = ROUTES.find(
-    (r) => r.operationId === "updateProject",
-  )!;
+  const patchRoute = ROUTES.find((r) => r.operationId === "updateProject")!;
 
   test("archiving via PATCH cascades to open work items", async () => {
     const { project, queued, done } = seedProjectWithItems();
