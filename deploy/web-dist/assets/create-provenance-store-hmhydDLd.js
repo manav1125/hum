@@ -1,0 +1,1 @@
+import{n as e,t}from"./create-selectors-Bg1LOKfl.js";var n=64,r=t(e()((e,t)=>({byConversationId:{},stampIntent:(t,r)=>{t&&e(e=>{let i={...e.byConversationId,[t]:r},a=Object.keys(i);return a.length>n&&delete i[a[0]],{byConversationId:i}})},getIntent:e=>{if(e)return t().byConversationId[e]},reset:()=>e({byConversationId:{}})})));export{r as t};

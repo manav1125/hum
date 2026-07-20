@@ -1,0 +1,1 @@
+var e=`https://vellum.ai/community`;export{e as t};

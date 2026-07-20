@@ -1,0 +1,1 @@
+import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{W as t}from"./design-library-DlFS81Mf.js";var n=e(t(),1),r=`(max-width: 767px)`;function i(e){let t=window.matchMedia(r);return t.addEventListener(`change`,e),()=>t.removeEventListener(`change`,e)}function a(){return window.matchMedia(r).matches}function o(){return(0,n.useSyncExternalStore)(i,a)}export{o as n,r as t};
