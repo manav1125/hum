@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Minimize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minimize2 } from "lucide-react";
 
 import { AppNavBar } from "@/components/app-nav-bar";
 import { RemixCluster } from "@/domains/create/create-remix-cluster";
@@ -60,6 +60,18 @@ export interface AppViewerContainerProps {
   remix?: AppViewerRemix;
 }
 
+/**
+ * Decks are authored to the SLIDES contract: fixed 1280×720 slides with
+ * arrow-key navigation. On narrow (phone) viewports that layout is unusable
+ * raw, so we render the frame at the contract size and CSS-scale it to fit —
+ * same heuristic the Library uses to badge an app as a Deck.
+ */
+const DECK_NAME_RE = /deck|slide|pitch|presentation/i;
+const DECK_VIRTUAL_W = 1280;
+const DECK_VIRTUAL_H = 720;
+/** Below this container width the deck fit-to-width treatment kicks in. */
+const DECK_FIT_MAX_W = 700;
+
 export function AppViewerContainer({
   appId,
   appName,
@@ -96,18 +108,59 @@ export function AppViewerContainer({
     return () => window.removeEventListener("keydown", onKey);
   }, [isFullscreen]);
 
-  const srcdoc = useMemo(
-    () => injectBridge(html, appId, { fetch: true, route }),
-    [html, appId, route],
+  // --- Mobile deck treatment (fit-to-width scaled slide + swipe/arrows) ----
+  const isDeck = DECK_NAME_RE.test(appName);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageSize, setStageSize] = useState<{ w: number; h: number } | null>(
+    null,
   );
 
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (rect) setStageSize({ w: rect.width, h: rect.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Fit-to-width only on narrow (phone) stages — desktop renders unscaled.
+  const deckFit =
+    isDeck && stageSize && stageSize.w > 0 && stageSize.w < DECK_FIT_MAX_W
+      ? {
+          scale: Math.min(
+            stageSize.w / DECK_VIRTUAL_W,
+            stageSize.h / DECK_VIRTUAL_H,
+          ),
+        }
+      : null;
+
+  const srcdoc = useMemo(
+    () => injectBridge(html, appId, { fetch: true, route, deckNav: isDeck }),
+    [html, appId, route, isDeck],
+  );
+
+  /** Forward a pagination key into the sandboxed deck frame. */
+  const sendDeckNav = useCallback((key: "ArrowLeft" | "ArrowRight") => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "vellum_deck_nav", key },
+      "*",
+    );
+  }, []);
+
+  // Deck fit changes the frame's virtual viewport (e.g. 390 → 1280): remount
+  // so decks that measure the viewport once at load lay out for the new size.
+  // Keyed on the boolean (not the scale) so plain resizes don't remount.
+  const deckFitActive = deckFit !== null;
   const iframeKey = useMemo(() => {
     let hash = 0;
     for (let i = 0; i < html.length; i++) {
       hash = ((hash << 5) - hash + html.charCodeAt(i)) | 0;
     }
-    return `app-${appId}-${hash}`;
-  }, [html, appId]);
+    return `app-${appId}-${hash}${deckFitActive ? "-deckfit" : ""}`;
+  }, [html, appId, deckFitActive]);
 
   useSandboxFetchProxy(iframeRef, {
     frameId: appId,
@@ -136,7 +189,7 @@ export function AppViewerContainer({
         />
       )}
 
-      <div className="relative min-h-0 flex-1">
+      <div ref={stageRef} className="relative min-h-0 flex-1 overflow-hidden">
         {isFullscreen && (
           <div
             className="absolute z-10"
@@ -161,8 +214,50 @@ export function AppViewerContainer({
           sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="no-referrer"
           title={appName}
-          className="h-full w-full border-none"
+          className={deckFit ? "border-none" : "h-full w-full border-none"}
+          style={
+            deckFit
+              ? {
+                  // Render at the SLIDES contract size and scale to fit the
+                  // stage — the deck lays out exactly as on desktop and the
+                  // whole slide is visible (letterboxed) on a phone.
+                  width: DECK_VIRTUAL_W,
+                  height: DECK_VIRTUAL_H,
+                  position: "absolute",
+                  left: "50%",
+                  top: "50%",
+                  transform: `translate(-50%, -50%) scale(${deckFit.scale})`,
+                }
+              : undefined
+          }
         />
+        {deckFit ? (
+          // Letterbox pagination — swipe works on the slide itself (bridge),
+          // these give a visible, thumb-sized affordance since the deck's own
+          // nav chrome is scaled too small to tap.
+          <div
+            className="absolute inset-x-0 bottom-2 z-10 flex items-center justify-center gap-3"
+            style={{ pointerEvents: "none" }}
+          >
+            {(
+              [
+                ["ArrowLeft", "Previous slide", ChevronLeft],
+                ["ArrowRight", "Next slide", ChevronRight],
+              ] as const
+            ).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                type="button"
+                aria-label={label}
+                onClick={() => sendDeckNav(key)}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border-element)] bg-[var(--surface-lift)] text-[var(--content-secondary)]"
+                style={{ pointerEvents: "auto" }}
+              >
+                <Icon size={20} aria-hidden />
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* Create Studio remix cluster (SET 3) — hidden in fullscreen + editing. */}

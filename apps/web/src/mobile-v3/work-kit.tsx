@@ -5,8 +5,12 @@
  * read off docs/design/mobile-v3/cue-mobile-v3.html — no re-imagining.
  */
 import type React from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
+import { haptic } from "@/utils/haptics";
 
 import { mv3Mono } from "./mv3-kit";
 
@@ -165,6 +169,189 @@ export function fullPatchBody(
     assignee: item.assignee ?? "cue",
     context: patch.context !== undefined ? patch.context : (item.context ?? null),
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Parked tasks + one-tap run                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Parked = the daemon's trust guard: user-loaded tasks land with
+ * `autoRunEligibility: "parked"` so they NEVER silently run/spend — they wait
+ * for an explicit ▶. Only meaningful while the item still sits in the queue.
+ * Older daemons omit the field → false (no chip, no behavior change).
+ */
+export function isParked(item: HqWorkItem): boolean {
+  return (
+    (item.status === "queued" || item.status === "pending") &&
+    item.autoRunEligibility === "parked"
+  );
+}
+
+/**
+ * One-tap run for queue rows — the SAME endpoint as the task sheet's "Have
+ * Cue handle it" (`POST work-items/:id/run`, which un-parks + runs).
+ * `started` is the optimistic overlay: rows in it render as running (pulse +
+ * "Cue picked this up") until the daemon's status flip lands; an error rolls
+ * the row back to its parked rendering. On success the work-item buckets are
+ * invalidated directly (targeted — every `workitemsGet` status variant plus
+ * the activity read model) so the row transitions without waiting on the
+ * 60s safety-net poll; SSE (`work_item_status_changed`) follows.
+ */
+export function useRunNow(assistantId: string): {
+  runNow: (item: HqWorkItem) => void;
+  started: Set<string>;
+} {
+  const queryClient = useQueryClient();
+  const [started, setStarted] = useState<Set<string>>(() => new Set());
+  const run = useMutation({
+    ...workitemsByIdRunPostMutation(),
+    onSuccess: () => {
+      haptic.success();
+      void queryClient.invalidateQueries({
+        predicate: (q) => {
+          const first = q.queryKey[0] as { _id?: unknown } | undefined;
+          return (
+            first != null &&
+            typeof first === "object" &&
+            (first._id === "workitemsGet" || first._id === "activityGet")
+          );
+        },
+      });
+    },
+    onError: (_err, vars) => {
+      // Roll the optimistic running row back to parked.
+      setStarted((s) => {
+        const next = new Set(s);
+        next.delete(vars.path.id);
+        return next;
+      });
+    },
+  });
+  const runNow = (item: HqWorkItem) => {
+    if (started.has(item.id)) return;
+    haptic.medium();
+    setStarted((s) => new Set(s).add(item.id));
+    run.mutate({ path: { assistant_id: assistantId, id: item.id } });
+  };
+  return { runNow, started };
+}
+
+/**
+ * The inline ▶ Run affordance for queue rows — 44pt hit target wrapped
+ * around a 30px accent tile (negative margins keep frame 48's row density).
+ * Click stops propagation so the tap runs instead of opening the row;
+ * pointerdown is NOT stopped so swipe/long-press still work from here.
+ */
+export function RunNowButton({
+  title,
+  onRun,
+  style,
+}: {
+  /** Task title, for the accessible label. */
+  title: string;
+  onRun: () => void;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`Run now: ${title}`}
+      className="cue-pressable"
+      onClick={(e) => {
+        e.stopPropagation();
+        onRun();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      style={{
+        width: 44,
+        height: 44,
+        margin: "-7px -8px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "transparent",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        flexShrink: 0,
+        fontFamily: "inherit",
+        WebkitTapHighlightColor: "transparent",
+        ...style,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 10,
+          background:
+            "color-mix(in srgb, var(--mv3-accent) 16%, transparent)",
+          border:
+            "1px solid color-mix(in srgb, var(--mv3-accent) 35%, transparent)",
+          color: "var(--mv3-accent)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+        }}
+      >
+        ▶
+      </span>
+    </button>
+  );
+}
+
+/** The quiet mono "○ parked" leg for a row's metadata line. */
+export function ParkedMark(): React.ReactElement {
+  return (
+    <span
+      style={{
+        fontFamily: mv3Mono,
+        fontSize: 9.5,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: "var(--mv3-faint)",
+      }}
+    >
+      ○ parked
+    </span>
+  );
+}
+
+const COACH_KEY = "mv3-parked-coach-shown";
+
+/**
+ * First-run coaching (session-scoped): the first surface in a session that
+ * renders a parked task shows one quiet footnote under its list; the
+ * sessionStorage stamp keeps every later mount silent.
+ */
+export function ParkedCoachline({ hasParked }: { hasParked: boolean }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!hasParked || show) return;
+    try {
+      if (sessionStorage.getItem(COACH_KEY)) return;
+      sessionStorage.setItem(COACH_KEY, "1");
+    } catch {
+      // Storage unavailable — still coach this mount.
+    }
+    setShow(true);
+  }, [hasParked, show]);
+  if (!show) return null;
+  return (
+    <div
+      style={{
+        fontSize: 11,
+        color: "var(--mv3-faint)",
+        lineHeight: 1.5,
+        padding: "4px 6px 0",
+      }}
+    >
+      Parked tasks wait for you — tap ▶ and Cue gets to work.
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */

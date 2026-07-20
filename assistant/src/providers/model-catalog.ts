@@ -1314,6 +1314,25 @@ export function getCatalogProviderForModel(
 }
 
 /**
+ * Tri-state vision-capability lookup for a model id across every provider
+ * that offers it: `true` when any catalog entry marks it `supportsVision`,
+ * `false` when the model is catalog-known and every entry says text-only,
+ * `undefined` when the model is not in the catalog at all (capability
+ * unknown — callers must NOT treat unknown as text-only).
+ */
+export function getCatalogVisionSupport(modelId: string): boolean | undefined {
+  let known = false;
+  for (const provider of PROVIDER_CATALOG) {
+    for (const model of provider.models) {
+      if (model.id !== modelId) continue;
+      known = true;
+      if (model.supportsVision === true) return true;
+    }
+  }
+  return known ? false : undefined;
+}
+
+/**
  * Whether the given model only supports adaptive (always-on) thinking, driven
  * by the `adaptiveThinkingOnly` capability in the catalog. Matches the model ID
  * across every provider (a model carries the same id under each provider it is

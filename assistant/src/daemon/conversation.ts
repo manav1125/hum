@@ -15,9 +15,9 @@
  * - conversation-usage.ts        — recordUsage
  */
 
-import { resolveFlashTierRouteForTurn } from "../agent/flash-tier.js";
 import type { AgentLoopConfig, ResolvedSystemPrompt } from "../agent/loop.js";
 import { AgentLoop } from "../agent/loop.js";
+import { resolveModelRouteForTurn } from "../agent/vision-tier.js";
 import type { AssistantActivityStateEvent } from "../api/events/assistant-activity-state.js";
 import type {
   ChannelId,
@@ -682,34 +682,46 @@ export class Conversation {
       if (configuredMaxTokens !== undefined) {
         resolved.maxTokens = configuredMaxTokens;
       }
-      if (resolvedModel !== undefined) {
-        resolved.model = resolvedModel;
-      } else {
-        // Flash-tier routing (llm.flashTier, default OFF): pin structurally
-        // trivial mainAgent rounds to the flash model. The per-call model
-        // override wins over call-site resolution downstream, but transport,
-        // tools, and system prompt are unchanged — a misclassified turn is
-        // just a cheaper model, and the per-round re-classification escalates
-        // back to the main model once tool blocks appear in history.
-        const flashRoute = resolveFlashTierRouteForTurn({
-          llm: getConfig().llm,
-          history,
-          callSite: this.currentCallSite,
-          overrideProfile:
-            this.currentTurnOverrideProfile ?? this.toolRoutedProfile,
-          selectionSeed: this.conversationId,
-        });
-        if (flashRoute != null) {
-          resolved.model = flashRoute.model;
-          log.debug(
-            {
-              conversationId: this.conversationId,
-              model: flashRoute.model,
-              reason: flashRoute.reason,
-            },
-            "flash_tier_routed",
-          );
+      // Per-round model-tier routing, vision first then flash (see
+      // `agent/vision-tier.ts` for the precedence contract):
+      // - Vision-tier (llm.visionTier, default ON): an image-bearing round
+      //   that resolved to a known text-only model (e.g. the deepseek prod
+      //   brains) is pinned to a vision-capable model — the alternative is a
+      //   hard "doesn't support image input" provider error. This applies
+      //   even over an explicit modelOverride / pinned profile: a pinned
+      //   text-only model literally cannot serve the request.
+      // - Flash-tier (llm.flashTier, default OFF): structurally trivial
+      //   mainAgent rounds run on the flash model. Skipped entirely when an
+      //   explicit modelOverride is set.
+      // Either way the per-call model override wins over call-site resolution
+      // downstream, but transport, tools, and system prompt are unchanged —
+      // a misclassified round is just a different model, and the per-round
+      // re-classification restores the configured model on later rounds.
+      const tierRoute = resolveModelRouteForTurn({
+        llm: getConfig().llm,
+        history,
+        callSite: this.currentCallSite,
+        overrideProfile:
+          this.currentTurnOverrideProfile ?? this.toolRoutedProfile,
+        ...(resolvedModel !== undefined
+          ? { explicitModel: resolvedModel }
+          : {}),
+        selectionSeed: this.conversationId,
+      });
+      if (tierRoute != null) {
+        resolved.model = tierRoute.model;
+        const logPayload = {
+          conversationId: this.conversationId,
+          model: tierRoute.model,
+          reason: tierRoute.reason,
+        };
+        if (tierRoute.tier === "vision") {
+          log.info(logPayload, "vision_tier_routed");
+        } else {
+          log.debug(logPayload, "flash_tier_routed");
         }
+      } else if (resolvedModel !== undefined) {
+        resolved.model = resolvedModel;
       }
       return resolved;
     };

@@ -73,7 +73,8 @@ export interface LiveStatusView {
   brain?: boolean;
 }
 
-function formatElapsed(ms: number): string {
+/** "12s" / "1m 10s" formatting shared with the mobile live-activity block. */
+export function formatElapsed(ms: number): string {
   const secs = Math.max(0, Math.floor(ms / 1000));
   if (secs < 60) return `${secs}s`;
   const m = Math.floor(secs / 60);

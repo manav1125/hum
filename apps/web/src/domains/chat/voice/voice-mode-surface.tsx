@@ -1098,14 +1098,17 @@ function Mv3VoiceMobile({
         }}
       />
 
-      {/* Top controls — engine toggle (kept: required behavior) + Done. */}
+      {/* Top controls — engine toggle (kept: required behavior) + Done.
+          The surface is mounted full-bleed (fixed inset:0 overlay / route), so
+          this row must clear the iOS status bar itself via the safe-area top
+          inset — otherwise the Realtime pill renders under the clock. */}
       <div
         style={{
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "10px 18px 0",
+          padding: `calc(10px + ${safeInset("top")}) 18px 0`,
           position: "relative",
           zIndex: 5,
         }}

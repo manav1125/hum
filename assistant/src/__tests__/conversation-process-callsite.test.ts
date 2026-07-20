@@ -91,6 +91,8 @@ mock.module("../config/loader.js", () => ({
       profiles: {},
       callSites: {},
       pricingOverrides: [],
+      flashTier: { enabled: false, maxUserChars: 280 },
+      visionTier: { enabled: true },
     },
     rateLimit: { maxRequestsPerMinute: 0 },
     memory: {

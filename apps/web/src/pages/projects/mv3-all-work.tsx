@@ -25,7 +25,16 @@ import {
 } from "@/mobile-v3";
 import { SwipeArchiveRow } from "@/mobile-v3/swipe-archive-row";
 import { dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
-import { dueLabel, isAutoFiled } from "@/mobile-v3/work-kit";
+import {
+  LivePulseBadge,
+  ParkedCoachline,
+  ParkedMark,
+  RunNowButton,
+  dueLabel,
+  isAutoFiled,
+  isParked,
+  useRunNow,
+} from "@/mobile-v3/work-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -85,9 +94,11 @@ function WorkRow({
   now,
   delay,
   leaving,
+  started,
   onOpen,
   onLongPress,
   onDismiss,
+  onRun,
 }: {
   item: HqWorkItem;
   projectName: string | null;
@@ -95,12 +106,19 @@ function WorkRow({
   delay: number;
   /** Mid-collapse (the 150ms dismiss leave). */
   leaving: boolean;
+  /** Optimistic — ▶ was tapped; render running until the status flip lands. */
+  started: boolean;
   onOpen: () => void;
   /** Long-press / right-click → the task sheet as a context menu. */
   onLongPress: () => void;
   onDismiss: () => void;
+  /** One-tap run — POST work-items/:id/run (un-parks + runs). */
+  onRun: () => void;
 }) {
   const due = item.dueAt != null ? dueLabel(item.dueAt, now) : null;
+  const queued = item.status === "queued" || item.status === "pending";
+  const optimisticRun = started && queued;
+  const parked = isParked(item) && !optimisticRun;
   return (
     <div data-mv3>
       <SwipeArchiveRow
@@ -121,7 +139,11 @@ function WorkRow({
           boxSizing: "border-box",
         }}
       >
-        <StateChip state={stateFor(item.status)} label="" size="sm" />
+        {optimisticRun ? (
+          <LivePulseBadge size={18} />
+        ) : (
+          <StateChip state={stateFor(item.status)} label="" size="sm" />
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -135,7 +157,17 @@ function WorkRow({
           >
             {item.title}
           </div>
-          {due || projectName ? (
+          {optimisticRun ? (
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--mv3-micro)",
+                marginTop: 2,
+              }}
+            >
+              Cue picked this up
+            </div>
+          ) : due || projectName || parked ? (
             <div
               style={{
                 fontSize: 11,
@@ -152,7 +184,7 @@ function WorkRow({
                   {due.toLowerCase()}
                 </span>
               ) : null}
-              {due && projectName ? " · " : ""}
+              {due && (projectName || parked) ? " · " : ""}
               {projectName ? (
                 <>
                   {/* ✨ = Cue filed it (feature-detected provenance). */}
@@ -160,9 +192,16 @@ function WorkRow({
                   {projectName}
                 </>
               ) : null}
+              {projectName && parked ? " · " : ""}
+              {/* The quietest honest treatment — parked isn't a state-chip
+                  state, it's a metadata fact ("waits for your ▶"). */}
+              {parked ? <ParkedMark /> : null}
             </div>
           ) : null}
         </div>
+        {queued && !optimisticRun ? (
+          <RunNowButton title={item.title} onRun={onRun} />
+        ) : null}
         <span aria-hidden style={{ fontSize: 15, color: "var(--mv3-faint)" }}>
           ›
         </span>
@@ -183,6 +222,8 @@ export function Mv3AllWork() {
   const [addOpen, setAddOpen] = useState(false);
   // One-tap ✕ dismiss with the shared 5s undo pill.
   const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
+  // One-tap ▶ run (the task sheet's "Have Cue handle it", inline).
+  const { runNow, started } = useRunNow(assistantId);
 
   // Full records (the typed hq bucket) so the sheet can assemble the daemon's
   // full-record PATCH body straight off the row it opened from.
@@ -250,6 +291,10 @@ export function Mv3AllWork() {
     else if (item.status === "awaiting_review")
       // Seed the pager AT the tapped item (QA night P1-4).
       navigate(`${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`);
+    else if (item.status === "done" && item.lastRunConversationId)
+      // ✓ lands on the OUTPUT (the run's thread), not the edit sheet;
+      // long-press still opens the sheet for Run again / labels / re-file.
+      navigate(routes.conversation(item.lastRunConversationId));
     else setSheetItemId(item.id);
   };
 
@@ -411,12 +456,14 @@ export function Mv3AllWork() {
                     now={now}
                     delay={nextDelay()}
                     leaving={leavingId === item.id}
+                    started={started.has(item.id)}
                     onOpen={() => openItem(item)}
                     // Frame 48: long-press = the task context menu (the
                     // sheet's ▶ Have Cue handle it · 📁 File · ✓ Done
                     // elsewhere · ✕ Archive), for every row.
                     onLongPress={() => setSheetItemId(item.id)}
                     onDismiss={() => dismiss(item, { immediate: true })}
+                    onRun={() => runNow(item)}
                   />
                 ))}
                 {group.items.length > 20 ? (
@@ -434,6 +481,8 @@ export function Mv3AllWork() {
             </div>
           ))
         )}
+        {/* First-run coaching — one quiet line, once per session. */}
+        <ParkedCoachline hasParked={items.some(isParked)} />
       </div>
 
       <Mv3TaskSheet

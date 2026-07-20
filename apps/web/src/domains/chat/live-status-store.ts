@@ -60,6 +60,27 @@ export interface LiveToolRun {
   startedAt: number;
 }
 
+/**
+ * One entry in the turn's step history — every tool call the turn has
+ * started, whether still running or already finished. Drives the mobile
+ * live-activity block's step counter + "latest steps" mini-stream, which
+ * needs finished steps too (the `runningTools` list drops them the moment
+ * their result lands, which on fast tools means the UI never sees them).
+ */
+export interface LiveStep {
+  toolUseId: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+  startedAt: number;
+  /** Null while the tool is still running. */
+  endedAt: number | null;
+}
+
+/** Bound on the retained step history per conversation. The mini-stream
+ *  shows only the latest few; older entries only feed the counter, which
+ *  is tracked separately in `stepCount` so eviction never skews it. */
+const MAX_STEPS = 12;
+
 /** Per-conversation transient turn signal. */
 export interface ConversationLiveStatus {
   /** Wall-clock ms when this conversation's turn became active. Null when
@@ -76,6 +97,15 @@ export interface ConversationLiveStatus {
   thinkingAt: number | null;
   /** Currently-running tool calls, oldest first. */
   runningTools: LiveToolRun[];
+  /** Step history for the current turn (running + finished), oldest first,
+   *  capped at {@link MAX_STEPS}. */
+  steps: LiveStep[];
+  /** Total tool calls started this turn — survives step-history eviction. */
+  stepCount: number;
+  /** Wall-clock ms of the most recent live signal for this conversation
+   *  (thinking delta, tool start/end). Null until the first signal. The
+   *  mobile watchdog uses this to detect a genuinely silent stall. */
+  lastEventAt: number | null;
 }
 
 export interface LiveStatusState {
@@ -97,6 +127,9 @@ export const EMPTY_LIVE_STATUS: ConversationLiveStatus = {
   thinkingTail: "",
   thinkingAt: null,
   runningTools: [],
+  steps: [],
+  stepCount: 0,
+  lastEventAt: null,
 };
 
 const INITIAL_STATE: LiveStatusState = {
@@ -170,20 +203,16 @@ export const useLiveStatusStore = create<LiveStatusStore>()((set, get) => ({
   noteTurnStart: (conversationId) =>
     set((s) => ({
       byConversation: withSlice(s.byConversation, conversationId, {
+        ...EMPTY_LIVE_STATUS,
         turnStartedAt: Date.now(),
-        thinkingTail: "",
-        thinkingAt: null,
-        runningTools: [],
       }),
     })),
 
   noteTurnBoundary: (conversationId) =>
     set((s) => ({
       byConversation: withSlice(s.byConversation, conversationId, {
+        ...EMPTY_LIVE_STATUS,
         turnStartedAt: Date.now(),
-        thinkingTail: "",
-        thinkingAt: null,
-        runningTools: [],
       }),
     })),
 
@@ -193,11 +222,13 @@ export const useLiveStatusStore = create<LiveStatusStore>()((set, get) => ({
       cur.thinkingTail.length >= THINKING_TAIL_CAP
         ? cur.thinkingTail
         : (cur.thinkingTail + chunk).slice(0, THINKING_TAIL_CAP);
+    const now = Date.now();
     set((s) => ({
       byConversation: withSlice(s.byConversation, conversationId, {
         ...cur,
         thinkingTail: tail,
-        thinkingAt: Date.now(),
+        thinkingAt: now,
+        lastEventAt: now,
       }),
     }));
   },
@@ -216,13 +247,24 @@ export const useLiveStatusStore = create<LiveStatusStore>()((set, get) => ({
 
   noteToolStart: (conversationId, { toolUseId, toolName, input }) => {
     const cur = get().byConversation[conversationId] ?? EMPTY_LIVE_STATUS;
+    const now = Date.now();
+    // Restarted tool-use id (shouldn't happen, but the runningTools filter
+    // guards it) — replace the step entry rather than double-counting.
+    const priorSteps = cur.steps.filter((step) => step.toolUseId !== toolUseId);
+    const replaced = priorSteps.length !== cur.steps.length;
     set((s) => ({
       byConversation: withSlice(s.byConversation, conversationId, {
         ...cur,
         runningTools: [
           ...cur.runningTools.filter((t) => t.toolUseId !== toolUseId),
-          { toolUseId, toolName, input, startedAt: Date.now() },
+          { toolUseId, toolName, input, startedAt: now },
         ],
+        steps: [
+          ...priorSteps.slice(-(MAX_STEPS - 1)),
+          { toolUseId, toolName, input, startedAt: now, endedAt: null },
+        ],
+        stepCount: replaced ? cur.stepCount : cur.stepCount + 1,
+        lastEventAt: now,
         // A tool starting marks a new phase of work — the previous thinking
         // block is done, so the next thinking preview starts fresh.
         thinkingTail: "",
@@ -234,11 +276,23 @@ export const useLiveStatusStore = create<LiveStatusStore>()((set, get) => ({
   noteToolEnd: (conversationId, toolUseId) => {
     if (!toolUseId) return;
     const cur = get().byConversation[conversationId];
-    if (!cur?.runningTools.some((t) => t.toolUseId === toolUseId)) return;
+    if (!cur) return;
+    const isRunning = cur.runningTools.some((t) => t.toolUseId === toolUseId);
+    const hasStep = cur.steps.some(
+      (step) => step.toolUseId === toolUseId && step.endedAt === null,
+    );
+    if (!isRunning && !hasStep) return;
+    const now = Date.now();
     set((s) => ({
       byConversation: withSlice(s.byConversation, conversationId, {
         ...cur,
         runningTools: cur.runningTools.filter((t) => t.toolUseId !== toolUseId),
+        steps: cur.steps.map((step) =>
+          step.toolUseId === toolUseId && step.endedAt === null
+            ? { ...step, endedAt: now }
+            : step,
+        ),
+        lastEventAt: now,
       }),
     }));
   },

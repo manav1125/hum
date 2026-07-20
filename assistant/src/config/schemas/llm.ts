@@ -530,11 +530,48 @@ const FlashTierSchema = z
 
 export type FlashTierConfig = z.infer<typeof FlashTierSchema>;
 
+/**
+ * Vision-tier routing for image-bearing agent rounds.
+ *
+ * When enabled (the default), a round whose request payload carries image
+ * blocks AND whose resolved model is known text-only in the model catalog is
+ * pinned to a vision-capable model instead (see `agent/vision-tier.ts` for
+ * the model resolution order: this config's `model`, else the resolved
+ * `cueLiveVision` call-site model, else an OpenRouter default). Tools,
+ * system prompt, and transport are unchanged — only the model id.
+ *
+ * Default ON, unlike flash-tier: the alternative to routing is a hard
+ * provider error ("This model doesn't support image input"), so opting out
+ * must be the explicit choice.
+ */
+const VisionTierSchema = z
+  .object({
+    enabled: z
+      .boolean()
+      .default(true)
+      .describe(
+        "When true (default), image-bearing rounds that resolved to a known text-only model are routed to the vision-tier model. Set false to always keep the resolved model (image turns on a text-only model will fail).",
+      ),
+    model: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Model id for image-bearing rounds. Must be servable by the turn's resolved provider (the transport is not re-routed). When unset, falls back to the resolved cueLiveVision call-site model, then to a proven OpenRouter vision default.",
+      ),
+  })
+  .describe(
+    "Vision-tier routing of image-bearing rounds to a vision-capable model",
+  );
+
+export type VisionTierConfig = z.infer<typeof VisionTierSchema>;
+
 export const LLMSchema = z
   .object({
     default: LLMConfigBase.default(LLMConfigBase.parse({})),
     toolPruning: ToolPruningSchema.default(ToolPruningSchema.parse({})),
     flashTier: FlashTierSchema.default(FlashTierSchema.parse({})),
+    visionTier: VisionTierSchema.default(VisionTierSchema.parse({})),
     profiles: z.record(z.string().min(1), ProfileEntry).default({}),
     // Presentation-only order for named profiles. The resolver ignores this;
     // clients use it to render profile pickers consistently.

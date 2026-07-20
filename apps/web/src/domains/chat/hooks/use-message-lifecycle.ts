@@ -8,15 +8,21 @@
  * needed by external consumers are exposed.
  */
 
-import { type Dispatch, type SetStateAction, useCallback } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect } from "react";
 
 import { useNavigate } from "react-router";
 
 import { useIsNativePlatform } from "@/runtime/native-auth";
+import {
+  registerActiveReconciler,
+  settleTurnLivenessAgainstServer,
+} from "@/domains/chat/foreground-reconcile";
 import { useMessageReconciliation } from "@/domains/chat/hooks/use-message-reconciliation";
 import { useStreamEventHandler } from "@/domains/chat/hooks/use-stream-event-handler";
 import { useEventStream } from "@/domains/chat/hooks/use-event-stream";
+import { isSending, useTurnStore } from "@/domains/chat/turn-store";
 import { useBusSubscription } from "@/hooks/use-bus-subscription";
+import { recordDiagnostic } from "@/lib/diagnostics";
 import { getClientId } from "@/lib/telemetry/client-identity";
 import { parseConversationSyncTag } from "@/lib/sync/types";
 import { useConversationStore } from "@/stores/conversation-store";
@@ -132,6 +138,38 @@ export function useMessageLifecycle({
       }
     }
   });
+
+  // 5. Foreground reconcile — belt-and-braces for turns whose terminal
+  //    event was lost while the app was backgrounded (iOS freezes the
+  //    WKWebView JS runtime; SSE silently dies; the turn completes
+  //    server-side but the client keeps spinning). The SSE service DOES
+  //    reopen on `app.resume` and `reconcile-on-reopen` runs then, but
+  //    that path depends on the reopen succeeding + the `sse.opened`
+  //    dispatch; this direct reconcile has no such dependency. Only fires
+  //    while a turn looks in flight, so an idle foreground is free.
+  useBusSubscription("app.resume", () => {
+    if (!isSending(useTurnStore.getState().phase)) return;
+    if (!useConversationStore.getState().activeConversationId) return;
+    recordDiagnostic("foreground_reconcile_triggered", {});
+    void reconcileActiveConversation()
+      .catch(() => {
+        // Transient fetch failure — the SSE-reopen reconcile and the
+        // polling loop are the fallbacks; nothing to surface here.
+      })
+      // Then the lost-terminal settle: the messages reconcile alone can't
+      // clear a spinner whose reply fully arrived before the SSE died
+      // (changed:false defeats the structural rescue) — the conversation
+      // row's `isProcessing` is the authoritative tiebreak.
+      .then(() => settleTurnLivenessAgainstServer())
+      .catch(() => {});
+  });
+
+  // 6. Expose the reconcile function to out-of-tree affordances (the
+  //    mobile live-activity "check status" watchdog).
+  useEffect(
+    () => registerActiveReconciler(reconcileActiveConversation),
+    [reconcileActiveConversation],
+  );
 
   return {
     startReconciliationLoop,

@@ -258,6 +258,7 @@ describe("resolveCallSiteConfig", () => {
       pricingOverrides: [],
       toolPruning: { enabled: true, keepTools: [] },
       flashTier: { enabled: false, maxUserChars: 280 },
+      visionTier: { enabled: true },
     };
     expect(() => resolveCallSiteConfig("mainAgent", llm)).toThrow(
       /references undefined profile "nonexistent"/,
@@ -485,6 +486,7 @@ describe("resolveCallSiteConfig", () => {
       pricingOverrides: [],
       toolPruning: { enabled: true, keepTools: [] },
       flashTier: { enabled: false, maxUserChars: 280 },
+      visionTier: { enabled: true },
     };
     const resolved = resolveCallSiteConfig("mainAgent", llm);
     // Falls through to default.

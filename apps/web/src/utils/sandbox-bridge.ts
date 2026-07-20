@@ -91,6 +91,18 @@ export interface BridgeOptions {
   fetch?: boolean;
   /** Deep-link route exposed as `window.vellum.route`. */
   route?: string;
+  /**
+   * Include the deck navigation bridge (mobile slide decks). Adds:
+   *  1. a `vellum_deck_nav` message listener that re-dispatches the given
+   *     key (`ArrowLeft` / `ArrowRight`) as a real `keydown` inside the
+   *     sandbox — decks built to the SLIDES contract navigate on arrow keys,
+   *     and the sandboxed frame (no `allow-same-origin`) can't be reached
+   *     any other way from the parent;
+   *  2. an in-frame horizontal swipe detector that synthesizes the same
+   *     arrow-key events, so swiping the slide itself paginates on touch.
+   * Default: false.
+   */
+  deckNav?: boolean;
 }
 
 /**
@@ -106,7 +118,69 @@ function buildBridgeLogicScript(
   options?: BridgeOptions,
 ): string {
   const enableFetch = options?.fetch ?? false;
+  const enableDeckNav = options?.deckNav ?? false;
   const route = options?.route ?? null;
+
+  const deckNavBridge = enableDeckNav
+    ? `
+  // Find the deck's own next/prev control (SLIDES-contract nav chrome or a
+  // plain arrow glyph button) so pagination works for click-driven decks too.
+  function vellumDeckNavEl(dir) {
+    var words = dir === 'next' ? ['next', 'forward'] : ['prev', 'back'];
+    var glyphs = dir === 'next' ? ['\\u2192', '\\u203A', '\\u276F', '>'] : ['\\u2190', '\\u2039', '\\u276E', '<'];
+    var els = document.querySelectorAll('button, [role="button"], a, .nav *, [data-chrome] *');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var label = ((el.getAttribute('aria-label') || '') + ' ' + (el.className && el.className.baseVal !== undefined ? '' : el.className || '') + ' ' + el.id).toLowerCase();
+      for (var w = 0; w < words.length; w++) {
+        if (label.indexOf(words[w]) !== -1) return el;
+      }
+      var text = (el.textContent || '').trim();
+      if (text.length <= 2 && glyphs.indexOf(text) !== -1) return el;
+    }
+    return null;
+  }
+  function vellumDeckKey(key) {
+    // Prefer the deck's own control (deterministic for click-driven decks)…
+    var el = vellumDeckNavEl(key === 'ArrowRight' ? 'next' : 'prev');
+    if (el) { el.click(); return; }
+    // …fall back to a synthetic arrow key (SLIDES-contract keyboard nav).
+    // bubbles:true so listeners on document OR window both fire; keyCode
+    // shimmed for decks written against the legacy property.
+    var ev = new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
+    var code = key === 'ArrowRight' ? 39 : 37;
+    try {
+      Object.defineProperty(ev, 'keyCode', { get: function() { return code; } });
+      Object.defineProperty(ev, 'which', { get: function() { return code; } });
+    } catch (e) { /* read-only in some engines — key-based listeners still fire */ }
+    (document.body || document).dispatchEvent(ev);
+  }
+  window.addEventListener('message', function(event) {
+    var d = event.data;
+    if (d && d.type === 'vellum_deck_nav' && (d.key === 'ArrowLeft' || d.key === 'ArrowRight')) {
+      vellumDeckKey(d.key);
+    }
+  });
+  (function() {
+    var startX = 0, startY = 0, tracking = false;
+    document.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) { tracking = false; return; }
+      tracking = true;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchend', function(e) {
+      if (!tracking || e.changedTouches.length !== 1) return;
+      tracking = false;
+      var dx = e.changedTouches[0].clientX - startX;
+      var dy = e.changedTouches[0].clientY - startY;
+      // Deliberate horizontal swipe: dominant axis + a real distance.
+      if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        vellumDeckKey(dx < 0 ? 'ArrowRight' : 'ArrowLeft');
+      }
+    }, { passive: true });
+  })();`
+    : "";
 
   const fetchBridge = enableFetch
     ? `
@@ -173,7 +247,7 @@ function buildBridgeLogicScript(
         data: data || {}
       }, '*');
     }
-  };${fetchBridge}
+  };${fetchBridge}${deckNavBridge}
 })();
 </script>`;
 }

@@ -332,6 +332,9 @@ function TypeCard({
 // Logo — on light / on dark / mark
 // ---------------------------------------------------------------------------
 
+/** Logo images above this size are refused (stored inline on the profile). */
+const MAX_LOGO_BYTES = 1_000_000;
+
 function LogoCard({
   draft,
   setDraft,
@@ -340,8 +343,29 @@ function LogoCard({
   setDraft: (d: BrandProfileInput) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const mark = draft.logo.mark;
   const primary = draft.palette.primary || C.blue;
+
+  /** Read a picked image and store it inline (data URI) on the draft slot. */
+  const uploadLogo = (slot: "light" | "dark" | "mark", file: File) => {
+    setUploadError(null);
+    if (!file.type.startsWith("image/")) {
+      setUploadError("That file isn't an image.");
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setUploadError("Logo images must be under 1 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === "string" ? reader.result : null;
+      if (!src) return;
+      setDraft({ ...draft, logo: { ...draft.logo, [slot]: src } });
+    };
+    reader.readAsDataURL(file);
+  };
   return (
     <Panel>
       <SectionHead
@@ -412,19 +436,59 @@ function LogoCard({
       {editing ? (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
           {(["light", "dark", "mark"] as const).map((slot) => (
-            <input
+            <div
               key={slot}
-              value={draft.logo[slot] ?? ""}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  logo: { ...draft.logo, [slot]: e.target.value },
-                })
-              }
-              placeholder={`${slot} logo URL`}
-              style={miniField}
-            />
+              style={{ display: "flex", gap: 8, alignItems: "center" }}
+            >
+              <input
+                value={draft.logo[slot] ?? ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    logo: { ...draft.logo, [slot]: e.target.value },
+                  })
+                }
+                placeholder={`${slot} logo URL`}
+                style={{ ...miniField, flex: 1, minWidth: 0 }}
+              />
+              {/* Upload from device — the only workable path on mobile, where
+                  pasting an image URL is a dead end. Stored inline (data URI),
+                  which every logo consumer already renders. */}
+              <label
+                style={{
+                  fontSize: 11.5,
+                  fontFamily: mono,
+                  color: C.t2,
+                  border: `1px solid ${C.line2}`,
+                  borderRadius: 8,
+                  padding: "7px 10px",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  minHeight: 32,
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                Upload
+                <input
+                  type="file"
+                  accept="image/*"
+                  aria-label={`Upload ${slot} logo`}
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadLogo(slot, file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
           ))}
+          {uploadError ? (
+            <div style={{ fontSize: 11.5, color: "#C4553B" }}>
+              {uploadError}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Panel>

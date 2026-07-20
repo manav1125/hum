@@ -21,6 +21,8 @@ import { haptic } from "@/utils/haptics";
 const ARCHIVE_W = 88;
 const SWIPE_MAX = 120;
 const LONG_PRESS_MS = 480;
+/** Axis-lock threshold — forgiving 8px of horizontal intent (real-touch). */
+const LOCK_PX = 8;
 
 export function SwipeArchiveRow({
   title,
@@ -52,6 +54,14 @@ export function SwipeArchiveRow({
   const dx = useRef(0);
   const crossed = useRef(false);
   const dragging = useRef(false);
+  /**
+   * Sticky axis lock (real-iOS fix): decide ONCE per gesture whether the
+   * finger means horizontal (we own the drag) or vertical (native scroll
+   * owns it). The old per-move `|dy| > |dx|` re-check meant any noisy
+   * diagonal sample mid-drag froze the row, and on WKWebView the scroll
+   * gesture usually claimed the touch first — the swipe never engaged.
+   */
+  const axis = useRef<"h" | "v" | null>(null);
   const longPressTimer = useRef<number | null>(null);
   const suppressClick = useRef(false);
   const [reveal, setReveal] = useState(false);
@@ -74,11 +84,12 @@ export function SwipeArchiveRow({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (leaving) return;
+    if (leaving || !e.isPrimary) return;
     start.current = { x: e.clientX, y: e.clientY };
     dx.current = 0;
     crossed.current = false;
     dragging.current = false;
+    axis.current = null;
     suppressClick.current = false;
     clearLongPress();
     longPressTimer.current = window.setTimeout(() => {
@@ -91,18 +102,28 @@ export function SwipeArchiveRow({
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!start.current || leaving) return;
+    if (!start.current || leaving || !e.isPrimary) return;
     const rawDx = e.clientX - start.current.x;
     const rawDy = e.clientY - start.current.y;
     // Any real movement cancels the long-press.
     if (Math.abs(rawDx) > 8 || Math.abs(rawDy) > 8) clearLongPress();
-    if (Math.abs(rawDx) < 6 || Math.abs(rawDy) > Math.abs(rawDx)) return;
-    // Horizontal intent — capture so vertical scroll doesn't fight the swipe.
-    try {
-      (e.target as Element).setPointerCapture?.(e.pointerId);
-    } catch {
-      /* inactive pointer (synthetic/stale) — drag still tracks fine */
+    // Lock the gesture's axis once, at ~8px of clear intent.
+    if (axis.current == null) {
+      if (Math.abs(rawDx) >= LOCK_PX && Math.abs(rawDx) > Math.abs(rawDy)) {
+        axis.current = "h";
+        // Capture on the ROW (not e.target — a child span whose capture iOS
+        // may drop on rerender) so the drag survives leaving the element.
+        try {
+          cardRef.current?.setPointerCapture?.(e.pointerId);
+        } catch {
+          /* inactive pointer (synthetic/stale) — drag still tracks fine */
+        }
+      } else if (Math.abs(rawDy) >= LOCK_PX) {
+        // Vertical intent — hand the gesture to native scroll for good.
+        axis.current = "v";
+      }
     }
+    if (axis.current !== "h") return;
     dragging.current = true;
     // Left-only (frame 48): rightward drags rubber-band at 0.
     const clamped = Math.max(-SWIPE_MAX, Math.min(0, rawDx));
@@ -124,16 +145,33 @@ export function SwipeArchiveRow({
     window.setTimeout(() => onArchive(), 200);
   };
 
+  const settleBack = () => {
+    setX(0, true);
+    setReveal(false);
+  };
+
   const onPointerEnd = () => {
     clearLongPress();
     if (!start.current || leaving) return;
     start.current = null;
+    axis.current = null;
     if (dragging.current) suppressClick.current = true;
     if (dx.current <= -ARCHIVE_W) commit();
-    else {
-      setX(0, true);
-      setReveal(false);
-    }
+    else settleBack();
+    dx.current = 0;
+  };
+
+  /**
+   * pointercancel = the OS took the touch (scroll started, edge gesture,
+   * incoming call). NEVER commit from a cancel — spring back only.
+   */
+  const onPointerCancelEnd = () => {
+    clearLongPress();
+    if (!start.current || leaving) return;
+    start.current = null;
+    axis.current = null;
+    if (dragging.current) suppressClick.current = true;
+    settleBack();
     dx.current = 0;
   };
 
@@ -188,7 +226,7 @@ export function SwipeArchiveRow({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
+        onPointerCancel={onPointerCancelEnd}
         onClick={() => {
           if (suppressClick.current) {
             suppressClick.current = false;
@@ -210,7 +248,15 @@ export function SwipeArchiveRow({
         }}
         style={{
           position: "relative",
+          // pan-y: vertical scroll stays native; horizontal drags reach the
+          // pointer handlers instead of being eaten by the scroller.
           touchAction: "pan-y",
+          // iOS long-press pitfalls: without these, 480ms of hold starts the
+          // text-selection loupe / share callout and hijacks the gesture.
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          WebkitTouchCallout: "none",
+          WebkitTapHighlightColor: "transparent",
           cursor: "pointer",
           borderRadius: radius,
           ...rowStyle,

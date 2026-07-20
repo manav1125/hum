@@ -53,6 +53,8 @@ import {
   MobileComposerSettingsSheet,
   MobileConversationActionsSheet,
 } from "@/domains/chat/components/mobile-chat-menus";
+import { MobileLiveActivity } from "@/domains/chat/components/mobile-live-activity";
+import { MobileTurnErrorCard } from "@/domains/chat/components/mobile-turn-error-card";
 import {
   MobileThreadVoice,
   ThreadVoiceActiveChip,
@@ -622,14 +624,18 @@ export function MobileChatView({
 
       <AuroraBackdrop />
 
-      {/* HEADER — ‹ back + ring chip + "Cue" / live status (frame 8). */}
+      {/* HEADER — ‹ back + ring chip + "Cue" / live status (frame 8).
+          Top padding carries the iOS status-bar inset — the mobile chat
+          route renders edge-to-edge (chat-layout's <main> adds no inset),
+          so without this the header sits under the clock/notch. */}
       <div
         style={{
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
           gap: 11,
-          padding: "4px 20px 12px",
+          padding:
+            "calc(4px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px 12px",
           borderBottom: "1px solid var(--mv3-line)",
           position: "relative",
           zIndex: 2,
@@ -737,6 +743,49 @@ export function MobileChatView({
           <Transcript ref={transcriptRef} {...transcriptProps} />
         )}
       </div>
+
+      {/* LIVE ACTIVITY — the "Cue is genuinely working" block pinned above
+          the composer while a turn is in flight: current step + counter +
+          elapsed + latest-steps mini-stream + the long-silence "Check
+          status" rescue. Hidden while the in-thread voice session owns the
+          bottom of the screen (it has its own live strip). Renders null
+          when idle. */}
+      {!threadVoiceOpen ? (
+        <div
+          // `empty:hidden` — both children render null when idle/error-free,
+          // and the collapsed wrapper must not leave dead padding above the
+          // composer.
+          className="empty:hidden"
+          style={{
+            flexShrink: 0,
+            padding: "0 16px 8px",
+            position: "relative",
+            zIndex: 2,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <MobileLiveActivity
+            // `liveStatusFallbackActive` (showThinking) misses a real
+            // mid-turn state: once a streaming assistant row exists, the
+            // restored-processing OR goes false — and the turn reducer can
+            // sit idle mid-turn (draft→server conversation-id switch resets
+            // it; external-channel turns never activate it). In that state
+            // `canStopGenerating` is the surviving local proof of an active
+            // turn (conversation processing flag / live transcript row), so
+            // OR it in — otherwise the block goes dark exactly during the
+            // long waits it exists for.
+            fallbackActive={
+              Boolean(transcriptProps.liveStatusFallbackActive) ||
+              canStopGenerating
+            }
+          />
+          {/* Quiet error surface — vision degrade card + generic failed-turn
+              card. */}
+          <MobileTurnErrorCard />
+        </div>
+      ) : null}
 
       {/* FAILED RUNS in this conversation — the only red (frame 29). */}
       {failedHere.length > 0 ? (

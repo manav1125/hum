@@ -98,6 +98,8 @@ function TriageCard({
   const start = useRef<{ x: number; y: number } | null>(null);
   const dx = useRef(0);
   const crossed = useRef(false);
+  /** Sticky per-gesture axis lock (same real-iOS fix as SwipeArchiveRow). */
+  const axis = useRef<"h" | "v" | null>(null);
   const [reveal, setReveal] = useState<0 | 1 | -1>(0);
   const [leaving, setLeaving] = useState<0 | 1 | -1>(0);
 
@@ -111,18 +113,32 @@ function TriageCard({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (leaving) return;
+    if (leaving || !e.isPrimary) return;
     start.current = { x: e.clientX, y: e.clientY };
     dx.current = 0;
     crossed.current = false;
+    axis.current = null;
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!start.current || leaving) return;
+    if (!start.current || leaving || !e.isPrimary) return;
     const rawDx = e.clientX - start.current.x;
     const rawDy = e.clientY - start.current.y;
-    if (Math.abs(rawDx) < 6 || Math.abs(rawDy) > Math.abs(rawDx)) return;
-    // Horizontal intent — capture so vertical scroll doesn't fight the swipe.
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    // Lock the gesture's axis ONCE at ~8px of clear intent (the old per-move
+    // |dy|>|dx| re-check let noisy diagonal samples freeze the drag, and on
+    // real iOS the scroller usually claimed the touch first).
+    if (axis.current == null) {
+      if (Math.abs(rawDx) >= 8 && Math.abs(rawDx) > Math.abs(rawDy)) {
+        axis.current = "h";
+        try {
+          cardRef.current?.setPointerCapture?.(e.pointerId);
+        } catch {
+          /* inactive pointer — drag still tracks fine */
+        }
+      } else if (Math.abs(rawDy) >= 8) {
+        axis.current = "v"; // native scroll owns this gesture
+      }
+    }
+    if (axis.current !== "h") return;
     const clamped = Math.max(-SWIPE_MAX, Math.min(SWIPE_MAX, rawDx));
     dx.current = clamped;
     setX(clamped, false);
@@ -143,12 +159,22 @@ function TriageCard({
   const onPointerEnd = () => {
     if (!start.current || leaving) return;
     start.current = null;
+    axis.current = null;
     if (dx.current >= SWIPE_THRESHOLD) commit(1);
     else if (dx.current <= -SWIPE_THRESHOLD) commit(-1);
     else {
       setX(0, true);
       setReveal(0);
     }
+    dx.current = 0;
+  };
+  /** pointercancel = the OS took the touch — spring back, never commit. */
+  const onPointerCancelEnd = () => {
+    if (!start.current || leaving) return;
+    start.current = null;
+    axis.current = null;
+    setX(0, true);
+    setReveal(0);
     dx.current = 0;
   };
 
@@ -225,7 +251,7 @@ function TriageCard({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
+        onPointerCancel={onPointerCancelEnd}
         style={{
           position: "relative",
           // Near-opaque (frame 15 uses .96 alpha) so the reveal layer never
@@ -238,6 +264,11 @@ function TriageCard({
           borderRadius: 20,
           padding: "14px 16px",
           touchAction: "pan-y",
+          // iOS: no text-selection loupe / callout mid-drag.
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          WebkitTouchCallout: "none",
+          WebkitTapHighlightColor: "transparent",
           cursor: "grab",
         }}
       >

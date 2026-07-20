@@ -47,9 +47,14 @@ import {
   BackRow,
   Grabber,
   LivePulseBadge,
+  ParkedCoachline,
+  ParkedMark,
+  RunNowButton,
   dueLabel,
   elapsedLabel,
   inlineSheet,
+  isParked,
+  useRunNow,
 } from "@/mobile-v3/work-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
@@ -265,10 +270,13 @@ function NeedsYouCard({
   assistantId,
   item,
   delay,
+  onOpen,
 }: {
   assistantId: string;
   item: HqWorkItem;
   delay: number;
+  /** Opens the OUTPUT — the review pager seeded at this item. */
+  onOpen: () => void;
 }) {
   const queryClient = useQueryClient();
   const approve = useMutation({
@@ -356,6 +364,30 @@ function NeedsYouCard({
         }}
       >
         {approve.isPending ? "Approving…" : "Approve & finish"}
+      </button>
+      {/* The output link — see what Cue actually made before approving. */}
+      <button
+        type="button"
+        className="cue-pressable"
+        onClick={() => {
+          haptic.light();
+          onOpen();
+        }}
+        style={{
+          width: "100%",
+          background: "none",
+          border: "none",
+          color: "var(--mv3-muted)",
+          fontSize: 12,
+          fontWeight: 500,
+          fontFamily: "inherit",
+          padding: 8,
+          minHeight: 36,
+          marginTop: 2,
+          cursor: "pointer",
+        }}
+      >
+        Review the work ›
       </button>
     </div>
   );
@@ -720,6 +752,8 @@ export function Mv3ProjectDetail() {
   // this project client-side (keeps the exact HqWorkItem shape the cards need).
   // One-tap ✕ dismiss with the shared 5s undo pill.
   const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
+  // One-tap ▶ run (the task sheet's "Have Cue handle it", inline on rows).
+  const { runNow, started } = useRunNow(assistantId);
   const all = useHqWorkItems(assistantId);
   const items = useMemo(
     () =>
@@ -747,6 +781,8 @@ export function Mv3ProjectDetail() {
       ),
     [items],
   );
+
+  const parkedCount = useMemo(() => queued.filter(isParked).length, [queued]);
 
   // The single-project GET omits `stats`, so the ring + goal line derive
   // from the board items themselves (the same rows the sheet renders).
@@ -928,6 +964,7 @@ export function Mv3ProjectDetail() {
             ) : null}
             <b style={{ color: "var(--mv3-text)", fontWeight: 600 }}>
               {running.length} running · {review.length} needs you
+              {parkedCount > 0 ? ` · ${parkedCount} parked` : ""}
             </b>
           </div>
         </div>
@@ -961,6 +998,11 @@ export function Mv3ProjectDetail() {
                 assistantId={assistantId}
                 item={item}
                 delay={nextDelay()}
+                onOpen={() =>
+                  navigate(
+                    `${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`,
+                  )
+                }
               />
             ))}
             {review.slice(1, 4).map((item) => (
@@ -987,6 +1029,10 @@ export function Mv3ProjectDetail() {
                 item.dueAt != null
                   ? dueLabel(item.dueAt, now).toLowerCase()
                   : null;
+              // Optimistic ▶: render running until the daemon's flip lands
+              // (then the item graduates to the LiveRunCard above).
+              const optimisticRun = started.has(item.id);
+              const parked = isParked(item) && !optimisticRun;
               return (
                 <SwipeArchiveRow
                   key={item.id}
@@ -1011,7 +1057,11 @@ export function Mv3ProjectDetail() {
                     boxSizing: "border-box",
                   }}
                 >
-                  <StateChip state="picked_up" label="" size="sm" />
+                  {optimisticRun ? (
+                    <LivePulseBadge size={18} />
+                  ) : (
+                    <StateChip state="picked_up" label="" size="sm" />
+                  )}
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span
                       style={{
@@ -1025,7 +1075,18 @@ export function Mv3ProjectDetail() {
                     >
                       {item.title}
                     </span>
-                    {due ? (
+                    {optimisticRun ? (
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 11,
+                          color: "var(--mv3-micro)",
+                          marginTop: 1,
+                        }}
+                      >
+                        Cue picked this up
+                      </span>
+                    ) : due || parked ? (
                       <span
                         style={{
                           display: "block",
@@ -1035,9 +1096,18 @@ export function Mv3ProjectDetail() {
                         }}
                       >
                         {due}
+                        {due && parked ? " · " : ""}
+                        {/* Quiet honest "waits for your ▶" (not a chip state). */}
+                        {parked ? <ParkedMark /> : null}
                       </span>
                     ) : null}
                   </span>
+                  {!optimisticRun ? (
+                    <RunNowButton
+                      title={item.title}
+                      onRun={() => runNow(item)}
+                    />
+                  ) : null}
                   <span
                     aria-hidden
                     style={{ fontSize: 15, color: "var(--mv3-faint)" }}
@@ -1055,7 +1125,11 @@ export function Mv3ProjectDetail() {
                 onLongPress={() => setSheetItemId(item.id)}
                 onOpen={() => {
                   haptic.light();
-                  setSheetItemId(item.id);
+                  // ✓ lands on the OUTPUT (the run's thread) when one exists;
+                  // long-press keeps the edit sheet (Run again / labels).
+                  if (item.lastRunConversationId)
+                    navigate(routes.conversation(item.lastRunConversationId));
+                  else setSheetItemId(item.id);
                 }}
                 radius={12}
                 containerStyle={{
@@ -1111,6 +1185,9 @@ export function Mv3ProjectDetail() {
                 automatically.
               </div>
             ) : null}
+
+            {/* First-run coaching — one quiet line, once per session. */}
+            <ParkedCoachline hasParked={parkedCount > 0} />
 
             {/* Quick-add — the board's `useQuickAddTask` (POST work-items
                 { title, projectId }), as an inline v3 row. */}

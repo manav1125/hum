@@ -362,9 +362,18 @@ export function CreateGalleryOverlay({
       }}
     >
       <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
-        {/* Mobile drag handle */}
+        {/* Mobile drag handle — the panel is full-screen (fixed inset:0), so
+            it must clear the iOS status bar itself or the "Choose a template"
+            header renders under the clock. */}
         {isMobile ? (
-          <div style={{ display: "grid", placeItems: "center", paddingTop: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              placeItems: "center",
+              paddingTop:
+                "calc(8px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))",
+            }}
+          >
             <span
               style={{
                 width: 36,
@@ -619,7 +628,9 @@ export function CreateGalleryOverlay({
             display: "flex",
             alignItems: "center",
             gap: 10,
-            padding: isMobile ? "12px 16px" : "14px 20px",
+            padding: isMobile
+              ? "12px 16px calc(12px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))"
+              : "14px 20px",
             borderTop: `1px solid ${C.line}`,
             background: C.surface,
           }}
@@ -939,6 +950,8 @@ function SlideCard({
       >
         <span
           style={{
+            flex: 1,
+            minWidth: 0,
             fontSize: 12.5,
             fontWeight: 600,
             color: C.t1,
@@ -949,11 +962,15 @@ function SlideCard({
         >
           {t.name}
         </span>
-        <FidelityBadge
-          fidelity={t.fidelity}
-          mode={fidelityMode}
-          onChange={onFidelity}
-        />
+        {/* flexShrink 0 so the EXACT | INSPIRED toggle never clips to "INSP"
+            on narrow (phone) cards — the name ellipsizes instead. */}
+        <span style={{ flexShrink: 0, display: "inline-flex" }}>
+          <FidelityBadge
+            fidelity={t.fidelity}
+            mode={fidelityMode}
+            onChange={onFidelity}
+          />
+        </span>
       </span>
     </button>
   );

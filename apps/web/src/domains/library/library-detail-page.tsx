@@ -111,16 +111,26 @@ export function LibraryDetailPage() {
   }
 
   return (
-    <AppViewerContainer
-      appId={app.appId}
-      appName={app.name}
-      html={app.html}
-      assistantId={assistantId}
-      onClose={handleClose}
-      onEdit={handleEdit}
-      onShare={handleShare}
-      isSharing={isSharing}
-      enableFullscreen
-    />
+    // The route renders full-bleed (no shell header), so it must clear the
+    // iOS status bar itself — otherwise the viewer nav bar sits under the
+    // clock. Zero on desktop where the inset resolves to 0px.
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      style={{
+        paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
+      }}
+    >
+      <AppViewerContainer
+        appId={app.appId}
+        appName={app.name}
+        html={app.html}
+        assistantId={assistantId}
+        onClose={handleClose}
+        onEdit={handleEdit}
+        onShare={handleShare}
+        isSharing={isSharing}
+        enableFullscreen
+      />
+    </div>
   );
 }

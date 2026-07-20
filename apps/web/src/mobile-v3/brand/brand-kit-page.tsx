@@ -422,7 +422,7 @@ export function BrandKitPage() {
             sub={
               logoSlots.length > 0
                 ? logoSlots.map((s) => s.label).join(" · ")
-                : "No logos yet — add from Settings → Brand"
+                : "No logos yet — tap to add"
             }
             onPress={() => setSheet("logos")}
           />
@@ -540,15 +540,35 @@ export function BrandKitPage() {
         <div style={{ padding: "2px 2px 8px" }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>Logos</div>
           {logoSlots.length === 0 ? (
-            <div
-              style={{
-                fontSize: 12.5,
-                color: "var(--mv3-muted)",
-                marginTop: 10,
-              }}
-            >
-              No logos saved yet — add them from Settings → Brand.
-            </div>
+            <>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  color: "var(--mv3-muted)",
+                  marginTop: 10,
+                }}
+              >
+                No logos saved yet.
+              </div>
+              {/* Actionable path (not a dead end): the settings Brand leaf
+                  hosts the studio, whose logo step supports upload on mobile. */}
+              <button
+                type="button"
+                onClick={() => {
+                  haptic.medium();
+                  setSheet(null);
+                  navigate(routes.settings.brand);
+                }}
+                style={{
+                  ...primaryBtn,
+                  width: "100%",
+                  marginTop: 14,
+                  minHeight: 48,
+                }}
+              >
+                Add a logo ›
+              </button>
+            </>
           ) : (
             <div style={{ display: "flex", gap: 9, marginTop: 14 }}>
               {logoSlots.map((slot) => (

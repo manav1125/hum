@@ -92,6 +92,7 @@ const defaultLlmConfig: LLMConfig = {
   pricingOverrides: [],
   toolPruning: { enabled: true, keepTools: [] },
   flashTier: { enabled: false, maxUserChars: 280 },
+  visionTier: { enabled: true },
 };
 
 let mockLlmConfig: LLMConfig = structuredClone(defaultLlmConfig);
