@@ -36,8 +36,33 @@ import { useProjects, type ProjectView } from "./use-projects";
 
 type RowState = "idle" | "pending" | "done" | "failed";
 
+/** One line that failed to POST, with its short human reason (frame D4). */
+interface FailedRow {
+  line: string;
+  reason: string;
+}
+
+/** Post-submit partial-failure snapshot (D4 — the modal never closes). */
+interface SubmitResult {
+  added: string[];
+  failed: FailedRow[];
+}
+
+/** Short reason for the D4 inline red line ("connection dropped"). */
+function describeSubmitError(err: unknown): string {
+  if (err instanceof TypeError) return "connection dropped";
+  if (err instanceof Error && err.message && err.message.length <= 60) {
+    return err.message.replace(/\.$/, "");
+  }
+  return "didn’t go through";
+}
+
 const wash = (accent: string, pct: number) =>
   `color-mix(in srgb, ${accent} ${pct}%, transparent)`;
+
+/** D4's failure red — #C24E42 on cream light / re-toned dark (index.css). */
+const RED = "var(--mv1-red)";
+const RED_WASH = "var(--mv1-red-wash)";
 
 /* ------------------------------- chip atoms ------------------------------- */
 
@@ -248,7 +273,15 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
   const { projects } = useProjects(assistantId);
   const create = useMutation({ ...workitemsPostMutation() });
 
-  const [draft, setDraft] = useState("");
+  // Seeded from the store so a deferred draft ("Keep in draft", D4) survives
+  // the modal unmounting; every edit writes back for the lossless close.
+  const storedDraft = useAddTasksStore.use.draft();
+  const setStoredDraft = useAddTasksStore.use.setDraft();
+  const [draft, setDraftState] = useState(storedDraft);
+  const setDraft = (next: string) => {
+    setDraftState(next);
+    setStoredDraft(next);
+  };
   const [overrides, setOverrides] = useState<Map<string, string | null>>(
     () => new Map(),
   );
@@ -256,7 +289,8 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
   const [newProjFor, setNewProjFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [rowStates, setRowStates] = useState<RowState[]>([]);
-  const [errorLine, setErrorLine] = useState<string | null>(null);
+  /** Non-null = frame D4's partial-failure state (modal stays open). */
+  const [result, setResult] = useState<SubmitResult | null>(null);
 
   const lines = useMemo(() => parseTaskLines(draft), [draft]);
   const activeProjects = projects.filter((p) => p.status === "active");
@@ -284,9 +318,10 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
-    setErrorLine(null);
+    setResult(null);
     setExpandedLine(null);
     const states: RowState[] = lines.map(() => "idle");
+    const reasons: string[] = lines.map(() => "");
     setRowStates([...states]);
 
     for (let i = 0; i < lines.length; i++) {
@@ -299,28 +334,32 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
           body: { title: lines[i], ...(projectId ? { projectId } : {}) },
         });
         states[i] = "done";
-      } catch {
+      } catch (err) {
         states[i] = "failed";
+        reasons[i] = describeSubmitError(err);
       }
       setRowStates([...states]);
     }
 
     setSubmitting(false);
-    const added = states.filter((s) => s === "done").length;
-    const failed = lines.filter((_, i) => states[i] === "failed");
+    const added = lines.filter((_, i) => states[i] === "done");
+    const failed: FailedRow[] = lines
+      .map((line, i) => ({ line, reason: reasons[i] }))
+      .filter((_, i) => states[i] === "failed");
     void queryClient.invalidateQueries();
 
     if (failed.length === 0) {
       toast.success(
-        `${added} ${added === 1 ? "task" : "tasks"} added — parked until you say go`,
+        `${added.length} ${added.length === 1 ? "task" : "tasks"} added — parked until you say go`,
       );
+      setDraft("");
       onClose();
     } else {
-      setDraft(failed.join("\n"));
+      // Frame D4: the modal NEVER closes on partial failure — failed rows
+      // stay in the (editable) draft with the reason inline.
+      setDraft(failed.map((f) => f.line).join("\n"));
       setRowStates([]);
-      setErrorLine(
-        `${added > 0 ? `${added} added · ` : ""}${failed.length} didn’t make it — they stay in the draft, submit to retry.`,
-      );
+      setResult({ added, failed });
     }
   };
 
@@ -409,7 +448,12 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
               aria-label="Tasks, one per line"
               placeholder={"One task per line…"}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                // Editing the draft steps back out of the failure summary —
+                // D4's failed rows stay editable.
+                setDraft(e.target.value);
+                if (result) setResult(null);
+              }}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                   e.preventDefault();
@@ -469,8 +513,221 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Right pane — parsed rows + per-row filing. */}
+          {/* Right pane — parsed rows + per-row filing, or the D4 partial-
+              failure summary (the modal never closes on partial failure). */}
           <div style={{ flex: 1, minWidth: 0, paddingLeft: 20 }}>
+            {result !== null ? (
+              <>
+                {/* ✓ serif summary line. */}
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 12 }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 9,
+                      background: wash(C.green, 16),
+                      color: C.green,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 14,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ✓
+                  </span>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{ fontFamily: serif, fontSize: 22, color: C.t1 }}
+                    >
+                      {result.added.length} added · {result.failed.length}{" "}
+                      didn&rsquo;t make it
+                    </div>
+                    <div
+                      style={{ fontSize: 12, color: C.t3, marginTop: 1 }}
+                    >
+                      {result.added.length > 0
+                        ? "Added tasks are parked in the queue · your text is kept"
+                        : "Nothing saved yet — your text is kept"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* N STILL IN YOUR DRAFT — mono red label + hairline. */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    margin: "18px 0 10px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 10,
+                      letterSpacing: "0.1em",
+                      color: RED,
+                    }}
+                  >
+                    {result.failed.length} STILL IN YOUR DRAFT
+                  </span>
+                  <span
+                    aria-hidden
+                    style={{ flex: 1, height: 1, background: wash(C.ink, 7) }}
+                  />
+                </div>
+
+                {/* Failed rows — red on cream, the reason inline right. The
+                    text stays editable in the left pane. */}
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  {result.failed.map((f, i) => (
+                    <div
+                      key={`${i}-${f.line}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        background: RED_WASH,
+                        border: `1px solid ${wash(RED, 35)}`,
+                        borderRadius: 11,
+                        padding: "10px 13px",
+                      }}
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 6,
+                          background: wash(RED, 12),
+                          color: RED,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 10,
+                          flexShrink: 0,
+                        }}
+                      >
+                        ✕
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 13.5,
+                          color: C.t1,
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {f.line}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11.5,
+                          color: RED,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {f.reason}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Succeeded rows collapse to one quiet ✓ line. */}
+                {result.added.length > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 12.5,
+                      color: C.t3,
+                      padding: "12px 2px 0",
+                    }}
+                  >
+                    <span aria-hidden>✓</span>
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {result.added.slice(0, 2).join(" · ")}
+                      {result.added.length > 2
+                        ? ` · +${result.added.length - 2}`
+                        : ""}{" "}
+                      — added
+                    </span>
+                  </div>
+                ) : null}
+
+                {/* Footer — Keep in draft (lossless defer) · Retry failures
+                    only. */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 10,
+                    marginTop: 20,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // The draft already holds the failed lines and is
+                      // persisted in the store — nothing is lost.
+                      setResult(null);
+                      onClose();
+                    }}
+                    style={{
+                      background: C.surface,
+                      color: C.t2,
+                      border: `1px solid ${wash(C.ink, 12)}`,
+                      borderRadius: 11,
+                      padding: "10px 18px",
+                      fontSize: 13,
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Keep in draft
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      setResult(null);
+                      void submit();
+                    }}
+                    style={{
+                      background: C.blue,
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 11,
+                      padding: "10px 22px",
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                      boxShadow: `0 10px 24px -10px ${wash(C.blue, 50)}`,
+                    }}
+                  >
+                    Retry {result.failed.length} failed
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
             <div
               style={{
                 display: "flex",
@@ -580,12 +837,6 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
-            {errorLine ? (
-              <div style={{ fontSize: 11.5, color: C.amber, marginTop: 10 }}>
-                {errorLine}
-              </div>
-            ) : null}
-
             <div
               style={{
                 display: "flex",
@@ -633,6 +884,8 @@ function AddTasksModalBody({ onClose }: { onClose: () => void }) {
                   : `Add ${lines.length > 0 ? `${lines.length} ` : ""}${lines.length === 1 ? "task" : "tasks"}`}
               </button>
             </div>
+              </>
+            )}
           </div>
         </div>
       </div>

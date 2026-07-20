@@ -39,10 +39,10 @@ import {
   StateChip,
   cardBody,
   microLabel,
-  mv3Mono,
   rise,
 } from "@/mobile-v3";
-import { DismissX, dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
+import { SwipeArchiveRow } from "@/mobile-v3/swipe-archive-row";
+import { dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
 import {
   BackRow,
   Grabber,
@@ -978,99 +978,104 @@ export function Mv3ProjectDetail() {
               />
             ))}
 
-            {/* Queued + recent done — the designed row patterns, repeated.
-                Rows are now tappable: they open the task edit sheet. */}
-            {queued.slice(0, 4).map((item) => (
-              <div
-                key={item.id}
-                role="button"
-                tabIndex={0}
-                className="cue-pressable"
-                onClick={() => {
-                  haptic.light();
-                  setSheetItemId(item.id);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
+            {/* Queued + recent done — gap frame 48's density RULE: no inline
+                ✕ (dismiss = swipe-left 88pt Archive, full-swipe commits), the
+                DUE chip merges into the metadata line, long-press (and tap,
+                here) opens the task sheet's actions. Rows keep the chevron. */}
+            {queued.slice(0, 4).map((item) => {
+              const due =
+                item.dueAt != null
+                  ? dueLabel(item.dueAt, now).toLowerCase()
+                  : null;
+              return (
+                <SwipeArchiveRow
+                  key={item.id}
+                  title={item.title}
+                  onArchive={() => dismiss(item, { immediate: true })}
+                  onLongPress={() => setSheetItemId(item.id)}
+                  onOpen={() => {
                     haptic.light();
                     setSheetItemId(item.id);
-                  }
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "6px 4px",
-                  minHeight: 44,
-                  cursor: "pointer",
-                  ...rise(nextDelay()),
-                  ...dismissLeave(leavingId === item.id),
-                }}
-              >
-                <StateChip state="picked_up" label="" size="sm" />
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: "var(--mv3-text)",
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                  }}
+                  radius={12}
+                  containerStyle={{
+                    ...rise(nextDelay()),
+                    ...dismissLeave(leavingId === item.id),
+                  }}
+                  rowStyle={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "6px 4px",
+                    minHeight: 44,
+                    boxSizing: "border-box",
                   }}
                 >
-                  {item.title}
-                </span>
-                {item.dueAt != null ? (
-                  <span
-                    style={{
-                      fontFamily: mv3Mono,
-                      fontSize: 9,
-                      color: "var(--mv3-amber)",
-                      background:
-                        "color-mix(in srgb, var(--mv3-amber) 15%, transparent)",
-                      padding: "3px 8px",
-                      borderRadius: 6,
-                      letterSpacing: "0.08em",
-                    }}
-                  >
-                    {dueLabel(item.dueAt, now)}
+                  <StateChip state="picked_up" label="" size="sm" />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        color: "var(--mv3-text)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {item.title}
+                    </span>
+                    {due ? (
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 11,
+                          color: "var(--mv3-amber)",
+                          marginTop: 1,
+                        }}
+                      >
+                        {due}
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-                <DismissX title={item.title} onDismiss={() => dismiss(item)} />
-              </div>
-            ))}
+                  <span
+                    aria-hidden
+                    style={{ fontSize: 15, color: "var(--mv3-faint)" }}
+                  >
+                    ›
+                  </span>
+                </SwipeArchiveRow>
+              );
+            })}
             {done.slice(0, 3).map((item) => (
-              <div
+              <SwipeArchiveRow
                 key={item.id}
-                role="button"
-                tabIndex={0}
-                className="cue-pressable"
-                onClick={() => {
+                title={item.title}
+                onArchive={() => dismiss(item, { immediate: true })}
+                onLongPress={() => setSheetItemId(item.id)}
+                onOpen={() => {
                   haptic.light();
                   setSheetItemId(item.id);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    haptic.light();
-                    setSheetItemId(item.id);
-                  }
+                radius={12}
+                containerStyle={{
+                  opacity: 0.75,
+                  ...rise(nextDelay()),
+                  ...dismissLeave(leavingId === item.id),
                 }}
-                style={{
+                rowStyle={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
                   padding: "6px 4px",
                   minHeight: 44,
-                  opacity: 0.75,
-                  cursor: "pointer",
-                  ...rise(nextDelay()),
-                  ...dismissLeave(leavingId === item.id),
+                  boxSizing: "border-box",
                 }}
               >
-                <span aria-hidden style={{ color: "var(--mv3-green)", fontSize: 12 }}>
+                <span
+                  aria-hidden
+                  style={{ color: "var(--mv3-green)", fontSize: 12 }}
+                >
                   ✓
                 </span>
                 <span
@@ -1091,8 +1096,13 @@ export function Mv3ProjectDetail() {
                     {relativeTime(item.updatedAt)}
                   </span>
                 ) : null}
-                <DismissX title={item.title} onDismiss={() => dismiss(item)} />
-              </div>
+                <span
+                  aria-hidden
+                  style={{ fontSize: 15, color: "var(--mv3-faint)" }}
+                >
+                  ›
+                </span>
+              </SwipeArchiveRow>
             ))}
 
             {!all.isLoading && items.length === 0 ? (

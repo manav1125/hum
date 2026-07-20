@@ -424,7 +424,12 @@ export function TelegramSetupSheet({
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
-                    background: "rgba(0,0,0,.35)",
+                    // Gap frame 51's light rule: token wells are a #F2F3F7
+                    // inset on the white card with a hairline border — never
+                    // a dark well. Dark keeps the designed inset (tokens in
+                    // mv3.css).
+                    background: "var(--mv3-token-well)",
+                    border: "1px solid var(--mv3-token-well-border)",
                     borderRadius: 11,
                     padding: "0 13px",
                   }}

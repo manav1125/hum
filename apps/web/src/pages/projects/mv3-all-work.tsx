@@ -20,11 +20,11 @@ import {
   StateChip,
   cardBody,
   microLabel,
-  mv3Mono,
   rise,
   type Mv3State,
 } from "@/mobile-v3";
-import { DismissX, dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
+import { SwipeArchiveRow } from "@/mobile-v3/swipe-archive-row";
+import { dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
 import { dueLabel, isAutoFiled } from "@/mobile-v3/work-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
@@ -72,6 +72,13 @@ function stateFor(status: string): Mv3State {
   }
 }
 
+/**
+ * One All-work row, to gap frame 48's density RULE at 390px: the row keeps
+ * ONLY the chevron (no inline ✕), the DUE chip merges into the metadata line
+ * ("due Fri · unfiled"), dismiss moves to swipe-left (88pt Archive,
+ * full-swipe commits) and long-press opens the task context menu (the task
+ * sheet's ▶/📁/✓/✕ actions).
+ */
 function WorkRow({
   item,
   projectName,
@@ -79,6 +86,7 @@ function WorkRow({
   delay,
   leaving,
   onOpen,
+  onLongPress,
   onDismiss,
 }: {
   item: HqWorkItem;
@@ -88,86 +96,77 @@ function WorkRow({
   /** Mid-collapse (the 150ms dismiss leave). */
   leaving: boolean;
   onOpen: () => void;
+  /** Long-press / right-click → the task sheet as a context menu. */
+  onLongPress: () => void;
   onDismiss: () => void;
 }) {
+  const due = item.dueAt != null ? dueLabel(item.dueAt, now) : null;
   return (
-    <div
-      data-mv3
-      role="button"
-      tabIndex={0}
-      className="cue-pressable"
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      style={{
-        background: "var(--mv3-card)",
-        border: "1px solid var(--mv3-card-border)",
-        borderRadius: 16,
-        padding: "12px 14px",
-        display: "flex",
-        alignItems: "center",
-        gap: 11,
-        minHeight: 52,
-        cursor: "pointer",
-        ...rise(delay),
-        ...dismissLeave(leaving),
-      }}
-    >
-      <StateChip state={stateFor(item.status)} label="" size="sm" />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 13.5,
-            fontWeight: 600,
-            color: "var(--mv3-text)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {item.title}
-        </div>
-        {projectName ? (
+    <div data-mv3>
+      <SwipeArchiveRow
+        title={item.title}
+        onArchive={onDismiss}
+        onLongPress={onLongPress}
+        onOpen={onOpen}
+        radius={16}
+        containerStyle={{ ...rise(delay), ...dismissLeave(leaving) }}
+        rowStyle={{
+          background: "var(--mv3-card)",
+          border: "1px solid var(--mv3-card-border)",
+          padding: "12px 14px",
+          display: "flex",
+          alignItems: "center",
+          gap: 11,
+          minHeight: 52,
+          boxSizing: "border-box",
+        }}
+      >
+        <StateChip state={stateFor(item.status)} label="" size="sm" />
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 11,
-              color: "var(--mv3-faint)",
-              marginTop: 2,
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: "var(--mv3-text)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
             }}
           >
-            {/* ✨ = Cue filed it (feature-detected auto-file provenance). */}
-            {isAutoFiled(item) ? "✨ " : ""}
-            {projectName}
+            {item.title}
           </div>
-        ) : null}
-      </div>
-      {item.dueAt != null ? (
-        <span
-          style={{
-            fontFamily: mv3Mono,
-            fontSize: 9,
-            color: "var(--mv3-amber)",
-            background: "color-mix(in srgb, var(--mv3-amber) 15%, transparent)",
-            padding: "3px 8px",
-            borderRadius: 6,
-            letterSpacing: "0.08em",
-            flexShrink: 0,
-          }}
-        >
-          {dueLabel(item.dueAt, now)}
+          {due || projectName ? (
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--mv3-faint)",
+                marginTop: 2,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {/* Frame 48: DUE rides the metadata line, amber, lowercase. */}
+              {due ? (
+                <span style={{ color: "var(--mv3-amber)" }}>
+                  {due.toLowerCase()}
+                </span>
+              ) : null}
+              {due && projectName ? " · " : ""}
+              {projectName ? (
+                <>
+                  {/* ✨ = Cue filed it (feature-detected provenance). */}
+                  {isAutoFiled(item) ? "✨ " : ""}
+                  {projectName}
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <span aria-hidden style={{ fontSize: 15, color: "var(--mv3-faint)" }}>
+          ›
         </span>
-      ) : null}
-      <span aria-hidden style={{ fontSize: 15, color: "var(--mv3-faint)" }}>
-        ›
-      </span>
-      <DismissX title={item.title} onDismiss={onDismiss} />
+      </SwipeArchiveRow>
     </div>
   );
 }
@@ -413,7 +412,11 @@ export function Mv3AllWork() {
                     delay={nextDelay()}
                     leaving={leavingId === item.id}
                     onOpen={() => openItem(item)}
-                    onDismiss={() => dismiss(item)}
+                    // Frame 48: long-press = the task context menu (the
+                    // sheet's ▶ Have Cue handle it · 📁 File · ✓ Done
+                    // elsewhere · ✕ Archive), for every row.
+                    onLongPress={() => setSheetItemId(item.id)}
+                    onDismiss={() => dismiss(item, { immediate: true })}
                   />
                 ))}
                 {group.items.length > 20 ? (

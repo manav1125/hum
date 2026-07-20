@@ -16,6 +16,16 @@ import type { Message } from "../../providers/types.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { runBtwSidechain } from "../btw-sidechain.js";
+import {
+  consumeRemoteStop,
+  getSessionView,
+  isRemotePaused,
+  recordActStep,
+  recordGuidance,
+  recordLook,
+  requestRemoteStop,
+  setRemotePaused,
+} from "./cuelive-session.js";
 import { BadRequestError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -59,6 +69,12 @@ async function handleGuidance({
     throw new BadRequestError("Invalid Cue Live guidance request body");
   }
   const { role, roleDescription, label, value, appName, actions } = parsed.data;
+
+  // Feed the remote viewer (metadata only), then honor a remote pause: the
+  // overlay falls back to its local AX heuristic, exactly like the no-model
+  // case.
+  recordGuidance({ appName, label });
+  if (isRemotePaused()) return { nextMove: null };
 
   const provider = await getConfiguredProvider("mainAgent");
   if (!provider) {
@@ -206,8 +222,16 @@ async function handleLook({
   const { question, imageBase64, mediaType, imageWidth, imageHeight } =
     parsed.data;
 
+  // Remote pause (from the phone viewer): answer inertly with a reason the
+  // overlay can show. The screenshot is never retained either way.
+  if (isRemotePaused()) {
+    recordLook({ question, imageWidth, imageHeight, held: true });
+    return { answer: "", points: [], error: "Paused from your phone." };
+  }
+
   const provider = await getConfiguredProvider("mainAgent");
   if (!provider) {
+    recordLook({ question, imageWidth, imageHeight });
     return { answer: "", points: [] };
   }
 
@@ -239,10 +263,19 @@ async function handleLook({
       timeoutMs: LOOK_TIMEOUT_MS,
       signal: abortSignal,
     });
-    return parsePoints(result.text);
+    const lookResult = parsePoints(result.text);
+    recordLook({
+      question,
+      answer: lookResult.answer,
+      imageWidth,
+      imageHeight,
+    });
+    return lookResult;
   } catch (err) {
     log.warn({ err }, "Cue Live look generation failed");
-    return { answer: "", points: [], error: describeLookFailure(err) };
+    const error = describeLookFailure(err);
+    recordLook({ question, error, imageWidth, imageHeight });
+    return { answer: "", points: [], error };
   }
 }
 
@@ -383,8 +416,44 @@ async function handleAct({
     history,
   } = parsed.data;
 
+  // Remote stop (one-shot, from the phone viewer): the act loop asks the
+  // daemon for every step, so answering done genuinely ends the run.
+  if (consumeRemoteStop()) {
+    const say = "Stopped from your phone.";
+    recordActStep({
+      goal,
+      step,
+      say,
+      done: true,
+      stoppedRemotely: true,
+      imageWidth,
+      imageHeight,
+    });
+    return { say, done: true, action: null };
+  }
+
+  // Remote pause: an auto-run can't idle mid-step, so a pause ends it too —
+  // said out loud rather than silently.
+  if (isRemotePaused()) {
+    const say = "Paused from your phone.";
+    recordActStep({
+      goal,
+      step,
+      say,
+      done: true,
+      held: true,
+      stoppedRemotely: true,
+      imageWidth,
+      imageHeight,
+    });
+    return { say, done: true, action: null };
+  }
+
   const provider = await getConfiguredProvider("mainAgent");
-  if (!provider) return { say: null, done: true, action: null };
+  if (!provider) {
+    recordActStep({ goal, step, done: true, imageWidth, imageHeight });
+    return { say: null, done: true, action: null };
+  }
 
   const userText =
     `Goal: ${goal}\nStep: ${step}` +
@@ -416,14 +485,95 @@ async function handleAct({
       timeoutMs: ACT_TIMEOUT_MS,
       signal: abortSignal,
     });
-    return parseActJson(result.text);
+    const actResult = parseActJson(result.text);
+    recordActStep({
+      goal,
+      step,
+      say: actResult.say,
+      done: actResult.done,
+      imageWidth,
+      imageHeight,
+    });
+    return actResult;
   } catch (err) {
     log.warn({ err }, "Cue Live act generation failed");
     // `done: true` ends the run — it has to, since without vision there is no
     // next action to take. Carry the reason in `say` so the run reports why it
     // stopped instead of looking like it finished the goal.
-    return { say: describeLookFailure(err), done: true, action: null };
+    const say = describeLookFailure(err);
+    recordActStep({ goal, step, say, done: true, imageWidth, imageHeight });
+    return { say, done: true, action: null };
   }
+}
+
+// --- Remote viewer session routes (mobile is the remote) ---------------------
+
+const ObservationSchema = z.object({
+  id: z.number(),
+  kind: z.enum(["guidance", "look", "act"]),
+  at: z.string(),
+  summary: z.string(),
+  detail: z.string().optional(),
+  status: z.enum(["active", "done", "held"]),
+});
+
+const SessionView = z.object({
+  active: z.boolean(),
+  paused: z.boolean(),
+  stopPending: z.boolean(),
+  lastSeenAt: z.string().nullable(),
+  sessionStartedAt: z.string().nullable(),
+  watching: z
+    .object({
+      appName: z.string().nullable(),
+      screen: z.object({ width: z.number(), height: z.number() }).nullable(),
+      at: z.string(),
+    })
+    .nullable(),
+  goal: z
+    .object({
+      text: z.string(),
+      step: z.number(),
+      done: z.boolean(),
+      startedAt: z.string(),
+      stoppedRemotely: z.boolean().optional(),
+    })
+    .nullable(),
+  observations: z.array(ObservationSchema),
+});
+
+const PauseBody = z.object({
+  paused: z.boolean().describe("Hold (true) or release (false) the session"),
+});
+
+function handleSessionGet(): z.infer<typeof SessionView> {
+  return getSessionView();
+}
+
+function handleSessionPause({
+  body,
+}: RouteHandlerArgs): z.infer<typeof SessionView> {
+  const parsed = PauseBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live pause request body");
+  }
+  setRemotePaused(parsed.data.paused);
+  return getSessionView();
+}
+
+function handleSessionStop(): {
+  stopped: boolean;
+  note: string;
+  session: z.infer<typeof SessionView>;
+} {
+  const { runInFlight } = requestRemoteStop();
+  return {
+    stopped: runInFlight,
+    note: runInFlight
+      ? "Stop armed — the run ends at its next step."
+      : "No auto-run in flight. If one starts in the next minute it will be stopped.",
+    session: getSessionView(),
+  };
 }
 
 export const ROUTES: RouteDefinition[] = [
@@ -482,6 +632,64 @@ export const ROUTES: RouteDefinition[] = [
     tags: ["cuelive"],
     requestBody: GuidanceBody,
     responseBody: z.object({ nextMove: z.string().nullable() }),
+  },
+  {
+    operationId: "cuelive_session",
+    endpoint: "cuelive/session",
+    method: "GET",
+    policy: {
+      requiredScopes: ["chat.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleSessionGet,
+    summary: "Remote view of the Cue Live session running on the Mac",
+    description:
+      "What the daemon genuinely knows about the active Cue Live session: " +
+      "live/idle, pause state, the auto-run goal in flight, and the recent " +
+      "guidance/look/act observation stream (metadata only — the daemon " +
+      "never retains screenshots). Capture itself runs on the Mac.",
+    tags: ["cuelive"],
+    responseBody: SessionView,
+    logging: { silenceSuccessAfter: 5 },
+  },
+  {
+    operationId: "cuelive_session_pause",
+    endpoint: "cuelive/session/pause",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleSessionPause,
+    summary: "Hold or release the daemon's Cue Live answers",
+    description:
+      "While paused the daemon answers the Mac's guidance/look/act calls " +
+      "inertly — the overlay falls back to local hints and any auto-run in " +
+      "flight ends. Does not switch off capture on the Mac.",
+    tags: ["cuelive"],
+    requestBody: PauseBody,
+    responseBody: SessionView,
+  },
+  {
+    operationId: "cuelive_session_stop",
+    endpoint: "cuelive/session/stop",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleSessionStop,
+    summary: "Stop the Cue Live auto-run in flight (one-shot)",
+    description:
+      "Arms a one-shot stop: the act loop asks the daemon for every next " +
+      "step, so the next step is answered `done` and the run ends. Expires " +
+      "unconsumed after a minute.",
+    tags: ["cuelive"],
+    responseBody: z.object({
+      stopped: z.boolean(),
+      note: z.string(),
+      session: SessionView,
+    }),
   },
 ];
 

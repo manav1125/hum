@@ -13619,6 +13619,401 @@ paths:
                 - imageWidth
                 - imageHeight
               additionalProperties: false
+  /v1/cuelive/session:
+    get:
+      operationId: cuelive_session_get
+      summary: Remote view of the Cue Live session running on the Mac
+      description:
+        "What the daemon genuinely knows about the active Cue Live session: live/idle, pause state, the auto-run
+        goal in flight, and the recent guidance/look/act observation stream (metadata only — the daemon never retains
+        screenshots). Capture itself runs on the Mac."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                  paused:
+                    type: boolean
+                  stopPending:
+                    type: boolean
+                  lastSeenAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  sessionStartedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  watching:
+                    anyOf:
+                      - type: object
+                        properties:
+                          appName:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          screen:
+                            anyOf:
+                              - type: object
+                                properties:
+                                  width:
+                                    type: number
+                                  height:
+                                    type: number
+                                required:
+                                  - width
+                                  - height
+                                additionalProperties: false
+                              - type: "null"
+                          at:
+                            type: string
+                        required:
+                          - appName
+                          - screen
+                          - at
+                        additionalProperties: false
+                      - type: "null"
+                  goal:
+                    anyOf:
+                      - type: object
+                        properties:
+                          text:
+                            type: string
+                          step:
+                            type: number
+                          done:
+                            type: boolean
+                          startedAt:
+                            type: string
+                          stoppedRemotely:
+                            type: boolean
+                        required:
+                          - text
+                          - step
+                          - done
+                          - startedAt
+                        additionalProperties: false
+                      - type: "null"
+                  observations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: number
+                        kind:
+                          type: string
+                          enum:
+                            - guidance
+                            - look
+                            - act
+                        at:
+                          type: string
+                        summary:
+                          type: string
+                        detail:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - active
+                            - done
+                            - held
+                      required:
+                        - id
+                        - kind
+                        - at
+                        - summary
+                        - status
+                      additionalProperties: false
+                required:
+                  - active
+                  - paused
+                  - stopPending
+                  - lastSeenAt
+                  - sessionStartedAt
+                  - watching
+                  - goal
+                  - observations
+                additionalProperties: false
+  /v1/cuelive/session/pause:
+    post:
+      operationId: cuelive_session_pause_post
+      summary: Hold or release the daemon's Cue Live answers
+      description:
+        While paused the daemon answers the Mac's guidance/look/act calls inertly — the overlay falls back to local
+        hints and any auto-run in flight ends. Does not switch off capture on the Mac.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                  paused:
+                    type: boolean
+                  stopPending:
+                    type: boolean
+                  lastSeenAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  sessionStartedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  watching:
+                    anyOf:
+                      - type: object
+                        properties:
+                          appName:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          screen:
+                            anyOf:
+                              - type: object
+                                properties:
+                                  width:
+                                    type: number
+                                  height:
+                                    type: number
+                                required:
+                                  - width
+                                  - height
+                                additionalProperties: false
+                              - type: "null"
+                          at:
+                            type: string
+                        required:
+                          - appName
+                          - screen
+                          - at
+                        additionalProperties: false
+                      - type: "null"
+                  goal:
+                    anyOf:
+                      - type: object
+                        properties:
+                          text:
+                            type: string
+                          step:
+                            type: number
+                          done:
+                            type: boolean
+                          startedAt:
+                            type: string
+                          stoppedRemotely:
+                            type: boolean
+                        required:
+                          - text
+                          - step
+                          - done
+                          - startedAt
+                        additionalProperties: false
+                      - type: "null"
+                  observations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: number
+                        kind:
+                          type: string
+                          enum:
+                            - guidance
+                            - look
+                            - act
+                        at:
+                          type: string
+                        summary:
+                          type: string
+                        detail:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - active
+                            - done
+                            - held
+                      required:
+                        - id
+                        - kind
+                        - at
+                        - summary
+                        - status
+                      additionalProperties: false
+                required:
+                  - active
+                  - paused
+                  - stopPending
+                  - lastSeenAt
+                  - sessionStartedAt
+                  - watching
+                  - goal
+                  - observations
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paused:
+                  type: boolean
+                  description: Hold (true) or release (false) the session
+              required:
+                - paused
+              additionalProperties: false
+  /v1/cuelive/session/stop:
+    post:
+      operationId: cuelive_session_stop_post
+      summary: Stop the Cue Live auto-run in flight (one-shot)
+      description:
+        "Arms a one-shot stop: the act loop asks the daemon for every next step, so the next step is answered
+        `done` and the run ends. Expires unconsumed after a minute."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stopped:
+                    type: boolean
+                  note:
+                    type: string
+                  session:
+                    type: object
+                    properties:
+                      active:
+                        type: boolean
+                      paused:
+                        type: boolean
+                      stopPending:
+                        type: boolean
+                      lastSeenAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sessionStartedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      watching:
+                        anyOf:
+                          - type: object
+                            properties:
+                              appName:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                              screen:
+                                anyOf:
+                                  - type: object
+                                    properties:
+                                      width:
+                                        type: number
+                                      height:
+                                        type: number
+                                    required:
+                                      - width
+                                      - height
+                                    additionalProperties: false
+                                  - type: "null"
+                              at:
+                                type: string
+                            required:
+                              - appName
+                              - screen
+                              - at
+                            additionalProperties: false
+                          - type: "null"
+                      goal:
+                        anyOf:
+                          - type: object
+                            properties:
+                              text:
+                                type: string
+                              step:
+                                type: number
+                              done:
+                                type: boolean
+                              startedAt:
+                                type: string
+                              stoppedRemotely:
+                                type: boolean
+                            required:
+                              - text
+                              - step
+                              - done
+                              - startedAt
+                            additionalProperties: false
+                          - type: "null"
+                      observations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: number
+                            kind:
+                              type: string
+                              enum:
+                                - guidance
+                                - look
+                                - act
+                            at:
+                              type: string
+                            summary:
+                              type: string
+                            detail:
+                              type: string
+                            status:
+                              type: string
+                              enum:
+                                - active
+                                - done
+                                - held
+                          required:
+                            - id
+                            - kind
+                            - at
+                            - summary
+                            - status
+                          additionalProperties: false
+                    required:
+                      - active
+                      - paused
+                      - stopPending
+                      - lastSeenAt
+                      - sessionStartedAt
+                      - watching
+                      - goal
+                      - observations
+                    additionalProperties: false
+                required:
+                  - stopped
+                  - note
+                  - session
+                additionalProperties: false
   /v1/debug:
     get:
       operationId: debug_get

@@ -78,6 +78,17 @@
   --mv3-sheet: rgba(249, 249, 252, 0.9);
   --mv3-sheet-border: rgba(0, 0, 0, 0.06);
   --mv3-grabber: rgba(0, 0, 0, 0.18);
+
+  /* Failure-red row grammar (gap frame 46; light leg mirrors D4's
+   * #C24E42-on-cream desktop treatment). */
+  --mv3-fail-card-bg: #fcf2f0;
+  --mv3-fail-card-border: rgba(194, 78, 66, 0.35);
+  --mv3-fail-text: #c24e42;
+
+  /* Token/mono input wells (gap frame 51): light = #F2F3F7 inset on the white
+   * card with a hairline border — never a dark well. */
+  --mv3-token-well: #f2f3f7;
+  --mv3-token-well-border: rgba(0, 0, 0, 0.07);
 }
 
 [data-theme="dark"],
@@ -135,6 +146,15 @@
   --mv3-sheet: rgba(22, 26, 36, 0.85);
   --mv3-sheet-border: rgba(255, 255, 255, 0.1);
   --mv3-grabber: rgba(255, 255, 255, 0.22);
+
+  /* Failure-red rows, dark leg (frame 46 spec values). */
+  --mv3-fail-card-bg: rgba(44, 26, 28, 0.6);
+  --mv3-fail-card-border: rgba(229, 103, 91, 0.4);
+  --mv3-fail-text: #e7a9ad;
+
+  /* Token wells stay the designed dark inset (frame 39 — dark unchanged). */
+  --mv3-token-well: rgba(0, 0, 0, 0.35);
+  --mv3-token-well-border: transparent;
 }
 
 /* --------------------------------------------------------------------------
@@ -238,6 +258,31 @@
   }
   100% {
     transform: scale(1);
+    opacity: 1;
+  }
+}
+/* Frame 50's spring pop — a dictated utterance landing as a parsed row. */
+@keyframes mv3RowPop {
+  0% {
+    transform: translateY(8px) scale(0.96);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-2px) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+/* Frame 50's in-progress pulse — the dashed not-yet-committed row. */
+@keyframes mv3DashPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
     opacity: 1;
   }
 }

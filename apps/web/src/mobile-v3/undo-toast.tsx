@@ -22,8 +22,11 @@ import { useDismissEngine } from "@/pages/projects/dismiss-core";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 
+import { useAnySheetOpen } from "./sheet-shell";
+
 const SAFE_BOTTOM =
   "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))";
+const SAFE_TOP = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
 
 /* ------------------------------- toast pill ------------------------------- */
 
@@ -38,6 +41,8 @@ export interface Mv3Toast {
 }
 
 const TOAST_MS = 5_000;
+/** Promoted (a sheet scrim is up) — frame 47: the timer extends to 8s. */
+const TOAST_PROMOTED_MS = 8_000;
 
 export function UndoToast({
   toast,
@@ -46,16 +51,36 @@ export function UndoToast({
   toast: Mv3Toast | null;
   onClear: () => void;
 }) {
-  // Auto-dismiss, re-armed per toast.key.
+  // Frame 47's stacking RULE: while any SheetShell scrim is open the pill
+  // PROMOTES to a top-anchored capsule below the Dynamic Island area, rides
+  // above every scrim/sheet layer, and its timer extends to 8s. Never
+  // suppressed — undo must survive the interruption.
+  const promoted = useAnySheetOpen();
+
+  // Auto-dismiss, re-armed per toast.key AND on promotion (the extend).
   const clearRef = useRef(onClear);
   useEffect(() => {
     clearRef.current = onClear;
   }, [onClear]);
+  const duration = promoted ? TOAST_PROMOTED_MS : TOAST_MS;
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => clearRef.current(), TOAST_MS);
+    const t = window.setTimeout(() => clearRef.current(), duration);
     return () => window.clearTimeout(t);
-  }, [toast]);
+  }, [toast, duration]);
+
+  // Promoted capsule shows the remaining seconds on the Undo chip
+  // (frame 47: "Undo · 8s").
+  const [secondsLeft, setSecondsLeft] = useState(TOAST_PROMOTED_MS / 1000);
+  useEffect(() => {
+    if (!toast || !promoted) return;
+    setSecondsLeft(duration / 1000);
+    const iv = window.setInterval(
+      () => setSecondsLeft((s) => Math.max(0, s - 1)),
+      1_000,
+    );
+    return () => window.clearInterval(iv);
+  }, [toast, promoted, duration]);
 
   if (!toast) return null;
   const host = document.getElementById("viewport-overlays") ?? document.body;
@@ -68,11 +93,16 @@ export function UndoToast({
         position: "fixed",
         left: 0,
         right: 0,
-        // Floats above the in-flow glass tab bar (~82px incl. its padding).
-        bottom: `calc(${SAFE_BOTTOM} + 92px)`,
+        ...(promoted
+          ? // Top-anchored, below the Island (safe-area-top anchored).
+            { top: `calc(${SAFE_TOP} + 14px)` }
+          : // Floats above the in-flow glass tab bar (~82px incl. padding).
+            { bottom: `calc(${SAFE_BOTTOM} + 92px)` }),
         display: "flex",
         justifyContent: "center",
-        zIndex: 55,
+        // Sheets portal at zIndex 60 — the promoted capsule rides above ALL
+        // scrims/sheets (frame 47: never buried).
+        zIndex: promoted ? 80 : 55,
         pointerEvents: "none",
         fontFamily: "var(--mv3-font)",
       }}
@@ -84,22 +114,33 @@ export function UndoToast({
           alignItems: "center",
           gap: 10,
           maxWidth: "calc(100vw - 30px)",
-          background: "var(--mv3-sheet)",
+          // Promoted = near-opaque (frame 47's capsule) so sheet content
+          // never bleeds through; resting keeps frame 45's glass pill.
+          background: promoted ? "var(--mv3-chip-bg)" : "var(--mv3-sheet)",
           border: "1px solid var(--mv3-sheet-border)",
           borderRadius: 99,
           // Frame 45's glass pill: 9px 10px 9px 15px with the Undo chip.
-          padding: toast.actionLabel ? "9px 10px 9px 15px" : "10px 16px",
+          padding: toast.actionLabel
+            ? promoted
+              ? "8px 9px 8px 15px"
+              : "9px 10px 9px 15px"
+            : "10px 16px",
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
+          // Themed deep drop (light .3 / dark .8) — reads over any scrim.
           boxShadow: "var(--mv3-glass-shadow)",
           animation: "mv3Fade .2s ease both",
         }}
       >
         <span
           style={{
-            fontSize: 11.5,
+            fontSize: promoted ? 12 : 11.5,
             color:
-              toast.tone === "error" ? "var(--mv3-amber)" : "var(--mv3-muted)",
+              toast.tone === "error"
+                ? "var(--mv3-amber)"
+                : promoted
+                  ? "var(--mv3-text)"
+                  : "var(--mv3-muted)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -122,7 +163,7 @@ export function UndoToast({
               border: "none",
               borderRadius: 99,
               color: "var(--mv3-micro)",
-              fontSize: 11.5,
+              fontSize: promoted ? 12 : 11.5,
               fontWeight: 600,
               fontFamily: "inherit",
               padding: "5px 12px",
@@ -133,6 +174,7 @@ export function UndoToast({
             }}
           >
             {toast.actionLabel}
+            {promoted ? ` · ${secondsLeft}s` : ""}
           </button>
         ) : null}
       </div>

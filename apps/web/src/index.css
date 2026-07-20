@@ -105,6 +105,9 @@ body {
   --mv1-green-wash: #e2f0e7;
   --mv1-amber: #c98a1b;
   --mv1-danger: #da491a;
+  /* HQ-filing failure red (D4): #C24E42 on cream. */
+  --mv1-red: #c24e42;
+  --mv1-red-wash: #fcf2f0;
 }
 
 [data-theme="dark"],
@@ -138,6 +141,9 @@ body {
   --mv1-green-wash: rgba(63, 184, 113, 0.16);
   --mv1-amber: #d9a84e;
   --mv1-danger: #e5634b;
+  /* HQ-filing failure red, dark leg (re-toned, not inverted). */
+  --mv1-red: #e5675b;
+  --mv1-red-wash: rgba(229, 103, 91, 0.12);
 }
 
 /* Electron prechat onboarding typography — mirror the lighter DM Sans (Swift

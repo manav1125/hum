@@ -25,8 +25,15 @@
  * Prompt composition is EXACTLY desktop's: `template.composePrompt(values)`.
  * The parent applies the brand/intent contract and seeds the run.
  */
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
+import {
+  contactsGetOptions,
+  memoryitemsGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
+import { mv3Mono } from "@/mobile-v3/mv3-kit";
 import { haptic } from "@/utils/haptics";
 
 import {
@@ -307,6 +314,16 @@ function SheetFieldControl({
           focused={focused}
           onChange={onChange}
         />
+      ) : field.type === "url" ? (
+        <SheetUrlInput
+          label={field.label}
+          placeholder={field.placeholder}
+          value={(value as string) ?? ""}
+          invalid={invalid}
+          focused={focused}
+          onFocusChange={onFocusChange}
+          onChange={onChange}
+        />
       ) : field.type === "number" ? (
         /* Metric/number card (frame 33): label-in-card + bold value. */
         <div
@@ -355,8 +372,7 @@ function SheetFieldControl({
       ) : (
         <input
           aria-label={field.label}
-          type={field.type === "url" ? "url" : "text"}
-          inputMode={field.type === "url" ? "url" : undefined}
+          type="text"
           placeholder={field.placeholder}
           value={(value as string) ?? ""}
           onFocus={() => onFocusChange(true)}
@@ -445,6 +461,222 @@ function ChipSelect({
   );
 }
 
+/* ------------------------------ url control ------------------------------ */
+
+/**
+ * Frame 49's url kind: a mono `https://` affix, paste normalization (strips
+ * `utm_*` params, adds https), and a live reachability dot — a no-cors HEAD
+ * probe with a short timeout that is NEUTRAL on failure and never blocks.
+ *
+ * Stored value = the full normalized URL (`https://…`) so composePrompt gets
+ * something runnable; the visible field holds the bare host/path.
+ */
+function normalizeUrlPaste(raw: string): string {
+  let bare = raw.trim().replace(/^https?:\/\//i, "");
+  if (!bare) return "";
+  try {
+    const u = new URL(`https://${bare}`);
+    for (const k of [...u.searchParams.keys()]) {
+      if (k.toLowerCase().startsWith("utm_")) u.searchParams.delete(k);
+    }
+    bare = u.toString().replace(/^https:\/\//, "").replace(/\/$/, "");
+  } catch {
+    /* not URL-shaped yet — keep the typed text as-is */
+  }
+  return bare;
+}
+
+function SheetUrlInput({
+  label,
+  placeholder,
+  value,
+  invalid,
+  focused,
+  onFocusChange,
+  onChange,
+}: {
+  label: string;
+  placeholder?: string;
+  value: string;
+  invalid: boolean;
+  focused: boolean;
+  onFocusChange: (focused: boolean) => void;
+  onChange: (value: string) => void;
+}) {
+  const bare = value.replace(/^https?:\/\//i, "");
+  const [reachable, setReachable] = useState(false);
+  const probeSeq = useRef(0);
+
+  // Debounced reachability probe — feature-light, neutral on any failure.
+  useEffect(() => {
+    setReachable(false);
+    const host = bare.split(/[/?#]/)[0] ?? "";
+    if (!/^[^\s]+\.[a-z]{2,}$/i.test(host)) return;
+    const seq = ++probeSeq.current;
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => {
+      const kill = window.setTimeout(() => ctrl.abort(), 2_500);
+      fetch(`https://${bare}`, {
+        method: "HEAD",
+        mode: "no-cors",
+        signal: ctrl.signal,
+      })
+        .then(() => {
+          if (probeSeq.current === seq) setReachable(true);
+        })
+        .catch(() => {
+          /* unreachable / CORS-opaque failure → stay neutral, never block */
+        })
+        .finally(() => window.clearTimeout(kill));
+    }, 600);
+    return () => {
+      window.clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [bare]);
+
+  const commit = (nextBare: string) =>
+    onChange(nextBare ? `https://${nextBare}` : "");
+
+  return (
+    <div
+      style={{
+        ...fieldChrome(focused ? "focus" : invalid ? "invalid" : "rest"),
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "0 14px",
+      }}
+    >
+      {/* The https:// affix (frame 49) — mono, quiet, not editable. */}
+      <span
+        aria-hidden
+        style={{
+          fontFamily: mv3Mono,
+          fontSize: 12.5,
+          color: "var(--mv3-micro)",
+          flexShrink: 0,
+        }}
+      >
+        https://
+      </span>
+      <input
+        aria-label={label}
+        type="text"
+        inputMode="url"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder={placeholder?.replace(/^https?:\/\//i, "") ?? "yoursite.com"}
+        value={bare}
+        onFocus={() => onFocusChange(true)}
+        onBlur={() => {
+          onFocusChange(false);
+          commit(normalizeUrlPaste(bare));
+        }}
+        onChange={(e) => commit(e.target.value.replace(/^https?:\/\//i, ""))}
+        onPaste={(e) => {
+          const text = e.clipboardData.getData("text");
+          if (!text) return;
+          e.preventDefault();
+          commit(normalizeUrlPaste(text));
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: "transparent",
+          border: "none",
+          outline: "none",
+          fontSize: 16,
+          padding: "12px 0",
+          color: "var(--mv3-text)",
+          fontFamily: "inherit",
+        }}
+      />
+      {reachable ? (
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 10,
+            color: "var(--mv3-green)",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--mv3-green)",
+            }}
+          />
+          reachable
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------ tags control ----------------------------- */
+
+/**
+ * Frame 49's memory-suggested chips, from REAL stores only (feature-detected;
+ * any error or an empty store renders nothing):
+ *   · contacts (`/contacts` — the Memory page's People segment) → short
+ *     `displayName`s, and
+ *   · memory items (`/memory-items`) whose `subject` is chip-short.
+ * Filtered by the in-field draft when the user is typing.
+ */
+function useMemoryTagSuggestions(
+  existing: string[],
+  draft: string,
+): string[] {
+  const assistantId = useActiveAssistantId();
+  const memories = useQuery({
+    ...memoryitemsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { limit: 100 },
+    }),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const contacts = useQuery({
+    ...contactsGetOptions({ path: { assistant_id: assistantId } }),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const contactItems = (
+    contacts.data as { contacts?: unknown[] } | undefined
+  )?.contacts;
+  return useMemo(() => {
+    const candidates: string[] = [];
+    for (const raw of contactItems ?? []) {
+      const name = (raw as { displayName?: unknown }).displayName;
+      if (typeof name === "string") candidates.push(name);
+    }
+    for (const raw of memories.data?.items ?? []) {
+      const subject = (raw as { subject?: unknown }).subject;
+      if (typeof subject === "string") candidates.push(subject);
+    }
+    const taken = new Set(existing.map((t) => t.toLowerCase()));
+    const needle = draft.trim().toLowerCase();
+    const out: string[] = [];
+    for (const c of candidates) {
+      const s = c.trim();
+      if (s.length < 2 || s.length > 24 || s.includes("\n")) continue;
+      const key = s.toLowerCase();
+      if (taken.has(key) || out.some((o) => o.toLowerCase() === key)) continue;
+      if (needle && !key.includes(needle)) continue;
+      out.push(s);
+      if (out.length >= 2) break;
+    }
+    return out;
+  }, [contactItems, memories.data?.items, existing, draft]);
+}
+
 /** Removable chips + inline add field (desktop TagsInput, v3-skinned). */
 function SheetTagsInput({
   label,
@@ -464,6 +696,8 @@ function SheetTagsInput({
   onChange: (values: string[]) => void;
 }) {
   const [draft, setDraft] = useState("");
+  // Frame 49: memory-suggested chips under the field (real store, or nothing).
+  const suggestions = useMemoryTagSuggestions(values, draft);
 
   const commit = (raw: string) => {
     const tag = raw.trim().replace(/,$/, "").trim();
@@ -486,6 +720,7 @@ function SheetTagsInput({
   };
 
   return (
+    <>
     <div
       style={{
         ...fieldChrome(focused ? "focus" : invalid ? "invalid" : "rest"),
@@ -565,5 +800,52 @@ function SheetTagsInput({
         }}
       />
     </div>
+    {/* Memory-suggested dashed chips (frame 49). */}
+    {suggestions.length > 0 ? (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 6,
+          marginTop: 7,
+        }}
+      >
+        {suggestions.map((s) => (
+          <button
+            key={s}
+            type="button"
+            className="cue-pressable"
+            aria-label={`Add suggested tag ${s}`}
+            onClick={() => {
+              haptic.light();
+              onChange([...values, s]);
+            }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 11.5,
+              color: "var(--mv3-muted)",
+              background: "transparent",
+              border:
+                "1px dashed color-mix(in srgb, var(--mv3-micro) 40%, transparent)",
+              borderRadius: 99,
+              padding: "4px 11px",
+              minHeight: 26,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            ＋ {s}
+          </button>
+        ))}
+        <span style={{ fontSize: 9.5, color: "var(--mv3-faint)" }}>
+          suggested from memory
+        </span>
+      </div>
+    ) : null}
+    </>
   );
 }

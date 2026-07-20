@@ -1,4 +1,4 @@
-import { Lock, Mic, MousePointer2, ShieldAlert, Volume2 } from "lucide-react";
+import { Lock, Mic, ShieldAlert, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
@@ -10,6 +10,7 @@ import type {
   CueLiveVoiceKeysStatus,
 } from "@vellumai/ipc-contract";
 
+import { CueLiveRemoteViewer } from "@/domains/intelligence/cue-live-remote-viewer";
 import {
   deleteCueLiveGoal,
   getCueLivePermissions,
@@ -1718,31 +1719,9 @@ function DesktopControlPanel() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Web fallback — Cue Live is macOS-only. Keep this explainer.                 */
-/* -------------------------------------------------------------------------- */
-
-function UnavailableNotice() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        borderRadius: 14,
-        border: `1px solid ${C.line}`,
-        background: C.sunken,
-        padding: 20,
-      }}
-    >
-      <MousePointer2 className="size-5" style={{ color: C.t3 }} />
-      <p style={{ fontSize: 13.5, color: C.t2, lineHeight: 1.5 }}>
-        Cue Live is a macOS desktop feature. Open Cue on your Mac to turn it on
-        and summon it over any app.
-      </p>
-    </div>
-  );
-}
-
+/* Off-desktop — the remote viewer (mobile-v3 frame 52). Capture stays on the */
+/* Mac; away from it this page is the live remote of that session, not a      */
+/* dead-end "open on Mac" card.                                               */
 /* -------------------------------------------------------------------------- */
 
 export function CueLivePage() {
@@ -1759,7 +1738,7 @@ export function CueLivePage() {
           paddingBottom: 24,
         }}
       >
-        {available ? <DesktopControlPanel /> : <UnavailableNotice />}
+        {available ? <DesktopControlPanel /> : <CueLiveRemoteViewer />}
       </div>
     </>
   );

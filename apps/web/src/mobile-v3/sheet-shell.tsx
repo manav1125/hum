@@ -11,12 +11,39 @@
  *
  * Portals into `#viewport-overlays` (the root layout's fixed-overlay slot).
  */
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import { haptic } from "@/utils/haptics";
 
 import { useMv3EntranceGuard } from "./entrance-guard";
+
+/* --------------------------- open-sheet registry --------------------------- */
+
+/**
+ * Tiny module-level registry of mounted-open SheetShells, so overlays that
+ * must OUTLIVE a sheet (gap frame 47: the undo pill promotes to a top capsule
+ * whenever any scrim is up) can subscribe without prop-drilling. Counts, not
+ * booleans — stacked sheets (task sheet → refile sheet) keep it truthy.
+ */
+let openSheetCount = 0;
+const sheetListeners = new Set<() => void>();
+
+function notifySheetListeners() {
+  for (const l of sheetListeners) l();
+}
+
+function subscribeSheets(listener: () => void): () => void {
+  sheetListeners.add(listener);
+  return () => sheetListeners.delete(listener);
+}
+
+const getSheetCount = () => openSheetCount;
+
+/** True while any SheetShell scrim is open (frame 47's stacking rule). */
+export function useAnySheetOpen(): boolean {
+  return useSyncExternalStore(subscribeSheets, getSheetCount) > 0;
+}
 
 export function SheetShell({
   open,
@@ -44,6 +71,17 @@ export function SheetShell({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Register with the open-sheet registry while the scrim is up (frame 47).
+  useEffect(() => {
+    if (!open) return;
+    openSheetCount += 1;
+    notifySheetListeners();
+    return () => {
+      openSheetCount -= 1;
+      notifySheetListeners();
+    };
+  }, [open]);
 
   if (!open) return null;
 
