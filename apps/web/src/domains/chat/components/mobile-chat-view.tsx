@@ -68,6 +68,7 @@ import {
 } from "@/domains/chat/components/chat-composer/slash-command-catalog";
 import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
 import { useComposerStore } from "@/domains/chat/composer-store";
+import { goBackWithFallback } from "@/domains/chat/utils/conversation-navigation";
 import { useVisibleViewport } from "@/hooks/use-visible-viewport";
 import type { ConversationStarter } from "@/domains/chat/utils/conversation-starters";
 import { DEFAULT_EMPTY_STATE_GREETING } from "@/domains/chat/utils/empty-state-constants";
@@ -151,6 +152,13 @@ const MCHAT_TRANSCRIPT_THEME = `
   border-left-color: var(--mv3-amber) !important;
   border-radius: 18px;
   box-shadow: var(--mv3-amber-card-shadow);
+}
+/* The desktop transcript pins the assistant avatar (+ its status line) below
+   the latest reply — on mobile that reads as a dangling empty block after the
+   last message, and the live-turn signal already lives in the
+   MobileLiveActivity strip pinned above the composer. Hide the slot here. */
+.cue-mchat [data-latest-assistant-avatar="true"] {
+  display: none;
 }
 /* Slash-command list rising above the composer (transform/opacity only). */
 @keyframes mchatRise {
@@ -577,13 +585,11 @@ export function MobileChatView({
 
   const handleBack = useCallback(() => {
     haptic.light();
-    // Back ‹ returns to where you came from. The home surface is the safe
-    // origin when there's no history to pop.
-    if (window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate(routes.home);
-    }
+    // Back ‹ returns to where you came from; Today is the safe origin when
+    // this chat was the FIRST in-app entry (deep link / push notification —
+    // `history.length` counts external entries, so it lies there; the
+    // router's own `state.idx` doesn't). See goBackWithFallback.
+    goBackWithFallback(navigate, routes.hq);
   }, [navigate]);
 
   const handleTellCue = useCallback(
@@ -614,7 +620,12 @@ export function MobileChatView({
         display: "flex",
         flexDirection: "column",
         position: "relative",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scroll: `hidden`
+        // still let focus / streaming autoscroll drift `scrollLeft` sideways
+        // and stick (P1: the 546px aurora overhang). The aurora is
+        // paint-contained, so engines without `clip` degrade safely.
+        overflow: "clip",
         background: "var(--mv3-bg)",
         color: "var(--mv3-text)",
         fontFamily: "var(--mv3-font)",

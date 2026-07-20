@@ -562,13 +562,15 @@ export function NotificationsPage() {
 
   // The page is fully platform-routed (organization-scoped notifications and
   // pause-rule APIs). On a self-hosted assistant the page is meaningless,
-  // so redirect to the general settings page instead of rendering null —
-  // a bookmark or shared link should land somewhere reasonable. (Sidebar
-  // entry is already filtered out in `settings-layout.tsx`, so the most
-  // likely way to reach this state is a deep link or browser back/forward.)
-  // Render the page chrome with a login notice when logged out.
+  // so redirect to the settings INDEX instead of rendering null — a bookmark
+  // or shared link should land somewhere reasonable, and the index (not a
+  // sibling leaf) is the honest destination on both desktop and mobile.
+  // (Sidebar entry is already filtered out in `settings-layout.tsx`; the
+  // mobile layout renders its own honest Notifications leaf before this
+  // page is reached.) Render the page chrome with a login notice when
+  // logged out.
   if (platformGate === "gated") {
-    return <Navigate replace to={routes.settings.general} />;
+    return <Navigate replace to={routes.settings.root} />;
   }
 
   if (platformGate === "disabled") {

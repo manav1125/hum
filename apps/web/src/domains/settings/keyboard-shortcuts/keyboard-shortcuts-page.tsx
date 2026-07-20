@@ -237,7 +237,9 @@ export function KeyboardShortcutsPage() {
   // concern, so redirect rather than render an empty page (defense in depth —
   // the sidebar entry is already gated in settings-layout.tsx).
   if (!isElectron()) {
-    return <Navigate replace to={routes.settings.general} />;
+    // Settings INDEX, not the general leaf — mobile renders Appearance at
+    // /general, which read as a silent mis-route (UAT P1).
+    return <Navigate replace to={routes.settings.root} />;
   }
 
   return (

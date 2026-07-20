@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 import { Typography, cn } from "@vellumai/design-library";
 
@@ -79,30 +79,18 @@ export function IntelligenceLayout() {
       (to) => pathname === to || pathname.startsWith(to + "/"),
     );
 
-  // On mobile the title moves out of the page body and into the shared top
-  // bar — centered between the hamburger menu and the search icon — so the
-  // tab row can rise directly beneath the header. Desktop keeps the in-body
-  // <h1> and leaves the top-bar center empty. The mobile-v3 full-bleed tabs
-  // carry their own headers, so the slot stays empty there.
+  // Mobile section identity lives in the v3 back row below ("‹ You" + the
+  // section title), so the shared top-bar center stays empty everywhere —
+  // desktop keeps the in-body <h1>.
   useEffect(() => {
-    if (isMobile && !isFullBleedMobileTab) {
-      setTopBarCenter(
-        <Typography
-          variant="body-medium-default"
-          className="truncate text-[var(--content-secondary)]"
-        >
-          About {assistantName || "Assistant"}
-        </Typography>,
-      );
-    } else {
-      setTopBarCenter(null);
-    }
+    setTopBarCenter(null);
     return () => {
       setTopBarCenter(null);
     };
-  }, [isMobile, isFullBleedMobileTab, assistantName, setTopBarCenter]);
+  }, [setTopBarCenter]);
 
   const marketplace = useAssistantFeatureFlagStore.use.marketplace();
+  const navigate = useNavigate();
 
   // Insert the Plugins tab between Identity and Skills when the
   // `external-plugins` flag is on. Gated on `hasHydrated` so we don't
@@ -133,10 +121,42 @@ export function IntelligenceLayout() {
         About {assistantName || "Assistant"}
       </h1>
 
+      {/* MOBILE (UAT P2): the desktop section-nav strip never renders on a
+          phone — the non-full-bleed tabs (Identity, Cue Live, Workspace,
+          Contacts, Marketplace…) get a v3-grammar back row instead: `‹ You`
+          + the section title. The sibling sections stay reachable through
+          the You screen's footer links. */}
+      {isMobile && !isFullBleedMobileTab ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-[var(--border-base)] px-2 pb-1 md:hidden"
+          style={{
+            paddingTop:
+              "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => navigate(routes.channels)}
+            className="inline-flex min-h-11 cursor-pointer items-center gap-1 border-none bg-transparent px-2 text-body-medium-default text-[var(--content-secondary)]"
+            aria-label="Back to You"
+          >
+            ‹ You
+          </button>
+          <Typography
+            variant="body-medium-default"
+            className="truncate text-[var(--content-default)]"
+          >
+            {tabs.find(
+              ({ to }) => pathname === to || pathname.startsWith(to + "/"),
+            )?.label ?? "About"}
+          </Typography>
+        </div>
+      ) : null}
+
       <nav
         className={cn(
           "mb-4 flex shrink-0 items-center overflow-x-auto border-b border-[var(--border-base)] max-md:mb-0 max-md:px-2",
-          isFullBleedMobileTab && "max-md:hidden",
+          "max-md:hidden",
         )}
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
         aria-label="About assistant sections"

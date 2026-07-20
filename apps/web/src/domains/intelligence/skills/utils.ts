@@ -22,6 +22,28 @@ export function rebrandSkillProse(
   return text.replace(/\bVellum\b/g, "Cue");
 }
 
+/**
+ * Display label for a skill's source/origin id (mobile UAT: raw "vellum"
+ * leaked as the visible source). Display-only — the protocol id itself is
+ * never renamed.
+ */
+export function skillOriginLabel(
+  origin: string | null | undefined,
+): string | null {
+  switch (origin) {
+    case "vellum":
+      return "Cue official";
+    case "custom":
+      return "Custom";
+    case "clawhub":
+      return "Clawhub";
+    case "skillssh":
+      return "skills.sh";
+    default:
+      return origin ?? null;
+  }
+}
+
 export function resolveFilterParams(filter: SkillFilter): {
   origin?: string;
   kind?: "installed" | "available";

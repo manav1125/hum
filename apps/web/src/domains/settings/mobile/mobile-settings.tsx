@@ -22,6 +22,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { handleLogout } from "@/lib/auth/handle-logout";
+import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { GlassCard } from "@/mobile-v3/glass-card";
 import { rise } from "@/mobile-v3/mv3-kit";
 import { Eyebrow, NavRow, YouScreen } from "@/mobile-v3/you/you-kit";
@@ -100,9 +101,18 @@ export function Mv3SettingsIndex({
   const navigate = useNavigate();
   const byId = new Map(items.map((item) => [item.id, item]));
 
+  // Mobile-only pruning (UAT P2, honest index): "Advanced" is an effectively
+  // empty page on a phone (its cards are platform/desktop concerns), and
+  // "Debug" resolves the assistant from the platform lockfile list — on a
+  // self-host gateway session that list is empty and the page dead-ends at
+  // "No assistant found". Both stay reachable on desktop.
+  const hiddenOnMobile = new Set<PanelId>(["advanced"]);
+  if (isSelfHostMode()) hiddenOnMobile.add("assistant-debug");
+
   const groups = INDEX_GROUPS.map((group) => ({
     ...group,
     rows: group.ids
+      .filter((id) => !hiddenOnMobile.has(id))
       .map((id) => byId.get(id))
       .filter((item): item is SidebarItem => item !== undefined),
   })).filter((group) => group.rows.length > 0);

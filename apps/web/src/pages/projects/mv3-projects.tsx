@@ -36,7 +36,11 @@ import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { Mv3NewProjectSheet } from "./mv3-new-project-sheet";
-import { useProjects, type ProjectView } from "./use-projects";
+import {
+  useArchivedProjects,
+  useProjects,
+  type ProjectView,
+} from "./use-projects";
 
 type Segment = "active" | "done";
 
@@ -191,6 +195,7 @@ function ProjectCardV3({
       style={{ position: "relative", overflow: "hidden", ...rise(delay) }}
       role="button"
       tabIndex={0}
+      aria-label={`Project: ${project.title}`}
       onClick={open}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -301,16 +306,18 @@ export function Mv3Projects() {
   const [newOpen, setNewOpen] = useState(false);
 
   const { projects, isLoading, isError } = useProjects(assistantId);
+  // The default projects list is ACTIVE-only daemon-side; the Done segment
+  // reads the archived list through its own status=archived query (filtering
+  // the active list for "archived" matched nothing — the post-archive
+  // "Nothing archived yet" bug).
+  const archivedQuery = useArchivedProjects(assistantId);
   const runningItems = useHqWorkItems(assistantId, "running");
 
   const active = useMemo(
     () => projects.filter((p) => p.status === "active"),
     [projects],
   );
-  const archived = useMemo(
-    () => projects.filter((p) => p.status === "archived"),
-    [projects],
-  );
+  const archived = archivedQuery.projects;
 
   // projectId → first running item (newest activity first) for the live line.
   const liveByProject = useMemo(() => {
@@ -461,6 +468,7 @@ export function Mv3Projects() {
               {segment === "active" ? (
                 <button
                   type="button"
+                  aria-label="New project — tell Cue what you're working on"
                   className="cue-pressable"
                   onClick={() => {
                     haptic.light();
@@ -509,6 +517,7 @@ export function Mv3Projects() {
                   parity audit §3 P0: previously unreachable on mobile. */}
               <button
                 type="button"
+                aria-label="All work — everything Cue is tracking"
                 className="cue-pressable"
                 onClick={() => {
                   haptic.light();

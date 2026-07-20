@@ -14,6 +14,16 @@
  *
  * Render it as the first child of a `position: relative; overflow: hidden`
  * screen container.
+ *
+ * OVERFLOW GUARDRAIL: the gradient layer's `inset: -20%` makes it wider than
+ * the screen (546px on a 390px viewport). Absolutely-positioned overhang past
+ * the container's right edge still counts as *scrollable* overflow under
+ * `overflow: hidden` — programmatic scrolls (input focus, streaming
+ * autoscroll) could drift the page shell's `scrollLeft` sideways and stick,
+ * clipping headers/composers. The gradient therefore renders inside a
+ * full-inset `overflow: clip; contain: strict` wrapper so the overhang can
+ * never create scrollable overflow on any page shell. (Visually identical:
+ * the shells clipped the overhang at their bounds anyway.)
  */
 import { useMv3EntranceGuard } from "./entrance-guard";
 
@@ -28,20 +38,31 @@ export function AuroraBackdrop({
   return (
     <div
       aria-hidden
-      data-mv3
       style={{
         position: "absolute",
-        inset: "-20%",
-        background:
-          "radial-gradient(44% 30% at 50% 4%, var(--mv3-aurora), transparent 68%)",
-        filter: "blur(30px)",
-        animation: "mv3Aur 12s ease-in-out infinite",
+        inset: 0,
+        overflow: "clip",
+        // Size/layout/paint containment: the oversized child can neither
+        // paint outside this box nor contribute scrollable overflow.
+        contain: "strict",
         pointerEvents: "none",
-        // Own layer so the one-time blur rasterization is reused across the
-        // transform animation instead of re-painting.
-        willChange: "transform",
-        ...style,
       }}
-    />
+    >
+      <div
+        data-mv3
+        style={{
+          position: "absolute",
+          inset: "-20%",
+          background:
+            "radial-gradient(44% 30% at 50% 4%, var(--mv3-aurora), transparent 68%)",
+          filter: "blur(30px)",
+          animation: "mv3Aur 12s ease-in-out infinite",
+          // Own layer so the one-time blur rasterization is reused across the
+          // transform animation instead of re-painting.
+          willChange: "transform",
+          ...style,
+        }}
+      />
+    </div>
   );
 }

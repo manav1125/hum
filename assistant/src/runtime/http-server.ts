@@ -59,9 +59,11 @@ import { withErrorHandling } from "./middleware/error-handler.js";
 import {
   extractClientIp,
   ipRateLimiter,
+  isMutatingMethod,
   rateLimitHeaders,
   rateLimitResponse,
   selectAuthenticatedRateLimiter,
+  writeBurstLimiter,
 } from "./middleware/rate-limiter.js";
 import { withRequestLogging } from "./middleware/request-logger.js";
 import {
@@ -704,7 +706,17 @@ export class RuntimeHttpServer {
         : ipRateLimiter;
       const limiterKind = token ? "authenticated" : "unauthenticated";
       const result = limiter.check(clientIp, path);
-      if (!result.allowed) {
+      // Authenticated WRITES get a bounded burst allowance on top of the
+      // sliding window: a mutation burst (batch add, archive cascade, rapid
+      // PATCHes) must not surface as a dead-end "Couldn't save" 429 just
+      // because reads already warmed the window. Unauthenticated requests and
+      // reads are unaffected.
+      const writeBurstGranted =
+        !result.allowed &&
+        Boolean(token) &&
+        isMutatingMethod(req.method) &&
+        writeBurstLimiter.tryTake(clientIp);
+      if (!result.allowed && !writeBurstGranted) {
         return rateLimitResponse(result, {
           clientIp,
           deniedPath: path,

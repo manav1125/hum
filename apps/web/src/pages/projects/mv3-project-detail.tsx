@@ -60,6 +60,7 @@ import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { parseTaskLines } from "./filing-kit";
 import { Mv3ProjectBrief } from "./mv3-project-brief";
 import { Mv3ProjectKnowledge } from "./mv3-project-knowledge";
 import { Mv3TaskSheet } from "./mv3-task-sheet";
@@ -98,6 +99,25 @@ function stepLabel(e: {
   }
 }
 
+
+/**
+ * Collapse consecutive trail events that render the same label — the daemon
+ * writes both a `status_changed` and a `run_started` event on run start, so
+ * without this the checklist shows "✓ Started the run" twice.
+ */
+function dedupeTrail<T extends { kind: string; fromStatus: string | null; toStatus: string | null }>(
+  trail: T[],
+  label: (e: T) => string,
+): T[] {
+  const out: T[] = [];
+  for (const e of trail) {
+    const prev = out[out.length - 1];
+    if (prev && label(prev) === label(e)) continue;
+    out.push(e);
+  }
+  return out;
+}
+
 /** LIVE run card (frame 3): pulse badge · elapsed · step checklist · controls. */
 function LiveRunCard({
   assistantId,
@@ -119,7 +139,11 @@ function LiveRunCard({
     staleTime: 5_000,
   });
   const trail = useMemo(
-    () => [...(events.data?.events ?? [])].sort((a, b) => a.at - b.at),
+    () =>
+      dedupeTrail(
+        [...(events.data?.events ?? [])].sort((a, b) => a.at - b.at),
+        stepLabel,
+      ),
     [events.data?.events],
   );
   const runStart =
@@ -757,7 +781,15 @@ export function Mv3ProjectDetail() {
   const all = useHqWorkItems(assistantId);
   const items = useMemo(
     () =>
-      all.items.filter((i) => i.projectId === projectId && !gone.has(i.id)),
+      all.items.filter(
+        (i) =>
+          i.projectId === projectId &&
+          // Dismissed/cancelled items are out of the project's story — and
+          // out of the progress denominator (matches the daemon's stats).
+          i.status !== "archived" &&
+          i.status !== "cancelled" &&
+          !gone.has(i.id),
+      ),
     [all.items, projectId, gone],
   );
 
@@ -1187,7 +1219,7 @@ export function Mv3ProjectDetail() {
             ) : null}
 
             {/* First-run coaching — one quiet line, once per session. */}
-            <ParkedCoachline hasParked={parkedCount > 0} />
+            <ParkedCoachline surface="project-detail" hasParked={parkedCount > 0} />
 
             {/* Quick-add — the board's `useQuickAddTask` (POST work-items
                 { title, projectId }), as an inline v3 row. */}
@@ -1215,6 +1247,26 @@ export function Mv3ProjectDetail() {
                     placeholder="What should Cue take on?"
                     value={addDraft}
                     onChange={(e) => setAddDraft(e.target.value)}
+                    onPaste={(e) => {
+                      // Multi-line paste = one parked task PER LINE (mirrors
+                      // the batch sheet's grammar). A single-line paste keeps
+                      // the native insert; without this, the browser flattens
+                      // newlines and the lines concatenate into one title.
+                      const text = e.clipboardData.getData("text/plain");
+                      const lines = parseTaskLines(text);
+                      if (lines.length <= 1 || quickAdd.isPending) return;
+                      e.preventDefault();
+                      haptic.medium();
+                      void quickAdd.addMany(lines, {
+                        onDone: (added, failed) => {
+                          if (added > 0) haptic.success();
+                          if (failed === 0) {
+                            setAddDraft("");
+                            setAddOpen(false);
+                          }
+                        },
+                      });
+                    }}
                     style={{
                       flex: 1,
                       minHeight: 44,

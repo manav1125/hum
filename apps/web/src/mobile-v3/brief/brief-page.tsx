@@ -234,6 +234,21 @@ function OvernightBeat({ items }: { items: OvernightItem[] }) {
         {items.slice(0, 5).map((item, i) => (
           <OvernightRow key={item.id} item={item} delay={0.35 + i * 0.15} />
         ))}
+        {/* Count honesty (UAT 2026-07-21): the headline counts everything,
+            so the rows must account for the remainder instead of silently
+            showing 5 of 6. */}
+        {n > 5 ? (
+          <div
+            style={{
+              fontSize: 11.5,
+              color: "var(--mv3-faint)",
+              padding: "2px 4px",
+              ...rise(0.35 + 5 * 0.15),
+            }}
+          >
+            +{n - 5} more — they’re all on Today
+          </div>
+        ) : null}
       </div>
     </>
   );

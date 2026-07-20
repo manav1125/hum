@@ -32,9 +32,11 @@ import {
   primaryBtn,
   type Mv3State,
 } from "@/mobile-v3";
-import { isAutoFiled } from "@/mobile-v3/work-kit";
+import { isAutoFiled, isParked } from "@/mobile-v3/work-kit";
+import { mv3Mono } from "@/mobile-v3/mv3-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
+import { rateLimitRetry } from "@/utils/rate-limit-retry";
 import { routes } from "@/utils/routes";
 
 import { Mv3RefileSheet } from "./mv3-refile-sheet";
@@ -273,10 +275,12 @@ export function Mv3TaskSheet({
 
   const run = useMutation({
     ...workitemsByIdRunPostMutation(),
+    ...rateLimitRetry,
     onSuccess: refreshAll,
   });
   const approve = useMutation({
     ...workitemsByIdCompletePostMutation(),
+    ...rateLimitRetry,
     onSuccess: refreshAll,
   });
 
@@ -288,6 +292,7 @@ export function Mv3TaskSheet({
    * fall back to the sheet's full-record PATCH (status → done) on rejection.
    */
   const doneElsewhere = useMutation({
+    ...rateLimitRetry,
     mutationFn: async () => {
       if (!item) return;
       const path = { assistant_id: assistantId, id: item.id };
@@ -341,9 +346,25 @@ export function Mv3TaskSheet({
   return (
     <SheetShell open label={`Task: ${item.title}`} onClose={onClose}>
       <div style={{ paddingBottom: 6 }}>
-        {/* Header — state chip · last activity, then the title. */}
+        {/* Header — state chip · last activity, then the title. Parked items
+            say "○ Parked" here too (one vocabulary everywhere): a parked task
+            was never "queued and active" — it waits for the user's ▶. */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <StateChip state={chip.state} label={chip.label} />
+          {isParked(item) ? (
+            <span
+              style={{
+                fontFamily: mv3Mono,
+                fontSize: 10,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--mv3-faint)",
+              }}
+            >
+              ○ Parked
+            </span>
+          ) : (
+            <StateChip state={chip.state} label={chip.label} />
+          )}
           {item.lastActivityAt != null ? (
             <span
               style={{
@@ -352,7 +373,9 @@ export function Mv3TaskSheet({
                 color: "var(--mv3-faint)",
               }}
             >
-              active {relativeTime(item.lastActivityAt)}
+              {isParked(item)
+                ? "waits for your ▶"
+                : `active ${relativeTime(item.lastActivityAt)}`}
             </span>
           ) : null}
         </div>
@@ -687,6 +710,11 @@ export function Mv3TaskSheet({
                     key={p.id}
                     type="button"
                     className="cue-pressable"
+                    aria-label={
+                      current
+                        ? `Filed to ${p.title} (current)`
+                        : `File to ${p.title}`
+                    }
                     disabled={current || patch.isPending}
                     onClick={() => {
                       haptic.medium();

@@ -315,6 +315,53 @@ function ReviewV3({
   );
 }
 
+/** Review cards shown inline on Today before "See all" takes over. */
+const REVIEW_SHOWN_MAX = 2;
+
+/**
+ * "Review ready · N / See all N ›" strip (UAT P1-3): when more deliverables
+ * await review than Today shows, surface the real count and link into the
+ * full pager instead of silently hiding the rest.
+ */
+function ReviewSeeAllStrip({ total }: { total: number }) {
+  const navigate = useNavigate();
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "2px 6px 0",
+      }}
+    >
+      <span style={{ ...microLabel, color: "var(--mv3-violet)" }}>
+        ◱ Review ready · {total}
+      </span>
+      <button
+        type="button"
+        className="cue-pressable"
+        aria-label={`See all ${total} items ready for review`}
+        onClick={() => {
+          haptic.light();
+          navigate(routes.reviewQueue);
+        }}
+        style={{
+          marginLeft: "auto",
+          fontSize: 12,
+          color: "var(--mv3-micro)",
+          background: "none",
+          border: "none",
+          padding: "4px 0",
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
+      >
+        See all {total} ›
+      </button>
+    </div>
+  );
+}
+
 /** The 3-bar live equalizer (spec: 2px bars, 12px tall, staggered mv3Bar). */
 function LiveBarsV3() {
   return (
@@ -506,6 +553,7 @@ export function Mv3Today({
   assistantId,
   userName,
   move,
+  moveLoading = false,
   review,
   running,
   cameIn,
@@ -514,6 +562,8 @@ export function Mv3Today({
   assistantId: string;
   userName: string | null;
   move: NextMove;
+  /** True while the next-move pick is still computing (skeleton slot). */
+  moveLoading?: boolean;
   /** awaiting_review items (next-move item already excluded by HqPage). */
   review: HqWorkItem[];
   running: HqWorkItem[];
@@ -685,7 +735,22 @@ export function Mv3Today({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <NextMoveV3 assistantId={assistantId} move={move} />
+          {moveLoading && !move.hasMove ? (
+            // Reserve the Next-move slot while the pick computes so the card
+            // streaming in later never shoves the Review cards down mid-read.
+            <div
+              aria-hidden
+              style={{
+                height: 96,
+                borderRadius: 18,
+                background: "var(--mv3-btn2-bg)",
+                border: "1px solid var(--mv3-line)",
+                opacity: 0.55,
+              }}
+            />
+          ) : (
+            <NextMoveV3 assistantId={assistantId} move={move} />
+          )}
           {approvals.slice(0, 2).map((interaction) => (
             <NeedsOkV3
               key={interaction.requestId}
@@ -694,7 +759,10 @@ export function Mv3Today({
               delay={nextDelay()}
             />
           ))}
-          {reviewShown.slice(0, 2).map((item) => (
+          {reviewShown.length > REVIEW_SHOWN_MAX ? (
+            <ReviewSeeAllStrip total={reviewShown.length} />
+          ) : null}
+          {reviewShown.slice(0, REVIEW_SHOWN_MAX).map((item) => (
             <ReviewV3
               key={item.id}
               item={item}

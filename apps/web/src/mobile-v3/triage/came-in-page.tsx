@@ -32,9 +32,9 @@ import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { AuroraBackdrop, LargeTitleHeader, cardBody, mv3Mono } from "@/mobile-v3";
 import { useDismissTask } from "@/mobile-v3/undo-toast";
+import { relativeTime } from "@/domains/activity/theme";
 import {
   BackRow,
-  clockTime,
   dueLabel,
   isAutoFiled,
   isBelowConfidence,
@@ -180,7 +180,9 @@ function TriageCard({
 
   const badge = sourceBadge(item.sourceType);
   const { sender, channel } = senderOf(item);
-  const provenance = [sender, channel, clockTime(item.createdAt)]
+  // Relative "came in" age ("12m ago"), not wall-clock time — "0:06" for an
+  // item that arrived at 00:06 reads as a duration (UAT P2).
+  const provenance = [sender, channel, relativeTime(item.createdAt)]
     .filter(Boolean)
     .join(" · ");
   const autoFiled = projectTitle != null && isAutoFiled(item);
@@ -530,7 +532,12 @@ export function CameInPage() {
       style={{
         position: "relative",
         height: "100%",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
         display: "flex",
         flexDirection: "column",
         background: "var(--mv3-bg)",

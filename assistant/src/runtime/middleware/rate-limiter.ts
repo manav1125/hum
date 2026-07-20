@@ -149,6 +149,91 @@ export interface RateLimitResult {
   resetAt: number;
 }
 
+// ---------------------------------------------------------------------------
+// Write-burst token bucket
+//
+// Authenticated WRITE endpoints (work-item PATCH bursts, project archive
+// cascades, batch add) legitimately fire short mutation bursts that can land
+// on top of an already-hot sliding window and turn into dead-end 429s in the
+// UI. When the sliding window denies an AUTHENTICATED mutating request, a
+// per-key token bucket grants a bounded burst allowance on top: capacity
+// WRITE_BURST_CAPACITY, refilling at WRITE_BURST_REFILL_PER_SEC. Reads and
+// unauthenticated requests never touch this path, so the abuse surface of the
+// low unauthenticated IP limit is unchanged.
+// ---------------------------------------------------------------------------
+
+const WRITE_BURST_CAPACITY = 20;
+const WRITE_BURST_REFILL_PER_SEC = 0.5; // 1 token every 2s → 30/min sustained
+const MAX_TRACKED_BURST_KEYS = 10_000;
+
+interface BurstBucket {
+  tokens: number;
+  lastRefillAt: number;
+}
+
+/**
+ * Classic token bucket keyed by client IP. `tryTake` returns true and spends
+ * a token when one is available (refilled continuously up to capacity).
+ */
+export class WriteBurstLimiter {
+  private buckets = new Map<string, BurstBucket>();
+
+  constructor(
+    private readonly capacity = WRITE_BURST_CAPACITY,
+    private readonly refillPerSec = WRITE_BURST_REFILL_PER_SEC,
+    private readonly maxTrackedKeys = MAX_TRACKED_BURST_KEYS,
+  ) {}
+
+  tryTake(key: string, now = Date.now()): boolean {
+    let bucket = this.buckets.get(key);
+    if (!bucket) {
+      if (this.buckets.size >= this.maxTrackedKeys) {
+        this.evictFull(now);
+      }
+      bucket = { tokens: this.capacity, lastRefillAt: now };
+      this.buckets.set(key, bucket);
+    } else {
+      const elapsedSec = Math.max(0, now - bucket.lastRefillAt) / 1_000;
+      bucket.tokens = Math.min(
+        this.capacity,
+        bucket.tokens + elapsedSec * this.refillPerSec,
+      );
+      bucket.lastRefillAt = now;
+    }
+    if (bucket.tokens < 1) return false;
+    bucket.tokens -= 1;
+    return true;
+  }
+
+  /** Drop buckets that have refilled to capacity (no recent denials). */
+  private evictFull(now: number): void {
+    for (const [key, bucket] of this.buckets) {
+      const elapsedSec = Math.max(0, now - bucket.lastRefillAt) / 1_000;
+      if (bucket.tokens + elapsedSec * this.refillPerSec >= this.capacity) {
+        this.buckets.delete(key);
+      }
+    }
+    if (this.buckets.size >= this.maxTrackedKeys) {
+      const oldest = this.buckets.keys().next().value;
+      if (oldest !== undefined) this.buckets.delete(oldest);
+    }
+  }
+}
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/** True for HTTP methods that mutate state (the write-burst allowance gate). */
+export function isMutatingMethod(method: string): boolean {
+  return MUTATING_METHODS.has(method.toUpperCase());
+}
+
+/**
+ * Singleton write-burst bucket for authenticated mutating requests. Consulted
+ * only AFTER the sliding-window limiter denies, so it adds a bounded burst
+ * allowance without raising the steady-state budget.
+ */
+export const writeBurstLimiter = new WriteBurstLimiter();
+
 /** Build standard rate limit headers from a check result. */
 export function rateLimitHeaders(
   result: RateLimitResult,

@@ -529,6 +529,13 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
           }
           await conversation.processMessage({
             content: contextPreamble ? `${contextPreamble}${message}` : message,
+            // Stamp the persisted user row when it carries the injected
+            // project/task context preamble, so clients can collapse it into
+            // a quiet "Project context" affordance instead of rendering the
+            // scaffolding as a raw user bubble.
+            ...(contextPreamble
+              ? { persistMetadata: { taskRunContext: true } }
+              : {}),
             attachments: [],
             onEvent: (event) => {
               broadcastMessage(event);

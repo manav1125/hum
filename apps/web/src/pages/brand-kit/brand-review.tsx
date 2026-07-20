@@ -548,7 +548,11 @@ function LogoChip({
         )}
       </div>
       <MicroLabel style={{ display: "block", marginTop: 6, fontSize: 9 }}>
-        {caption}
+        {/* HONESTY (mobile UAT P2): with no stored image this chip renders a
+            SYNTHESIZED wordmark (name + mark color) — say so, so it can't be
+            mistaken for a saved logo (the Logos sheet elsewhere honestly
+            reports "none saved"). */}
+        {src ? caption : `${caption} · preview — no image saved`}
       </MicroLabel>
     </div>
   );

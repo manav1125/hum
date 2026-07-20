@@ -76,6 +76,7 @@ export function AppNavBar({
             }
             onClick={onDeploy}
             disabled={isDeploying}
+            aria-label={isDeploying ? "Deploying…" : "Deploy"}
             tooltip={isDeploying ? "Deploying…" : "Deploy"}
           />
         )}
@@ -87,6 +88,7 @@ export function AppNavBar({
             }
             onClick={onShare}
             disabled={isSharing}
+            aria-label={isSharing ? "Sharing…" : "Share"}
             tooltip={isSharing ? "Sharing…" : "Share"}
           />
         )}
@@ -95,6 +97,7 @@ export function AppNavBar({
             variant="outlined"
             iconOnly={<Maximize2 />}
             onClick={onToggleFullscreen}
+            aria-label="Fullscreen"
             tooltip="Fullscreen"
           />
         )}
@@ -103,6 +106,7 @@ export function AppNavBar({
             variant="outlined"
             iconOnly={isEditing ? <ChevronUp /> : <Pencil />}
             onClick={onEdit}
+            aria-label={isEditing ? "Open app" : "Edit"}
             tooltip={isEditing ? "Open app" : "Edit"}
             active={isEditing}
             className="md:hidden"
@@ -112,6 +116,7 @@ export function AppNavBar({
           variant="outlined"
           iconOnly={<X />}
           onClick={onClose}
+          aria-label="Close"
           tooltip="Close"
         />
       </div>

@@ -162,6 +162,17 @@ export function AppViewerContainer({
     return `app-${appId}-${hash}${deckFitActive ? "-deckfit" : ""}`;
   }, [html, appId, deckFitActive]);
 
+  // Decks wait for the first stage measurement before mounting the iframe:
+  // mounting unscaled and then remounting when the ResizeObserver flips
+  // `deckFitActive` double-loads a heavy srcdoc document (a large chunk of
+  // the slow first paint on phones). The RO fires within a frame, so the
+  // deferral is invisible; a shimmer skeleton covers the document load.
+  const deckAwaitingMeasure = isDeck && stageSize === null;
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  useEffect(() => {
+    setFrameLoaded(false);
+  }, [iframeKey]);
+
   useSandboxFetchProxy(iframeRef, {
     frameId: appId,
     assistantId,
@@ -207,30 +218,51 @@ export function AppViewerContainer({
             />
           </div>
         )}
-        <iframe
-          ref={iframeRef}
-          key={iframeKey}
-          srcDoc={srcdoc}
-          sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-          referrerPolicy="no-referrer"
-          title={appName}
-          className={deckFit ? "border-none" : "h-full w-full border-none"}
-          style={
-            deckFit
-              ? {
-                  // Render at the SLIDES contract size and scale to fit the
-                  // stage — the deck lays out exactly as on desktop and the
-                  // whole slide is visible (letterboxed) on a phone.
-                  width: DECK_VIRTUAL_W,
-                  height: DECK_VIRTUAL_H,
-                  position: "absolute",
-                  left: "50%",
-                  top: "50%",
-                  transform: `translate(-50%, -50%) scale(${deckFit.scale})`,
-                }
-              : undefined
-          }
-        />
+        {!deckAwaitingMeasure ? (
+          <iframe
+            ref={iframeRef}
+            key={iframeKey}
+            srcDoc={srcdoc}
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+            referrerPolicy="no-referrer"
+            title={appName}
+            onLoad={() => setFrameLoaded(true)}
+            className={deckFit ? "border-none" : "h-full w-full border-none"}
+            style={
+              deckFit
+                ? {
+                    // Render at the SLIDES contract size and scale to fit the
+                    // stage — the deck lays out exactly as on desktop and the
+                    // whole slide is visible (letterboxed) on a phone.
+                    width: DECK_VIRTUAL_W,
+                    height: DECK_VIRTUAL_H,
+                    position: "absolute",
+                    left: "50%",
+                    top: "50%",
+                    transform: `translate(-50%, -50%) scale(${deckFit.scale})`,
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+        {isDeck && (deckAwaitingMeasure || !frameLoaded) ? (
+          // First-paint skeleton — a letterboxed slide-shaped shimmer so the
+          // stage never reads as blank while the deck document loads.
+          <div
+            aria-hidden
+            data-testid="deck-loading-skeleton"
+            className="absolute inset-0 flex items-center justify-center"
+          >
+            <div
+              className="animate-pulse rounded-md bg-[var(--surface-lift)]"
+              style={{
+                width: "88%",
+                aspectRatio: "16 / 9",
+                maxHeight: "88%",
+              }}
+            />
+          </div>
+        ) : null}
         {deckFit ? (
           // Letterbox pagination — swipe works on the slide itself (bridge),
           // these give a visible, thumb-sized affordance since the deck's own

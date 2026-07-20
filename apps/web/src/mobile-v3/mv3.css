@@ -296,3 +296,21 @@
     animation: none !important;
   }
 }
+
+/* Mobile scroll regions are gesture-scrolled — desktop scrollbar gutters
+ * reading as chrome inside mv3 surfaces (and the mobile chat reskin) are a
+ * UAT flag. Hide them within every mv3-marked surface; scrolling itself is
+ * untouched. `.cue-mchat` roots carry data-mv3 too, so one scope covers both. */
+/* `:root` prefix outranks index.css's global `:root * { scrollbar-width:
+ * thin }` (equal specificity would lose on order — mv3.css is imported
+ * first). */
+:root [data-mv3],
+:root [data-mv3] * {
+  scrollbar-width: none;
+}
+:root [data-mv3]::-webkit-scrollbar,
+:root [data-mv3] *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

@@ -139,6 +139,14 @@ export interface DisplayMessage {
    * identifiable after a history reload; desktop ignores it.
    */
   voiceTurn?: boolean;
+  /**
+   * True for the daemon-injected task-run context message that seeds a
+   * work-item run ("You are working a task inside a project…" — wire
+   * `ConversationMessage.taskRunContext`, stamped like `voiceTurn`). The
+   * transcript collapses these into a quiet "Project context ›" pill instead
+   * of rendering the injected prompt as a user bubble.
+   */
+  taskRunContext?: boolean;
 }
 
 /**

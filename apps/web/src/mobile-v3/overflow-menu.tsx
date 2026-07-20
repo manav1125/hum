@@ -63,8 +63,17 @@ export function Mv3OverflowMenu() {
         ]
       : []),
     {
+      // The mobile Chats index (spec frame 21) at /assistant/conversations —
+      // routing there directly (not /assistant, which redirects into the most
+      // recent conversation) is what makes chat history reachable (UAT P1-2).
       label: "Chats",
-      run: () => navigate(routes.assistant),
+      run: () => navigate(routes.conversations),
+    },
+    {
+      // All-work was only reachable under Projects (UAT P2) — surface the
+      // flat queue here too.
+      label: "All work",
+      run: () => navigate(routes.allWork),
     },
     {
       label: "Search",
@@ -128,6 +137,7 @@ export function Mv3OverflowMenu() {
       {open ? (
         <div
           role="menu"
+          aria-label="More options"
           style={{
             position: "absolute",
             top: 40,

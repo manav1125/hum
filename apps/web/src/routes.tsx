@@ -1,4 +1,9 @@
-import { createBrowserRouter, Navigate, useSearchParams } from "react-router";
+import {
+  createBrowserRouter,
+  Navigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 
 import { authMiddleware } from "@/lib/auth/auth-middleware";
 import {
@@ -28,6 +33,24 @@ function OAuthDesktopCompleteRedirect() {
       replace
     />
   );
+}
+
+/**
+ * Redirects bare pre-app paths (`/onboarding/*`, `/welcome`, …) into their
+ * `/assistant/*` homes. Externally-minted links (magic-link emails, older
+ * builds) use the short paths; the gateway now serves the SPA shell for
+ * them (see gateway `spa-shell-paths.ts`), and this component completes the
+ * hop client-side. `/onboarding/welcome` maps onto the Welcome screen — the
+ * funnel has no "welcome" step of its own.
+ */
+function OnboardingPathRedirect() {
+  const params = useParams();
+  const splat = params["*"] ?? "";
+  const target =
+    splat === "" || splat === "welcome"
+      ? routes.welcome
+      : `/assistant/onboarding/${splat}`;
+  return <Navigate to={target} replace />;
 }
 
 /**
@@ -188,6 +211,32 @@ export const routeTree = [
         ],
       },
     ],
+  },
+
+  // Pre-app short paths — externally-minted links (magic-link emails, older
+  // builds) land on `/onboarding/*` / `/welcome` / `/select-assistant` /
+  // `/review-terms` without the `/assistant` prefix. The gateway serves the
+  // SPA shell for these GET paths; the router completes the redirect into
+  // the canonical `/assistant/*` homes.
+  {
+    path: "/onboarding/*",
+    ErrorBoundary: RouteErrorBoundary,
+    Component: OnboardingPathRedirect,
+  },
+  {
+    path: "/welcome",
+    ErrorBoundary: RouteErrorBoundary,
+    element: <Navigate to={routes.welcome} replace />,
+  },
+  {
+    path: "/select-assistant",
+    ErrorBoundary: RouteErrorBoundary,
+    element: <Navigate to={routes.selectAssistant} replace />,
+  },
+  {
+    path: "/review-terms",
+    ErrorBoundary: RouteErrorBoundary,
+    element: <Navigate to={routes.reviewTerms} replace />,
   },
 
   // Logout — standalone page, no app chrome
@@ -726,6 +775,19 @@ export const routeTree = [
                       Component: () =>
                         import("@/domains/chat/conversation-redirect").then(
                           (m) => m.ConversationRedirect,
+                        ),
+                    },
+                  },
+                  {
+                    // Bare chats index (no id): the mobile v3 Chats screen
+                    // (spec frame 21) — the ⋯ overflow's "Chats" destination.
+                    // Desktop redirects to /assistant (the sidebar rail IS
+                    // the index there); previously this URL 404'd.
+                    path: "conversations",
+                    lazy: {
+                      Component: () =>
+                        import("@/mobile-v3/chats/chats-index-page").then(
+                          (m) => m.ChatsIndexPage,
                         ),
                     },
                   },

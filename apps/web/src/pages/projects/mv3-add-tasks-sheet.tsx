@@ -38,6 +38,7 @@ import { workitemsPostMutation } from "@/generated/daemon/@tanstack/react-query.
 import { SheetShell, mv3Mono, primaryBtn } from "@/mobile-v3";
 import { UndoToast, type Mv3Toast } from "@/mobile-v3/undo-toast";
 import { haptic } from "@/utils/haptics";
+import { rateLimitRetry } from "@/utils/rate-limit-retry";
 
 import {
   parseTaskLines,
@@ -346,7 +347,7 @@ export function Mv3AddTasksSheet({
 }) {
   const queryClient = useQueryClient();
   const { projects } = useProjects(assistantId);
-  const create = useMutation({ ...workitemsPostMutation() });
+  const create = useMutation({ ...workitemsPostMutation(), ...rateLimitRetry });
 
   const [draft, setDraft] = useState("");
   const [overrides, setOverrides] = useState<Map<string, string | null>>(

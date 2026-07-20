@@ -1364,6 +1364,13 @@ export interface ProcessMessageOptions {
    */
   overrideProfile?: string;
   displayContent?: string;
+  /**
+   * Extra metadata keys merged into the persisted user message's metadata
+   * JSON (e.g. the work-item runner's `taskRunContext: true` stamp, which
+   * lets clients collapse the injected run-context preamble instead of
+   * rendering it as a raw user bubble).
+   */
+  persistMetadata?: Record<string, unknown>;
 }
 
 // ── processMessage ───────────────────────────────────────────────────
@@ -1387,6 +1394,7 @@ export async function processMessage(
     callSite,
     overrideProfile,
     displayContent,
+    persistMetadata,
   } = options;
   await conversation.ensureActorScopedHistory();
   // Snapshot persona context at turn start so later tool turns can't pick up
@@ -1806,6 +1814,7 @@ export async function processMessage(
       attachments,
       requestId,
       displayContent,
+      ...(persistMetadata ? { metadata: persistMetadata } : {}),
     });
     publishConversationMessagesChanged(conversation.conversationId);
   } catch (err) {

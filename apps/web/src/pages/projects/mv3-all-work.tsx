@@ -482,7 +482,7 @@ export function Mv3AllWork() {
           ))
         )}
         {/* First-run coaching — one quiet line, once per session. */}
-        <ParkedCoachline hasParked={items.some(isParked)} />
+        <ParkedCoachline surface="all-work" hasParked={items.some(isParked)} />
       </div>
 
       <Mv3TaskSheet

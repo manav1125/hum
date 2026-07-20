@@ -177,19 +177,33 @@ export function mergeListFirstPage(
 const activeListDrains = new Set<string>();
 
 /**
- * Fetch pages 1..N in the background and merge the tail into the cached
- * foreground list. Runs after the queryFn has already resolved with page 0
- * so the sidebar paints in one round-trip while the backlog streams in.
+ * How many EXTRA pages a single background drain fetches beyond page 0.
+ * The old unbounded drain walked every page on every cold load (8 sequential
+ * GETs at ~360 conversations, hundreds at thousands) and could exhaust the
+ * daemon's per-client rate budget by itself — UAT 2026-07-21 caught it
+ * landing a self-inflicted 429 during app open. Two extra pages (150 rows
+ * with page 0) cover every realistically visible window; older history loads
+ * on demand via {@link loadMoreConversations} as the list scrolls.
+ */
+const DRAIN_MAX_EXTRA_PAGES = 2;
+/** Breather between drained pages so the drain never bursts the limiter. */
+const DRAIN_PAGE_GAP_MS = 250;
+
+/**
+ * Fetch up to {@link DRAIN_MAX_EXTRA_PAGES} more pages in the background and
+ * merge the tail into the cached foreground list. Runs after the queryFn has
+ * already resolved with page 0 so the sidebar paints in one round-trip while
+ * the near-backlog streams in.
  *
- * Completion merge semantics (`authoritative` = page 0 + drained tail, the
- * complete server list as of the drain):
- * - Rows present in both take whichever version has the newer
- *   `lastMessageAt` (SSE may have refreshed the cached window mid-drain).
- * - Cache-only rows survive when they are client-local drafts or newer
- *   than the drain start (created/updated mid-drain, e.g. via SSE).
- * - Everything else absent from the authoritative list was deleted or
- *   archived server-side and is dropped — the drain keeps the cache from
- *   accumulating stale rows.
+ * Merge semantics depend on whether the drain reached the end of the list:
+ * - Drained to the end → `window` is the complete server list: rows present
+ *   in both take whichever version has the newer `lastMessageAt`; cache-only
+ *   rows survive when they are client-local drafts or newer than the drain
+ *   start (created mid-drain via SSE); everything else was deleted/archived
+ *   server-side and is dropped.
+ * - Capped (more pages exist) → `window` is only the newest slice: cached
+ *   rows OLDER than the window's oldest row also survive, because the drain
+ *   never observed them — dropping them would shrink an already-loaded list.
  */
 function drainRemainingPagesInBackground(
   queryClient: QueryClient,
@@ -203,26 +217,37 @@ function drainRemainingPagesInBackground(
   void (async () => {
     try {
       const tail: Conversation[] = [];
-      for (let page = 1; page < CONVERSATION_LIST_MAX_PAGES; page++) {
+      let sawEnd = false;
+      for (let page = 1; page <= DRAIN_MAX_EXTRA_PAGES; page++) {
+        await new Promise((r) => setTimeout(r, DRAIN_PAGE_GAP_MS));
         const { conversations, hasMore } = await fetchConversationListPage(
           assistantId,
           page * CONVERSATION_LIST_PAGE_SIZE,
         );
         tail.push(...conversations);
-        if (!hasMore || conversations.length === 0) break;
-      }
-
-      const authoritative = new Map<string, Conversation>();
-      for (const c of [...firstPage.conversations, ...tail]) {
-        if (!authoritative.has(c.conversationId)) {
-          authoritative.set(c.conversationId, c);
+        if (!hasMore || conversations.length === 0) {
+          sawEnd = true;
+          break;
         }
       }
+
+      const window = new Map<string, Conversation>();
+      for (const c of [...firstPage.conversations, ...tail]) {
+        if (!window.has(c.conversationId)) {
+          window.set(c.conversationId, c);
+        }
+      }
+      const windowRows = [...window.values()];
+      const nonPinned = windowRows.filter((c) => c.isPinned !== true);
+      const windowCutoff =
+        nonPinned.length > 0
+          ? Math.min(...nonPinned.map((c) => c.lastMessageAt ?? 0))
+          : 0;
 
       queryClient.setQueryData<Conversation[]>(
         conversationsQueryKey(assistantId),
         (prev) => {
-          const merged = new Map(authoritative);
+          const merged = new Map(window);
           for (const c of prev ?? []) {
             const auth = merged.get(c.conversationId);
             if (auth) {
@@ -231,7 +256,10 @@ function drainRemainingPagesInBackground(
               }
             } else if (
               c.draft === true ||
-              (c.lastMessageAt ?? 0) >= drainStartedAt
+              (c.lastMessageAt ?? 0) >= drainStartedAt ||
+              // Capped drain: rows below the drained window were never
+              // observed — keep them rather than shrinking the list.
+              (!sawEnd && (c.lastMessageAt ?? 0) < windowCutoff)
             ) {
               merged.set(c.conversationId, c);
             }
@@ -251,6 +279,44 @@ function drainRemainingPagesInBackground(
       activeListDrains.delete(assistantId);
     }
   })();
+}
+
+/**
+ * On-demand continuation for the capped drain: fetch one more page past what
+ * the cache currently holds and append it. Callers (the conversation list's
+ * scroll sentinel / "load more" affordance) invoke this as the user nears
+ * the bottom. Returns whether more pages likely remain.
+ */
+export async function loadMoreConversations(
+  queryClient: QueryClient,
+  assistantId: string,
+): Promise<{ hasMore: boolean }> {
+  const cached =
+    queryClient.getQueryData<Conversation[]>(
+      conversationsQueryKey(assistantId),
+    ) ?? [];
+  const offset =
+    Math.floor(cached.length / CONVERSATION_LIST_PAGE_SIZE) *
+    CONVERSATION_LIST_PAGE_SIZE;
+  const { conversations, hasMore } = await fetchConversationListPage(
+    assistantId,
+    offset,
+  );
+  queryClient.setQueryData<Conversation[]>(
+    conversationsQueryKey(assistantId),
+    (prev) => {
+      const merged = new Map<string, Conversation>();
+      for (const c of prev ?? []) merged.set(c.conversationId, c);
+      for (const c of conversations) {
+        const existing = merged.get(c.conversationId);
+        if (!existing || (c.lastMessageAt ?? 0) > (existing.lastMessageAt ?? 0)) {
+          merged.set(c.conversationId, c);
+        }
+      }
+      return [...merged.values()].sort(byTimestampDesc("lastMessageAt"));
+    },
+  );
+  return { hasMore };
 }
 
 // ---------------------------------------------------------------------------

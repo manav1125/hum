@@ -21,6 +21,7 @@ import {
 } from "../../work-items/project-store.js";
 import {
   listWorkItems,
+  updateWorkItem,
   type WorkItemStatus,
 } from "../../work-items/work-item-store.js";
 import { buildAssistantEvent } from "../assistant-event.js";
@@ -32,6 +33,36 @@ import { annotateWorkItems, workItemSchema } from "./work-items-routes.js";
 
 function publishEvent(msg: ServerMessage): void {
   void assistantEventHub.publish(buildAssistantEvent(msg));
+}
+
+/**
+ * Archive cascade: archiving a project parks + archives its still-open work
+ * items so nothing stays live/runnable inside an archived container. Done and
+ * cancelled items keep their terminal status (the project's history); running
+ * items are left to finish — their terminal transition lands as usual and the
+ * item then sits archived-project-side but terminal. The `parked` stamp is
+ * belt-and-braces: if an item is ever restored, it must wait for an explicit
+ * run rather than re-entering the auto-run pool.
+ *
+ * Exported for tests.
+ */
+export function archiveProjectWorkItems(projectId: string): number {
+  const CASCADE_STATUSES: readonly WorkItemStatus[] = [
+    "queued",
+    "awaiting_review",
+    "failed",
+  ];
+  let archived = 0;
+  for (const item of listWorkItems({ projectId })) {
+    if (!CASCADE_STATUSES.includes(item.status)) continue;
+    updateWorkItem(
+      item.id,
+      { status: "archived", autoRunEligibility: "parked" },
+      { actor: "user" },
+    );
+    archived++;
+  }
+  return archived;
 }
 
 const projectSchema = z.object({
@@ -204,7 +235,8 @@ export const ROUTES: RouteDefinition[] = [
     responseBody: z.object({ project: projectSchema }),
     handler: ({ pathParams, body }) => {
       const id = pathParams!.id;
-      if (!getProject(id)) throw new NotFoundError(`Project not found: ${id}`);
+      const existing = getProject(id);
+      if (!existing) throw new NotFoundError(`Project not found: ${id}`);
       const raw = (body ?? {}) as {
         title?: string;
         emoji?: string | null;
@@ -228,6 +260,12 @@ export const ROUTES: RouteDefinition[] = [
       // The store column is 0/1; accept a boolean at the wire and normalize.
       if (raw.pinned !== undefined) updates.pinned = raw.pinned ? 1 : 0;
       const project = updateProject(id, updates);
+      // Archiving the project cascades to its still-open work items (park +
+      // archive) so nothing stays runnable/orphaned inside an archived
+      // container. Only fires on the active → archived transition.
+      if (raw.status === "archived" && existing.status !== "archived") {
+        archiveProjectWorkItems(id);
+      }
       publishEvent({ type: "tasks_changed" } as ServerMessage);
       return { project };
     },

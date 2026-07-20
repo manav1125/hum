@@ -673,9 +673,24 @@ export function CreateGalleryOverlay({
               cursor: canConfirm ? "pointer" : "not-allowed",
               opacity: canConfirm ? 1 : 0.7,
               whiteSpace: "nowrap",
+              // Long template names ellipsize INSIDE the label span below —
+              // "Use" and "→" themselves never truncate.
+              minWidth: 0,
+              maxWidth: isMobile ? "58vw" : 320,
             }}
           >
-            Use {primaryLabel} →
+            <span style={{ flexShrink: 0 }}>Use</span>
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {primaryLabel}
+            </span>
+            <span style={{ flexShrink: 0 }}>→</span>
           </button>
         </div>
       </div>
@@ -698,7 +713,17 @@ function usePrimaryLabel(
       const n = state.chartIds.length;
       return `${fmt?.label ?? "Output"} · ${n} chart${n === 1 ? "" : "s"}`;
     }
-    if (!state.selectedId) return "…";
+    // Nothing picked yet → the kind noun ("Use template →"), never a bare
+    // "Use … →" (UAT: the CTA read as truncated).
+    if (!state.selectedId) {
+      return kind === "slides"
+        ? "template"
+        : kind === "style"
+          ? "style"
+          : kind === "docs"
+            ? "document"
+            : "action";
+    }
     if (kind === "slides") {
       return `"${TEMPLATE_SPECS.find((t) => t.id === state.selectedId)?.name ?? ""}"`;
     }
@@ -927,7 +952,11 @@ function SlideCard({
           style={{
             position: "absolute",
             inset: 0,
-            background: `center / cover no-repeat url("${publicAsset(t.thumbnail)}")`,
+            // Anchor the crop to the LEFT edge: 16:9 slide thumbs in the 4:3
+            // frame crop horizontally, and slide titles live top-left — a
+            // centered crop cut them off (UAT: "thumbnails crop from the
+            // left").
+            background: `left center / cover no-repeat url("${publicAsset(t.thumbnail)}")`,
             opacity: preview ? 0 : 1,
             transition: "opacity 160ms ease",
           }}
@@ -946,12 +975,16 @@ function SlideCard({
           justifyContent: "space-between",
           gap: 6,
           padding: "8px 10px",
+          // Narrow (phone, 2-col) cards can't fit name + EXACT|INSPIRED on
+          // one line — the name collapsed to ~2 letters (UAT). Let the badge
+          // wrap to its own line instead; the name keeps a readable floor.
+          flexWrap: "wrap",
         }}
       >
         <span
           style={{
             flex: 1,
-            minWidth: 0,
+            minWidth: isMobile ? "60%" : 0,
             fontSize: 12.5,
             fontWeight: 600,
             color: C.t1,
@@ -963,7 +996,7 @@ function SlideCard({
           {t.name}
         </span>
         {/* flexShrink 0 so the EXACT | INSPIRED toggle never clips to "INSP"
-            on narrow (phone) cards — the name ellipsizes instead. */}
+            on narrow (phone) cards — it wraps below the name instead. */}
         <span style={{ flexShrink: 0, display: "inline-flex" }}>
           <FidelityBadge
             fidelity={t.fidelity}

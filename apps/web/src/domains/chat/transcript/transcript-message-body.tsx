@@ -30,6 +30,7 @@ import { parseInlineSurfaces } from "@/domains/chat/utils/parse-inline-surfaces"
 import { getSlackLinkUrl } from "@/domains/chat/types/types";
 import { wireSurfaceToDisplay } from "@/domains/chat/utils/map-runtime-message";
 import { InterruptedTurnNotice } from "@/domains/chat/transcript/interrupted-turn-notice";
+import { TaskRunContextRow } from "@/domains/chat/transcript/task-run-context-row";
 import { isPointerCoarse } from "@/utils/pointer";
 import { useSubagentStore } from "@/domains/chat/subagent-store";
 import type { ChatMessageToolCall } from "@/domains/chat/api/event-types";
@@ -409,6 +410,26 @@ export function TranscriptMessageBody({
   );
 
   if (isUser) {
+    // Daemon-injected task-run context (wire `taskRunContext`) is machinery,
+    // not something the user typed — collapse it into the quiet "Project
+    // context ›" pill instead of leaking the injected prompt as a user
+    // bubble (UAT P2). Tap to expand the full text.
+    if (message.taskRunContext) {
+      const contextText = groups
+        .filter((group) => group.type === "text")
+        .map((group) => group.text)
+        .join("\n\n")
+        .trim();
+      return (
+        <div
+          ref={wrapperRef}
+          data-revealed={revealed}
+          className="group/msg flex justify-start"
+        >
+          <TaskRunContextRow text={contextText} />
+        </div>
+      );
+    }
     const userItems = groups.map((group, gi) => ({
       kind: group.type === "text" ? ("text" as const) : ("nonText" as const),
       node: renderGroupNode(group, gi),

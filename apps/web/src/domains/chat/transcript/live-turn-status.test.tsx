@@ -129,7 +129,7 @@ describe("deriveLiveStatus", () => {
 
   // --- thinking preview ----------------------------------------------------
 
-  test("thinking preview shows with brain glyph, whitespace collapsed + capped", () => {
+  test("fresh thinking shows CALM derived copy with brain glyph — never the raw tail", () => {
     const view = deriveLiveStatus(
       input({
         thinkingTail: "The user wants\n two things:  " + "x".repeat(200),
@@ -137,8 +137,20 @@ describe("deriveLiveStatus", () => {
       }),
     );
     expect(view?.brain).toBe(true);
-    expect(view?.text.startsWith("The user wants two things: ")).toBe(true);
-    expect(view?.text.length).toBeLessThanOrEqual(80);
+    expect(view?.text).toBe("Thinking it through…");
+    expect(view?.text).not.toContain("The user wants");
+  });
+
+  test("error-ish thinking maps to the honest snag tier, still never verbatim", () => {
+    const view = deriveLiveStatus(
+      input({
+        thinkingTail:
+          "Bash tool is erroring — same recurring issue with the sandbox",
+        thinkingAt: T0 + 900,
+      }),
+    );
+    expect(view?.text).toBe("Hit a snag — working through it…");
+    expect(view?.text).not.toContain("Bash");
   });
 
   test("while streaming, stale thinking loses to Writing…, fresh thinking wins", () => {
@@ -159,7 +171,7 @@ describe("deriveLiveStatus", () => {
         now: T0 + 10_000,
       }),
     );
-    expect(fresh?.text).toBe("new reasoning");
+    expect(fresh?.text).toBe("Thinking it through…");
   });
 
   // --- daemon statusText -----------------------------------------------------
@@ -276,14 +288,16 @@ describe("live-status store conversation scoping", () => {
     );
   });
 
-  test("thinking deltas for the viewed conversation DO surface", () => {
+  test("thinking deltas for the viewed conversation DO surface (as calm derived copy)", () => {
     const live = useLiveStatusStore.getState();
     live.noteTurnStart("conv-a");
     live.noteThinkingDelta("conv-a", "The user wants a new personality");
     live.noteThinkingDelta("conv-b", "unrelated background reasoning");
 
     const view = viewWhileViewing("conv-a");
-    expect(view?.text).toBe("The user wants a new personality");
+    // The raw tail never surfaces verbatim — the viewed conversation's fresh
+    // thinking signal maps to the calm derived tier.
+    expect(view?.text).toBe("Thinking it through…");
     expect(view?.brain).toBe(true);
     expect(sliceFor("conv-a").thinkingTail).not.toContain("unrelated");
   });

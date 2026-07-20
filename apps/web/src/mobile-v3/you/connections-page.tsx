@@ -11,8 +11,10 @@
  * command-center tile trust. Logos are the catalog's brand `logoUrl`s
  * (ConnectorAppLogo falls back to a monogram only if an image fails).
  * Per-app "what flowed today" lines are NOT rendered — no per-connector
- * activity source exists yet, so connected tiles carry an honest "Connected"
- * status line instead of fabricated counts.
+ * activity/health source exists yet (the daemon only exposes a boolean
+ * "an ACTIVE Composio account exists"), so connected tiles carry an honest
+ * "Linked" status line — never "live"/"working" — plus a footnote that
+ * status reflects setup, not verified health.
  *
  * Leaves (extrapolation grant — frame 11's row grammar):
  *  · connector detail sheet — status, category, reconnect (real OAuth);
@@ -86,20 +88,33 @@ function ConnectedTile({
   delay: number;
   onPress: () => void;
 }) {
+  const press = () => {
+    haptic.light();
+    onPress();
+  };
   return (
     <GlassCard
       radius={18}
       padding="13px 14px"
       blur={delay < 0.4}
+      // HONESTY (UAT P1): the daemon only knows a login exists (Composio
+      // ACTIVE account) — it has no health/last-success signal, so this tile
+      // says "Linked", never "live". a11y: the tile is a real button.
+      role="button"
+      tabIndex={0}
+      aria-label={`${app.name} — linked. Open connection details`}
+      onKeyDown={(e: React.KeyboardEvent) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          press();
+        }
+      }}
       style={{
         border: "1px solid rgba(111,214,154,.3)",
         cursor: "pointer",
         ...rise(delay),
       }}
-      onClick={() => {
-        haptic.light();
-        onPress();
-      }}
+      onClick={press}
     >
       <div
         style={{
@@ -123,7 +138,7 @@ function ConnectedTile({
       <div
         style={{ fontSize: 10.5, color: "var(--mv3-muted)", marginTop: 2 }}
       >
-        Connected
+        Linked
       </div>
     </GlassCard>
   );
@@ -217,7 +232,7 @@ export function Mv3ConnectionsPage() {
       sub={
         appsQuery.isLoading
           ? "Checking what's plugged in…"
-          : `${connected.length} live · everything flows into the orbit`
+          : `${connected.length} linked · everything flows into the orbit`
       }
     >
       {appsQuery.isError ? (
@@ -241,22 +256,37 @@ export function Mv3ConnectionsPage() {
       ) : (
         <>
           {connected.length > 0 ? (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 9,
-              }}
-            >
-              {connected.map((app, i) => (
-                <ConnectedTile
-                  key={app.slug}
-                  app={app}
-                  delay={0.1 + Math.min(i, 3) * 0.12}
-                  onPress={() => setDetail(app)}
-                />
-              ))}
-            </div>
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 9,
+                }}
+              >
+                {connected.map((app, i) => (
+                  <ConnectedTile
+                    key={app.slug}
+                    app={app}
+                    delay={0.1 + Math.min(i, 3) * 0.12}
+                    onPress={() => setDetail(app)}
+                  />
+                ))}
+              </div>
+              {/* The honest line: linked ≠ verified healthy (no probe yet). */}
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--mv3-faint)",
+                  textAlign: "center",
+                  padding: "0 8px",
+                  lineHeight: 1.5,
+                }}
+              >
+                Status reflects setup, not live health — if an app
+                misbehaves, open it and Reconnect.
+              </div>
+            </>
           ) : !appsQuery.isLoading ? (
             <GlassCard padding="18px 16px">
               <div style={{ fontSize: 13.5, color: "var(--mv3-muted)" }}>
@@ -419,7 +449,7 @@ export function Mv3ConnectionsPage() {
                   color: "var(--mv3-green)",
                 }}
               >
-                <LiveDot /> live
+                <LiveDot /> linked
               </span>
             </div>
 
@@ -435,8 +465,10 @@ export function Mv3ConnectionsPage() {
                 lineHeight: 1.5,
               }}
             >
-              Everything this app shares flows into your instance only —
-              nothing leaves without your say-so.
+              Linked means the sign-in is set up — it doesn&rsquo;t verify
+              recent calls are succeeding. If this app has stopped working,
+              Reconnect re-runs the sign-in. Everything it shares flows into
+              your instance only — nothing leaves without your say-so.
             </div>
 
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>

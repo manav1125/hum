@@ -1,19 +1,18 @@
 /**
- * Tests for `IntelligenceLayout`'s mobile/desktop title placement.
+ * Tests for `IntelligenceLayout`'s mobile/desktop chrome.
  *
- * On mobile the "About <name>" title moves into the shared top-bar center
- * slot (via `setTopBarCenter`) and the in-body <h1> is hidden with
- * `max-md:hidden`. On desktop the in-body <h1> renders the title and the
- * top-bar center is cleared (`setTopBarCenter(null)`).
+ * On mobile the desktop section-nav strip is hidden and a v3-grammar back
+ * row renders instead ("‹ You" + the section title); the shared top-bar
+ * center slot stays cleared. The in-body <h1> is hidden with
+ * `max-md:hidden`. On desktop the in-body <h1> renders the title, the tab
+ * strip renders, and the top-bar center is cleared (`setTopBarCenter(null)`).
  *
  * `useIsMobile` and the slots-store setter are mocked; the assistant name is
  * driven through the real identity store. `MemoryRouter` satisfies the
  * component's `useLocation`/`NavLink` usage.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { isValidElement } from "react";
 import { cleanup, render } from "@testing-library/react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 
 import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
@@ -50,9 +49,9 @@ mock.module("@/stores/assistant-feature-flag-store", () => ({
 const { IntelligenceLayout } =
   await import("@/domains/intelligence/intelligence-layout");
 
-const renderLayout = () =>
+const renderLayout = (initialPath = "/") =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <IntelligenceLayout />
     </MemoryRouter>,
   );
@@ -69,22 +68,32 @@ afterEach(() => {
 });
 
 describe("IntelligenceLayout", () => {
-  test("on mobile, registers the centered title and hides the in-body h1", () => {
+  test("on mobile, renders the back row with the section title and hides the in-body h1", () => {
     isMobileRef.value = true;
-    const { container } = renderLayout();
+    const { container, getAllByText, getByLabelText } = renderLayout(
+      "/assistant/identity",
+    );
 
     // The in-body h1 still renders the title but is hidden on mobile.
     const heading = container.querySelector("h1");
     expect(heading?.textContent).toContain("About Ada");
     expect(heading?.className).toContain("max-md:hidden");
 
-    // The top-bar center receives a node that renders the dynamic title.
-    const lastCall = setTopBarCenterMock.mock.calls.at(-1);
-    const node = lastCall?.[0];
-    expect(isValidElement(node)).toBe(true);
-    expect(renderToStaticMarkup(node as React.ReactElement)).toContain(
-      "About Ada",
-    );
+    // The desktop tab strip is hidden on mobile (UAT P2: it used to leak
+    // above Cue Live/Identity/Workspace at phone widths).
+    const nav = container.querySelector("nav");
+    expect(nav?.className).toContain("max-md:hidden");
+
+    // The v3 back row carries navigation + the section title.
+    expect(getByLabelText("Back to You")).toBeTruthy();
+    expect(
+      getAllByText("Identity").some(
+        (el) => el.getAttribute("data-slot") === "typography",
+      ),
+    ).toBe(true);
+
+    // The shared top-bar center stays cleared.
+    expect(setTopBarCenterMock).toHaveBeenLastCalledWith(null);
   });
 
   test("on desktop, renders the in-body title and clears the top-bar center", () => {

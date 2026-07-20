@@ -178,6 +178,13 @@ export interface Mv3ChatsIndexProps {
   onSelectConversation: (conversationId: string) => void;
   onStartNewConversation: () => void;
   onClose?: () => void;
+  /**
+   * Fetches the next page of older conversations (the boot drain is capped at
+   * 3 pages). Resolves with whether more likely remain; the row hides itself
+   * when it resolves false. Omitted → no load-more affordance (drawer usage
+   * inside a chat keeps the lighter list).
+   */
+  onLoadMore?: () => Promise<{ hasMore: boolean }>;
 }
 
 export function Mv3ChatsIndex({
@@ -188,9 +195,14 @@ export function Mv3ChatsIndex({
   onSelectConversation,
   onStartNewConversation,
   onClose,
+  onLoadMore,
 }: Mv3ChatsIndexProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
+  const [loadMore, setLoadMore] = useState<{
+    busy: boolean;
+    exhausted: boolean;
+  }>({ busy: false, exhausted: false });
 
   // Work receipts: the full work-item bucket, mapped conversation → latest
   // item by `lastRunConversationId`. Same generated endpoint HQ uses; TanStack
@@ -229,7 +241,12 @@ export function Mv3ChatsIndex({
       style={{
         position: "relative",
         height: "100%",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
         display: "flex",
         flexDirection: "column",
         background: "var(--mv3-bg)",
@@ -398,6 +415,7 @@ export function Mv3ChatsIndex({
                 // PERF: cap live backdrop-filter layers in the long list.
                 blur={i < 6}
                 role="button"
+                aria-label={`Open chat: ${conversation.title?.trim() || "New chat"}`}
                 tabIndex={0}
                 onClick={() => {
                   haptic.light();
@@ -448,6 +466,33 @@ export function Mv3ChatsIndex({
               </GlassCard>
             );
           })}
+          {onLoadMore && !loadMore.exhausted && !query ? (
+            <button
+              type="button"
+              className="cue-pressable"
+              disabled={loadMore.busy}
+              onClick={() => {
+                haptic.light();
+                setLoadMore((s) => ({ ...s, busy: true }));
+                onLoadMore()
+                  .then(({ hasMore }) =>
+                    setLoadMore({ busy: false, exhausted: !hasMore }),
+                  )
+                  .catch(() => setLoadMore((s) => ({ ...s, busy: false })));
+              }}
+              style={{
+                minHeight: 44,
+                background: "none",
+                border: "none",
+                color: "var(--mv3-micro)",
+                fontSize: 12.5,
+                fontFamily: "inherit",
+                cursor: "pointer",
+              }}
+            >
+              {loadMore.busy ? "Loading…" : "Older chats ›"}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

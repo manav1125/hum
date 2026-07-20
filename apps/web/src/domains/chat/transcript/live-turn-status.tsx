@@ -63,6 +63,25 @@ const TOOL_ELAPSED_THRESHOLD_MS = 8_000;
  *  so the preview wins over the generic streaming copy. */
 const THINKING_FRESH_MS = 3_000;
 
+/**
+ * Error-ish markers in the live thinking tail. The status line never shows
+ * raw model thinking verbatim (UAT: it surfaced ops-speak like "Bash tool is
+ * erroring — same recurring issue…"); instead the tail is classified into a
+ * calm, honest tier: working through a snag vs. plain thinking.
+ */
+const THINKING_SNAG_RE =
+  /\b(error|errors|erroring|errored|fail|fails|failing|failed|failure|retry|retrying|broken|bug|issue|problem|snag|stuck|crash|crashed|exception)\b/i;
+
+/**
+ * Calm user-facing copy for a fresh thinking tail. Honest about trouble
+ * (snag tier) without leaking the model's internal monologue.
+ */
+export function thinkingStatusText(preview: string): string {
+  return THINKING_SNAG_RE.test(preview)
+    ? "Hit a snag — working through it…"
+    : "Thinking it through…";
+}
+
 export interface LiveStatusView {
   /** Stable copy — drives the fade-in animation key, so it must NOT embed
    *  the ticking elapsed time. */
@@ -160,14 +179,17 @@ export function deriveLiveStatus(
     };
   }
 
-  // Live thinking preview. Wins over the generic streaming copy only while
+  // Live thinking signal. Wins over the generic streaming copy only while
   // deltas are actually fresh, so a stale block never masks real progress.
+  // The tail itself is NEVER surfaced verbatim — it's classified into calm
+  // derived copy (thinking vs. snag tier) so raw model reasoning can't leak
+  // into the UI.
   const preview = thinkingTail.trim();
   const thinkingIsFresh =
     thinkingAt !== null && now - thinkingAt < THINKING_FRESH_MS;
   if (preview && (phase !== "streaming" || thinkingIsFresh)) {
     return {
-      text: truncate(preview.replace(/\s+/g, " "), THINKING_PREVIEW_MAX_CHARS),
+      text: thinkingStatusText(preview),
       brain: true,
     };
   }

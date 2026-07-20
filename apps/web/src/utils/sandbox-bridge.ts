@@ -123,6 +123,19 @@ function buildBridgeLogicScript(
 
   const deckNavBridge = enableDeckNav
     ? `
+  // Repair the common broken SLIDES pagination pattern (P2, Northwind /
+  // VentureVerse decks): the generated JS drives a track with inline
+  // width:C*100% + per-slide inline width:(100/C)% and translateX(-i/C*100%),
+  // while the generated CSS also declares ".slide { flex: 0 0 100% }". In a
+  // flex track, flex-basis beats the inline width — 100% of the 1000%-wide
+  // track makes EVERY slide track-sized, so navigation advances the counter
+  // but shows empty track. Keyed on the exact signature (inline width on BOTH
+  // track and slide) so contract-correct decks are untouched.
+  (function() {
+    var st = document.createElement('style');
+    st.textContent = '.slide-container[style*="width"] > .slide[style*="width"] { flex: 0 0 auto !important; }';
+    (document.head || document.documentElement).appendChild(st);
+  })();
   // Find the deck's own next/prev control (SLIDES-contract nav chrome or a
   // plain arrow glyph button) so pagination works for click-driven decks too.
   function vellumDeckNavEl(dir) {

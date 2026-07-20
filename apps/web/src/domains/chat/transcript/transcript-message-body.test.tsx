@@ -253,6 +253,44 @@ describe("TranscriptMessageBody", () => {
     expect(bubble!.getAttribute("data-voice-turn")).toBe("true");
   });
 
+  test("taskRunContext user message collapses to the Project context pill (no user bubble), expands on tap", () => {
+    const injected =
+      "You are working a task inside a project. Use the following context…";
+    const { container } = render(
+      <TranscriptMessageBody
+        message={{
+          id: "m-task-ctx",
+          role: "user",
+          taskRunContext: true,
+          contentBlocks: [textBlock(injected)],
+          timestamp: 1_000,
+        }}
+        onSurfaceAction={noop}
+      />,
+    );
+
+    // Collapsed: pill present, injected prompt hidden, no user bubble.
+    const row = container.querySelector(
+      "[data-testid='task-run-context-row']",
+    );
+    expect(row).not.toBeNull();
+    const pill = row!.querySelector("button");
+    expect(pill).not.toBeNull();
+    expect(pill!.textContent).toContain("Project context");
+    expect(pill!.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("You are working a task");
+    expect(
+      container.querySelector(".bg-\\[var\\(--surface-lift\\)\\].self-end"),
+    ).toBeNull();
+
+    // Expanded: full text revealed; collapses again on a second tap.
+    fireEvent.click(pill!);
+    expect(pill!.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("You are working a task");
+    fireEvent.click(pill!);
+    expect(container.textContent).not.toContain("You are working a task");
+  });
+
   test("omits data-voice-turn on ordinary typed user bubbles", () => {
     const { container } = render(
       <TranscriptMessageBody

@@ -177,11 +177,16 @@ function computeProjectStats(projectId: string): ProjectStats {
     .groupBy(workItems.status)
     .all() as Array<{ status: WorkItemStatus; count: number }>;
 
+  // Dismissed (archived) and cancelled items are out of the project's story:
+  // counting them in `total` deflated the progress % (a project with every
+  // real task done but two dismissed captures read "3 of 5"). They stay out
+  // of the denominator entirely.
+  const EXCLUDED_FROM_TOTAL = new Set<string>(["archived", "cancelled"]);
   const byStatus = new Map<string, number>();
   let total = 0;
   for (const r of rows) {
     byStatus.set(r.status, r.count);
-    total += r.count;
+    if (!EXCLUDED_FROM_TOTAL.has(r.status)) total += r.count;
   }
   const queued = byStatus.get("queued") ?? 0;
   const running = byStatus.get("running") ?? 0;

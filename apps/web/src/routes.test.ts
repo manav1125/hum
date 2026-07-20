@@ -44,3 +44,41 @@ describe("account route compact-window grouping", () => {
     expect(isUnderAccountLayout(path)).toBe(false);
   });
 });
+
+// Leaf-route component/element presence for a matched path. NotFound is the
+// only catch-all component, so "resolves to something other than NotFound"
+// distinguishes real routes/redirects from dead paths.
+function leafIsNotFound(path: string): boolean {
+  const matches = matchRoutes(routeTree as never, path) ?? [];
+  const leaf = matches[matches.length - 1]?.route as
+    | { Component?: { name?: string } }
+    | undefined;
+  return leaf?.Component?.name === "NotFound";
+}
+
+describe("pre-app short paths resolve in the SPA router", () => {
+  // The gateway serves the SPA shell for these GET paths (spa-shell-paths.ts);
+  // the router must then handle them (redirect components), not 404.
+  test.each([
+    "/onboarding/welcome",
+    "/onboarding/privacy",
+    "/welcome",
+    "/select-assistant",
+    "/review-terms",
+  ])("%s matches a redirect, not the catch-all", (path) => {
+    expect(leafIsNotFound(path)).toBe(false);
+  });
+});
+
+describe("chats index route", () => {
+  test("/assistant/conversations (no id) resolves to a real route", () => {
+    expect(leafIsNotFound("/assistant/conversations")).toBe(false);
+  });
+
+  test.each(["/assistant/system-events", "/emails", "/assistant/nope"])(
+    "%s falls to the NotFound catch-all",
+    (path) => {
+      expect(leafIsNotFound(path)).toBe(true);
+    },
+  );
+});

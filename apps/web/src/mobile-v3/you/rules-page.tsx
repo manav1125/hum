@@ -6,7 +6,9 @@
  * Three real rule stores, one surface (frame 20's row grammar throughout):
  *  · WHAT CUE MAY DO ALONE — the gateway per-category autonomy policies
  *    (research/draft/send/money/delete/other × auto/ask/never). Tapping a row
- *    cycles its mode and persists — the SAME store Settings → Privacy edits.
+ *    opens the mode sheet (AUTO / ASK FIRST / NEVER, current state checked);
+ *    picking one persists — the SAME store Settings → Privacy edits — and an
+ *    undo toast restores the previous mode.
  *  · STANDING RULES — the trust-rules store (`trust/rules`): the auto-confirm
  *    rules you made ("Auto-confirm from Rachel"). Chip toggles `enabled`.
  *  · CHECKPOINTS — guardrails checkpoints ("Cue always asks before…"),
@@ -37,6 +39,7 @@ import { routes } from "@/utils/routes";
 
 import { GlassCard } from "../glass-card";
 import { SheetShell } from "../sheet-shell";
+import { UndoToast, type Mv3Toast } from "../undo-toast";
 import { microLabel, rise } from "../mv3-kit";
 import { Eyebrow, YouScreen } from "./you-kit";
 import {
@@ -68,10 +71,33 @@ const MODE_LINE: Record<AutonomyMode, string> = {
   never: "Always declined",
 };
 
-const NEXT_MODE: Record<AutonomyMode, AutonomyMode> = {
-  auto: "ask",
-  ask: "never",
-  never: "auto",
+/** Sheet copy per mode — the one-line explanation under each option. */
+const MODE_OPTIONS: ReadonlyArray<{
+  mode: AutonomyMode;
+  label: string;
+  line: string;
+}> = [
+  {
+    mode: "auto",
+    label: "AUTO",
+    line: "Cue runs these on its own — you see them in the ledger",
+  },
+  {
+    mode: "ask",
+    label: "ASK FIRST",
+    line: "Cue holds each one for your OK before acting",
+  },
+  {
+    mode: "never",
+    label: "NEVER",
+    line: "Cue declines these outright — nothing runs",
+  },
+];
+
+const MODE_WORD: Record<AutonomyMode, string> = {
+  auto: "Auto",
+  ask: "Ask first",
+  never: "Never",
 };
 
 function ModeChip({ mode }: { mode: AutonomyMode }) {
@@ -105,6 +131,8 @@ function RuleRow({
   chip,
   isLast,
   onPress,
+  /** Accessible name — falls back to the visible name (a11y: UAT polish). */
+  ariaLabel,
 }: {
   glyph: string;
   glyphColor: string;
@@ -113,10 +141,12 @@ function RuleRow({
   chip: React.ReactNode;
   isLast?: boolean;
   onPress?: () => void;
+  ariaLabel?: string;
 }) {
   return (
     <button
       type="button"
+      aria-label={ariaLabel ?? name}
       disabled={!onPress}
       onClick={() => {
         if (!onPress) return;
@@ -173,6 +203,123 @@ function RuleRow({
       </span>
       {chip}
     </button>
+  );
+}
+
+/**
+ * The category state sheet (UAT P1: a bare tap used to cycle AUTO→ASK→NEVER
+ * silently). Tap now opens this sheet — the three modes with one-line
+ * explanations, current state checked; picking one persists and the caller
+ * shows an undo toast.
+ */
+function ModeSheet({
+  category,
+  current,
+  onPick,
+  onClose,
+}: {
+  category: AutonomyCategory | null;
+  current: AutonomyMode | null;
+  onPick: (mode: AutonomyMode) => void;
+  onClose: () => void;
+}) {
+  const row = category ? CATEGORY_ROW[category] : null;
+  return (
+    <SheetShell
+      open={category !== null}
+      onClose={onClose}
+      label={row ? `${row.name} — when Cue may act` : "When Cue may act"}
+    >
+      {row ? (
+        <div style={{ padding: "2px 2px 8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+            <span
+              aria-hidden
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                background: "var(--mv3-btn2-bg)",
+                color: "var(--mv3-text)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 13,
+              }}
+            >
+              {row.glyph}
+            </span>
+            <span style={{ fontSize: 16, fontWeight: 700 }}>{row.name}</span>
+          </div>
+          <div
+            role="radiogroup"
+            aria-label={`${row.name} mode`}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              marginTop: 14,
+            }}
+          >
+            {MODE_OPTIONS.map((opt) => {
+              const active = current === opt.mode;
+              return (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  aria-label={`${opt.label} — ${opt.line}`}
+                  onClick={() => {
+                    haptic.light();
+                    onPick(opt.mode);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 11,
+                    width: "100%",
+                    textAlign: "left",
+                    border: active
+                      ? "1.5px solid var(--mv3-accent)"
+                      : "1px solid var(--mv3-btn2-border)",
+                    borderRadius: 13,
+                    padding: "12px 13px",
+                    minHeight: 56,
+                    background: active ? "rgba(61,110,232,.1)" : "transparent",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    color: "var(--mv3-text)",
+                  }}
+                >
+                  <ModeChip mode={opt.mode} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: 12,
+                        color: "var(--mv3-muted)",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {opt.line}
+                    </span>
+                  </span>
+                  {active ? (
+                    <span
+                      aria-hidden
+                      style={{ color: "var(--mv3-accent)", fontSize: 14 }}
+                    >
+                      ✓
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </SheetShell>
   );
 }
 
@@ -407,9 +554,36 @@ export function Mv3RulesPage() {
   const guardrails = useGuardrails(assistantId);
   const { rules } = useStandingRules(assistantId);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // The category whose state sheet is open (UAT P1: no more tap-to-cycle).
+  const [modeSheetFor, setModeSheetFor] = useState<AutonomyCategory | null>(
+    null,
+  );
+  const [toast, setToast] = useState<Mv3Toast | null>(null);
 
   const checkpoints: Checkpoint[] = guardrails.data?.checkpoints ?? [];
-  const ruleCount = rules.length + checkpoints.length;
+  // Header count = enabled rows only (UAT: the count must match what's on).
+  const enabledRuleCount =
+    rules.filter((r) => r.enabled === 1).length +
+    checkpoints.filter((c) => c.enabled === 1).length;
+  const totalRuleCount = rules.length + checkpoints.length;
+
+  const pickMode = (category: AutonomyCategory, next: AutonomyMode) => {
+    const previous = policies?.[category] ?? null;
+    setModeSheetFor(null);
+    if (previous === next) return;
+    setCategory.mutate({ category, mode: next });
+    setToast({
+      key: Date.now(),
+      message: `${CATEGORY_ROW[category].name} → ${MODE_WORD[next]}`,
+      actionLabel: previous ? "Undo" : undefined,
+      onAction: previous
+        ? () => {
+            haptic.light();
+            setCategory.mutate({ category, mode: previous });
+          }
+        : undefined,
+    });
+  };
 
   const patchRule = useMutation({
     ...trustRulesByIdPatchMutation(),
@@ -475,7 +649,7 @@ export function Mv3RulesPage() {
       sub={
         guardrails.isLoading
           ? "Reading your rules…"
-          : `${ruleCount} standing rule${ruleCount === 1 ? "" : "s"} · every one you made, none hidden`
+          : `${enabledRuleCount} of ${totalRuleCount} standing rule${totalRuleCount === 1 ? "" : "s"} on · every one listed, none hidden`
       }
     >
       {/* Per-category autonomy defaults. */}
@@ -495,18 +669,15 @@ export function Mv3RulesPage() {
                     : "var(--mv3-amber)"
               }
               name={row.name}
+              ariaLabel={
+                mode
+                  ? `${row.name} — ${MODE_WORD[mode]}. Change when Cue may act`
+                  : row.name
+              }
               line={mode ? MODE_LINE[mode] : "Loading…"}
               chip={mode ? <ModeChip mode={mode} /> : null}
               isLast={i === AUTONOMY_CATEGORIES.length - 1}
-              onPress={
-                mode
-                  ? () =>
-                      setCategory.mutate({
-                        category,
-                        mode: NEXT_MODE[mode],
-                      })
-                  : undefined
-              }
+              onPress={mode ? () => setModeSheetFor(category) : undefined}
             />
           );
         })}
@@ -527,6 +698,9 @@ export function Mv3RulesPage() {
                   glyph="↴"
                   glyphColor={on ? "var(--mv3-green)" : "var(--mv3-faint)"}
                   name={rule.label}
+                  ariaLabel={`${rule.label} — ${on ? "on" : "off"}. ${
+                    on ? "Switch off" : "Switch on"
+                  }`}
                   line={ruleLine(rule)}
                   chip={<span
                     style={{
@@ -543,12 +717,24 @@ export function Mv3RulesPage() {
                     {on ? "AUTO" : "OFF"}
                   </span>}
                   isLast={i === rules.length - 1}
-                  onPress={() =>
+                  onPress={() => {
                     patchRule.mutate({
                       path: { assistant_id: assistantId, id: rule.id },
                       body: { enabled: !on },
-                    })
-                  }
+                    });
+                    setToast({
+                      key: Date.now(),
+                      message: `${rule.label} → ${on ? "off" : "on"}`,
+                      actionLabel: "Undo",
+                      onAction: () => {
+                        haptic.light();
+                        patchRule.mutate({
+                          path: { assistant_id: assistantId, id: rule.id },
+                          body: { enabled: on },
+                        });
+                      },
+                    });
+                  }}
                 />
               );
             })}
@@ -571,6 +757,9 @@ export function Mv3RulesPage() {
                   glyph="‖"
                   glyphColor={on ? "var(--mv3-amber)" : "var(--mv3-faint)"}
                   name={cp.label}
+                  ariaLabel={`Checkpoint: ${cp.label} — ${on ? "on" : "off"}. ${
+                    on ? "Switch off" : "Switch on"
+                  }`}
                   line={
                     on
                       ? cp.enforced
@@ -593,12 +782,24 @@ export function Mv3RulesPage() {
                     {on ? "ASK" : "OFF"}
                   </span>}
                   isLast={i === checkpoints.length - 1}
-                  onPress={() =>
+                  onPress={() => {
                     patchCheckpoint.mutate({
                       path: { assistant_id: assistantId, id: cp.id },
                       body: { enabled: !on },
-                    })
-                  }
+                    });
+                    setToast({
+                      key: Date.now(),
+                      message: `${cp.label} → ${on ? "off" : "on"}`,
+                      actionLabel: "Undo",
+                      onAction: () => {
+                        haptic.light();
+                        patchCheckpoint.mutate({
+                          path: { assistant_id: assistantId, id: cp.id },
+                          body: { enabled: on },
+                        });
+                      },
+                    });
+                  }}
                 />
               );
             })}
@@ -606,11 +807,22 @@ export function Mv3RulesPage() {
         </div>
       ) : null}
 
+      <ModeSheet
+        category={modeSheetFor}
+        current={modeSheetFor ? (policies?.[modeSheetFor] ?? null) : null}
+        onPick={(mode) => {
+          if (modeSheetFor) pickMode(modeSheetFor, mode);
+        }}
+        onClose={() => setModeSheetFor(null)}
+      />
+
       <MakeRuleSheetV3
         assistantId={assistantId}
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
       />
+
+      <UndoToast toast={toast} onClear={() => setToast(null)} />
     </YouScreen>
   );
 }

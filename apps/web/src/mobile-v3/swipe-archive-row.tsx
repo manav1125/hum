@@ -222,6 +222,7 @@ export function SwipeArchiveRow({
         ref={cardRef}
         role="button"
         tabIndex={0}
+        aria-label={`Task: ${title}`}
         className="cue-pressable"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

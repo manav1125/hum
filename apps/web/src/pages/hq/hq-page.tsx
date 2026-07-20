@@ -1554,7 +1554,7 @@ export function HqPage() {
   const { schedules } = useHqSchedules(assistantId);
   const stateQuery = useHomeStateQuery(assistantId);
   const { profile } = useCompanyProfile(assistantId);
-  const { move } = useNextMove(assistantId);
+  const { move, isLoading: moveLoading } = useNextMove(assistantId);
   const { degraded, syncedLabel } = useDegradedState();
   const orientation = useHqOrientation();
   const firstRun = useHqFirstRun();
@@ -1624,6 +1624,7 @@ export function HqPage() {
         assistantId={assistantId}
         userName={stateQuery.data?.userName?.trim() || null}
         move={move}
+        moveLoading={moveLoading}
         review={reviewItems}
         running={running.items}
         cameIn={cameIn}

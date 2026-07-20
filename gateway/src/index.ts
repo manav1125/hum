@@ -12,6 +12,7 @@ import {
 } from "@vellumai/service-contracts/twilio-ingress";
 
 import { AuthRateLimiter } from "./auth-rate-limiter.js";
+import { isSpaShellPath } from "./spa-shell-paths.js";
 import {
   loadOrCreateSigningKey,
   initSigningKey,
@@ -1766,6 +1767,16 @@ async function main() {
       }
       return new Response("Not found", { status: 404 });
     }
+    return serveSpaIndex();
+  }
+
+  /**
+   * Serve the SPA's `index.html` shell (client-side routing fallback).
+   * Shared by `serveSpaAsset` and the pre-app shell paths below.
+   */
+  async function serveSpaIndex(): Promise<Response | undefined> {
+    const dir = process.env.WEB_DIST_DIR;
+    if (!dir) return undefined;
     const index = Bun.file(`${dir}/index.html`);
     if (await index.exists()) {
       return new Response(index, {
@@ -1852,6 +1863,15 @@ async function main() {
     if (req.method === "GET" && url.pathname.startsWith("/assistant/")) {
       const spa = await serveSpaAsset(url.pathname);
       if (spa) return spa;
+    }
+    // Pre-app SPA client routes (/onboarding/*, /welcome, /select-assistant,
+    // /review-terms) live OUTSIDE the /assistant prefix — magic-link emails
+    // and older builds mint them. Serve the shell so the client router can
+    // take over; without this they fall through to the auth gate and the
+    // browser renders raw {"error":"Unauthorized"} JSON (QA P1-7).
+    if (req.method === "GET" && isSpaShellPath(url.pathname)) {
+      const shell = await serveSpaIndex();
+      if (shell) return shell;
     }
     // Bare `/assistant` (no trailing slash) → redirect to the app root. Without
     // this it falls through to the auth gate and returns 401, which a client

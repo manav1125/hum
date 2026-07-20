@@ -143,6 +143,14 @@ export const messageMetadataSchema = z
      * after a history reload. Display marker only.
      */
     voiceTurn: z.boolean().optional(),
+    /**
+     * True when this user message is the work-item runner's injected
+     * run-context preamble (project brief + task context prepended to the
+     * task template). Stamped at persist time by the runner; surfaced on the
+     * messages wire so clients can collapse the scaffolding into a quiet
+     * "Project context" affordance. Display marker only.
+     */
+    taskRunContext: z.boolean().optional(),
     forkSourceMessageId: z.string().optional(),
     /** Image source paths from desktop attachments, keyed by filename. */
     imageSourcePaths: z.record(z.string(), z.string()).optional(),

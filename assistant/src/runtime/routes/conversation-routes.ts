@@ -748,6 +748,7 @@ export function handleListMessages({
     let interrupted: boolean | undefined;
     let interruptedAt: number | undefined;
     let voiceTurn: boolean | undefined;
+    let taskRunContext: boolean | undefined;
     let subagentNotification:
       | {
           subagentId: string;
@@ -773,6 +774,12 @@ export function handleListMessages({
         // live-voice thread writer. Only user rows carry it.
         if (meta.voiceTurn === true && msg.role === "user") {
           voiceTurn = true;
+        }
+        // Injected work-item run context (project brief + task context) —
+        // stamped by the work-item runner at persist time. Clients collapse
+        // the row into a quiet "Project context" affordance.
+        if (meta.taskRunContext === true && msg.role === "user") {
+          taskRunContext = true;
         }
         if (meta.subagentNotification) {
           const n = meta.subagentNotification;
@@ -818,6 +825,7 @@ export function handleListMessages({
       interrupted,
       interruptedAt,
       voiceTurn,
+      taskRunContext,
       subagentNotification,
       slackMessage,
       clientMessageId: msg.clientMessageId ?? undefined,
@@ -975,6 +983,7 @@ export function handleListMessages({
         : {}),
       ...(contentBlocks.length > 0 ? { contentBlocks } : {}),
       ...(m.voiceTurn ? { voiceTurn: true } : {}),
+      ...(m.taskRunContext ? { taskRunContext: true } : {}),
       ...(m.subagentNotification
         ? { subagentNotification: m.subagentNotification }
         : {}),

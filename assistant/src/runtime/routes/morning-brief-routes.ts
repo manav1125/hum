@@ -108,6 +108,22 @@ export interface MorningBrief {
 
 const OVERNIGHT_STATUSES = new Set(["done", "awaiting_review"]);
 const MAX_OVERNIGHT_ITEMS = 12;
+/** Titles shorter than this (trimmed) carry no story — skip them. */
+const MIN_TITLE_CHARS = 4;
+
+/** Normalized title key for duplicate collapsing ("Call the dentist" twice). */
+function titleKey(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * True for titles too degenerate to narrate ("Run it", "ok", empty). The
+ * brief is a story surface — a row whose title says nothing erodes trust in
+ * everything around it.
+ */
+function isDegenerateTitle(title: string): boolean {
+  return title.trim().length < MIN_TITLE_CHARS;
+}
 
 /** Resolve the display attribution for a work-item assignee. */
 function agentLabel(assignee: string | null): string | undefined {
@@ -162,13 +178,23 @@ export function gatherOvernight(sinceMs: number): OvernightItem[] {
   }
 
   const out: Array<OvernightItem & { atMs: number }> = [];
+  const seenTitles = new Set<string>();
   for (const item of items) {
     if (!OVERNIGHT_STATUSES.has(item.status)) continue;
     // Cheap pre-filter: updatedAt is bumped on every status change, so an
     // item whose last update predates the window can't have completed in it.
     if (item.updatedAt < sinceMs) continue;
+    // Content trust (UAT 2026-07-21): degenerate titles read as garbage in
+    // the narration; duplicate captures ("Call the dentist" twice) read as a
+    // glitch. Skip the former, collapse the latter by normalized title.
+    // (listWorkItems returns unique rows, so id-dedupe is implicit; the
+    // title-dedupe below covers double-captured items.)
+    if (isDegenerateTitle(item.title)) continue;
+    const key = titleKey(item.title);
+    if (seenTitles.has(key)) continue;
     const atMs = statusReachedAtMs(item);
     if (atMs < sinceMs) continue;
+    seenTitles.add(key);
 
     out.push({
       id: item.id,
@@ -260,7 +286,10 @@ export function pickAsk(): BriefAsk | null {
     log.warn({ err: String(err) }, "morning-brief: review read failed");
     return null;
   }
-  const top = reviews[0];
+  // Prefer the top-ranked review with a narratable title — a degenerate
+  // headline ("Run it") erodes the whole brief. Fall back to the raw top so
+  // a real ask is never hidden outright.
+  const top = reviews.find((r) => !isDegenerateTitle(r.title)) ?? reviews[0];
   if (!top) return null;
   return {
     id: top.id,
@@ -422,8 +451,13 @@ export async function buildMorningBrief(opts?: {
   // Kick the calendar fetch first so the (synchronous) store reads below
   // overlap with its network time instead of queueing behind it.
   const eventsPromise = gatherCalendarEvents(now);
-  const overnight = gatherOvernight(sinceMs);
   const ask = pickAsk();
+  // Status reconciliation (UAT 2026-07-21): the one ask IS the next move —
+  // narrating the same item under "while you slept" too tells the user it's
+  // both finished and pending. The ask wins; the overnight list drops it.
+  const overnight = gatherOvernight(sinceMs).filter(
+    (item) => !(ask?.kind === "review" && item.id === ask.id),
+  );
   const dueToday = gatherDueToday(now);
   const events = await eventsPromise;
 
@@ -437,6 +471,15 @@ export async function buildMorningBrief(opts?: {
   ]
     // Timed entries in chronological order; untimed (all-day) entries first.
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
+    // Duplicate captures (same title at the same slot) collapse to one row.
+    .filter(
+      ((seen) => (d: DayEntry) => {
+        const key = `${titleKey(d.title)}|${d.time ?? ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })(new Set<string>()),
+    )
     .slice(0, MAX_DAY_ENTRIES);
 
   return {

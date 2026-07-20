@@ -165,6 +165,36 @@ describe("getProjectWithStats", () => {
     expect(stats2.nextTask?.id).not.toBe(queuedFar.id);
   });
 
+  test("archived and cancelled items stay out of the progress denominator", () => {
+    const project = createProject({ title: "Denominator" });
+    const taskId = createTask({ title: "t", template: "do it" }).id;
+
+    const doneItem = createWorkItem({
+      taskId,
+      title: "Done",
+      projectId: project.id,
+    });
+    updateWorkItem(doneItem.id, { status: "done" });
+    const dismissed = createWorkItem({
+      taskId,
+      title: "Dismissed",
+      projectId: project.id,
+    });
+    updateWorkItem(dismissed.id, { status: "archived" });
+    const cancelled = createWorkItem({
+      taskId,
+      title: "Cancelled",
+      projectId: project.id,
+    });
+    updateWorkItem(cancelled.id, { status: "cancelled" });
+
+    const stats = getProjectWithStats(project.id)!.stats;
+    // 1 done of 1 counted — the dismissed/cancelled captures don't deflate %.
+    expect(stats.counts.done).toBe(1);
+    expect(stats.counts.total).toBe(1);
+    expect(stats.counts.open).toBe(0);
+  });
+
   test("listProjectsWithStats attaches stats to every project", () => {
     const p = createProject({ title: "P" });
     const taskId = createTask({ title: "t", template: "x" }).id;

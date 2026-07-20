@@ -130,13 +130,17 @@ export function SidebarShell({
           </aside>
 
           {isMenuRoute ? (
-            <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-y-auto pb-6 md:hidden">
+            <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-y-auto pb-6 md:hidden max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden">
               {sidebar}
             </div>
           ) : null}
 
+          {/* max-md: desktop scrollbar gutters read as chrome / eat edge
+              margin on phone-width passthrough pages (UAT: "usage tiles clip
+              right edge") — mobile scrolls by gesture, so hide the bar there
+              only. Desktop rendering is untouched. */}
           <main
-            className={`min-w-0 min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-6 md:flex md:px-6 md:pt-0 ${
+            className={`min-w-0 min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-6 md:flex md:px-6 md:pt-0 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden ${
               isMenuRoute ? "hidden" : "flex"
             }`}
           >

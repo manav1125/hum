@@ -107,26 +107,41 @@ describe("morning brief endpoint", () => {
     );
   });
 
-  test("overnight: done + review items in-window, review leads the story", async () => {
+  test("overnight: done + review items in-window; the ask never doubles as an overnight row", async () => {
     const task = createTask({ title: "t", template: "..." });
     const done = createWorkItem({
       taskId: task.id,
       title: "14 emails triaged & filed",
     });
     updateWorkItem(done.id, { status: "done" });
-    const review = createWorkItem({ taskId: task.id, title: "Acme one-pager" });
-    updateWorkItem(review.id, { status: "awaiting_review" });
+    const reviewTop = createWorkItem({
+      taskId: task.id,
+      title: "Acme one-pager",
+    });
+    updateWorkItem(reviewTop.id, { status: "awaiting_review" });
+    const reviewOther = createWorkItem({
+      taskId: task.id,
+      title: "Pricing follow-up",
+    });
+    updateWorkItem(reviewOther.id, { status: "awaiting_review" });
     // Still-running work is not an overnight win.
     const running = createWorkItem({ taskId: task.id, title: "Still running" });
     updateWorkItem(running.id, { status: "running" });
 
     const brief = await callBrief();
-    expect(brief.overnight.map((o) => o.id)).toEqual([review.id, done.id]);
-    expect(brief.overnight[0]).toMatchObject({
-      title: "Acme one-pager",
-      state: "review",
-      kind: "work_item",
-    });
+    // The single ask is one of the review items…
+    expect(brief.ask?.kind).toBe("review");
+    const askId = brief.ask!.id;
+    // …and that exact item is NOT narrated again under "while you slept"
+    // (status reconciliation: a next-move isn't also "finished").
+    expect(brief.overnight.map((o) => o.id)).not.toContain(askId);
+    const otherReviewId =
+      askId === reviewTop.id ? reviewOther.id : reviewTop.id;
+    expect(brief.overnight.map((o) => o.id)).toEqual([
+      otherReviewId,
+      done.id,
+    ]);
+    expect(brief.overnight[0].state).toBe("review");
     expect(brief.overnight[1]).toMatchObject({
       title: "14 emails triaged & filed",
       state: "done",
@@ -164,10 +179,67 @@ describe("morning brief endpoint", () => {
       assignee: "ops", // case-insensitive match against the Ops agent
     });
     updateWorkItem(wi.id, { status: "awaiting_review" });
+    // A pending approval takes the ask slot, so the review item stays an
+    // overnight row (otherwise the reconciliation pass would claim it).
+    register("req-attr", {
+      conversationId: "conv-attr",
+      kind: "confirmation",
+      confirmationDetails: {
+        toolName: "send_email",
+        input: {},
+        riskLevel: "high",
+        allowlistOptions: [],
+        scopeOptions: [],
+      },
+    });
 
     const brief = await callBrief();
     expect(brief.overnight[0].project).toBe("Acme renewal");
     expect(brief.overnight[0].agent).toBe("Ops");
+  });
+
+  test("overnight: duplicate titles collapse and degenerate titles are skipped", async () => {
+    const task = createTask({ title: "t", template: "..." });
+    const dentistA = createWorkItem({
+      taskId: task.id,
+      title: "Call the dentist",
+    });
+    updateWorkItem(dentistA.id, { status: "done" });
+    const dentistB = createWorkItem({
+      taskId: task.id,
+      title: "  call the  dentist ", // same story, messier capture
+    });
+    updateWorkItem(dentistB.id, { status: "done" });
+    const garbage = createWorkItem({ taskId: task.id, title: "ok" });
+    updateWorkItem(garbage.id, { status: "done" });
+    const real = createWorkItem({
+      taskId: task.id,
+      title: "File the expense report",
+    });
+    updateWorkItem(real.id, { status: "done" });
+
+    const brief = await callBrief();
+    const titles = brief.overnight.map((o) => o.title);
+    // One dentist row, no "ok" row, the real row present.
+    expect(
+      titles.filter((t) => t.toLowerCase().includes("dentist")),
+    ).toHaveLength(1);
+    expect(titles).not.toContain("ok");
+    expect(titles).toContain("File the expense report");
+  });
+
+  test("ask: a degenerate-titled top review yields to the next narratable one", async () => {
+    const task = createTask({ title: "t", template: "..." });
+    const garbage = createWorkItem({ taskId: task.id, title: "ok" });
+    updateWorkItem(garbage.id, { status: "awaiting_review" });
+    const real = createWorkItem({
+      taskId: task.id,
+      title: "Review the pricing page",
+    });
+    updateWorkItem(real.id, { status: "awaiting_review" });
+
+    const brief = await callBrief();
+    expect(brief.ask?.title).toBe("Review the pricing page");
   });
 
   test("overnight: the implicit house assignee 'cue' carries no agent chip", async () => {

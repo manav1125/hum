@@ -21,7 +21,7 @@
  * metadata today.
  */
 import type React from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +30,7 @@ import remarkGfm from "remark-gfm";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { relativeTime } from "@/domains/activity/theme";
+import { goBackWithFallback } from "@/domains/chat/utils/conversation-navigation";
 import {
   workitemsByIdCompletePostMutation,
   workitemsByIdOutputGetOptions,
@@ -41,6 +42,7 @@ import { AuroraBackdrop, cardBody } from "@/mobile-v3";
 import { fullPatchBody } from "@/mobile-v3/work-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
+import { routes } from "@/utils/routes";
 
 const REDO_CHIPS = [
   "Make it shorter",
@@ -48,6 +50,31 @@ const REDO_CHIPS = [
   "Wrong data",
   "Lead with…",
 ];
+
+/** Items untouched for this long read as stale even without a due date. */
+const STALE_AGE_MS = 7 * 86_400_000;
+
+/**
+ * Stale detection (UAT P1-3): an awaiting-review card whose task date passed
+ * (dueAt before today) or that has sat untouched for a week gets a quiet
+ * amber "From Jul 4 — likely stale" marker so a 17-day-old deliverable can't
+ * masquerade as fresh work.
+ */
+function staleLabel(item: HqWorkItem, now = Date.now()): string | null {
+  const duePassed = item.dueAt != null && item.dueAt < now - 86_400_000;
+  const aged = item.updatedAt < now - STALE_AGE_MS;
+  if (!duePassed && !aged) return null;
+  const fromMs = duePassed ? item.dueAt! : item.updatedAt;
+  const from = new Date(fromMs).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  return `From ${from} — likely stale`;
+}
+
+/** How long the actions stay non-interactive after an Approve lands (so the
+ *  next card's Approve can't swallow a double-tap — UAT P1-9 pager safety). */
+const POST_APPROVE_BEAT_MS = 400;
 
 /** Narrow the opaque run `output` payload (same read the Review lane does). */
 function narrowOutput(raw: unknown): {
@@ -299,9 +326,11 @@ export function ReviewQueuePage() {
   useActivitySync(assistantId, true);
 
   const awaiting = useHqWorkItems(assistantId, "awaiting_review");
+  // Newest-first (UAT P1-3): the freshest deliverable leads the pager; the
+  // 17-day-stale card no longer greets the user.
   const queue = useMemo(
     () =>
-      [...awaiting.items].sort((a, b) => a.updatedAt - b.updatedAt),
+      [...awaiting.items].sort((a, b) => b.updatedAt - a.updatedAt),
     [awaiting.items],
   );
 
@@ -322,6 +351,20 @@ export function ReviewQueuePage() {
 
   const queryClient = useQueryClient();
   const invalidate = () => void queryClient.invalidateQueries();
+
+  // Pager safety: after an Approve lands, the actions go non-interactive for
+  // a beat so the NEXT card's Approve is never armed under the finger that
+  // just tapped. The header (with the count) stays pinned throughout.
+  const [approveBeat, setApproveBeat] = useState(false);
+  useEffect(() => {
+    if (!approveBeat) return;
+    const id = window.setTimeout(
+      () => setApproveBeat(false),
+      POST_APPROVE_BEAT_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [approveBeat]);
+
   const approve = useMutation({
     ...workitemsByIdCompletePostMutation(),
     onSuccess: () => {
@@ -337,7 +380,8 @@ export function ReviewQueuePage() {
       invalidate();
     },
   });
-  const busy = approve.isPending || rerun.isPending || patch.isPending;
+  const busy =
+    approve.isPending || rerun.isPending || patch.isPending || approveBeat;
 
   const advance = (from: HqWorkItem) => {
     const next =
@@ -351,7 +395,12 @@ export function ReviewQueuePage() {
     haptic.medium();
     approve.mutate(
       { path: { assistant_id: assistantId, id: target.id }, body: {} },
-      { onSuccess: () => advance(target) },
+      {
+        onSuccess: () => {
+          setApproveBeat(true);
+          advance(target);
+        },
+      },
     );
   };
 
@@ -402,7 +451,12 @@ export function ReviewQueuePage() {
       style={{
         position: "relative",
         height: "100%",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
         display: "flex",
         flexDirection: "column",
         background: "var(--mv3-bg)",
@@ -418,7 +472,10 @@ export function ReviewQueuePage() {
           display: "flex",
           alignItems: "center",
           gap: 10,
-          padding: "4px 20px 8px",
+          // Header clears the iOS status bar — the page renders
+          // edge-to-edge, so the row carries the top inset itself.
+          padding:
+            "calc(4px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) 20px 8px",
           flexShrink: 0,
           position: "relative",
           zIndex: 2,
@@ -430,7 +487,9 @@ export function ReviewQueuePage() {
           aria-label="Back"
           onClick={() => {
             haptic.light();
-            navigate(-1);
+            // Deep-link / push entries have no in-app history — land on
+            // Today instead of exiting to a blank external page.
+            goBackWithFallback(navigate, routes.hq);
           }}
           style={{
             fontSize: 16,
@@ -462,6 +521,12 @@ export function ReviewQueuePage() {
             <div style={{ fontSize: 11, color: "var(--mv3-violet)" }}>
               ◱ Ready for review
               {item.updatedAt ? ` · ${relativeTime(item.updatedAt)}` : ""}
+              {staleLabel(item) ? (
+                <span style={{ color: "var(--mv3-amber)" }}>
+                  {" "}
+                  · {staleLabel(item)}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -500,7 +565,8 @@ export function ReviewQueuePage() {
         </div>
       )}
 
-      {/* Action sheet pinned below the canvas. */}
+      {/* Action sheet pinned below the canvas. Non-interactive during the
+          post-approve beat so the next card's Approve is never pre-armed. */}
       {item ? (
         <div
           style={{
@@ -512,6 +578,9 @@ export function ReviewQueuePage() {
             position: "relative",
             zIndex: 5,
             padding: "14px 18px 10px",
+            pointerEvents: approveBeat ? "none" : undefined,
+            opacity: approveBeat ? 0.7 : 1,
+            transition: "opacity .15s ease",
           }}
         >
           <div style={{ display: "flex", gap: 9 }}>

@@ -37,7 +37,10 @@ import {
   isRemovableSkill,
   type SkillInfo,
 } from "@/domains/intelligence/skills/types";
-import { rebrandSkillProse } from "@/domains/intelligence/skills/utils";
+import {
+  rebrandSkillProse,
+  skillOriginLabel,
+} from "@/domains/intelligence/skills/utils";
 import { useSkillCategories } from "@/domains/intelligence/skills/use-skill-categories";
 import { useSkillDetailFiles } from "@/domains/intelligence/skills/use-skill-detail-files";
 import { SkillFileContent } from "@/domains/intelligence/components/skills/skill-file-content";
@@ -366,7 +369,7 @@ function SkillManage({
   });
 
   const originLine = [
-    skill.sourceRepo ?? skill.author ?? skill.origin,
+    skill.sourceRepo ?? skill.author ?? skillOriginLabel(skill.origin),
     skill.version ? `v${skill.version}` : null,
   ]
     .filter(Boolean)
@@ -922,7 +925,7 @@ export function Mv3SkillsPage({
                         marginTop: 1,
                       }}
                     >
-                      {skill.author ?? skill.origin}
+                      {skill.author ?? skillOriginLabel(skill.origin)}
                       {typeof skill.installs === "number"
                         ? ` · ${skill.installs.toLocaleString()} installs`
                         : ""}
@@ -1036,7 +1039,9 @@ export function Mv3SkillsPage({
                       marginTop: 1,
                     }}
                   >
-                    {skill.kind === "bundled" ? "built in" : skill.origin}
+                    {skill.kind === "bundled"
+                      ? "built in"
+                      : skillOriginLabel(skill.origin)}
                     {skill.version ? ` · v${skill.version}` : ""}
                   </span>
                 </span>

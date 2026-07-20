@@ -21,13 +21,13 @@ import {
   projectsByIdWorkitemsGetOptions,
   projectsByIdWorkitemsGetQueryKey,
   projectsGetOptions,
-  projectsGetQueryKey,
   projectsPostMutation,
   projectsReorderPostMutation,
   workitemsByIdPatchMutation,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ProjectsGetResponses } from "@/generated/daemon/types.gen";
+import { rateLimitRetry } from "@/utils/rate-limit-retry";
 
 /** Per-status tally + most-urgent next task, straight off the stats endpoint. */
 export interface ProjectStats {
@@ -109,6 +109,28 @@ export function useProjects(assistantId: string) {
   };
 }
 
+/**
+ * Archived projects — the daemon's `GET /projects` defaults to ACTIVE only,
+ * so the Done/Archived segment must ask for `status=archived` explicitly.
+ * (Filtering the default list for `status === "archived"` matches nothing —
+ * that was the "Nothing archived yet" bug right after archiving.)
+ */
+export function useArchivedProjects(assistantId: string) {
+  const query = useQuery({
+    ...projectsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { status: "archived" },
+    }),
+    staleTime: 20_000,
+  });
+  const projects: ProjectView[] = (query.data?.projects ?? []).map(toView);
+  return {
+    projects,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  };
+}
+
 /** A single project's canonical record (drives the detail header + brief). */
 export function useProject(assistantId: string, projectId: string) {
   const query = useQuery({
@@ -130,8 +152,17 @@ function invalidateProjects(
   queryClient: ReturnType<typeof useQueryClient>,
   assistantId: string,
 ) {
+  void assistantId;
+  // Predicate (not the exact key): the archived variant (`status=archived`)
+  // hashes to a different single-element key, and archive/unarchive writes
+  // must refresh both lists.
   return queryClient.invalidateQueries({
-    queryKey: projectsGetQueryKey({ path: { assistant_id: assistantId } }),
+    predicate: (q) => {
+      const first = q.queryKey[0] as { _id?: unknown } | undefined;
+      return (
+        first != null && typeof first === "object" && first._id === "projectsGet"
+      );
+    },
   });
 }
 
@@ -139,6 +170,7 @@ export function useCreateProject(assistantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...projectsPostMutation(),
+    ...rateLimitRetry,
     onSettled: () => void invalidateProjects(queryClient, assistantId),
   });
 }
@@ -148,6 +180,7 @@ export function usePatchProject(assistantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...projectsByIdPatchMutation(),
+    ...rateLimitRetry,
     onSettled: (_d, _e, variables) => {
       void invalidateProjects(queryClient, assistantId);
       const id = variables?.path?.id;
@@ -166,6 +199,7 @@ export function useDeleteProject(assistantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...projectsByIdDeleteMutation(),
+    ...rateLimitRetry,
     onSettled: () => void invalidateProjects(queryClient, assistantId),
   });
 }
@@ -174,6 +208,7 @@ export function useReorderProjects(assistantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...projectsReorderPostMutation(),
+    ...rateLimitRetry,
     onSettled: () => void invalidateProjects(queryClient, assistantId),
   });
 }
@@ -187,6 +222,7 @@ export function usePatchWorkItem(assistantId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     ...workitemsByIdPatchMutation(),
+    ...rateLimitRetry,
     onSettled: (_d, _e, variables) => {
       // The move-between-projects path touches two boards; refresh the list
       // level (all projects' stats) + any per-project board we know about.

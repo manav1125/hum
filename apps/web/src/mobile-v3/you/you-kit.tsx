@@ -64,7 +64,12 @@ export function YouScreen({
         position: "relative",
         height: "100%",
         minHeight: 0,
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
         display: "flex",
         flexDirection: "column",
         background: "var(--mv3-bg)",

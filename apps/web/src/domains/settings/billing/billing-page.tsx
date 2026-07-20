@@ -101,7 +101,9 @@ export function BillingPage() {
   }, [setSearchParams]);
 
   if (billingGate === "gated") {
-    return <Navigate replace to={routes.settings.general} />;
+    // Settings INDEX, not the general leaf — mobile renders Appearance at
+    // /general, which read as a silent mis-route (UAT P1).
+    return <Navigate replace to={routes.settings.root} />;
   }
 
   if (billingGate === "disabled") {

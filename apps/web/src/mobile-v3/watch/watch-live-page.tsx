@@ -63,6 +63,25 @@ function stepLabel(e: {
   }
 }
 
+
+/**
+ * Collapse consecutive trail events that render the same label — the daemon
+ * writes both a `status_changed` and a `run_started` event on run start, so
+ * without this the checklist shows "✓ Started the run" twice.
+ */
+function dedupeTrail<T extends { kind: string; fromStatus: string | null; toStatus: string | null }>(
+  trail: T[],
+  label: (e: T) => string,
+): T[] {
+  const out: T[] = [];
+  for (const e of trail) {
+    const prev = out[out.length - 1];
+    if (prev && label(prev) === label(e)) continue;
+    out.push(e);
+  }
+  return out;
+}
+
 /** One timeline node: ✓ done · pulsing current · dashed future. */
 function StreamNode({
   variant,
@@ -232,7 +251,11 @@ export function WatchLivePage() {
     enabled: Boolean(workItemId),
   });
   const trail = useMemo(
-    () => [...(eventsQuery.data?.events ?? [])].sort((a, b) => a.at - b.at),
+    () =>
+      dedupeTrail(
+        [...(eventsQuery.data?.events ?? [])].sort((a, b) => a.at - b.at),
+        stepLabel,
+      ),
     [eventsQuery.data?.events],
   );
   const runStart =
@@ -257,7 +280,12 @@ export function WatchLivePage() {
       style={{
         position: "relative",
         height: "100%",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
         display: "flex",
         flexDirection: "column",
         background: "var(--mv3-bg)",

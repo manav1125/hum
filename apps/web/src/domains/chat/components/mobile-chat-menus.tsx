@@ -46,10 +46,7 @@ import { useComposerSettings } from "@/domains/chat/components/composer-settings
 import { useConversationActions } from "@/domains/chat/hooks/use-conversation-actions";
 import { useCanUseLlmInspector } from "@/domains/chat/inspector/access";
 import { isChannelConversation } from "@/domains/chat/utils/conversation-channel";
-import {
-  navigateToConversation,
-  navigateToNewConversation,
-} from "@/domains/chat/utils/conversation-navigation";
+import { navigateAfterArchive } from "@/domains/chat/utils/conversation-navigation";
 import { useConversationListQuery } from "@/hooks/conversation-queries";
 import { SheetShell, microLabel } from "@/mobile-v3";
 import { useIsNativePlatform } from "@/runtime/native-auth";
@@ -315,12 +312,12 @@ export function MobileConversationActionsSheet({
   // Mutations share the TanStack cache (snapshots + invalidations hit the
   // same conversation-list keys), so this second instance stays consistent.
   const prePinGroupIdsRef = useRef<Map<string, string | undefined>>(new Map());
-  const switchConversation = useCallback(
-    (key: string) => navigateToConversation(navigate, key),
-    [navigate],
-  );
-  const startNewConversation = useCallback(
-    (opts?: { silent?: boolean }) => navigateToNewConversation(navigate, opts),
+  // The hook only calls these callbacks from its post-archive paths — route
+  // to the Chats index (mobile) / Today instead of the next conversation
+  // (UAT P1-9). This sheet only archives the ACTIVE conversation, so the
+  // navigate always fires.
+  const postArchiveNavigate = useCallback(
+    () => navigateAfterArchive(navigate),
     [navigate],
   );
   const {
@@ -332,8 +329,8 @@ export function MobileConversationActionsSheet({
     assistantId,
     activeConversationId,
     conversations,
-    switchConversation,
-    startNewConversation,
+    switchConversation: postArchiveNavigate,
+    startNewConversation: postArchiveNavigate,
     prePinGroupIdsRef,
   });
 

@@ -162,6 +162,10 @@ export function mapRuntimeToDisplayMessage(
   if (m.slackMessage) msg.slackMessage = m.slackMessage;
   if (m.interrupted) msg.interrupted = true;
   if (m.voiceTurn) msg.voiceTurn = true;
+  // Data-driven task-run-context stamp (daemon stamps new runs; the published
+  // wire type may lag codegen, so read it as a typed optional extension).
+  if ((m as ConversationMessage & { taskRunContext?: boolean }).taskRunContext)
+    msg.taskRunContext = true;
   if (toolCalls) msg.toolCalls = toolCalls;
   if (timestamp != null) msg.timestamp = timestamp;
 

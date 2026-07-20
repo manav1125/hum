@@ -366,7 +366,12 @@ function V3Shell({
       style={{
         position: "relative",
         height: "100dvh",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
         display: "flex",
         flexDirection: "column",
         background: "var(--mv3-bg)",
@@ -383,7 +388,7 @@ function V3Shell({
       />
       <div
         style={{
-          padding: "calc(env(safe-area-inset-top, 0px) + 10px) 24px 0",
+          padding: "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) 24px 0",
           flexShrink: 0,
           position: "relative",
           zIndex: 2,
@@ -408,7 +413,7 @@ function V3Shell({
         style={{
           flexShrink: 0,
           padding:
-            "10px 18px calc(env(safe-area-inset-bottom, 0px) + 10px)",
+            "10px 18px calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 10px)",
           position: "relative",
           zIndex: 5,
           display: "flex",

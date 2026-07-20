@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
+import { rateLimitRetry } from "@/utils/rate-limit-retry";
 
 import { mv3Mono } from "./mv3-kit";
 
@@ -206,6 +207,7 @@ export function useRunNow(assistantId: string): {
   const [started, setStarted] = useState<Set<string>>(() => new Set());
   const run = useMutation({
     ...workitemsByIdRunPostMutation(),
+    ...rateLimitRetry,
     onSuccess: () => {
       haptic.success();
       void queryClient.invalidateQueries({
@@ -214,7 +216,11 @@ export function useRunNow(assistantId: string): {
           return (
             first != null &&
             typeof first === "object" &&
-            (first._id === "workitemsGet" || first._id === "activityGet")
+            (first._id === "workitemsGet" ||
+              first._id === "activityGet" ||
+              // Project cards derive running counts / % from projectsGet
+              // stats — refresh them too so the card doesn't go stale.
+              String(first._id ?? "").startsWith("projects"))
           );
         },
       });
@@ -323,23 +329,36 @@ export function ParkedMark(): React.ReactElement {
 const COACH_KEY = "mv3-parked-coach-shown";
 
 /**
- * First-run coaching (session-scoped): the first surface in a session that
- * renders a parked task shows one quiet footnote under its list; the
- * sessionStorage stamp keeps every later mount silent.
+ * First-run coaching, deterministic (UAT 2026-07-21): the line shows while
+ * ANY parked row is visible on a surface, capped at once per surface per
+ * session. The old single global stamp made it a race — whichever surface
+ * mounted first (even one the user never looked at) consumed the stamp and
+ * every other surface stayed silent, so the coachline appeared to come and
+ * go at random.
  */
-export function ParkedCoachline({ hasParked }: { hasParked: boolean }) {
+export function ParkedCoachline({
+  hasParked,
+  surface = "default",
+}: {
+  hasParked: boolean;
+  /** Per-surface session cap key ("all-work", "project-detail", …). */
+  surface?: string;
+}) {
   const [show, setShow] = useState(false);
   useEffect(() => {
     if (!hasParked || show) return;
+    const key = `${COACH_KEY}:${surface}`;
     try {
-      if (sessionStorage.getItem(COACH_KEY)) return;
-      sessionStorage.setItem(COACH_KEY, "1");
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
     } catch {
       // Storage unavailable — still coach this mount.
     }
     setShow(true);
-  }, [hasParked, show]);
-  if (!show) return null;
+  }, [hasParked, show, surface]);
+  // The line rides with the parked rows: if the last parked row leaves
+  // (run/dismissed), the coaching goes with it instead of dangling.
+  if (!show || !hasParked) return null;
   return (
     <div
       style={{

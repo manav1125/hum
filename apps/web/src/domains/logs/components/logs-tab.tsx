@@ -48,6 +48,18 @@ interface LogsTabProps {
 
 const TRACE_EVENT_LIMIT = 500;
 
+/** Hard client-side deadline: a hanging trace request must surface an error
+ *  state with Retry, not an infinite spinner (mobile UAT P2). */
+const TRACE_REQUEST_TIMEOUT_MS = 15_000;
+
+/** React-Query cancel signal + a hard timeout, in one AbortSignal. */
+function withTimeout(signal: AbortSignal, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return typeof AbortSignal.any === "function"
+    ? AbortSignal.any([signal, timeout])
+    : timeout;
+}
+
 export function LogsTab({ assistantId }: LogsTabProps) {
   const [selectedConversationId, setSelectedConversationId] = useState<
     string | null
@@ -111,14 +123,20 @@ export function LogsTab({ assistantId }: LogsTabProps) {
     isLoading: isLoadingEvents,
     isError,
     error,
+    refetch: refetchEvents,
   } = useQuery({
     queryKey: ["trace-events", assistantId, activeConversationId],
-    queryFn: () =>
-      fetchTraceEvents(assistantId, {
-        conversationId: activeConversationId,
-        limit: TRACE_EVENT_LIMIT,
-      }),
+    queryFn: ({ signal }) =>
+      fetchTraceEvents(
+        assistantId,
+        {
+          conversationId: activeConversationId,
+          limit: TRACE_EVENT_LIMIT,
+        },
+        { signal: withTimeout(signal, TRACE_REQUEST_TIMEOUT_MS) },
+      ),
     enabled: activeConversationId.length > 0,
+    retry: 1,
   });
 
   const events = useMemo<TraceEventRow[]>(() => data?.events ?? [], [data]);
@@ -167,10 +185,14 @@ export function LogsTab({ assistantId }: LogsTabProps) {
           ) : isError ? (
             <ErrorMessage
               message={
-                error instanceof Error
-                  ? error.message
-                  : "Failed to load trace events."
+                error instanceof DOMException &&
+                (error.name === "TimeoutError" || error.name === "AbortError")
+                  ? "The trace request timed out."
+                  : error instanceof Error && error.message
+                    ? error.message
+                    : "Failed to load trace events."
               }
+              onRetry={() => void refetchEvents()}
             />
           ) : (
             <>
@@ -501,7 +523,13 @@ function EmptyPlaceholder({
   );
 }
 
-function ErrorMessage({ message }: { message: string }) {
+function ErrorMessage({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   return (
     <div
       className="text-body-medium-lighter flex items-start gap-3 rounded-md border px-4 py-3"
@@ -515,7 +543,21 @@ function ErrorMessage({ message }: { message: string }) {
         className="h-5 w-5 shrink-0"
         style={{ color: "var(--system-negative-strong)" }}
       />
-      <span>{message}</span>
+      <span className="flex-1">{message}</span>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="shrink-0 rounded-md border px-3 py-1 text-body-small-default"
+          style={{
+            borderColor: "var(--border-base)",
+            color: "var(--content-default)",
+            cursor: "pointer",
+          }}
+        >
+          Retry
+        </button>
+      ) : null}
     </div>
   );
 }

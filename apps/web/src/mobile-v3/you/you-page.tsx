@@ -155,8 +155,10 @@ function TrackRecord({ assistantId }: { assistantId: string }) {
   const { rules } = useStandingRules(assistantId);
 
   const summary = data?.ledger.summary ?? null;
+  // Enabled rows only — must match the Rules screen's header count.
   const ruleCount =
-    (data ? data.checkpoints.length : 0) + rules.length;
+    (data ? data.checkpoints.filter((c) => c.enabled === 1).length : 0) +
+    rules.filter((r) => r.enabled === 1).length;
 
   return (
     <GlassCard padding="15px 16px" style={rise(0.25)}>
@@ -369,7 +371,11 @@ export function Mv3YouPage() {
           }
           iconBg="rgba(79,199,199,.15)"
           label="Connections"
-          meta={liveCount != null && liveCount > 0 ? `${liveCount} live` : undefined}
+          meta={
+            liveCount != null && liveCount > 0
+              ? `${liveCount} linked`
+              : undefined
+          }
           metaColor="var(--mv3-green)"
           onPress={() => navigate(routes.connectors)}
         />

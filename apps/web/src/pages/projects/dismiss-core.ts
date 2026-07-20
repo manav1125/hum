@@ -13,6 +13,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { workitemsByIdPatchMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import { fullPatchBody } from "@/mobile-v3/work-kit";
+import { rateLimitRetry } from "@/utils/rate-limit-retry";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 
 export interface DismissHandlers {
@@ -45,7 +46,7 @@ export function useDismissEngine(
   leavingId: string | null;
 } {
   const queryClient = useQueryClient();
-  const patch = useMutation({ ...workitemsByIdPatchMutation() });
+  const patch = useMutation({ ...workitemsByIdPatchMutation(), ...rateLimitRetry });
   const [gone, setGone] = useState<Set<string>>(() => new Set());
   const [leavingId, setLeavingId] = useState<string | null>(null);
 

@@ -1,5 +1,6 @@
 import type { NavigateFunction } from "react-router";
 
+import { MOBILE_MEDIA_QUERY } from "@/hooks/use-is-mobile";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -47,4 +48,41 @@ export function navigateToNewConversation(
   useConversationStore.getState().setActiveConversationId(draftId);
   void navigate(routes.conversation(draftId));
   requestComposerFocus();
+}
+
+/**
+ * Post-archive landing (mobile UAT P1-9): archiving the ACTIVE conversation
+ * must not auto-drop the user into the next real conversation. Mobile lands
+ * on the Chats index; desktop lands on Today (HQ). `replace` so Back does
+ * not return to the just-archived transcript.
+ *
+ * Pure imperative function — safe to pass where a
+ * `switchConversation(key)` / `startNewConversation(opts)` callback is
+ * expected (extra args are ignored).
+ */
+export function navigateAfterArchive(navigate: NavigateFunction): void {
+  const isMobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+  void navigate(isMobile ? routes.conversations : routes.hq, {
+    replace: true,
+  });
+}
+
+/**
+ * Back with a safe origin: pops in-app history when it exists, otherwise
+ * lands on `fallback` (default Today/HQ). Raw `navigate(-1)` on a deep-link
+ * or push-notification entry (React Router history index 0) exits to a blank
+ * external page — the router stamps its index on `history.state.idx`, so 0
+ * means "this is the first in-app entry".
+ */
+export function goBackWithFallback(
+  navigate: NavigateFunction,
+  fallback: string = routes.hq,
+): void {
+  const idx =
+    (window.history.state as { idx?: number } | null | undefined)?.idx ?? 0;
+  if (idx > 0) {
+    void navigate(-1);
+  } else {
+    void navigate(fallback, { replace: true });
+  }
 }

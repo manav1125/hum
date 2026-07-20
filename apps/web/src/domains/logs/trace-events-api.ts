@@ -31,6 +31,7 @@ export interface FetchTraceEventsParams {
 export async function fetchTraceEvents(
   assistantId: string,
   params: FetchTraceEventsParams,
+  options?: { signal?: AbortSignal },
 ): Promise<TraceEventsListResponse> {
   const { data, response } = await traceeventsGet({
     path: { assistant_id: assistantId },
@@ -39,6 +40,7 @@ export async function fetchTraceEvents(
       limit: params.limit,
       afterSequence: params.afterSequence,
     },
+    signal: options?.signal,
     throwOnError: false,
   });
   if (!response?.ok) {

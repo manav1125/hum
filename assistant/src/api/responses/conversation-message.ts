@@ -495,6 +495,16 @@ export const ConversationMessageSchema = z.object({
    */
   voiceTurn: z.boolean().optional(),
   /**
+   * True when this user row is the work-item runner's injected run-context
+   * preamble ("You are working a task inside a project…" + project brief +
+   * task context) prepended to the task template. Stamped in message metadata
+   * at persist time by the runner and surfaced here so clients can collapse
+   * the scaffolding into a quiet "Project context" affordance instead of
+   * rendering it as a raw user bubble. Only user rows carry it; absent on
+   * rows persisted by older daemons.
+   */
+  taskRunContext: z.boolean().optional(),
+  /**
    * True when this assistant turn died without finishing (the daemon was
    * restarted or crashed mid-generation) and boot recovery marked it. Any
    * partially-streamed content the row holds is still shipped; clients

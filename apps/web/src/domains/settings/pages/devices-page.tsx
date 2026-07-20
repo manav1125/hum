@@ -28,7 +28,10 @@ export function DevicesPage() {
   const devices = (data?.results ?? []) as Assistant[];
 
   if (platformGate === "gated") {
-    return <Navigate replace to={routes.settings.general} />;
+    // Land on the settings INDEX, not a sibling leaf — on mobile the general
+    // route renders the Appearance leaf, which read as a silent mis-route
+    // (UAT P1). Desktop's index route renders General anyway.
+    return <Navigate replace to={routes.settings.root} />;
   }
 
   if (platformGate === "disabled") {

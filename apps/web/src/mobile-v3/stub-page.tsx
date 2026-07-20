@@ -14,7 +14,12 @@ export function Mv3StubPage({ title }: { title: string }) {
         background: "var(--mv3-bg)",
         color: "var(--mv3-text)",
         position: "relative",
-        overflow: "hidden",
+        // `clip` (both axes — a lone overflow-x:clip computes back to hidden
+        // next to overflow-y:hidden) forbids programmatic scrollLeft drift;
+        // `hidden` still allowed focus/autoscroll to wedge the shell
+        // sideways (P1 546px-orb fix). The aurora is paint-contained, so
+        // engines without `clip` support degrade safely.
+        overflow: "clip",
       }}
     >
       <AuroraBackdrop />
@@ -22,7 +27,7 @@ export function Mv3StubPage({ title }: { title: string }) {
         style={{
           position: "relative",
           padding:
-            "calc(env(safe-area-inset-top, 0px) + 64px) 20px 40px",
+            "calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px) 20px 40px",
         }}
       >
         <h1

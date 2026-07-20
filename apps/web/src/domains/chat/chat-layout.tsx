@@ -42,6 +42,7 @@ import { useConversationActions } from "@/domains/chat/hooks/use-conversation-ac
 import { useConversationGroupActions } from "@/domains/chat/hooks/use-conversation-group-actions";
 import { useCanUseLlmInspector } from "@/domains/chat/inspector/access";
 import {
+  navigateAfterArchive,
   navigateToConversation,
   navigateToNewConversation,
 } from "@/domains/chat/utils/conversation-navigation";
@@ -356,6 +357,14 @@ export function ChatLayout() {
     [navigate],
   );
 
+  // Post-archive landing (UAT P1-9): archiving the active conversation lands
+  // on the Chats index (mobile) / Today (desktop) — never the next real
+  // conversation. The CRUD hook only calls its switch/new callbacks from the
+  // archive paths, so this override is scoped to exactly that flow.
+  const handlePostArchiveNavigate = useCallback(() => {
+    navigateAfterArchive(navigate);
+  }, [navigate]);
+
   const {
     handleArchiveConversation,
     handleUnarchiveConversation,
@@ -370,8 +379,8 @@ export function ChatLayout() {
     assistantId: assistantId,
     activeConversationId,
     conversations,
-    switchConversation: handleSelectConversation,
-    startNewConversation,
+    switchConversation: handlePostArchiveNavigate,
+    startNewConversation: handlePostArchiveNavigate,
     prePinGroupIdsRef,
   });
 

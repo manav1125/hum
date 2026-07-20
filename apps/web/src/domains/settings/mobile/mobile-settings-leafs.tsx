@@ -45,6 +45,13 @@ import {
   type SoundEventId,
 } from "@/domains/settings/types/sounds";
 import { getSoundManager } from "@/domains/settings/utils/sound-manager";
+import {
+  formatNextRun,
+  nextRunFromChipsInZone,
+  parseCronToChips,
+  resolveCronZone,
+} from "@/domains/settings/utils/cron-chips";
+import { formatTimeOfDay } from "@/domains/settings/utils/cron-builder";
 import { groupSchedules } from "@/domains/settings/utils/schedule-formatters";
 import {
   applyThemePreference,
@@ -721,6 +728,54 @@ export function Mv3PrivacyLeaf() {
 // sheet (spec frame 40 — plain-language chips + time, cron as mono footnote).
 // ---------------------------------------------------------------------------
 
+const WEEKDAY_PLURALS = [
+  "Sundays",
+  "Mondays",
+  "Tuesdays",
+  "Wednesdays",
+  "Thursdays",
+  "Fridays",
+  "Saturdays",
+] as const;
+
+/**
+ * Local-timezone cadence line (UAT P2: rows used to echo the daemon's
+ * cadenceDescription verbatim — "At 06:00 PM" in the DAEMON's zone, which
+ * read as UTC soup). For the simple chip shapes we compute the next firing
+ * instant in the daemon's zone and render its LOCAL wall time: "6:00 PM ·
+ * daily". One-time rows render the local next-run; custom crons fall back
+ * to the daemon description.
+ */
+function localCadenceLine(schedule: Schedule): string | undefined {
+  if (schedule.isOneShot) {
+    return schedule.nextRunAt
+      ? `Once · ${formatNextRun(schedule.nextRunAt)}`
+      : schedule.cadenceDescription || schedule.description || undefined;
+  }
+  const chips = parseCronToChips(schedule.cronExpression);
+  if (chips.chip === "custom") {
+    return schedule.cadenceDescription || schedule.description || undefined;
+  }
+  const zone = resolveCronZone({
+    timezone: schedule.timezone ?? null,
+    savedCron: schedule.cronExpression,
+    nextRunAt: schedule.nextRunAt ?? null,
+  });
+  const next =
+    nextRunFromChipsInZone(chips, zone) ??
+    (schedule.nextRunAt ? new Date(schedule.nextRunAt) : null);
+  const time = next
+    ? formatTimeOfDay(next.getHours(), next.getMinutes())
+    : formatTimeOfDay(chips.hour, chips.minute);
+  const cadence =
+    chips.chip === "daily"
+      ? "daily"
+      : chips.chip === "weekday"
+        ? "weekdays"
+        : WEEKDAY_PLURALS[chips.weekday] ?? "weekly";
+  return `${time} · ${cadence}`;
+}
+
 /**
  * Schedule row: the row body opens the editor sheet; the ON/OFF chip stays a
  * one-tap pause/resume (a real nested button, so the outer press target is a
@@ -758,7 +813,7 @@ function ScheduleRow({
     >
       <RowText
         name={schedule.name}
-        line={schedule.cadenceDescription || schedule.description || undefined}
+        line={localCadenceLine(schedule)}
       />
       <button
         type="button"
@@ -858,7 +913,12 @@ export function Mv3SchedulesLeaf() {
       sub={
         isLoading
           ? "Reading your schedules…"
-          : `${recurring.length + upcomingOneTime.length} live · tap a schedule to edit`
+          : // "Live" counts ENABLED schedules only (UAT P2: a paused one was
+            // counted as live).
+            `${
+              [...recurring, ...upcomingOneTime].filter((s) => s.enabled)
+                .length
+            } live · tap a schedule to edit`
       }
       tint="teal"
       testId="mv3-settings-schedules"
@@ -1463,8 +1523,8 @@ export function Mv3IntegrationsLeaf() {
         loading
           ? "Loading your integrations…"
           : connectedCount > 0
-            ? `${connectedCount} connected · tap one to manage`
-            : "Connect the tools Cue works through"
+            ? `${connectedCount} enabled · tap one to manage`
+            : "Cue's native sign-ins — enable the tools it works through"
       }
       tint="blue"
       testId="mv3-settings-integrations"
@@ -1596,9 +1656,11 @@ export function Mv3IntegrationsLeaf() {
             {searchText.trim()
               ? `Nothing matched “${searchText.trim()}”.`
               : filter === "enabled"
-                ? "Nothing connected yet — pick an integration to enable it."
+                ? "No native integrations enabled yet — these are Cue's " +
+                  "built-in sign-ins (Google, Slack…). Apps you connected " +
+                  "in chat live in You → Connections."
                 : filter === "not-enabled"
-                  ? "Everything available is already connected."
+                  ? "Everything available is already enabled."
                   : "No integrations available."}
           </div>
         </GlassCard>
@@ -1658,6 +1720,32 @@ export function Mv3IntegrationsLeaf() {
           </GlassCard>
         </div>
       )}
+
+      {/* Disambiguation (UAT P2): this leaf is the NATIVE integration
+          sign-ins; Composio app connections are a separate store surfaced
+          under You → Connections — link it so the two counts stop reading
+          as a contradiction. */}
+      <div style={rise(0.3)}>
+        <GlassCard padding={0} radius={20} style={{ overflow: "hidden" }}>
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              navigate(routes.connectors);
+            }}
+            style={{ ...rowShell(true), cursor: "pointer" }}
+          >
+            <RowText
+              name="Connected apps"
+              line="Apps linked in chat (Gmail, Slack…) live in You → Connections"
+            />
+            <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+              ›
+            </span>
+          </button>
+        </GlassCard>
+      </div>
 
       <Mv3SettingsNote>
         Tip: you can also enable integrations by mentioning them in chat.
@@ -2110,6 +2198,107 @@ export function Mv3ArchiveLeaf() {
 }
 
 // ---------------------------------------------------------------------------
+// Notifications (settings/notifications) — honest leaf (UAT P1: the You
+// footer's Notifications link used to land on the Appearance leaf via the
+// desktop page's gated redirect).
+//
+// Platform-hosted sessions get the real organization-notifications page
+// (lazy, inside the v3 shell). Everyone else gets the honest state of the
+// world: this instance has NO device-push pipeline and NO per-category
+// notification preference endpoints — so no toggles are faked. Cue reaches
+// you through connected channels; the leaf links their setup surface.
+// ---------------------------------------------------------------------------
+
+const NotificationsPageLazy = lazy(() =>
+  import("@/domains/settings/pages/notifications-page").then((m) => ({
+    default: m.NotificationsPage,
+  })),
+);
+
+export function Mv3NotificationsLeaf() {
+  const navigate = useNavigate();
+  const platformNotifications =
+    useClientFeatureFlagStore.use.platformNotifications();
+  const platformGate = usePlatformGate({ platformHostedOnly: true });
+
+  if (platformNotifications && platformGate !== "gated") {
+    return (
+      <Mv3SettingsScreen
+        title="Notifications"
+        tint="lavender"
+        testId="mv3-settings-notifications"
+      >
+        {/* Desktop-styled platform notifications panel inside the v3 push. */}
+        <div data-slot="mv3-settings-desktop-leaf" style={{ paddingBottom: 8 }}>
+          <Suspense
+            fallback={
+              <GlassCard>
+                <div style={{ fontSize: 12.5, color: "var(--mv3-muted)" }}>
+                  Loading notifications…
+                </div>
+              </GlassCard>
+            }
+          >
+            <NotificationsPageLazy />
+          </Suspense>
+        </div>
+      </Mv3SettingsScreen>
+    );
+  }
+
+  return (
+    <Mv3SettingsScreen
+      title="Notifications"
+      sub="How Cue reaches you"
+      tint="lavender"
+      testId="mv3-settings-notifications"
+    >
+      <SectionCard eyebrow="How Cue reaches you" delay={0.1}>
+        <button
+          type="button"
+          className="cue-pressable"
+          onClick={() => {
+            haptic.light();
+            navigate(routes.contacts.root);
+          }}
+          style={{ ...rowShell(false), cursor: "pointer" }}
+        >
+          <RowText
+            name="Connected channels"
+            line="Telegram · WhatsApp · email — instant, where you already are"
+          />
+          <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+            ›
+          </span>
+        </button>
+        <button
+          type="button"
+          className="cue-pressable"
+          onClick={() => {
+            haptic.light();
+            navigate(routes.home);
+          }}
+          style={{ ...rowShell(true), cursor: "pointer" }}
+        >
+          <RowText
+            name="In-app"
+            line="Approvals and review items surface on Today"
+          />
+          <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+            ›
+          </span>
+        </button>
+      </SectionCard>
+      <Mv3SettingsNote>
+        This instance doesn&rsquo;t send device push notifications yet, so
+        there are no notification toggles to set here — anything urgent
+        arrives through your connected channels.
+      </Mv3SettingsNote>
+    </Mv3SettingsScreen>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Route → adapted leaf map (consumed by MobileSettingsLayout).
 // ---------------------------------------------------------------------------
 
@@ -2123,4 +2312,5 @@ export const MOBILE_LEAF_PAGES: Record<string, () => React.JSX.Element> = {
   [routes.settings.integrations]: Mv3IntegrationsLeaf,
   [routes.settings.brand]: Mv3BrandLeaf,
   [routes.settings.archive]: Mv3ArchiveLeaf,
+  [routes.settings.notifications]: Mv3NotificationsLeaf,
 };

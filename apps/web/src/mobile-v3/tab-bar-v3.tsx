@@ -86,7 +86,10 @@ function YouGlyph() {
 function tabBarHidden(pathname: string): boolean {
   return (
     pathname.endsWith("/voice") ||
-    pathname.includes("/conversations") ||
+    // A conversation (with id) owns its composer dock; the BARE chats index
+    // (/assistant/conversations, spec frame 21) keeps the tab bar so the
+    // list stays inside the primary nav.
+    pathname.includes("/conversations/") ||
     pathname.endsWith("/brief") ||
     // Pre-app flows own their full canvas (frames 26–28).
     pathname.includes("/onboarding/")
@@ -116,12 +119,15 @@ const TABS: V3Tab[] = [
         dotRadius={34}
       />
     ),
+    // /hq/agents is a You-cluster child (the agents org chart), not Today —
+    // exclude it here; the You tab claims it below. The bare legacy /agents
+    // path is a momentary redirect to /hq, still Today's.
     match: (p) =>
-      p.includes("/hq") ||
+      (p.includes("/hq") && !p.includes("/hq/agents")) ||
       p.endsWith("/home") ||
       p.includes("/mission-control") ||
       p.includes("/activity") ||
-      p.includes("/agents") ||
+      (p.includes("/agents") && !p.includes("/hq/agents")) ||
       p.includes("/next-moves"),
   },
   {
@@ -143,11 +149,18 @@ const TABS: V3Tab[] = [
     label: "You",
     to: routes.channels,
     icon: () => <YouGlyph />,
+    // You-cluster children reached from You's rows also highlight You
+    // (mobile UAT P2): the agents org chart (/hq/agents), Guardrails
+    // (+ any ?view= — match is pathname-based so params don't matter), and
+    // Cue Live (linked from You, its entry point).
     match: (p) =>
       p.includes("/channels") ||
       p.includes("/memory") ||
       p.includes("/settings") ||
-      p.includes("/contacts"),
+      p.includes("/contacts") ||
+      p.includes("/hq/agents") ||
+      p.includes("/guardrails") ||
+      p.includes("/cue-live"),
   },
 ];
 
