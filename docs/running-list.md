@@ -2,6 +2,13 @@
 
 Legend: ✅ proven working · 🟡 shipped, not yet proven/activated · 🔧 needs build/fix · 👤 needs you · 🎨 needs design
 
+## Cue Live — interaction model (decided 2026-07-21, user)
+**Purpose:** Cue watches your screen/life to *capture tasks & todos* and *help complete them* — ambient chief-of-staff, not a remote-desktop tool.
+**Model:** watch and take-control are NOT exclusive modes. **Watch runs ambiently** (background, opt-in, time-bounded → files captured todos into Came-in, parked). **Take control is invoked conversationally — by voice OR text, like asking Claude.**
+**Already true in code:** voice turns carry `userMessageInterface:"macos"` (live-voice-session.ts:797) and `macos` is the interface that unlocks host-proxy computer-use — so voice AND text can both reach the proven computer_use path. No new invocation plumbing needed.
+**Still to do:** (a) Cue Live "act" re-platform off the old pixel loop onto the grounded computer_use tools; (b) mode UX must stop being an exclusive radio picker (watch = ambient toggle, take-control = always-available on request, trust-dial capped); (c) live proof of a voice-asked take-control driving the screen.
+**Precedent/trust:** consented screen control is established (Claude computer use et al). The only hard rule: never ship copy that contradicts what the product does — the "no frames leave your Mac" line is being rewritten in the same change as streaming (user chose real streaming + input relay).
+
 ## Proven working (evidence in hand)
 - ✅ Desktop-organizer on the Mac (plan/apply/undo, move-never-delete) — docs/mac-verification-2026-07-21.md
 - ✅ Computer-use on the Mac (helper read live screen + wrote to TextEdit; 19+82 tests)
