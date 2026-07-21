@@ -115,12 +115,22 @@ workstream lands with tests + a prod smoke + rollback notes.
    ~5× cheaper input ($0.95 vs $3/M). Advisor fires selectively to bound cost. Anthropic/Claude
    remains a later config flip if desired. Wire in WS-B via our call-site routing
    (CUE_ADVISOR_MODEL / config).
-3. **Phone channel** — OPEN: provide a Twilio account/number during the week, or WS-G slips
-   post-alpha (doesn't block anything else).
-4. **Extension distribution** — OPEN: OK to submit to Chrome Web Store under your dev account
-   ($5 one-time if unregistered)? Alpha users sideload the zip meanwhile regardless.
-5. **Plugins curation** — OPEN: we curate + commit-pin the alpha catalog (3 seeds), community
-   submissions open post-alpha. Confirm.
+3. **Phone channel** — ✅ LOCKED: user provides Twilio (account SID + auth token + a purchased
+   number). WS-G proceeds; needs the creds during the week to verify inbound/outbound. Store creds
+   as prod secrets (never in config doc).
+4. **Extension distribution** — ✅ LOCKED: submit to Chrome Web Store. User has no Chrome dev
+   account yet → user must register it themselves (account creation + the $5 fee are user actions I
+   cannot perform). RECOMMEND registering under a Cue/company Google account (not personal) so the
+   listing isn't tied to an individual. I prep: extension zip, listing copy, screenshots, 128px
+   icon, privacy-policy page. Alpha users sideload the zip regardless of listing timing.
+5. **Plugins curation** — ✅ LOCKED + EXPANDED: user wants this COMPREHENSIVE and scalable like the
+   skills marketplace (which indexes SKILL.md across multiple GitHub repos). So WS-C's marketplace
+   is not a 3-seed stub — it's a **multi-repo plugin registry**: a curated set of GitHub repos/orgs
+   whose plugin manifests (package.json + @vellumai/plugin-api) are indexed into the same embedding
+   space as skills, commit-pinned, security-reviewed. Seed with our own + upstream's marketplace
+   plugins + a curated allowlist of source repos; community-submitted repos post-alpha via PR.
+   This makes plugins scale the way skills already do. (See [[cue-kortix-competitive-analysis]] +
+   [[cue-overnight-moat-sprint]] for the skill-embedding-space precedent.)
 
 ## Design-ask list (user offered to help — prioritized per platform)
 **Mobile (v3 grammar):** Plugins surface (browse/installed/detail/permissions — reuse skill-detail
