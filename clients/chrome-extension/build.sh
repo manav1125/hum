@@ -80,7 +80,7 @@ echo "Installing dependencies..."
 # Build function — shared by initial build and watch-triggered rebuilds.
 # ---------------------------------------------------------------------------
 do_build() {
-  echo "Building the Vellum Assistant Chrome extension…"
+  echo "Building the Cue Chrome extension…"
   echo "  Command: $CMD"
 
   echo "Type-checking with tsc --noEmit..."
@@ -120,17 +120,21 @@ do_build() {
   echo "  Extension version: $EXT_VERSION (full: $EXT_VERSION_FULL)"
 
   case "$VELLUM_ENV" in
-    production) EXT_NAME="Vellum Assistant" ;;
-    *)          EXT_NAME="Vellum Assistant $(echo "$VELLUM_ENV" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')" ;;
+    production) EXT_NAME="Cue" ;;
+    *)          EXT_NAME="Cue $(echo "$VELLUM_ENV" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')" ;;
   esac
   jq --arg n "$EXT_NAME" '.name = $n' "$DIST_DIR/manifest.json" > "$DIST_DIR/manifest.json.tmp" \
     && mv "$DIST_DIR/manifest.json.tmp" "$DIST_DIR/manifest.json" \
     || { echo "❌ Failed to stamp name."; return 1; }
   echo "  Extension name: $EXT_NAME"
 
-  # Inject a deterministic public key for non-production builds so every
-  # developer running the same environment gets the same stable extension ID.
-  # Production builds omit the key — Chrome uses the CWS signing key instead.
+  # Inject a deterministic public key per environment so every build of the
+  # same environment gets the same stable extension ID (needed so the
+  # gateway's KNOWN_EXTENSION_ORIGINS allowlist stays valid and pairing
+  # redirect URIs are stable). Cue embeds its own production key too so the
+  # sideload and Chrome Web Store builds share one deterministic id; if CWS
+  # assigns a different id at item creation, reconcile it in
+  # extension-environments.json AND gateway/src/chrome-extension-origins.ts.
   # The mapping lives in extension-environments.json alongside this script.
   ENV_KEY=$(jq -r --arg e "$VELLUM_ENV" '.[$e].key // empty' "$SCRIPT_DIR/extension-environments.json")
   ENV_EXT_ID=$(jq -r --arg e "$VELLUM_ENV" '.[$e].extensionId // empty' "$SCRIPT_DIR/extension-environments.json")
@@ -265,9 +269,9 @@ fi
 # directory; CI injects it via secrets.
 # ---------------------------------------------------------------------------
 CRX_KEY_FILE="${CRX_KEY_PATH:-$SCRIPT_DIR/privatekey.pem}"
-CRX_OUT="$SCRIPT_DIR/vellum-browser-relay.crx"
-CRX_ZIP_OUT="$SCRIPT_DIR/vellum-browser-relay.crx.zip"
-ZIP_OUT="$SCRIPT_DIR/vellum-browser-relay.zip"
+CRX_OUT="$SCRIPT_DIR/cue-browser-relay.crx"
+CRX_ZIP_OUT="$SCRIPT_DIR/cue-browser-relay.crx.zip"
+ZIP_OUT="$SCRIPT_DIR/cue-browser-relay.zip"
 
 # Detect Chrome/Chromium binary (macOS & Linux)
 find_chrome() {

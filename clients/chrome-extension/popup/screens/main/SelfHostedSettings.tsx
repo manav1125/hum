@@ -86,7 +86,8 @@ export function SelfHostedSettings({ onPaired }: SelfHostedSettingsProps) {
         </button>
       </div>
       <p className="mt-1.5 text-[10px] leading-snug text-fg-subtle">
-        The HTTP address of your self-hosted assistant gateway.
+        The address of your Cue gateway — the desktop app runs at
+        http://127.0.0.1:7830.
       </p>
       {localStatus && (
         <p className="mt-1.5 break-all font-mono text-[11px] leading-relaxed text-fg-subtle">

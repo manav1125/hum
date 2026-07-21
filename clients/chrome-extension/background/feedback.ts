@@ -27,7 +27,7 @@ import {
   getSelectedAssistant,
   type CloudSession,
   type SelectedAssistant,
-} from "./cloud-auth.js";
+} from "./session-store.js";
 import {
   getEventLog,
   getOperations,

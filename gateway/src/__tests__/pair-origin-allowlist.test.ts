@@ -26,8 +26,8 @@ const { KNOWN_EXTENSION_ORIGINS } =
 // Simulate a loopback peer IP as supplied by the gateway server to the handler.
 const LOOPBACK_IP = "127.0.0.1";
 
-// A valid Vellum extension origin (production).
-const PROD_ORIGIN = "chrome-extension://hphbdmpffeigpcdjkckleobjmhhokpne";
+// A valid Cue extension origin (production).
+const PROD_ORIGIN = "chrome-extension://mhgllmdapjpfdnfnmdihjffclnjknhmc";
 // A non-Vellum extension origin.
 const MALICIOUS_ORIGIN =
   "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

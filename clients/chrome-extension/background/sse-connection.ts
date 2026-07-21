@@ -1,16 +1,17 @@
 /**
- * SSE connection helper for vellum-cloud assistants.
+ * SSE connection helper for a self-hosted Cue gateway.
  *
- * Manages the connect/reconnect lifecycle for the cloud transport:
- * GET /v1/assistants/{assistantId}/events?conversationKey=...
+ * Manages the connect/reconnect lifecycle for the relay transport:
+ * GET {gatewayUrl}/v1/events
  *
  * The class opens a `fetch()` SSE stream, parses `data:` frames,
  * and forwards unwrapped event payloads to the caller via `onMessage`.
  * It handles reconnection with exponential backoff on unexpected closes.
  *
  * Client registration headers (`X-Vellum-Client-Id`,
- * `X-Vellum-Interface-Id`) are sent on every connect so the daemon's
- * ClientRegistry tracks this extension instance.
+ * `X-Vellum-Interface-Id` — protocol identifiers, unchanged by the Cue
+ * rebrand) are sent on every connect so the daemon's ClientRegistry
+ * tracks this extension instance.
  */
 
 import { getClientRegistrationHeaders } from './client-identity.js';
@@ -20,31 +21,22 @@ const SSE_RECONNECT_BASE_MS = 1_000;
 const SSE_RECONNECT_MAX_MS = 30_000;
 
 /**
- * Connection mode for cloud assistants. The `runtimeUrl` is the
- * gateway base URL (e.g. `https://api.vellum.ai`); the `token` is the
- * bearer token for the gateway edge auth (WorkOS session JWT).
+ * Connection mode for a self-hosted Cue gateway. The `runtimeUrl` is the
+ * gateway base URL (e.g. `http://127.0.0.1:7830`); the `token` is the
+ * bearer token obtained from `POST /v1/pair`.
  */
-export type SseMode =
-  | {
-      kind: 'vellum-cloud';
-      runtimeUrl: string;
-      assistantId: string;
-      token: string | null;
-      sessionToken: string | null;
-      organizationId: string | null;
-    }
-  | {
-      kind: 'self-hosted';
-      /** Local gateway base URL, e.g. `http://127.0.0.1:7830`. */
-      runtimeUrl: string;
-      /**
-       * Bearer token obtained from POST /v1/pair. Required for the gateway to
-       * forward SSE requests to the runtime (the loopback-without-token bypass
-       * was removed in ATL-429). May be null if pairing failed, in which case
-       * the SSE connection will be rejected with a 401.
-       */
-      token: string | null;
-    };
+export type SseMode = {
+  kind: 'self-hosted';
+  /** Gateway base URL, e.g. `http://127.0.0.1:7830`. */
+  runtimeUrl: string;
+  /**
+   * Bearer token obtained from POST /v1/pair. Required for the gateway to
+   * forward SSE requests to the runtime (loopback peers must still present a
+   * token). May be null if pairing failed, in which case the SSE connection
+   * will be rejected with a 401.
+   */
+  token: string | null;
+};
 
 export interface SseConnectionDeps {
   mode: SseMode;
@@ -131,28 +123,14 @@ export class SseConnection {
     const { mode } = this.deps;
     const baseUrl = mode.runtimeUrl.replace(/\/$/, '');
 
-    // Self-hosted: the gateway proxies /v1/events using the pair token for auth.
-    // Cloud: use the assistant-scoped path with the session token.
-    const url =
-      mode.kind === 'self-hosted'
-        ? `${baseUrl}/v1/events`
-        : `${baseUrl}/v1/assistants/${encodeURIComponent(mode.assistantId)}/events`;
+    // The gateway proxies /v1/events using the pair token for auth.
+    const url = `${baseUrl}/v1/events`;
 
     const headers: Record<string, string> = {
       Accept: 'text/event-stream',
       ...(await getClientRegistrationHeaders()),
     };
-    if (mode.kind === 'vellum-cloud') {
-      if (mode.token) {
-        headers['Authorization'] = `Bearer ${mode.token}`;
-      }
-      if (mode.sessionToken) {
-        headers['X-Session-Token'] = mode.sessionToken;
-      }
-      if (mode.organizationId) {
-        headers['Vellum-Organization-Id'] = mode.organizationId;
-      }
-    } else if (mode.kind === 'self-hosted' && mode.token) {
+    if (mode.token) {
       headers['Authorization'] = `Bearer ${mode.token}`;
     }
 
@@ -178,7 +156,7 @@ export class SseConnection {
         const body = await response.text().catch(() => '');
         this._isOpen = false;
         this.deps.onClose(
-          body || `Authentication failed (${response.status}). Sign in again to reconnect.`,
+          body || `Authentication failed (${response.status}). Re-pair to reconnect.`,
         );
         return;
       }

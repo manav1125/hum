@@ -1,0 +1,18 @@
+# Build output
+dist/
+
+# Packaged artifacts (produced by build.sh — never commit)
+cue-browser-relay.zip
+cue-browser-relay*.zip
+cue-browser-relay.crx
+cue-browser-relay*.crx
+*.crx
+*.crx.zip
+
+# Signing key — never commit. The Cue production/dev/staging/local private
+# keys live outside the repo (store as CI secrets / password manager).
+privatekey.pem
+*.pem
+
+# Local dependency install
+node_modules/

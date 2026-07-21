@@ -119,18 +119,18 @@ describe('cloudUrlsForEnvironment', () => {
   }> = [
     {
       env: 'production',
-      expectedApiBaseUrl: 'https://platform.vellum.ai',
-      expectedWebBaseUrl: 'https://www.vellum.ai',
+      expectedApiBaseUrl: 'https://app.justcue.ai',
+      expectedWebBaseUrl: 'https://justcue.ai',
     },
     {
       env: 'staging',
-      expectedApiBaseUrl: 'https://staging-platform.vellum.ai',
-      expectedWebBaseUrl: 'https://staging-assistant.vellum.ai',
+      expectedApiBaseUrl: 'https://staging.justcue.ai',
+      expectedWebBaseUrl: 'https://staging.justcue.ai',
     },
     {
       env: 'dev',
-      expectedApiBaseUrl: 'https://dev-platform.vellum.ai',
-      expectedWebBaseUrl: 'https://dev-assistant.vellum.ai',
+      expectedApiBaseUrl: 'https://dev.justcue.ai',
+      expectedWebBaseUrl: 'https://dev.justcue.ai',
     },
     {
       env: 'local',
@@ -153,7 +153,7 @@ describe('cloudUrlsForEnvironment', () => {
 
   test('production parity: "prod" alias and "production" resolve to same URLs', () => {
     const fromProd = cloudUrlsForEnvironment('production');
-    expect(fromProd.apiBaseUrl).toBe('https://platform.vellum.ai');
-    expect(fromProd.webBaseUrl).toBe('https://www.vellum.ai');
+    expect(fromProd.apiBaseUrl).toBe('https://app.justcue.ai');
+    expect(fromProd.webBaseUrl).toBe('https://justcue.ai');
   });
 });

@@ -1,30 +1,44 @@
-# Vellum Assistant Chrome Extension
+# Cue Chrome Extension (Cue Browser Relay)
 
-MV3 Chrome extension that connects your browser to a running Vellum assistant via a WebSocket relay. It discovers assistants from the local lockfile, handles auth automatically, and maintains a persistent background connection.
+MV3 Chrome extension that lets your Cue assistant act inside the browser you're
+already signed into. It drives tabs via the Chrome DevTools Protocol
+(`chrome.debugger`) on behalf of your assistant, pairing with a Cue gateway and
+maintaining a persistent, auto-reconnecting background relay.
 
-## Install from Chrome Web Store
+Single connection mode: the extension pairs with a **Cue gateway** — the desktop
+app on loopback (`http://127.0.0.1:7830`), or any gateway URL you provide — using
+the gateway's own `POST /v1/pair` flow. There is **no external sign-in and no data
+collection**; the extension only executes what your assistant explicitly requests.
 
-Install the [Vellum Assistant](https://chromewebstore.google.com/detail/vellum-assistant-browser/hphbdmpffeigpcdjkckleobjmhhokpne) extension directly from the Chrome Web Store. This is the recommended approach for most users — no developer mode required.
+> Protocol identifiers stay `vellum` on purpose (the `X-Vellum-*` headers, the
+> `x-vellum-interface-id: chrome-extension` handshake, the `Vellum.*` synthetic
+> CDP methods, and the `vellum.*` storage keys). Only user-facing display strings
+> are rebranded to Cue. See the repo rebrand-boundary note.
+
+## Install
+
+**Alpha (sideload):** load the packaged zip in Developer mode — see below. This is
+the day-one path; alpha users are never gated on Chrome Web Store review.
+
+**Chrome Web Store:** once the Cue item is published, install it from the store
+listing (no developer mode required). The store-assigned extension id must be
+reconciled into [`extension-environments.json`](./extension-environments.json) and
+`gateway/src/chrome-extension-origins.ts` if it differs from the embedded
+production key's id.
 
 ## Development
 
 ### Prerequisites
 
-- Bun installed and on `PATH`
-- Chrome with Developer mode enabled (`chrome://extensions`)
-- At least one running assistant (local or cloud-managed)
+- Bun installed and on `PATH` (`export PATH="$HOME/.bun/bin:$PATH"`)
+- Chrome 120+ with Developer mode enabled (`chrome://extensions`)
+- A running Cue assistant (the desktop app, or a gateway URL you can reach)
 
-If Bun isn't on your PATH:
-
-```bash
-export PATH="$HOME/.bun/bin:$PATH"
-```
-
-### Build & Load
+### Build & Load (dev)
 
 ```bash
 cd clients/chrome-extension
-bash build.sh
+bash build.sh          # env defaults to `dev`
 ```
 
 Then in Chrome:
@@ -33,125 +47,70 @@ Then in Chrome:
 3. Click **Load unpacked**
 4. Select `clients/chrome-extension/dist`
 
-### Dev Loop
+`bash build.sh run` rebuilds on change (watch mode).
 
-After editing extension code:
-
-```bash
-cd clients/chrome-extension
-bash build.sh
-```
-
-Then in `chrome://extensions`, click **Reload** on the unpacked extension.
-
-## Publishing to Chrome Web Store
-
-To create a zip for manual upload to the [Chrome Web Store developer dashboard](https://chrome.google.com/webstore/devconsole):
+### Packaged builds
 
 ```bash
-cd clients/chrome-extension
-bash build.sh
-cd dist && zip -r ../vellum-browser-relay.zip .
+# Production sideload / store-submission zip → cue-browser-relay.zip
+VELLUM_ENVIRONMENT=production VERSION=<x.y.z> bash build.sh build
 ```
 
-Upload `vellum-browser-relay.zip` through the dashboard.
-
-For automated publishing, the `release.yml` GitHub Actions workflow builds, packages, and uploads to CWS when a release tag is created.
+`build.sh` also signs a `.crx` when a private key is present at `privatekey.pem`
+in this directory (or `CRX_KEY_PATH`). The Cue production private key is NOT
+committed — supply it to sign a CRX, and keep it as the Chrome Web Store signing
+key so the sideload and published ids match.
 
 ## Usage
 
-1. Open the extension popup.
-2. Select an assistant (if more than one is available).
-3. Click **Connect**.
+1. Open the extension popup and click **Connect to Cue**.
+2. The extension pairs with the gateway URL (default `http://127.0.0.1:7830`) and
+   opens the relay. Change the gateway URL in the popup if your assistant runs
+   elsewhere.
 
-That's it. The extension auto-reconnects on browser restarts, network drops, and assistant restarts. Click **Pause** to intentionally stop the relay.
+The extension auto-reconnects on browser restarts, network drops, and assistant
+restarts (SSE reconnect with exponential backoff). Click **Disconnect** to stop
+the relay; it stays quiet until you connect again.
 
-## Environment Selector
+## Environment selector
 
-The popup's **Advanced** section includes an **Environment** dropdown that lets you switch between `local`, `dev`, `staging`, and `production` without rebuilding the extension. This controls which cloud API and web URLs are used for sign-in, pairing, and relay connections.
-
-### Precedence rules
-
-The effective environment is resolved in this order:
+The popup can switch between `local`, `dev`, `staging`, and `production` without
+rebuilding. This controls the toolbar icon tint and the (WS-D follow-up) feedback
+endpoint host. Precedence:
 
 | Priority | Source | Description |
 |---|---|---|
-| 1 (highest) | Popup override | Selected in the dropdown, persisted in `chrome.storage.local` |
-| 2 | Build-time default | Injected via `--define process.env.VELLUM_ENVIRONMENT=...` at bundle time |
-| 3 (fallback) | Hard-coded default | `dev` |
+| 1 (highest) | Popup override | Persisted in `chrome.storage.local` |
+| 2 | Build-time default | Injected via `--define process.env.VELLUM_ENVIRONMENT=...` |
+| 3 (fallback) | Hard-coded default | `production` |
 
-### Expected defaults by context
+## Extension IDs (deterministic per environment)
 
-| Context | Build default | Notes |
-|---|---|---|
-| Local dev build (`bash build.sh`) | `dev` | No `--define` injection; falls back to `dev` |
-| `vel up` (local assistant) | `dev` build / `local` override | Build defaults to `dev`; use the popup dropdown to select `local` to target `localhost` endpoints |
-| Staging release artifact | `staging` | Set by `release.yml` via `--define` |
-| Production release artifact (CWS) | `production` | Set by `release.yml` via `--define` |
+Each environment embeds a fixed public `key` in the manifest (from
+[`extension-environments.json`](./extension-environments.json)), so every build of
+the same environment gets the same stable 32-char id. These ids are allowlisted by
+the gateway's pairing origin check (`gateway/src/chrome-extension-origins.ts`) —
+**keep the two files in sync.** Cue owns its own keys (regenerated from Vellum's).
 
-### Behavior on change
+| Environment | Extension ID |
+|---|---|
+| production | `mhgllmdapjpfdnfnmdihjffclnjknhmc` |
+| dev | `fgjdoijjdaknpebalabagkblfchpebkp` |
+| staging | `andfdpliflikfgnejjeokmcofpnochic` |
+| local | `mlkohkopfacnbiajpnajjmphoahogfcc` |
 
-When you change the environment in the dropdown:
-
-1. The override is persisted immediately (survives popup close/reopen).
-2. The assistant catalog is refreshed (different environments may list different assistants).
-3. Local and cloud auth status panels are refreshed.
-4. If the extension is currently connected, it automatically disconnects and reconnects using the new environment's endpoints.
-
-To clear the override and revert to the build default, the dropdown simply selects the build-default value (no separate "reset" action needed since the worker treats selecting the same value as the build default equivalently).
+The production id is derived from the embedded production key. If the Chrome Web
+Store assigns a different id at item creation, add that id to both files.
 
 ## Debugging
 
-- **Service worker logs:** `chrome://extensions` > extension card > **Service worker** link
-- **Popup logs:** Open popup > right-click > **Inspect**
-
-## Extension ID
-
-Chrome assigns each extension a unique 32-character ID. Non-production builds inject a deterministic `key` into the manifest from [`extension-environments.json`](./extension-environments.json), so every developer running the same environment gets the same stable extension ID — no manual setup needed.
-
-Each environment also gets its own icon set (under `icons/<env>/`), making it easy to distinguish side-by-side installs at a glance.
-
-## WorkOS redirect URIs (REQUIRED dashboard step)
-
-Cloud sign-in uses app-held PKCE against WorkOS User Management. The extension
-authorizes via `chrome.identity.launchWebAuthFlow` and WorkOS redirects back to
-a fixed `chromiumapp.org` URL — `https://<extension-id>.chromiumapp.org/cloud-auth`.
-
-**Each of these exact URLs MUST be registered as a redirect on the WorkOS User
-Management application for its environment.** Sign-in fails at the WorkOS
-authorize step (`redirect_uri` not allowed) until the URL is registered. The
-extension id is fixed per environment (deterministic `key` in
-[`extension-environments.json`](./extension-environments.json) for non-prod; the
-CWS signing key for production):
-
-| Environment | Extension ID | Redirect URI to register |
-|---|---|---|
-| production | `hphbdmpffeigpcdjkckleobjmhhokpne` | `https://hphbdmpffeigpcdjkckleobjmhhokpne.chromiumapp.org/cloud-auth` |
-| staging | `idpcnibfinmkdhlpenkglianflkbhfim` | `https://idpcnibfinmkdhlpenkglianflkbhfim.chromiumapp.org/cloud-auth` |
-| dev | `kajfcoaefacmjgdaloeafnpcfaeahcio` | `https://kajfcoaefacmjgdaloeafnpcfaeahcio.chromiumapp.org/cloud-auth` |
-| local | `gfcldmjjhcginboeldmknclbjilohcbn` | `https://gfcldmjjhcginboeldmknclbjilohcbn.chromiumapp.org/cloud-auth` |
-
-Register each redirect on the WorkOS UM app that backs the corresponding
-platform environment (production WorkOS app for `production`, etc.). The
-production extension id is assigned by the Chrome Web Store; if it ever changes,
-update the production row above and re-register.
-
-## Troubleshooting
-
-| Error | Cause / Fix |
-|---|---|
-| `failed to reach assistant at http://127.0.0.1:<port>/...` | Assistant not running, wrong port, or firewall blocking. |
-| `Automatic cloud sign-in failed` | Use "Re-sign in" in the popup's Troubleshooting section, then click Connect. |
-| `Automatic local pairing failed` | Use "Re-pair" in the popup's Troubleshooting section, then click Connect. |
+- **Service worker logs:** `chrome://extensions` → extension card → **Service worker**
+- **Popup logs:** open the popup → right-click → **Inspect**
 
 ## Tests
-
-Extension:
 
 ```bash
 cd clients/chrome-extension
 bunx tsc --noEmit
-bun test background/__tests__/self-hosted-auth.test.ts
-bun test background/__tests__/worker-selected-assistant-connect.test.ts
-bun test background/__tests__/relay-connection.test.ts
+bun test
 ```

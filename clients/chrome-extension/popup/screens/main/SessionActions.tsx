@@ -26,10 +26,7 @@ export function SessionActions({ paired, onBack }: SessionActionsProps) {
   let actionLabel: string;
   let actionHandler: () => void;
 
-  if (mode === 'cloud') {
-    actionLabel = 'Sign out';
-    actionHandler = onSignOut;
-  } else if (paired) {
+  if (paired) {
     actionLabel = 'Disconnect';
     actionHandler = onSignOut;
   } else {
@@ -39,7 +36,7 @@ export function SessionActions({ paired, onBack }: SessionActionsProps) {
 
   return (
     <div className="mt-auto flex flex-col items-center pt-1">
-      {/* Reconnect button: only in self-hosted + failure state */}
+      {/* Reconnect button: only shown in a failure state */}
       {mode === 'self-hosted' && isFailure && (
         <button
           type="button"

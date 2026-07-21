@@ -17,12 +17,15 @@
  * local gateway).
  */
 export const KNOWN_EXTENSION_ORIGINS: ReadonlySet<string> = new Set([
-  // production (Chrome Web Store)
-  "chrome-extension://hphbdmpffeigpcdjkckleobjmhhokpne",
+  // production — derived from the Cue production key embedded in the
+  // manifest (extension-environments.json). If the Chrome Web Store
+  // assigns a DIFFERENT id at item creation, add that id here too and
+  // update extension-environments.json.
+  "chrome-extension://mhgllmdapjpfdnfnmdihjffclnjknhmc",
   // dev
-  "chrome-extension://kajfcoaefacmjgdaloeafnpcfaeahcio",
+  "chrome-extension://fgjdoijjdaknpebalabagkblfchpebkp",
   // staging
-  "chrome-extension://idpcnibfinmkdhlpenkglianflkbhfim",
+  "chrome-extension://andfdpliflikfgnejjeokmcofpnochic",
   // local
-  "chrome-extension://gfcldmjjhcginboeldmknclbjilohcbn",
+  "chrome-extension://mlkohkopfacnbiajpnajjmphoahogfcc",
 ]);

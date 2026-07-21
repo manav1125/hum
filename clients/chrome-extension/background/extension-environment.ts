@@ -1,5 +1,5 @@
 /**
- * Canonical environment contract for the Vellum Chrome extension.
+ * Canonical environment contract for the Cue Chrome extension.
  *
  * This module is the single source of truth for:
  *   - the set of valid extension environments
@@ -101,29 +101,30 @@ export interface CloudUrls {
 }
 
 /**
- * Return the cloud API and web base URLs for the given environment.
+ * Return the API and web base URLs for the given environment.
  *
- * Production uses the canonical Vellum production hosts. Non-production
- * environments use environment-prefixed subdomains following the
- * convention `<env>-api.vellum.ai` / `<env>-assistant.vellum.ai`, with
- * `local` using `localhost` origins for both.
+ * These are used only by the Share Feedback flow (diagnostics endpoint)
+ * and for environment display. Cue is a per-instance product with no
+ * central platform API, so these point at the Cue web hosts. NOTE: the
+ * feedback upload endpoint (`/v1/upload/feedback/`) is not yet served by
+ * these hosts — the Share Feedback destination is a WS-D follow-up.
  */
 export function cloudUrlsForEnvironment(env: ExtensionEnvironment): CloudUrls {
   switch (env) {
     case 'production':
       return {
-        apiBaseUrl: 'https://platform.vellum.ai',
-        webBaseUrl: 'https://www.vellum.ai',
+        apiBaseUrl: 'https://app.justcue.ai',
+        webBaseUrl: 'https://justcue.ai',
       };
     case 'staging':
       return {
-        apiBaseUrl: 'https://staging-platform.vellum.ai',
-        webBaseUrl: 'https://staging-assistant.vellum.ai',
+        apiBaseUrl: 'https://staging.justcue.ai',
+        webBaseUrl: 'https://staging.justcue.ai',
       };
     case 'dev':
       return {
-        apiBaseUrl: 'https://dev-platform.vellum.ai',
-        webBaseUrl: 'https://dev-assistant.vellum.ai',
+        apiBaseUrl: 'https://dev.justcue.ai',
+        webBaseUrl: 'https://dev.justcue.ai',
       };
     case 'local':
       return {

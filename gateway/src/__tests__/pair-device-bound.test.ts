@@ -34,7 +34,7 @@ const { hashToken } = await import("../auth/guardian-bootstrap.js");
 const { rotateCredentials } = await import("../auth/guardian-refresh.js");
 
 const LOOPBACK_IP = "127.0.0.1";
-const PROD_ORIGIN = "chrome-extension://hphbdmpffeigpcdjkckleobjmhhokpne";
+const PROD_ORIGIN = "chrome-extension://mhgllmdapjpfdnfnmdihjffclnjknhmc";
 const GUARDIAN_ID = "guardian-001";
 
 let testRoot: string;
