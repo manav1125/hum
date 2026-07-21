@@ -243,20 +243,53 @@ function ToggleRow({
   );
 }
 
-/** Radio-style row — one-of-N selection (retention, timeout, theme, mic). */
+/** Radio-style row — one-of-N selection (retention, timeout, theme, mic).
+ * `align: "trailing"` puts the ring on the RIGHT (round-4 frame 63 leaf
+ * grammar — label first, control at the row's end); default stays leading
+ * for the frame-20 rows already shipped. */
 function RadioRow({
   name,
   line,
   selected,
   isLast,
+  align = "leading",
   onPress,
 }: {
   name: string;
   line?: React.ReactNode;
   selected: boolean;
   isLast?: boolean;
+  align?: "leading" | "trailing";
   onPress: () => void;
 }) {
+  const ring = (
+    <span
+      aria-hidden
+      style={{
+        width: 18,
+        height: 18,
+        borderRadius: "50%",
+        border: selected
+          ? "2px solid var(--mv3-accent)"
+          : "2px solid var(--mv3-btn2-border)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      {selected ? (
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "var(--mv3-accent)",
+          }}
+        />
+      ) : null}
+    </span>
+  );
   return (
     <button
       type="button"
@@ -268,33 +301,9 @@ function RadioRow({
       }}
       style={{ ...rowShell(isLast), cursor: "pointer" }}
     >
-      <span
-        aria-hidden
-        style={{
-          width: 18,
-          height: 18,
-          borderRadius: "50%",
-          border: selected
-            ? "2px solid var(--mv3-accent)"
-            : "2px solid var(--mv3-btn2-border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        {selected ? (
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--mv3-accent)",
-            }}
-          />
-        ) : null}
-      </span>
+      {align === "leading" ? ring : null}
       <RowText name={name} line={line} />
+      {align === "trailing" ? ring : null}
     </button>
   );
 }
@@ -359,16 +368,21 @@ export function Mv3AppearanceLeaf() {
       testId="mv3-settings-appearance"
     >
       <SectionCard eyebrow="Theme" delay={0.1}>
-        {rows.map((row, i) => (
-          <RadioRow
-            key={row.value}
-            name={row.name}
-            line={row.line}
-            selected={theme === row.value}
-            isLast={i === rows.length - 1}
-            onPress={() => pick(row.value)}
-          />
-        ))}
+        {/* Frame 63 leaf: labeled radio rows, ring at the row's end. Rows
+            commit on tap — the full-leaf push made the choice deliberate. */}
+        <div role="radiogroup" aria-label="Theme">
+          {rows.map((row, i) => (
+            <RadioRow
+              key={row.value}
+              name={row.name}
+              line={row.line}
+              selected={theme === row.value}
+              isLast={i === rows.length - 1}
+              align="trailing"
+              onPress={() => pick(row.value)}
+            />
+          ))}
+        </div>
       </SectionCard>
       <Mv3SettingsNote>
         Assistant name, timezone and software updates live in Settings →

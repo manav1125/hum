@@ -7,8 +7,10 @@
  *  · Explore   — marketplace items streamed per enabled source (the SAME
  *                `useSourceItems` read the desktop Marketplace page uses),
  *                with the daemon skills catalog as the fallback when no
- *                marketplace source is enabled. "Get" runs the REAL two-phase
- *                install: plan → the consent sheet → confirm.
+ *                marketplace source is enabled. A card tap opens the frame-57
+ *                detail sheet; "Get" opens the SAME sheet with the confirm
+ *                card focused and runs the REAL two-phase install (plan →
+ *                confirm) — no naked installs (see `SkillDetailSheet`).
  *  · Installed — installed + bundled skills (`skillsGet`); tap → the frame-30
  *                manage screen.
  *
@@ -18,9 +20,10 @@
  * no category, so the row honestly hides for marketplace results.
  *  · Sources   — the real marketplace source registry (add/remove/toggle).
  *
- * The consent sheet renders the skill's DECLARED capability manifest from the
- * install plan: connectors/network read as ✓ allow (green), secrets/writes as
- * ‖ asks-first (amber) — the daemon's own elevated-capability split.
+ * The detail sheet's "WILL BE ABLE TO" renders the skill's DECLARED capability
+ * manifest (marketplace metadata, superseded by the install plan once fetched):
+ * connectors/network read as ✓ allow (green), secrets/writes as ‖ asks-first
+ * (amber) — the daemon's own elevated-capability split.
  *
  * Frame-30 honesty: per-skill run history, runs·reversed and spend have no
  * per-skill data source yet, so those sections are omitted (never faked).
@@ -65,6 +68,12 @@ import { routes } from "@/utils/routes";
 import { GlassCard } from "../glass-card";
 import { SheetShell } from "../sheet-shell";
 import { microLabel, primaryBtn, rise } from "../mv3-kit";
+import {
+  capabilityRows,
+  catalogDetailModel,
+  marketplaceDetailModel,
+  SkillDetailSheet,
+} from "./skill-detail-sheet";
 import { Eyebrow, QuietLink, SegRail, TrustFootnote, YouScreen } from "./you-kit";
 
 type Segment = "explore" | "installed" | "sources";
@@ -93,243 +102,6 @@ function SkillTile({
     >
       {emoji || "✦"}
     </span>
-  );
-}
-
-/* ────────────────────────── Consent sheet (frame 18) ─────────────────────── */
-
-function capabilityRows(caps: InstallResponse["capabilities"]): {
-  label: string;
-  elevated: boolean;
-}[] {
-  const rows: { label: string; elevated: boolean }[] = [];
-  if (caps.connectors.length > 0)
-    rows.push({
-      label: `Use ${caps.connectors.join(", ")}`,
-      elevated: false,
-    });
-  if (caps.network.length > 0)
-    rows.push({
-      label: `Reach ${caps.network.slice(0, 3).join(", ")}`,
-      elevated: false,
-    });
-  if (caps.writes.length > 0)
-    rows.push({
-      label: `Write to ${caps.writes.slice(0, 3).join(", ")}`,
-      elevated: true,
-    });
-  if (caps.secrets.length > 0)
-    rows.push({
-      label: `Use secrets: ${caps.secrets.join(", ")}`,
-      elevated: true,
-    });
-  return rows;
-}
-
-function ConsentSheet({
-  plan,
-  confirming,
-  error,
-  onConfirm,
-  onClose,
-}: {
-  plan: InstallResponse | null;
-  confirming: boolean;
-  error: string | null;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  const rows = plan ? capabilityRows(plan.capabilities) : [];
-  return (
-    <SheetShell
-      open={plan !== null}
-      onClose={onClose}
-      label="Before it can run"
-    >
-      {plan ? (
-        <div style={{ padding: "2px 2px 8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-            <SkillTile emoji={plan.item?.emoji} size={40} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                Before it can run
-              </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--mv3-muted)",
-                  marginTop: 1,
-                }}
-              >
-                You approve what every skill may touch
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              marginTop: 14,
-            }}
-          >
-            {rows.length === 0 ? (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  background: "var(--mv3-btn2-bg)",
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                }}
-              >
-                <span
-                  aria-hidden
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 7,
-                    background: "color-mix(in srgb, var(--mv3-green) 15%, transparent)",
-                    color: "var(--mv3-green)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 11,
-                  }}
-                >
-                  ✓
-                </span>
-                <span style={{ fontSize: 12.5, flex: 1 }}>
-                  Declares no elevated capabilities — instructions only
-                </span>
-                <span
-                  style={{ fontSize: 10.5, color: "var(--mv3-green)" }}
-                >
-                  allow
-                </span>
-              </div>
-            ) : (
-              rows.map((row) => (
-                <div
-                  key={row.label}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: row.elevated
-                      ? "color-mix(in srgb, var(--mv3-amber) 8%, transparent)"
-                      : "var(--mv3-btn2-bg)",
-                    border: row.elevated
-                      ? "1px solid color-mix(in srgb, var(--mv3-amber) 30%, transparent)"
-                      : "1px solid transparent",
-                    borderRadius: 12,
-                    padding: "10px 12px",
-                  }}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 7,
-                      background: `color-mix(in srgb, ${
-                        row.elevated ? "var(--mv3-amber)" : "var(--mv3-green)"
-                      } 16%, transparent)`,
-                      color: row.elevated
-                        ? "var(--mv3-amber)"
-                        : "var(--mv3-green)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 11,
-                      fontWeight: row.elevated ? 700 : 400,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {row.elevated ? "‖" : "✓"}
-                  </span>
-                  <span style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>
-                    {row.label}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      color: row.elevated
-                        ? "var(--mv3-amber)"
-                        : "var(--mv3-green)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {row.elevated ? "asks first" : "allow"}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-
-          {plan.notice ? (
-            <div
-              style={{
-                fontSize: 11.5,
-                color: "var(--mv3-muted)",
-                lineHeight: 1.5,
-                marginTop: 12,
-              }}
-            >
-              {plan.notice}
-            </div>
-          ) : null}
-          {plan.files ? (
-            <div
-              style={{
-                ...microLabel,
-                color: "var(--mv3-faint)",
-                marginTop: 10,
-              }}
-            >
-              {plan.files.length} file{plan.files.length === 1 ? "" : "s"} to
-              install
-              {plan.skipped.length > 0
-                ? ` · ${plan.skipped.length} skipped (never executable)`
-                : ""}
-            </div>
-          ) : null}
-          {error ? (
-            <div style={{ fontSize: 12, color: "#E5675B", marginTop: 10 }}>
-              {error}
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            disabled={confirming}
-            onClick={() => {
-              haptic.medium();
-              onConfirm();
-            }}
-            style={{
-              width: "100%",
-              fontSize: 14,
-              fontWeight: 600,
-              fontFamily: "inherit",
-              background: "var(--mv3-text)",
-              color: "var(--mv3-bg)",
-              border: "none",
-              borderRadius: 13,
-              padding: 13,
-              minHeight: 48,
-              cursor: confirming ? "default" : "pointer",
-              opacity: confirming ? 0.6 : 1,
-              marginTop: 13,
-            }}
-          >
-            {confirming ? "Installing…" : "Install with these limits"}
-          </button>
-        </div>
-      ) : null}
-    </SheetShell>
   );
 }
 
@@ -643,6 +415,15 @@ export function Mv3SkillsPage({
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
 
+  // Frame 57: card tap → detail sheet; "Get" → the SAME sheet with the
+  // confirm card focused (one flow, no naked installs).
+  const [detail, setDetail] = useState<
+    | { kind: "market"; item: MarketplaceItem }
+    | { kind: "catalog"; skill: SkillInfo }
+    | null
+  >(null);
+  const [confirmingInstall, setConfirmingInstall] = useState(false);
+
   // Catalog fallback install (no consent payload exists on that route).
   const catalogInstall = useMutation({
     mutationFn: (slug: string) => installSkill(assistantId, slug),
@@ -681,6 +462,8 @@ export function Mv3SkillsPage({
         onSuccess: () => {
           haptic.success();
           setPlan(null);
+          setDetail(null);
+          setConfirmingInstall(false);
           void queryClient.invalidateQueries({
             queryKey: skillsGetQueryKey({
               path: { assistant_id: assistantId },
@@ -691,6 +474,60 @@ export function Mv3SkillsPage({
           setInstallError(err instanceof Error ? err.message : String(err)),
       },
     );
+  };
+
+  /** Card tap — open the detail sheet (no install intent yet). */
+  const openDetail = (
+    target:
+      | { kind: "market"; item: MarketplaceItem }
+      | { kind: "catalog"; skill: SkillInfo },
+  ) => {
+    haptic.light();
+    setInstallError(null);
+    setPlan(null);
+    setConfirmingInstall(false);
+    setDetail(target);
+  };
+
+  /** "Get" — same sheet, confirm card focused; marketplace fetches the plan. */
+  const openConfirm = (
+    target:
+      | { kind: "market"; item: MarketplaceItem }
+      | { kind: "catalog"; skill: SkillInfo },
+  ) => {
+    setInstallError(null);
+    setDetail(target);
+    setConfirmingInstall(true);
+    if (target.kind === "market" && plan?.skillId !== target.item.id) {
+      setPlan(null);
+      startInstall(target.item);
+    }
+  };
+
+  const closeDetail = () => {
+    setDetail(null);
+    setConfirmingInstall(false);
+    setPlan(null);
+    setInstallError(null);
+  };
+
+  /** The confirm card's Install — the real install endpoints. */
+  const handleConfirmInstall = () => {
+    if (!detail) return;
+    if (detail.kind === "market") {
+      confirmInstall();
+      return;
+    }
+    haptic.medium();
+    setInstallError(null);
+    catalogInstall.mutate(detail.skill.slug ?? detail.skill.id, {
+      onSuccess: () => {
+        haptic.success();
+        closeDetail();
+      },
+      onError: (err) =>
+        setInstallError(err instanceof Error ? err.message : String(err)),
+    });
   };
 
   const allItems = useMemo(
@@ -833,25 +670,54 @@ export function Mv3SkillsPage({
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 11 }}
                   >
-                    <SkillTile emoji={item.emoji} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14.5, fontWeight: 600 }}>
-                        {item.displayName}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "var(--mv3-muted)",
-                          marginTop: 1,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {item.sourceLabel || item.source}
-                        {item.license ? ` · ${item.license}` : ""}
-                      </div>
-                    </div>
+                    {/* Frame 57: the card body opens the detail sheet. */}
+                    <button
+                      type="button"
+                      aria-label={`About ${item.displayName}`}
+                      className="cue-pressable"
+                      onClick={() => openDetail({ kind: "market", item })}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 11,
+                        flex: 1,
+                        minWidth: 0,
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        color: "var(--mv3-text)",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <SkillTile emoji={item.emoji} />
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: 14.5,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {item.displayName}
+                        </span>
+                        <span
+                          style={{
+                            display: "block",
+                            fontSize: 11,
+                            color: "var(--mv3-muted)",
+                            marginTop: 1,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {item.sourceLabel || item.source}
+                          {item.license ? ` · ${item.license}` : ""}
+                        </span>
+                      </span>
+                    </button>
                     {item.installed ? (
                       <span
                         style={{
@@ -870,7 +736,10 @@ export function Mv3SkillsPage({
                       <button
                         type="button"
                         disabled={pendingItemId === item.id}
-                        onClick={() => startInstall(item)}
+                        onClick={() => {
+                          haptic.medium();
+                          openConfirm({ kind: "market", item });
+                        }}
                         style={{
                           ...primaryBtn,
                           flex: "none",
@@ -913,30 +782,59 @@ export function Mv3SkillsPage({
                 style={rise(0.1 + Math.min(i, 3) * 0.12)}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                  <SkillTile emoji={skill.emoji ?? skill.icon} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 600 }}>
-                      {skill.name}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--mv3-muted)",
-                        marginTop: 1,
-                      }}
-                    >
-                      {skill.author ?? skillOriginLabel(skill.origin)}
-                      {typeof skill.installs === "number"
-                        ? ` · ${skill.installs.toLocaleString()} installs`
-                        : ""}
-                    </div>
-                  </div>
+                  {/* Frame 57: the card body opens the detail sheet. */}
+                  <button
+                    type="button"
+                    aria-label={`About ${skill.name}`}
+                    className="cue-pressable"
+                    onClick={() => openDetail({ kind: "catalog", skill })}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 11,
+                      flex: 1,
+                      minWidth: 0,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      color: "var(--mv3-text)",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <SkillTile emoji={skill.emoji ?? skill.icon} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 14.5,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {skill.name}
+                      </span>
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 11,
+                          color: "var(--mv3-muted)",
+                          marginTop: 1,
+                        }}
+                      >
+                        {skill.author ?? skillOriginLabel(skill.origin)}
+                        {typeof skill.installs === "number"
+                          ? ` · ${skill.installs.toLocaleString()} installs`
+                          : ""}
+                      </span>
+                    </span>
+                  </button>
                   <button
                     type="button"
                     disabled={catalogInstall.isPending}
                     onClick={() => {
                       haptic.medium();
-                      catalogInstall.mutate(skill.slug ?? skill.id);
+                      openConfirm({ kind: "catalog", skill });
                     }}
                     style={{
                       ...primaryBtn,
@@ -1190,15 +1088,33 @@ export function Mv3SkillsPage({
         </>
       )}
 
-      <ConsentSheet
-        plan={plan}
-        confirming={marketInstall.isPending}
+      {/* Frame 57: skill detail + install confirm — one sheet, one flow. */}
+      <SkillDetailSheet
+        open={detail !== null}
+        model={
+          detail === null
+            ? null
+            : detail.kind === "market"
+              ? marketplaceDetailModel(detail.item)
+              : catalogDetailModel(detail.skill)
+        }
+        installed={detail?.kind === "market" && Boolean(detail.item.installed)}
+        confirming={confirmingInstall}
+        planPending={
+          detail?.kind === "market" && pendingItemId === detail.item.id
+        }
+        plan={detail?.kind === "market" ? plan : null}
+        installing={
+          detail?.kind === "market"
+            ? marketInstall.isPending && pendingItemId === null
+            : catalogInstall.isPending
+        }
         error={installError}
-        onConfirm={confirmInstall}
-        onClose={() => {
-          setPlan(null);
-          setInstallError(null);
+        onGet={() => {
+          if (detail) openConfirm(detail);
         }}
+        onConfirm={handleConfirmInstall}
+        onClose={closeDetail}
       />
     </YouScreen>
   );

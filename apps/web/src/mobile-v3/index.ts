@@ -12,6 +12,11 @@ export { CueRing, CueRingHero, type OrbitChip } from "./cue-ring";
 export { StateChip, type Mv3State } from "./state-chip";
 export { TabBarV3 } from "./tab-bar-v3";
 export { LargeTitleHeader } from "./large-title-header";
+export {
+  SharedMobileHeader,
+  type SharedHeaderAction,
+  type SharedHeaderPill,
+} from "./shared-header";
 export { SheetShell } from "./sheet-shell";
 export {
   cardBody,

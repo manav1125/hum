@@ -115,6 +115,9 @@ export const routes = {
   workLive: (id: string) => `${dyn(r("/assistant/work"), id)}/live`,
   // Review pager — full-bleed deliverable review queue (frame 16).
   reviewQueue: r("/assistant/review-queue"),
+  // Review index — the round-4 frame 55 list (Today's "See all" entry; rows
+  // seed the pager, "Play all ›" plays it from the top).
+  reviewIndex: r("/assistant/review-queue/list"),
   // Brand kit — palette/type/logos/voice + apply-everywhere (frame 19).
   brandKit: r("/assistant/brand"),
   // "What do you want to get done?" template / asset-creation picker.

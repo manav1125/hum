@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { toast } from "@vellumai/design-library/components/toast";
 
@@ -8,6 +9,9 @@ import {
   MobileSidebarDrawer,
   MobileSidebarTrigger,
 } from "@/components/mobile-sidebar-drawer";
+import { SharedMobileHeader } from "@/mobile-v3/shared-header";
+import { useIsMobile } from "@/hooks/use-is-mobile";
+import { routes } from "@/utils/routes";
 import { AssistantChannelsDetail } from "@/domains/contacts/components/assistant-channels-detail";
 import { ContactDetailView } from "@/domains/contacts/components/contact-detail-view";
 import { ContactMergeDialog } from "@/domains/contacts/components/contact-merge-dialog";
@@ -120,9 +124,15 @@ export function ContactsPage({
   const setFlag = useAssistantFeatureFlagStore.use.setFlag();
   const identityName = useAssistantIdentityStore.use.name();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
+  const navigate = useNavigate();
   const [selection, setSelection] = useState<ContactSelection>({
     kind: "assistant",
   });
+  // Mobile (frame 54): list-first — the detail only pushes on an explicit tap.
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [mobileTypePill, setMobileTypePill] = useState("all");
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
 
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -269,6 +279,7 @@ export function ContactsPage({
       // channel ids still land on the assistant pane (just without a specific
       // highlight).
       setSelection({ kind: "assistant" });
+      setMobileDetailOpen(true);
       if (
         channelParam === "slack" ||
         channelParam === "telegram" ||
@@ -398,6 +409,7 @@ export function ContactsPage({
       setSelection(sel);
       setDrawerOpen(false);
       setMergeDialogOpen(false);
+      setMobileDetailOpen(true);
       mergeMutation.reset();
     },
     [mergeMutation],
@@ -617,6 +629,43 @@ export function ContactsPage({
   // Render
   // ---------------------------------------------------------------------------
 
+  const visibleRegularContacts = regularContacts
+    .filter((c) => c.id !== deletingContactId)
+    .map((c) => ({
+      id: c.id,
+      displayName: c.displayName,
+      role: c.role,
+      contactType: c.contactType,
+      channelTypes: channelTypeLabels(c.channels, a2aChannel),
+    }));
+
+  // Mobile filter pills (frame 54): real contact-type buckets with counts.
+  const typeCounts = new Map<string, number>();
+  for (const c of visibleRegularContacts) {
+    const t = (c.contactType || "human").toLowerCase();
+    typeCounts.set(t, (typeCounts.get(t) ?? 0) + 1);
+  }
+  const mobilePills = [
+    { value: "all", label: "All", count: visibleRegularContacts.length },
+    // Type pills only when there is more than one bucket to filter between.
+    ...(typeCounts.size > 1
+      ? [...typeCounts.entries()].map(([t, n]) => ({
+          value: t,
+          label: t.charAt(0).toUpperCase() + t.slice(1),
+          count: n,
+        }))
+      : []),
+  ];
+  const activeMobilePill = mobilePills.some((p) => p.value === mobileTypePill)
+    ? mobileTypePill
+    : "all";
+  const mobileFilteredContacts =
+    activeMobilePill === "all"
+      ? visibleRegularContacts
+      : visibleRegularContacts.filter(
+          (c) => (c.contactType || "human").toLowerCase() === activeMobilePill,
+        );
+
   const contactsListProps = {
     loading: contactsQuery.isLoading,
     assistantName: assistantName,
@@ -630,19 +679,193 @@ export function ContactsPage({
           channelTypes: channelTypeLabels(guardian.channels, a2aChannel),
         }
       : null,
-    regularContacts: regularContacts
-      .filter((c) => c.id !== deletingContactId)
-      .map((c) => ({
-        id: c.id,
-        displayName: c.displayName,
-        role: c.role,
-        contactType: c.contactType,
-        channelTypes: channelTypeLabels(c.channels, a2aChannel),
-      })),
+    regularContacts: isMobile ? mobileFilteredContacts : visibleRegularContacts,
     selection,
     onAddContact: handleAddContact,
     addingContact: createMutation.isPending,
   };
+
+  const detailPane =
+    selection.kind === "assistant" ||
+    (selection.kind === "contact" &&
+      selection.contactId === deletingContactId) ? (
+      <AssistantChannelsDetail
+        assistantName={assistantName}
+        channels={channels}
+        pendingChannelKey={
+          disconnectMutation.isPending
+            ? (disconnectMutation.variables ?? null)
+            : null
+        }
+        onSetup={onStartSetupConversation ? handleAssistantSetup : undefined}
+        onDisconnect={handleDisconnect}
+        onSaveTelegramToken={handleSaveTelegramToken}
+        onSaveSlackConfig={handleSaveSlackConfig}
+        onSaveTwilioCredentials={handleSaveTwilioCredentials}
+        onGenerateInviteLink={a2aChannel ? handleOpenInviteLink : undefined}
+        highlightChannelKey={highlightChannel}
+        onHighlightConsumed={() => setHighlightChannel(null)}
+      />
+    ) : optimisticContact ? (
+      optimisticContact.role === "guardian" ? (
+        <GuardianDetailView
+          contact={optimisticContact}
+          savePending={updateMutation.isPending}
+          verifyPending={verifyChannelMutation.isPending}
+          mergePending={mergeMutation.isPending}
+          canMerge={canMerge}
+          availableChannels={availableChannels}
+          a2aEnabled={a2aChannel}
+          onSave={async (patch) => {
+            await updateMutation.mutateAsync({
+              contactId: optimisticContact.id,
+              patch,
+            });
+          }}
+          onMerge={handleOpenMerge}
+          onSetupChannel={
+            onStartSetupConversation ? handleGuardianEnableChannel : undefined
+          }
+          onVerifyChannel={handleGuardianVerifyChannel}
+          onRevokeChannel={handleRevokeChannel}
+          onGenerateInviteLink={a2aChannel ? handleOpenInviteLink : undefined}
+        />
+      ) : (
+        <ContactDetailView
+          contact={optimisticContact}
+          savePending={updateMutation.isPending}
+          deletePending={deleteMutation.isPending}
+          mergePending={mergeMutation.isPending}
+          canMerge={canMerge}
+          availableChannels={availableChannels}
+          a2aEnabled={a2aChannel}
+          onSave={async (patch) => {
+            await updateMutation.mutateAsync({
+              contactId: optimisticContact.id,
+              patch,
+            });
+          }}
+          onDelete={async () => {
+            await deleteMutation.mutateAsync(optimisticContact.id);
+          }}
+          onMerge={handleOpenMerge}
+          onSetupChannel={
+            onStartSetupConversation ? handleContactSetupChannel : undefined
+          }
+          onRevokeChannel={handleRevokeChannel}
+        />
+      )
+    ) : (
+      <ContactsEmptyState />
+    );
+
+  const dialogs = (
+    <>
+      {selectedContact ? (
+        <ContactMergeDialog
+          open={mergeDialogOpen}
+          survivor={selectedContact}
+          candidates={mergeCandidates}
+          pending={mergeMutation.isPending}
+          errorMessage={
+            mergeMutation.error instanceof Error
+              ? mergeMutation.error.message
+              : mergeMutation.error
+                ? "Failed to merge contacts"
+                : null
+          }
+          onMerge={(donorId) =>
+            mergeMutation.mutate({
+              path: { assistant_id: assistantId },
+              body: {
+                keepId: selectedContact.id,
+                mergeId: donorId,
+              },
+            })
+          }
+          onClose={handleCloseMerge}
+        />
+      ) : null}
+
+      <GenerateInviteLinkDialog
+        open={inviteDialogOpen}
+        assistantId={assistantId}
+        onClose={handleInviteClose}
+      />
+    </>
+  );
+
+  // ── Mobile (frame 54): shared header + list-first, tap pushes the detail ──
+  if (isMobile) {
+    const mobileDetailTitle =
+      selection.kind === "assistant"
+        ? assistantName
+        : (optimisticContact?.displayName?.trim() ?? "Contact");
+
+    return (
+      <div
+        data-mv3
+        className="flex min-h-0 flex-1 flex-col"
+        style={{
+          background: "var(--mv3-bg)",
+          color: "var(--mv3-text)",
+          fontFamily: "var(--mv3-font)",
+        }}
+      >
+        {mobileDetailOpen ? (
+          <SharedMobileHeader
+            backLabel="Contacts"
+            onBack={() => setMobileDetailOpen(false)}
+            title={mobileDetailTitle}
+          />
+        ) : (
+          <SharedMobileHeader
+            backLabel="You"
+            onBack={() => navigate(routes.channels)}
+            title="Contacts"
+            actions={[
+              {
+                key: "add",
+                label: "Add contact",
+                icon: <Plus size={15} aria-hidden />,
+                onPress: handleAddContact,
+              },
+            ]}
+            pills={mobilePills}
+            activePill={activeMobilePill}
+            onPillChange={setMobileTypePill}
+            scrollRef={mobileScrollRef}
+          />
+        )}
+
+        <div
+          ref={mobileScrollRef}
+          className="min-h-0 flex-1 overflow-y-auto"
+          style={{
+            padding:
+              "12px 16px calc(24px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))",
+            fontFamily: "'DM Sans', system-ui, sans-serif",
+            color: "var(--mv1-t1)",
+          }}
+        >
+          {mobileDetailOpen ? (
+            detailPane
+          ) : (
+            // List-first: no preselect highlight — selection only means
+            // something on mobile once a tap pushes the detail (and the
+            // desktop selected-row treatment is light-palette).
+            <ContactsList
+              {...contactsListProps}
+              selection={null}
+              onSelect={handleSelect}
+            />
+          )}
+        </div>
+
+        {dialogs}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -681,121 +904,10 @@ export function ContactsPage({
         </aside>
 
         <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          {selection.kind === "assistant" ||
-          (selection.kind === "contact" &&
-            selection.contactId === deletingContactId) ? (
-            <AssistantChannelsDetail
-              assistantName={assistantName}
-              channels={channels}
-              pendingChannelKey={
-                disconnectMutation.isPending
-                  ? (disconnectMutation.variables ?? null)
-                  : null
-              }
-              onSetup={
-                onStartSetupConversation ? handleAssistantSetup : undefined
-              }
-              onDisconnect={handleDisconnect}
-              onSaveTelegramToken={handleSaveTelegramToken}
-              onSaveSlackConfig={handleSaveSlackConfig}
-              onSaveTwilioCredentials={handleSaveTwilioCredentials}
-              onGenerateInviteLink={
-                a2aChannel ? handleOpenInviteLink : undefined
-              }
-              highlightChannelKey={highlightChannel}
-              onHighlightConsumed={() => setHighlightChannel(null)}
-            />
-          ) : optimisticContact ? (
-            optimisticContact.role === "guardian" ? (
-              <GuardianDetailView
-                contact={optimisticContact}
-                savePending={updateMutation.isPending}
-                verifyPending={verifyChannelMutation.isPending}
-                mergePending={mergeMutation.isPending}
-                canMerge={canMerge}
-                availableChannels={availableChannels}
-                a2aEnabled={a2aChannel}
-                onSave={async (patch) => {
-                  await updateMutation.mutateAsync({
-                    contactId: optimisticContact.id,
-                    patch,
-                  });
-                }}
-                onMerge={handleOpenMerge}
-                onSetupChannel={
-                  onStartSetupConversation
-                    ? handleGuardianEnableChannel
-                    : undefined
-                }
-                onVerifyChannel={handleGuardianVerifyChannel}
-                onRevokeChannel={handleRevokeChannel}
-                onGenerateInviteLink={
-                  a2aChannel ? handleOpenInviteLink : undefined
-                }
-              />
-            ) : (
-              <ContactDetailView
-                contact={optimisticContact}
-                savePending={updateMutation.isPending}
-                deletePending={deleteMutation.isPending}
-                mergePending={mergeMutation.isPending}
-                canMerge={canMerge}
-                availableChannels={availableChannels}
-                a2aEnabled={a2aChannel}
-                onSave={async (patch) => {
-                  await updateMutation.mutateAsync({
-                    contactId: optimisticContact.id,
-                    patch,
-                  });
-                }}
-                onDelete={async () => {
-                  await deleteMutation.mutateAsync(optimisticContact.id);
-                }}
-                onMerge={handleOpenMerge}
-                onSetupChannel={
-                  onStartSetupConversation
-                    ? handleContactSetupChannel
-                    : undefined
-                }
-                onRevokeChannel={handleRevokeChannel}
-              />
-            )
-          ) : (
-            <ContactsEmptyState />
-          )}
+          {detailPane}
         </section>
 
-        {selectedContact ? (
-          <ContactMergeDialog
-            open={mergeDialogOpen}
-            survivor={selectedContact}
-            candidates={mergeCandidates}
-            pending={mergeMutation.isPending}
-            errorMessage={
-              mergeMutation.error instanceof Error
-                ? mergeMutation.error.message
-                : mergeMutation.error
-                  ? "Failed to merge contacts"
-                  : null
-            }
-            onMerge={(donorId) =>
-              mergeMutation.mutate({
-                path: { assistant_id: assistantId },
-                body: {
-                  keepId: selectedContact.id,
-                  mergeId: donorId,
-                },
-              })
-            }
-            onClose={handleCloseMerge}
-          />
-        ) : null}
-
-        <GenerateInviteLinkDialog
-          open={inviteDialogOpen}
-          assistantId={assistantId}
-          onClose={handleInviteClose}
-        />
+        {dialogs}
       </div>
     </div>
   );

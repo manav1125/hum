@@ -1,12 +1,20 @@
 /**
- * Mv3Today — the mobile v3 Today screen (spec frame 1 dark / 12 light): the
- * daily hook. Replaces the MOBILE rendering of HqPage only; desktop keeps the
- * serif HQ deck untouched.
+ * Mv3Today — the mobile v3 Today screen (spec frame 1 dark / 12 light + the
+ * round-4 frame 60 collapse). Replaces the MOBILE rendering of HqPage only;
+ * desktop keeps the serif HQ deck untouched.
  *
  * Layout (spec-verbatim): date eyebrow + avatar → "Good morning, Manav."
  * large title → CueRing hero with orbit chips + "Working on N things for
  * you" → the card stack: NEXT MOVE → NEEDS YOUR OK (amber, Approve/Deny) →
  * REVIEW READY (violet) → WORKING NOW rows → "Came in today" strip.
+ *
+ * ROUND-4 FRAME 60 — the whole page scrolls as ONE surface and the hero
+ * condenses into a pinned 56px bar with exact physics (see
+ * ./today-collapse.ts for the verbatim spec + the pure value maps). The
+ * scroll driver is rAF-batched and writes transform/opacity ONLY, with all
+ * geometry (ring start/target centers) measured once per mount/resize —
+ * never per frame (WKWebView guardrails). Reduced motion degrades to two
+ * static states with a 200ms cross-fade at threshold 100.
  *
  * DATA MAPPING — nothing invented, every slot rides the wiring HqPage
  * already has (a slot with no data collapses; the designed empty state is a
@@ -20,7 +28,7 @@
  * Capture stays reachable through the tab bar's + (Create) — the v3 design
  * moves capture there, so Today carries no capture bar.
  */
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
@@ -42,10 +50,9 @@ import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { AuroraBackdrop } from "../aurora-backdrop";
-import { CueRingHero, type OrbitChip } from "../cue-ring";
+import { CueRing, CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
-import { LargeTitleHeader } from "../large-title-header";
 import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
 import {
   cardBody,
@@ -56,6 +63,22 @@ import {
   rise,
   secondaryBtn,
 } from "../mv3-kit";
+import {
+  barChromeOpacity,
+  captionOpacity,
+  chipFade,
+  condensedRightOpacity,
+  condensedTitleOpacity,
+  greetingOpacity,
+  guideRingOpacity,
+  reducedMode,
+  ringHandoff,
+  ringTransform,
+  REDUCED_MOTION_FADE_MS,
+  type RingGeometry,
+} from "./today-collapse";
+
+const SAFE_TOP = "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))";
 
 function dayPart(): string {
   const hour = new Date().getHours();
@@ -321,7 +344,8 @@ const REVIEW_SHOWN_MAX = 2;
 /**
  * "Review ready · N / See all N ›" strip (UAT P1-3): when more deliverables
  * await review than Today shows, surface the real count and link into the
- * full pager instead of silently hiding the rest.
+ * review INDEX (round-4 frame 55 — the list seeds the pager) instead of
+ * silently hiding the rest.
  */
 function ReviewSeeAllStrip({ total }: { total: number }) {
   const navigate = useNavigate();
@@ -343,7 +367,7 @@ function ReviewSeeAllStrip({ total }: { total: number }) {
         aria-label={`See all ${total} items ready for review`}
         onClick={() => {
           haptic.light();
-          navigate(routes.reviewQueue);
+          navigate(routes.reviewIndex);
         }}
         style={{
           marginLeft: "auto",
@@ -546,6 +570,188 @@ function CameInStripV3({
 }
 
 /* -------------------------------------------------------------------------- */
+/* Frame 60 — the collapse driver                                             */
+/* -------------------------------------------------------------------------- */
+
+/** The element handles the rAF scroll driver writes to. */
+interface CollapseRefs {
+  scroller: React.RefObject<HTMLDivElement | null>;
+  eyebrowRow: React.RefObject<HTMLDivElement | null>;
+  greeting: React.RefObject<HTMLDivElement | null>;
+  morph: React.RefObject<HTMLDivElement | null>;
+  orbitals: React.RefObject<HTMLDivElement | null>;
+  guides: React.RefObject<HTMLDivElement | null>;
+  caption: React.RefObject<HTMLDivElement | null>;
+  barChrome: React.RefObject<HTMLDivElement | null>;
+  barRing: React.RefObject<HTMLSpanElement | null>;
+  barSlot: React.RefObject<HTMLSpanElement | null>;
+  barLiveDot: React.RefObject<HTMLSpanElement | null>;
+  barTitle: React.RefObject<HTMLDivElement | null>;
+  barRight: React.RefObject<HTMLButtonElement | null>;
+}
+
+/**
+ * rAF scroll driver — reads scrollTop, writes transform/opacity through the
+ * physics maps in ./today-collapse.ts. No React re-render per tick, no
+ * per-frame layout reads (geometry is measured on mount/resize only).
+ */
+function useTodayCollapse(refs: CollapseRefs, hasLive: boolean) {
+  useEffect(() => {
+    const scroller = refs.scroller.current;
+    if (!scroller) return;
+
+    const reducedQuery = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    );
+    let geom: RingGeometry | null = null;
+    let raf = 0;
+
+    const fade = `opacity ${REDUCED_MOTION_FADE_MS}ms ease`;
+    const setFade = (el: HTMLElement | null, on: boolean) => {
+      if (el) el.style.transition = on ? fade : "";
+    };
+    const setOpacity = (el: HTMLElement | null, v: number) => {
+      if (el) el.style.opacity = String(v);
+    };
+
+    /** Measure the morph start/target centers with the transform cleared. */
+    const measure = () => {
+      const morph = refs.morph.current;
+      const slot = refs.barSlot.current;
+      if (!morph || !slot) {
+        geom = null;
+        return;
+      }
+      const prev = morph.style.transform;
+      morph.style.transform = "";
+      const m = morph.getBoundingClientRect();
+      const s = slot.getBoundingClientRect();
+      morph.style.transform = prev;
+      geom = {
+        heroCx: m.left + m.width / 2,
+        heroCyDoc: m.top + scroller.scrollTop + m.height / 2,
+        barCx: s.left + s.width / 2,
+        barCy: s.top + s.height / 2,
+      };
+    };
+
+    const apply = () => {
+      raf = 0;
+      const y = scroller.scrollTop;
+      const reduced = Boolean(reducedQuery?.matches);
+      const morph = refs.morph.current;
+      const right = refs.barRight.current;
+
+      if (reduced) {
+        // Two static states, 200ms cross-fade at threshold 100 (spec).
+        const condensed = reducedMode(y) === "condensed";
+        for (const el of [
+          refs.eyebrowRow.current,
+          refs.greeting.current,
+          refs.orbitals.current,
+          refs.guides.current,
+          refs.caption.current,
+          refs.barChrome.current,
+          refs.barRing.current,
+          refs.barLiveDot.current,
+          refs.barTitle.current,
+          right,
+          morph,
+        ])
+          setFade(el, true);
+        if (morph) morph.style.transform = "";
+        setOpacity(refs.eyebrowRow.current, condensed ? 0 : 1);
+        setOpacity(refs.greeting.current, condensed ? 0 : 1);
+        setOpacity(refs.orbitals.current, condensed ? 0 : 1);
+        setOpacity(refs.guides.current, condensed ? 0 : 1);
+        setOpacity(refs.caption.current, condensed ? 0 : 1);
+        setOpacity(morph, condensed ? 0 : 1);
+        setOpacity(refs.barChrome.current, condensed ? 1 : 0);
+        // Reduced mode swaps in the STATIC 30px bar ring (no morph flight).
+        setOpacity(refs.barRing.current, condensed ? 1 : 0);
+        setOpacity(refs.barLiveDot.current, condensed && hasLive ? 1 : 0);
+        setOpacity(refs.barTitle.current, condensed ? 1 : 0);
+        if (right) {
+          right.style.opacity = condensed ? "1" : "0";
+          right.style.pointerEvents = condensed ? "auto" : "none";
+        }
+        return;
+      }
+
+      // Full physics. Transforms/opacity only; every value is a pure map.
+      const chips = chipFade(y);
+      const orbitals = refs.orbitals.current;
+      if (orbitals) {
+        setFade(orbitals, false);
+        orbitals.style.opacity = String(chips.opacity);
+        orbitals.style.transform = `scale(${chips.scale})`;
+      }
+      const guides = refs.guides.current;
+      if (guides) {
+        setFade(guides, false);
+        guides.style.opacity = String(guideRingOpacity(y));
+      }
+      const handoff = ringHandoff(y);
+      if (morph && geom) {
+        setFade(morph, false);
+        // 150–190: hand the visual off to the bar's own ring (above the
+        // chrome) — see ringHandoff in today-collapse.ts.
+        morph.style.opacity = String(1 - handoff);
+        const t = ringTransform(y, geom);
+        morph.style.transform = `translate3d(${t.tx}px, ${t.ty}px, 0) scale(${t.scale})`;
+      }
+      const gOp = greetingOpacity(y);
+      setFade(refs.greeting.current, false);
+      setOpacity(refs.greeting.current, gOp);
+      setFade(refs.eyebrowRow.current, false);
+      setOpacity(refs.eyebrowRow.current, gOp);
+      setFade(refs.caption.current, false);
+      setOpacity(refs.caption.current, captionOpacity(y));
+      setFade(refs.barChrome.current, false);
+      setOpacity(refs.barChrome.current, barChromeOpacity(y));
+      setFade(refs.barTitle.current, false);
+      setOpacity(refs.barTitle.current, condensedTitleOpacity(y));
+      // The morphed hero ring carries the flight; the bar's static ring
+      // takes over during the 150–190 handoff (it sits ABOVE the chrome).
+      setFade(refs.barRing.current, false);
+      setOpacity(refs.barRing.current, handoff);
+      setFade(refs.barLiveDot.current, false);
+      setOpacity(
+        refs.barLiveDot.current,
+        hasLive ? condensedTitleOpacity(y) : 0,
+      );
+      if (right) {
+        setFade(right, false);
+        const t = condensedRightOpacity(y);
+        right.style.opacity = String(t);
+        right.style.pointerEvents = t > 0.5 ? "auto" : "none";
+      }
+    };
+
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
+    const remeasure = () => {
+      measure();
+      schedule();
+    };
+
+    // Initial measure rides one frame after mount so fonts/layout settle.
+    const initial = requestAnimationFrame(remeasure);
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", remeasure);
+    reducedQuery?.addEventListener?.("change", remeasure);
+    return () => {
+      cancelAnimationFrame(initial);
+      if (raf) cancelAnimationFrame(raf);
+      scroller.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", remeasure);
+      reducedQuery?.removeEventListener?.("change", remeasure);
+    };
+  }, [refs, hasLive]);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Screen                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -571,7 +777,40 @@ export function Mv3Today({
   cameIn: HqWorkItem[];
   degraded: boolean;
 }) {
+  const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const eyebrowRowRef = useRef<HTMLDivElement>(null);
+  const greetingRef = useRef<HTMLDivElement>(null);
+  const morphRef = useRef<HTMLDivElement>(null);
+  const orbitalsRef = useRef<HTMLDivElement>(null);
+  const guidesRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
+  const barChromeRef = useRef<HTMLDivElement>(null);
+  const barRingRef = useRef<HTMLSpanElement>(null);
+  const barSlotRef = useRef<HTMLSpanElement>(null);
+  const barLiveDotRef = useRef<HTMLSpanElement>(null);
+  const barTitleRef = useRef<HTMLDivElement>(null);
+  const barRightRef = useRef<HTMLButtonElement>(null);
+
+  const collapseRefs = useMemo<CollapseRefs>(
+    () => ({
+      scroller: scrollRef,
+      eyebrowRow: eyebrowRowRef,
+      greeting: greetingRef,
+      morph: morphRef,
+      orbitals: orbitalsRef,
+      guides: guidesRef,
+      caption: captionRef,
+      barChrome: barChromeRef,
+      barRing: barRingRef,
+      barSlot: barSlotRef,
+      barLiveDot: barLiveDotRef,
+      barTitle: barTitleRef,
+      barRight: barRightRef,
+    }),
+    [],
+  );
+  useTodayCollapse(collapseRefs, running.length > 0);
 
   // One-tap ✕ dismiss on review cards, with the shared 5s undo pill.
   const { dismiss, gone, leavingId, toastNode } = useDismissTask(assistantId);
@@ -644,6 +883,13 @@ export function Mv3Today({
     );
   }
 
+  const watchLive = () => {
+    haptic.light();
+    const first = running[0];
+    if (first) navigate(routes.workLive(first.id));
+    else navigate(routes.allWork);
+  };
+
   // Stagger delays follow the spec's cadence (.1/.25/.4/.55) across whatever
   // slots actually rendered.
   let slot = 0;
@@ -658,8 +904,6 @@ export function Mv3Today({
         position: "relative",
         height: "100%",
         overflow: "hidden",
-        display: "flex",
-        flexDirection: "column",
         background: "var(--mv3-bg)",
         color: "var(--mv3-text)",
         fontFamily: "var(--mv3-font)",
@@ -667,112 +911,260 @@ export function Mv3Today({
     >
       <AuroraBackdrop />
 
-      <LargeTitleHeader
-        eyebrow={dateEyebrow()}
-        title={greeting}
-        scrollRef={scrollRef}
-        trailing={
-          <span
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: "50%",
-              background: "var(--mv3-avatar-bg)",
-              border: "1px solid var(--mv3-avatar-border)",
-              boxShadow: "var(--mv3-avatar-shadow)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 13,
-              fontWeight: 600,
-              backdropFilter: "blur(10px)",
-              WebkitBackdropFilter: "blur(10px)",
-            }}
-          >
-            {initial}
-          </span>
-        }
-      />
-
-      {degraded ? (
+      {/* ── Frame 60: the pinned condensed bar (invisible at rest). ─────────
+          The overlay never takes pointer events except the right slot once
+          it's visible; the page scrolls underneath. */}
+      <div
+        data-slot="mv3-today-condensed-bar"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 4,
+          pointerEvents: "none",
+        }}
+      >
+        {/* Hairline + blur backdrop — fades in 120–200. Opacity carries the
+            blur with it (one composited layer, no per-frame filter writes). */}
         <div
-          role="status"
+          ref={barChromeRef}
+          aria-hidden
           style={{
-            textAlign: "center",
-            fontFamily: mv3Mono,
-            fontSize: 10,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--mv3-faint)",
-            padding: "4px 0 0",
+            position: "absolute",
+            inset: 0,
+            background: "color-mix(in srgb, var(--mv3-bg) 62%, transparent)",
+            borderBottom: "1px solid var(--mv3-line)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            opacity: 0,
+          }}
+        />
+        <div
+          style={{
             position: "relative",
-            zIndex: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: `calc(${SAFE_TOP} + 8px) 20px 10px`,
           }}
         >
-          Reconnecting to Cue…
+          {/* Bar-left ring slot: the morph target. The static 30px ring
+              inside only shows under reduced motion (the animated path flies
+              the hero ring in instead). Live-dot rides on top either way. */}
+          <span
+            ref={barSlotRef}
+            style={{
+              position: "relative",
+              width: 30,
+              height: 30,
+              flexShrink: 0,
+            }}
+          >
+            <span ref={barRingRef} style={{ opacity: 0, display: "block" }}>
+              <CueRing size={30} stroke="var(--mv3-text)" />
+            </span>
+            <span
+              ref={barLiveDotRef}
+              aria-hidden
+              style={{
+                position: "absolute",
+                right: -2,
+                top: -2,
+                width: 9,
+                height: 9,
+                borderRadius: "50%",
+                background: "var(--mv3-accent)",
+                border: "2px solid var(--mv3-bg)",
+                opacity: 0,
+              }}
+            />
+          </span>
+          {/* Condensed title — 16/700 (intentional per frame 60, vs the
+              shared header's 17/600; keep as drawn). */}
+          <div
+            ref={barTitleRef}
+            style={{
+              flex: 1,
+              fontSize: 16,
+              fontWeight: 700,
+              letterSpacing: "-0.3px",
+              opacity: 0,
+            }}
+          >
+            Today
+          </div>
+          <button
+            ref={barRightRef}
+            type="button"
+            className="cue-pressable"
+            aria-label={
+              running.length > 0
+                ? `Working on ${running.length} — watch live`
+                : "Nothing running"
+            }
+            onClick={watchLive}
+            style={{
+              fontSize: 11,
+              color: "var(--mv3-micro)",
+              background: "none",
+              border: "none",
+              // ≥44pt target for the 15px-tall link.
+              padding: "14px 0 14px 14px",
+              margin: "-14px 0",
+              minHeight: 44,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              opacity: 0,
+              pointerEvents: "none",
+            }}
+          >
+            {running.length > 0 ? `working on ${running.length} ›` : ""}
+          </button>
         </div>
-      ) : null}
+      </div>
 
-      <CueRingHero
-        chips={chips}
-        caption={
-          running.length > 0
-            ? `Working on ${running.length} ${running.length === 1 ? "thing" : "things"} for you`
-            : undefined
-        }
-      />
-
-      {/* Card stack — the only scrolling region (header + hero stay put). */}
+      {/* ── ONE page scroll (frame 60: no inner region). ──────────────────── */}
       <div
         ref={scrollRef}
         style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          padding: "4px 16px 16px",
           position: "relative",
           zIndex: 2,
+          height: "100%",
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {moveLoading && !move.hasMove ? (
-            // Reserve the Next-move slot while the pick computes so the card
-            // streaming in later never shoves the Review cards down mid-read.
+        {/* Hero zone — 285px at rest, condensing to the 56px bar over
+            scrollY 0–200 by scroll consumption + transform/opacity (heights
+            never animate). */}
+        <div style={{ padding: `calc(${SAFE_TOP} + 6px) 22px 0` }}>
+          <div
+            ref={eyebrowRowRef}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
             <div
-              aria-hidden
               style={{
-                height: 96,
-                borderRadius: 18,
-                background: "var(--mv3-btn2-bg)",
-                border: "1px solid var(--mv3-line)",
-                opacity: 0.55,
+                fontFamily: mv3Mono,
+                fontSize: 11,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: "var(--mv3-micro)",
               }}
-            />
-          ) : (
-            <NextMoveV3 assistantId={assistantId} move={move} />
-          )}
-          {approvals.slice(0, 2).map((interaction) => (
-            <NeedsOkV3
-              key={interaction.requestId}
-              assistantId={assistantId}
-              interaction={interaction}
-              delay={nextDelay()}
-            />
-          ))}
-          {reviewShown.length > REVIEW_SHOWN_MAX ? (
-            <ReviewSeeAllStrip total={reviewShown.length} />
-          ) : null}
-          {reviewShown.slice(0, REVIEW_SHOWN_MAX).map((item) => (
-            <ReviewV3
-              key={item.id}
-              item={item}
-              delay={nextDelay()}
-              leaving={leavingId === item.id}
-              onDismiss={() => dismiss(item)}
-            />
-          ))}
-          <WorkingNowV3 running={running} delay={nextDelay()} />
-          <CameInStripV3 items={cameIn} delay={nextDelay()} />
+            >
+              {dateEyebrow()}
+            </div>
+            <span
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: "50%",
+                background: "var(--mv3-avatar-bg)",
+                border: "1px solid var(--mv3-avatar-border)",
+                boxShadow: "var(--mv3-avatar-shadow)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 13,
+                fontWeight: 600,
+                backdropFilter: "blur(10px)",
+                WebkitBackdropFilter: "blur(10px)",
+              }}
+            >
+              {initial}
+            </span>
+          </div>
+          {/* Greeting — fades out 40–100 as "Today" takes over 100–160. */}
+          <div
+            ref={greetingRef}
+            style={{
+              fontSize: 29,
+              fontWeight: 700,
+              letterSpacing: "-0.8px",
+              marginTop: 4,
+              lineHeight: 1.08,
+            }}
+          >
+            {greeting}
+          </div>
+        </div>
+
+        {degraded ? (
+          <div
+            role="status"
+            style={{
+              textAlign: "center",
+              fontFamily: mv3Mono,
+              fontSize: 10,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "var(--mv3-faint)",
+              padding: "4px 0 0",
+            }}
+          >
+            Reconnecting to Cue…
+          </div>
+        ) : null}
+
+        <CueRingHero
+          chips={chips}
+          caption={
+            running.length > 0
+              ? `Working on ${running.length} ${running.length === 1 ? "thing" : "things"} for you`
+              : undefined
+          }
+          morphRef={morphRef}
+          orbitalsRef={orbitalsRef}
+          guidesRef={guidesRef}
+          captionRef={captionRef}
+        />
+
+        {/* Card stack — rides the same page scroll (frame 60). */}
+        <div style={{ padding: "4px 16px 16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {moveLoading && !move.hasMove ? (
+              // Reserve the Next-move slot while the pick computes so the card
+              // streaming in later never shoves the Review cards down mid-read.
+              <div
+                aria-hidden
+                style={{
+                  height: 96,
+                  borderRadius: 18,
+                  background: "var(--mv3-btn2-bg)",
+                  border: "1px solid var(--mv3-line)",
+                  opacity: 0.55,
+                }}
+              />
+            ) : (
+              <NextMoveV3 assistantId={assistantId} move={move} />
+            )}
+            {approvals.slice(0, 2).map((interaction) => (
+              <NeedsOkV3
+                key={interaction.requestId}
+                assistantId={assistantId}
+                interaction={interaction}
+                delay={nextDelay()}
+              />
+            ))}
+            {reviewShown.length > REVIEW_SHOWN_MAX ? (
+              <ReviewSeeAllStrip total={reviewShown.length} />
+            ) : null}
+            {reviewShown.slice(0, REVIEW_SHOWN_MAX).map((item) => (
+              <ReviewV3
+                key={item.id}
+                item={item}
+                delay={nextDelay()}
+                leaving={leavingId === item.id}
+                onDismiss={() => dismiss(item)}
+              />
+            ))}
+            <WorkingNowV3 running={running} delay={nextDelay()} />
+            <CameInStripV3 items={cameIn} delay={nextDelay()} />
+          </div>
         </div>
       </div>
       {toastNode}

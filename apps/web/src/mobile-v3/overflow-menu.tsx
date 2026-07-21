@@ -22,7 +22,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { readStoredThemePreference } from "@/domains/settings/utils/theme-preferences";
 import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
+import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { haptic } from "@/utils/haptics";
@@ -40,6 +42,13 @@ export function Mv3OverflowMenu() {
   // an assistant is actually active.
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const [addTasksOpen, setAddTasksOpen] = useState(false);
+  // Value preview for the Appearance link row (round-4 frame 63: "Appearance
+  // · Dark ›"). Read fresh on each open — the leaf writes localStorage, and
+  // the menu re-renders when it toggles open.
+  const velvet = useClientFeatureFlagStore.use.velvet();
+  const themePreference = readStoredThemePreference({ velvetEnabled: velvet });
+  const themeLabel =
+    themePreference.charAt(0).toUpperCase() + themePreference.slice(1);
 
   // Dismiss on outside tap.
   useEffect(() => {
@@ -53,7 +62,7 @@ export function Mv3OverflowMenu() {
     return () => window.removeEventListener("pointerdown", onDown);
   }, [open]);
 
-  const items: Array<{ label: string; run: () => void }> = [
+  const items: Array<{ label: string; meta?: string; run: () => void }> = [
     ...(assistantId
       ? [
           {
@@ -78,6 +87,13 @@ export function Mv3OverflowMenu() {
     {
       label: "Search",
       run: () => toggleCommandPalette(),
+    },
+    {
+      // Frame 63 (a): value-preview link row → the Appearance radio leaf.
+      // Two taps to change a theme, zero to mis-fire.
+      label: "Appearance",
+      meta: themeLabel,
+      run: () => navigate(routes.settings.general),
     },
     {
       label: "Settings",
@@ -165,7 +181,9 @@ export function Mv3OverflowMenu() {
                 item.run();
               }}
               style={{
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
                 width: "100%",
                 textAlign: "left",
                 background: "transparent",
@@ -180,7 +198,26 @@ export function Mv3OverflowMenu() {
                 WebkitTapHighlightColor: "transparent",
               }}
             >
-              {item.label}
+              <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+              {item.meta ? (
+                <>
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      color: "var(--mv3-muted)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {item.meta}
+                  </span>
+                  <span
+                    aria-hidden
+                    style={{ color: "var(--mv3-faint)", flexShrink: 0 }}
+                  >
+                    ›
+                  </span>
+                </>
+              ) : null}
             </button>
           ))}
         </div>

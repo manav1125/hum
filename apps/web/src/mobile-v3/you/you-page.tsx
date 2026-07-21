@@ -187,6 +187,7 @@ function TrackRecord({ assistantId }: { assistantId: string }) {
           <StatTile
             value={usd(summary.totalCents)!}
             label="model spend · 7d"
+            onPress={() => navigate(routes.logs.usage)}
           />
         ) : null}
         <StatTile
@@ -479,8 +480,10 @@ export function Mv3YouPage() {
           onPress={() => navigate(routes.contacts.root)}
         />
         <Dot />
+        {/* Round-4 frame 64: "Workspace" describes a desktop browser; the
+            phone job is retrieval, so the mobile label is "Files". */}
         <FooterLink
-          label="Workspace"
+          label="Files"
           onPress={() => navigate(routes.workspace)}
         />
       </div>

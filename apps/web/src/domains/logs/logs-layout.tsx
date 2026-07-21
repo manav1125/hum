@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Outlet, useLocation } from "react-router";
 
+import { useIsMobile } from "@/hooks/use-is-mobile";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { LOGS_SIDEBAR } from "@/domains/logs/navigation";
@@ -11,6 +12,7 @@ export function LogsLayout() {
   const systemEventsGate = usePlatformGate({ platformHostedOnly: true });
   const emailsGate = usePlatformGate();
   const { pathname } = useLocation();
+  const isMobile = useIsMobile();
 
   const filteredItems = useMemo(
     () =>
@@ -36,6 +38,16 @@ export function LogsLayout() {
     }
     return "Logs & Usage";
   }, [pathname]);
+
+  // MOBILE (round-4 frame 61): the Usage route renders the full-bleed v3
+  // screen (it carries its own `‹ You` navigation), so the desktop
+  // SidebarShell chrome stands down for it. Other logs pages keep the shell.
+  if (
+    isMobile &&
+    (pathname === routes.logs.usage || pathname === routes.logs.root)
+  ) {
+    return <Outlet />;
+  }
 
   return (
     <SidebarShell

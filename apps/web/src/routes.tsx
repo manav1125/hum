@@ -908,6 +908,16 @@ export const routeTree = [
                         },
                       },
                       {
+                        // Review index — round-4 frame 55 list → seeded pager.
+                        path: "review-queue/list",
+                        lazy: {
+                          Component: () =>
+                            import("@/mobile-v3/review/review-index-page").then(
+                              (m) => m.ReviewIndexPage,
+                            ),
+                        },
+                      },
+                      {
                         // Brand kit (frame 19).
                         path: "brand",
                         lazy: {

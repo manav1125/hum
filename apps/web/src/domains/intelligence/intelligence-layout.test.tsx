@@ -70,8 +70,11 @@ afterEach(() => {
 describe("IntelligenceLayout", () => {
   test("on mobile, renders the back row with the section title and hides the in-body h1", () => {
     isMobileRef.value = true;
+    // Cue Live is a section that still uses the interim strip (Identity /
+    // Contacts / Skills / Memory / Workspace… render full-bleed v3 surfaces
+    // that mount their own headers — round-4 frames 53/54).
     const { container, getAllByText, getByLabelText } = renderLayout(
-      "/assistant/identity",
+      "/assistant/cue-live",
     );
 
     // The in-body h1 still renders the title but is hidden on mobile.
@@ -87,13 +90,24 @@ describe("IntelligenceLayout", () => {
     // The v3 back row carries navigation + the section title.
     expect(getByLabelText("Back to You")).toBeTruthy();
     expect(
-      getAllByText("Identity").some(
+      getAllByText("Cue Live").some(
         (el) => el.getAttribute("data-slot") === "typography",
       ),
     ).toBe(true);
 
     // The shared top-bar center stays cleared.
     expect(setTopBarCenterMock).toHaveBeenLastCalledWith(null);
+  });
+
+  test("on mobile, Identity and Contacts render full-bleed — no interim strip", () => {
+    isMobileRef.value = true;
+    for (const path of ["/assistant/identity", "/assistant/contacts"]) {
+      const { queryByLabelText, unmount } = renderLayout(path);
+      // These surfaces mount their own v3 header (frames 53/54), so the
+      // layout's `‹ You` strip stands down.
+      expect(queryByLabelText("Back to You")).toBeNull();
+      unmount();
+    }
   });
 
   test("on desktop, renders the in-body title and clears the top-bar center", () => {

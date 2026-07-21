@@ -73,11 +73,22 @@ export function IntelligenceLayout() {
   // v3 screens carry their own `‹ You` navigation, and the remaining tabs
   // stay reachable through the You screen's quiet footer links. Every other
   // tab keeps the standard chrome.
+  // Round 4 additions: Identity renders the v3 You-cluster leaf (frame 53)
+  // and Contacts mounts the shared mobile header itself (frame 54) — both
+  // own their full canvas, so the interim strip stands down for them too.
   const isFullBleedMobileTab =
     isMobile &&
-    [routes.channels, routes.memory, routes.connectors, routes.skills].some(
-      (to) => pathname === to || pathname.startsWith(to + "/"),
-    );
+    [
+      routes.channels,
+      routes.memory,
+      routes.connectors,
+      routes.skills,
+      routes.identity,
+      routes.contacts.root,
+      // Frame 64: the mobile Workspace tab is the full-bleed v3 "Files"
+      // gallery (it carries its own `‹ You` row).
+      routes.workspace,
+    ].some((to) => pathname === to || pathname.startsWith(to + "/"));
 
   // Mobile section identity lives in the v3 back row below ("‹ You" + the
   // section title), so the shared top-bar center stays empty everywhere —

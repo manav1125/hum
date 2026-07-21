@@ -180,6 +180,82 @@ function SelectedBadge() {
   );
 }
 
+/**
+ * Round-4 frame 59 (mobile): EXACT / INSPIRED rides as a CORNER chip on the
+ * thumbnail, never inline with the name. Fix rule applied: every chip gets an
+ * opaque / blurred-glass background so it stays legible over any thumbnail
+ * content (the mock's translucent INSPIRED chip vanished into title bars).
+ */
+const cornerChipBase: React.CSSProperties = {
+  fontFamily: mono,
+  fontSize: 8.5,
+  letterSpacing: "0.06em",
+  borderRadius: 5,
+  padding: "3px 7px",
+  lineHeight: 1.3,
+};
+
+const cornerChipTones: Record<"exact" | "inspired", React.CSSProperties> = {
+  exact: { background: "#F4F4F6", color: "#050508" },
+  inspired: {
+    background: "rgba(24,28,40,.88)",
+    color: "#E7E7EE",
+    border: "1px solid rgba(255,255,255,.16)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
+  },
+};
+
+function CornerFidelityBadge({
+  fidelity,
+  mode,
+  onChange,
+}: {
+  fidelity: TemplateFidelity;
+  mode: "exact" | "inspired";
+  onChange: (m: "exact" | "inspired") => void;
+}) {
+  if (fidelity === "both") {
+    // ONE corner chip (the frame's rule — never a wide toggle over the
+    // thumbnail): it shows the active mode; tapping it flips exact/inspired
+    // for the pick.
+    const next = mode === "exact" ? "inspired" : "exact";
+    return (
+      <button
+        type="button"
+        aria-label={`Fidelity: ${mode}. Tap to switch to ${next}.`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(next);
+        }}
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          ...cornerChipBase,
+          ...cornerChipTones[mode],
+          cursor: "pointer",
+        }}
+      >
+        {mode === "exact" ? "EXACT" : "INSPIRED"}
+      </button>
+    );
+  }
+  return (
+    <span
+      style={{
+        position: "absolute",
+        top: 8,
+        right: 8,
+        ...cornerChipBase,
+        ...cornerChipTones[fidelity === "exact" ? "exact" : "inspired"],
+      }}
+    >
+      {fidelity === "exact" ? "EXACT" : "INSPIRED"}
+    </span>
+  );
+}
+
 /** EXACT / INSPIRED fidelity badge. `both` renders an Exact | Inspired toggle. */
 function FidelityBadge({
   fidelity,
@@ -552,13 +628,16 @@ export function CreateGalleryOverlay({
           </div>
         ) : null}
 
-        {/* Body (scroll region) */}
+        {/* Body (scroll region). Mobile reserves room for the pinned footer
+            so the last row scrolls clear of the gradient fade. */}
         <div
           style={{
             flex: 1,
             minHeight: 0,
             overflowY: "auto",
-            padding: isMobile ? "6px 16px 16px" : "4px 20px 18px",
+            padding: isMobile
+              ? "6px 16px calc(120px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))"
+              : "4px 20px 18px",
           }}
         >
           {kind === "slides" ? (
@@ -622,19 +701,35 @@ export function CreateGalleryOverlay({
           ) : null}
         </div>
 
-        {/* Footer — escape hatch · brand toggle · primary */}
+        {/* Footer — escape hatch · brand toggle · primary. MOBILE (frame 59):
+            pinned over a gradient fade instead of a hairline, so the grid
+            visibly scrolls beneath the always-legible "Use ‹name› →" CTA. */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 10,
             padding: isMobile
-              ? "12px 16px calc(12px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))"
+              ? "34px 16px calc(12px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))"
               : "14px 20px",
-            borderTop: `1px solid ${C.line}`,
-            background: C.surface,
+            ...(isMobile
+              ? {
+                  position: "absolute" as const,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  border: "none",
+                  background: `linear-gradient(transparent, ${C.surface} 40%)`,
+                  pointerEvents: "none" as const,
+                }
+              : {
+                  borderTop: `1px solid ${C.line}`,
+                  background: C.surface,
+                }),
           }}
         >
+          {/* pointer-events re-enable per control — the mobile footer shell
+              is pointer-transparent so the fade never blocks grid taps. */}
           <button
             type="button"
             onClick={onTakeAiDirection}
@@ -647,13 +742,22 @@ export function CreateGalleryOverlay({
               cursor: "pointer",
               padding: 0,
               whiteSpace: "nowrap",
+              pointerEvents: "auto",
             }}
           >
             + Take AI direction →
           </button>
-          <span style={{ flex: 1 }} />
+          {/* Desktop pushes the CTA right; on mobile the CTA itself flexes
+              to fill the footer, so no spacer. */}
+          {!isMobile ? <span style={{ flex: 1 }} /> : null}
           {hasBrand ? (
-            <BrandToggle on={inBrand} onChange={setInBrand} compact={isMobile} />
+            <span style={{ pointerEvents: "auto", display: "inline-flex" }}>
+              <BrandToggle
+                on={inBrand}
+                onChange={setInBrand}
+                compact={isMobile}
+              />
+            </span>
           ) : null}
           <button
             type="button"
@@ -674,9 +778,12 @@ export function CreateGalleryOverlay({
               opacity: canConfirm ? 1 : 0.7,
               whiteSpace: "nowrap",
               // Long template names ellipsize INSIDE the label span below —
-              // "Use" and "→" themselves never truncate.
+              // "Use" and "→" themselves never truncate. On mobile the CTA
+              // takes all remaining footer width so ordinary names render in
+              // full; only absurdly long ones ellipsize (frame 59).
               minWidth: 0,
-              maxWidth: isMobile ? "58vw" : 320,
+              ...(isMobile ? { flex: 1, justifyContent: "center" } : { maxWidth: 320 }),
+              pointerEvents: "auto",
             }}
           >
             <span style={{ flexShrink: 0 }}>Use</span>
@@ -937,14 +1044,18 @@ function SlideCard({
       onTouchCancel={isMobile ? onTouchEnd : undefined}
       style={cardFrame(selected)}
     >
-      {selected ? <SelectedBadge /> : null}
-      {/* Fixed-aspect media frame: demo thumb + preview cross-fade layered. */}
+      {/* MOBILE (round-4 frame 59): selection reads as the blue border +
+          glow + the footer CTA naming the pick; the check circle would
+          collide with the corner fidelity chip. Desktop keeps it. */}
+      {selected && !isMobile ? <SelectedBadge /> : null}
+      {/* Media frame: demo thumb + preview cross-fade layered. Mobile is the
+          frame-59 96px thumbnail; desktop keeps the 4:3 aspect frame. */}
       <span
         style={{
           position: "relative",
           display: "block",
           width: "100%",
-          aspectRatio: "4 / 3",
+          ...(isMobile ? { height: 96 } : { aspectRatio: "4 / 3" }),
           overflow: "hidden",
         }}
       >
@@ -952,11 +1063,10 @@ function SlideCard({
           style={{
             position: "absolute",
             inset: 0,
-            // Anchor the crop to the LEFT edge: 16:9 slide thumbs in the 4:3
-            // frame crop horizontally, and slide titles live top-left — a
-            // centered crop cut them off (UAT: "thumbnails crop from the
-            // left").
-            background: `left center / cover no-repeat url("${publicAsset(t.thumbnail)}")`,
+            // Anchor the crop TOP-LEFT: slide titles live there, so the crop
+            // may only eat the right/bottom edges (frame 59 rule; the earlier
+            // UAT fix anchored left, the 96px frame also needs top).
+            background: `left top / cover no-repeat url("${publicAsset(t.thumbnail)}")`,
             opacity: preview ? 0 : 1,
             transition: "opacity 160ms ease",
           }}
@@ -967,6 +1077,14 @@ function SlideCard({
           inBrand={previewInBrand}
           visible={preview}
         />
+        {/* Corner mono badge (mobile) — opaque chip over any thumbnail. */}
+        {isMobile ? (
+          <CornerFidelityBadge
+            fidelity={t.fidelity}
+            mode={fidelityMode}
+            onChange={onFidelity}
+          />
+        ) : null}
       </span>
       <span
         style={{
@@ -974,17 +1092,16 @@ function SlideCard({
           alignItems: "center",
           justifyContent: "space-between",
           gap: 6,
-          padding: "8px 10px",
-          // Narrow (phone, 2-col) cards can't fit name + EXACT|INSPIRED on
-          // one line — the name collapsed to ~2 letters (UAT). Let the badge
-          // wrap to its own line instead; the name keeps a readable floor.
+          padding: isMobile ? "9px 11px" : "8px 10px",
+          // Desktop keeps the inline badge and lets it wrap under the name;
+          // on mobile the name owns the full row (badge moved to the corner).
           flexWrap: "wrap",
         }}
       >
         <span
           style={{
             flex: 1,
-            minWidth: isMobile ? "60%" : 0,
+            minWidth: 0,
             fontSize: 12.5,
             fontWeight: 600,
             color: C.t1,
@@ -995,15 +1112,15 @@ function SlideCard({
         >
           {t.name}
         </span>
-        {/* flexShrink 0 so the EXACT | INSPIRED toggle never clips to "INSP"
-            on narrow (phone) cards — it wraps below the name instead. */}
-        <span style={{ flexShrink: 0, display: "inline-flex" }}>
-          <FidelityBadge
-            fidelity={t.fidelity}
-            mode={fidelityMode}
-            onChange={onFidelity}
-          />
-        </span>
+        {!isMobile ? (
+          <span style={{ flexShrink: 0, display: "inline-flex" }}>
+            <FidelityBadge
+              fidelity={t.fidelity}
+              mode={fidelityMode}
+              onChange={onFidelity}
+            />
+          </span>
+        ) : null}
       </span>
     </button>
   );

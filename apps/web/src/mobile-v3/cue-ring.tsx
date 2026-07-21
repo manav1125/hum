@@ -92,10 +92,26 @@ export function CueRingHero({
   chips = [],
   caption,
   height = 150,
+  morphRef,
+  orbitalsRef,
+  guidesRef,
+  captionRef,
 }: {
   chips?: OrbitChip[];
   caption?: React.ReactNode;
   height?: number;
+  /**
+   * Frame-60 collapse hooks (optional; Today passes them so its rAF scroll
+   * driver can write transform/opacity directly — no re-render per tick):
+   * `morphRef` wraps the breathing mark (the 40–160 scale+translate morph
+   * target — a wrapper so the morph never fights the mv3Breathe keyframes),
+   * `orbitalsRef` wraps the chip+dot orbits (0–80 fade), `guidesRef` the two
+   * guide rings (0–80 fade-to-.3), `captionRef` the status pill (120–200).
+   */
+  morphRef?: React.Ref<HTMLDivElement>;
+  orbitalsRef?: React.Ref<HTMLDivElement>;
+  guidesRef?: React.Ref<HTMLDivElement>;
+  captionRef?: React.Ref<HTMLDivElement>;
 }) {
   return (
     <div
@@ -118,30 +134,38 @@ export function CueRingHero({
         }}
       >
         {/* Guide rings — decorative closed circles are allowed as ORBITS
-            (they are paths, not the mark). */}
-        <span
-          style={{
-            position: "absolute",
-            top: -84,
-            left: -84,
-            width: 168,
-            height: 168,
-            borderRadius: "50%",
-            border: "1px solid var(--mv3-guide-ring)",
-          }}
-        />
-        <span
-          style={{
-            position: "absolute",
-            top: -62,
-            left: -62,
-            width: 124,
-            height: 124,
-            borderRadius: "50%",
-            border: "1px dashed var(--mv3-guide-ring-dash)",
-          }}
-        />
+            (they are paths, not the mark). The wrapper keeps the 0×0 anchor
+            coordinate space while giving the collapse driver one opacity
+            handle. */}
+        <div ref={guidesRef} style={{ position: "absolute", width: 0, height: 0 }}>
+          <span
+            style={{
+              position: "absolute",
+              top: -84,
+              left: -84,
+              width: 168,
+              height: 168,
+              borderRadius: "50%",
+              border: "1px solid var(--mv3-guide-ring)",
+            }}
+          />
+          <span
+            style={{
+              position: "absolute",
+              top: -62,
+              left: -62,
+              width: 124,
+              height: 124,
+              borderRadius: "50%",
+              border: "1px dashed var(--mv3-guide-ring-dash)",
+            }}
+          />
+        </div>
 
+        <div
+          ref={orbitalsRef}
+          style={{ position: "absolute", width: 0, height: 0 }}
+        >
         {/* Orbit chips — active work streams. */}
         {chips.length > 0 ? (
           <div
@@ -211,41 +235,52 @@ export function CueRingHero({
             ))}
           </div>
         ) : null}
+        </div>
 
         {/* The breathing mark + its glow halo (static blur; only opacity and
-            scale animate). */}
+            scale animate). The outer morph wrapper takes the frame-60
+            scale+translate so it never fights mv3Breathe's own transform. */}
         <div
+          ref={morphRef}
           style={{
             position: "absolute",
             top: -40,
             left: -40,
             width: 80,
             height: 80,
-            animation: "mv3Breathe 5s ease-in-out infinite",
           }}
         >
-          <span
+          <div
             style={{
               position: "absolute",
-              inset: -18,
-              borderRadius: "50%",
-              background:
-                "radial-gradient(circle, var(--mv3-ring-glow), transparent 62%)",
-              filter: "blur(14px)",
-              animation: "mv3Glow 3.8s ease-in-out infinite",
+              inset: 0,
+              animation: "mv3Breathe 5s ease-in-out infinite",
             }}
-          />
-          <CueRing
-            size={80}
-            stroke="var(--mv3-text)"
-            style={{ position: "relative" }}
-          />
+          >
+            <span
+              style={{
+                position: "absolute",
+                inset: -18,
+                borderRadius: "50%",
+                background:
+                  "radial-gradient(circle, var(--mv3-ring-glow), transparent 62%)",
+                filter: "blur(14px)",
+                animation: "mv3Glow 3.8s ease-in-out infinite",
+              }}
+            />
+            <CueRing
+              size={80}
+              stroke="var(--mv3-text)"
+              style={{ position: "relative" }}
+            />
+          </div>
         </div>
       </div>
 
       {/* Status pill — "Working on N things for you". */}
       {caption ? (
         <div
+          ref={captionRef}
           style={{
             position: "absolute",
             left: 0,

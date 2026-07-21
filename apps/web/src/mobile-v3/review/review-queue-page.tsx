@@ -44,33 +44,14 @@ import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
+import { staleLabel } from "./review-kit";
+
 const REDO_CHIPS = [
   "Make it shorter",
   "More formal",
   "Wrong data",
   "Lead with…",
 ];
-
-/** Items untouched for this long read as stale even without a due date. */
-const STALE_AGE_MS = 7 * 86_400_000;
-
-/**
- * Stale detection (UAT P1-3): an awaiting-review card whose task date passed
- * (dueAt before today) or that has sat untouched for a week gets a quiet
- * amber "From Jul 4 — likely stale" marker so a 17-day-old deliverable can't
- * masquerade as fresh work.
- */
-function staleLabel(item: HqWorkItem, now = Date.now()): string | null {
-  const duePassed = item.dueAt != null && item.dueAt < now - 86_400_000;
-  const aged = item.updatedAt < now - STALE_AGE_MS;
-  if (!duePassed && !aged) return null;
-  const fromMs = duePassed ? item.dueAt! : item.updatedAt;
-  const from = new Date(fromMs).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-  return `From ${from} — likely stale`;
-}
 
 /** How long the actions stay non-interactive after an Approve lands (so the
  *  next card's Approve can't swallow a double-tap — UAT P1-9 pager safety). */
