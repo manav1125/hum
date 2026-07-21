@@ -24,6 +24,9 @@ import { hostFileExecutor } from "./executors/host-file-executor";
 import { hostTransferExecutor } from "./executors/host-transfer-executor";
 import { onLockfileChange, getWatchedLockfile } from "./lockfile-watcher";
 import { HostBrowserExecutor } from "./executors/host-browser-executor";
+import { hostCuExecutor } from "./executors/host-cu-executor";
+import { hostAppControlExecutor } from "./executors/host-app-control-executor";
+import { shutdownSharedCuHelper } from "./sidecar/shared-cu-helper";
 import { getSessionToken } from "./session-token-store";
 import log from "./logger";
 
@@ -632,6 +635,10 @@ export function installHostProxyBridge(
   setExecutor("host_bash", hostBashExecutor);
   setExecutor("host_file", hostFileExecutor);
   setExecutor("host_transfer", hostTransferExecutor);
+  // Computer-use + app-control run through the shared, signed mac-helper (same
+  // binary as Cue Live → inherits its Accessibility + Screen-Recording grants).
+  setExecutor("host_cu", hostCuExecutor);
+  setExecutor("host_app_control", hostAppControlExecutor);
   unsubscribe = onLockfileChange(handleLockfileChange);
 
   // Seed from any assistants already present in the lockfile
@@ -652,6 +659,9 @@ export function installHostProxyBridge(
     }
     browserExecutor.destroy();
     removeExecutor("host_browser");
+    removeExecutor("host_cu");
+    removeExecutor("host_app_control");
+    shutdownSharedCuHelper();
     resolveCliInvocation = null;
   };
 }
