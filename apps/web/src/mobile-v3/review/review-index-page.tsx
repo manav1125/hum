@@ -29,6 +29,7 @@ import { relativeTime } from "@/domains/activity/theme";
 import { goBackWithFallback } from "@/domains/chat/utils/conversation-navigation";
 import { workitemsByIdPatchMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
+import { holdsForYou } from "@/pages/hq/assessment-kit";
 import { useAgentFor } from "@/pages/hq/hq-agent-identity";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { useProjects } from "@/pages/projects/use-projects";
@@ -37,6 +38,7 @@ import { rateLimitRetry } from "@/utils/rate-limit-retry";
 import { routes } from "@/utils/routes";
 
 import { AuroraBackdrop } from "../aurora-backdrop";
+import { Mv3AssessmentMark } from "../assessment-mv3";
 import { cardBody, mv3Mono } from "../mv3-kit";
 import { SheetShell } from "../sheet-shell";
 import { SwipeArchiveRow } from "../swipe-archive-row";
@@ -62,6 +64,7 @@ function ReviewRow({
   onArchive: () => void;
 }) {
   const agent = useAgentFor(item.assignee);
+  const hold = holdsForYou(item) != null;
   const sub = stale
     ? staleLabel(item)
     : [projectTitle, relativeTime(item.updatedAt), agent?.name]
@@ -132,6 +135,14 @@ function ReviewRow({
             textOverflow: "ellipsis",
           }}
         >
+          {/* Marked only when the pre-run verdict WAITS on a person; the rest
+              of the sub-line ellipsises behind it, never the badge. */}
+          {hold ? (
+            <>
+              <Mv3AssessmentMark item={item} />
+              {sub ? " · " : ""}
+            </>
+          ) : null}
           {sub}
         </span>
       </span>

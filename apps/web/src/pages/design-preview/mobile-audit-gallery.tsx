@@ -51,6 +51,15 @@ function workItem(over: Record<string, unknown>): Record<string, unknown> {
     autoRunEligibility: null,
     ranProvenance: null,
     completedElsewhere: false,
+    // Pre-run assessment — null everywhere by default so the DEFAULT fixtures
+    // exercise the "never assessed" path (surfaces must render as before).
+    assessmentVerdict: null,
+    assessmentUnderstanding: null,
+    assessmentPlan: null,
+    assessmentQuestion: null,
+    assessmentMissing: null,
+    assessmentConfidence: null,
+    assessmentAt: null,
     createdAt: NOW - 40 * MIN,
     updatedAt: NOW - 12 * MIN,
     ...over,
@@ -92,6 +101,16 @@ const WORK_ITEMS = [
     status: "done",
     ranProvenance: "auto",
     lastProgressNote: null,
+  }),
+  workItem({
+    id: "wi-6",
+    taskId: "t-6",
+    title: "Draft the renewal note for Northwind",
+    status: "queued",
+    autoRunEligibility: "parked",
+    lastProgressNote: null,
+    lastRunConversationId: null,
+    lastRunStatus: null,
   }),
   workItem({
     id: "wi-5",
@@ -231,6 +250,77 @@ const STATE = new URLSearchParams(globalThis.location?.search ?? "").get(
   "state",
 );
 
+/* ------------------------- pre-run assessment states ----------------------- */
+
+/**
+ * The four verdicts, one per fixture row, so a list can be measured with the
+ * "waits on you" marks present. `?state=assess` uses short daemon copy;
+ * `?state=assess-long` swaps in the pathological strings (a paragraph-long
+ * question, an unbreakable URL) that must wrap rather than shear.
+ */
+const ASSESS_LONG_QUESTION =
+  "Which of the three September bank exports should I reconcile against — the one Priya sent on the 18th, the corrected re-issue from the 22nd, or the consolidated file at " +
+  UNBREAKABLE;
+const ASSESS_LONG_MISSING =
+  "The September bank export is not attached to this project, and the finance drive it usually arrives in is not connected: " +
+  UNBREAKABLE;
+
+function assessed(long: boolean): Record<string, Record<string, unknown>> {
+  return {
+    "wi-1": {
+      assessmentVerdict: "execute",
+      assessmentUnderstanding:
+        "Write the Q3 partner update and send it to the partner list.",
+      assessmentPlan: long
+        ? `Read the pipeline numbers from the CRM, draft the email, and show it to you before sending. Source: ${UNBREAKABLE}`
+        : "Read the pipeline numbers from the CRM, draft the email, and show it to you before sending.",
+      assessmentConfidence: 0.9,
+      assessmentAt: NOW - 14 * MIN,
+    },
+    "wi-2": {
+      assessmentVerdict: "not_ai_task",
+      assessmentUnderstanding:
+        "Sit down with Priya and agree the two unmatched rows in person.",
+      assessmentConfidence: 0.88,
+      assessmentAt: NOW - 20 * MIN,
+    },
+    "wi-3": {
+      assessmentVerdict: "clarify",
+      assessmentQuestion: long
+        ? ASSESS_LONG_QUESTION
+        : "Which advisory-board session should I summarise — June or September?",
+      assessmentUnderstanding: "Summarise the advisory-board transcript.",
+      assessmentConfidence: 0.4,
+      assessmentAt: NOW - 6 * MIN,
+    },
+    "wi-6": {
+      assessmentVerdict: "clarify",
+      assessmentQuestion: long
+        ? ASSESS_LONG_QUESTION
+        : "Should the renewal note go to Northwind's ops lead or their CFO?",
+      assessmentConfidence: 0.55,
+      assessmentAt: NOW - 9 * MIN,
+    },
+    "wi-5": {
+      assessmentVerdict: "blocked",
+      assessmentMissing: long
+        ? ASSESS_LONG_MISSING
+        : "No email account is connected, so I cannot chase Northwind.",
+      assessmentConfidence: 0.8,
+      assessmentAt: NOW - 3 * MIN,
+    },
+  };
+}
+
+/** Stamp the verdict map onto the fixture rows for the `assess*` states. */
+function withAssessments(
+  items: Record<string, unknown>[],
+  long: boolean,
+): Record<string, unknown>[] {
+  const map = assessed(long);
+  return items.map((i) => ({ ...i, ...(map[String(i.id)] ?? {}) }));
+}
+
 const LONG_EVENTS = Array.from({ length: 24 }, (_, i) => ({
   ...EVENTS[i % EVENTS.length],
   id: `e-long-${i}`,
@@ -266,7 +356,9 @@ const FIXTURES: [RegExp, () => unknown][] = [
     /\/work-items$/,
     () => ({
       items:
-        STATE === "review"
+        STATE === "assess" || STATE === "assess-long"
+          ? withAssessments(WORK_ITEMS, STATE === "assess-long")
+          : STATE === "review"
           ? [{ ...WORK_ITEMS[0], status: "awaiting_review" }, ...WORK_ITEMS.slice(1)]
           : STATE === "stress"
             ? WORK_ITEMS.map((w) => ({
@@ -280,7 +372,15 @@ const FIXTURES: [RegExp, () => unknown][] = [
             : WORK_ITEMS,
     }),
   ],
-  [/\/projects\/[^/]+\/work-items$/, () => ({ items: WORK_ITEMS })],
+  [
+    /\/projects\/[^/]+\/work-items$/,
+    () => ({
+      items:
+        STATE === "assess" || STATE === "assess-long"
+          ? withAssessments(WORK_ITEMS, STATE === "assess-long")
+          : WORK_ITEMS,
+    }),
+  ],
   [/\/projects$/, () => ({ projects: PROJECTS })],
   [/\/missions\/[^/]+\/events$/, () => ({ events: [] })],
   [/\/missions\/[^/]+$/, () => ({ mission: MISSIONS[0] })],
@@ -717,6 +817,11 @@ const Mv3MissionDetail = lazy(() =>
     default: m.Mv3MissionDetail,
   })),
 );
+const Mv3ProjectDetail = lazy(() =>
+  import("@/pages/projects/mv3-project-detail").then((m) => ({
+    default: m.Mv3ProjectDetail,
+  })),
+);
 const Mv3Projects = lazy(() =>
   import("@/pages/projects/mv3-projects").then((m) => ({
     default: m.Mv3Projects,
@@ -791,6 +896,59 @@ const OrganizerRemotePage = lazy(() =>
   })),
 );
 
+const Mv3TaskSheet = lazy(() =>
+  import("@/pages/projects/mv3-task-sheet").then((m) => ({
+    default: m.Mv3TaskSheet,
+  })),
+);
+
+/**
+ * The task sheet, held open on ONE fixture item, so each pre-run verdict's
+ * affordances can be measured at 390px. `?state=execute|clarify|not_ai|blocked`
+ * picks the verdict; `?state=assess-long` (or `long`) drives the pathological
+ * daemon copy through the clarify path. Anything else = no verdict at all,
+ * which must render exactly as the sheet did before assessment existed.
+ */
+function TaskSheetPreview() {
+  const long = STATE === "assess-long" || STATE === "long";
+  const map = assessed(long);
+  const pick: Record<string, string> = {
+    execute: "wi-1",
+    not_ai: "wi-2",
+    clarify: "wi-3",
+    blocked: "wi-5",
+    "assess-long": "wi-3",
+    long: "wi-3",
+  };
+  const id = pick[STATE ?? ""] ?? null;
+  const base = workItem({
+    id: "wi-3",
+    title: "Summarise the customer-advisory-board transcript",
+    status: "queued",
+    lastProgressNote: null,
+    lastRunConversationId: null,
+  });
+  const item = id
+    ? { ...base, id, ...(map[id] ?? {}) }
+    : base;
+  return (
+    <Mv3TaskSheet
+      assistantId={ASSISTANT_ID}
+      item={item as any}
+      projects={PROJECTS as any}
+      onClose={() => {}}
+      onAttachKnowledge={() => {}}
+    />
+  );
+}
+
+/** Today takes its rows as PROPS (not through the fetch stub), so the
+ *  `assess*` states are applied here too. */
+const TODAY_ITEMS =
+  STATE === "assess" || STATE === "assess-long"
+    ? withAssessments(WORK_ITEMS, STATE === "assess-long")
+    : WORK_ITEMS;
+
 interface Screen {
   key: string;
   label: string;
@@ -832,9 +990,9 @@ const SCREENS: Screen[] = [
             { id: "a2", label: "Snooze", kind: "snooze" },
           ],
         }}
-        review={WORK_ITEMS.filter((i) => i.status === "awaiting_review") as any}
-        running={WORK_ITEMS.filter((i) => i.status === "running") as any}
-        cameIn={WORK_ITEMS.filter((i) => i.status === "pending") as any}
+        review={TODAY_ITEMS.filter((i) => i.status === "awaiting_review") as any}
+        running={TODAY_ITEMS.filter((i) => i.status === "running") as any}
+        cameIn={TODAY_ITEMS.filter((i) => i.status === "pending") as any}
         degraded={false}
       />
     ),
@@ -888,12 +1046,27 @@ const SCREENS: Screen[] = [
     tabBar: true,
   },
   {
+    key: "project-detail",
+    label: "Project detail",
+    entry: "/assistant/projects/p-1",
+    route: "/assistant/projects/:projectId",
+    element: <Mv3ProjectDetail />,
+    tabBar: true,
+  },
+  {
     key: "all-work",
     label: "All work",
     entry: "/assistant/work",
     route: "/assistant/work",
     element: <Mv3AllWork />,
     tabBar: true,
+  },
+  {
+    key: "task-sheet",
+    label: "Task sheet (pre-run assessment)",
+    entry: "/assistant/work",
+    route: "/assistant/work",
+    element: <TaskSheetPreview />,
   },
   {
     key: "chats",

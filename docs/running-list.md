@@ -76,6 +76,13 @@ a held task (mobile pass outstanding).
 - 👤 **Rotate the ANTHROPIC API key** (exposed earlier, still unrotated)
 - 👤 Voice device QA (needs a real mic session)
 
+## Resolved loose ends
+- **"Advisor never showed a `call_site=advisor` row"** — not a defect. `llm_request_logs` only
+  records `mainAgent` / `compactionAgent`; every side-chain call (advisor, assessment,
+  conversation titles) is absent by design. The daemon-log `advisor_consult_applied` line is
+  the real evidence. Deliberately NOT adding side-chain request logging — those writes were
+  the root cause of the assistant.db runaway.
+
 ## Known backend gaps flagged for follow-up
 - Connector health probe exists but Composio only exposes "linked" not live health (real probe = future)
 - DSML history leak filter (old DeepSeek markup in some transcripts) — sanitizer shipped, verify coverage

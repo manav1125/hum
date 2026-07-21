@@ -21,7 +21,7 @@
  * live + Step in instead of a dead Pause.
  */
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router";
 
@@ -41,6 +41,7 @@ import {
   microLabel,
   rise,
 } from "@/mobile-v3";
+import { Mv3AssessmentMark } from "@/mobile-v3/assessment-mv3";
 import { SwipeArchiveRow } from "@/mobile-v3/swipe-archive-row";
 import { dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
 import {
@@ -56,6 +57,7 @@ import {
   isParked,
   useRunNow,
 } from "@/mobile-v3/work-kit";
+import { holdsForYou, opensInsteadOfRunning } from "@/pages/hq/assessment-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -99,16 +101,18 @@ function stepLabel(e: {
   }
 }
 
-
 /**
  * Collapse consecutive trail events that render the same label — the daemon
  * writes both a `status_changed` and a `run_started` event on run start, so
  * without this the checklist shows "✓ Started the run" twice.
  */
-function dedupeTrail<T extends { kind: string; fromStatus: string | null; toStatus: string | null }>(
-  trail: T[],
-  label: (e: T) => string,
-): T[] {
+function dedupeTrail<
+  T extends {
+    kind: string;
+    fromStatus: string | null;
+    toStatus: string | null;
+  },
+>(trail: T[], label: (e: T) => string): T[] {
   const out: T[] = [];
   for (const e of trail) {
     const prev = out[out.length - 1];
@@ -591,7 +595,11 @@ function Mv3ProjectMenuSheet({
   };
 
   return (
-    <SheetShell open={open} onClose={onClose} label={`Project: ${project.title}`}>
+    <SheetShell
+      open={open}
+      onClose={onClose}
+      label={`Project: ${project.title}`}
+    >
       <div
         style={{
           fontSize: 16,
@@ -606,7 +614,14 @@ function Mv3ProjectMenuSheet({
         {project.title}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          marginTop: 14,
+        }}
+      >
         {/* Rename — inline, in-sheet. */}
         {renaming ? (
           <div style={{ display: "flex", gap: 8 }}>
@@ -747,7 +762,9 @@ function Mv3ProjectMenuSheet({
       </div>
 
       {patch.isError || del.isError ? (
-        <div style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 10 }}>
+        <div
+          style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 10 }}
+        >
           Couldn’t save that — try again in a moment.
         </div>
       ) : null}
@@ -767,6 +784,9 @@ export function Mv3ProjectDetail() {
   const { projects } = useProjects(assistantId);
   // Task edit sheet (due date / labels / re-file / Run-Redo) + quick-add.
   const [sheetItemId, setSheetItemId] = useState<string | null>(null);
+  // The knowledge pane, so a `blocked` verdict that wants a file has a real
+  // place to send you instead of a button that goes nowhere.
+  const knowledgeRef = useRef<HTMLDivElement>(null);
   // The project ⋯ menu (rename / archive / delete).
   const [menuOpen, setMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -802,8 +822,7 @@ export function Mv3ProjectDetail() {
     [items],
   );
   const queued = useMemo(
-    () =>
-      items.filter((i) => i.status === "queued" || i.status === "pending"),
+    () => items.filter((i) => i.status === "queued" || i.status === "pending"),
     [items],
   );
   const done = useMemo(
@@ -990,7 +1009,9 @@ export function Mv3ProjectDetail() {
             {next ? (
               <>
                 {next.title}
-                {next.dueAt != null ? ` · ${dueLabel(next.dueAt, now).toLowerCase()}` : ""}
+                {next.dueAt != null
+                  ? ` · ${dueLabel(next.dueAt, now).toLowerCase()}`
+                  : ""}
                 <br />
               </>
             ) : null}
@@ -1065,6 +1086,8 @@ export function Mv3ProjectDetail() {
               // (then the item graduates to the LiveRunCard above).
               const optimisticRun = started.has(item.id);
               const parked = isParked(item) && !optimisticRun;
+              // Only rows waiting on a person are marked (clarify / blocked).
+              const hold = !optimisticRun && holdsForYou(item) != null;
               return (
                 <SwipeArchiveRow
                   key={item.id}
@@ -1118,15 +1141,25 @@ export function Mv3ProjectDetail() {
                       >
                         Cue picked this up
                       </span>
-                    ) : due || parked ? (
+                    ) : due || parked || hold ? (
                       <span
                         style={{
                           display: "block",
                           fontSize: 11,
                           color: "var(--mv3-amber)",
                           marginTop: 1,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
                         }}
                       >
+                        {/* A held row leads with WHY — Cue is waiting on you. */}
+                        {hold ? (
+                          <>
+                            <Mv3AssessmentMark item={item} />
+                            {due || parked ? " · " : ""}
+                          </>
+                        ) : null}
                         {due}
                         {due && parked ? " · " : ""}
                         {/* Quiet honest "waits for your ▶" (not a chip state). */}
@@ -1137,7 +1170,13 @@ export function Mv3ProjectDetail() {
                   {!optimisticRun ? (
                     <RunNowButton
                       title={item.title}
-                      onRun={() => runNow(item)}
+                      // Held tasks open the sheet rather than running: the
+                      // inline ▶ cannot show the question Cue is waiting on.
+                      onRun={() =>
+                        opensInsteadOfRunning(item)
+                          ? setSheetItemId(item.id)
+                          : runNow(item)
+                      }
                     />
                   ) : null}
                   <span
@@ -1219,7 +1258,10 @@ export function Mv3ProjectDetail() {
             ) : null}
 
             {/* First-run coaching — one quiet line, once per session. */}
-            <ParkedCoachline surface="project-detail" hasParked={parkedCount > 0} />
+            <ParkedCoachline
+              surface="project-detail"
+              hasParked={parkedCount > 0}
+            />
 
             {/* Quick-add — the board's `useQuickAddTask` (POST work-items
                 { title, projectId }), as an inline v3 row. */}
@@ -1377,11 +1419,15 @@ export function Mv3ProjectDetail() {
               brief={project?.context ?? null}
               delay={Math.min(nextDelay(), 0.7)}
             />
-            <Mv3ProjectKnowledge
-              assistantId={assistantId}
-              projectId={projectId}
-              delay={Math.min(nextDelay(), 0.8)}
-            />
+            {/* Wrapped so a `blocked` verdict's "Attach it to this project"
+                has a real destination to scroll to (see knowledgeRef). */}
+            <div ref={knowledgeRef}>
+              <Mv3ProjectKnowledge
+                assistantId={assistantId}
+                projectId={projectId}
+                delay={Math.min(nextDelay(), 0.8)}
+              />
+            </div>
 
             {/* Ask about this project… — opens a fresh conversation (no
                 project-scoped chat exists yet; noted for the coordinator). */}
@@ -1407,7 +1453,12 @@ export function Mv3ProjectDetail() {
                 textAlign: "left",
               }}
             >
-              <CueRing size={18} stroke="var(--mv3-micro)" strokeWidth={46} dotRadius={34} />
+              <CueRing
+                size={18}
+                stroke="var(--mv3-micro)"
+                strokeWidth={46}
+                dotRadius={34}
+              />
               <span style={{ fontSize: 13.5, color: "var(--mv3-faint)" }}>
                 Ask about this project…
               </span>
@@ -1431,6 +1482,12 @@ export function Mv3ProjectDetail() {
         item={items.find((i) => i.id === sheetItemId) ?? null}
         projects={projects}
         onClose={() => setSheetItemId(null)}
+        onAttachKnowledge={() =>
+          knowledgeRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          })
+        }
       />
       <Mv3ProjectMenuSheet
         assistantId={assistantId}

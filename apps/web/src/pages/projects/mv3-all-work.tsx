@@ -23,6 +23,7 @@ import {
   rise,
   type Mv3State,
 } from "@/mobile-v3";
+import { Mv3AssessmentMark } from "@/mobile-v3/assessment-mv3";
 import { SwipeArchiveRow } from "@/mobile-v3/swipe-archive-row";
 import { dismissLeave, useDismissTask } from "@/mobile-v3/undo-toast";
 import {
@@ -35,6 +36,7 @@ import {
   isParked,
   useRunNow,
 } from "@/mobile-v3/work-kit";
+import { holdsForYou, opensInsteadOfRunning } from "@/pages/hq/assessment-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -119,6 +121,9 @@ function WorkRow({
   const queued = item.status === "queued" || item.status === "pending";
   const optimisticRun = started && queued;
   const parked = isParked(item) && !optimisticRun;
+  // Only the two verdicts that wait on a person get a mark — everything else
+  // stays quiet, so the list never turns into a wall of badges.
+  const hold = !optimisticRun && holdsForYou(item) != null;
   return (
     <div data-mv3>
       <SwipeArchiveRow
@@ -167,7 +172,7 @@ function WorkRow({
             >
               Cue picked this up
             </div>
-          ) : due || projectName || parked ? (
+          ) : due || projectName || parked || hold ? (
             <div
               style={{
                 fontSize: 11,
@@ -178,6 +183,14 @@ function WorkRow({
                 whiteSpace: "nowrap",
               }}
             >
+              {/* A held row leads with WHY it is held — the rest of the line
+                  ellipsises behind it, never the badge. */}
+              {hold ? (
+                <>
+                  <Mv3AssessmentMark item={item} />
+                  {due || projectName || parked ? " · " : ""}
+                </>
+              ) : null}
               {/* Frame 48: DUE rides the metadata line, amber, lowercase. */}
               {due ? (
                 <span style={{ color: "var(--mv3-amber)" }}>
@@ -441,9 +454,7 @@ export function Mv3AllWork() {
               >
                 {group.key} · {group.items.length}
               </div>
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 8 }}
-              >
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {group.items.slice(0, 20).map((item) => (
                   <WorkRow
                     key={item.id}
@@ -463,7 +474,16 @@ export function Mv3AllWork() {
                     // elsewhere · ✕ Archive), for every row.
                     onLongPress={() => setSheetItemId(item.id)}
                     onDismiss={() => dismiss(item, { immediate: true })}
-                    onRun={() => runNow(item)}
+                    // A task Cue held is opened, not fired: the inline ▶ has
+                    // no room to say what it wants or why it declined, so
+                    // running from here would be the blind run the
+                    // assessment exists to prevent. The sheet still offers
+                    // the override.
+                    onRun={() =>
+                      opensInsteadOfRunning(item)
+                        ? setSheetItemId(item.id)
+                        : runNow(item)
+                    }
                   />
                 ))}
                 {group.items.length > 20 ? (

@@ -32,8 +32,14 @@ import {
   primaryBtn,
   type Mv3State,
 } from "@/mobile-v3";
+import { Mv3AssessmentPanel } from "@/mobile-v3/assessment-mv3";
 import { isAutoFiled, isParked } from "@/mobile-v3/work-kit";
 import { mv3Mono } from "@/mobile-v3/mv3-kit";
+import {
+  blockedFixKind,
+  readAssessment,
+  type AssessmentFix,
+} from "@/pages/hq/assessment-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
 import { rateLimitRetry } from "@/utils/rate-limit-retry";
@@ -68,6 +74,7 @@ function sheetBody(
     labels: string[];
     projectId: string | null;
     status: string;
+    context: string | null;
   }>,
 ) {
   return {
@@ -80,7 +87,7 @@ function sheetBody(
     dueAt: patch.dueAt !== undefined ? patch.dueAt : item.dueAt,
     labels: patch.labels !== undefined ? patch.labels : parseLabels(item.labels),
     assignee: item.assignee ?? "cue",
-    context: item.context ?? null,
+    context: patch.context !== undefined ? patch.context : (item.context ?? null),
   };
 }
 
@@ -242,6 +249,7 @@ export function Mv3TaskSheet({
   item,
   projects,
   onClose,
+  onAttachKnowledge,
 }: {
   assistantId: string;
   /** The task to edit; null keeps the sheet closed. */
@@ -249,6 +257,13 @@ export function Mv3TaskSheet({
   /** Filed-to targets (the sheet filters to active projects itself). */
   projects: ProjectView[];
   onClose: () => void;
+  /**
+   * Take the user to this project's knowledge pane. Supplied by the surface
+   * behind the sheet (project detail has one; All-work does not); when it's
+   * absent a `blocked` verdict that wants a file says what's needed instead of
+   * offering a button with nowhere to go.
+   */
+  onAttachKnowledge?: () => void;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -343,6 +358,66 @@ export function Mv3TaskSheet({
     (p) => p.status === "active" || p.id === item.projectId,
   );
 
+  /* ----------------------------- the pre-run read ---------------------------- */
+
+  // The verdict the daemon stored before this item's run. A non-`execute`
+  // verdict means the run was HELD, so the sheet's loud ▶ stands down and the
+  // panel owns the honest framing (plus the override). No verdict → nothing
+  // renders and the sheet is exactly what it was.
+  const assessment = readAssessment(item);
+  const canRun = item.status === "queued" || item.status === "pending";
+  const held = assessment != null && assessment.verdict !== "execute";
+  const canDoneElsewhere =
+    item.status === "queued" ||
+    item.status === "pending" ||
+    item.status === "awaiting_review";
+
+  /**
+   * Answer the assessor's one question (or name what was missing). The text
+   * lands in the task's OWN context — the same field the run reads — which
+   * changes the assessment's input hash, so Cue looks at the task again
+   * instead of asking twice.
+   */
+  const answerQuestion = (answer: string) => {
+    const prompt =
+      assessment?.verdict === "clarify"
+        ? assessment.question
+        : (assessment?.missing ?? null);
+    const entry = prompt ? `${prompt}\n${answer}` : answer;
+    const merged = [(item.context ?? "").trim(), entry]
+      .filter(Boolean)
+      .join("\n\n");
+    patch.mutate(
+      { ...pathOpts, body: sheetBody(item, { context: merged }) },
+      { onSuccess: refreshAll },
+    );
+  };
+
+  /** The one real destination that clears a `blocked` verdict, when we have one. */
+  const blockedFix = ((): AssessmentFix | null => {
+    if (assessment?.verdict !== "blocked") return null;
+    const kind = blockedFixKind(assessment.missing);
+    if (kind === "connect") {
+      return {
+        label: "Connect an account",
+        onClick: () => {
+          onClose();
+          navigate(routes.connectors);
+        },
+      };
+    }
+    if (kind === "attach" && onAttachKnowledge) {
+      return {
+        label: "Attach it to this project",
+        onClick: () => {
+          onClose();
+          onAttachKnowledge();
+        },
+      };
+    }
+    return null;
+  })();
+
   return (
     <SheetShell open label={`Task: ${item.title}`} onClose={onClose}>
       <div style={{ paddingBottom: 6 }}>
@@ -400,6 +475,41 @@ export function Mv3TaskSheet({
           {item.sourceType ? ` · from ${item.sourceType}` : ""}
         </div>
 
+        {/* What Cue understood before it ran this, in plain words — and, when
+            it is holding the task, the one thing it needs from you. Absent on
+            an item that was never assessed: that renders exactly as before. */}
+        {assessment ? (
+          <Mv3AssessmentPanel
+            assessment={assessment}
+            running={item.status === "running"}
+            checked={
+              assessment.assessedAt != null
+                ? relativeTime(assessment.assessedAt)
+                : null
+            }
+            onAnswer={
+              // clarify always takes an answer; blocked takes one only when we
+              // have no real destination to send you to (the phone has no
+              // Context editor to point at).
+              assessment.verdict === "clarify" ||
+              (assessment.verdict === "blocked" && !blockedFix)
+                ? answerQuestion
+                : undefined
+            }
+            answerPending={patch.isPending}
+            answerFailed={patch.isError}
+            onMarkDone={
+              assessment.verdict === "not_ai_task" && canDoneElsewhere
+                ? () => doneElsewhere.mutate()
+                : undefined
+            }
+            markDonePending={doneElsewhere.isPending}
+            onRunAnyway={canRun ? () => run.mutate(pathOpts) : undefined}
+            runPending={run.isPending}
+            fix={blockedFix}
+          />
+        ) : null}
+
         {/* Actions — frame 45's stacked order: ▶ Have Cue handle it ·
             📁 File to a project · ✓ Done elsewhere · ✕ Not relevant — archive.
             Same wiring as ever (run / refile PATCH / complete + 409→PATCH
@@ -413,7 +523,10 @@ export function Mv3TaskSheet({
             marginTop: 14,
           }}
         >
-          {(item.status === "queued" || item.status === "pending") && (
+          {/* Held by the assessment → no loud ▶ here. The panel above says why
+              and carries the override, so we never offer "have Cue handle it"
+              for something Cue has just said it cannot handle yet. */}
+          {canRun && !held && (
             <StackBtn
               primary
               label={run.isPending ? "Starting…" : "▶ Have Cue handle it"}

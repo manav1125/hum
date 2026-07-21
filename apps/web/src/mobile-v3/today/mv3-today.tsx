@@ -44,6 +44,7 @@ import {
   type NextMove,
   type NextMoveAction,
 } from "@/pages/command-center/use-next-move";
+import { holdsForYou } from "@/pages/hq/assessment-kit";
 import { sourceBadge } from "@/pages/hq/hq-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { haptic } from "@/utils/haptics";
@@ -53,6 +54,7 @@ import { AuroraBackdrop } from "../aurora-backdrop";
 import { CueRing, CueRingHero, type OrbitChip } from "../cue-ring";
 import { EmptyOrbit } from "../empty-orbit";
 import { GlassCard } from "../glass-card";
+import { StateChip } from "../state-chip";
 import { DismissX, dismissLeave, useDismissTask } from "../undo-toast";
 import {
   cardBody,
@@ -513,6 +515,10 @@ function CameInStripV3({
   const navigate = useNavigate();
   if (items.length === 0) return null;
   const filed = items.filter((i) => i.projectId != null).length;
+  // The pre-run verdicts that WAIT on a person (a question Cue needs answered,
+  // or something it is missing). Only these are called out — a captured item
+  // Cue can simply do gets no badge.
+  const held = items.filter((i) => holdsForYou(i) != null).length;
   return (
     <div
       style={{
@@ -540,11 +546,27 @@ function CameInStripV3({
       >
         ↴
       </span>
-      <span style={{ fontSize: 13, color: "var(--mv3-muted)", flex: 1 }}>
+      <span
+        style={{
+          fontSize: 13,
+          color: "var(--mv3-muted)",
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
         Came in today ·{" "}
         <b style={{ color: "var(--mv3-text)", fontWeight: 600 }}>
           {filed > 0 ? `${filed} auto-filed` : `${items.length} captured`}
         </b>
+        {held > 0 ? (
+          <span style={{ display: "block", marginTop: 3 }}>
+            <StateChip
+              state="needs_you"
+              size="sm"
+              label={held === 1 ? "1 waits on you" : `${held} wait on you`}
+            />
+          </span>
+        ) : null}
       </span>
       <button
         type="button"

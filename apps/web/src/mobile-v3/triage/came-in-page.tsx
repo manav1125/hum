@@ -31,6 +31,7 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { workitemsByIdRunPostMutation } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { AuroraBackdrop, LargeTitleHeader, cardBody, mv3Mono } from "@/mobile-v3";
+import { Mv3AssessmentMark } from "@/mobile-v3/assessment-mv3";
 import { useDismissTask } from "@/mobile-v3/undo-toast";
 import { relativeTime } from "@/domains/activity/theme";
 import {
@@ -40,6 +41,7 @@ import {
   isBelowConfidence,
   senderOf,
 } from "@/mobile-v3/work-kit";
+import { holdsForYou } from "@/pages/hq/assessment-kit";
 import { sourceBadge } from "@/pages/hq/hq-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { Mv3RefileSheet } from "@/pages/projects/mv3-refile-sheet";
@@ -189,6 +191,9 @@ function TriageCard({
   // Feature-detected daemon marker; absent → the plain rendering (frame 44's
   // amber "?" grammar only when the daemon says "scored but not confident").
   const belowConfidence = isBelowConfidence(item);
+  // The pre-run verdict, but only when it WAITS on a person (clarify /
+  // blocked). Everything else stays quiet — no badge on every card.
+  const hold = holdsForYou(item) != null;
 
   return (
     <div
@@ -374,8 +379,10 @@ function TriageCard({
             Not sure where this goes — you sort it
           </div>
         ) : null}
-        {(item.dueAt != null || (projectTitle && !autoFiled)) && (
-          <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+        {(item.dueAt != null || (projectTitle && !autoFiled) || hold) && (
+          <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap", alignItems: "center" }}>
+            {/* Only the two verdicts that wait on a person get a mark. */}
+            {hold ? <Mv3AssessmentMark item={item} /> : null}
             {item.dueAt != null ? (
               <MonoChip
                 color="var(--mv3-amber)"

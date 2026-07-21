@@ -115,6 +115,23 @@ export function holdsForYou(
   return null;
 }
 
+/**
+ * Whether a list's inline ▶ should open the task instead of running it.
+ *
+ * True for every verdict except `execute` — including `not_ai_task`, which
+ * `holdsForYou` deliberately leaves out of the badge vocabulary but which
+ * must still not be run from a row. An inline ▶ has nowhere to show the
+ * question Cue is waiting on or the reason it declined, so firing from a row
+ * would be exactly the blind run this whole pass exists to prevent. The
+ * override still lives in the sheet.
+ */
+export function opensInsteadOfRunning(
+  item: AssessedItem | null | undefined,
+): boolean {
+  const assessment = readAssessment(item);
+  return assessment !== null && assessment.verdict !== "execute";
+}
+
 /** The held row's one-line reason, in the assessor's own words. */
 export function holdReason(
   item: AssessedItem | null | undefined,
