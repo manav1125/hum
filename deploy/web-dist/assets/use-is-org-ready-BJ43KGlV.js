@@ -1,1 +1,0 @@
-import{c as e,r as t}from"./auth-store-BMO3-Pq7.js";function n(){let n=e.use.currentOrganizationId();return!t()||n!=null}export{n as t};
