@@ -69,6 +69,12 @@ COPY assistant ./assistant
 # have no default in the image and resolve OFF regardless of defaultEnabled.
 COPY meta ./meta
 
+# Ship the curated plugin registry (plugins/registry.json — the commit-pinned
+# allowlist WS-C built). The daemon's registry-file loader walks up from
+# assistant/src looking for `plugins/registry.json`; without this COPY it falls
+# to the empty embedded fallback and the marketplace shows zero plugins.
+COPY plugins ./plugins
+
 # Emit the meet-join manifest consumed by the daemon-side loader to
 # register proxy tools/routes without importing the skill in-process.
 RUN bun run /app/skills/meet-join/scripts/emit-manifest.ts \
