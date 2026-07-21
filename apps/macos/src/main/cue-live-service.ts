@@ -1,3 +1,6 @@
+import os from "node:os";
+
+import { CUE_LIVE_DEFAULT_HOTKEY } from "@vellumai/ipc-contract";
 import { z } from "zod";
 
 import { getMacHelperClient, type MacHelperClient } from "./hotkey-helper";
@@ -150,8 +153,12 @@ let summonGeneration = 0;
 // the user can see whether the summon hotkey is actually armed.
 let lastKnownTrusted = false;
 
-/** The summon hotkey, for display in the UI. */
-export const CUE_LIVE_HOTKEY = "Control+Option+Space";
+/**
+ * The summon hotkey, for display in the UI. Sourced from the IPC contract so
+ * the web explainer (which has no bridge to read the live value from) and this
+ * service can never drift apart.
+ */
+export const CUE_LIVE_HOTKEY: string = CUE_LIVE_DEFAULT_HOTKEY;
 
 /** Whether the helper last reported it was trusted for Accessibility. */
 export const isAccessibilityTrusted = (): boolean => lastKnownTrusted;
@@ -777,6 +784,236 @@ const runActLoop = async (
   scheduleHide(client);
 };
 
+/* ------------------------------------------------------------------------- */
+/* Remote screen stream (Mac → daemon → the web viewer)                       */
+/* ------------------------------------------------------------------------- */
+
+/** Daemon routes for the remote viewer's screen stream. */
+const CUE_LIVE_CHECKIN_PATH = "/cuelive/session/checkin";
+const CUE_LIVE_FRAME_PATH = "/cuelive/session/frame";
+const CUE_LIVE_STREAM_PATH = "/cuelive/session/stream";
+
+/** How often the Mac checks in while it is NOT streaming. */
+const CHECKIN_IDLE_MS = 4_000;
+/** Fallback cadence if the daemon's negotiated interval is unreadable. */
+const FRAME_FALLBACK_INTERVAL_MS = 900;
+/**
+ * The streaming banner is redrawn at least this often. The overlay auto-hides
+ * cards after {@link AUTO_HIDE_MS}, so a shorter refresh is what keeps the
+ * "your screen is leaving this Mac" notice continuously on screen — the notice
+ * must outlive any single draw.
+ */
+const STREAM_BANNER_REFRESH_MS = 4_000;
+
+const CHECKIN_SCHEMA = z.object({
+  stream: z.object({
+    state: z.enum(["off", "starting", "live", "stalled"]),
+    armed: z.boolean(),
+    intervalMs: z.number(),
+    maxWidth: z.number(),
+  }),
+  paused: z.boolean().optional(),
+  stopPending: z.boolean().optional(),
+});
+
+const FRAME_PUSH_SCHEMA = z.object({
+  streaming: z.boolean(),
+  intervalMs: z.number(),
+  maxWidth: z.number(),
+  rejected: z.string().optional(),
+});
+
+interface StreamLoopState {
+  timer: ReturnType<typeof setTimeout> | null;
+  /** True while this Mac is actually pushing frames. */
+  streaming: boolean;
+  intervalMs: number;
+  maxWidth: number;
+  lastBannerMs: number;
+  /** Guards against two overlapping ticks when a push runs long. */
+  busy: boolean;
+}
+
+const streamLoop: StreamLoopState = {
+  timer: null,
+  streaming: false,
+  intervalMs: FRAME_FALLBACK_INTERVAL_MS,
+  maxWidth: 1280,
+  lastBannerMs: 0,
+  busy: false,
+};
+
+/** Whether this Mac is currently sending frames off the machine. */
+export const isStreamingScreen = (): boolean => streamLoop.streaming;
+
+/**
+ * The on-Mac indicator. While frames are leaving this machine the overlay
+ * carries a card that says so in plain words, redrawn before it can auto-hide.
+ * There is deliberately no quiet mode: a screen stream the owner cannot see is
+ * the failure this whole feature has to avoid.
+ */
+const drawStreamingBanner = async (
+  client: MacHelperClient,
+  now: number,
+): Promise<void> => {
+  if (now - streamLoop.lastBannerMs < STREAM_BANNER_REFRESH_MS) return;
+  streamLoop.lastBannerMs = now;
+  try {
+    await client.call(CUE_LIVE_SHOW_CARD, {
+      title: "● Screen streaming to your Cue web session",
+      subtitle: "Frames are leaving this Mac. Press Esc to stop.",
+      x: 40,
+      y: 40,
+    });
+  } catch (err) {
+    log.warn(`[cue-live] streaming banner failed: ${errMessage(err)}`);
+  }
+};
+
+/**
+ * Tell the daemon to stop streaming and clear local state. Called from the
+ * Mac's own stop paths (Escape, "Stop everything", Cue Live turning off) so
+ * the Mac is always able to end the stream on its own, whatever the browser
+ * is doing.
+ */
+export const stopScreenStream = async (): Promise<void> => {
+  const wasStreaming = streamLoop.streaming;
+  streamLoop.streaming = false;
+  streamLoop.lastBannerMs = 0;
+  if (!guidanceFetcher || !wasStreaming) return;
+  try {
+    await guidanceFetcher(CUE_LIVE_STREAM_PATH, {
+      streaming: false,
+      origin: "mac",
+    });
+    log.info("[cue-live] screen stream stopped from this Mac");
+  } catch (err) {
+    log.warn(`[cue-live] stopping the screen stream failed: ${errMessage(err)}`);
+  }
+};
+
+/** Capture one frame and push it. Returns the daemon's next-step instruction. */
+const pushOneFrame = async (
+  client: MacHelperClient,
+): Promise<{ keepStreaming: boolean }> => {
+  let cap: z.infer<typeof CAPTURE_SCHEMA>;
+  try {
+    const raw = await client.call(CUE_LIVE_CAPTURE_SCREEN, {
+      maxWidth: streamLoop.maxWidth,
+    });
+    const parsed = CAPTURE_SCHEMA.safeParse(raw);
+    if (!parsed.success) return { keepStreaming: true };
+    cap = parsed.data;
+  } catch (err) {
+    log.warn(`[cue-live] stream capture failed: ${errMessage(err)}`);
+    return { keepStreaming: true };
+  }
+  if (!cap.ok || !cap.data) {
+    // No permission, no display — stop rather than leave the viewer waiting on
+    // a picture this Mac cannot produce.
+    log.warn(`[cue-live] stream capture unavailable: ${cap.reason ?? "unknown"}`);
+    return { keepStreaming: false };
+  }
+
+  if (!guidanceFetcher) return { keepStreaming: false };
+  try {
+    const raw = await guidanceFetcher(CUE_LIVE_FRAME_PATH, {
+      dataBase64: cap.data,
+      mediaType: cap.mediaType ?? "image/jpeg",
+      width: cap.width ?? 0,
+      height: cap.height ?? 0,
+      screenWidth: cap.screenWidth ?? cap.width ?? 0,
+      screenHeight: cap.screenHeight ?? cap.height ?? 0,
+    });
+    const parsed = FRAME_PUSH_SCHEMA.safeParse(raw);
+    if (!parsed.success) return { keepStreaming: true };
+    streamLoop.intervalMs = parsed.data.intervalMs;
+    streamLoop.maxWidth = parsed.data.maxWidth;
+    return { keepStreaming: parsed.data.streaming };
+  } catch (err) {
+    log.warn(`[cue-live] frame push failed: ${errMessage(err)}`);
+    return { keepStreaming: true };
+  }
+};
+
+/**
+ * One tick of the remote-control loop. While the stream is disarmed this is a
+ * cheap check-in that captures nothing; the Mac only starts capturing once the
+ * daemon reports that the owner armed it. That ordering is the whole opt-in
+ * guarantee — it is not possible for this loop to take a frame first and ask
+ * afterwards.
+ */
+const streamTick = async (): Promise<void> => {
+  if (streamLoop.busy) return;
+  streamLoop.busy = true;
+  try {
+    const client = getMacHelperClient();
+    if (!guidanceFetcher) {
+      streamLoop.streaming = false;
+      return;
+    }
+
+    if (!streamLoop.streaming) {
+      const raw = await guidanceFetcher(CUE_LIVE_CHECKIN_PATH, {
+        cueLiveRunning: started,
+        screenRecordingGranted: lastKnownScreenRecording,
+        deviceName: os.hostname(),
+      });
+      const parsed = CHECKIN_SCHEMA.safeParse(raw);
+      if (!parsed.success) return;
+      if (!parsed.data.stream.armed) return;
+      streamLoop.streaming = true;
+      streamLoop.intervalMs = parsed.data.stream.intervalMs;
+      streamLoop.maxWidth = parsed.data.stream.maxWidth;
+      streamLoop.lastBannerMs = 0;
+      log.info("[cue-live] screen stream armed by the owner — starting frames");
+    }
+
+    await drawStreamingBanner(client, Date.now());
+    const { keepStreaming } = await pushOneFrame(client);
+    if (!keepStreaming) {
+      streamLoop.streaming = false;
+      streamLoop.lastBannerMs = 0;
+      clearHideTimer();
+      scheduleHide(client);
+      log.info("[cue-live] screen stream ended");
+    }
+  } catch (err) {
+    log.warn(`[cue-live] stream tick failed: ${errMessage(err)}`);
+  } finally {
+    streamLoop.busy = false;
+  }
+};
+
+const scheduleStreamTick = (): void => {
+  if (streamLoop.timer) clearTimeout(streamLoop.timer);
+  const wait = streamLoop.streaming
+    ? Math.max(streamLoop.intervalMs, 400)
+    : CHECKIN_IDLE_MS;
+  streamLoop.timer = setTimeout(() => {
+    void streamTick().finally(() => {
+      if (streamLoop.timer !== null) scheduleStreamTick();
+    });
+  }, wait);
+};
+
+const startStreamLoop = (): void => {
+  if (streamLoop.timer) return;
+  // Prime the timer handle so the first `finally` reschedules.
+  streamLoop.timer = setTimeout(() => {
+    void streamTick().finally(() => {
+      if (streamLoop.timer !== null) scheduleStreamTick();
+    });
+  }, CHECKIN_IDLE_MS);
+};
+
+const stopStreamLoop = (): void => {
+  if (streamLoop.timer) clearTimeout(streamLoop.timer);
+  streamLoop.timer = null;
+  streamLoop.streaming = false;
+  streamLoop.lastBannerMs = 0;
+};
+
 /**
  * On summon: a spoken goal with take-control on runs the full-auto act loop;
  * otherwise screenshot the screen, answer the (default or spoken) question, fly
@@ -1022,6 +1259,9 @@ export const stopEverything = async (): Promise<void> => {
   abortRequested = true;
   // Bump the generation so a slow guidance/act response can't redraw a card.
   summonGeneration++;
+  // "Stop" from this Mac also cuts the picture: it would be indefensible for
+  // the local stop control to leave frames flowing to a browser somewhere.
+  await stopScreenStream();
   if (!started) return;
   clearHideTimer();
   try {
@@ -1119,10 +1359,17 @@ export const start = async (): Promise<void> => {
     },
   );
 
-  // Escape (from the helper) aborts an in-progress full-auto run.
+  // Escape (from the helper) aborts an in-progress full-auto run — and stops
+  // the screen stream, so the key the user already knows as "make it stop"
+  // stops the most sensitive thing too.
   unsubscribeAbort = client.onNotification(CUE_LIVE_ABORT, z.unknown(), () => {
     abortRequested = true;
+    void stopScreenStream();
   });
+
+  // The remote-control loop: a cheap check-in while nothing is armed, frames
+  // only once the owner arms the stream from the viewer.
+  startStreamLoop();
 
   try {
     const raw = await client.call(CUE_LIVE_START);
@@ -1171,6 +1418,9 @@ export const stop = async (): Promise<void> => {
 
   clearHideTimer();
   abortRequested = true;
+  // Turning Cue Live off must never leave a stream running behind it.
+  await stopScreenStream();
+  stopStreamLoop();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
   unsubscribeRun?.();
@@ -1209,6 +1459,7 @@ export const dispose = (): void => {
   started = false;
   abortRequested = true;
   clearHideTimer();
+  stopStreamLoop();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
   unsubscribeRun?.();
@@ -1225,6 +1476,7 @@ export const __resetForTesting = (): void => {
   started = false;
   abortRequested = false;
   clearHideTimer();
+  stopStreamLoop();
   unsubscribeSummoned?.();
   unsubscribeSummoned = null;
   unsubscribeRun?.();

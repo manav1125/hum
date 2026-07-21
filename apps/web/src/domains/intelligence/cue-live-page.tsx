@@ -10,7 +10,8 @@ import type {
   CueLiveVoiceKeysStatus,
 } from "@vellumai/ipc-contract";
 
-import { CueLiveRemoteViewer } from "@/domains/intelligence/cue-live-remote-viewer";
+import { CueLiveWebExplainer } from "@/domains/intelligence/cue-live-explainer";
+import { hotkeyGlyphs } from "@/domains/intelligence/cue-live-hotkey";
 import {
   deleteCueLiveGoal,
   getCueLivePermissions,
@@ -45,6 +46,9 @@ const C = {
   violetWash: "#FBFAFF",
   blueWashSoft: "#FAFBFF",
   green: "#277E41",
+  // needs-you (the grant flow) is amber, not danger red — red is reserved for
+  // a failure, and a permission Cue has simply not been given yet isn't one.
+  amber: "#C98A1B",
   danger: "#DA491A",
   bg: "#F4F6F9",
   surface: "#FFFFFF",
@@ -74,27 +78,11 @@ const sectionLabel: React.CSSProperties = {
 
 /* -------------------------------------------------------------------------- */
 /* Keycap rendering (real Summon accelerator)                                 */
+/*                                                                            */
+/* `hotkeyGlyphs` lives in cue-live-hotkey.tsx so the off-desktop explainer    */
+/* renders the identical accelerator. This local `Keycap` keeps the desktop    */
+/* panel's own (light, non-token) palette.                                     */
 /* -------------------------------------------------------------------------- */
-
-/** Split a hotkey accelerator ("Control+Option+Space") into glyphs. */
-const KEYCAP_LABELS: Record<string, string> = {
-  Control: "⌃",
-  Ctrl: "⌃",
-  Option: "⌥",
-  Alt: "⌥",
-  Command: "⌘",
-  Cmd: "⌘",
-  Shift: "⇧",
-  Space: "Space",
-};
-
-/** Render an accelerator string as a single keycap pill matching the mock. */
-function hotkeyGlyphs(hotkey: string): string {
-  return hotkey
-    .split("+")
-    .map((p) => KEYCAP_LABELS[p] ?? p)
-    .join(" ");
-}
 
 function Keycap({
   children,
@@ -1316,57 +1304,61 @@ function GoalRunner() {
 /* banner explains what each grant unlocks so the user knows why it matters.   */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * One row of the sequential grant flow (frame L3).
+ *
+ * `stage` is the whole point: exactly one un-granted row is ever "next", and
+ * only that row carries a lit action. Rows behind it read ✓ Granted; rows
+ * ahead of it are dimmed and actionless, so there is never a choice of two
+ * buttons and never a wall of red.
+ */
 function PermissionRow({
-  granted,
+  stage,
   title,
   detail,
   pane,
 }: {
-  granted: boolean;
+  stage: "granted" | "next" | "later";
   title: string;
   detail: string;
   pane: CueLiveSettingsPane;
 }) {
+  const granted = stage === "granted";
+  const next = stage === "next";
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "flex-start",
+        alignItems: "center",
         justifyContent: "space-between",
         gap: 12,
-        padding: "10px 0",
+        padding: "12px 0",
+        opacity: stage === "later" ? 0.45 : 1,
       }}
     >
-      <div style={{ display: "flex", gap: 9, minWidth: 0 }}>
+      <div style={{ display: "flex", gap: 10, minWidth: 0 }}>
         <span
+          aria-hidden
           style={{
-            marginTop: 2,
-            width: 16,
-            height: 16,
+            marginTop: 1,
+            width: 18,
+            height: 18,
             flexShrink: 0,
             borderRadius: "50%",
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            background: granted ? C.green : C.danger,
-            color: "#fff",
+            background: granted ? C.green : next ? C.amber : "transparent",
+            border: granted || next ? "none" : `1px solid ${C.line2}`,
+            color: granted || next ? "#fff" : C.t3,
             fontSize: 10,
           }}
         >
-          {granted ? "✓" : "!"}
+          {granted ? "✓" : next ? "→" : ""}
         </span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.t1 }}>
-            {title}{" "}
-            <span
-              style={{
-                fontFamily: MONO,
-                fontSize: 10,
-                color: granted ? C.green : C.danger,
-              }}
-            >
-              {granted ? "granted" : "needed"}
-            </span>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: C.t1 }}>
+            {title}
           </div>
           <div
             style={{
@@ -1380,73 +1372,117 @@ function PermissionRow({
           </div>
         </div>
       </div>
-      {!granted && (
+      {granted ? (
+        <span
+          style={{
+            flexShrink: 0,
+            fontFamily: MONO,
+            fontSize: 11,
+            color: C.green,
+          }}
+        >
+          Granted
+        </span>
+      ) : next ? (
         <button
           type="button"
           onClick={() => void openCueLiveSystemSettings(pane)}
           style={{
             flexShrink: 0,
             borderRadius: 8,
-            background: C.danger,
+            background: C.blue,
             color: "#fff",
             border: "none",
-            padding: "6px 12px",
-            fontSize: 12,
-            fontWeight: 500,
+            padding: "8px 16px",
+            fontSize: 12.5,
+            fontWeight: 600,
             cursor: "pointer",
           }}
         >
-          Open Settings
+          Grant
         </button>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function PermissionsBanner({
+/**
+ * The grant flow (frame L3) — grant-then-it-works, one step at a time.
+ *
+ * Screen Recording leads because it is what "Cue can't see anything" actually
+ * means; Accessibility follows because clicking is the second capability. It
+ * disappears entirely once both are held.
+ */
+export function PermissionsBanner({
   permissions,
 }: {
   permissions: CueLivePermissions;
 }) {
-  const allGranted =
-    permissions.accessibilityTrusted && permissions.screenRecordingGranted;
-  if (allGranted) return null;
+  const screen = permissions.screenRecordingGranted;
+  const access = permissions.accessibilityTrusted;
+  if (screen && access) return null;
+
+  // Exactly one "next": the first un-granted step in order.
+  const screenStage = screen ? "granted" : "next";
+  const accessStage = access ? "granted" : screen ? "next" : "later";
+
   return (
     <div
       style={{
         borderRadius: 14,
-        border: `1px solid ${C.dangerLine}`,
-        background: C.dangerWash,
-        padding: "14px 16px",
+        border: `1px solid color-mix(in srgb, ${C.amber} 45%, transparent)`,
+        background: `color-mix(in srgb, ${C.amber} 9%, ${C.surface})`,
+        padding: "16px 18px",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <ShieldAlert className="size-5" style={{ color: C.danger }} />
-        <div style={{ fontSize: 14, fontWeight: 600, color: C.danger }}>
-          Cue Live can't see or act yet
+        <ShieldAlert className="size-5" style={{ color: C.amber }} />
+        <div style={{ fontSize: 15, fontWeight: 600, color: C.t1 }}>
+          Let Cue see &amp; act on your screen
         </div>
       </div>
       <div
         style={{ fontSize: 12.5, color: C.t2, marginTop: 6, lineHeight: 1.5 }}
       >
-        Grant the macOS permissions below to <strong>Cue</strong>, then come
-        back — this updates on its own. Until then, summon and "Do it" do
-        nothing.
+        Two macOS permissions, granted once. Cue only looks when you summon it —
+        nothing runs in the background. Until then, summon and &ldquo;Do
+        it&rdquo; do nothing.
       </div>
-      <div style={{ marginTop: 8, borderTop: `1px solid ${C.dangerLine}` }}>
+      <div
+        style={{
+          marginTop: 10,
+          borderTop: `1px solid color-mix(in srgb, ${C.amber} 30%, transparent)`,
+        }}
+      >
         <PermissionRow
-          granted={permissions.accessibilityTrusted}
-          title="Accessibility"
-          detail="Arms the summon hotkey, reads the element under your cursor, and lets Cue click & type for you."
-          pane="accessibility"
-        />
-        <div style={{ borderTop: `1px solid ${C.dangerLine}` }} />
-        <PermissionRow
-          granted={permissions.screenRecordingGranted}
+          stage={screenStage}
           title="Screen Recording"
-          detail="Lets Cue see your screen to answer questions and run goals (the vision pass behind Look / Do it)."
+          detail="so Cue can see the screen — the vision pass behind Look / Do it."
           pane="screenRecording"
         />
+        <div
+          style={{
+            borderTop: `1px solid color-mix(in srgb, ${C.amber} 30%, transparent)`,
+          }}
+        />
+        <PermissionRow
+          stage={accessStage}
+          title="Accessibility"
+          detail="so Cue can click & type for you — and so the summon hotkey is armed."
+          pane="accessibility"
+        />
+      </div>
+      <div
+        style={{
+          fontSize: 11.5,
+          color: C.t3,
+          marginTop: 10,
+          lineHeight: 1.5,
+        }}
+      >
+        Opens System Settings → Privacy &amp; Security. Cue can&rsquo;t grant
+        these for you — macOS asks you directly. This page updates on its own
+        once you do.
       </div>
     </div>
   );
@@ -1719,9 +1755,10 @@ function DesktopControlPanel() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Off-desktop — the remote viewer (mobile-v3 frame 52). Capture stays on the */
-/* Mac; away from it this page is the live remote of that session, not a      */
-/* dead-end "open on Mac" card.                                               */
+/* Off-desktop — the explainer (frame L1), which hands over to the remote     */
+/* viewer (mobile-v3 frame 52) the moment a session is live. Capture stays on */
+/* the Mac; away from it this page states where control lives and how to turn */
+/* it on, instead of a bare viewer that looks broken when nothing is running. */
 /* -------------------------------------------------------------------------- */
 
 export function CueLivePage() {
@@ -1738,7 +1775,7 @@ export function CueLivePage() {
           paddingBottom: 24,
         }}
       >
-        {available ? <DesktopControlPanel /> : <CueLiveRemoteViewer />}
+        {available ? <DesktopControlPanel /> : <CueLiveWebExplainer />}
       </div>
     </>
   );

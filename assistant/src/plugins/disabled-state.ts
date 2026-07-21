@@ -2,14 +2,19 @@
  * Per-plugin enable/disable state, backed by a `.disabled` sentinel file.
  *
  * A plugin at `<workspacePluginsDir>/<name>/` is disabled iff a `.disabled`
- * file exists in its directory. The check is a synchronous `existsSync` read at
- * request/turn time by every surface that loads plugin code (hooks, tools,
- * routes, injectors), so toggling takes effect on the next turn without a
- * daemon restart.
+ * file exists in its directory. The sentinel is read by `loadUserPlugins()`
+ * once per boot, immediately before the plugin's directory would be imported.
  *
  * Contract: a `.disabled` plugin is NEVER loaded — none of its code runs (no
- * init, hooks, tools, routes, or shutdown). This is the safety boundary for
- * untrusted/direct-installed plugins: disabling one guarantees it is inert.
+ * module evaluation, init, hooks, tools, routes, or shutdown). This is the
+ * safety boundary for untrusted/direct-installed plugins: disabling one
+ * guarantees it is inert on the next load.
+ *
+ * Timing: because the gate is at load time, toggling a plugin that is already
+ * running takes effect on the next assistant restart — the same rule the
+ * install / uninstall / upgrade paths already advertise. A plugin that has
+ * been imported has already evaluated its module and run `init()`, so there is
+ * no honest way to retroactively make it inert without a restart.
  */
 
 import { existsSync } from "node:fs";

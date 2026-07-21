@@ -10,6 +10,7 @@ import {
   isAccessibilityTrusted,
   isScreenRecordingGranted,
   isStarted,
+  isStreamingScreen,
   pushVoiceConfig,
   requestScreenRecording,
   runTypedGoal,
@@ -17,6 +18,7 @@ import {
   start as startCueLive,
   stop as stopCueLive,
   stopEverything,
+  stopScreenStream,
   triggerSummon,
 } from "./cue-live-service";
 import {
@@ -43,6 +45,8 @@ export interface CueLiveStatus {
   hotkey: string;
   /** Whether a spoken goal lets Cue Live click/type for you (full auto). */
   takeControl: boolean;
+  /** True while this Mac is sending screen frames to the remote viewer. */
+  streamingScreen: boolean;
 }
 
 const cueLiveStatus = (): CueLiveStatus => ({
@@ -52,6 +56,7 @@ const cueLiveStatus = (): CueLiveStatus => ({
   screenRecordingGranted: isScreenRecordingGranted(),
   hotkey: CUE_LIVE_HOTKEY,
   takeControl: readSetting("cueLiveTakeControl") ?? true,
+  streamingScreen: isStreamingScreen(),
 });
 
 /**
@@ -224,10 +229,23 @@ export const installCueLiveIpc = (): void => {
     },
   );
 
-  // "Stop everything" (⌥ esc mirror): abort any auto-run and hide the overlay.
+  // "Stop everything" (⌥ esc mirror): abort any auto-run, cut the screen
+  // stream, and hide the overlay.
   handle("vellum:cueLive:stop", z.tuple([]), async (): Promise<void> => {
     await stopEverything();
   });
+
+  // Stop only the screen stream, from the Mac. The web viewer can stop it too;
+  // this is the half of that promise that lives on the machine being watched,
+  // so the owner never has to reach for a browser to make frames stop.
+  handle(
+    "vellum:cueLive:stopScreenStream",
+    z.tuple([]),
+    async (): Promise<CueLiveStatus> => {
+      await stopScreenStream();
+      return cueLiveStatus();
+    },
+  );
 
   // Typed-goal test box: run a goal by text (no mic/voice). takeControl=true
   // engages the act loop; false runs a look-only "explain" pass.

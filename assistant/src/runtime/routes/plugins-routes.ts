@@ -1,24 +1,32 @@
 /**
  * Route handlers for the assistant plugins surface.
  *
- * GET    /v1/plugins          — list installed plugins under `<workspaceDir>/plugins/`.
- * GET    /v1/plugins/search   — search the canonical GitHub catalog of installable plugins.
- * GET    /v1/plugins/:name    — resolve a single plugin's detail view (metadata + README).
- * POST   /v1/plugins/install  — install a plugin by name from the canonical source.
- * DELETE /v1/plugins/:name    — uninstall a plugin from `<workspaceDir>/plugins/<name>/`.
+ * GET    /v1/plugins                — list installed plugins under `<workspaceDir>/plugins/`.
+ * GET    /v1/plugins/search         — search the canonical GitHub catalog of installable plugins.
+ * GET    /v1/plugins/:name          — resolve a single plugin's detail view (metadata + README).
+ * POST   /v1/plugins/install        — install a plugin by name from the canonical source.
+ * POST   /v1/plugins/:name/enable   — clear a plugin's `.disabled` sentinel.
+ * POST   /v1/plugins/:name/disable  — write a plugin's `.disabled` sentinel.
+ * DELETE /v1/plugins/:name          — uninstall a plugin from `<workspaceDir>/plugins/<name>/`.
  *
  * The read-only routes are projections over the same library functions
  * the CLI uses (`assistant plugins list`, `assistant plugins search`).
- * The install / uninstall routes are symmetric to `assistant plugins
- * install` / `uninstall` and delegate to the same `installPlugin` /
- * `uninstallPlugin` lib functions. CLI / daemon / web stay aligned on
- * what an installed or available plugin looks like — mirroring the
- * skills surface, which already exposes detail + install over HTTP.
+ * The install / uninstall / enable / disable routes are symmetric to
+ * `assistant plugins install|uninstall|enable|disable` and delegate to the
+ * same `installPlugin` / `uninstallPlugin` / `enablePlugin` / `disablePlugin`
+ * lib functions. CLI / daemon / web stay aligned on what an installed or
+ * available plugin looks like — mirroring the skills surface, which already
+ * exposes detail + install over HTTP.
+ *
+ * Together these close the plugin lifecycle over HTTP:
+ * Install → Enabled ⟷ Disabled → Remove. The list and detail responses both
+ * carry `disabled` so a client can render which of those states a plugin is
+ * in without a second call.
  *
  * # Policy gating
  *
- * Reads require `settings.read`; install and uninstall require
- * `settings.write`. The HTTP router enforces the per-route `policy`
+ * Reads require `settings.read`; install, uninstall, enable, and disable
+ * require `settings.write`. The HTTP router enforces the per-route `policy`
  * block below, and the IPC route adapter ships the same policy in
  * `get_route_schema` so the gateway's IPC proxy stays in sync.
  */
@@ -49,6 +57,11 @@ import {
   assertValidSearchPattern,
   InvalidSearchPatternError,
 } from "../../cli/lib/search-plugins.js";
+import {
+  disablePlugin,
+  enablePlugin,
+  isPluginDisabled,
+} from "../../cli/lib/toggle-plugin.js";
 import {
   PluginNotInstalledError,
   uninstallPlugin,
@@ -92,6 +105,11 @@ const pluginInfoSchema = z.object({
     .string()
     .nullable()
     .describe("From `package.json#version`; `null` when unknown."),
+  disabled: z
+    .boolean()
+    .describe(
+      "True when the plugin carries a `.disabled` sentinel, i.e. the loader skips it. This is the Enabled ⟷ Disabled axis of the lifecycle; toggle it with `POST /v1/plugins/:name/{enable,disable}`.",
+    ),
   path: z
     .string()
     .optional()
@@ -206,6 +224,11 @@ const pluginDetailsResponseSchema = z.object({
     .boolean()
     .describe(
       "Whether a copy is materialized under `<workspaceDir>/plugins/<name>/`.",
+    ),
+  disabled: z
+    .boolean()
+    .describe(
+      "True when the installed copy carries a `.disabled` sentinel, i.e. the loader skips it. Always `false` when `installed` is false.",
     ),
   description: z
     .string()
@@ -518,6 +541,29 @@ const pluginUpgradeResponseSchema = z.object({
     ),
 });
 
+const pluginToggleResponseSchema = z.object({
+  name: z
+    .string()
+    .describe(
+      "Directory name that was toggled. Echoes the request's `:name` path parameter after sanitization.",
+    ),
+  disabled: z
+    .boolean()
+    .describe(
+      "State AFTER the operation: `true` when the `.disabled` sentinel is present. `POST .../disable` always resolves to `true`, `POST .../enable` to `false`.",
+    ),
+  changed: z
+    .boolean()
+    .describe(
+      "Whether the call actually changed the on-disk state. `false` means the plugin was already in the requested state — the route is idempotent, so this is a 200 rather than a conflict.",
+    ),
+  restartRequired: z
+    .boolean()
+    .describe(
+      "Whether the assistant must restart for this toggle to take effect. Mirrors `changed`: the sentinel is read when a plugin directory is imported at load time, so a change only lands on the next load. `false` for a no-op toggle.",
+    ),
+});
+
 const pluginSeedEmbeddingsRequestSchema = z.object({
   includeUnreviewed: z
     .boolean()
@@ -549,6 +595,7 @@ interface PluginView {
   name: string;
   description: string | null;
   version: string | null;
+  disabled: boolean;
   path: string;
   issues?: string[];
 }
@@ -562,6 +609,9 @@ function projectPlugin(entry: InstalledPluginInfo): PluginView {
     name: entry.name,
     description: entry.packageJson?.description ?? null,
     version: entry.packageJson?.version ?? null,
+    // Read through the cli/lib facade so the list route and `plugins list`
+    // agree on enable/disable state without either reaching past the other.
+    disabled: isPluginDisabled(entry.name),
     path: entry.target,
   };
   if (entry.issues.length > 0) {
@@ -882,6 +932,69 @@ async function handleUpgradePlugin({
 }
 
 // ---------------------------------------------------------------------------
+// Handler — enable / disable
+// ---------------------------------------------------------------------------
+
+interface PluginToggleResponse {
+  name: string;
+  disabled: boolean;
+  changed: boolean;
+  restartRequired: boolean;
+}
+
+/**
+ * Shared body for both toggle routes. `enablePlugin` / `disablePlugin` run the
+ * same `sanitizePluginName` check the CLI uses, so an attacker-supplied
+ * `../escape` name is rejected before any path is joined — the raw `:name` is
+ * handed off verbatim exactly like the uninstall route does.
+ *
+ * Idempotent by contract: toggling a plugin that is already in the requested
+ * state returns 200 with `changed: false` rather than a conflict, so a
+ * double-tapped UI toggle is harmless.
+ */
+function togglePlugin(
+  rawName: string,
+  next: "enable" | "disable",
+): PluginToggleResponse {
+  try {
+    const result =
+      next === "disable"
+        ? disablePlugin({ name: rawName })
+        : enablePlugin({ name: rawName });
+    return {
+      name: result.name,
+      disabled: result.disabled,
+      changed: result.changed,
+      // The sentinel gates the loader's import, so a real change only lands
+      // on the next load — same restart rule install/uninstall/upgrade carry.
+      restartRequired: result.changed,
+    };
+  } catch (err) {
+    if (err instanceof InvalidPluginNameError) {
+      throw new BadRequestError(err.message);
+    }
+    if (err instanceof PluginNotInstalledError) {
+      throw new NotFoundError(err.message);
+    }
+    throw new InternalError(
+      err instanceof Error ? err.message : `plugin ${next} failed`,
+    );
+  }
+}
+
+function handleEnablePlugin({
+  pathParams = {},
+}: RouteHandlerArgs): PluginToggleResponse {
+  return togglePlugin(pathParams.name ?? "", "enable");
+}
+
+function handleDisablePlugin({
+  pathParams = {},
+}: RouteHandlerArgs): PluginToggleResponse {
+  return togglePlugin(pathParams.name ?? "", "disable");
+}
+
+// ---------------------------------------------------------------------------
 // Handler — seed embeddings
 // ---------------------------------------------------------------------------
 
@@ -1144,6 +1257,70 @@ export const ROUTES: RouteDefinition[] = [
       },
     },
     handler: handleUpgradePlugin,
+  },
+  {
+    operationId: "plugins_enable",
+    endpoint: "plugins/:name/enable",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Enable an installed plugin",
+    description:
+      "Remove the `.disabled` sentinel from `<workspaceDir>/plugins/<name>/` so the loader imports the plugin again. Mirrors the CLI's `assistant plugins enable <name>`. Idempotent: an already-enabled plugin returns 200 with `changed: false` rather than a conflict. The sentinel gates the loader's import, so a real change lands on the next assistant restart (`restartRequired`) — the same rule install / uninstall / upgrade carry. The plugin name is sanitized by the same regex the CLI uses; `../escape`-style values return 400, and a name with no installed directory returns 404. This is the Enabled half of the Install → Enabled ⟷ Disabled → Remove lifecycle; `disabled` on `GET /v1/plugins` and `GET /v1/plugins/:name` reports the current state.",
+    tags: ["plugins"],
+    pathParams: [
+      {
+        name: "name",
+        type: "string",
+        description:
+          "Directory name under `<workspaceDir>/plugins/`. Must match the kebab-case name accepted by `assistant plugins install`.",
+      },
+    ],
+    responseBody: pluginToggleResponseSchema,
+    additionalResponses: {
+      "400": {
+        description:
+          "The plugin name failed sanitization (e.g. contained slashes, dots, or uppercase letters).",
+      },
+      "404": {
+        description: "No plugin directory exists with the given name.",
+      },
+    },
+    handler: handleEnablePlugin,
+  },
+  {
+    operationId: "plugins_disable",
+    endpoint: "plugins/:name/disable",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Disable an installed plugin",
+    description:
+      "Write a `.disabled` sentinel into `<workspaceDir>/plugins/<name>/` so the loader skips the plugin entirely — no module evaluation, init, hooks, tools, or routes. This is the reversible alternative to uninstalling an untrusted or misbehaving plugin: the code stays on disk and `POST /v1/plugins/:name/enable` restores it. Mirrors the CLI's `assistant plugins disable <name>`. Idempotent: an already-disabled plugin returns 200 with `changed: false`. The gate is at load time, so a real change lands on the next assistant restart (`restartRequired`). The plugin name is sanitized by the same regex the CLI uses; `../escape`-style values return 400, and a name with no installed directory returns 404.",
+    tags: ["plugins"],
+    pathParams: [
+      {
+        name: "name",
+        type: "string",
+        description:
+          "Directory name under `<workspaceDir>/plugins/`. Must match the kebab-case name accepted by `assistant plugins install`.",
+      },
+    ],
+    responseBody: pluginToggleResponseSchema,
+    additionalResponses: {
+      "400": {
+        description:
+          "The plugin name failed sanitization (e.g. contained slashes, dots, or uppercase letters).",
+      },
+      "404": {
+        description: "No plugin directory exists with the given name.",
+      },
+    },
+    handler: handleDisablePlugin,
   },
   {
     operationId: "plugins_seed_embeddings",

@@ -34,6 +34,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { isPluginDisabled } from "../../plugins/disabled-state.js";
 import { findRegistryPlugin } from "../../plugins/registry/registry-file.js";
 import type {
   PluginRegistryEntry,
@@ -104,6 +105,12 @@ export interface PluginDetails {
   readonly name: string;
   /** Whether a copy is materialized under the workspace plugins directory. */
   readonly installed: boolean;
+  /**
+   * Whether the installed copy carries a `.disabled` sentinel, i.e. the
+   * loader will skip it. Always `false` for a plugin that is not installed —
+   * only an installed copy has a directory to hold the sentinel.
+   */
+  readonly disabled: boolean;
   /** Short description, best-effort across the three sources; `null` when unknown. */
   readonly description: string | null;
   /** Project homepage URL, when known; `null` otherwise. */
@@ -210,6 +217,7 @@ export async function getPluginDetails(
   return {
     name,
     installed: local.installed,
+    disabled: local.installed && isPluginDisabled(name, pluginsDir),
     description:
       local.manifest.description ??
       registryEntry?.description ??

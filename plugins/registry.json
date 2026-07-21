@@ -5,17 +5,17 @@
     "name": "Cue",
     "url": "https://github.com/vellum-ai/vellum-assistant"
   },
-  "docs": "Backed by assistant/src/plugins/registry/ (types/registry-file/indexer/search/embedding-seed). This file is the curated, commit-pinned, security-reviewed allowlist that backs `cue plugins search/reindex/versions/publish`. It scales like the skills marketplace: `sources` are the GitHub repos/orgs the indexer crawls for plugin manifests (package.json declaring an @vellumai/plugin-api peerDependency); `plugins` are the reviewed, pinned entries surfaced by default. Community repos are added post-alpha via PR (see `cue plugins publish`).",
+  "docs": "Backed by assistant/src/plugins/registry/ (types/registry-file/indexer/search/embedding-seed). This file is the curated, commit-pinned, security-reviewed allowlist that backs `cue plugins search/reindex/versions/publish` and the HTTP browse/search/detail surface. `sources` are the GitHub repos the indexer crawls for plugin manifests (a package.json declaring an @vellumai/plugin-api peerDependency); `plugins` are the reviewed, pinned entries surfaced by default. Every `plugins` entry is pinned to the SAME full commit SHA the upstream `plugins/marketplace.json` install-resolution manifest carries, so anything browsable here is installable. Repos that are installable upstream but NOT listed here were deliberately left out of the browse catalog — they stay reachable from the CLI. Community repos are added post-alpha via PR (see `cue plugins publish`).",
   "reviewStatuses": {
-    "curated": "First-party or hand-reviewed by the Cue team; pinned to a specific commit; surfaced by default.",
-    "community": "Submitted via PR, license + manifest verified, pinned to a commit; surfaced with a third-party notice.",
-    "unreviewed": "Indexed from an allowlisted source but not yet hand-reviewed; only shown when --allow-unreviewed is passed."
+    "curated": "Cue authored the plugin, forked/adopted it, or maintains the in-repo adapter that makes it run on Cue — plus a pinned commit. This is an ownership claim, so it is only used where Cue actually carries code for the entry.",
+    "community": "Third-party plugin. License + manifest verified and pinned to a commit by the Cue team, but Cue neither authored nor maintains it — surfaced with a third-party notice.",
+    "unreviewed": "Indexed from an allowlisted source but not yet hand-reviewed; never surfaced over HTTP, only shown when --allow-unreviewed is passed on the CLI."
   },
   "sources": [
     {
-      "address": "vellum-ai/simple-memory",
+      "address": "JuliusBrussee/caveman",
       "kind": "github",
-      "label": "Vellum reference plugins",
+      "label": "caveman (Cue maintains the loader adapter)",
       "enabled": true,
       "builtIn": true,
       "reviewStatus": "curated",
@@ -24,120 +24,122 @@
     {
       "address": "vellum-ai/admin-copilot",
       "kind": "github",
-      "label": "Vellum admin copilot",
+      "label": "admin-copilot (third party)",
       "enabled": true,
       "builtIn": true,
-      "reviewStatus": "curated",
-      "license": "MIT"
-    },
-    {
-      "address": "vellum-ai/agent-wrapped",
-      "kind": "github",
-      "label": "Vellum agent-wrapped",
-      "enabled": true,
-      "builtIn": true,
-      "reviewStatus": "curated",
+      "reviewStatus": "community",
       "license": "MIT"
     },
     {
       "address": "vellum-ai/git-workflow",
       "kind": "github",
-      "label": "Vellum git workflow",
+      "label": "git-workflow (third party)",
       "enabled": true,
       "builtIn": true,
-      "reviewStatus": "curated",
-      "license": "MIT"
-    },
-    {
-      "address": "vellum-ai/cofounder",
-      "kind": "github",
-      "label": "Vellum cofounder",
-      "enabled": true,
-      "builtIn": true,
-      "reviewStatus": "curated",
+      "reviewStatus": "community",
       "license": "MIT"
     },
     {
       "address": "vellum-ai/level-up",
       "kind": "github",
-      "label": "Vellum level-up",
+      "label": "level-up (third party)",
       "enabled": true,
       "builtIn": true,
-      "reviewStatus": "curated",
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/marketing-expert",
+      "kind": "github",
+      "label": "marketing-expert (third party)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/motion-design",
+      "kind": "github",
+      "label": "motion-design (third party)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "AnitaKirkovska/smb-inbox-brief",
+      "kind": "github",
+      "label": "smb-inbox-brief (third party)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "AnitaKirkovska/travel-planner",
+      "kind": "github",
+      "label": "travel-planner (third party)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "ZeebBoyBlue/google-drive-search",
+      "kind": "github",
+      "label": "google-drive-search (third party)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "Apache-2.0"
+    },
+    {
+      "address": "marinatrajk/ai-hero-engineer-kit",
+      "kind": "github",
+      "label": "ai-hero-engineer-kit (third party)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
       "license": "MIT"
     },
     {
       "address": "AnitaKirkovska/model-router",
       "kind": "github",
-      "label": "model-router (community)",
-      "enabled": true,
+      "label": "model-router — excluded: its pre-model-call hook overrides model selection and collides with Cue's per-call-site routing (llm.callSites.*)",
+      "enabled": false,
       "builtIn": true,
-      "reviewStatus": "community",
+      "reviewStatus": "unreviewed",
       "license": "MIT"
     },
     {
       "address": "AnitaKirkovska/dynamic-notch",
       "kind": "github",
-      "label": "dynamic-notch (community)",
-      "enabled": true,
+      "label": "dynamic-notch — excluded: ships a competing macOS chat/voice client alongside Cue's own desktop app and Cue Live",
+      "enabled": false,
       "builtIn": true,
-      "reviewStatus": "community",
+      "reviewStatus": "unreviewed",
       "license": "MIT"
     },
     {
-      "address": "JuliusBrussee/caveman",
+      "address": "vellum-ai/simple-memory",
       "kind": "github",
-      "label": "caveman (community)",
-      "enabled": true,
+      "label": "simple-memory — excluded: an authoring reference that replaces the memory defaults with low-cost variants",
+      "enabled": false,
       "builtIn": true,
-      "reviewStatus": "community",
+      "reviewStatus": "unreviewed",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/cofounder",
+      "kind": "github",
+      "label": "cofounder — excluded: duplicates Cue's own memory, agents, and decision tracking",
+      "enabled": false,
+      "builtIn": true,
+      "reviewStatus": "unreviewed",
       "license": "MIT"
     }
   ],
   "plugins": [
-    {
-      "name": "caveman",
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman",
-        "ref": "63a91ecadbf4c4719a4602a5abb00883f9966034"
-      },
-      "description": "Ultra-compressed communication mode that strips filler words to cut token usage.",
-      "category": "productivity",
-      "homepage": "https://github.com/JuliusBrussee/caveman",
-      "license": "MIT",
-      "reviewStatus": "community",
-      "icon": "🦴",
-      "surfaces": ["hooks"]
-    },
-    {
-      "name": "simple-memory",
-      "source": {
-        "source": "github",
-        "repo": "vellum-ai/simple-memory",
-        "ref": "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3"
-      },
-      "description": "Reference memory plugin that exercises the full plugin API with low-cost variants of the memory defaults. Useful as a template when authoring a plugin.",
-      "category": "memory",
-      "homepage": "https://github.com/vellum-ai/simple-memory",
-      "license": "MIT",
-      "reviewStatus": "curated",
-      "surfaces": ["hooks", "tools"]
-    },
-    {
-      "name": "model-router",
-      "source": {
-        "source": "github",
-        "repo": "AnitaKirkovska/model-router",
-        "ref": "605100d27b"
-      },
-      "description": "Route each turn to a model chosen by intent — cheap models for simple asks, stronger models for hard reasoning — via a pre-model-call hook.",
-      "category": "productivity",
-      "homepage": "https://github.com/AnitaKirkovska/model-router",
-      "license": "MIT",
-      "reviewStatus": "community",
-      "surfaces": ["hooks"]
-    },
     {
       "name": "admin-copilot",
       "source": {
@@ -149,81 +151,144 @@
       "category": "productivity",
       "homepage": "https://github.com/vellum-ai/admin-copilot",
       "license": "MIT",
-      "reviewStatus": "curated",
+      "reviewStatus": "community",
       "icon": "🧑‍💼",
       "surfaces": ["skills"]
     },
     {
-      "name": "agent-wrapped",
+      "name": "ai-hero-engineer-kit",
       "source": {
         "source": "github",
-        "repo": "vellum-ai/agent-wrapped",
-        "ref": "7e5e7971a38a90120cee9b1e393b733622e24d17"
+        "repo": "marinatrajk/ai-hero-engineer-kit",
+        "ref": "18d33c62b15a3e2cc22dc070723fe3077749dcec"
       },
-      "description": "Your agent's year in review: conversations, days together, memories formed, top topics, and total tokens + LLM calls. Presents the stats as data in chat.",
-      "category": "creative",
-      "homepage": "https://github.com/vellum-ai/agent-wrapped",
-      "license": "MIT",
-      "reviewStatus": "curated",
-      "icon": "🎁",
-      "surfaces": ["tools"]
-    },
-    {
-      "name": "level-up",
-      "source": {
-        "source": "github",
-        "repo": "vellum-ai/level-up",
-        "ref": "d3cbb50f8a"
-      },
-      "description": "Surfaces a first-class \"Level Up\" diff card whenever the assistant edits its own skills or plugins, so you can see how it improved itself after the fact.",
+      "description": "Five engineering skills adapted from Matt Pocock's '5 Agent Skills I Use Every Day' — plans, PRDs, vertical-slice issues, a TDD loop, and codebase deepening in one install.",
       "category": "developer",
-      "homepage": "https://github.com/vellum-ai/level-up",
-      "license": "MIT",
-      "reviewStatus": "curated",
-      "surfaces": ["hooks", "routes"]
-    },
-    {
-      "name": "dynamic-notch",
-      "source": {
-        "source": "github",
-        "repo": "AnitaKirkovska/dynamic-notch",
-        "ref": "9729c3685d60d00d1de73a183b03122b9fa1f8f4"
-      },
-      "description": "Put your assistant inside your MacBook's notch: click to chat, hold to talk, and get a floating task bulb while it works, with live-streamed replies and per-sentence voice.",
-      "category": "interface",
-      "homepage": "https://github.com/AnitaKirkovska/dynamic-notch",
+      "homepage": "https://github.com/marinatrajk/ai-hero-engineer-kit",
       "license": "MIT",
       "reviewStatus": "community",
-      "surfaces": ["apps", "routes"]
+      "icon": "🧰",
+      "surfaces": ["skills"]
+    },
+    {
+      "name": "caveman",
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman",
+        "ref": "63a91ecadbf4c4719a4602a5abb00883f9966034"
+      },
+      "description": "Ultra-compressed communication mode that strips filler words to cut token usage.",
+      "category": "productivity",
+      "homepage": "https://github.com/JuliusBrussee/caveman",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "icon": "🦴",
+      "surfaces": ["hooks"]
     },
     {
       "name": "git-workflow",
       "source": {
         "source": "github",
         "repo": "vellum-ai/git-workflow",
-        "ref": "829407aa93"
+        "ref": "829407aa93b63b8bca4717624533f2fc7f702a5d"
       },
-      "description": "Opinionated git helper skills: branch, commit, and PR conventions applied consistently across repos.",
+      "description": "Git workflow tools and multi-perspective code review: branch management, push, stash, PR creation/review/merge/checkout, diffs, logs, changelog generation, and parallel subagent code review with confidence scoring.",
       "category": "developer",
       "homepage": "https://github.com/vellum-ai/git-workflow",
       "license": "MIT",
-      "reviewStatus": "curated",
+      "reviewStatus": "community",
+      "icon": "🔀",
+      "surfaces": ["hooks", "skills"]
+    },
+    {
+      "name": "google-drive-search",
+      "source": {
+        "source": "github",
+        "repo": "ZeebBoyBlue/google-drive-search",
+        "ref": "ddd5013477cc1ec8d1fb174db6b599dbfe1cca21"
+      },
+      "description": "Local full-text search across your Google Drive. Indexes file metadata and document content into SQLite FTS5 for instant, private search.",
+      "category": "productivity",
+      "homepage": "https://github.com/ZeebBoyBlue/google-drive-search",
+      "license": "Apache-2.0",
+      "reviewStatus": "community",
+      "icon": "🔍",
+      "surfaces": ["hooks", "tools"]
+    },
+    {
+      "name": "level-up",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/level-up",
+        "ref": "d3cbb50f8aba1f8320cd2d59ea3a85d0a4e9210b"
+      },
+      "description": "Surfaces a first-class \"Level Up\" diff card whenever the assistant edits its own skills or plugins, so you can see how it improved itself after the fact.",
+      "category": "developer",
+      "homepage": "https://github.com/vellum-ai/level-up",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "icon": "🆙",
+      "surfaces": ["apps", "hooks", "routes"]
+    },
+    {
+      "name": "marketing-expert",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/marketing-expert",
+        "ref": "6a85ee33e184c2be56ed63cd5681d1287a941eff"
+      },
+      "description": "A full-stack marketing expert for any business: an on-demand persona plus playbook skills (positioning, demand planning, launches, content and copywriting, brand voice, email sequences, SEO, competitive teardown, board reporting) and deterministic funnel/positioning/GTM tools.",
+      "category": "marketing",
+      "homepage": "https://github.com/vellum-ai/marketing-expert",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "icon": "📈",
       "surfaces": ["skills"]
     },
     {
-      "name": "cofounder",
+      "name": "motion-design",
       "source": {
         "source": "github",
-        "repo": "vellum-ai/cofounder",
-        "ref": "547adf1c0db0cbb32855ff0e4ef46c056248bdea"
+        "repo": "vellum-ai/motion-design",
+        "ref": "9cdc798c26e0141dcdf6887d7707559c38bfe00e"
       },
-      "description": "AI co-founder that remembers your company context, challenges your thinking, and tracks your decisions.",
-      "category": "productivity",
-      "homepage": "https://github.com/vellum-ai/cofounder",
+      "description": "Teaches the assistant to build polished UI animations with Motion (motion.dev) for React: animated product mockups, chat replays, typing effects, and staggered reveals.",
+      "category": "creative",
+      "homepage": "https://github.com/vellum-ai/motion-design",
       "license": "MIT",
-      "reviewStatus": "curated",
-      "icon": "🤝",
-      "surfaces": ["hooks", "tools"]
+      "reviewStatus": "community",
+      "icon": "🎬",
+      "surfaces": ["skills"]
+    },
+    {
+      "name": "smb-inbox-brief",
+      "source": {
+        "source": "github",
+        "repo": "AnitaKirkovska/smb-inbox-brief",
+        "ref": "8e298bd8ded5e0e16c5160edcd547eda1e4d222f"
+      },
+      "description": "Find urgent replies, overdue invoices, quotes, and customer follow-ups before they slip. Scans email, logs business items, and delivers urgency-ranked daily briefs.",
+      "category": "productivity",
+      "homepage": "https://github.com/AnitaKirkovska/smb-inbox-brief",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "icon": "📧",
+      "surfaces": ["hooks", "skills", "tools"]
+    },
+    {
+      "name": "travel-planner",
+      "source": {
+        "source": "github",
+        "repo": "AnitaKirkovska/travel-planner",
+        "ref": "10c2c4878b017997cb6766b8204b9803c56bc6cf"
+      },
+      "description": "A travel EA for your assistant. Remembers how you travel, keeps per-trip records, watches email for booking changes, syncs your calendar, and sends an EA-style trip brief 48 hours before departure.",
+      "category": "lifestyle",
+      "homepage": "https://github.com/AnitaKirkovska/travel-planner",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "icon": "✈️",
+      "surfaces": ["skills", "tools"]
     }
   ]
 }

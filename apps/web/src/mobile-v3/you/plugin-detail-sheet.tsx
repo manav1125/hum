@@ -6,21 +6,23 @@
  *
  * Honesty rules (the plugin backend is thinner than the design imagined —
  * `GET /v1/plugins/:name` returns description / homepage / license / version /
- * source / readme / artifact but NO declared-surface or capability manifest):
+ * source / reviewStatus / surfaces / readme / artifact but NO per-capability
+ * manifest):
  *
  *  · The "What it can reach" card derives STRICTLY from what the daemon
- *    actually returns. Since the per-surface manifest (tools / connectors /
- *    apps / routes) is not exposed over HTTP, we never invent a permission
- *    list. Instead we render the one consent signal we CAN stand behind
- *    honestly — the review posture, derived from the source org (first-party
- *    `vellum-ai/*` reads ✓ green "reviewed & pinned"; anything else reads ‖
- *    amber "community source — Cue hasn't first-party reviewed it") — using
- *    the SAME ✓ / ‖ vocabulary as the skill sheet and desktop W2.
+ *    actually returns. Since the per-capability manifest (which tools /
+ *    connectors it touches) is not exposed over HTTP, we never invent a
+ *    permission list. We render the two signals we CAN stand behind: the
+ *    registry's real `reviewStatus` (see `@/lib/plugin-curation`) and the
+ *    declared `surfaces` — using the SAME ✓ / ‖ vocabulary as the skill sheet
+ *    and desktop W2.
  *  · The pinned commit + version render only from real fields.
  *  · The "an app will appear" note is shown from the real `artifact`
  *    descriptor (a prebuilt client the plugin ships) — the panel is NEVER
  *    mocked.
  *  · Install is confirmed before anything runs.
+ *  · The installed state renders the full lifecycle — Enabled ⟷ Disabled via
+ *    `POST /v1/plugins/:name/{enable,disable}`, then Remove.
  *
  * `PluginUntrustedInstallSheet` (frame 68) is the distinct red-edged warning
  * for a raw GitHub-URL install.
@@ -28,22 +30,19 @@
 import { useEffect, useRef } from "react";
 
 import type { PluginsByNameGetResponse } from "@/generated/daemon/types.gen";
+import {
+  curationBadge,
+  curationConsentLine,
+  isCurated,
+  type PluginReviewStatus,
+  reviewStatusOf,
+} from "@/lib/plugin-curation";
 import { haptic } from "@/utils/haptics";
 
 import { SheetShell } from "../sheet-shell";
 import { microLabel, primaryBtn } from "../mv3-kit";
 
 /* ─────────────────────────── Shared helpers ──────────────────────────────── */
-
-/**
- * First-party plugins ship from the `vellum-ai` org. This is the one
- * curation signal derivable from the HTTP search/detail response (`source.repo`
- * is `owner/repo`); the daemon does not surface the registry's `reviewStatus`
- * over HTTP, so we read the org rather than invent a badge.
- */
-export function isOfficialRepo(repo: string | null | undefined): boolean {
-  return typeof repo === "string" && repo.startsWith("vellum-ai/");
-}
 
 /** First 7 chars of a commit SHA — git's default short form. */
 export function shortSha(sha: string | null | undefined): string | null {
@@ -52,16 +51,21 @@ export function shortSha(sha: string | null | undefined): string | null {
 
 export interface PluginDetailModel {
   name: string;
-  official: boolean;
+  /** Real curation posture from the registry entry. */
+  reviewStatus: PluginReviewStatus;
   /** "v0.0.1 · MIT" — real fields only, null when none. */
   metaLine: string | null;
   description: string | null;
-  /** "vellum-ai/simple-memory" — the source repo. */
+  /** "vellum-ai/level-up" — the source repo. */
   repo: string | null;
   /** Pinned commit short SHA, when known. */
   pinnedCommit: string | null;
+  /** Declared plugin surfaces from the registry entry; `[]` when none. */
+  surfaces: string[];
   /** Real prebuilt-client descriptor, when the plugin ships one. */
   artifactLabel: string | null;
+  /** The installed copy carries a `.disabled` sentinel — the loader skips it. */
+  disabled: boolean;
 }
 
 /** Detail response → sheet model. */
@@ -75,14 +79,16 @@ export function pluginDetailModel(
   ].filter(Boolean);
   return {
     name: detail.name,
-    official: isOfficialRepo(repo),
+    reviewStatus: reviewStatusOf(detail.reviewStatus),
     metaLine: meta.length > 0 ? meta.join(" · ") : null,
     description: detail.description,
     repo,
     pinnedCommit: shortSha(detail.source?.ref ?? null),
+    surfaces: detail.surfaces ?? [],
     artifactLabel: detail.artifact
       ? (detail.artifact.label ?? "a downloadable client")
       : null,
+    disabled: detail.disabled ?? false,
   };
 }
 
@@ -118,10 +124,12 @@ export function PluginDetailSheet({
   confirming,
   installing,
   uninstalling = false,
+  toggling = false,
   error,
   onGet,
   onConfirm,
   onUninstall,
+  onToggleEnabled,
   onClose,
 }: {
   open: boolean;
@@ -134,11 +142,15 @@ export function PluginDetailSheet({
   confirming: boolean;
   installing: boolean;
   uninstalling?: boolean;
+  /** An enable/disable toggle is in flight. */
+  toggling?: boolean;
   error: string | null;
   onGet: () => void;
   onConfirm: () => void;
   /** Uninstall the installed copy — rendered only in the installed state. */
   onUninstall?: () => void;
+  /** Flip the `.disabled` sentinel — rendered only in the installed state. */
+  onToggleEnabled?: () => void;
   onClose: () => void;
 }) {
   const confirmRef = useRef<HTMLDivElement>(null);
@@ -192,10 +204,10 @@ export function PluginDetailSheet({
                 <span
                   style={{
                     fontSize: 10,
-                    color: model.official
+                    color: isCurated(model.reviewStatus)
                       ? "var(--mv3-micro)"
                       : "var(--mv3-muted)",
-                    background: model.official
+                    background: isCurated(model.reviewStatus)
                       ? "rgba(61,110,232,.16)"
                       : "var(--mv3-btn2-bg)",
                     borderRadius: 6,
@@ -203,7 +215,7 @@ export function PluginDetailSheet({
                     flexShrink: 0,
                   }}
                 >
-                  {model.official ? "Cue official" : "Community"}
+                  {curationBadge(model.reviewStatus)}
                 </span>
                 {model.metaLine ? (
                   <span style={{ fontSize: 10.5, color: "var(--mv3-muted)" }}>
@@ -215,10 +227,12 @@ export function PluginDetailSheet({
                     style={{
                       ...microLabel,
                       fontSize: 9.5,
-                      color: "var(--mv3-green)",
+                      color: model.disabled
+                        ? "var(--mv3-muted)"
+                        : "var(--mv3-green)",
                     }}
                   >
-                    ✓ Installed
+                    {model.disabled ? "◦ Disabled" : "✓ Enabled"}
                   </span>
                 ) : null}
               </div>
@@ -245,10 +259,10 @@ export function PluginDetailSheet({
               </div>
             ) : null}
 
-            {/* What it can reach — the honest review-posture consent signal.
-                The per-surface manifest is not exposed over HTTP, so we never
-                fabricate a tools/connectors/apps/routes list; we stand behind
-                the one signal we can (source review posture). */}
+            {/* What it can reach — the honest consent signals. The
+                per-capability manifest is not exposed over HTTP, so we never
+                fabricate a "reaches your email/files" list; we render the
+                registry's real review posture plus its declared surfaces. */}
             <div
               style={{
                 background: "var(--mv3-card)",
@@ -267,37 +281,49 @@ export function PluginDetailSheet({
               >
                 What it can reach
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 9,
-                  fontSize: 12.5,
-                  color: model.official
-                    ? "var(--mv3-text)"
-                    : "var(--mv3-amber)",
-                }}
-              >
-                <span
-                  aria-hidden
+              {(() => {
+                const consent = curationConsentLine(model.reviewStatus);
+                const ok = consent.tone === "ok";
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 9,
+                      fontSize: 12.5,
+                      color: ok ? "var(--mv3-text)" : "var(--mv3-amber)",
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        color: ok ? "var(--mv3-green)" : "var(--mv3-amber)",
+                        fontWeight: ok ? 400 : 700,
+                      }}
+                    >
+                      {consent.glyph}
+                    </span>
+                    <span>
+                      {consent.text}
+                      {
+                        " A plugin can add tools, hooks, and app surfaces that run inside Cue; anything sensitive still asks before it acts."
+                      }
+                    </span>
+                  </div>
+                );
+              })()}
+              {model.surfaces.length > 0 ? (
+                <div
                   style={{
-                    color: model.official
-                      ? "var(--mv3-green)"
-                      : "var(--mv3-amber)",
-                    fontWeight: model.official ? 400 : 700,
+                    fontSize: 11.5,
+                    color: "var(--mv3-muted)",
+                    marginTop: 9,
+                    lineHeight: 1.5,
                   }}
                 >
-                  {model.official ? "✓" : "‖"}
-                </span>
-                <span>
-                  {model.official
-                    ? "First-party — reviewed and pinned to a commit."
-                    : "Community source — Cue hasn't first-party reviewed it."}
-                  {
-                    " A plugin can add tools, hooks, and app surfaces that run inside Cue; anything sensitive still asks before it acts."
-                  }
-                </span>
-              </div>
+                  Adds: {model.surfaces.join(", ")}.
+                </div>
+              ) : null}
             </div>
 
             {/* Source + pinned commit — real provenance only. */}
@@ -381,9 +407,8 @@ export function PluginDetailSheet({
                     lineHeight: 1.5,
                   }}
                 >
-                  {model.official
-                    ? "It's a reviewed, first-party plugin pinned to a commit. You can uninstall anytime."
-                    : "It's from a community source. You can uninstall anytime."}
+                  {curationConsentLine(model.reviewStatus).text} You can disable
+                  or uninstall it at any time.
                 </div>
                 {error ? (
                   <div
@@ -436,13 +461,70 @@ export function PluginDetailSheet({
               </div>
             ) : null}
 
-            {/* Installed: read-only detail + an Uninstall affordance. */}
+            {/* Installed: the rest of the lifecycle — Enabled ⟷ Disabled,
+                then Remove. Disabling keeps the code on disk and inert; it is
+                the reversible alternative to uninstalling. */}
             {installed ? (
               <>
                 {error ? (
                   <div role="alert" style={{ fontSize: 12, color: "#E5675B" }}>
                     {error}
                   </div>
+                ) : null}
+                {onToggleEnabled ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={toggling}
+                      onClick={() => {
+                        haptic.medium();
+                        onToggleEnabled();
+                      }}
+                      style={
+                        model.disabled
+                          ? {
+                              ...primaryBtn,
+                              borderRadius: 12,
+                              padding: 12,
+                              minHeight: 46,
+                              fontSize: 13.5,
+                              opacity: toggling ? 0.6 : 1,
+                            }
+                          : {
+                              background: "var(--mv3-btn2-bg)",
+                              color: "var(--mv3-text)",
+                              border: "1px solid var(--mv3-btn2-border)",
+                              borderRadius: 12,
+                              padding: 12,
+                              minHeight: 46,
+                              fontSize: 13.5,
+                              fontFamily: "inherit",
+                              cursor: "pointer",
+                              width: "100%",
+                              opacity: toggling ? 0.6 : 1,
+                            }
+                      }
+                    >
+                      {toggling
+                        ? model.disabled
+                          ? "Enabling…"
+                          : "Disabling…"
+                        : model.disabled
+                          ? "Enable plugin"
+                          : "Disable plugin"}
+                    </button>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--mv3-muted)",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {model.disabled
+                        ? "Disabled — its code stays on disk but never loads. Enabling takes effect after the assistant restarts."
+                        : "Disabling keeps the plugin installed but stops its code from loading. It takes effect after the assistant restarts."}
+                    </div>
+                  </>
                 ) : null}
                 {onUninstall ? (
                   <div style={{ textAlign: "center", padding: "2px 0" }}>

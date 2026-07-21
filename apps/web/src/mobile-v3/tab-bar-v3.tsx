@@ -160,6 +160,7 @@ const TABS: V3Tab[] = [
       p.includes("/contacts") ||
       p.includes("/hq/agents") ||
       p.includes("/guardrails") ||
+      p.includes("/explore") ||
       p.includes("/cue-live"),
   },
 ];

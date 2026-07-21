@@ -1,8 +1,9 @@
 /**
- * Tests for the desktop Plugins marketplace (spec W1): the installed section,
- * the registry Explore section, official/community badge derivation, catalog
- * suppression of already-installed entries, and the update-available flag on
- * an installed card behind the marketplace pin.
+ * Tests for the desktop Plugins marketplace (spec W1): the installed section
+ * and its Enabled ⟷ Disabled lifecycle state, the registry Explore section,
+ * registry-driven curation badges, catalog suppression of already-installed
+ * entries, and the update-available flag on an installed card behind the
+ * marketplace pin.
  *
  * Strategy: pre-populate the React Query cache with the data we want the tab
  * to render — `renderToStaticMarkup` is single-pass, so a useQuery whose
@@ -135,6 +136,12 @@ function driftResponse(
   };
 }
 
+/** Occurrences of `needle` in `haystack` — the rail label repeats the badge
+ * vocabulary, so badge assertions have to count rather than just contain. */
+function countOf(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 describe("PluginsTab (desktop W1)", () => {
   test("renders the registry hero + Explore section", () => {
     const html = renderTab({
@@ -155,6 +162,7 @@ describe("PluginsTab (desktop W1)", () => {
             name: "simple-memory",
             description: "Memory plugin",
             version: "0.1.0",
+            disabled: false,
           },
         ],
       },
@@ -163,6 +171,41 @@ describe("PluginsTab (desktop W1)", () => {
     expect(html).toContain("Installed");
     expect(html).toContain("simple-memory");
     expect(html).toContain("v0.1.0");
+  });
+
+  test("renders the Enabled/Disabled lifecycle state and the matching action", () => {
+    // Install → Enabled ⟷ Disabled → Remove: the list response's `disabled`
+    // is what drives the middle of that, so both states must be legible and
+    // the toggle must offer the opposite action.
+    const html = renderTab({
+      installed: {
+        plugins: [
+          {
+            id: "on-plugin",
+            name: "on-plugin",
+            description: "Running",
+            version: "0.1.0",
+            disabled: false,
+          },
+          {
+            id: "off-plugin",
+            name: "off-plugin",
+            description: "Parked",
+            version: "0.1.0",
+            disabled: true,
+          },
+        ],
+      },
+      catalog: { query: "", ref: "main", matches: [] },
+    });
+
+    expect(html).toContain("Enabled");
+    expect(html).toContain("Disabled");
+    // The action offered is the opposite of the current state, per row.
+    expect(html).toContain('aria-label="Disable on-plugin"');
+    expect(html).toContain('aria-label="Enable off-plugin"');
+    // And the restart caveat is stated rather than implied.
+    expect(html).toContain("takes effect the next time the assistant restarts");
   });
 
   test("flags an installed plugin behind the marketplace pin", () => {
@@ -174,6 +217,7 @@ describe("PluginsTab (desktop W1)", () => {
             name: "level-up",
             description: "Level Up plugin",
             version: "0.1.0",
+            disabled: false,
           },
         ],
       },
@@ -192,6 +236,7 @@ describe("PluginsTab (desktop W1)", () => {
             name: "level-up",
             description: "Level Up plugin",
             version: "0.1.0",
+            disabled: false,
           },
         ],
       },
@@ -211,7 +256,7 @@ describe("PluginsTab (desktop W1)", () => {
           {
             name: "apollo-bot-brain",
             description: "test plugin",
-            reviewStatus: "curated" as const,
+            reviewStatus: "community" as const,
             surfaces: [],
             category: null,
             license: null,
@@ -230,12 +275,15 @@ describe("PluginsTab (desktop W1)", () => {
     expect(html).toContain("apollo-bot-brain");
     // The source repo is shown on the card (W1 revision requirement).
     expect(html).toContain("acme/apollo-bot-brain");
-    // A non-vellum-ai repo reads as Community.
+    // The badge comes from the registry's `reviewStatus`, not the repo owner.
+    // "Cue reviewed" appears once as the rail filter label; a second
+    // occurrence would mean the card was badged curated.
     expect(html).toContain("Community");
+    expect(countOf(html, "Cue reviewed")).toBe(1);
     expect(html).toContain('href="/assistant/plugins/apollo-bot-brain"');
   });
 
-  test("derives an Official badge for first-party repos", () => {
+  test("badges a curated entry from reviewStatus, NOT from the repo owner", () => {
     const html = renderTab({
       installed: { plugins: [] },
       catalog: {
@@ -243,7 +291,7 @@ describe("PluginsTab (desktop W1)", () => {
         ref: "main",
         matches: [
           {
-            name: "simple-memory",
+            name: "caveman",
             description: "test plugin",
             reviewStatus: "curated" as const,
             surfaces: [],
@@ -251,17 +299,53 @@ describe("PluginsTab (desktop W1)", () => {
             license: null,
             homepage: null,
             icon: null,
-            path: "github:vellum-ai/simple-memory@ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
+            path: "github:JuliusBrussee/caveman@63a91ecadbf4c4719a4602a5abb00883f9966034",
             source: {
               kind: "github",
-              repo: "vellum-ai/simple-memory",
-              ref: "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
+              repo: "JuliusBrussee/caveman",
+              ref: "63a91ecadbf4c4719a4602a5abb00883f9966034",
             },
           },
         ],
       },
     });
-    expect(html).toContain("Official");
+    // A third-party repo can still be curated — Cue maintains the adapter for
+    // this one. The old `repo.startsWith("vellum-ai/")` heuristic got this
+    // exactly backwards, and it never claims "official" (an ownership claim).
+    expect(countOf(html, "Cue reviewed")).toBe(2); // rail label + card badge
+    expect(html).not.toContain("Official");
+  });
+
+  test("a vellum-ai repo marked community does NOT read as Cue-curated", () => {
+    // The other direction of the old heuristic's error: upstream authorship is
+    // not a Cue endorsement.
+    const html = renderTab({
+      installed: { plugins: [] },
+      catalog: {
+        query: "",
+        ref: "main",
+        matches: [
+          {
+            name: "admin-copilot",
+            description: "test plugin",
+            reviewStatus: "community" as const,
+            surfaces: [],
+            category: null,
+            license: null,
+            homepage: null,
+            icon: null,
+            path: "github:vellum-ai/admin-copilot@d30596aa50a1c702f5d74e05c45bd965d14e2107",
+            source: {
+              kind: "github",
+              repo: "vellum-ai/admin-copilot",
+              ref: "d30596aa50a1c702f5d74e05c45bd965d14e2107",
+            },
+          },
+        ],
+      },
+    });
+    expect(html).toContain("Community");
+    expect(countOf(html, "Cue reviewed")).toBe(1); // rail label only
   });
 
   test("suppresses catalog entries that are already installed", () => {
@@ -273,6 +357,7 @@ describe("PluginsTab (desktop W1)", () => {
             name: "simple-memory",
             description: null,
             version: null,
+            disabled: false,
           },
         ],
       },
@@ -299,7 +384,7 @@ describe("PluginsTab (desktop W1)", () => {
           {
             name: "apollo-bot-brain",
             description: "test plugin",
-            reviewStatus: "curated" as const,
+            reviewStatus: "community" as const,
             surfaces: [],
             category: null,
             license: null,

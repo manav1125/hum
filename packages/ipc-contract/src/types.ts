@@ -354,6 +354,15 @@ export interface AppVersionInfo {
 // Cue Live
 // ---------------------------------------------------------------------------
 
+/**
+ * The shipped summon accelerator. Single source of truth: the Electron main
+ * service registers it and reports it back as `CueLiveStatus.hotkey`, and web
+ * surfaces that cannot reach the bridge (the Intelligence › Cue Live explainer
+ * runs off-desktop, where no live value exists) fall back to this rather than
+ * hardcoding a second, drift-prone copy.
+ */
+export const CUE_LIVE_DEFAULT_HOTKEY = "Control+Option+Space";
+
 /** Live status of the Cue Live overlay, for the in-app "How it works" page. */
 export interface CueLiveStatus {
   /** Whether the user has Cue Live enabled (persisted, default ON). */
@@ -368,6 +377,12 @@ export interface CueLiveStatus {
   hotkey: string;
   /** Whether a spoken goal lets Cue Live click/type for you (full auto). */
   takeControl: boolean;
+  /**
+   * Whether this Mac is currently sending screen frames to the remote viewer.
+   * The overlay shows an on-screen notice whenever this is true; the flag lets
+   * the in-app surface show it too, and offer the local stop.
+   */
+  streamingScreen: boolean;
 }
 
 /**

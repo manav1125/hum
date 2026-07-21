@@ -54,6 +54,7 @@ import { ROUTES as CONVERSATION_STARTER_ROUTES } from "./conversation-starter-ro
 import { ROUTES as CONVERSATIONS_IMPORT_ROUTES } from "./conversations-import-routes.js";
 import { ROUTES as CREDENTIAL_PROMPT_ROUTES } from "./credential-prompt-routes.js";
 import { ROUTES as CREDENTIAL_ROUTES } from "./credential-routes.js";
+import { ROUTES as CUELIVE_OBSERVATION_ROUTES } from "./cuelive-observation-routes.js";
 import { ROUTES as CUELIVE_ROUTES } from "./cuelive-routes.js";
 import { ROUTES as DEBUG_BASH_ROUTES } from "./debug-bash-routes.js";
 import { ROUTES as DEBUG_ROUTES } from "./debug-routes.js";
@@ -209,6 +210,7 @@ export const ROUTES: RouteDefinition[] = [
   ...CONVERSATION_MESSAGE_ROUTES,
   ...CONSOLIDATION_ROUTES,
   ...CUELIVE_ROUTES,
+  ...CUELIVE_OBSERVATION_ROUTES,
   ...CREDENTIAL_PROMPT_ROUTES,
   ...CREDENTIAL_ROUTES,
   ...DEFER_ROUTES,

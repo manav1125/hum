@@ -11,24 +11,28 @@
  * path), registry search, and cards that carry the SOURCE REPO and an
  * official/community badge, linking to the W2 detail page.
  *
- * Honesty (the HTTP plugin surface is thinner than the design imagined):
- *  · `GET /v1/plugins/search` returns only name / path / source / description —
- *    no review-status, surface-type, or install-count. So the curation rail
- *    filters on the one axis derivable from `source.repo` (first-party
- *    `vellum-ai/*` = official vs community); surface-type and install-count
- *    filters are deliberately ABSENT rather than faked.
+ * Curation is authoritative from the registry: `GET /v1/plugins/search` returns
+ * each entry's real `reviewStatus`, so the left rail filters on that rather
+ * than guessing from the repo owner. See `@/lib/plugin-curation` for why the
+ * badge reads "Cue reviewed" and never "Cue official".
+ *
+ * Honesty (what the HTTP surface still doesn't carry):
+ *  · There is no install-count anywhere in the catalog, so a popularity filter
+ *    or "12k installs" line is deliberately ABSENT rather than faked.
  *  · "Submit a plugin" is a doc-link PR path — the registry has no submit
  *    endpoint yet (NEEDS BACKEND), flagged on-frame.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
-import { isOfficialRepo } from "@/mobile-v3/you/plugin-detail-sheet";
 import {
   pluginsGetOptions,
+  pluginsGetQueryKey,
   pluginsSearchGetOptions,
+  usePluginsByNameDisablePostMutation,
+  usePluginsByNameEnablePostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type {
   PluginsGetResponse,
@@ -36,6 +40,13 @@ import type {
 } from "@/generated/daemon/types.gen";
 import { usePluginDrift } from "@/domains/intelligence/use-plugin-drift";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import {
+  curationBadge,
+  type CurationFilter,
+  CURATION_FILTER_LABELS,
+  isCurated,
+  matchesCuration,
+} from "@/lib/plugin-curation";
 import { Mv3PluginsPage } from "@/mobile-v3/you/plugins-page";
 import { routes } from "@/utils/routes";
 
@@ -45,7 +56,6 @@ interface PluginsTabProps {
 
 type SearchMatch = PluginsSearchGetResponse["matches"][number];
 type InstalledPlugin = PluginsGetResponse["plugins"][number];
-type Curation = "all" | "official" | "community";
 
 const CATALOG_STALE_MS = 5 * 60 * 1000;
 
@@ -83,7 +93,7 @@ export function PluginsTab({ assistantId }: PluginsTabProps) {
 
 function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
   const [searchValue, setSearchValue] = useState("");
-  const [curation, setCuration] = useState<Curation>("all");
+  const [curation, setCuration] = useState<CurationFilter>("all");
   const query = searchValue.trim().toLowerCase();
 
   const installedQuery = useQuery({
@@ -116,18 +126,27 @@ function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
     () => catalogQuery.data?.matches ?? [],
     [catalogQuery.data?.matches],
   );
-  const officialCount = allMatches.filter((m) =>
-    isOfficialRepo(m.source.repo),
+  const curatedCount = allMatches.filter((m) =>
+    isCurated(m.reviewStatus),
   ).length;
-  const communityCount = allMatches.length - officialCount;
+  const communityCount = allMatches.length - curatedCount;
+
+  /**
+   * An installed plugin's row still needs its curation posture, and the list
+   * response (which is a disk walk) doesn't carry one. The catalog does, so
+   * look it up by install name; a name with no catalog entry is a direct/CLI
+   * install and correctly reads "Unreviewed".
+   */
+  const reviewStatusByName = useMemo(
+    () => new Map(allMatches.map((m) => [m.name, m.reviewStatus])),
+    [allMatches],
+  );
 
   const catalogMatches = useMemo<SearchMatch[]>(() => {
     return allMatches.filter((m) => {
       if (installedNames.has(m.name)) return false;
       if (!matches(query, m.name, m.description, m.source.repo)) return false;
-      if (curation === "all") return true;
-      const official = isOfficialRepo(m.source.repo);
-      return curation === "official" ? official : !official;
+      return matchesCuration(curation, m.reviewStatus);
     });
   }, [allMatches, installedNames, query, curation]);
 
@@ -135,6 +154,38 @@ function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
     () => installed.filter((p) => matches(query, p.name, p.description)),
     [installed, query],
   );
+
+  // ── Enabled ⟷ Disabled ────────────────────────────────────────────────────
+  const queryClient = useQueryClient();
+  const [pendingToggle, setPendingToggle] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  const enableMutation = usePluginsByNameEnablePostMutation();
+  const disableMutation = usePluginsByNameDisablePostMutation();
+
+  const toggleInstalled = (plugin: InstalledPlugin) => {
+    setToggleError(null);
+    setPendingToggle(plugin.name);
+    const mutation = plugin.disabled ? enableMutation : disableMutation;
+    mutation.mutate(
+      { path: { assistant_id: assistantId, name: plugin.name } },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: pluginsGetQueryKey({
+              path: { assistant_id: assistantId },
+            }),
+          });
+        },
+        onError: (err) =>
+          setToggleError(
+            err instanceof Error
+              ? err.message
+              : `Couldn't ${plugin.disabled ? "enable" : "disable"} ${plugin.name}.`,
+          ),
+        onSettled: () => setPendingToggle(null),
+      },
+    );
+  };
 
   const registryTotal = allMatches.length;
   const isSearching =
@@ -211,7 +262,7 @@ function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
             curation={curation}
             onSelect={setCuration}
             total={registryTotal}
-            official={officialCount}
+            curated={curatedCount}
             community={communityCount}
           />
           <SubmitPluginCard />
@@ -263,6 +314,18 @@ function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
           {visibleInstalled.length > 0 ? (
             <>
               <SectionLabel>Installed</SectionLabel>
+              {toggleError ? (
+                <div
+                  role="alert"
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--mv1-danger, #C0473C)",
+                    marginBottom: 10,
+                  }}
+                >
+                  {toggleError}
+                </div>
+              ) : null}
               <div
                 style={{
                   display: "flex",
@@ -276,8 +339,23 @@ function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
                     key={p.id}
                     assistantId={assistantId}
                     plugin={p}
+                    reviewStatus={reviewStatusByName.get(p.name) ?? null}
+                    onToggle={toggleInstalled}
+                    toggling={pendingToggle === p.name}
                   />
                 ))}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: C.t3,
+                  marginTop: -14,
+                  marginBottom: 22,
+                  lineHeight: 1.5,
+                }}
+              >
+                Disabling keeps a plugin installed but stops its code from
+                loading — it takes effect the next time the assistant restarts.
               </div>
             </>
           ) : null}
@@ -293,11 +371,19 @@ function PluginsMarketplaceDesktop({ assistantId }: PluginsTabProps) {
             />
           ) : catalogMatches.length === 0 ? (
             <EmptyCard
-              title={query ? "No plugins match" : "Nothing to explore"}
+              title={
+                query
+                  ? "No plugins match"
+                  : curation === "curated"
+                    ? "Cue doesn't publish its own plugins yet"
+                    : "Nothing to explore"
+              }
               body={
                 query
                   ? "Try a different search term or clear the curation filter."
-                  : "No plugins in this filter."
+                  : curation === "curated"
+                    ? "Everything in the registry today is third-party: the Cue team verified the license and manifest and pinned each entry to a commit, but didn't write them. Browse Community to see them."
+                    : "No plugins in this filter."
               }
             />
           ) : (
@@ -319,19 +405,23 @@ function CurationRail({
   curation,
   onSelect,
   total,
-  official,
+  curated,
   community,
 }: {
-  curation: Curation;
-  onSelect: (c: Curation) => void;
+  curation: CurationFilter;
+  onSelect: (c: CurationFilter) => void;
   total: number;
-  official: number;
+  curated: number;
   community: number;
 }) {
-  const items: { value: Curation; label: string; count: number }[] = [
-    { value: "all", label: "All plugins", count: total },
-    { value: "official", label: "Cue official", count: official },
-    { value: "community", label: "Community", count: community },
+  const items: { value: CurationFilter; label: string; count: number }[] = [
+    { value: "all", label: CURATION_FILTER_LABELS.all, count: total },
+    { value: "curated", label: CURATION_FILTER_LABELS.curated, count: curated },
+    {
+      value: "community",
+      label: CURATION_FILTER_LABELS.community,
+      count: community,
+    },
   ];
   return (
     <div style={{ marginBottom: 18 }}>
@@ -449,7 +539,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Badge({ official }: { official: boolean }) {
+function Badge({ reviewStatus }: { reviewStatus: string | null | undefined }) {
+  const curated = isCurated(reviewStatus);
   return (
     <span
       style={{
@@ -457,8 +548,8 @@ function Badge({ official }: { official: boolean }) {
         fontSize: 9.5,
         letterSpacing: ".05em",
         textTransform: "uppercase",
-        color: official ? C.blue : C.t3,
-        background: official
+        color: curated ? C.blue : C.t3,
+        background: curated
           ? "color-mix(in srgb, var(--mv1-blue) 12%, transparent)"
           : C.bg,
         borderRadius: 5,
@@ -466,7 +557,30 @@ function Badge({ official }: { official: boolean }) {
         flexShrink: 0,
       }}
     >
-      {official ? "Official" : "Community"}
+      {curationBadge(reviewStatus)}
+    </span>
+  );
+}
+
+/** Enabled / Disabled — the middle of the plugin lifecycle. */
+function StateChip({ disabled }: { disabled: boolean }) {
+  return (
+    <span
+      style={{
+        fontFamily: MONO,
+        fontSize: 9.5,
+        letterSpacing: ".05em",
+        textTransform: "uppercase",
+        color: disabled ? C.t3 : "var(--mv1-success, #2E9E6B)",
+        background: disabled
+          ? C.bg
+          : "color-mix(in srgb, var(--mv1-success, #2E9E6B) 12%, transparent)",
+        borderRadius: 5,
+        padding: "2px 7px",
+        flexShrink: 0,
+      }}
+    >
+      {disabled ? "Disabled" : "Enabled"}
     </span>
   );
 }
@@ -505,7 +619,6 @@ function PluginGlyph() {
 }
 
 function CatalogCard({ match }: { match: SearchMatch }) {
-  const official = isOfficialRepo(match.source.repo);
   return (
     <Link to={routes.plugin(match.name)} title={match.path} style={cardShell()}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -521,7 +634,7 @@ function CatalogCard({ match }: { match: SearchMatch }) {
             <span style={{ fontSize: 15, fontWeight: 600, color: C.t1 }}>
               {match.name}
             </span>
-            <Badge official={official} />
+            <Badge reviewStatus={match.reviewStatus} />
           </div>
           <div
             style={{
@@ -558,12 +671,23 @@ function CatalogCard({ match }: { match: SearchMatch }) {
   );
 }
 
+/**
+ * An installed row: the Enabled ⟷ Disabled half of the lifecycle. The toggle
+ * is a sibling of the detail link rather than nested inside it — a button
+ * inside an anchor is invalid markup and swallows the click.
+ */
 function InstalledCard({
   assistantId,
   plugin,
+  reviewStatus,
+  onToggle,
+  toggling,
 }: {
   assistantId: string;
   plugin: InstalledPlugin;
+  reviewStatus: string | null | undefined;
+  onToggle: (plugin: InstalledPlugin) => void;
+  toggling: boolean;
 }) {
   const drift = usePluginDrift({
     assistantId,
@@ -571,19 +695,38 @@ function InstalledCard({
     enabled: true,
   });
   const updateAvailable = drift.data?.status === "update-available";
-  const official = isOfficialRepo(
-    drift.data?.remote?.repo ?? drift.data?.local?.source?.repo,
-  );
   return (
-    <Link to={routes.plugin(plugin.name)} style={cardShell()}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <div style={{ ...cardShell(), display: "flex" }}>
+      <Link
+        to={routes.plugin(plugin.name)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flex: 1,
+          minWidth: 0,
+          textDecoration: "none",
+          color: "inherit",
+          // Dim only the identity block, never the toggle — the control that
+          // brings a disabled plugin back must stay fully legible.
+          opacity: plugin.disabled ? 0.55 : 1,
+        }}
+      >
         <PluginGlyph />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
             <span style={{ fontSize: 15, fontWeight: 600, color: C.t1 }}>
               {plugin.name}
             </span>
-            {drift.data ? <Badge official={official} /> : null}
+            <StateChip disabled={plugin.disabled} />
+            <Badge reviewStatus={reviewStatus} />
             {plugin.version ? (
               <span style={{ fontSize: 12, color: C.t3 }}>
                 v{plugin.version}
@@ -622,11 +765,46 @@ function InstalledCard({
             </div>
           ) : null}
         </div>
-        <span style={{ color: C.t3, fontSize: 18 }} aria-hidden>
+      </Link>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexShrink: 0,
+          paddingLeft: 12,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => onToggle(plugin)}
+          disabled={toggling}
+          aria-label={`${plugin.disabled ? "Enable" : "Disable"} ${plugin.name}`}
+          style={{
+            fontSize: 12.5,
+            fontWeight: 500,
+            fontFamily: "inherit",
+            color: plugin.disabled ? "#fff" : C.t2,
+            background: plugin.disabled ? C.violet : "transparent",
+            border: plugin.disabled ? "none" : `1px solid ${C.line2}`,
+            borderRadius: 9,
+            padding: "7px 14px",
+            cursor: toggling ? "default" : "pointer",
+            opacity: toggling ? 0.6 : 1,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {toggling ? "Saving…" : plugin.disabled ? "Enable" : "Disable"}
+        </button>
+        <Link
+          to={routes.plugin(plugin.name)}
+          aria-label={`Open ${plugin.name}`}
+          style={{ color: C.t3, fontSize: 18, textDecoration: "none" }}
+        >
           ›
-        </span>
+        </Link>
       </div>
-    </Link>
+    </div>
   );
 }
 

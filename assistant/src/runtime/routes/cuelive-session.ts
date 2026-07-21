@@ -1,13 +1,16 @@
 /**
  * Cue Live remote-viewer session state.
  *
- * Screen capture and the overlay live entirely in the macOS app — the daemon
- * never holds frames and has no control channel into the native engine. What
- * the daemon *genuinely* sees is the stream of guidance / look / act calls the
- * Mac makes while a Cue Live session runs. This module records that stream
- * (metadata only — never screenshot bytes) so other clients (the phone) can
- * watch a session remotely, and exposes the two remote controls the daemon can
- * honestly provide:
+ * Screen capture and the overlay live in the macOS app. What the daemon sees
+ * here is the stream of guidance / look / act calls the Mac makes while a Cue
+ * Live session runs. **This module holds metadata only — never screenshot
+ * bytes.** (The opt-in screen stream is a separate concern: `cuelive-stream.ts`
+ * holds exactly one frame, in memory, replaced on every push and never
+ * persisted. Nothing in this file ever touches it.)
+ *
+ * The metadata stream lets other clients (the phone, the web viewer) watch a
+ * session remotely, and this module exposes the two remote controls the daemon
+ * can honestly provide:
  *
  * - **Pause**: while held, the daemon answers the Mac's guidance/look/act
  *   calls inertly (overlay falls back to its local heuristics; an in-flight
@@ -34,7 +37,16 @@ const STOP_REQUEST_TTL_MS = 60_000;
 /** Longest detail line kept per observation. */
 const MAX_DETAIL_CHARS = 240;
 
-export type CueLiveObservationKind = "guidance" | "look" | "act";
+export type CueLiveObservationKind = "guidance" | "look" | "act" | "input";
+
+/**
+ * The overlay's verify beat. Only set where the daemon genuinely learns the
+ * outcome — today that is the web input relay, whose host-CU round trip runs
+ * verify → execute → settle → observe on the Mac and reports back. The Mac's
+ * own act loop performs actions fire-and-forget, so its steps carry no verify
+ * mark rather than a guessed one.
+ */
+export type CueLiveVerifyBeat = "verified" | "retrying" | "stuck";
 
 export interface CueLiveObservation {
   id: number;
@@ -50,6 +62,8 @@ export interface CueLiveObservation {
    * `held` when the daemon answered inertly because of a remote pause.
    */
   status: "active" | "done" | "held";
+  /** Present only when the outcome was actually verified on the Mac. */
+  verify?: CueLiveVerifyBeat;
 }
 
 export interface CueLiveWatching {
@@ -260,6 +274,29 @@ export function recordActStep(
           ? truncate(input.say, MAX_DETAIL_CHARS)
           : undefined,
       status: input.held ? "held" : input.done ? "done" : "active",
+    },
+    now,
+  );
+}
+
+/**
+ * An action the owner relayed from the web viewer. Recorded like any other
+ * observation so the remote stream shows human steering and Cue's own steps in
+ * one honest timeline, and carries the verify beat the host-CU round trip
+ * actually reported.
+ */
+export function recordRelayAction(
+  input: { summary: string; detail?: string; verify: CueLiveVerifyBeat },
+  now: number = Date.now(),
+): void {
+  touch(now);
+  pushObservation(
+    {
+      kind: "input",
+      summary: truncate(input.summary, 120),
+      detail: input.detail ? truncate(input.detail, MAX_DETAIL_CHARS) : undefined,
+      status: "done",
+      verify: input.verify,
     },
     now,
   );

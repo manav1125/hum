@@ -3,12 +3,16 @@
  * sentinel (see {@link ../../plugins/disabled-state}).
  *
  * Disabling is the safe way to neutralize an untrusted or misbehaving plugin
- * without deleting it: the sentinel is read at load time by every plugin
- * surface, so a disabled plugin's code never runs on the next turn. Enabling
- * removes the sentinel.
+ * without deleting it: `loadUserPlugins()` reads the sentinel before importing
+ * a plugin directory, so a disabled plugin's code never runs from the next
+ * load onward. Enabling removes the sentinel.
  *
- * The CLI commands `assistant plugins disable|enable <name>` are thin wrappers
- * that supply the live workspace directory and format the result.
+ * The CLI commands `assistant plugins disable|enable <name>` and the daemon's
+ * `POST /v1/plugins/:name/{enable,disable}` routes are both thin wrappers that
+ * supply the live workspace directory and format the result. This is a
+ * file-only operation, so the CLI calls it directly rather than over IPC (the
+ * cli/daemon boundary: daemon-state ops go through ipc, file-only ops through
+ * these cli/lib facades).
  */
 
 import { existsSync, rmSync, statSync, writeFileSync } from "node:fs";

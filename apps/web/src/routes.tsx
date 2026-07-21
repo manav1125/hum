@@ -1107,6 +1107,17 @@ export const routeTree = [
                             },
                           },
                           {
+                            // Capability discovery — "What Cue can now do"
+                            // (D2 serif HQ grid / D1 mobile v3 list).
+                            path: "explore",
+                            lazy: {
+                              Component: () =>
+                                import("@/pages/explore/explore-page").then(
+                                  (m) => m.ExplorePage,
+                                ),
+                            },
+                          },
+                          {
                             path: "channels",
                             loader: surfaceLoader("channels"),
                             lazy: {

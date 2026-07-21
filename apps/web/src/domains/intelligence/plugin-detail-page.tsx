@@ -7,17 +7,18 @@
  *
  * Honesty (the HTTP plugin surface is thinner than the design imagined):
  *  · `GET /v1/plugins/:name` returns description / homepage / license /
- *    version / source / readme / artifact — but NO declared-surface or
- *    capability manifest. So the consent panel stands behind the one signal it
- *    can (review posture derived from the source org), and the per-surface
- *    "declared surfaces" list is flagged NEEDS BACKEND rather than faked.
+ *    version / source / reviewStatus / surfaces / disabled / readme /
+ *    artifact — but NO per-capability manifest (which connectors or files a
+ *    plugin actually touches). So the consent panel stands behind the real
+ *    registry `reviewStatus` plus the declared `surfaces`, and never
+ *    fabricates a permission list.
  *  · Version history is real: it reads the installed vs marketplace commit
  *    (+ committer timestamps) from `GET /v1/plugins/:name/inspect`.
  *  · The app-preview affordance is the real prebuilt-client `artifact`
  *    download when present; otherwise it's flagged NEEDS BACKEND (no preview
  *    endpoint) rather than mocked.
- *  · install / uninstall / upgrade are wired to the real routes. There is no
- *    separate enable/disable route — uninstall is the removal (flagged).
+ *  · The full lifecycle is wired to real routes: install, enable / disable
+ *    (`POST /v1/plugins/:name/{enable,disable}`), upgrade, uninstall.
  *
  * Mounted under `IntelligenceLayout`; gated by the same `external-plugins`
  * feature flag as `PluginsPage`.
@@ -34,7 +35,11 @@ import {
   type PluginDrift,
   usePluginDrift,
 } from "@/domains/intelligence/use-plugin-drift";
-import { isOfficialRepo } from "@/mobile-v3/you/plugin-detail-sheet";
+import {
+  curationBadge,
+  curationConsentLine,
+  isCurated,
+} from "@/lib/plugin-curation";
 import {
   pluginsByNameGetOptions,
   pluginsByNameGetQueryKey,
@@ -42,6 +47,8 @@ import {
   pluginsGetQueryKey,
   pluginsSearchGetQueryKey,
   usePluginsByNameDeleteMutation,
+  usePluginsByNameDisablePostMutation,
+  usePluginsByNameEnablePostMutation,
   usePluginsByNameUpgradePostMutation,
   usePluginsInstallPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
@@ -151,6 +158,25 @@ export function PluginDetailPage() {
       );
     },
   });
+  // Enabled ⟷ Disabled. The toast reports the restart caveat honestly: the
+  // sentinel gates the loader's import, so a live plugin keeps running until
+  // the assistant restarts.
+  const toggleSuccess =
+    (verb: "Enabled" | "Disabled") =>
+    (result: { restartRequired: boolean }) => {
+      invalidate();
+      toast.success(
+        result.restartRequired
+          ? `${verb} ${name ?? "plugin"} — takes effect after the assistant restarts`
+          : `${name ?? "Plugin"} was already ${verb.toLowerCase()}`,
+      );
+    };
+  const enableMutation = usePluginsByNameEnablePostMutation({
+    onSuccess: toggleSuccess("Enabled"),
+  });
+  const disableMutation = usePluginsByNameDisablePostMutation({
+    onSuccess: toggleSuccess("Disabled"),
+  });
 
   if (!hasHydrated) return null;
   if (!externalPlugins) return <Navigate to={routes.identity} replace />;
@@ -181,12 +207,20 @@ export function PluginDetailPage() {
     setConfirmingUpgrade(false);
     runUpgrade();
   };
+  const handleToggleEnabled = () => {
+    const mutation = detailQuery.data?.disabled
+      ? enableMutation
+      : disableMutation;
+    mutation.mutate({ path: { assistant_id: assistantId, name } });
+  };
 
   const plugin = detailQuery.data ?? null;
   const actionError =
     installMutation.isError ||
     removeMutation.isError ||
-    upgradeMutation.isError;
+    upgradeMutation.isError ||
+    enableMutation.isError ||
+    disableMutation.isError;
 
   return (
     <div
@@ -230,8 +264,10 @@ export function PluginDetailPage() {
             installing={installMutation.isPending}
             removing={removeMutation.isPending}
             upgrading={upgradeMutation.isPending}
+            toggling={enableMutation.isPending || disableMutation.isPending}
             onInstall={handleInstall}
             onUpgrade={handleUpgrade}
+            onToggleEnabled={handleToggleEnabled}
             onRemove={() => setConfirmingRemove(true)}
           />
 
@@ -252,7 +288,9 @@ export function PluginDetailPage() {
                 ? "Failed to install plugin. Please try again."
                 : removeMutation.isError
                   ? "Failed to uninstall plugin. Please try again."
-                  : "Failed to upgrade plugin. Please try again."}
+                  : upgradeMutation.isError
+                    ? "Failed to upgrade plugin. Please try again."
+                    : "Failed to change this plugin's enabled state. Please try again."}
             </div>
           ) : null}
 
@@ -287,7 +325,7 @@ export function PluginDetailPage() {
             {/* Side column */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <ConsentPanel plugin={plugin} />
-              <SurfacesPanel />
+              <SurfacesPanel plugin={plugin} />
               <AppPreviewPanel plugin={plugin} />
               <ProvenancePanel plugin={plugin} drift={drift} />
             </div>
@@ -325,8 +363,10 @@ function Hero({
   installing,
   removing,
   upgrading,
+  toggling,
   onInstall,
   onUpgrade,
+  onToggleEnabled,
   onRemove,
 }: {
   plugin: PluginsByNameGetResponse;
@@ -334,13 +374,13 @@ function Hero({
   installing: boolean;
   removing: boolean;
   upgrading: boolean;
+  toggling: boolean;
   onInstall: () => void;
   onUpgrade: () => void;
+  onToggleEnabled: () => void;
   onRemove: () => void;
 }) {
-  const official = isOfficialRepo(
-    plugin.source?.kind === "github" ? plugin.source.repo : null,
-  );
+  const curated = isCurated(plugin.reviewStatus);
   const updateAvailable = drift?.status === "update-available";
   return (
     <div
@@ -400,15 +440,15 @@ function Hero({
               fontSize: 10,
               letterSpacing: ".05em",
               textTransform: "uppercase",
-              color: official ? "#BFD0FF" : "rgba(255,255,255,.6)",
-              background: official
+              color: curated ? "#BFD0FF" : "rgba(255,255,255,.6)",
+              background: curated
                 ? "rgba(127,163,242,.24)"
                 : "rgba(255,255,255,.1)",
               borderRadius: 5,
               padding: "3px 8px",
             }}
           >
-            {official ? "Cue official" : "Community"}
+            {curationBadge(plugin.reviewStatus)}
           </span>
           {plugin.version ? (
             <span style={{ fontSize: 13, color: "rgba(255,255,255,.65)" }}>
@@ -416,8 +456,29 @@ function Hero({
             </span>
           ) : null}
           {plugin.installed ? (
-            <span style={{ fontSize: 12, color: C.violetWash }}>
-              ✓ Installed
+            <span
+              style={{
+                fontSize: 12,
+                color: plugin.disabled ? "rgba(255,255,255,.6)" : C.violetWash,
+              }}
+            >
+              {plugin.disabled ? "◦ Installed · disabled" : "✓ Enabled"}
+            </span>
+          ) : null}
+          {updateAvailable ? (
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                letterSpacing: ".05em",
+                textTransform: "uppercase",
+                color: "#DAD5FF",
+                background: "rgba(127,119,221,.3)",
+                borderRadius: 5,
+                padding: "3px 8px",
+              }}
+            >
+              Update available
             </span>
           ) : null}
         </div>
@@ -452,6 +513,16 @@ function Hero({
                 {upgrading ? "Upgrading…" : "Upgrade"}
               </HeroButton>
             ) : null}
+            {/* Enabled ⟷ Disabled sits BEFORE Uninstall: disabling is the
+                reversible way to stop a plugin, so it should be the easier
+                reach of the two. */}
+            <HeroButton
+              variant={plugin.disabled ? "primary" : "secondary"}
+              onClick={onToggleEnabled}
+              disabled={toggling}
+            >
+              {toggling ? "Saving…" : plugin.disabled ? "Enable" : "Disable"}
+            </HeroButton>
             <HeroButton variant="danger" onClick={onRemove} disabled={removing}>
               {removing ? "Uninstalling…" : "Uninstall"}
             </HeroButton>
@@ -475,9 +546,9 @@ function HeroButton({
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
-  variant?: "primary" | "danger";
+  /** `secondary` is the low-emphasis outline used by the reversible actions. */
+  variant?: "primary" | "secondary" | "danger";
 }) {
-  const bg = variant === "danger" ? "transparent" : C.violet;
   return (
     <button
       type="button"
@@ -488,9 +559,9 @@ function HeroButton({
         fontWeight: 500,
         fontFamily: "inherit",
         color: "#fff",
-        background: bg,
+        background: variant === "primary" ? C.violet : "transparent",
         border:
-          variant === "danger" ? "1px solid rgba(255,255,255,.35)" : "none",
+          variant === "primary" ? "none" : "1px solid rgba(255,255,255,.35)",
         borderRadius: 9,
         padding: "9px 16px",
         cursor: disabled ? "default" : "pointer",
@@ -555,9 +626,8 @@ function Panel({
 }
 
 function ConsentPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
-  const official = isOfficialRepo(
-    plugin.source?.kind === "github" ? plugin.source.repo : null,
-  );
+  const consent = curationConsentLine(plugin.reviewStatus);
+  const ok = consent.tone === "ok";
   return (
     <Panel title="What it can reach">
       <div
@@ -566,53 +636,89 @@ function ConsentPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
           alignItems: "flex-start",
           gap: 9,
           fontSize: 13,
-          color: official ? C.t1 : C.amber,
+          color: ok ? C.t1 : C.amber,
           lineHeight: 1.5,
         }}
       >
         <span
           aria-hidden
           style={{
-            color: official ? C.green : C.amber,
-            fontWeight: official ? 400 : 700,
+            color: ok ? C.green : C.amber,
+            fontWeight: ok ? 400 : 700,
             marginTop: 1,
           }}
         >
-          {official ? "✓" : "‖"}
+          {consent.glyph}
         </span>
         <span>
-          {official
-            ? "First-party — reviewed and pinned to a commit."
-            : "Community source — Cue hasn't first-party reviewed it."}{" "}
-          A plugin can add tools, hooks, and app surfaces that run inside Cue;
-          anything sensitive still asks before it acts.
+          {consent.text} A plugin can add tools, hooks, and app surfaces that
+          run inside Cue; anything sensitive still asks before it acts, and you
+          can disable it at any time without uninstalling.
         </span>
       </div>
     </Panel>
   );
 }
 
-function SurfacesPanel() {
-  // The detail route does not return the manifest's declared surfaces
-  // (tools / hooks / routes / apps), so we surface the honest note rather
-  // than fabricate a list. The card stays so W2's structure matches the
-  // frame and lights up the moment the backend exposes surfaces.
+function SurfacesPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
+  // `surfaces` is real registry data (which of hooks/tools/skills/routes/apps
+  // the entry contributes). What is still NOT exposed is the per-capability
+  // manifest — which connectors or files a plugin reaches — so that stays
+  // flagged rather than fabricated.
+  const surfaces = plugin.surfaces ?? [];
+  if (surfaces.length === 0) {
+    return (
+      <Panel title="Declared surfaces">
+        <div style={{ fontSize: 13, color: C.t2, lineHeight: 1.5 }}>
+          This entry doesn&apos;t declare any surfaces in the registry. The
+          README below documents what it contributes.
+        </div>
+      </Panel>
+    );
+  }
   return (
     <Panel
       title="Declared surfaces"
-      note="Needs backend · not exposed by this build"
+      note="Per-capability detail · needs backend"
     >
-      <div style={{ fontSize: 13, color: C.t2, lineHeight: 1.5 }}>
-        The per-surface manifest (tools, hooks, routes, apps) isn&apos;t
-        returned by the plugin detail endpoint yet. The README below documents
-        what this plugin contributes.
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {surfaces.map((s) => (
+          <span
+            key={s}
+            style={{
+              fontFamily: MONO,
+              fontSize: 11,
+              color: C.t2,
+              background: C.bg,
+              borderRadius: 6,
+              padding: "3px 9px",
+            }}
+          >
+            {s}
+          </span>
+        ))}
+      </div>
+      <div
+        style={{
+          fontSize: 12.5,
+          color: C.t2,
+          lineHeight: 1.5,
+          marginTop: 10,
+        }}
+      >
+        Which specific connectors or files it reaches isn&apos;t exposed by the
+        detail endpoint — the README below is the source of truth for that.
       </div>
     </Panel>
   );
 }
 
 function AppPreviewPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
-  const artifact = plugin.artifact;
+  // The download is install-gated on purpose: the artifact is a native client
+  // that only makes sense once the plugin it belongs to is actually on the
+  // machine, and offering a binary for a plugin the user hasn't accepted yet
+  // would hand them an executable ahead of the consent step.
+  const artifact = plugin.installed ? plugin.artifact : null;
   if (artifact) {
     return (
       <Panel title="App preview">
@@ -641,8 +747,9 @@ function AppPreviewPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
   return (
     <Panel title="App preview" note="Needs backend · no preview endpoint">
       <div style={{ fontSize: 13, color: C.t2, lineHeight: 1.5 }}>
-        Any surfaces this plugin adds load after install and a restart. A live
-        in-page preview isn&apos;t available yet.
+        {plugin.artifact
+          ? "This plugin ships a prebuilt client. Install it first — the client becomes available once the plugin is on your assistant."
+          : "Any surfaces this plugin adds load after install and a restart. A live in-page preview isn't available yet."}
       </div>
     </Panel>
   );
@@ -682,6 +789,18 @@ function ProvenancePanel({
             ) : (
               repo
             )}
+          </Row>
+        ) : null}
+        {plugin.homepage ? (
+          <Row label="Homepage">
+            <a
+              href={plugin.homepage}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: C.blue, textDecoration: "none" }}
+            >
+              {plugin.homepage} ↗
+            </a>
           </Row>
         ) : null}
         {plugin.license ? <Row label="License">{plugin.license}</Row> : null}

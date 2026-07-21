@@ -11,11 +11,26 @@
  */
 import { z } from "zod";
 
+import { kickScreenObservationCapture } from "../../cue-live/observation-capture.js";
+import type { MissionMode } from "../../missions/mission-store.js";
+import { getGlobalDial } from "../../playbooks/autonomy-cap.js";
 import { getConfiguredProvider } from "../../providers/provider-send-message.js";
 import type { Message } from "../../providers/types.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { runBtwSidechain } from "../btw-sidechain.js";
+import {
+  dialAllowsCueLiveAction,
+  evaluateInputRelay,
+} from "./cuelive-input-policy.js";
+import {
+  armTakeover,
+  disarmTakeover,
+  dispatchRelayAction,
+  getTakeoverStatus,
+  isTakeoverArmed,
+  type RelayAction,
+} from "./cuelive-input-relay.js";
 import {
   consumeRemoteStop,
   getSessionView,
@@ -23,9 +38,20 @@ import {
   recordActStep,
   recordGuidance,
   recordLook,
+  recordRelayAction,
   requestRemoteStop,
   setRemotePaused,
 } from "./cuelive-session.js";
+import {
+  armStream,
+  disarmStream,
+  getLiveFrameGeometry,
+  getStreamStatus,
+  MAX_FRAME_BASE64_BYTES,
+  pushFrame,
+  recordMacCheckin,
+  takeFrame,
+} from "./cuelive-stream.js";
 import { BadRequestError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -270,6 +296,15 @@ async function handleLook({
       imageWidth,
       imageHeight,
     });
+    // A look already produced a fresh description of this screen. When the
+    // owner has armed observation capture, hand that description to the
+    // capture pass (text tier — no second vision call, no frame retained) so
+    // "Cue watches your screen and picks up the work" is true of the verb the
+    // user actually uses. No-ops when capture is off or disarmed.
+    kickScreenObservationCapture({
+      description: lookResult.answer,
+      appName: getSessionView().watching?.appName ?? undefined,
+    });
     return lookResult;
   } catch (err) {
     log.warn({ err }, "Cue Live look generation failed");
@@ -432,6 +467,25 @@ async function handleAct({
     return { say, done: true, action: null };
   }
 
+  // The global trust dial caps Cue Live exactly as it caps every other
+  // acting surface: Observe means watch-only, so the take-control loop stops
+  // before it touches the mouse. Assist and Autonomous both permit attended
+  // action, which is what a summoned auto-run is.
+  if (!dialAllowsCueLiveAction(readTrustDial())) {
+    const say =
+      "Your trust dial is set to Observe, so I can look but not act.";
+    recordActStep({
+      goal,
+      step,
+      say,
+      done: true,
+      stoppedRemotely: true,
+      imageWidth,
+      imageHeight,
+    });
+    return { say, done: true, action: null };
+  }
+
   // Remote pause: an auto-run can't idle mid-step, so a pause ends it too —
   // said out loud rather than silently.
   if (isRemotePaused()) {
@@ -510,11 +564,40 @@ async function handleAct({
 
 const ObservationSchema = z.object({
   id: z.number(),
-  kind: z.enum(["guidance", "look", "act"]),
+  kind: z.enum(["guidance", "look", "act", "input"]),
   at: z.string(),
   summary: z.string(),
   detail: z.string().optional(),
   status: z.enum(["active", "done", "held"]),
+  verify: z.enum(["verified", "retrying", "stuck"]).optional(),
+});
+
+const MacPresenceSchema = z.object({
+  seenAt: z.string(),
+  cueLiveRunning: z.boolean(),
+  screenRecordingGranted: z.boolean(),
+  deviceName: z.string().nullable(),
+});
+
+const StreamStatusSchema = z.object({
+  state: z.enum(["off", "starting", "live", "stalled"]),
+  armed: z.boolean(),
+  armedBy: z.enum(["web", "mac"]).nullable(),
+  armedAt: z.string().nullable(),
+  lastFrameAt: z.string().nullable(),
+  seq: z.number(),
+  intervalMs: z.number(),
+  maxWidth: z.number(),
+  viewerAttached: z.boolean(),
+  lastStopReason: z.string().nullable(),
+  mac: MacPresenceSchema.nullable(),
+});
+
+const TakeoverStatusSchema = z.object({
+  armed: z.boolean(),
+  armedAt: z.string().nullable(),
+  steps: z.number(),
+  maxSteps: z.number(),
 });
 
 const SessionView = z.object({
@@ -540,40 +623,308 @@ const SessionView = z.object({
     })
     .nullable(),
   observations: z.array(ObservationSchema),
+  /** Screen-stream state. Frames are never part of this payload. */
+  stream: StreamStatusSchema,
+  /** Whether the owner has armed steering from the web, and the step budget. */
+  takeover: TakeoverStatusSchema,
+  /** Live global trust dial — the ceiling on everything Cue Live may do. */
+  trustDial: z.enum(["observe", "assist", "autonomous"]),
 });
+type SessionViewT = z.infer<typeof SessionView>;
 
 const PauseBody = z.object({
   paused: z.boolean().describe("Hold (true) or release (false) the session"),
 });
 
-function handleSessionGet(): z.infer<typeof SessionView> {
-  return getSessionView();
+/**
+ * Read the global trust dial, failing CLOSED. The dial lives in the workspace
+ * database; if that read throws (degraded daemon, migration in flight) the
+ * honest answer is not "assume the owner allowed it" — it is the most
+ * restrictive posture, which makes Cue Live watch-only until the dial can be
+ * read again.
+ */
+function readTrustDial(): MissionMode {
+  try {
+    return getGlobalDial();
+  } catch (err) {
+    log.warn({ err }, "Cue Live could not read the trust dial — failing closed");
+    return "observe";
+  }
 }
 
-function handleSessionPause({
-  body,
-}: RouteHandlerArgs): z.infer<typeof SessionView> {
+/**
+ * One payload for the whole remote-control surface: what the Mac is doing,
+ * whether frames are flowing, whether steering is armed, and the dial that
+ * caps both. The frame bytes deliberately travel on their own endpoint so
+ * this stays cheap to poll.
+ */
+function sessionView(): SessionViewT {
+  return {
+    ...getSessionView(),
+    stream: getStreamStatus(),
+    takeover: getTakeoverStatus(),
+    trustDial: readTrustDial(),
+  };
+}
+
+function handleSessionGet(): SessionViewT {
+  return sessionView();
+}
+
+function handleSessionPause({ body }: RouteHandlerArgs): SessionViewT {
   const parsed = PauseBody.safeParse(body ?? {});
   if (!parsed.success) {
     throw new BadRequestError("Invalid Cue Live pause request body");
   }
   setRemotePaused(parsed.data.paused);
-  return getSessionView();
+  return sessionView();
 }
 
 function handleSessionStop(): {
   stopped: boolean;
   note: string;
-  session: z.infer<typeof SessionView>;
+  session: SessionViewT;
 } {
   const { runInFlight } = requestRemoteStop();
+  // Stop ends the run at the next safe boundary AND cuts the picture: leaving
+  // frames flowing after a stop would be the one thing the word cannot mean.
+  disarmStream("web");
+  disarmTakeover();
   return {
     stopped: runInFlight,
     note: runInFlight
-      ? "Stop armed — the run ends at its next step."
-      : "No auto-run in flight. If one starts in the next minute it will be stopped.",
-    session: getSessionView(),
+      ? "Stop armed — the run ends at its next step, and the screen stream is off."
+      : "No auto-run in flight. The screen stream is off; a run started in the next minute will be stopped.",
+    session: sessionView(),
   };
+}
+
+// --- Screen stream (Mac → daemon → viewer; frames are never persisted) ------
+
+const StreamBody = z.object({
+  streaming: z
+    .boolean()
+    .describe("Arm (true) or stop (false) the screen stream"),
+  origin: z
+    .enum(["web", "mac"])
+    .default("web")
+    .describe("Which surface asked, so both can say who stopped it"),
+});
+
+function handleStreamGet(): z.infer<typeof StreamStatusSchema> {
+  return getStreamStatus();
+}
+
+function handleStreamSet({
+  body,
+}: RouteHandlerArgs): z.infer<typeof StreamStatusSchema> {
+  const parsed = StreamBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live stream request body");
+  }
+  const { streaming, origin } = parsed.data;
+  if (!streaming) {
+    // Stopping the picture also drops steering — you may not steer blind.
+    disarmTakeover();
+    return disarmStream(origin);
+  }
+  return armStream(origin);
+}
+
+const CheckinBody = z.object({
+  cueLiveRunning: z.boolean(),
+  screenRecordingGranted: z.boolean(),
+  deviceName: z.string().nullish(),
+});
+
+const CheckinResult = z.object({
+  stream: StreamStatusSchema,
+  paused: z.boolean(),
+  stopPending: z.boolean(),
+});
+
+/**
+ * The Mac's control channel. It reports what it can do and learns from the
+ * response whether the owner armed the stream — capture never starts on the
+ * Mac's own initiative.
+ */
+function handleCheckin({ body }: RouteHandlerArgs): z.infer<
+  typeof CheckinResult
+> {
+  const parsed = CheckinBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live check-in body");
+  }
+  const stream = recordMacCheckin(parsed.data);
+  const session = getSessionView();
+  return { stream, paused: session.paused, stopPending: session.stopPending };
+}
+
+const FrameBody = z.object({
+  dataBase64: z
+    .string()
+    .max(MAX_FRAME_BASE64_BYTES)
+    .describe("Downscaled JPEG/WebP frame, base64, no data URI"),
+  mediaType: z.string().default("image/jpeg"),
+  width: z.number().describe("Frame pixel width"),
+  height: z.number().describe("Frame pixel height"),
+  screenWidth: z.number().describe("Screen width in points"),
+  screenHeight: z.number().describe("Screen height in points"),
+  appName: z.string().nullish(),
+});
+
+const FramePushResult = z.object({
+  streaming: z.boolean(),
+  intervalMs: z.number(),
+  maxWidth: z.number(),
+  rejected: z.string().optional(),
+});
+
+function handleFramePush({
+  body,
+}: RouteHandlerArgs): z.infer<typeof FramePushResult> {
+  const parsed = FrameBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live frame body");
+  }
+  return pushFrame(parsed.data);
+}
+
+const FrameResult = z.object({
+  stream: StreamStatusSchema,
+  frame: z
+    .object({
+      dataBase64: z.string(),
+      mediaType: z.string(),
+      width: z.number(),
+      height: z.number(),
+      screenWidth: z.number(),
+      screenHeight: z.number(),
+      appName: z.string().nullable(),
+      capturedAt: z.string(),
+      seq: z.number(),
+    })
+    .nullable(),
+});
+
+function handleFrameGet(): z.infer<typeof FrameResult> {
+  const { status, frame } = takeFrame();
+  return { stream: status, frame };
+}
+
+// --- Take over + input relay (web → the proven host computer-use path) ------
+
+const TakeoverBody = z.object({
+  armed: z.boolean().describe("Arm (true) or release (false) web steering"),
+});
+
+const TakeoverResult = z.object({
+  takeover: TakeoverStatusSchema,
+  trustDial: z.enum(["observe", "assist", "autonomous"]),
+  /** Present when arming was refused, e.g. the dial forbids acting. */
+  refused: z.string().optional(),
+});
+
+function handleTakeoverSet({
+  body,
+}: RouteHandlerArgs): z.infer<typeof TakeoverResult> {
+  const parsed = TakeoverBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live takeover request body");
+  }
+  const dial = readTrustDial();
+  if (!parsed.data.armed) {
+    disarmTakeover();
+    return { takeover: getTakeoverStatus(), trustDial: dial };
+  }
+  // Refuse to arm at all under Observe, so the button never lights up a
+  // capability the dial forbids.
+  const decision = evaluateInputRelay({
+    dial,
+    takeoverArmed: true,
+    liveFrame: true,
+    paused: isRemotePaused(),
+  });
+  if (!decision.allowed) {
+    return {
+      takeover: getTakeoverStatus(),
+      trustDial: dial,
+      refused: decision.reason,
+    };
+  }
+  armTakeover();
+  return { takeover: getTakeoverStatus(), trustDial: dial };
+}
+
+const InputBody = z.object({
+  kind: z.enum(["click", "double_click", "type", "key", "scroll"]),
+  x: z.number().optional().describe("Frame-pixel X (click/scroll)"),
+  y: z.number().optional().describe("Frame-pixel Y (click/scroll)"),
+  text: z.string().max(2_000).optional(),
+  key: z.string().max(40).optional(),
+  direction: z.enum(["up", "down", "left", "right"]).optional(),
+  amount: z.number().optional(),
+});
+
+const InputResult = z.object({
+  performed: z.boolean(),
+  detail: z.string(),
+  /** Set when the gate refused; `performed` is false and nothing was sent. */
+  refused: z.string().optional(),
+  session: SessionView,
+});
+
+async function handleInput({
+  body,
+  abortSignal,
+}: RouteHandlerArgs): Promise<z.infer<typeof InputResult>> {
+  const parsed = InputBody.safeParse(body ?? {});
+  if (!parsed.success) {
+    throw new BadRequestError("Invalid Cue Live input request body");
+  }
+  const decision = evaluateInputRelay({
+    dial: readTrustDial(),
+    takeoverArmed: isTakeoverArmed(),
+    liveFrame: getLiveFrameGeometry() !== null,
+    paused: isRemotePaused(),
+  });
+  if (!decision.allowed) {
+    log.info(
+      { code: decision.code, dial: decision.dial },
+      "Cue Live input relay refused",
+    );
+    return {
+      performed: false,
+      detail: decision.reason,
+      refused: decision.reason,
+      session: sessionView(),
+    };
+  }
+
+  const action = parsed.data as RelayAction;
+  const result = await dispatchRelayAction(action, { signal: abortSignal });
+  recordRelayAction({
+    summary: describeRelayAction(action),
+    detail: result.detail,
+    verify: result.performed ? "verified" : "stuck",
+  });
+  return { ...result, session: sessionView() };
+}
+
+/** One human line per relayed gesture for the observation stream. */
+function describeRelayAction(action: RelayAction): string {
+  switch (action.kind) {
+    case "click":
+      return "You clicked from the web viewer";
+    case "double_click":
+      return "You double-clicked from the web viewer";
+    case "type":
+      return `You typed "${(action.text ?? "").slice(0, 40)}" from the web viewer`;
+    case "key":
+      return `You pressed ${action.key} from the web viewer`;
+    case "scroll":
+      return `You scrolled ${action.direction ?? "down"} from the web viewer`;
+  }
 }
 
 export const ROUTES: RouteDefinition[] = [
@@ -645,9 +996,12 @@ export const ROUTES: RouteDefinition[] = [
     summary: "Remote view of the Cue Live session running on the Mac",
     description:
       "What the daemon genuinely knows about the active Cue Live session: " +
-      "live/idle, pause state, the auto-run goal in flight, and the recent " +
-      "guidance/look/act observation stream (metadata only — the daemon " +
-      "never retains screenshots). Capture itself runs on the Mac.",
+      "live/idle, pause state, the auto-run goal in flight, the recent " +
+      "guidance/look/act observation stream, the screen-stream and take-over " +
+      "state, and the trust dial that caps both. Metadata only: screen frames " +
+      "never appear in this payload — they travel on cuelive/session/frame, " +
+      "one at a time, in memory, and are never persisted. Capture itself runs " +
+      "on the Mac.",
     tags: ["cuelive"],
     responseBody: SessionView,
     logging: { silenceSuccessAfter: 5 },
@@ -690,6 +1044,142 @@ export const ROUTES: RouteDefinition[] = [
       note: z.string(),
       session: SessionView,
     }),
+  },
+  {
+    operationId: "cuelive_session_stream",
+    endpoint: "cuelive/session/stream",
+    method: "GET",
+    policy: {
+      requiredScopes: ["chat.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleStreamGet,
+    summary: "Whether the Mac is streaming its screen, and at what cadence",
+    description:
+      "State of the opt-in screen stream (off / starting / live / stalled) " +
+      "plus the negotiated push interval and downscale width. The Mac polls " +
+      "this to learn when to start and stop capturing.",
+    tags: ["cuelive"],
+    responseBody: StreamStatusSchema,
+    logging: { silenceSuccessAfter: 5 },
+  },
+  {
+    operationId: "cuelive_session_stream_set",
+    endpoint: "cuelive/session/stream",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleStreamSet,
+    summary: "Start or stop the Cue Live screen stream",
+    description:
+      "Arms or disarms screen streaming. Streaming is never implicit: opening " +
+      "the viewer does not start it. Either surface may stop it, stopping " +
+      "drops the held frame and disarms take over, and an armed stream that " +
+      "nobody reads from stops itself.",
+    tags: ["cuelive"],
+    requestBody: StreamBody,
+    responseBody: StreamStatusSchema,
+  },
+  {
+    operationId: "cuelive_session_checkin",
+    endpoint: "cuelive/session/checkin",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleCheckin,
+    summary: "Mac check-in: report capability, learn whether to stream",
+    description:
+      "The Mac's control channel. It reports whether Cue Live is running and " +
+      "whether Screen Recording is granted, and learns from the response " +
+      "whether the owner armed the screen stream. Capture never starts on the " +
+      "Mac's own initiative, and a Mac that loses the grant disarms the " +
+      "stream rather than leaving the viewer waiting.",
+    tags: ["cuelive"],
+    requestBody: CheckinBody,
+    responseBody: CheckinResult,
+    logging: { silenceSuccessAfter: 3 },
+  },
+  {
+    operationId: "cuelive_session_frame_push",
+    endpoint: "cuelive/session/frame",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleFramePush,
+    summary: "Push one screen frame from the Mac (ephemeral)",
+    description:
+      "Replaces the single in-memory frame the daemon holds. Frames are never " +
+      "written to the database, to disk, or to an event stream, and a push " +
+      "while the stream is disarmed is dropped. The response carries the next " +
+      "push interval and downscale width so bandwidth is negotiated, not fixed.",
+    tags: ["cuelive"],
+    requestBody: FrameBody,
+    responseBody: FramePushResult,
+    logging: { silenceSuccessAfter: 2 },
+  },
+  {
+    operationId: "cuelive_session_frame",
+    endpoint: "cuelive/session/frame",
+    method: "GET",
+    policy: {
+      requiredScopes: ["chat.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleFrameGet,
+    summary: "Read the latest Cue Live screen frame",
+    description:
+      "Returns the single held frame, or null when the stream is off, still " +
+      "starting, stalled, or the frame has aged out — a frozen picture is " +
+      "never served as if it were live. Reading also marks the viewer as " +
+      "attached; a stream nobody reads stops on its own.",
+    tags: ["cuelive"],
+    responseBody: FrameResult,
+    logging: { silenceSuccessAfter: 2 },
+  },
+  {
+    operationId: "cuelive_session_takeover",
+    endpoint: "cuelive/session/takeover",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleTakeoverSet,
+    summary: "Arm or release steering the Mac from the web",
+    description:
+      "Take over is explicit and expiring — it never turns on because the " +
+      "viewer is open. Arming is refused outright when the global trust dial " +
+      "is Observe, so the button cannot light up a capability the dial forbids.",
+    tags: ["cuelive"],
+    requestBody: TakeoverBody,
+    responseBody: TakeoverResult,
+  },
+  {
+    operationId: "cuelive_session_input",
+    endpoint: "cuelive/session/input",
+    method: "POST",
+    policy: {
+      requiredScopes: ["chat.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    handler: handleInput,
+    summary: "Relay one click / keystroke from the web viewer to the Mac",
+    description:
+      "Translates a viewer gesture into the same computer_use_* request the " +
+      "agent uses and sends it through the host computer-use proxy, so it " +
+      "inherits that path's ActionVerifier, step cap and same-actor checks. " +
+      "Refused when the trust dial is Observe, when take over is not armed, " +
+      "when the session is paused, or when there is no live frame to steer " +
+      "against.",
+    tags: ["cuelive"],
+    requestBody: InputBody,
+    responseBody: InputResult,
   },
 ];
 

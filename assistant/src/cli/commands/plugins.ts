@@ -438,14 +438,14 @@ Examples:
       plugins
         .command("disable <name>")
         .description(
-          "Disable an installed plugin (writes a .disabled sentinel; its code stops loading next turn)",
+          "Disable an installed plugin (writes a .disabled sentinel; its code stops loading from the next restart)",
         )
         .action((name: string) => {
           try {
             const result = disablePlugin({ name });
             console.log(
               result.changed
-                ? `Disabled plugin "${result.name}". It will not load on the next turn.`
+                ? `Disabled plugin "${result.name}". It will not load once the assistant restarts.`
                 : `Plugin "${result.name}" is already disabled.`,
             );
           } catch (err) {
@@ -465,7 +465,7 @@ Examples:
             const result = enablePlugin({ name });
             console.log(
               result.changed
-                ? `Enabled plugin "${result.name}". It will load on the next turn.`
+                ? `Enabled plugin "${result.name}". It will load once the assistant restarts.`
                 : `Plugin "${result.name}" is already enabled.`,
             );
           } catch (err) {

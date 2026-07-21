@@ -136,4 +136,52 @@ describe("user plugin loader", () => {
     const names = getRegisteredPlugins().map((p) => p.manifest.name);
     expect(names).toContain("cool-plugin");
   });
+
+  test("a plugin carrying a .disabled sentinel is never imported", async () => {
+    // GIVEN a plugin whose hook file would throw the moment the loader
+    // evaluates the module. If the sentinel were ignored, the import would
+    // run and the failure would be visible (isolated, but the code DID run).
+    writePlugin(
+      "off-plugin",
+      { name: "off-plugin", version: "0.1.0" },
+      {
+        "hooks/init.ts":
+          'throw new Error("a disabled plugin must never be evaluated");\n',
+      },
+    );
+    writeFileSync(join(PLUGINS_DIR, "off-plugin", ".disabled"), "");
+
+    // AND a healthy sibling with no sentinel
+    writePlugin("on-plugin", { name: "on-plugin", version: "0.1.0" });
+
+    await loadUserPlugins();
+
+    // THEN only the enabled sibling registers — the disabled one is skipped
+    // before its directory is ever dispatched to `loadExternalPlugin`.
+    const names = getRegisteredPlugins().map((p) => p.manifest.name);
+    expect(names).toContain("on-plugin");
+    expect(names).not.toContain("off-plugin");
+  });
+
+  test("removing the .disabled sentinel restores the plugin on the next load", async () => {
+    // The enable half of the lifecycle: the sentinel is the ONLY thing
+    // keeping the plugin out, so clearing it must bring the same on-disk
+    // copy back without a reinstall.
+    writePlugin("toggled", { name: "toggled", version: "0.1.0" });
+    const sentinel = join(PLUGINS_DIR, "toggled", ".disabled");
+    writeFileSync(sentinel, "");
+
+    await loadUserPlugins();
+    expect(getRegisteredPlugins().map((p) => p.manifest.name)).not.toContain(
+      "toggled",
+    );
+
+    resetPluginRegistryForTests();
+    rmSync(sentinel, { force: true });
+
+    await loadUserPlugins();
+    expect(getRegisteredPlugins().map((p) => p.manifest.name)).toContain(
+      "toggled",
+    );
+  });
 });

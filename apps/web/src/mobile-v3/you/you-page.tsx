@@ -346,6 +346,18 @@ export function Mv3YouPage() {
 
       {/* Native grouped rows. */}
       <GlassCard padding={0} style={{ overflow: "hidden", ...rise(0.4) }}>
+        {/* The persistent home of "What Cue can now do" (design D1) — leads
+            the group so an invisible power is always one tap from here. */}
+        <NavRow
+          icon={
+            <span style={{ fontSize: 14, color: "#A79FF0" }} aria-hidden>
+              ✦
+            </span>
+          }
+          iconBg="rgba(167,159,240,.15)"
+          label="Explore — what Cue can do"
+          onPress={() => navigate(routes.explore)}
+        />
         <NavRow
           icon={
             <svg

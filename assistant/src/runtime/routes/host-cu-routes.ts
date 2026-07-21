@@ -14,6 +14,7 @@ import {
 } from "../auth/same-actor.js";
 import { resolveActorPrincipalIdForLocalGuardian } from "../local-actor-identity.js";
 import * as pendingInteractions from "../pending-interactions.js";
+import { getRelayHostCuProxy } from "./cuelive-input-relay.js";
 import {
   BadRequestError,
   ConflictError,
@@ -106,18 +107,22 @@ function handleHostCuResult({ body, headers }: RouteHandlerArgs) {
     });
   }
 
-  const conversation = findConversation(peeked.conversationId);
-  if (!conversation) {
+  // Cue Live's web input relay is not a conversation — a person clicking in
+  // the remote viewer has no agent turn behind it — so its requests are
+  // registered under a reserved id and answered by the relay's own proxy.
+  // Everything else resolves through the owning conversation as before.
+  const relayProxy = getRelayHostCuProxy(peeked.conversationId);
+  const proxy =
+    relayProxy ?? findConversation(peeked.conversationId)?.hostCuProxy;
+
+  if (!proxy) {
     pendingInteractions.resolve(requestId, "cancelled");
-    throw new NotFoundError("Conversation not found for host CU result");
+    throw new NotFoundError(
+      "No host CU proxy for this request (conversation or relay is gone)",
+    );
   }
 
-  if (!conversation.hostCuProxy) {
-    pendingInteractions.resolve(requestId, "cancelled");
-    throw new NotFoundError("No host CU proxy for conversation");
-  }
-
-  conversation.hostCuProxy.processObservation(requestId, {
+  proxy.processObservation(requestId, {
     axTree,
     axDiff,
     screenshot,

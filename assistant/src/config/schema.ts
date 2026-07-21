@@ -7,6 +7,11 @@ export { AnalysisConfigSchema } from "./schemas/analysis.js";
 export type { BackupConfig, BackupDestination } from "./schemas/backup.js";
 export { BackupConfigSchema } from "./schemas/backup.js";
 export { VALID_CALLER_IDENTITY_MODES } from "./schemas/calls.js";
+export type {
+  CueLiveConfig,
+  CueLiveObservationCaptureConfig,
+} from "./schemas/cue-live.js";
+export { DEFAULT_SENSITIVE_APP_DENY_LIST } from "./schemas/cue-live.js";
 export { DEFAULT_ELEVENLABS_VOICE_ID } from "./schemas/elevenlabs.js";
 export type {
   ContextWindowConfig,
@@ -35,6 +40,7 @@ import { CompactionConfigSchema } from "./schemas/compaction.js";
 import { CompactionLogsConfigSchema } from "./schemas/compaction-logs.js";
 import { ConfigRepoConfigSchema } from "./schemas/config-repo.js";
 import { ConversationsConfigSchema } from "./schemas/conversations.js";
+import { CueLiveConfigSchema } from "./schemas/cue-live.js";
 import { FilingConfigSchema } from "./schemas/filing.js";
 import { HeartbeatConfigSchema } from "./schemas/heartbeat.js";
 import { HostBrowserConfigSchema } from "./schemas/host-browser.js";
@@ -122,6 +128,10 @@ export const AssistantConfigSchema = z
     twilio: TwilioConfigSchema.default(TwilioConfigSchema.parse({})),
     calls: CallsConfigSchema.default(CallsConfigSchema.parse({})),
     liveVoice: LiveVoiceConfigSchema.default(LiveVoiceConfigSchema.parse({})),
+    // Cue Live (screen watching). `cueLive.observationCapture.*` gates the
+    // ambient observation → task capture pass; it ships OFF and every session
+    // it runs is time-bounded and spend-capped.
+    cueLive: CueLiveConfigSchema.default(CueLiveConfigSchema.parse({})),
     whatsapp: WhatsAppConfigSchema.default(WhatsAppConfigSchema.parse({})),
     telegram: TelegramConfigSchema.default(TelegramConfigSchema.parse({})),
     slack: SlackConfigSchema.default(SlackConfigSchema.parse({})),

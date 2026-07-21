@@ -134,6 +134,12 @@ export interface VellumBridge {
     openSystemSettings(pane: CueLiveSettingsPane): Promise<void>;
     /** Stop everything: abort any auto-run and hide the overlay (⌥ esc mirror). */
     stop(): Promise<void>;
+    /**
+     * Stop only the screen stream to the remote viewer, from this Mac. The web
+     * viewer can stop it as well; this is the half of that promise that lives
+     * on the machine being watched.
+     */
+    stopScreenStream(): Promise<CueLiveStatus>;
     runGoal(goal: string, takeControl: boolean): Promise<void>;
     voiceKeysStatus(): Promise<CueLiveVoiceKeysStatus>;
     setVoiceKey(

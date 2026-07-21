@@ -226,6 +226,10 @@ const bridge: VellumBridge = {
       ) as Promise<void>,
     stop: (): Promise<void> =>
       ipcRenderer.invoke("vellum:cueLive:stop") as Promise<void>,
+    stopScreenStream: (): Promise<CueLiveStatus> =>
+      ipcRenderer.invoke(
+        "vellum:cueLive:stopScreenStream",
+      ) as Promise<CueLiveStatus>,
     runGoal: (goal: string, takeControl: boolean): Promise<void> =>
       ipcRenderer.invoke(
         "vellum:cueLive:runGoal",

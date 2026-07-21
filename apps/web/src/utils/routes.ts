@@ -148,6 +148,9 @@ export const routes = {
   connectors: r("/assistant/connectors"),
   connector: (slug: string) => dyn(r("/assistant/connectors"), slug),
   channels: r("/assistant/channels"),
+  // "What Cue can now do" — capability discovery (design D1 mobile / D2 HQ).
+  // Full-screen at first run, then persistent at You → Explore.
+  explore: r("/assistant/explore"),
   impact: r("/assistant/impact"),
   plugins: r("/assistant/plugins"),
   plugin: (name: string) => dyn(r("/assistant/plugins"), name),

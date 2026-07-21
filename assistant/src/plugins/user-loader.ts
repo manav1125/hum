@@ -33,6 +33,7 @@ import { join } from "node:path";
 
 import { getLogger } from "../util/logger.js";
 import { getWorkspacePluginsDir } from "../util/platform.js";
+import { isPluginDisabled } from "./disabled-state.js";
 import { ensurePluginApiShim } from "./ensure-plugin-api-shim.js";
 import { loadExternalPlugin } from "./external-plugin-loader.js";
 import { closeRegistration } from "./registry.js";
@@ -133,6 +134,20 @@ export async function loadUserPlugins(
 
     if (!existsSync(join(pluginDir, "package.json"))) {
       log.debug({ pluginDir }, "loadUserPlugins: no package.json — skipping");
+      continue;
+    }
+
+    // A `.disabled` sentinel is the safety boundary for an untrusted or
+    // misbehaving plugin: skipping the import here is what makes the contract
+    // in `disabled-state.ts` true — none of its code runs (no module
+    // evaluation, init, hooks, tools, routes, or shutdown). Checked per entry
+    // rather than cached so a toggle takes effect on the next load without
+    // any extra invalidation step.
+    if (isPluginDisabled(entry, pluginsDir)) {
+      log.info(
+        { plugin: entry },
+        "loadUserPlugins: plugin is disabled — skipping",
+      );
       continue;
     }
 

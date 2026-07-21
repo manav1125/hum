@@ -72,6 +72,7 @@ describe("PluginDetailPage", () => {
     const html = renderDetail("caveman", {
       name: "caveman",
       installed: false,
+      disabled: false,
       reviewStatus: "curated",
       surfaces: [],
       category: null,
@@ -92,16 +93,22 @@ describe("PluginDetailPage", () => {
     expect(html).toContain("example-org/caveman");
     expect(html).toContain("https://example.com/caveman");
     expect(html).toContain("MIT");
-    expect(html).toContain("external");
-    // An available plugin offers Install, not Remove.
+    // Curation comes from the registry's reviewStatus, and the badge is a
+    // review claim rather than an ownership one.
+    expect(html).toContain("Cue reviewed");
+    expect(html).not.toContain("Cue official");
+    // An available plugin offers Install only — none of the lifecycle
+    // actions that presuppose an installed copy.
     expect(html).toContain("Install");
-    expect(html).not.toContain("Remove");
+    expect(html).not.toContain("Uninstall");
+    expect(html).not.toContain("Disable");
   });
 
   test("renders a Remove action when the plugin is already installed", () => {
     const html = renderDetail("simple-memory", {
       name: "simple-memory",
       installed: true,
+      disabled: false,
       reviewStatus: "curated",
       surfaces: [],
       category: null,
@@ -116,9 +123,11 @@ describe("PluginDetailPage", () => {
       artifact: null,
     });
 
-    expect(html).toContain("Remove");
-    // A plugin with no marketplace origin isn't badged external.
-    expect(html).not.toContain("external");
+    // An installed, enabled copy offers the full remainder of the lifecycle:
+    // Disable (reversible) and Uninstall (removal).
+    expect(html).toContain("Uninstall");
+    expect(html).toContain("Disable");
+    expect(html).toContain("✓ Enabled");
     // No README falls back to an explanatory line.
     expect(html).toContain("ship a README");
     // With no artifact descriptor, no download affordance is offered.
@@ -131,6 +140,7 @@ describe("PluginDetailPage", () => {
     const html = renderDetail("dynamic-notch", {
       name: "dynamic-notch",
       installed: true,
+      disabled: false,
       reviewStatus: "curated",
       surfaces: [],
       category: null,
@@ -152,8 +162,8 @@ describe("PluginDetailPage", () => {
     // With no label on the artifact, the button falls back to a generic name.
     expect(html).toContain("Download");
     expect(html).toContain(`href="${url}"`);
-    // The plugin is installed, so Remove is still available alongside it.
-    expect(html).toContain("Remove");
+    // The plugin is installed, so Uninstall is still available alongside it.
+    expect(html).toContain("Uninstall");
   });
 
   test("uses the artifact's label for the download button when one is provided", () => {
@@ -162,6 +172,7 @@ describe("PluginDetailPage", () => {
     const html = renderDetail("dynamic-notch", {
       name: "dynamic-notch",
       installed: true,
+      disabled: false,
       reviewStatus: "curated",
       surfaces: [],
       category: null,
@@ -185,10 +196,45 @@ describe("PluginDetailPage", () => {
     expect(html).toContain(`href="${url}"`);
   });
 
+  test("a disabled copy reads Disabled and offers Enable instead of Disable", () => {
+    // The Enabled ⟷ Disabled axis has to be legible from the header, and the
+    // action must flip — otherwise a disabled plugin is unreachable from here.
+    const html = renderDetail("caveman", {
+      name: "caveman",
+      installed: true,
+      disabled: true,
+      reviewStatus: "curated",
+      surfaces: ["hooks"],
+      category: "productivity",
+      icon: null,
+      description: "Talk like a caveman.",
+      homepage: null,
+      license: "MIT",
+      version: "1.8.2",
+      source: {
+        kind: "github",
+        repo: "JuliusBrussee/caveman",
+        ref: "63a91ecadbf4c4719a4602a5abb00883f9966034",
+      },
+      readme: null,
+      ref: "63a91ecadbf4c4719a4602a5abb00883f9966034",
+      artifact: null,
+    });
+
+    expect(html).toContain("Installed · disabled");
+    expect(html).toContain(">Enable<");
+    expect(html).not.toContain(">Disable<");
+    // Removal stays available from the disabled state.
+    expect(html).toContain("Uninstall");
+    // Declared surfaces are real registry data, so they render as chips.
+    expect(html).toContain("hooks");
+  });
+
   test("does not offer a download before an artifact-bearing plugin is installed", () => {
     const html = renderDetail("dynamic-notch", {
       name: "dynamic-notch",
       installed: false,
+      disabled: false,
       reviewStatus: "curated",
       surfaces: [],
       category: null,

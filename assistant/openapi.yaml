@@ -13660,14 +13660,408 @@ paths:
                 - imageWidth
                 - imageHeight
               additionalProperties: false
+  /v1/cuelive/observation:
+    post:
+      operationId: cuelive_observation_post
+      summary: Submit one screen observation for task capture
+      description:
+        Ingest seam for a screen observer (the macOS Cue Live capture loop). Gated by the armed session, an
+        interval floor, a change fingerprint, a sensitive-screen heuristic, and per-session extraction/item caps — most
+        observations return `skipped` with the reason and cost nothing. Captured tasks land PARKED in the queue and
+        never auto-run. Frames are never persisted.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - captured
+                      - skipped
+                      - error
+                  reason:
+                    type: string
+                  createdWorkItemIds:
+                    type: array
+                    items:
+                      type: string
+                  session:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      armed:
+                        type: boolean
+                      sessionId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      startedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      expiresAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      secondsRemaining:
+                        type: number
+                      extractionsUsed:
+                        type: number
+                      extractionsRemaining:
+                        type: number
+                      itemsFiled:
+                        type: number
+                      itemsRemaining:
+                        type: number
+                      captures:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            workItemId:
+                              type: string
+                            title:
+                              type: string
+                            at:
+                              type: string
+                            atLocal:
+                              type: string
+                            appName:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                            evidence:
+                              type: string
+                          required:
+                            - workItemId
+                            - title
+                            - at
+                            - atLocal
+                            - appName
+                            - evidence
+                          additionalProperties: false
+                    required:
+                      - enabled
+                      - armed
+                      - sessionId
+                      - startedAt
+                      - expiresAt
+                      - secondsRemaining
+                      - extractionsUsed
+                      - extractionsRemaining
+                      - itemsFiled
+                      - itemsRemaining
+                      - captures
+                    additionalProperties: false
+                required:
+                  - status
+                  - createdWorkItemIds
+                  - session
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  description:
+                    Text description of what is on screen (a Cue Live look answer, OCR, or an accessibility summary). Preferred
+                    — the cheapest extraction path.
+                  type: string
+                imageBase64:
+                  description: Raw frame, base64-encoded (no data URI). Passed to the vision model and dropped; never persisted.
+                  type: string
+                mediaType:
+                  description: MIME type of the frame
+                  type: string
+                appName:
+                  description: Frontmost application name
+                  type: string
+              additionalProperties: false
+  /v1/cuelive/observation/session:
+    get:
+      operationId: cuelive_observation_session_get
+      summary: Whether Cue is capturing tasks from the screen, and what it took
+      description:
+        "The consent view: the config switch, whether a capture session is armed, when it expires, how much of its
+        extraction/item budget is left, and every task it has captured (with the on-screen evidence). Captured items are
+        ordinary work items — dismiss them through the work-item routes."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  armed:
+                    type: boolean
+                  sessionId:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  startedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  expiresAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  secondsRemaining:
+                    type: number
+                  extractionsUsed:
+                    type: number
+                  extractionsRemaining:
+                    type: number
+                  itemsFiled:
+                    type: number
+                  itemsRemaining:
+                    type: number
+                  captures:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workItemId:
+                          type: string
+                        title:
+                          type: string
+                        at:
+                          type: string
+                        atLocal:
+                          type: string
+                        appName:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        evidence:
+                          type: string
+                      required:
+                        - workItemId
+                        - title
+                        - at
+                        - atLocal
+                        - appName
+                        - evidence
+                      additionalProperties: false
+                required:
+                  - enabled
+                  - armed
+                  - sessionId
+                  - startedAt
+                  - expiresAt
+                  - secondsRemaining
+                  - extractionsUsed
+                  - extractionsRemaining
+                  - itemsFiled
+                  - itemsRemaining
+                  - captures
+                additionalProperties: false
+  /v1/cuelive/observation/session/start:
+    post:
+      operationId: cuelive_observation_session_start_post
+      summary: Start a time-bounded screen-observation capture session
+      description:
+        "Opt in to Cue capturing tasks from the screen for a bounded period. The duration is clamped to the
+        configured maximum and always expires on its own. Returns { armed: false } when
+        cueLive.observationCapture.enabled is off, so the client can say why."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  armed:
+                    type: boolean
+                  sessionId:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  startedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  expiresAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  secondsRemaining:
+                    type: number
+                  extractionsUsed:
+                    type: number
+                  extractionsRemaining:
+                    type: number
+                  itemsFiled:
+                    type: number
+                  itemsRemaining:
+                    type: number
+                  captures:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workItemId:
+                          type: string
+                        title:
+                          type: string
+                        at:
+                          type: string
+                        atLocal:
+                          type: string
+                        appName:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        evidence:
+                          type: string
+                      required:
+                        - workItemId
+                        - title
+                        - at
+                        - atLocal
+                        - appName
+                        - evidence
+                      additionalProperties: false
+                required:
+                  - enabled
+                  - armed
+                  - sessionId
+                  - startedAt
+                  - expiresAt
+                  - secondsRemaining
+                  - extractionsUsed
+                  - extractionsRemaining
+                  - itemsFiled
+                  - itemsRemaining
+                  - captures
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationMinutes:
+                  description:
+                    How long to watch for. Clamped to cueLive.observationCapture.sessionMaxMinutes; omitted means that maximum.
+                    There is no unbounded option.
+                  type: integer
+                  exclusiveMinimum: 0
+                  maximum: 9007199254740991
+              additionalProperties: false
+  /v1/cuelive/observation/session/stop:
+    post:
+      operationId: cuelive_observation_session_stop_post
+      summary: Stop capturing tasks from the screen now
+      description:
+        Disarms the capture session immediately. Idempotent. Already-captured work items are left alone — they are
+        parked in the queue for review.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  armed:
+                    type: boolean
+                  sessionId:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  startedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  expiresAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  secondsRemaining:
+                    type: number
+                  extractionsUsed:
+                    type: number
+                  extractionsRemaining:
+                    type: number
+                  itemsFiled:
+                    type: number
+                  itemsRemaining:
+                    type: number
+                  captures:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        workItemId:
+                          type: string
+                        title:
+                          type: string
+                        at:
+                          type: string
+                        atLocal:
+                          type: string
+                        appName:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        evidence:
+                          type: string
+                      required:
+                        - workItemId
+                        - title
+                        - at
+                        - atLocal
+                        - appName
+                        - evidence
+                      additionalProperties: false
+                required:
+                  - enabled
+                  - armed
+                  - sessionId
+                  - startedAt
+                  - expiresAt
+                  - secondsRemaining
+                  - extractionsUsed
+                  - extractionsRemaining
+                  - itemsFiled
+                  - itemsRemaining
+                  - captures
+                additionalProperties: false
   /v1/cuelive/session:
     get:
       operationId: cuelive_session_get
       summary: Remote view of the Cue Live session running on the Mac
       description:
         "What the daemon genuinely knows about the active Cue Live session: live/idle, pause state, the auto-run
-        goal in flight, and the recent guidance/look/act observation stream (metadata only — the daemon never retains
-        screenshots). Capture itself runs on the Mac."
+        goal in flight, the recent guidance/look/act observation stream, the screen-stream and take-over state, and the
+        trust dial that caps both. Metadata only: screen frames never appear in this payload — they travel on
+        cuelive/session/frame, one at a time, in memory, and are never persisted. Capture itself runs on the Mac."
       tags:
         - cuelive
       responses:
@@ -13755,6 +14149,7 @@ paths:
                             - guidance
                             - look
                             - act
+                            - input
                         at:
                           type: string
                         summary:
@@ -13767,6 +14162,12 @@ paths:
                             - active
                             - done
                             - held
+                        verify:
+                          type: string
+                          enum:
+                            - verified
+                            - retrying
+                            - stuck
                       required:
                         - id
                         - kind
@@ -13774,6 +14175,104 @@ paths:
                         - summary
                         - status
                       additionalProperties: false
+                  stream:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        enum:
+                          - off
+                          - starting
+                          - live
+                          - stalled
+                      armed:
+                        type: boolean
+                      armedBy:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - web
+                              - mac
+                          - type: "null"
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastFrameAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      seq:
+                        type: number
+                      intervalMs:
+                        type: number
+                      maxWidth:
+                        type: number
+                      viewerAttached:
+                        type: boolean
+                      lastStopReason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      mac:
+                        anyOf:
+                          - type: object
+                            properties:
+                              seenAt:
+                                type: string
+                              cueLiveRunning:
+                                type: boolean
+                              screenRecordingGranted:
+                                type: boolean
+                              deviceName:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                            required:
+                              - seenAt
+                              - cueLiveRunning
+                              - screenRecordingGranted
+                              - deviceName
+                            additionalProperties: false
+                          - type: "null"
+                    required:
+                      - state
+                      - armed
+                      - armedBy
+                      - armedAt
+                      - lastFrameAt
+                      - seq
+                      - intervalMs
+                      - maxWidth
+                      - viewerAttached
+                      - lastStopReason
+                      - mac
+                    additionalProperties: false
+                  takeover:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      steps:
+                        type: number
+                      maxSteps:
+                        type: number
+                    required:
+                      - armed
+                      - armedAt
+                      - steps
+                      - maxSteps
+                    additionalProperties: false
+                  trustDial:
+                    type: string
+                    enum:
+                      - observe
+                      - assist
+                      - autonomous
                 required:
                   - active
                   - paused
@@ -13783,7 +14282,613 @@ paths:
                   - watching
                   - goal
                   - observations
+                  - stream
+                  - takeover
+                  - trustDial
                 additionalProperties: false
+  /v1/cuelive/session/checkin:
+    post:
+      operationId: cuelive_session_checkin_post
+      summary: "Mac check-in: report capability, learn whether to stream"
+      description:
+        The Mac's control channel. It reports whether Cue Live is running and whether Screen Recording is granted,
+        and learns from the response whether the owner armed the screen stream. Capture never starts on the Mac's own
+        initiative, and a Mac that loses the grant disarms the stream rather than leaving the viewer waiting.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stream:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        enum:
+                          - off
+                          - starting
+                          - live
+                          - stalled
+                      armed:
+                        type: boolean
+                      armedBy:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - web
+                              - mac
+                          - type: "null"
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastFrameAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      seq:
+                        type: number
+                      intervalMs:
+                        type: number
+                      maxWidth:
+                        type: number
+                      viewerAttached:
+                        type: boolean
+                      lastStopReason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      mac:
+                        anyOf:
+                          - type: object
+                            properties:
+                              seenAt:
+                                type: string
+                              cueLiveRunning:
+                                type: boolean
+                              screenRecordingGranted:
+                                type: boolean
+                              deviceName:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                            required:
+                              - seenAt
+                              - cueLiveRunning
+                              - screenRecordingGranted
+                              - deviceName
+                            additionalProperties: false
+                          - type: "null"
+                    required:
+                      - state
+                      - armed
+                      - armedBy
+                      - armedAt
+                      - lastFrameAt
+                      - seq
+                      - intervalMs
+                      - maxWidth
+                      - viewerAttached
+                      - lastStopReason
+                      - mac
+                    additionalProperties: false
+                  paused:
+                    type: boolean
+                  stopPending:
+                    type: boolean
+                required:
+                  - stream
+                  - paused
+                  - stopPending
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cueLiveRunning:
+                  type: boolean
+                screenRecordingGranted:
+                  type: boolean
+                deviceName:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+              required:
+                - cueLiveRunning
+                - screenRecordingGranted
+              additionalProperties: false
+  /v1/cuelive/session/frame:
+    get:
+      operationId: cuelive_session_frame_get
+      summary: Read the latest Cue Live screen frame
+      description:
+        Returns the single held frame, or null when the stream is off, still starting, stalled, or the frame has
+        aged out — a frozen picture is never served as if it were live. Reading also marks the viewer as attached; a
+        stream nobody reads stops on its own.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stream:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        enum:
+                          - off
+                          - starting
+                          - live
+                          - stalled
+                      armed:
+                        type: boolean
+                      armedBy:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - web
+                              - mac
+                          - type: "null"
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastFrameAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      seq:
+                        type: number
+                      intervalMs:
+                        type: number
+                      maxWidth:
+                        type: number
+                      viewerAttached:
+                        type: boolean
+                      lastStopReason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      mac:
+                        anyOf:
+                          - type: object
+                            properties:
+                              seenAt:
+                                type: string
+                              cueLiveRunning:
+                                type: boolean
+                              screenRecordingGranted:
+                                type: boolean
+                              deviceName:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                            required:
+                              - seenAt
+                              - cueLiveRunning
+                              - screenRecordingGranted
+                              - deviceName
+                            additionalProperties: false
+                          - type: "null"
+                    required:
+                      - state
+                      - armed
+                      - armedBy
+                      - armedAt
+                      - lastFrameAt
+                      - seq
+                      - intervalMs
+                      - maxWidth
+                      - viewerAttached
+                      - lastStopReason
+                      - mac
+                    additionalProperties: false
+                  frame:
+                    anyOf:
+                      - type: object
+                        properties:
+                          dataBase64:
+                            type: string
+                          mediaType:
+                            type: string
+                          width:
+                            type: number
+                          height:
+                            type: number
+                          screenWidth:
+                            type: number
+                          screenHeight:
+                            type: number
+                          appName:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          capturedAt:
+                            type: string
+                          seq:
+                            type: number
+                        required:
+                          - dataBase64
+                          - mediaType
+                          - width
+                          - height
+                          - screenWidth
+                          - screenHeight
+                          - appName
+                          - capturedAt
+                          - seq
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - stream
+                  - frame
+                additionalProperties: false
+    post:
+      operationId: cuelive_session_frame_post
+      summary: Push one screen frame from the Mac (ephemeral)
+      description:
+        Replaces the single in-memory frame the daemon holds. Frames are never written to the database, to disk, or
+        to an event stream, and a push while the stream is disarmed is dropped. The response carries the next push
+        interval and downscale width so bandwidth is negotiated, not fixed.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  streaming:
+                    type: boolean
+                  intervalMs:
+                    type: number
+                  maxWidth:
+                    type: number
+                  rejected:
+                    type: string
+                required:
+                  - streaming
+                  - intervalMs
+                  - maxWidth
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dataBase64:
+                  type: string
+                  maxLength: 950000
+                  description: Downscaled JPEG/WebP frame, base64, no data URI
+                mediaType:
+                  default: image/jpeg
+                  type: string
+                width:
+                  type: number
+                  description: Frame pixel width
+                height:
+                  type: number
+                  description: Frame pixel height
+                screenWidth:
+                  type: number
+                  description: Screen width in points
+                screenHeight:
+                  type: number
+                  description: Screen height in points
+                appName:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+              required:
+                - dataBase64
+                - width
+                - height
+                - screenWidth
+                - screenHeight
+              additionalProperties: false
+  /v1/cuelive/session/input:
+    post:
+      operationId: cuelive_session_input_post
+      summary: Relay one click / keystroke from the web viewer to the Mac
+      description:
+        Translates a viewer gesture into the same computer_use_* request the agent uses and sends it through the
+        host computer-use proxy, so it inherits that path's ActionVerifier, step cap and same-actor checks. Refused when
+        the trust dial is Observe, when take over is not armed, when the session is paused, or when there is no live
+        frame to steer against.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  performed:
+                    type: boolean
+                  detail:
+                    type: string
+                  refused:
+                    type: string
+                  session:
+                    type: object
+                    properties:
+                      active:
+                        type: boolean
+                      paused:
+                        type: boolean
+                      stopPending:
+                        type: boolean
+                      lastSeenAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sessionStartedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      watching:
+                        anyOf:
+                          - type: object
+                            properties:
+                              appName:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                              screen:
+                                anyOf:
+                                  - type: object
+                                    properties:
+                                      width:
+                                        type: number
+                                      height:
+                                        type: number
+                                    required:
+                                      - width
+                                      - height
+                                    additionalProperties: false
+                                  - type: "null"
+                              at:
+                                type: string
+                            required:
+                              - appName
+                              - screen
+                              - at
+                            additionalProperties: false
+                          - type: "null"
+                      goal:
+                        anyOf:
+                          - type: object
+                            properties:
+                              text:
+                                type: string
+                              step:
+                                type: number
+                              done:
+                                type: boolean
+                              startedAt:
+                                type: string
+                              stoppedRemotely:
+                                type: boolean
+                            required:
+                              - text
+                              - step
+                              - done
+                              - startedAt
+                            additionalProperties: false
+                          - type: "null"
+                      observations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: number
+                            kind:
+                              type: string
+                              enum:
+                                - guidance
+                                - look
+                                - act
+                                - input
+                            at:
+                              type: string
+                            summary:
+                              type: string
+                            detail:
+                              type: string
+                            status:
+                              type: string
+                              enum:
+                                - active
+                                - done
+                                - held
+                            verify:
+                              type: string
+                              enum:
+                                - verified
+                                - retrying
+                                - stuck
+                          required:
+                            - id
+                            - kind
+                            - at
+                            - summary
+                            - status
+                          additionalProperties: false
+                      stream:
+                        type: object
+                        properties:
+                          state:
+                            type: string
+                            enum:
+                              - off
+                              - starting
+                              - live
+                              - stalled
+                          armed:
+                            type: boolean
+                          armedBy:
+                            anyOf:
+                              - type: string
+                                enum:
+                                  - web
+                                  - mac
+                              - type: "null"
+                          armedAt:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          lastFrameAt:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          seq:
+                            type: number
+                          intervalMs:
+                            type: number
+                          maxWidth:
+                            type: number
+                          viewerAttached:
+                            type: boolean
+                          lastStopReason:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          mac:
+                            anyOf:
+                              - type: object
+                                properties:
+                                  seenAt:
+                                    type: string
+                                  cueLiveRunning:
+                                    type: boolean
+                                  screenRecordingGranted:
+                                    type: boolean
+                                  deviceName:
+                                    anyOf:
+                                      - type: string
+                                      - type: "null"
+                                required:
+                                  - seenAt
+                                  - cueLiveRunning
+                                  - screenRecordingGranted
+                                  - deviceName
+                                additionalProperties: false
+                              - type: "null"
+                        required:
+                          - state
+                          - armed
+                          - armedBy
+                          - armedAt
+                          - lastFrameAt
+                          - seq
+                          - intervalMs
+                          - maxWidth
+                          - viewerAttached
+                          - lastStopReason
+                          - mac
+                        additionalProperties: false
+                      takeover:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          armedAt:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          steps:
+                            type: number
+                          maxSteps:
+                            type: number
+                        required:
+                          - armed
+                          - armedAt
+                          - steps
+                          - maxSteps
+                        additionalProperties: false
+                      trustDial:
+                        type: string
+                        enum:
+                          - observe
+                          - assist
+                          - autonomous
+                    required:
+                      - active
+                      - paused
+                      - stopPending
+                      - lastSeenAt
+                      - sessionStartedAt
+                      - watching
+                      - goal
+                      - observations
+                      - stream
+                      - takeover
+                      - trustDial
+                    additionalProperties: false
+                required:
+                  - performed
+                  - detail
+                  - session
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - click
+                    - double_click
+                    - type
+                    - key
+                    - scroll
+                x:
+                  description: Frame-pixel X (click/scroll)
+                  type: number
+                y:
+                  description: Frame-pixel Y (click/scroll)
+                  type: number
+                text:
+                  type: string
+                  maxLength: 2000
+                key:
+                  type: string
+                  maxLength: 40
+                direction:
+                  type: string
+                  enum:
+                    - up
+                    - down
+                    - left
+                    - right
+                amount:
+                  type: number
+              required:
+                - kind
+              additionalProperties: false
   /v1/cuelive/session/pause:
     post:
       operationId: cuelive_session_pause_post
@@ -13878,6 +14983,7 @@ paths:
                             - guidance
                             - look
                             - act
+                            - input
                         at:
                           type: string
                         summary:
@@ -13890,6 +14996,12 @@ paths:
                             - active
                             - done
                             - held
+                        verify:
+                          type: string
+                          enum:
+                            - verified
+                            - retrying
+                            - stuck
                       required:
                         - id
                         - kind
@@ -13897,6 +15009,104 @@ paths:
                         - summary
                         - status
                       additionalProperties: false
+                  stream:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        enum:
+                          - off
+                          - starting
+                          - live
+                          - stalled
+                      armed:
+                        type: boolean
+                      armedBy:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - web
+                              - mac
+                          - type: "null"
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastFrameAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      seq:
+                        type: number
+                      intervalMs:
+                        type: number
+                      maxWidth:
+                        type: number
+                      viewerAttached:
+                        type: boolean
+                      lastStopReason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      mac:
+                        anyOf:
+                          - type: object
+                            properties:
+                              seenAt:
+                                type: string
+                              cueLiveRunning:
+                                type: boolean
+                              screenRecordingGranted:
+                                type: boolean
+                              deviceName:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                            required:
+                              - seenAt
+                              - cueLiveRunning
+                              - screenRecordingGranted
+                              - deviceName
+                            additionalProperties: false
+                          - type: "null"
+                    required:
+                      - state
+                      - armed
+                      - armedBy
+                      - armedAt
+                      - lastFrameAt
+                      - seq
+                      - intervalMs
+                      - maxWidth
+                      - viewerAttached
+                      - lastStopReason
+                      - mac
+                    additionalProperties: false
+                  takeover:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      steps:
+                        type: number
+                      maxSteps:
+                        type: number
+                    required:
+                      - armed
+                      - armedAt
+                      - steps
+                      - maxSteps
+                    additionalProperties: false
+                  trustDial:
+                    type: string
+                    enum:
+                      - observe
+                      - assist
+                      - autonomous
                 required:
                   - active
                   - paused
@@ -13906,6 +15116,9 @@ paths:
                   - watching
                   - goal
                   - observations
+                  - stream
+                  - takeover
+                  - trustDial
                 additionalProperties: false
       requestBody:
         required: true
@@ -14021,6 +15234,7 @@ paths:
                                 - guidance
                                 - look
                                 - act
+                                - input
                             at:
                               type: string
                             summary:
@@ -14033,6 +15247,12 @@ paths:
                                 - active
                                 - done
                                 - held
+                            verify:
+                              type: string
+                              enum:
+                                - verified
+                                - retrying
+                                - stuck
                           required:
                             - id
                             - kind
@@ -14040,6 +15260,104 @@ paths:
                             - summary
                             - status
                           additionalProperties: false
+                      stream:
+                        type: object
+                        properties:
+                          state:
+                            type: string
+                            enum:
+                              - off
+                              - starting
+                              - live
+                              - stalled
+                          armed:
+                            type: boolean
+                          armedBy:
+                            anyOf:
+                              - type: string
+                                enum:
+                                  - web
+                                  - mac
+                              - type: "null"
+                          armedAt:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          lastFrameAt:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          seq:
+                            type: number
+                          intervalMs:
+                            type: number
+                          maxWidth:
+                            type: number
+                          viewerAttached:
+                            type: boolean
+                          lastStopReason:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          mac:
+                            anyOf:
+                              - type: object
+                                properties:
+                                  seenAt:
+                                    type: string
+                                  cueLiveRunning:
+                                    type: boolean
+                                  screenRecordingGranted:
+                                    type: boolean
+                                  deviceName:
+                                    anyOf:
+                                      - type: string
+                                      - type: "null"
+                                required:
+                                  - seenAt
+                                  - cueLiveRunning
+                                  - screenRecordingGranted
+                                  - deviceName
+                                additionalProperties: false
+                              - type: "null"
+                        required:
+                          - state
+                          - armed
+                          - armedBy
+                          - armedAt
+                          - lastFrameAt
+                          - seq
+                          - intervalMs
+                          - maxWidth
+                          - viewerAttached
+                          - lastStopReason
+                          - mac
+                        additionalProperties: false
+                      takeover:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          armedAt:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                          steps:
+                            type: number
+                          maxSteps:
+                            type: number
+                        required:
+                          - armed
+                          - armedAt
+                          - steps
+                          - maxSteps
+                        additionalProperties: false
+                      trustDial:
+                        type: string
+                        enum:
+                          - observe
+                          - assist
+                          - autonomous
                     required:
                       - active
                       - paused
@@ -14049,12 +15367,270 @@ paths:
                       - watching
                       - goal
                       - observations
+                      - stream
+                      - takeover
+                      - trustDial
                     additionalProperties: false
                 required:
                   - stopped
                   - note
                   - session
                 additionalProperties: false
+  /v1/cuelive/session/stream:
+    get:
+      operationId: cuelive_session_stream_get
+      summary: Whether the Mac is streaming its screen, and at what cadence
+      description:
+        State of the opt-in screen stream (off / starting / live / stalled) plus the negotiated push interval and
+        downscale width. The Mac polls this to learn when to start and stop capturing.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum:
+                      - off
+                      - starting
+                      - live
+                      - stalled
+                  armed:
+                    type: boolean
+                  armedBy:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - web
+                          - mac
+                      - type: "null"
+                  armedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  lastFrameAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  seq:
+                    type: number
+                  intervalMs:
+                    type: number
+                  maxWidth:
+                    type: number
+                  viewerAttached:
+                    type: boolean
+                  lastStopReason:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  mac:
+                    anyOf:
+                      - type: object
+                        properties:
+                          seenAt:
+                            type: string
+                          cueLiveRunning:
+                            type: boolean
+                          screenRecordingGranted:
+                            type: boolean
+                          deviceName:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                        required:
+                          - seenAt
+                          - cueLiveRunning
+                          - screenRecordingGranted
+                          - deviceName
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - state
+                  - armed
+                  - armedBy
+                  - armedAt
+                  - lastFrameAt
+                  - seq
+                  - intervalMs
+                  - maxWidth
+                  - viewerAttached
+                  - lastStopReason
+                  - mac
+                additionalProperties: false
+    post:
+      operationId: cuelive_session_stream_post
+      summary: Start or stop the Cue Live screen stream
+      description:
+        "Arms or disarms screen streaming. Streaming is never implicit: opening the viewer does not start it.
+        Either surface may stop it, stopping drops the held frame and disarms take over, and an armed stream that nobody
+        reads from stops itself."
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: string
+                    enum:
+                      - off
+                      - starting
+                      - live
+                      - stalled
+                  armed:
+                    type: boolean
+                  armedBy:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - web
+                          - mac
+                      - type: "null"
+                  armedAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  lastFrameAt:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  seq:
+                    type: number
+                  intervalMs:
+                    type: number
+                  maxWidth:
+                    type: number
+                  viewerAttached:
+                    type: boolean
+                  lastStopReason:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  mac:
+                    anyOf:
+                      - type: object
+                        properties:
+                          seenAt:
+                            type: string
+                          cueLiveRunning:
+                            type: boolean
+                          screenRecordingGranted:
+                            type: boolean
+                          deviceName:
+                            anyOf:
+                              - type: string
+                              - type: "null"
+                        required:
+                          - seenAt
+                          - cueLiveRunning
+                          - screenRecordingGranted
+                          - deviceName
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - state
+                  - armed
+                  - armedBy
+                  - armedAt
+                  - lastFrameAt
+                  - seq
+                  - intervalMs
+                  - maxWidth
+                  - viewerAttached
+                  - lastStopReason
+                  - mac
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                streaming:
+                  type: boolean
+                  description: Arm (true) or stop (false) the screen stream
+                origin:
+                  default: web
+                  description: Which surface asked, so both can say who stopped it
+                  type: string
+                  enum:
+                    - web
+                    - mac
+              required:
+                - streaming
+              additionalProperties: false
+  /v1/cuelive/session/takeover:
+    post:
+      operationId: cuelive_session_takeover_post
+      summary: Arm or release steering the Mac from the web
+      description:
+        Take over is explicit and expiring — it never turns on because the viewer is open. Arming is refused
+        outright when the global trust dial is Observe, so the button cannot light up a capability the dial forbids.
+      tags:
+        - cuelive
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  takeover:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      armedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      steps:
+                        type: number
+                      maxSteps:
+                        type: number
+                    required:
+                      - armed
+                      - armedAt
+                      - steps
+                      - maxSteps
+                    additionalProperties: false
+                  trustDial:
+                    type: string
+                    enum:
+                      - observe
+                      - assist
+                      - autonomous
+                  refused:
+                    type: string
+                required:
+                  - takeover
+                  - trustDial
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                armed:
+                  type: boolean
+                  description: Arm (true) or release (false) web steering
+              required:
+                - armed
+              additionalProperties: false
   /v1/debug:
     get:
       operationId: debug_get
@@ -28993,6 +30569,11 @@ paths:
                             - type: string
                             - type: "null"
                           description: From `package.json#version`; `null` when unknown.
+                        disabled:
+                          type: boolean
+                          description:
+                            True when the plugin carries a `.disabled` sentinel, i.e. the loader skips it. This is the Enabled ⟷
+                            Disabled axis of the lifecycle; toggle it with `POST /v1/plugins/:name/{enable,disable}`.
                         path:
                           description: Absolute path to the plugin directory on the assistant host.
                           type: string
@@ -29006,6 +30587,7 @@ paths:
                         - name
                         - description
                         - version
+                        - disabled
                       additionalProperties: false
                 required:
                   - plugins
@@ -29082,6 +30664,11 @@ paths:
                   installed:
                     type: boolean
                     description: Whether a copy is materialized under `<workspaceDir>/plugins/<name>/`.
+                  disabled:
+                    type: boolean
+                    description:
+                      True when the installed copy carries a `.disabled` sentinel, i.e. the loader skips it. Always `false` when
+                      `installed` is false.
                   description:
                     anyOf:
                       - type: string
@@ -29188,6 +30775,7 @@ paths:
                 required:
                   - name
                   - installed
+                  - disabled
                   - description
                   - homepage
                   - license
@@ -29217,6 +30805,120 @@ paths:
           schema:
             type: string
           description: Optional git ref to read catalog metadata / README at. Defaults to the CLI's `DEFAULT_PLUGIN_REF`.
+  /v1/plugins/{name}/disable:
+    post:
+      operationId: plugins_by_name_disable_post
+      summary: Disable an installed plugin
+      description:
+        "Write a `.disabled` sentinel into `<workspaceDir>/plugins/<name>/` so the loader skips the plugin entirely
+        — no module evaluation, init, hooks, tools, or routes. This is the reversible alternative to uninstalling an
+        untrusted or misbehaving plugin: the code stays on disk and `POST /v1/plugins/:name/enable` restores it. Mirrors
+        the CLI's `assistant plugins disable <name>`. Idempotent: an already-disabled plugin returns 200 with `changed:
+        false`. The gate is at load time, so a real change lands on the next assistant restart (`restartRequired`). The
+        plugin name is sanitized by the same regex the CLI uses; `../escape`-style values return 400, and a name with no
+        installed directory returns 404."
+      tags:
+        - plugins
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    description: Directory name that was toggled. Echoes the request's `:name` path parameter after sanitization.
+                  disabled:
+                    type: boolean
+                    description:
+                      "State AFTER the operation: `true` when the `.disabled` sentinel is present. `POST .../disable` always
+                      resolves to `true`, `POST .../enable` to `false`."
+                  changed:
+                    type: boolean
+                    description:
+                      Whether the call actually changed the on-disk state. `false` means the plugin was already in the requested
+                      state — the route is idempotent, so this is a 200 rather than a conflict.
+                  restartRequired:
+                    type: boolean
+                    description:
+                      "Whether the assistant must restart for this toggle to take effect. Mirrors `changed`: the sentinel is read
+                      when a plugin directory is imported at load time, so a change only lands on the next load. `false`
+                      for a no-op toggle."
+                required:
+                  - name
+                  - disabled
+                  - changed
+                  - restartRequired
+                additionalProperties: false
+        "400":
+          description: The plugin name failed sanitization (e.g. contained slashes, dots, or uppercase letters).
+        "404":
+          description: No plugin directory exists with the given name.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/plugins/{name}/enable:
+    post:
+      operationId: plugins_by_name_enable_post
+      summary: Enable an installed plugin
+      description:
+        "Remove the `.disabled` sentinel from `<workspaceDir>/plugins/<name>/` so the loader imports the plugin
+        again. Mirrors the CLI's `assistant plugins enable <name>`. Idempotent: an already-enabled plugin returns 200
+        with `changed: false` rather than a conflict. The sentinel gates the loader's import, so a real change lands on
+        the next assistant restart (`restartRequired`) — the same rule install / uninstall / upgrade carry. The plugin
+        name is sanitized by the same regex the CLI uses; `../escape`-style values return 400, and a name with no
+        installed directory returns 404. This is the Enabled half of the Install → Enabled ⟷ Disabled → Remove
+        lifecycle; `disabled` on `GET /v1/plugins` and `GET /v1/plugins/:name` reports the current state."
+      tags:
+        - plugins
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    description: Directory name that was toggled. Echoes the request's `:name` path parameter after sanitization.
+                  disabled:
+                    type: boolean
+                    description:
+                      "State AFTER the operation: `true` when the `.disabled` sentinel is present. `POST .../disable` always
+                      resolves to `true`, `POST .../enable` to `false`."
+                  changed:
+                    type: boolean
+                    description:
+                      Whether the call actually changed the on-disk state. `false` means the plugin was already in the requested
+                      state — the route is idempotent, so this is a 200 rather than a conflict.
+                  restartRequired:
+                    type: boolean
+                    description:
+                      "Whether the assistant must restart for this toggle to take effect. Mirrors `changed`: the sentinel is read
+                      when a plugin directory is imported at load time, so a change only lands on the next load. `false`
+                      for a no-op toggle."
+                required:
+                  - name
+                  - disabled
+                  - changed
+                  - restartRequired
+                additionalProperties: false
+        "400":
+          description: The plugin name failed sanitization (e.g. contained slashes, dots, or uppercase letters).
+        "404":
+          description: No plugin directory exists with the given name.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
   /v1/plugins/{name}/inspect:
     get:
       operationId: plugins_by_name_inspect_get

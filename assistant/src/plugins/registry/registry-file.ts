@@ -39,15 +39,19 @@ import type {
 
 const log = getLogger("plugin-registry-file");
 
-/** Minimal embedded fallback: the built-in first-party source, no pins. */
+/**
+ * Minimal embedded fallback: the one source Cue genuinely curates (it carries
+ * the in-repo loader adapter at `plugins/caveman/`), no pins. `curated` is an
+ * ownership claim, so the fallback must not seed a third-party repo with it.
+ */
 const EMBEDDED_FALLBACK: PluginRegistryFile = {
   version: 1,
   name: "cue-plugin-registry",
   sources: [
     {
-      address: "vellum-ai/simple-memory",
+      address: "JuliusBrussee/caveman",
       kind: "github",
-      label: "Vellum reference plugins",
+      label: "caveman (Cue maintains the loader adapter)",
       enabled: true,
       builtIn: true,
       reviewStatus: "curated",

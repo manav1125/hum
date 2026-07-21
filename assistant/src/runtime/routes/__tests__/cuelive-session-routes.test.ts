@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
+import { initializeDb } from "../../../memory/db-init.js";
 import { ROUTES } from "../cuelive-routes.js";
 import type { CueLiveSessionView } from "../cuelive-session.js";
 import {
@@ -12,6 +13,10 @@ import {
   resetCueLiveSessionForTest,
   setRemotePaused,
 } from "../cuelive-session.js";
+
+// The session view now carries the live trust dial, which lives in the
+// workspace database — so the routes need a real (temp-workspace) schema.
+initializeDb();
 
 function route(operationId: string) {
   const def = ROUTES.find((r) => r.operationId === operationId);

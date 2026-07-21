@@ -105,6 +105,7 @@ function installedDetail(name: string): PluginsByNameGetResponse {
   return {
     name,
     installed: true,
+    disabled: false,
     reviewStatus: "curated",
     surfaces: [],
     category: null,

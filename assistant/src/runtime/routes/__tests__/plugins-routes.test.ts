@@ -26,6 +26,14 @@
  *   - Maps `PluginNotInstalledError` → NotFoundError (404)
  *   - Maps unknown errors → InternalError (500) with message preserved
  *
+ * POST /v1/plugins/:name/{enable,disable} (the Enabled ⟷ Disabled lifecycle):
+ *   - Each route delegates to its own `enablePlugin` / `disablePlugin` lib
+ *   - Projects `{ name, disabled, changed, restartRequired }`
+ *   - Idempotent: a no-op toggle is a 200 with `changed: false` and
+ *     `restartRequired: false`, not a conflict
+ *   - Maps `InvalidPluginNameError` → 400, `PluginNotInstalledError` → 404,
+ *     unknown errors → 500 with message preserved
+ *
  * The library functions themselves are covered by
  * `assistant/src/cli/lib/__tests__/list-installed-plugins.test.ts`,
  * `.../search-plugins.test.ts`, and `.../uninstall-plugin.test.ts`;
@@ -54,6 +62,10 @@ import {
   PluginDetailsNotFoundError,
   type PluginDetailsOptions,
 } from "../../../cli/lib/plugin-details.js";
+import type {
+  TogglePluginOptions,
+  TogglePluginResult,
+} from "../../../cli/lib/toggle-plugin.js";
 import {
   PluginNotInstalledError,
   type UninstallPluginOptions,
@@ -183,6 +195,29 @@ mock.module("../../../plugins/registry/embedding-seed.js", () => ({
   seedPluginEmbeddings: seedEmbeddingsSpy,
 }));
 
+// Mock the enable/disable facade. The sentinel write/remove itself is covered
+// by `cli/lib/__tests__/toggle-plugin.test.ts`; here the wiring under test is
+// which lib each route calls, the projected wire shape, and the error mapping.
+// `disabledNames` also backs the list route's `disabled` projection.
+let disabledNames = new Set<string>();
+
+const enableSpy = mock((_opts: TogglePluginOptions): TogglePluginResult => {
+  throw new Error("enableSpy default impl not configured");
+});
+const disableSpy = mock((_opts: TogglePluginOptions): TogglePluginResult => {
+  throw new Error("disableSpy default impl not configured");
+});
+
+mock.module("../../../cli/lib/toggle-plugin.js", () => ({
+  // Error classes pass through real so the handler's `instanceof` checks
+  // resolve to the same classes the spies throw.
+  InvalidPluginNameError,
+  PluginNotInstalledError,
+  enablePlugin: enableSpy,
+  disablePlugin: disableSpy,
+  isPluginDisabled: (name: string) => disabledNames.has(name),
+}));
+
 import {
   BadRequestError,
   ConflictError,
@@ -207,6 +242,8 @@ const installHandler = findHandler("plugins_install");
 const inspectHandler = findHandler("plugins_inspect");
 const upgradeHandler = findHandler("plugins_upgrade");
 const seedEmbeddingsHandler = findHandler("plugins_seed_embeddings");
+const enableHandler = findHandler("plugins_enable");
+const disableHandler = findHandler("plugins_disable");
 
 function invoke(args: RouteHandlerArgs = {}): {
   plugins: Array<Record<string, unknown>>;
@@ -239,6 +276,7 @@ function pluginEntry(
 
 beforeEach(() => {
   installedFixture = [];
+  disabledNames = new Set();
 });
 
 describe("GET /v1/plugins", () => {
@@ -266,10 +304,26 @@ describe("GET /v1/plugins", () => {
       name: "alpha",
       description: "Alpha plugin",
       version: "1.2.3",
+      disabled: false,
       path: "/workspace/plugins/alpha",
     });
     // `issues` is omitted (not just undefined) when the entry is clean.
     expect("issues" in result.plugins[0]!).toBe(false);
+  });
+
+  test("reports per-plugin `disabled` so the UI can render Enabled vs Disabled", () => {
+    // The Enabled ⟷ Disabled axis of the lifecycle has to be readable from
+    // the list alone — otherwise the marketplace would need an extra call per
+    // row just to know which state each installed plugin is in.
+    installedFixture = [
+      pluginEntry({ name: "on" }),
+      pluginEntry({ name: "off" }),
+    ];
+    disabledNames = new Set(["off"]);
+
+    const byId = new Map(invoke().plugins.map((p) => [p.id, p.disabled]));
+    expect(byId.get("on")).toBe(false);
+    expect(byId.get("off")).toBe(true);
   });
 
   test("uses directory name for `id` and `name` even when package.json#name is scoped", () => {
@@ -662,6 +716,7 @@ function pluginDetails(overrides: Partial<PluginDetails> = {}): PluginDetails {
   return {
     name: overrides.name ?? "caveman",
     installed: overrides.installed ?? false,
+    disabled: overrides.disabled ?? false,
     description: overrides.description ?? null,
     homepage: overrides.homepage ?? null,
     license: overrides.license ?? null,
@@ -1232,6 +1287,177 @@ describe("POST /v1/plugins/:name/upgrade", () => {
     }
     expect(caught).toBeInstanceOf(InternalError);
     expect((caught as Error).message).toContain("ECONNRESET");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /v1/plugins/:name/enable + /disable
+// ---------------------------------------------------------------------------
+
+interface ToggleResponse {
+  name: string;
+  disabled: boolean;
+  changed: boolean;
+  restartRequired: boolean;
+}
+
+function invokeEnable(args: RouteHandlerArgs = {}): ToggleResponse {
+  return enableHandler(args) as ToggleResponse;
+}
+function invokeDisable(args: RouteHandlerArgs = {}): ToggleResponse {
+  return disableHandler(args) as ToggleResponse;
+}
+
+describe("POST /v1/plugins/:name/{enable,disable}", () => {
+  beforeEach(() => {
+    enableSpy.mockReset();
+    disableSpy.mockReset();
+  });
+
+  test("disable forwards the name to disablePlugin and projects the result", () => {
+    disableSpy.mockImplementation((opts) => ({
+      name: opts.name,
+      disabled: true,
+      changed: true,
+    }));
+
+    const result = invokeDisable({ pathParams: { name: "caveman" } });
+
+    expect(result).toEqual({
+      name: "caveman",
+      disabled: true,
+      changed: true,
+      // A real state change only lands when the loader next walks the
+      // plugins dir, so the route says so rather than implying it's live.
+      restartRequired: true,
+    });
+    expect(disableSpy.mock.calls[0]?.[0]).toEqual({ name: "caveman" });
+    // Each route calls exactly one lib — no cross-wiring.
+    expect(enableSpy).not.toHaveBeenCalled();
+  });
+
+  test("enable forwards the name to enablePlugin and projects the result", () => {
+    enableSpy.mockImplementation((opts) => ({
+      name: opts.name,
+      disabled: false,
+      changed: true,
+    }));
+
+    const result = invokeEnable({ pathParams: { name: "caveman" } });
+
+    expect(result).toEqual({
+      name: "caveman",
+      disabled: false,
+      changed: true,
+      restartRequired: true,
+    });
+    expect(enableSpy.mock.calls[0]?.[0]).toEqual({ name: "caveman" });
+    expect(disableSpy).not.toHaveBeenCalled();
+  });
+
+  test("a no-op toggle is a 200 with changed:false and no restart needed", () => {
+    // Idempotency matters for a UI toggle: a double tap (or two clients
+    // racing) must not surface as an error, and must not tell the user to
+    // restart when nothing on disk moved.
+    disableSpy.mockImplementation((opts) => ({
+      name: opts.name,
+      disabled: true,
+      changed: false,
+    }));
+
+    expect(invokeDisable({ pathParams: { name: "caveman" } })).toEqual({
+      name: "caveman",
+      disabled: true,
+      changed: false,
+      restartRequired: false,
+    });
+  });
+
+  test("missing pathParams.name passes the empty string through to the lib", () => {
+    // Same contract as uninstall: `sanitizePluginName` inside the lib is the
+    // validator of last resort, so the route hands off the raw value.
+    disableSpy.mockImplementation(() => {
+      throw new InvalidPluginNameError(
+        'Invalid plugin name "" — must match /^[a-z][a-z0-9-]{0,63}$/.',
+      );
+    });
+
+    expect(() => invokeDisable({})).toThrow(BadRequestError);
+    expect(disableSpy.mock.calls[0]?.[0]).toEqual({ name: "" });
+  });
+
+  test("InvalidPluginNameError → BadRequestError (400) on both routes", () => {
+    enableSpy.mockImplementation(() => {
+      throw new InvalidPluginNameError("bad name ../escape");
+    });
+    disableSpy.mockImplementation(() => {
+      throw new InvalidPluginNameError("bad name ../escape");
+    });
+
+    expect(() => invokeEnable({ pathParams: { name: "../escape" } })).toThrow(
+      BadRequestError,
+    );
+    expect(() => invokeDisable({ pathParams: { name: "../escape" } })).toThrow(
+      BadRequestError,
+    );
+  });
+
+  test("PluginNotInstalledError → NotFoundError (404) on both routes", () => {
+    const notInstalled = (opts: TogglePluginOptions): TogglePluginResult => {
+      throw new PluginNotInstalledError(
+        opts.name,
+        `/workspace/.vellum/plugins/${opts.name}`,
+      );
+    };
+    enableSpy.mockImplementation(notInstalled);
+    disableSpy.mockImplementation(notInstalled);
+
+    expect(() => invokeEnable({ pathParams: { name: "ghost" } })).toThrow(
+      NotFoundError,
+    );
+    expect(() => invokeDisable({ pathParams: { name: "ghost" } })).toThrow(
+      NotFoundError,
+    );
+  });
+
+  test("unknown errors → InternalError with original message preserved", () => {
+    disableSpy.mockImplementation(() => {
+      throw new Error("EROFS: read-only file system");
+    });
+
+    let caught: unknown;
+    try {
+      invokeDisable({ pathParams: { name: "caveman" } });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(InternalError);
+    expect((caught as Error).message).toContain("EROFS");
+  });
+
+  test("non-Error throws fall through to InternalError with a default message", () => {
+    enableSpy.mockImplementation(() => {
+      throw "boom";
+    });
+
+    let caught: unknown;
+    try {
+      invokeEnable({ pathParams: { name: "caveman" } });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(InternalError);
+    expect((caught as Error).message).toBe("plugin enable failed");
+  });
+
+  test("both routes require settings.write, matching install/uninstall", () => {
+    // The toggle changes what code the daemon loads, so it must not be
+    // reachable with a read-only scope.
+    for (const operationId of ["plugins_enable", "plugins_disable"]) {
+      const route = PLUGINS_ROUTES.find((r) => r.operationId === operationId);
+      expect(route?.method).toBe("POST");
+      expect(route?.policy?.requiredScopes).toEqual(["settings.write"]);
+    }
   });
 });
 

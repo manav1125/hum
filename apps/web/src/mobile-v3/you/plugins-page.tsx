@@ -12,11 +12,14 @@
  *  · Installed — the installed list (`GET /v1/plugins`); tap → the same sheet
  *                in read-only mode with an Uninstall affordance.
  *
- * A curation chip row filters Explore by the one axis the HTTP search response
- * supports honestly — official (first-party `vellum-ai/*`) vs community. The
- * registry's surface-type / review-status / install-count fields are NOT
- * exposed over HTTP, so those filters are deliberately absent rather than faked
- * (see the report's honesty notes).
+ * A curation chip row filters Explore on the registry's real `reviewStatus`
+ * (`GET /v1/plugins/search` returns it per match) — "Cue reviewed" vs
+ * "Community". Install-count is still NOT exposed over HTTP, so that filter
+ * stays deliberately absent rather than faked.
+ *
+ * The Installed segment renders the rest of the lifecycle: each row shows
+ * Enabled or Disabled from the list response's `disabled` field, and the
+ * detail sheet carries the Enable / Disable / Uninstall actions.
  *
  * The dashed "Install from GitHub URL · unreviewed" row opens the red-edged
  * frame-68 warning sheet.
@@ -26,23 +29,31 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   pluginsByNameGetOptions,
+  pluginsByNameGetQueryKey,
   pluginsGetOptions,
   pluginsGetQueryKey,
   pluginsSearchGetOptions,
   usePluginsByNameDeleteMutation,
+  usePluginsByNameDisablePostMutation,
+  usePluginsByNameEnablePostMutation,
   usePluginsInstallPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type {
   PluginsGetResponse,
   PluginsSearchGetResponse,
 } from "@/generated/daemon/types.gen";
+import {
+  curationBadge,
+  type CurationFilter,
+  isCurated,
+  matchesCuration,
+} from "@/lib/plugin-curation";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
 import { GlassCard } from "../glass-card";
 import { microLabel, primaryBtn, rise } from "../mv3-kit";
 import {
-  isOfficialRepo,
   parseRepoSlug,
   pluginDetailModel,
   PluginDetailSheet,
@@ -51,7 +62,6 @@ import {
 import { SegRail, TrustFootnote, YouScreen } from "./you-kit";
 
 type Segment = "explore" | "installed";
-type Curation = "all" | "official" | "community";
 
 type SearchMatch = PluginsSearchGetResponse["matches"][number];
 type InstalledPlugin = PluginsGetResponse["plugins"][number];
@@ -79,20 +89,21 @@ function PluginTile({ size = 36 }: { size?: number }) {
   );
 }
 
-function OfficialBadge({ official }: { official: boolean }) {
+function CurationBadge({ reviewStatus }: { reviewStatus: string | null }) {
+  const curated = isCurated(reviewStatus);
   return (
     <span
       style={{
         ...microLabel,
         fontSize: 9,
-        color: official ? "var(--mv3-micro)" : "var(--mv3-muted)",
-        background: official ? "rgba(61,110,232,.16)" : "var(--mv3-btn2-bg)",
+        color: curated ? "var(--mv3-micro)" : "var(--mv3-muted)",
+        background: curated ? "rgba(61,110,232,.16)" : "var(--mv3-btn2-bg)",
         borderRadius: 5,
         padding: "2px 7px",
         flexShrink: 0,
       }}
     >
-      {official ? "Official" : "Community"}
+      {curationBadge(reviewStatus)}
     </span>
   );
 }
@@ -100,7 +111,7 @@ function OfficialBadge({ official }: { official: boolean }) {
 export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
   const queryClient = useQueryClient();
   const [segment, setSegment] = useState<Segment>("explore");
-  const [curation, setCuration] = useState<Curation>("all");
+  const [curation, setCuration] = useState<CurationFilter>("all");
 
   // Detail sheet: card tap → detail; "Get" → same sheet, confirm focused.
   const [detailName, setDetailName] = useState<string | null>(null);
@@ -144,12 +155,11 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
 
   const matches = useMemo<SearchMatch[]>(() => {
     const all = searchQuery.data?.matches ?? [];
-    return all.filter((m) => {
-      if (installedNames.has(m.name)) return false;
-      if (curation === "all") return true;
-      const official = isOfficialRepo(m.source.repo);
-      return curation === "official" ? official : !official;
-    });
+    return all.filter(
+      (m) =>
+        !installedNames.has(m.name) &&
+        matchesCuration(curation, m.reviewStatus),
+    );
   }, [searchQuery.data?.matches, installedNames, curation]);
 
   const detailQuery = useQuery({
@@ -166,10 +176,21 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
     void queryClient.invalidateQueries({
       queryKey: pluginsGetQueryKey({ path: { assistant_id: assistantId } }),
     });
+    if (detailName) {
+      // The detail read carries `disabled`, so a toggle must refresh it too —
+      // otherwise the sheet would keep rendering the pre-toggle state.
+      void queryClient.invalidateQueries({
+        queryKey: pluginsByNameGetQueryKey({
+          path: { assistant_id: assistantId, name: detailName },
+        }),
+      });
+    }
   };
 
   const installMutation = usePluginsInstallPostMutation();
   const uninstallMutation = usePluginsByNameDeleteMutation();
+  const enableMutation = usePluginsByNameEnablePostMutation();
+  const disableMutation = usePluginsByNameDisablePostMutation();
 
   const openDetail = (name: string, isInstalled: boolean) => {
     haptic.light();
@@ -225,6 +246,33 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
         onError: (err) =>
           setInstallError(
             err instanceof Error ? err.message : "Couldn't uninstall.",
+          ),
+      },
+    );
+  };
+
+  /**
+   * Flip the `.disabled` sentinel for the plugin the sheet is showing. The
+   * sheet stays open on success so the state change is visible in place —
+   * disabling is reversible, so it doesn't dismiss like uninstall does.
+   */
+  const toggleEnabled = () => {
+    if (!detailName || !detailModel) return;
+    haptic.medium();
+    setInstallError(null);
+    const mutation = detailModel.disabled ? enableMutation : disableMutation;
+    mutation.mutate(
+      { path: { assistant_id: assistantId, name: detailName } },
+      {
+        onSuccess: () => {
+          haptic.success();
+          invalidate();
+        },
+        onError: (err) =>
+          setInstallError(
+            err instanceof Error
+              ? err.message
+              : "Couldn't change this plugin's state.",
           ),
       },
     );
@@ -296,13 +344,13 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
           </div>
           {segment === "explore" ? (
             <div style={{ marginTop: 8 }}>
-              <SegRail<Curation>
-                ariaLabel="Filter plugins by source"
+              <SegRail<CurationFilter>
+                ariaLabel="Filter plugins by curation"
                 value={curation}
                 onChange={setCuration}
                 items={[
                   { value: "all", label: "All" },
-                  { value: "official", label: "Official" },
+                  { value: "curated", label: "Cue reviewed" },
                   { value: "community", label: "Community" },
                 ]}
               />
@@ -332,12 +380,13 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
           ) : matches.length === 0 ? (
             <GlassCard padding="18px 16px">
               <div style={{ fontSize: 13.5, color: "var(--mv3-muted)" }}>
-                Nothing to explore in this filter.
+                {curation === "curated"
+                  ? "Cue doesn't publish its own plugins yet — everything in the registry is third-party, reviewed and pinned to a commit. Check Community."
+                  : "Nothing to explore in this filter."}
               </div>
             </GlassCard>
           ) : (
             matches.slice(0, 40).map((m, i) => {
-              const official = isOfficialRepo(m.source.repo);
               return (
                 <GlassCard
                   key={m.name}
@@ -381,7 +430,7 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
                           <span style={{ fontSize: 14.5, fontWeight: 600 }}>
                             {m.name}
                           </span>
-                          <OfficialBadge official={official} />
+                          <CurationBadge reviewStatus={m.reviewStatus} />
                         </span>
                         <span
                           style={{
@@ -529,8 +578,16 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
                 color: "var(--mv3-text)",
               }}
             >
-              <PluginTile size={32} />
-              <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ opacity: p.disabled ? 0.5 : 1 }}>
+                <PluginTile size={32} />
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  opacity: p.disabled ? 0.55 : 1,
+                }}
+              >
                 <span
                   style={{
                     display: "block",
@@ -547,11 +604,14 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
                   style={{
                     display: "block",
                     fontSize: 11,
-                    color: "var(--mv3-muted)",
+                    color: p.disabled
+                      ? "var(--mv3-muted)"
+                      : "var(--mv3-green, var(--mv3-muted))",
                     marginTop: 1,
                   }}
                 >
-                  {p.version ? `v${p.version}` : "installed"}
+                  {p.disabled ? "Disabled" : "Enabled"}
+                  {p.version ? ` · v${p.version}` : ""}
                   {p.issues && p.issues.length > 0 ? " · needs attention" : ""}
                 </span>
               </span>
@@ -572,10 +632,12 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
         confirming={confirming}
         installing={installMutation.isPending}
         uninstalling={uninstallMutation.isPending}
+        toggling={enableMutation.isPending || disableMutation.isPending}
         error={installError}
         onGet={() => detailName && openConfirm(detailName)}
         onConfirm={confirmInstall}
         onUninstall={uninstallCurrent}
+        onToggleEnabled={toggleEnabled}
         onClose={closeDetail}
       />
 
