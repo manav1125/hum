@@ -56,9 +56,10 @@ import {
 import { getResolvedConversationDirPath } from "../memory/conversation-directories.js";
 import { ConversationGraphMemory } from "../memory/graph/conversation-graph-memory.js";
 import { unwrapMemoryBlock, wrapMemoryBlock } from "../memory/memory-marker.js";
+import { classifyRisk } from "../permissions/checker.js";
 import { PermissionPrompter } from "../permissions/prompter.js";
 import { SecretPrompter } from "../permissions/secret-prompter.js";
-import type { UserDecision } from "../permissions/types.js";
+import { RiskLevel, type UserDecision } from "../permissions/types.js";
 import { defaultCompact } from "../plugins/defaults/compaction/compact.js";
 import {
   createContextWindowManager,
@@ -177,6 +178,20 @@ import { conversationMetadataSyncTag } from "./message-types/sync.js";
 import { TraceEmitter } from "./trace-emitter.js";
 
 const log = getLogger("conversation");
+
+/**
+ * Shell tools whose REAL risk is per-invocation: their static
+ * `defaultRiskLevel` is only Medium because a command's risk (`rm -rf …` vs
+ * `ls`) is judged per-command by the gateway's classifier at execution, not by
+ * static tool metadata. The advisor gate classifies these proposed commands so
+ * their high-risk invocations trip the destructive signal. Matches the
+ * bash/host_bash branch of `buildClassifyRiskParams`.
+ */
+const PER_COMMAND_RISK_TOOLS = new Set(["bash", "host_bash"]);
+
+function isPerCommandRiskTool(toolName: string): boolean {
+  return PER_COMMAND_RISK_TOOLS.has(toolName);
+}
 
 export interface CleanResult {
   previousEstimatedInputTokens: number;
@@ -767,11 +782,30 @@ export class Conversation {
           conv.createdAt,
         );
       },
-      // Advisor gate (`agent/advisor.ts`) high-stakes signal: a tool whose
-      // registered default risk is "high" (destructive/irreversible). Derived
-      // from the tool registry so the loop stays decoupled from tool metadata.
+      // Advisor gate (`agent/advisor.ts`) STATIC high-stakes signal: a tool
+      // whose registered default risk is "high" (destructive/irreversible).
+      // Derived from the tool registry so the loop stays decoupled from tool
+      // metadata.
       isHighStakesTool: (toolName: string) =>
         getTool(toolName)?.defaultRiskLevel === "high",
+      // Advisor gate PER-COMMAND high-stakes signal: bash/shell risk is judged
+      // per-command by the gateway's classifier (`rm -rf …` is high, `ls` is
+      // low), not by static tool metadata — bash's static risk is only Medium,
+      // so without this its destructive commands would never trip the advisor.
+      // Only per-command-risk shell tools whose static risk is Medium are worth
+      // a gateway round-trip; everything else returns undefined cheaply.
+      classifyCallRisk: async (toolName, input) => {
+        const tool = getTool(toolName);
+        if (
+          !tool ||
+          tool.defaultRiskLevel !== RiskLevel.Medium ||
+          !isPerCommandRiskTool(toolName)
+        ) {
+          return undefined;
+        }
+        const { level } = await classifyRisk(toolName, input, this.workingDir);
+        return level;
+      },
     });
     createContextWindowManager({
       provider,

@@ -19,11 +19,22 @@
  *
  * - **Selective, never every turn.** The gate fires only on a TOOL-BEARING
  *   round (the loop invokes it at the pre-execution seam) that additionally
- *   carries a high-stakes signal: a destructive/irreversible tool
- *   (`defaultRiskLevel === "high"`) is about to run, or the assistant's own
- *   text expresses explicit uncertainty (a low-confidence proxy — the provider
- *   exposes no numeric confidence). A plain, confident, low-risk tool round is
- *   left untouched.
+ *   carries a high-stakes signal: a destructive/irreversible tool is about to
+ *   run, or the assistant's own text expresses explicit uncertainty (a
+ *   low-confidence proxy — the provider exposes no numeric confidence). A
+ *   plain, confident, low-risk tool round is left untouched.
+ *
+ *   "High-stakes" is the MAX of two risk views: the tool's static
+ *   `defaultRiskLevel === "high"` (statically-destructive tools like a2a_send
+ *   or credential writes), OR the PROPOSED call's per-command classified risk
+ *   being `high`. The latter is what catches bash: its static risk is only
+ *   Medium because a shell command's real risk is judged per-command by the
+ *   gateway's classifier at execution time (`rm -rf …` is high, `ls` is low),
+ *   not by static tool metadata. The caller classifies the proposed command at
+ *   the gate (fail-open) and threads the result in via
+ *   `ProposedToolUse.classifiedRisk`; without it, bash's Medium static risk
+ *   would never trip the destructive signal — the single most common way to do
+ *   destructive things.
  * - **Cost-bounded.** At most `llm.advisor.maxConsultsPerTurn` consults per
  *   user turn, and — by construction — never twice for the same round: the
  *   loop invokes the gate once per iteration and passes `alreadyConsulted`
@@ -39,6 +50,7 @@
  */
 
 import type { AdvisorConfig, LLMConfig } from "../config/schemas/llm.js";
+import { RiskLevel } from "../permissions/types.js";
 import type {
   ContentBlock,
   Message,
@@ -72,6 +84,29 @@ export interface AdvisorGateDecision {
 
 export interface ProposedToolUse {
   name: string;
+  /**
+   * The proposed call's per-command classified risk, when the caller ran the
+   * gateway classifier for this specific invocation (bash/shell, whose real
+   * risk is per-command, not static). Folded into the high-stakes signal as
+   * `max(staticDefaultRisk, classifiedRisk) === high`. Absent for tools the
+   * caller did not classify — the gate then relies on static risk alone.
+   */
+  classifiedRisk?: RiskLevel;
+}
+
+/**
+ * Whether a single proposed call is high-stakes: its tool is statically
+ * destructive (`isHighStakesTool`), OR its per-command classified risk is
+ * `high`. This is the `max(staticDefaultRisk, perCommandClassifiedRisk) ===
+ * high` condition that lets bash's per-command `rm -rf …` trip the gate even
+ * though bash's static `defaultRiskLevel` is only Medium.
+ */
+function isCallHighStakes(
+  toolUse: ProposedToolUse,
+  isHighStakesTool: (toolName: string) => boolean,
+): boolean {
+  if (isHighStakesTool(toolUse.name)) return true;
+  return toolUse.classifiedRisk === RiskLevel.High;
 }
 
 /**
@@ -88,8 +123,10 @@ export function classifyRoundForAdvisor(opts: {
   /** The assistant's own text for the round (uncertainty scan). */
   assistantText: string;
   /**
-   * True when the proposed tool is high-stakes/destructive — the caller
-   * derives this from tool metadata (`defaultRiskLevel === "high"`).
+   * True when the tool is STATICALLY high-stakes/destructive — the caller
+   * derives this from tool metadata (`defaultRiskLevel === "high"`). Per-command
+   * risk (bash) is carried separately on `ProposedToolUse.classifiedRisk` and
+   * folded in via `max(static, perCommand)`.
    */
   isHighStakesTool: (toolName: string) => boolean;
   /** True once the per-turn consult budget is spent. */
@@ -107,7 +144,7 @@ export function classifyRoundForAdvisor(opts: {
 
   if (advisor.consultOnDestructiveTools) {
     for (const toolUse of proposedToolUses) {
-      if (opts.isHighStakesTool(toolUse.name)) {
+      if (isCallHighStakes(toolUse, opts.isHighStakesTool)) {
         return { consult: true, reason: "destructive_tool" };
       }
     }

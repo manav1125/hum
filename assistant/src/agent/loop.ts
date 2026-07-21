@@ -16,6 +16,7 @@ import type { ToolActivityMetadata } from "../daemon/message-types/web-activity.
 import { parseActualTokensFromError } from "../daemon/parse-actual-tokens-from-error.js";
 import type { TrustContext } from "../daemon/trust-context.js";
 import { stripHistoricalWebSearchResults } from "../daemon/web-search-history.js";
+import { RiskLevel } from "../permissions/types.js";
 import { HOOKS } from "../plugin-api/constants.js";
 import type {
   AgentLoopExitReason,
@@ -658,6 +659,22 @@ export interface AgentLoopConstructorOptions {
    * registry. Defaults to "nothing is high-stakes" — the advisor never fires.
    */
   isHighStakesTool?: (toolName: string) => boolean;
+  /**
+   * Classify the PROPOSED tool call's per-command risk for the advisor gate.
+   * bash/shell risk is judged per-command by the gateway's classifier (`rm -rf
+   * …` is high, `ls` is low), not by static tool metadata — its static
+   * `defaultRiskLevel` is only Medium. This callback (injected so the loop stays
+   * decoupled from the permission subsystem) runs the same deterministic
+   * gateway `classify_risk` the approval path uses, and returns the classified
+   * `RiskLevel` (or `undefined` to skip — for tools that are not per-command
+   * risk, or on classifier error, so the gate fails open). Only the resulting
+   * `high` folds into the high-stakes signal. Absent → the advisor sees static
+   * risk only (bash never trips the destructive signal — the diagnosed bug).
+   */
+  classifyCallRisk?: (
+    toolName: string,
+    input: Record<string, unknown>,
+  ) => Promise<RiskLevel | undefined>;
 }
 
 export class AgentLoop {
@@ -685,6 +702,14 @@ export class AgentLoop {
   /** See {@link AgentLoopConstructorOptions.isHighStakesTool}. */
   private readonly isHighStakesTool: (toolName: string) => boolean;
 
+  /** See {@link AgentLoopConstructorOptions.classifyCallRisk}. */
+  private readonly classifyCallRisk:
+    | ((
+        toolName: string,
+        input: Record<string, unknown>,
+      ) => Promise<RiskLevel | undefined>)
+    | null;
+
   /**
    * Loop-held compaction circuit breaker. The loop has a 1:1 lifetime with its
    * conversation, so it is the source of truth for the cross-turn failure
@@ -706,6 +731,7 @@ export class AgentLoop {
       conversationId,
       resolveConversationDir,
       isHighStakesTool,
+      classifyCallRisk,
     } = options;
     this.provider = provider;
     this.systemPrompt = systemPrompt;
@@ -717,6 +743,7 @@ export class AgentLoop {
     this.conversationId = conversationId;
     this.resolveConversationDir = resolveConversationDir ?? null;
     this.isHighStakesTool = isHighStakesTool ?? (() => false);
+    this.classifyCallRisk = classifyCallRisk ?? null;
     this.compactionCircuit = new CompactionCircuit(this.conversationId);
   }
 
@@ -1831,14 +1858,45 @@ export class AgentLoop {
         // runs. Selective (only destructive-tool / explicit-uncertainty
         // rounds), cost-bounded (`llm.advisor.maxConsultsPerTurn`), and
         // fail-open (a null consult falls straight through to execution).
+        const advisorCfg = getConfig().llm.advisor;
+        const advisorBudgetSpent =
+          advisorConsultsThisTurn >= advisorCfg.maxConsultsPerTurn;
+        // Per-command risk: bash/shell risk is judged per-command by the
+        // gateway's classifier, not by static tool metadata (bash's static risk
+        // is only Medium). Classify each proposed command here — the same
+        // deterministic gateway `classify_risk` the approval path runs — and
+        // thread its risk into the gate so `rm -rf …` trips the destructive
+        // signal while `ls` does not. Bounded: only when the gate could
+        // actually consult (advisor on, destructive signal on, budget left) and
+        // only for tools that are not already statically high (those need no
+        // classify). Fail-open: any classifier error yields no per-command risk.
+        const shouldClassifyPerCommand =
+          this.classifyCallRisk != null &&
+          advisorCfg.enabled &&
+          advisorCfg.consultOnDestructiveTools &&
+          !advisorBudgetSpent;
+        const proposedToolUses = await Promise.all(
+          toolUseBlocks.map(async (t) => {
+            if (!shouldClassifyPerCommand || this.isHighStakesTool(t.name)) {
+              return { name: t.name };
+            }
+            let classifiedRisk: RiskLevel | undefined;
+            try {
+              classifiedRisk = await this.classifyCallRisk?.(t.name, t.input);
+            } catch {
+              classifiedRisk = undefined; // fail-open
+            }
+            return classifiedRisk != null
+              ? { name: t.name, classifiedRisk }
+              : { name: t.name };
+          }),
+        );
         const advisorRoute = resolveAdvisorRouteForRound({
           llm: getConfig().llm,
-          proposedToolUses: toolUseBlocks.map((t) => ({ name: t.name })),
+          proposedToolUses,
           assistantText: assistantTextOf(response.content),
           isHighStakesTool: this.isHighStakesTool,
-          alreadyConsulted:
-            advisorConsultsThisTurn >=
-            getConfig().llm.advisor.maxConsultsPerTurn,
+          alreadyConsulted: advisorBudgetSpent,
         });
         if (advisorRoute != null) {
           advisorConsultsThisTurn++;

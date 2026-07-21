@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { LLMSchema } from "../config/schemas/llm.js";
+import { RiskLevel } from "../permissions/types.js";
 import type {
   ContentBlock,
   Message,
@@ -122,6 +123,62 @@ describe("classifyRoundForAdvisor", () => {
       alreadyConsulted: true,
     });
     expect(decision).toEqual({ consult: false, reason: "budget_exhausted" });
+  });
+
+  // ── Per-command risk (bash/shell): the diagnosed bug ──────────────────────
+  // bash's static defaultRiskLevel is Medium, so isHighStakesTool("bash") is
+  // false. The gate must ALSO fire when the PROPOSED command's per-command
+  // classified risk is High — otherwise `rm -rf …` (the most common way to do
+  // destructive things) never trips the advisor.
+  const bashIsNotStaticallyHigh = (name: string) => name === "delete_everything";
+
+  test("fires on a bash command classified HIGH per-command (rm -rf class)", () => {
+    const decision = classifyRoundForAdvisor({
+      advisor: ADVISOR,
+      proposedToolUses: [{ name: "bash", classifiedRisk: RiskLevel.High }],
+      assistantText: "Cleaning up the scratch directory.",
+      isHighStakesTool: bashIsNotStaticallyHigh,
+      alreadyConsulted: false,
+    });
+    expect(decision).toEqual({ consult: true, reason: "destructive_tool" });
+  });
+
+  test("does NOT fire on a benign bash command classified LOW (ls)", () => {
+    const decision = classifyRoundForAdvisor({
+      advisor: ADVISOR,
+      proposedToolUses: [{ name: "bash", classifiedRisk: RiskLevel.Low }],
+      assistantText: "Listing the directory.",
+      isHighStakesTool: bashIsNotStaticallyHigh,
+      alreadyConsulted: false,
+    });
+    expect(decision).toEqual({ consult: false, reason: "no_signal" });
+  });
+
+  test("a HIGH-classified bash call routes to the advisor model", () => {
+    const route = resolveAdvisorRouteForRound({
+      llm: LLMSchema.parse({}),
+      proposedToolUses: [{ name: "bash", classifiedRisk: RiskLevel.High }],
+      assistantText: "removing the temp files",
+      isHighStakesTool: bashIsNotStaticallyHigh,
+      alreadyConsulted: false,
+      env: {},
+    });
+    expect(route).toEqual({
+      model: DEFAULT_ADVISOR_MODEL,
+      fallbackModel: DEFAULT_ADVISOR_FALLBACK_MODEL,
+      reason: "destructive_tool",
+    });
+  });
+
+  test("a Medium-classified bash call does not fire (only HIGH is high-stakes)", () => {
+    const decision = classifyRoundForAdvisor({
+      advisor: ADVISOR,
+      proposedToolUses: [{ name: "bash", classifiedRisk: RiskLevel.Medium }],
+      assistantText: "running the build",
+      isHighStakesTool: bashIsNotStaticallyHigh,
+      alreadyConsulted: false,
+    });
+    expect(decision).toEqual({ consult: false, reason: "no_signal" });
   });
 
   test("respects consultOnDestructiveTools=false", () => {

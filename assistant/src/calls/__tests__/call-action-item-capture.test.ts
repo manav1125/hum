@@ -10,17 +10,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { addMessage } from "../../memory/conversation-crud.js";
+import { getOrCreateConversation } from "../../memory/conversation-key-store.js";
 import { getDb } from "../../memory/db-connection.js";
 import { initializeDb } from "../../memory/db-init.js";
-import { getOrCreateConversation } from "../../memory/conversation-key-store.js";
 import { listWorkItems } from "../../work-items/work-item-store.js";
 import {
   _resetCallCaptureGuardForTests,
   _setCallCaptureOverridesForTests,
   buildTranscriptTurns,
   captureCallActionItems,
-  extractSpokenText,
   type ExtractedCallItem,
+  extractSpokenText,
   parseCallItemsResponse,
 } from "../call-action-item-capture.js";
 

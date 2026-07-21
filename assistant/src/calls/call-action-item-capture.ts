@@ -33,9 +33,8 @@
  * never blocks call finalization.
  */
 
-import { getConfig } from "../config/loader.js";
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
-import { getCallSession } from "./call-store.js";
+import { getConfig } from "../config/loader.js";
 import { getMessages } from "../memory/conversation-crud.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
@@ -46,6 +45,7 @@ import {
   findActiveWorkItemBySource,
 } from "../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../work-items/work-item-triage.js";
+import { getCallSession } from "./call-store.js";
 import { stripInternalSpeechMarkers } from "./voice-control-protocol.js";
 
 const log = getLogger("call-action-item-capture");

@@ -54,7 +54,6 @@ import {
   PluginDetailsNotFoundError,
   type PluginDetailsOptions,
 } from "../../../cli/lib/plugin-details.js";
-import type { RegistryCatalogMatch } from "../../../plugins/registry/catalog.js";
 import {
   PluginNotInstalledError,
   type UninstallPluginOptions,
@@ -66,6 +65,7 @@ import {
   type UpgradePluginDeps,
   type UpgradePluginOptions,
 } from "../../../cli/lib/upgrade-plugin.js";
+import type { RegistryCatalogMatch } from "../../../plugins/registry/catalog.js";
 
 // Mutable list returned by the mocked library function. Tests reassign
 // `installedFixture` before invoking the handler.
