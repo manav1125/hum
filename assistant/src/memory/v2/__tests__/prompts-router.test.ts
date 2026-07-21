@@ -268,6 +268,23 @@ describe("resolveRouterPrompt — override path", () => {
     expect(out).not.toEqual(renderRouterPrompt(STD_OPTS));
   });
 
+  test("an override outside the passed workspaceDir is rejected (workspace containment)", () => {
+    // The override field is settings-writable and its contents reach the LLM
+    // provider, so an out-of-workspace path would be an arbitrary-file-read
+    // primitive. The loader requires the resolved realpath to stay inside
+    // workspaceDir.
+    const outside = mkdtempSync(join(tmpdir(), "vellum-router-outside-"));
+    try {
+      const overridePath = join(outside, "smuggled.md");
+      writeFileSync(overridePath, "SENSITIVE CONTENTS\n", "utf-8");
+      const out = resolveRouterPrompt(overridePath, tmpDir, STD_OPTS);
+      expect(out).toEqual(renderRouterPrompt(STD_OPTS));
+      expect(out).not.toContain("SENSITIVE CONTENTS");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   test("missing override file falls back to bundled prompt", () => {
     const overridePath = join(tmpDir, "does-not-exist.md");
     expect(resolveRouterPrompt(overridePath, tmpDir, STD_OPTS)).toEqual(

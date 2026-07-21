@@ -592,6 +592,10 @@ Examples:
           "Source label for logging (e.g. github-notification)",
           "cli",
         )
+        .option(
+          "--external-content <string>",
+          "Untrusted third-party data (email body, PR text, fetched page, notification payload) to fence as untrusted content. The caller reads the data and passes it as a string; it is visible in the process table via 'ps' and bounded by ARG_MAX",
+        )
         .option("--json", "Output result as JSON")
         .addHelpText(
           "after",
@@ -605,17 +609,30 @@ only to the LLM — it never appears in the transcript or SSE feed. If the
 agent produces output (text or tool calls), it is persisted and emitted to
 connected clients. Otherwise the wake is a silent no-op.
 
+--hint is TRUSTED framing authored by you. Any attacker-influenceable data
+(email bodies, PR text, fetched web pages, notification payloads) MUST be
+passed via --external-content — never inlined into --hint. Untrusted content is
+fenced inside <external_content> so the model treats it as data, never
+instructions. The caller reads the data and passes it as a string; it is
+visible in the process table via 'ps' and bounded by ARG_MAX.
+
 Requires the assistant to be running. Communicates via IPC socket.
 
 Examples:
   $ assistant conversations wake abc123 --hint "PR #25933 received a review requesting changes"
   $ assistant conversations wake abc123 --hint "CI failed on commit abc" --source github-ci
-  $ assistant conversations wake abc123 --hint "New Slack DM from Vargas" --source slack --json`,
+  $ assistant conversations wake abc123 --hint "New Slack DM from Vargas" --source slack --json
+  $ assistant conversations wake abc123 --hint "New Slack msgs to triage" --external-content "$slack_dump"`,
         )
         .action(
           async (
             conversationId: string,
-            opts: { hint: string; source: string; json?: boolean },
+            opts: {
+              hint: string;
+              source: string;
+              externalContent?: string;
+              json?: boolean;
+            },
           ) => {
             const result = await cliIpcCall<{
               invoked: boolean;
@@ -626,6 +643,9 @@ Examples:
                 conversationId,
                 hint: opts.hint,
                 source: opts.source,
+                ...(opts.externalContent !== undefined
+                  ? { externalContent: opts.externalContent }
+                  : {}),
               },
             });
 

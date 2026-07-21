@@ -18,10 +18,7 @@
  * only new `connect()` calls require the path to exist.
  */
 
-import {
-  SocketWatchdog,
-  ensureSocketDir,
-} from "@vellumai/ipc-server-utils";
+import { SocketWatchdog, ensureSocketDir } from "@vellumai/ipc-server-utils";
 import { existsSync, unlinkSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 

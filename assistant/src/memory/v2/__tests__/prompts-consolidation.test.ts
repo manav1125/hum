@@ -62,9 +62,11 @@ afterAll(() => {
 
 const {
   CONSOLIDATION_PROMPT,
+  CONSOLIDATION_PROMPT_V3,
   CORE_PAGES_CONSOLIDATION_SECTION,
   CORE_PAGES_PLACEHOLDER,
   CUTOFF_PLACEHOLDER,
+  renderConsolidationPrompt,
   resolveConsolidationPrompt,
 } = await import("../prompts/consolidation.js");
 
@@ -103,6 +105,32 @@ afterEach(() => {
   ]) {
     rmSync(join(tmpWorkspace, entry), { force: true });
   }
+});
+
+describe("anti-injection framing", () => {
+  // The consolidation pass reads buffer.md + existing pages, which can carry
+  // text from untrusted sources the assistant ingested earlier. Both templates
+  // must frame that content as data to reorganize, never as instructions —
+  // defense-in-depth alongside the scoped tool surface. Assert on a stable
+  // phrase so a reword keeps the guarantee visible.
+  const MARKER = "not instructions for this pass";
+
+  test("both bundled templates contain the anti-injection framing", () => {
+    expect(CONSOLIDATION_PROMPT as string).toContain(MARKER);
+    expect(CONSOLIDATION_PROMPT_V3 as string).toContain(MARKER);
+  });
+
+  test("survives rendering for both v2 and v3 article shapes", () => {
+    // Guards against a future placeholder refactor silently dropping the
+    // framing from the prompt the model actually receives.
+    const v2 = renderConsolidationPrompt(CUTOFF, NO_CORE);
+    const v3 = renderConsolidationPrompt(CUTOFF, {
+      includeCorePagesSection: true,
+      articleShape: "v3",
+    });
+    expect(v2).toContain(MARKER);
+    expect(v3).toContain(MARKER);
+  });
 });
 
 describe("resolveConsolidationPrompt — no override", () => {
@@ -179,7 +207,7 @@ describe("resolveConsolidationPrompt — with override", () => {
     expect(warnCalls).toHaveLength(0);
   });
 
-  test("expands a leading ~/ to the home directory", () => {
+  test("rejects a ~/ path that resolves outside the workspace", () => {
     const filename = `.vellum-prompt-test-${process.pid}.md`;
     const path = join(homedir(), filename);
     writeFileSync(path, "Home dir {{CUTOFF}}\n");
@@ -189,8 +217,10 @@ describe("resolveConsolidationPrompt — with override", () => {
         CUTOFF,
         NO_CORE,
       );
-      expect(result).toBe(`Home dir ${CUTOFF}\n`);
-      expect(warnCalls).toHaveLength(0);
+      expect(result).toBe(bundledPrompt());
+      expect(warnCalls).toHaveLength(1);
+      const data = warnCalls[0].data as Record<string, unknown>;
+      expect(data.reason).toBe("outside_workspace");
     } finally {
       rmSync(path, { force: true });
     }
@@ -224,6 +254,62 @@ describe("resolveConsolidationPrompt — with override", () => {
 
     expect(result).toBe(`${CUTOFF} ... ${CUTOFF} ... ${CUTOFF}`);
     expect(result).not.toContain(CUTOFF_PLACEHOLDER);
+  });
+});
+
+describe("resolveConsolidationPrompt — workspace containment", () => {
+  test("an absolute path outside the workspace is rejected", () => {
+    const outside = mkdtempSync(join(tmpdir(), "prompt-override-outside-"));
+    try {
+      const p = join(outside, "secret.md");
+      writeFileSync(p, "SENSITIVE CONTENTS {{CUTOFF}}\n");
+      const result = resolveConsolidationPrompt(p, CUTOFF, NO_CORE);
+      expect(result).toBe(bundledPrompt());
+      expect(result).not.toContain("SENSITIVE CONTENTS");
+      expect(warnCalls).toHaveLength(1);
+      const data = warnCalls[0].data as Record<string, unknown>;
+      expect(data.reason).toBe("outside_workspace");
+      expect(data.fallback).toBe("bundled");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("a relative path escaping the workspace via .. is rejected", () => {
+    const name = `prompt-override-escape-${process.pid}.md`;
+    const target = join(tmpWorkspace, "..", name);
+    writeFileSync(target, "escaped\n");
+    try {
+      const result = resolveConsolidationPrompt(
+        join("..", name),
+        CUTOFF,
+        NO_CORE,
+      );
+      expect(result).toBe(bundledPrompt());
+      const data = warnCalls[0].data as Record<string, unknown>;
+      expect(data.reason).toBe("outside_workspace");
+    } finally {
+      rmSync(target, { force: true });
+    }
+  });
+
+  test("a symlinked directory pointing outside the workspace is rejected", () => {
+    const outside = mkdtempSync(join(tmpdir(), "prompt-override-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.md"), "SENSITIVE CONTENTS\n");
+      symlinkSync(outside, join(tmpWorkspace, "linked-dir"));
+      const result = resolveConsolidationPrompt(
+        join("linked-dir", "secret.md"),
+        CUTOFF,
+        NO_CORE,
+      );
+      expect(result).toBe(bundledPrompt());
+      const data = warnCalls[0].data as Record<string, unknown>;
+      expect(data.reason).toBe("outside_workspace");
+    } finally {
+      rmSync(join(tmpWorkspace, "linked-dir"), { force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 

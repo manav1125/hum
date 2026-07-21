@@ -18,23 +18,32 @@ mock.module("../fetch.js", () => ({
 }));
 
 // ── Assistant DB proxy mocks ──────────────────────────────────────────────────
-type DbQueryFn = (sql: string, bind?: unknown[]) => Promise<Record<string, unknown>[]>;
-let assistantDbQueryMock: ReturnType<typeof mock<DbQueryFn>> = mock(async () => []);
+type DbQueryFn = (
+  sql: string,
+  bind?: unknown[],
+) => Promise<Record<string, unknown>[]>;
+let assistantDbQueryMock: ReturnType<typeof mock<DbQueryFn>> = mock(
+  async () => [],
+);
 
 type DbRunFn = (sql: string, bind?: unknown[]) => Promise<void>;
 let assistantDbRunMock: ReturnType<typeof mock<DbRunFn>> = mock(async () => {});
 
 mock.module("../db/assistant-db-proxy.js", () => ({
-  assistantDbQuery: (...args: Parameters<DbQueryFn>) => assistantDbQueryMock(...args),
+  assistantDbQuery: (...args: Parameters<DbQueryFn>) =>
+    assistantDbQueryMock(...args),
   assistantDbRun: (...args: Parameters<DbRunFn>) => assistantDbRunMock(...args),
 }));
 
 // ── IPC assistant client mock ─────────────────────────────────────────────────
 type IpcCallFn = (method: string, params: unknown) => Promise<unknown>;
-let ipcCallAssistantMock: ReturnType<typeof mock<IpcCallFn>> = mock(async () => ({}));
+let ipcCallAssistantMock: ReturnType<typeof mock<IpcCallFn>> = mock(
+  async () => ({}),
+);
 
 mock.module("../ipc/assistant-client.js", () => ({
-  ipcCallAssistant: (...args: Parameters<IpcCallFn>) => ipcCallAssistantMock(...args),
+  ipcCallAssistant: (...args: Parameters<IpcCallFn>) =>
+    ipcCallAssistantMock(...args),
 }));
 
 // ── ContactStore mock ─────────────────────────────────────────────────────────
@@ -57,10 +66,12 @@ const DEFAULT_MOCK_CONTACT = {
 
 type UpsertResult = { contact: typeof DEFAULT_MOCK_CONTACT; created: boolean };
 type UpsertFn = (params: unknown) => Promise<UpsertResult>;
-let contactStoreUpsertMock: ReturnType<typeof mock<UpsertFn>> = mock(async () => ({
-  contact: DEFAULT_MOCK_CONTACT,
-  created: false,
-}));
+let contactStoreUpsertMock: ReturnType<typeof mock<UpsertFn>> = mock(
+  async () => ({
+    contact: DEFAULT_MOCK_CONTACT,
+    created: false,
+  }),
+);
 
 mock.module("../db/contact-store.js", () => ({
   ContactStore: class MockContactStore {
@@ -591,7 +602,12 @@ describe("handleUpsertContact (gateway-native)", () => {
     expect(res.status).toBe(200);
     expect(contactStoreUpsertMock).toHaveBeenCalledTimes(1);
     const [params] = contactStoreUpsertMock.mock.calls[0] as [
-      { assistantMetadata?: { species: string; metadata?: Record<string, unknown> } },
+      {
+        assistantMetadata?: {
+          species: string;
+          metadata?: Record<string, unknown>;
+        };
+      },
     ];
     expect(params.assistantMetadata?.species).toBe("vellum");
     expect(params.assistantMetadata?.metadata?.assistantId).toBe("asst_123");

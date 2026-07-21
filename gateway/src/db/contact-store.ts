@@ -579,7 +579,8 @@ export class ContactStore {
             updateSet.blockedReason = ch.blockedReason;
         }
         if (ch.verifiedAt !== undefined) updateSet.verifiedAt = ch.verifiedAt;
-        if (ch.verifiedVia !== undefined) updateSet.verifiedVia = ch.verifiedVia;
+        if (ch.verifiedVia !== undefined)
+          updateSet.verifiedVia = ch.verifiedVia;
         if (ch.inviteId !== undefined) updateSet.inviteId = ch.inviteId;
         this.db
           .update(contactChannels)
@@ -921,10 +922,8 @@ export class ContactStore {
       0,
     );
     const lastInteraction =
-      channels.reduce(
-        (max, ch) => Math.max(max, ch.lastInteraction ?? 0),
-        0,
-      ) || null;
+      channels.reduce((max, ch) => Math.max(max, ch.lastInteraction ?? 0), 0) ||
+      null;
 
     return {
       id: first.id,

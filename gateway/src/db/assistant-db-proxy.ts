@@ -13,10 +13,7 @@
  * gateway's own database.
  */
 
-import {
-  IpcHandlerError,
-  ipcCallAssistant,
-} from "../ipc/assistant-client.js";
+import { IpcHandlerError, ipcCallAssistant } from "../ipc/assistant-client.js";
 
 export type SqliteValue = string | number | null | Uint8Array;
 

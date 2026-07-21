@@ -8,10 +8,7 @@
 
 import { eq } from "drizzle-orm";
 
-import {
-  assistantDbQuery,
-  assistantDbRun,
-} from "../db/assistant-db-proxy.js";
+import { assistantDbQuery, assistantDbRun } from "../db/assistant-db-proxy.js";
 import { getGatewayDb } from "../db/connection.js";
 import { channelVerificationSessions as gwSessions } from "../db/schema.js";
 import { getLogger } from "../logger.js";
@@ -144,7 +141,8 @@ export async function consumeSession(
   // Gateway DB dual-write
   try {
     const gwDb = getGatewayDb();
-    gwDb.update(gwSessions)
+    gwDb
+      .update(gwSessions)
       .set({
         status: "consumed",
         consumedByExternalUserId: actorExternalUserId,

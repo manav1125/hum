@@ -30,7 +30,10 @@ import { getGatewaySecurityDir } from "../paths.js";
 import { ensureBackupKey } from "./backup-key.js";
 import type { SnapshotEntry } from "./list-snapshots.js";
 import { pruneLocalSnapshots, writeLocalSnapshot } from "./local-writer.js";
-import type { BackupDestination, OffsiteWriteResult } from "./offsite-writer.js";
+import type {
+  BackupDestination,
+  OffsiteWriteResult,
+} from "./offsite-writer.js";
 import {
   pruneOffsiteSnapshotsInAll,
   writeOffsiteSnapshotToAll,
@@ -89,8 +92,7 @@ function readBackupConfig(): BackupConfig {
   const enabled = backup.enabled === true;
   const intervalHours =
     typeof backup.intervalHours === "number" ? backup.intervalHours : 6;
-  const retention =
-    typeof backup.retention === "number" ? backup.retention : 3;
+  const retention = typeof backup.retention === "number" ? backup.retention : 3;
 
   const offsiteRaw = (backup.offsite ?? {}) as Record<string, unknown>;
   const offsiteEnabled = offsiteRaw.enabled !== false;
@@ -99,7 +101,9 @@ function readBackupConfig(): BackupConfig {
     destinations = offsiteRaw.destinations
       .filter(
         (d): d is { path: string; encrypt?: boolean } =>
-          d && typeof d === "object" && typeof (d as Record<string, unknown>).path === "string",
+          d &&
+          typeof d === "object" &&
+          typeof (d as Record<string, unknown>).path === "string",
       )
       .map((d) => ({
         path: d.path,

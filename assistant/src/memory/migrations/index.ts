@@ -304,6 +304,7 @@ export { migrateWorkItemsRunConversationIndex } from "./306-work-items-run-conve
 export { migrateWorkItemHygiene } from "./307-work-item-hygiene.js";
 export { migrateLlmUsageAgentAttribution } from "./308-llm-usage-agent-attribution.js";
 export { migrateMissionSweepAt } from "./309-mission-sweep-at.js";
+export { migrateConversationProcessingFlags } from "./310-conversation-processing-flags.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

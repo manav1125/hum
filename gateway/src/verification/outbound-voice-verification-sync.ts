@@ -154,8 +154,7 @@ export async function createPhoneGuardianBinding(
   // `getExistingGuardianBinding` only checks active bindings, so without
   // this guard we would reactivate a revoked binding or revoke an active
   // one in favor of a stale session.
-  const lastBindingTs =
-    await getMostRecentChannelGuardianTimestamp("phone");
+  const lastBindingTs = await getMostRecentChannelGuardianTimestamp("phone");
   if (lastBindingTs != null && sessionUpdatedAt <= lastBindingTs) {
     log.warn(
       { phoneNumber, sessionUpdatedAt, lastBindingTs },

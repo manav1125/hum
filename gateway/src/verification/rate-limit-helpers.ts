@@ -58,7 +58,10 @@ export function getRateLimit(
     .get();
 
   return row
-    ? { attemptTimestampsJson: row.attemptTimestampsJson, lockedUntil: row.lockedUntil }
+    ? {
+        attemptTimestampsJson: row.attemptTimestampsJson,
+        lockedUntil: row.lockedUntil,
+      }
     : null;
 }
 
@@ -163,7 +166,10 @@ export async function recordInvalidAttempt(
       ],
     );
   } catch (err) {
-    log.warn({ err }, "Assistant DB rate limit dual-write failed (best-effort)");
+    log.warn(
+      { err },
+      "Assistant DB rate limit dual-write failed (best-effort)",
+    );
   }
 }
 
@@ -175,7 +181,8 @@ export async function resetRateLimit(
   const now = Date.now();
 
   const gwDb = getGatewayDb();
-  gwDb.update(gwRateLimits)
+  gwDb
+    .update(gwRateLimits)
     .set({
       attemptTimestampsJson: "[]",
       lockedUntil: null,
@@ -200,6 +207,9 @@ export async function resetRateLimit(
       [now, channel, actorExternalUserId, actorChatId],
     );
   } catch (err) {
-    log.warn({ err }, "Assistant DB rate limit reset dual-write failed (best-effort)");
+    log.warn(
+      { err },
+      "Assistant DB rate limit reset dual-write failed (best-effort)",
+    );
   }
 }

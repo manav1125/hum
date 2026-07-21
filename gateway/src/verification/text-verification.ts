@@ -25,7 +25,11 @@ import {
   resolveCanonicalPrincipal,
   revokeExistingChannelGuardian,
 } from "./binding-helpers.js";
-import { extractEmailReplyBody, parseVerificationCode, hashVerificationSecret } from "./code-parsing.js";
+import {
+  extractEmailReplyBody,
+  parseVerificationCode,
+  hashVerificationSecret,
+} from "./code-parsing.js";
 import {
   findContactChannelByExternalUserId,
   upsertVerifiedContactChannel,
@@ -175,9 +179,10 @@ export async function tryTextVerificationIntercept(
     return {
       intercepted: true,
       outcome: "failed",
-      trustClass: session.verificationPurpose === "trusted_contact"
-        ? "trusted_contact"
-        : "guardian",
+      trustClass:
+        session.verificationPurpose === "trusted_contact"
+          ? "trusted_contact"
+          : "guardian",
       pendingReplyText,
     };
   }
@@ -202,9 +207,10 @@ export async function tryTextVerificationIntercept(
     return {
       intercepted: true,
       outcome: "failed",
-      trustClass: session.verificationPurpose === "trusted_contact"
-        ? "trusted_contact"
-        : "guardian",
+      trustClass:
+        session.verificationPurpose === "trusted_contact"
+          ? "trusted_contact"
+          : "guardian",
       pendingReplyText,
     };
   }
@@ -260,7 +266,12 @@ export async function tryTextVerificationIntercept(
     "Text verification succeeded",
   );
 
-  return { intercepted: true, outcome: "verified", trustClass, pendingReplyText };
+  return {
+    intercepted: true,
+    outcome: "verified",
+    trustClass,
+    pendingReplyText,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -316,10 +327,9 @@ async function applyGuardianSideEffects(params: {
     sourceChannel,
     canonicalUserId,
   );
-  const displayName =
-    existingContact?.displayName?.trim().length
-      ? existingContact.displayName
-      : actorDisplayName ?? actorUsername ?? canonicalUserId;
+  const displayName = existingContact?.displayName?.trim().length
+    ? existingContact.displayName
+    : (actorDisplayName ?? actorUsername ?? canonicalUserId);
 
   // Create guardian binding (dual-writes to both DBs)
   await createGuardianBinding({
@@ -352,10 +362,9 @@ async function applyTrustedContactSideEffects(params: {
     sourceChannel,
     canonicalUserId,
   );
-  const displayName =
-    existingContact?.displayName?.trim().length
-      ? existingContact.displayName
-      : actorDisplayName ?? actorUsername ?? canonicalUserId;
+  const displayName = existingContact?.displayName?.trim().length
+    ? existingContact.displayName
+    : (actorDisplayName ?? actorUsername ?? canonicalUserId);
 
   await upsertVerifiedContactChannel({
     sourceChannel,

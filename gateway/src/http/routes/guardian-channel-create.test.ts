@@ -2,9 +2,8 @@ import { describe, it, expect, mock, beforeEach } from "bun:test";
 
 // --- Mocks ----------------------------------------------------------------
 
-const assistantDbQueryMock = mock(
-  (_sql: string, _params?: unknown[]) =>
-    Promise.resolve([] as Record<string, unknown>[]),
+const assistantDbQueryMock = mock((_sql: string, _params?: unknown[]) =>
+  Promise.resolve([] as Record<string, unknown>[]),
 );
 
 const createGuardianBindingMock = mock((_params: unknown) =>
@@ -27,9 +26,8 @@ mock.module("../../auth/guardian-bootstrap.js", () => ({
 }));
 
 // Import after mocks are registered
-const { createGuardianChannelHandler } = await import(
-  "./guardian-channel-create.js"
-);
+const { createGuardianChannelHandler } =
+  await import("./guardian-channel-create.js");
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -177,9 +175,7 @@ describe("POST /v1/contacts/guardian/channel", () => {
   });
 
   it("returns 500 when createGuardianBinding throws", async () => {
-    createGuardianBindingMock.mockRejectedValue(
-      new Error("DB write failed"),
-    );
+    createGuardianBindingMock.mockRejectedValue(new Error("DB write failed"));
 
     const handler = createGuardianChannelHandler();
     const res = await handler(

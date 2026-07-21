@@ -22,10 +22,7 @@ import { createHash } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
 
-import {
-  assistantDbQuery,
-  assistantDbRun,
-} from "../db/assistant-db-proxy.js";
+import { assistantDbQuery, assistantDbRun } from "../db/assistant-db-proxy.js";
 import { getGatewayDb } from "../db/connection.js";
 import { channelGuardianRateLimits as gwRateLimits } from "../db/schema.js";
 import { getLogger } from "../logger.js";
@@ -131,9 +128,7 @@ function parseTimestamps(json: string): number[] {
   }
 }
 
-function getRateLimit(
-  fromNumber: string,
-): RateLimitRecord | null {
+function getRateLimit(fromNumber: string): RateLimitRecord | null {
   const gwDb = getGatewayDb();
   const row = gwDb
     .select()
@@ -148,7 +143,10 @@ function getRateLimit(
     .get();
 
   return row
-    ? { attemptTimestampsJson: row.attemptTimestampsJson, lockedUntil: row.lockedUntil }
+    ? {
+        attemptTimestampsJson: row.attemptTimestampsJson,
+        lockedUntil: row.lockedUntil,
+      }
     : null;
 }
 
@@ -158,7 +156,9 @@ async function recordInvalidAttempt(fromNumber: string): Promise<void> {
 
   const existing = getRateLimit(fromNumber);
   const recentTimestamps = existing
-    ? parseTimestamps(existing.attemptTimestampsJson).filter((ts) => ts > cutoff)
+    ? parseTimestamps(existing.attemptTimestampsJson).filter(
+        (ts) => ts > cutoff,
+      )
     : [];
   recentTimestamps.push(now);
 
@@ -166,11 +166,12 @@ async function recordInvalidAttempt(fromNumber: string): Promise<void> {
   const newLockedUntil =
     recentTimestamps.length >= RATE_LIMIT_MAX_ATTEMPTS
       ? now + RATE_LIMIT_LOCKOUT_MS
-      : existing?.lockedUntil ?? null;
+      : (existing?.lockedUntil ?? null);
 
   // Gateway DB — atomic upsert
   const gwDb = getGatewayDb();
-  gwDb.insert(gwRateLimits)
+  gwDb
+    .insert(gwRateLimits)
     .values({
       id: crypto.randomUUID(),
       channel: "phone",
@@ -182,7 +183,11 @@ async function recordInvalidAttempt(fromNumber: string): Promise<void> {
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: [gwRateLimits.channel, gwRateLimits.actorExternalUserId, gwRateLimits.actorChatId],
+      target: [
+        gwRateLimits.channel,
+        gwRateLimits.actorExternalUserId,
+        gwRateLimits.actorChatId,
+      ],
       set: {
         attemptTimestampsJson: timestampsJson,
         lockedUntil: newLockedUntil,
@@ -213,7 +218,10 @@ async function recordInvalidAttempt(fromNumber: string): Promise<void> {
       ],
     );
   } catch (err) {
-    log.warn({ err }, "Assistant DB rate limit dual-write failed (best-effort)");
+    log.warn(
+      { err },
+      "Assistant DB rate limit dual-write failed (best-effort)",
+    );
   }
 }
 
@@ -222,7 +230,8 @@ async function resetRateLimit(fromNumber: string): Promise<void> {
 
   // Gateway DB
   const gwDb = getGatewayDb();
-  gwDb.update(gwRateLimits)
+  gwDb
+    .update(gwRateLimits)
     .set({
       attemptTimestampsJson: "[]",
       lockedUntil: null,
@@ -248,7 +257,10 @@ async function resetRateLimit(fromNumber: string): Promise<void> {
       [now, fromNumber, fromNumber],
     );
   } catch (err) {
-    log.warn({ err }, "Assistant DB rate limit reset dual-write failed (best-effort)");
+    log.warn(
+      { err },
+      "Assistant DB rate limit reset dual-write failed (best-effort)",
+    );
   }
 }
 

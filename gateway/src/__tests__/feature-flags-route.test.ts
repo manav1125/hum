@@ -475,7 +475,8 @@ describe("GET /v1/feature-flags handler", () => {
 
   test("string flag uses registry default when no override exists", async () => {
     if (existsSync(featureFlagStorePath)) rmSync(featureFlagStorePath);
-    if (existsSync(remoteFeatureFlagStorePath)) rmSync(remoteFeatureFlagStorePath);
+    if (existsSync(remoteFeatureFlagStorePath))
+      rmSync(remoteFeatureFlagStorePath);
     clearFeatureFlagStoreCache();
     clearRemoteFeatureFlagStoreCache();
 

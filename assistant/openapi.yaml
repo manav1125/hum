@@ -13056,6 +13056,8 @@ paths:
                 source:
                   default: cli
                   type: string
+                externalContent:
+                  type: string
               required:
                 - conversationId
                 - hint

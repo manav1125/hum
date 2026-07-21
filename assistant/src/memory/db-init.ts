@@ -81,6 +81,7 @@ import {
   migrateConversationHostAccess,
   migrateConversationInferenceProfileSession,
   migrateConversationLastNotifiedProfile,
+  migrateConversationProcessingFlags,
   migrateConversationsArchivedAt,
   migrateConversationsLastMessageAt,
   migrateConversationsSurfacedAt,
@@ -556,6 +557,7 @@ export function initializeDb(): void {
     migrateWorkItemHygiene,
     migrateLlmUsageAgentAttribution,
     migrateMissionSweepAt,
+    migrateConversationProcessingFlags,
   ];
 
   // Run each migration step, catching and logging individual failures so one

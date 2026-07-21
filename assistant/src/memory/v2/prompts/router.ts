@@ -22,11 +22,12 @@
  * same placeholder substitution applies to overrides.
  */
 
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 import { getLogger } from "../../../util/logger.js";
+import { isPathInsideRoot } from "../../path-containment.js";
 
 const log = getLogger("memory-v2-router-prompt");
 
@@ -143,6 +144,28 @@ export function resolveRouterPrompt(
   const resolvedPath = resolveOverridePath(overridePath, workspaceDir);
   let contents: string;
   try {
+    // Containment is a security boundary, not a convenience: the override
+    // field is writable by any settings-write principal and the loaded
+    // contents reach the LLM provider, so an out-of-workspace path would turn
+    // this loader into an arbitrary-file-read primitive for daemon-readable
+    // files (SSH keys, token stores). Require the resolved REAL path
+    // (symlinks followed) to stay inside the workspace root's real path.
+    const realWorkspaceDir = realpathSync(workspaceDir);
+    const realResolvedPath = realpathSync(resolvedPath);
+    if (!isPathInsideRoot(realResolvedPath, realWorkspaceDir)) {
+      log.warn(
+        {
+          configuredPath: overridePath,
+          resolvedPath,
+          realPath: realResolvedPath,
+          workspaceDir: realWorkspaceDir,
+          reason: "outside_workspace",
+          fallback: "bundled",
+        },
+        "router prompt override resolves outside the workspace root; using bundled prompt",
+      );
+      return renderRouterPrompt(opts);
+    }
     const stat = lstatSync(resolvedPath);
     if (!stat.isFile()) {
       log.warn(
@@ -170,7 +193,7 @@ export function resolveRouterPrompt(
       );
       return renderRouterPrompt(opts);
     }
-    contents = readFileSync(resolvedPath, "utf-8");
+    contents = readFileSync(realResolvedPath, "utf-8");
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     log.warn(

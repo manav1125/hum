@@ -1,5 +1,8 @@
 import { describe, it, expect } from "bun:test";
-import { normalizeEmailWebhook } from "./normalize.js";
+import {
+  evaluateSenderAuthentication,
+  normalizeEmailWebhook,
+} from "./normalize.js";
 
 describe("normalizeEmailWebhook", () => {
   function makePayload(overrides?: Record<string, unknown>) {
@@ -125,5 +128,136 @@ describe("normalizeEmailWebhook", () => {
     const payload = makePayload();
     const result = normalizeEmailWebhook(payload);
     expect(result!.event.raw).toEqual(payload);
+  });
+
+  it("carries senderAuthenticated=true onto the actor", () => {
+    const result = normalizeEmailWebhook(
+      makePayload({ senderAuthenticated: true }),
+    );
+    expect(result!.event.actor.senderAuthenticated).toBe(true);
+  });
+
+  it("carries senderAuthenticated=false onto the actor", () => {
+    const result = normalizeEmailWebhook(
+      makePayload({ senderAuthenticated: false }),
+    );
+    expect(result!.event.actor.senderAuthenticated).toBe(false);
+  });
+
+  it("omits senderAuthenticated when the payload has no verdict", () => {
+    const result = normalizeEmailWebhook(makePayload());
+    expect("senderAuthenticated" in result!.event.actor).toBe(false);
+  });
+
+  it("ignores a non-boolean senderAuthenticated (treated as no signal)", () => {
+    const result = normalizeEmailWebhook(
+      makePayload({ senderAuthenticated: "true" }),
+    );
+    expect("senderAuthenticated" in result!.event.actor).toBe(false);
+  });
+});
+
+describe("evaluateSenderAuthentication", () => {
+  const fromEmail = "alice@example.com";
+
+  it("returns undefined when no Authentication-Results header is present", () => {
+    expect(
+      evaluateSenderAuthentication({ authResults: undefined, fromEmail }),
+    ).toBeUndefined();
+    expect(
+      evaluateSenderAuthentication({ authResults: null, fromEmail }),
+    ).toBeUndefined();
+    expect(
+      evaluateSenderAuthentication({ authResults: "", fromEmail }),
+    ).toBeUndefined();
+  });
+
+  it("returns true when DMARC passes", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults: "mx.example.com; spf=pass; dkim=pass; dmarc=pass",
+        fromEmail,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false on a present non-pass DMARC verdict even with an aligned DKIM pass", () => {
+    // The DMARC verdict is authoritative — an aligned DKIM pass must NOT
+    // override a receiver-reported dmarc=fail.
+    for (const verdict of ["fail", "temperror", "permerror"]) {
+      expect(
+        evaluateSenderAuthentication({
+          authResults: `mx.example.com; dkim=pass header.d=example.com; dmarc=${verdict}`,
+          fromEmail,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("falls back to aligned DKIM when DMARC is none", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults:
+          "mx.example.com; dkim=pass header.d=example.com; dmarc=none",
+        fromEmail,
+      }),
+    ).toBe(true);
+  });
+
+  it("falls back to aligned DKIM when there is no DMARC verdict", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults: "mx.example.com; spf=pass; dkim=pass header.d=example.com",
+        fromEmail,
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts an organizational-domain (subdomain) aligned DKIM pass", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults: "mx; dkim=pass header.d=mail.example.com; dmarc=none",
+        fromEmail,
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false when the only DKIM pass is for an unaligned domain", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults: "mx; dkim=pass header.d=evil.com; dmarc=none",
+        fromEmail,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not let a DKIM pass in one method chunk authenticate an unaligned domain in another", () => {
+    // dkim=pass belongs to evil.com's chunk; the aligned example.com token
+    // sits in a separate (non-pass) chunk and must not be borrowed.
+    expect(
+      evaluateSenderAuthentication({
+        authResults:
+          "mx; dkim=fail header.d=example.com; dkim=pass header.d=evil.com; dmarc=none",
+        fromEmail,
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false when DKIM fails and there is no DMARC verdict", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults: "mx; spf=pass; dkim=fail header.d=example.com",
+        fromEmail,
+      }),
+    ).toBe(false);
+  });
+
+  it("is case-insensitive on the verdict tokens", () => {
+    expect(
+      evaluateSenderAuthentication({
+        authResults: "MX; DMARC=PASS",
+        fromEmail,
+      }),
+    ).toBe(true);
   });
 });

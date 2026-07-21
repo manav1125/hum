@@ -135,4 +135,14 @@ export interface ToolSetupContext extends SurfaceConversationContext {
    * turn start.
    */
   toolRoutedProfile?: string;
+  /**
+   * Conversation-scoped sticky activation set for wire tool pruning (same
+   * object as `SkillProjectionContext.wireLoadedToolNames`). The executor
+   * callback adds the canonical tool name here whenever an alias rewrite
+   * fires, so a tool reached through a hallucinated name becomes
+   * wire-visible on subsequent turns via the same activation path a
+   * `tool_search` marker takes. The rewrite itself already resolved against
+   * the UNPRUNED allowlist (`allowedToolNames` is computed before pruning).
+   */
+  wireLoadedToolNames?: Set<string>;
 }

@@ -26,7 +26,8 @@ export function extractEmailReplyBody(body: string): string {
     if (/^On .+ wrote:\s*$/.test(line)) break;
     if (/^-{2,}\s*(Original Message|Forwarded message)/i.test(line)) break;
     if (line === "-- " || line === "--") break;
-    if (/^(From|Sent|To|Subject):\s/i.test(line) && freshLines.length > 0) break;
+    if (/^(From|Sent|To|Subject):\s/i.test(line) && freshLines.length > 0)
+      break;
 
     freshLines.push(line);
   }

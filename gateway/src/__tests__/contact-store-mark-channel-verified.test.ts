@@ -316,7 +316,11 @@ describe("ContactStore.markChannelVerified", () => {
 
   test("refuses to mirror when assistant channel references a missing contact", async () => {
     // Channel present, parent contact absent — broken state, refuse silently.
-    seedAssistantChannel({ id: "ch1", contactId: "orphan", status: "unverified" });
+    seedAssistantChannel({
+      id: "ch1",
+      contactId: "orphan",
+      status: "unverified",
+    });
 
     const result = await new ContactStore().markChannelVerified("ch1");
     expect(result).toBeNull();
@@ -345,9 +349,7 @@ describe("ContactStore.markChannelVerified", () => {
     expect(second!.didWrite).toBe(false);
     expect(second!.channel.verifiedAt).toBe(first!.channel.verifiedAt);
     // Mirror INSERT OR IGNORE: still exactly one channel row, one contact row.
-    expect(
-      getGatewayDb().select().from(contactChannels).all().length,
-    ).toBe(1);
+    expect(getGatewayDb().select().from(contactChannels).all().length).toBe(1);
     expect(getGatewayDb().select().from(contacts).all().length).toBe(1);
   });
 

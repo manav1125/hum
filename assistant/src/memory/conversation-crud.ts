@@ -62,7 +62,7 @@ import { forkGraphMemoryState } from "./graph/graph-memory-state-store.js";
 import { indexMessageNow } from "./indexer.js";
 import { MEMORY_RETROSPECTIVE_SOURCES } from "./memory-retrospective-constants.js";
 import { forkRetrospectiveState } from "./memory-retrospective-state.js";
-import { rawExec, rawGet, rawRun } from "./raw-query.js";
+import { rawAll, rawExec, rawGet, rawRun } from "./raw-query.js";
 import {
   channelInboundEvents,
   conversations,
@@ -1899,6 +1899,89 @@ export function unarchiveConversation(id: string): boolean {
     id,
   );
   return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Crash-recovery processing flags
+//
+// `processing_started_at` is a persisted marker set by
+// `Conversation.setProcessing()` so an out-of-process reader (the daemon at
+// the next boot) can detect a turn a previous process was running when it
+// died. It is deliberately NOT the source of the client-facing `isProcessing`
+// signal (that comes from the in-memory `Conversation` object), so a stale
+// value never strands a client as "processing forever" — it exists purely as
+// input to the startup reconciler.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Persist the processing-start timestamp for a conversation. Called by
+ * `Conversation.setProcessing(true)`. Pass `null` to clear (turn ended); a
+ * clean turn end also closes any interruption streak, so the startup
+ * auto-resume budget refills by resetting `processing_resume_attempts` to 0.
+ */
+export function setConversationProcessingStartedAt(
+  id: string,
+  startedAt: number | null,
+): void {
+  if (startedAt == null) {
+    rawRun(
+      "UPDATE conversations SET processing_started_at = NULL, processing_resume_attempts = 0 WHERE id = ?",
+      id,
+    );
+    return;
+  }
+  rawRun(
+    "UPDATE conversations SET processing_started_at = ? WHERE id = ?",
+    startedAt,
+    id,
+  );
+}
+
+/**
+ * Clear every stale processing flag. Called at startup after the interrupted
+ * conversations have been read. Only touches `processing_started_at` — the
+ * `processing_resume_attempts` counter must survive so the resume cap holds
+ * across boots. Returns the number of rows cleared.
+ */
+export function clearStaleProcessingFlags(): number {
+  return rawRun(
+    "UPDATE conversations SET processing_started_at = NULL WHERE processing_started_at IS NOT NULL",
+  );
+}
+
+export interface InterruptedConversationRow {
+  id: string;
+  /** Consecutive startup auto-resume attempts since the last clean turn end. */
+  resumeAttempts: number;
+}
+
+/**
+ * Conversations whose persisted processing flag is still set. Read at daemon
+ * startup before {@link clearStaleProcessingFlags} so the interrupted-turn
+ * reconciler knows which conversations were mid-turn when the previous
+ * process exited.
+ */
+export function listInterruptedConversations(): InterruptedConversationRow[] {
+  return rawAll<{ id: string; processing_resume_attempts: number }>(
+    "SELECT id, processing_resume_attempts FROM conversations WHERE processing_started_at IS NOT NULL",
+  ).map((row) => ({
+    id: row.id,
+    resumeAttempts: row.processing_resume_attempts,
+  }));
+}
+
+/**
+ * Bump the persisted auto-resume counter for a conversation the startup
+ * reconciler is about to resume. Intentionally left set by
+ * {@link clearStaleProcessingFlags} — the counter must survive the flag clear
+ * so the resume cap holds across boots. Reset to 0 by the clean turn-end write
+ * in {@link setConversationProcessingStartedAt}.
+ */
+export function incrementProcessingResumeAttempts(id: string): void {
+  rawRun(
+    "UPDATE conversations SET processing_resume_attempts = processing_resume_attempts + 1 WHERE id = ?",
+    id,
+  );
 }
 
 /**

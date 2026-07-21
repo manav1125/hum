@@ -48,6 +48,5 @@ export const VELAY_ALLOWED_PATHS_HEADER = "X-Vellum-Velay-Allowed-Paths";
  * module load — the allowlist is static for the lifetime of the gateway
  * process.
  */
-export const VELAY_ALLOWED_PATHS_HEADER_VALUE = JSON.stringify(
-  VELAY_ALLOWED_PATHS,
-);
+export const VELAY_ALLOWED_PATHS_HEADER_VALUE =
+  JSON.stringify(VELAY_ALLOWED_PATHS);

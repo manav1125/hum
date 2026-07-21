@@ -46,12 +46,10 @@ mock.module("../ipc/socket-path.js", () => ({
   resolveIpcSocketPath: () => ({ path: "/dev/null" }),
 }));
 
-const { createPhoneGuardianBinding } = await import(
-  "./outbound-voice-verification-sync.js"
-);
-const { getMostRecentChannelGuardianTimestamp } = await import(
-  "./binding-helpers.js"
-);
+const { createPhoneGuardianBinding } =
+  await import("./outbound-voice-verification-sync.js");
+const { getMostRecentChannelGuardianTimestamp } =
+  await import("./binding-helpers.js");
 
 // ---------------------------------------------------------------------------
 // Fixture setup
@@ -449,5 +447,3 @@ describe("createPhoneGuardianBinding recency check", () => {
     expect(row?.status).toBe("active");
   });
 });
-
-

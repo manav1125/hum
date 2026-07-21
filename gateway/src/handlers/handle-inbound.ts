@@ -155,6 +155,13 @@ export async function handleInbound(
           timezoneOffsetSeconds: event.actor.timezoneOffsetSeconds,
           isStranger: event.actor.isStranger,
           isRestricted: event.actor.isRestricted,
+          // Email SPF/DKIM/DMARC verdict for the visible From: (see
+          // email/normalize.ts). Forwarded alongside the other trust signals
+          // so the runtime can collapse a forged sender out of the
+          // guardian/trusted-contact tiers. Omitted when unevaluable.
+          ...(event.actor.senderAuthenticated !== undefined
+            ? { senderAuthenticated: event.actor.senderAuthenticated }
+            : {}),
           ...(transportHints.length > 0 ? { hints: transportHints } : {}),
           ...(transportUxBrief ? { uxBrief: transportUxBrief } : {}),
           ...(options?.sourceMetadata ?? {}),

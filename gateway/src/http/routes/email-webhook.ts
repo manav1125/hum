@@ -242,7 +242,9 @@ export function createEmailWebhookHandler(
 
       if (!result.rejected) {
         const denied = result.runtimeResponse?.denied ?? false;
-        const deniedReason = denied ? (result.runtimeResponse?.reason ?? "unknown") : undefined;
+        const deniedReason = denied
+          ? (result.runtimeResponse?.reason ?? "unknown")
+          : undefined;
         tlog.info(
           {
             status: denied ? "denied" : "forwarded",

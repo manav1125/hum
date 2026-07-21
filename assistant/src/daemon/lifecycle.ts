@@ -125,6 +125,11 @@ import { initializePlugins } from "./external-plugins-bootstrap.js";
 import { backfillSlackInjectionTemplates } from "./handlers/config-slack-channel.js";
 import { installAssistantSymlink } from "./install-symlink.js";
 import {
+  MAX_RESUME_ATTEMPTS,
+  reconcileInterruptedConversations,
+  resumeInterruptedConversations,
+} from "./interrupted-turn-reconciler.js";
+import {
   maybeRebuildMemoryV2Concepts,
   rebuildBm25CorpusStatsAndReseedSkills,
 } from "./memory-v2-startup.js";
@@ -430,6 +435,10 @@ export async function runDaemon(): Promise<void> {
     // the HTTP server and config-based subsystems still start so the process
     // remains reachable for health checks and diagnostics.
     let dbReady = false;
+    // Conversations the previous process left mid-turn, selected for a
+    // background auto-resume once startup completes (providers + agent loop
+    // are up). Populated by the interrupted-turn reconciler below.
+    let conversationsToResume: string[] = [];
     try {
       initializeDb();
       dbReady = true;
@@ -524,6 +533,48 @@ export async function runDaemon(): Promise<void> {
         }
       } catch (err) {
         log.warn({ err }, "Guardian reconcile failed — continuing startup");
+      }
+
+      // Reconcile conversations left mid-turn by the previous shutdown. Their
+      // `processing_started_at` is still set even though the in-memory agent
+      // loop that owned the turn is gone. Stale flags are always cleared so no
+      // conversation is left with a lingering crash-recovery marker; when
+      // `conversations.resumeProcessingOnStartup` is enabled the reconciler
+      // also selects conversations to resume once startup completes (the wakes
+      // need providers + the agent loop, so they are kicked off near the end
+      // of `runDaemon`). Pure DB work here — safe alongside the other
+      // post-migration reconciles.
+      try {
+        // Read only the static resume toggle here — the main `config` load
+        // (with onboarding/platform overlays) happens later in startup, but
+        // this flag isn't overlay-dependent.
+        const resumeOnStartup =
+          loadConfig().conversations.resumeProcessingOnStartup;
+        const reconciled = reconcileInterruptedConversations(resumeOnStartup);
+        conversationsToResume = reconciled.resume;
+        if (reconciled.cleared > 0) {
+          log.info(
+            {
+              count: reconciled.cleared,
+              resuming: reconciled.resume.length,
+            },
+            "Cleared stale conversation processing flags from previous process",
+          );
+        }
+        if (reconciled.capped.length > 0) {
+          log.warn(
+            {
+              conversationIds: reconciled.capped,
+              maxAttempts: MAX_RESUME_ATTEMPTS,
+            },
+            "Left interrupted conversations un-resumed after repeated interruptions",
+          );
+        }
+      } catch (err) {
+        log.warn(
+          { err },
+          "Failed to reconcile interrupted conversations — continuing startup",
+        );
       }
 
       // One-time backfill of `relationship-state.json` for existing or
@@ -1509,6 +1560,20 @@ export async function runDaemon(): Promise<void> {
         cleanupPidFile();
       },
     });
+
+    // Resume conversations whose turn the previous process interrupted.
+    // Kicked off only now — the wakes run full agent-loop turns and need
+    // providers and the conversation store, which the startup sequence above
+    // just brought up. Fire-and-forget: the resumes run sequentially in the
+    // background while the daemon serves requests; per-conversation failures
+    // are logged inside `resumeInterruptedConversations`.
+    if (conversationsToResume.length > 0) {
+      log.info(
+        { count: conversationsToResume.length },
+        "Resuming conversations interrupted by the previous process",
+      );
+      void resumeInterruptedConversations(conversationsToResume);
+    }
 
     log.info(
       {

@@ -142,9 +142,7 @@ describe("downloadSlackFile", () => {
   });
 
   test("throws when redirect has no Location header", async () => {
-    fetchMock = mock(
-      async () => new Response(null, { status: 302 }),
-    );
+    fetchMock = mock(async () => new Response(null, { status: 302 }));
 
     const file = makeSlackFile();
 

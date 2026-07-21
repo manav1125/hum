@@ -51,6 +51,7 @@ import {
   getMessages,
   resolveOverrideProfile,
   setConversationHistoryStrippedAt,
+  setConversationProcessingStartedAt,
 } from "../memory/conversation-crud.js";
 import { getResolvedConversationDirPath } from "../memory/conversation-directories.js";
 import { ConversationGraphMemory } from "../memory/graph/conversation-graph-memory.js";
@@ -1338,6 +1339,24 @@ export class Conversation {
   setProcessing(value: boolean): void {
     const wasProcessing = this._processing;
     this._processing = value;
+    // Persist a durable mid-turn marker so the daemon at the NEXT boot can
+    // detect a turn a dead prior process was running (see
+    // `daemon/interrupted-turn-reconciler.ts`). Best-effort: a DB error here
+    // must never break the turn, and the marker is only ever read at startup.
+    // The clear (`null`) also resets the resume-attempt streak.
+    if (wasProcessing !== value) {
+      try {
+        setConversationProcessingStartedAt(
+          this.conversationId,
+          value ? Date.now() : null,
+        );
+      } catch (err) {
+        log.warn(
+          { err, conversationId: this.conversationId, value },
+          "conversation: failed to persist processing_started_at (non-fatal)",
+        );
+      }
+    }
     if (wasProcessing && !value) {
       void publishSyncInvalidation([
         conversationMetadataSyncTag(this.conversationId),

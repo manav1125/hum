@@ -18,10 +18,11 @@ import { getBindingByConversation } from "../memory/external-conversation-store.
 import type { PermissionPrompter } from "../permissions/prompter.js";
 import type { SecretPrompter } from "../permissions/secret-prompter.js";
 import type { Message, ToolDefinition } from "../providers/types.js";
+import { isWeakOpenModel } from "../providers/weak-open-model.js";
 import { assistantEventHub } from "../runtime/assistant-event-hub.js";
 import { registerConversationSender } from "../tools/browser/browser-screencast.js";
 import type { ToolExecutor } from "../tools/executor.js";
-import { getMcpToolDefinitions } from "../tools/registry.js";
+import { getMcpToolDefinitions, getTool } from "../tools/registry.js";
 import {
   ACTIVITY_SKIP_SET,
   injectActivityField,
@@ -184,6 +185,15 @@ export function createToolExecutor(
     const { name: executionName, input: executionInput } =
       resolveToolInvocationAlias(name, input, ctx.allowedToolNames);
 
+    // When an alias rewrite fired, record the canonical tool in the sticky
+    // wire-activation set so its definition stays wire-visible on subsequent
+    // turns — the history scan only sees the hallucinated name in the
+    // tool_use block, so without this the resolved tool would remain pruned.
+    // Same activation path a `tool_search` marker takes.
+    if (executionName !== name) {
+      ctx.wireLoadedToolNames?.add(executionName);
+    }
+
     // The execution-layer gate must run FIRST — before any interception or
     // pre-execution side effect (switch_inference_profile profile switching,
     // DoorDash step marking) — so a non-allowlisted tool can neither run nor
@@ -331,6 +341,9 @@ export function createToolExecutor(
         { ...rawToolInput },
         ctx.allowedToolNames,
       );
+      if (toolName !== rawToolName) {
+        ctx.wireLoadedToolNames?.add(toolName);
+      }
 
       if (!toolName) {
         return {
@@ -710,6 +723,36 @@ export function isToolActiveForContext(
 }
 
 /**
+ * Resolve the loaded skill tools to expose first-class to weak open models.
+ *
+ * Weak open models (MiniMax, Kimi, DeepSeek, GLM) fail to serialize the nested
+ * `skill_execute` envelope — a large value double-escaped as a JSON string in
+ * `input` — and either drop it or emit it bare. Exposing each loaded skill
+ * tool first-class lets the model fill the tool's own scalar params directly
+ * (single-escape). Capable models keep the envelope-only contract: this returns
+ * `[]` for them, so their wire surface is unchanged.
+ *
+ * Defs are resolved from the registry by name; `skillToolNames` come from the
+ * projection (skill tools only), filtered by `turnAllowed` so subagent
+ * allowlists and the tool exclude list still apply. The generic `skill_execute`
+ * tool remains available as a fallback for both model tiers.
+ */
+export function resolveFirstClassSkillDefs(
+  skillToolNames: Iterable<string>,
+  turnAllowed: ReadonlySet<string>,
+  resolvedModel: string | null | undefined,
+): ToolDefinition[] {
+  if (!isWeakOpenModel(resolvedModel)) return [];
+  const defs: ToolDefinition[] = [];
+  for (const name of skillToolNames) {
+    if (!turnAllowed.has(name)) continue;
+    const tool = getTool(name);
+    if (tool) defs.push(tool);
+  }
+  return defs;
+}
+
+/**
  * Build a resolveTools callback that merges base tool definitions with
  * dynamically projected skill tools on each agent turn. Also updates
  * allowedToolNames so newly-activated skill tools aren't blocked by
@@ -891,7 +934,31 @@ export function createResolveToolsCallback(
         "Wire tool pruning applied",
       );
     }
-    const baseDefs = injectActivityField(pruned.defs, ACTIVITY_SKIP_SET);
+    // Weak open models fail to serialize the nested `skill_execute` envelope
+    // (a large value double-escaped as a JSON string in `input`), so expose the
+    // loaded skill tools first-class — their scalar params are emitted directly
+    // (single-escape). The defs are resolved from the registry by name; the
+    // names are already in `turnAllowed`. The generic `skill_execute` stays
+    // available as a fallback, and capable models keep the envelope-only
+    // contract (this branch is skipped for them). Appended after wire pruning:
+    // skill tools are registry-owned (never MCP), so pruning does not apply to
+    // them, and the executor gate was computed from the unpruned set above.
+    const resolvedModel = resolveConversationAttribution({
+      conversationId: ctx.conversationId ?? "",
+      currentCallSite: ctx.currentCallSite,
+      currentTurnOverrideProfile: ctx.currentTurnOverrideProfile,
+    })?.resolvedModel;
+    const baseDefs = [
+      ...injectActivityField(pruned.defs, ACTIVITY_SKIP_SET),
+      ...injectActivityField(
+        resolveFirstClassSkillDefs(
+          projection.allowedToolNames,
+          turnAllowed,
+          resolvedModel,
+        ),
+        ACTIVITY_SKIP_SET,
+      ),
+    ];
 
     const config = getConfig();
     if (

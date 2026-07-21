@@ -47,6 +47,14 @@ interface InboundEventBase<C extends InboundChannelId> {
     isStranger?: boolean;
     /** Slack-specific: user is a guest / restricted account. */
     isRestricted?: boolean;
+    /**
+     * Email-specific: the receiving MTA's SPF/DKIM/DMARC verdict for the
+     * visible `From:` address (see `email/normalize.ts`
+     * `evaluateSenderAuthentication`). `false` marks a spoofable sender that
+     * must not inherit guardian/trusted-contact trust; omitted means the
+     * verdict was unevaluable (no signal).
+     */
+    senderAuthenticated?: boolean;
   };
   source: {
     updateId: string;

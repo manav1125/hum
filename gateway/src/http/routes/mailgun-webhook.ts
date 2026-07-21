@@ -7,7 +7,10 @@ import { credentialKey } from "../../credential-key.js";
 import { recordDenialReplyIfAllowed } from "../../db/denial-reply-rate-limiter.js";
 import { StringDedupCache } from "../../dedup-cache.js";
 import type { VellumEmailPayload } from "../../email/normalize.js";
-import { normalizeEmailWebhook } from "../../email/normalize.js";
+import {
+  evaluateSenderAuthentication,
+  normalizeEmailWebhook,
+} from "../../email/normalize.js";
 import { handleInbound } from "../../handlers/handle-inbound.js";
 import { getLogger } from "../../logger.js";
 import {
@@ -127,6 +130,44 @@ async function parseMailgunBody(
 }
 
 /**
+ * Extract the receiving MTA's `Authentication-Results` header from Mailgun's
+ * parsed inbound fields. Mailgun's `message-headers` field is a JSON array of
+ * `[name, value]` pairs in message order; the receiver prepends its own trace
+ * headers, so the FIRST `Authentication-Results` is the authentic
+ * Mailgun-stamped SPF/DKIM/DMARC verdict — a sender-forged duplicate sits lower
+ * in the original message and is ignored. Returns undefined when Mailgun sent
+ * no parseable headers (the caller then omits the signal, a no-op downstream).
+ */
+export function extractMailgunAuthResults(
+  fields: Record<string, string>,
+): string | undefined {
+  const rawHeaders = fields["message-headers"];
+  if (!rawHeaders) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawHeaders);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed)) {
+    return undefined;
+  }
+  for (const entry of parsed) {
+    if (
+      Array.isArray(entry) &&
+      typeof entry[0] === "string" &&
+      entry[0].toLowerCase() === "authentication-results" &&
+      typeof entry[1] === "string"
+    ) {
+      return entry[1];
+    }
+  }
+  return undefined;
+}
+
+/**
  * Normalize Mailgun inbound fields into a `VellumEmailPayload`.
  */
 function normalizeMailgunToVellumPayload(
@@ -139,6 +180,14 @@ function normalizeMailgunToVellumPayload(
   if (!fromRaw || !recipient || !messageId) return null;
 
   const parsed = parseEmailAddress(fromRaw);
+
+  // Bind the spoofable From: to the receiver's SPF/DKIM/DMARC verdict so a
+  // forged sender is downgraded out of the guardian/contact tiers. Omitted
+  // (not false) when unevaluable, so behavior is unchanged on missing data.
+  const senderAuthenticated = evaluateSenderAuthentication({
+    authResults: extractMailgunAuthResults(fields),
+    fromEmail: parsed.address,
+  });
 
   const inReplyTo = fields["In-Reply-To"] || undefined;
   const references = fields["References"] || undefined;
@@ -166,6 +215,7 @@ function normalizeMailgunToVellumPayload(
     references,
     conversationId,
     timestamp: fields["timestamp"],
+    ...(senderAuthenticated !== undefined ? { senderAuthenticated } : {}),
   };
 }
 

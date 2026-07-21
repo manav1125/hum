@@ -52,6 +52,27 @@ export const conversations = sqliteTable(
     inferenceProfileSessionId: text("inference_profile_session_id"),
     inferenceProfileExpiresAt: integer("inference_profile_expires_at"),
     lastNotifiedInferenceProfile: text("last_notified_inference_profile"),
+    /**
+     * Epoch-ms timestamp set when a turn begins processing and cleared on a
+     * clean turn end. Written by `Conversation.setProcessing()` so an
+     * out-of-process reader (the daemon at the next boot) can detect a turn a
+     * previous process was running when it died. The client-facing
+     * `isProcessing` flag is sourced from the in-memory `Conversation` object,
+     * not this column — this persisted marker is boot-time crash-recovery
+     * input only. NULL means no turn in flight.
+     */
+    processingStartedAt: integer("processing_started_at"),
+    /**
+     * Count of consecutive startup auto-resume attempts for this
+     * conversation's interrupted turn. Incremented by the startup reconciler
+     * (`daemon/interrupted-turn-reconciler.ts`) when it wakes a conversation
+     * whose `processing_started_at` survived the previous process; reset to 0
+     * on a clean turn end. Caps resume-loops for turns that repeatedly take
+     * the process down.
+     */
+    processingResumeAttempts: integer("processing_resume_attempts")
+      .notNull()
+      .default(0),
   },
   (table) => [
     index("idx_conversations_updated_at").on(table.updatedAt),

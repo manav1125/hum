@@ -73,7 +73,9 @@ interface GuardianRow {
  * Find the existing guardian contact (any channel). Returns null if no
  * guardian has been verified yet or if the guardian has no principal_id.
  */
-async function findGuardian(): Promise<(GuardianRow & { principal_id: string }) | null> {
+async function findGuardian(): Promise<
+  (GuardianRow & { principal_id: string }) | null
+> {
   const rows = await assistantDbQuery<GuardianRow>(
     `SELECT id, principal_id FROM contacts WHERE role = 'guardian' LIMIT 1`,
   );
@@ -91,9 +93,7 @@ export function createInboundRegisterHandler(
   _config: GatewayConfig,
   credentialCache: CredentialCache,
 ) {
-  return async function handleInboundRegister(
-    req: Request,
-  ): Promise<Response> {
+  return async function handleInboundRegister(req: Request): Promise<Response> {
     // ── Parse & validate request body ─────────────────────────────
 
     let rawBody: unknown;
@@ -164,9 +164,7 @@ export function createInboundRegisterHandler(
 
     const guardian = await findGuardian();
     if (!guardian) {
-      log.warn(
-        "No guardian contact exists — cannot auto-verify email channel",
-      );
+      log.warn("No guardian contact exists — cannot auto-verify email channel");
       return Response.json(
         {
           error:

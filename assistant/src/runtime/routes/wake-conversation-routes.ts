@@ -7,6 +7,7 @@
 import { z } from "zod";
 
 import { getConversation } from "../../memory/conversation-crud.js";
+import { wrapUntrustedContent } from "../../security/untrusted-content.js";
 import { wakeAgentForOpportunity } from "../agent-wake.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { NotFoundError } from "./errors.js";
@@ -16,6 +17,11 @@ const WakeConversationBody = z.object({
   conversationId: z.string().min(1),
   hint: z.string().min(1),
   source: z.string().default("cli"),
+  // Untrusted third-party data (email bodies, PR text, fetched pages,
+  // notification payloads). Fenced inside `<external_content>` so the model
+  // treats it as data, never instructions — the caller must never inline such
+  // data into `hint`, which is trusted framing the caller authored.
+  externalContent: z.string().optional(),
 });
 
 export const ROUTES: RouteDefinition[] = [
@@ -38,14 +44,31 @@ export const ROUTES: RouteDefinition[] = [
       reason: z.string().optional(),
     }),
     handler: async ({ body }) => {
-      const { conversationId, hint, source } = WakeConversationBody.parse(body);
+      const { conversationId, hint, source, externalContent } =
+        WakeConversationBody.parse(body);
 
       const conversation = getConversation(conversationId);
       if (!conversation) {
         throw new NotFoundError(`Conversation not found: ${conversationId}`);
       }
 
-      return wakeAgentForOpportunity({ conversationId, hint, source });
+      // When the caller supplies untrusted third-party data, fence it inside
+      // an `<external_content>` boundary and append it after the trusted hint.
+      // The wake already sandwiches the hint between static user bookends
+      // (the anti-injection pattern in agent-wake); the fence adds an explicit
+      // structural marker so the fenced portion is unambiguously data.
+      const effectiveHint =
+        externalContent !== undefined
+          ? `${hint}\n\n${wrapUntrustedContent(externalContent, {
+              source: "webhook",
+            })}`
+          : hint;
+
+      return wakeAgentForOpportunity({
+        conversationId,
+        hint: effectiveHint,
+        source,
+      });
     },
   },
 ];
