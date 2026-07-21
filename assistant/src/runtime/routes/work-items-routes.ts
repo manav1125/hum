@@ -147,6 +147,59 @@ export const workItemSchema = z.object({
         "sweep scored the item but was not sure (clients render the amber " +
         '"?" triage card).',
     ),
+  // --- Pre-run assessment (work-items/work-item-assessment.ts) -------------
+  // Written before the execution turn: what Cue understood the task to be, and
+  // whether it can actually do it with the context this item carries. All null
+  // on an item that has never been dispatched (never assessed = runs as before).
+  assessmentVerdict: z
+    .enum(["execute", "clarify", "not_ai_task", "blocked"])
+    .nullable()
+    .describe(
+      '"execute" = Cue understands it and has what it needs (see ' +
+        'assessmentPlan); "clarify" = under-specified, surface ' +
+        "assessmentQuestion and let the answer land as task context; " +
+        '"not_ai_task" = a human action — do NOT offer a Run affordance as ' +
+        'the primary action; "blocked" = assessmentMissing names the one ' +
+        "thing Cue lacks (offer the fix, e.g. link the connector or attach " +
+        "the file). null = not assessed.",
+    ),
+  assessmentUnderstanding: z
+    .string()
+    .nullable()
+    .describe(
+      "One plain sentence naming what Cue understood the task to be — show " +
+        "this so the user can catch a misread before the work happens.",
+    ),
+  assessmentPlan: z
+    .string()
+    .nullable()
+    .describe(
+      "1-2 lines, plain words, of what Cue will actually do. Set with " +
+        'verdict "execute"; shown as/just before the run starts.',
+    ),
+  assessmentQuestion: z
+    .string()
+    .nullable()
+    .describe(
+      'Exactly ONE question. Set with verdict "clarify"; the item is parked ' +
+        "until answered (answering it as task context re-opens assessment).",
+    ),
+  assessmentMissing: z
+    .string()
+    .nullable()
+    .describe(
+      "The one specific missing thing — a connector, a file, an access. Set " +
+        'with verdict "blocked".',
+    ),
+  assessmentConfidence: z
+    .number()
+    .nullable()
+    .describe("The assessor's 0-1 confidence in its verdict."),
+  assessmentAt: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Epoch ms the stored verdict was produced."),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -1065,6 +1118,18 @@ export const ROUTES: RouteDefinition[] = [
           fromStatus: z.string().nullable(),
           toStatus: z.string().nullable(),
           actor: z.string().nullable(),
+          detail: z
+            .string()
+            .nullable()
+            .describe(
+              "Human-readable narration for this row, when it carries any: " +
+                'the assessment verdict on an "assessed" row ("Understood: … ' +
+                'Plan: …"), or one step of the run on a "run_step" row ' +
+                '("Reading Q2-deck.pdf from project knowledge"). Always ' +
+                "derived from something that really happened — a verdict Cue " +
+                "produced or a tool call it started. null on lifecycle-only " +
+                "rows (created / status_changed / run_started / …).",
+            ),
           at: z.number().int(),
         }),
       ),

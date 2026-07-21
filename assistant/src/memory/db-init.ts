@@ -239,6 +239,7 @@ import {
   migrateUsageLlmCallCount,
   migrateVoiceInviteColumns,
   migrateVoiceInviteDisplayMetadata,
+  migrateWorkItemAssessment,
   migrateWorkItemAutoRunEligibility,
   migrateWorkItemHygiene,
   migrateWorkItemLiveness,
@@ -560,6 +561,7 @@ export function initializeDb(): void {
     migrateMissionSweepAt,
     migrateConversationProcessingFlags,
     migrateAutomations,
+    migrateWorkItemAssessment,
   ];
 
   // Run each migration step, catching and logging individual failures so one

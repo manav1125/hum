@@ -211,6 +211,43 @@ export interface WorkItemStatusChanged {
   };
 }
 
+/**
+ * Server push — broadcast when the pre-run assessment produces a verdict for a
+ * work item (work-items/work-item-assessment.ts). Emitted BEFORE the execution
+ * turn starts, so a client can show what Cue understood and what it plans to
+ * do as the run begins — or, for a non-`execute` verdict, show the question /
+ * missing thing on an item that deliberately did not run.
+ *
+ * The same values are persisted on the work item (`assessment*` fields on the
+ * work-item wire shape), so a client that missed the push reads them from the
+ * item; this event exists so live surfaces don't have to poll.
+ */
+export interface WorkItemAssessed {
+  type: "work_item_assessed";
+  workItemId: string;
+  /**
+   * - `execute`     — Cue understands it and has what it needs; `plan` is set.
+   * - `clarify`     — under-specified; `question` carries the ONE thing to ask.
+   * - `not_ai_task` — a human action; surfaces should not offer a Run button.
+   * - `blocked`     — `missing` names the one thing Cue lacks.
+   */
+  verdict: "execute" | "clarify" | "not_ai_task" | "blocked";
+  /** One plain sentence: what Cue understood the task to be. */
+  understanding: string | null;
+  /** 1–2 plain-words lines of what Cue will do. Set with `execute`. */
+  plan: string | null;
+  /** Exactly one question. Set with `clarify`. */
+  question: string | null;
+  /** The one specific missing thing. Set with `blocked`. */
+  missing: string | null;
+  /** The assessor's 0–1 confidence. */
+  confidence: number;
+  /** Ready-to-render human line combining the fields above. */
+  narration: string;
+  /** ISO-8601 timestamp of the verdict. */
+  assessedAt: string;
+}
+
 /** Server push — broadcast when a task run creates a conversation. */
 export interface TaskRunConversationCreated {
   type: "task_run_conversation_created";
@@ -263,6 +300,7 @@ export type _WorkItemsServerMessages =
   | WorkItemApprovePermissionsResponse
   | WorkItemCancelResponse
   | WorkItemStatusChanged
+  | WorkItemAssessed
   | WorkItemCompleted
   | TaskRunConversationCreated
   | TasksChanged;

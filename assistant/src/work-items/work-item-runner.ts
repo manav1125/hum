@@ -42,6 +42,14 @@ import {
   clearApprovalTimeouts,
   consumeApprovalTimeouts,
 } from "./work-item-approval-timeouts.js";
+import {
+  ASSESSING_PROGRESS_NOTE,
+  assessWorkItem,
+  buildCapabilitySnapshot,
+  isAssessmentGateEnabled,
+  narrationForAssessment,
+  type WorkItemAssessment,
+} from "./work-item-assessment.js";
 import { recordWorkItemEvent } from "./work-item-events.js";
 import {
   getWorkItem,
@@ -153,6 +161,12 @@ export function broadcastWorkItemStatus(id: string): void {
 export function progressNoteForToolStart(
   toolName: string,
   input: Record<string, unknown>,
+  /**
+   * Project-knowledge paths → labels for this run (see
+   * {@link buildWorkItemRunContext}). Lets a file read of an attached
+   * reference say WHY it is being read rather than naming a temp path.
+   */
+  knowledgeByPath?: ReadonlyMap<string, string>,
 ): string {
   if (toolName === "web_search") {
     const query = typeof input.query === "string" ? input.query.trim() : "";
@@ -170,25 +184,64 @@ export function progressNoteForToolStart(
     }
     return "Reading a page";
   }
+  // File reads/edits: name the file, and say where it came from when it is one
+  // of the project's attached reference files. Both derived from the real tool
+  // input — an unrecognized path just reads as its basename.
   if (
-    toolName === "skill_execute" &&
-    typeof input.activity === "string" &&
-    input.activity.trim().length > 0
+    toolName === "file_read" ||
+    toolName === "file_edit" ||
+    toolName === "file_write" ||
+    toolName === "host_file_read"
   ) {
-    return input.activity.trim();
+    const path =
+      typeof input.path === "string"
+        ? input.path
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : "";
+    if (path) {
+      const basename = path.split("/").pop() ?? path;
+      const label =
+        knowledgeByPath?.get(path) ?? knowledgeByPath?.get(basename);
+      const verb = toolName === "file_write" ? "Writing" : "Reading";
+      return label
+        ? `${verb} ${label} from project knowledge`
+        : `${verb} ${basename}`;
+    }
+  }
+  // Most tools carry an `activity` field — the agent's own one-line,
+  // non-technical statement of what it is doing and why. That is strictly
+  // better narration than "Running <tool name>", and it is the agent's real
+  // words about a call it really made, so nothing is invented by using it.
+  if (typeof input.activity === "string" && input.activity.trim().length > 0) {
+    const activity = input.activity.trim();
+    return activity.length > 120 ? `${activity.slice(0, 117)}...` : activity;
   }
   return `Running ${toolName.replace(/_/g, " ")}`;
 }
 
 /**
+ * Most narration lines a single run may append to its trail. A long agent loop
+ * must leave a readable story behind, not thousands of rows — past the cap the
+ * live progress note still updates, only the durable trail stops growing.
+ */
+const MAX_TRAIL_STEPS_PER_RUN = 40;
+
+/**
  * Stamp the latest activity line onto a running work item, deduplicated so a
  * burst of identical tool starts doesn't spam DB writes. Best-effort — a
  * failed stamp never breaks the run.
+ *
+ * Each DISTINCT line is also appended to the item's trail as a `run_step`
+ * event, which is what turns "Running file read" into a readable account of
+ * what the run actually did. Both the live note and the trail row are derived
+ * from a tool call that really started.
  */
 function stampProgressNote(
   workItemId: string,
   note: string,
   lastNoteRef: { current: string | null },
+  trailRef?: { count: number },
 ): void {
   if (note === lastNoteRef.current) return;
   lastNoteRef.current = note;
@@ -200,6 +253,15 @@ function stampProgressNote(
       { err: String(err), workItemId },
       "failed to stamp work-item progress note (ignored)",
     );
+  }
+  if (trailRef && trailRef.count < MAX_TRAIL_STEPS_PER_RUN) {
+    trailRef.count += 1;
+    recordWorkItemEvent({
+      workItemId,
+      kind: "run_step",
+      actor: "runner",
+      detail: note,
+    });
   }
 }
 
@@ -267,7 +329,28 @@ export function buildWorkItemContextPreamble(
   item: WorkItem,
   agent?: Pick<Agent, "name" | "domain" | "charter"> | null,
 ): string {
+  return buildWorkItemRunContext(item, agent).preamble;
+}
+
+/**
+ * The run's assembled context, plus the index the run trail needs to narrate
+ * honestly. Same work as {@link buildWorkItemContextPreamble} — the knowledge
+ * files are materialized exactly once — with the resolved attachments handed
+ * back so a mid-run `file_read` of one of those paths can be described as
+ * "Reading <label> from project knowledge" instead of "Running file read".
+ */
+export interface WorkItemRunContext {
+  preamble: string;
+  /** Absolute path AND basename → the knowledge entry's display label. */
+  knowledgeByPath: Map<string, string>;
+}
+
+export function buildWorkItemRunContext(
+  item: WorkItem,
+  agent?: Pick<Agent, "name" | "domain" | "charter"> | null,
+): WorkItemRunContext {
   const sections: string[] = [];
+  const knowledgeByPath = new Map<string, string>();
 
   // Agent mandate: when the item runs as a staffed role, lead with who it's
   // acting as and its standing charter, so the run is carried out in that
@@ -290,9 +373,14 @@ export function buildWorkItemContextPreamble(
 
       // Project knowledge — never let a knowledge failure break the run.
       try {
-        const knowledge = buildProjectKnowledgeSection(
-          ensureProjectKnowledgeFiles(project.id),
-        );
+        const entries = ensureProjectKnowledgeFiles(project.id);
+        for (const entry of entries) {
+          if (entry.kind !== "file" || !entry.absPath) continue;
+          knowledgeByPath.set(entry.absPath, entry.label);
+          const basename = entry.absPath.split("/").pop();
+          if (basename) knowledgeByPath.set(basename, entry.label);
+        }
+        const knowledge = buildProjectKnowledgeSection(entries);
         if (knowledge) sections.push(knowledge);
       } catch (err) {
         log.warn(
@@ -308,24 +396,104 @@ export function buildWorkItemContextPreamble(
     sections.push(`## Task context\n${taskContext}`);
   }
 
-  if (sections.length === 0) return "";
-  return [
-    "You are working a task inside a project. Use the following context to inform how you carry it out.",
-    "",
-    sections.join("\n\n"),
-    "",
-    "---",
-    "",
-  ].join("\n");
+  if (sections.length === 0) return { preamble: "", knowledgeByPath };
+  return {
+    preamble: [
+      "You are working a task inside a project. Use the following context to inform how you carry it out.",
+      "",
+      sections.join("\n\n"),
+      "",
+      "---",
+      "",
+    ].join("\n"),
+    knowledgeByPath,
+  };
+}
+
+interface AssessmentGate {
+  assessment: WorkItemAssessment | null;
+  /** True when the run must NOT proceed — the item parks with the verdict. */
+  holdRun: boolean;
 }
 
 /**
- * Run a work item in the background. Returns immediately after validation.
- * The actual execution happens asynchronously.
+ * Run the pre-run assessment and decide whether the execution turn happens.
  *
- * When called from a chat tool (e.g. Telegram), required tools are
- * auto-approved since the user explicitly requested execution.
+ * Two deliberate properties:
+ *
+ *  - **Fail open.** A missing verdict (no provider, timeout, malformed reply,
+ *    assessment disabled) is never a reason to hold a run back.
+ *  - **Ask once, never nag.** A non-`execute` verdict holds the run the FIRST
+ *    time it is produced. Because the item then parks and only an explicit
+ *    human run can un-park it, a second dispatch on unchanged inputs is the
+ *    user saying "I've seen the question — go anyway", so the run proceeds
+ *    (with the verdict still stamped for surfaces to show).
  */
+async function evaluateAssessmentGate(
+  item: WorkItem,
+  contextPreamble: string,
+): Promise<AssessmentGate> {
+  const priorRunNote = item.lastRunStatus
+    ? `the previous run of this task ${item.lastRunStatus}`
+    : null;
+  const { assessment, alreadySurfaced } = await assessWorkItem({
+    item,
+    contextPreamble,
+    capabilities: buildCapabilitySnapshot(),
+    priorRunNote,
+  });
+  if (!assessment || assessment.verdict === "execute") {
+    return { assessment, holdRun: false };
+  }
+  return {
+    assessment,
+    holdRun: isAssessmentGateEnabled() && !alreadySurfaced,
+  };
+}
+
+/**
+ * Return an item the assessment held back to the queue, parked, with the
+ * verdict already persisted by the assessor. Parking (rather than failing) is
+ * the honest state: nothing went wrong, Cue simply needs something before it
+ * can do this well — and parked items never auto-run, so only an explicit
+ * human run restarts it.
+ */
+function parkForAssessment(
+  workItemId: string,
+  fromStatus: WorkItemStatus,
+  assessment: WorkItemAssessment | null,
+): void {
+  // The assessment call is in-flight for a second or two; if the item was
+  // cancelled meanwhile, that decision wins — never resurrect it to `queued`.
+  const current = getWorkItem(workItemId);
+  if (current && current.status !== "running") {
+    log.info(
+      { workItemId, status: current.status },
+      "assessment verdict arrived after the item left the run — not parking",
+    );
+    return;
+  }
+  const note = assessment ? narrationForAssessment(assessment) : null;
+  updateWorkItem(
+    workItemId,
+    {
+      status: "queued",
+      autoRunEligibility: "parked",
+      lastProgressNote: note,
+    },
+    { actor: "assessor" },
+  );
+  // The status transition itself is recorded by the store's single choke point
+  // (actor "assessor"); the `assessed` row the assessor already wrote carries
+  // the narration, so nothing extra is appended here.
+  log.info(
+    { workItemId, fromStatus, verdict: assessment?.verdict },
+    "work item held before its run by the pre-run assessment",
+  );
+  broadcastWorkItemStatus(workItemId);
+  broadcastMessage({ type: "tasks_changed" } as ServerMessage);
+}
+
 /** Human one-liner for a budget hard-stop, stamped on `lastProgressNote`. */
 function budgetStopReason(b: BudgetCheckResult): string {
   const usd = (c: number | null) => `$${((c ?? 0) / 100).toFixed(2)}`;
@@ -333,6 +501,20 @@ function budgetStopReason(b: BudgetCheckResult): string {
   return `Stopped: ${who} reached its budget — ${usd(b.spentCents)} of ${usd(b.capCents)} spent. Raise the cap to continue.`;
 }
 
+/**
+ * Run a work item in the background. Returns immediately after validation;
+ * the execution itself happens asynchronously.
+ *
+ * When called from a chat tool (e.g. Telegram), required tools are
+ * auto-approved since the user explicitly requested execution.
+ *
+ * The async phase begins with the pre-run assessment (see
+ * {@link evaluateAssessmentGate}): the item is already `running` at that point,
+ * and a non-`execute` verdict returns it to the queue, parked, with its
+ * question / missing thing surfaced. Dispatch stays synchronous — every caller
+ * gets its `{ success }` immediately, exactly as before — which is why the
+ * verdict is applied one step INSIDE the run rather than before it.
+ */
 export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   const workItem = getWorkItem(workItemId);
   if (!workItem) {
@@ -404,7 +586,8 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // Resolved once up front so every turn of the run uses the same model, and
   // so its charter can lead the run preamble.
   const runAgent = getAgentByAssignee(workItem.assignee);
-  const contextPreamble = buildWorkItemContextPreamble(workItem, runAgent);
+  const { preamble: contextPreamble, knowledgeByPath } =
+    buildWorkItemRunContext(workItem, runAgent);
   const pinnedModel = runAgent?.model ?? null;
   // Guardrails agent tool scopes: when the run agent carries `tool_scopes`,
   // the run conversation gets a tool filter — out-of-scope domain tools are
@@ -489,8 +672,32 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
   // Distinct tool names the run's agent loop started — the tool-mix signal
   // the act ledger's minutes-saved heuristic reads at completion.
   const toolsUsed = new Set<string>();
+  // Narration rows this run has appended to the item's trail (capped).
+  const trailSteps = { count: 0 };
   void (async () => {
     try {
+      // Pre-run assessment: understand the task, decide whether Cue can
+      // actually do it with the context this run will receive, and narrate the
+      // plan — BEFORE spending a full agent turn. A non-`execute` verdict
+      // returns the item to the queue (parked) with its question / missing
+      // thing surfaced, instead of producing plausible garbage. Fails open:
+      // when the assessment can't be made, the run proceeds exactly as before.
+      stampProgressNote(workItemId, ASSESSING_PROGRESS_NOTE, lastProgressNote);
+      const gate = await evaluateAssessmentGate(workItem, contextPreamble);
+      if (gate.holdRun) {
+        parkForAssessment(workItemId, workItem.status, gate.assessment);
+        return;
+      }
+      if (gate.assessment) {
+        // The plan is the item's first honest activity line: what Cue is about
+        // to do, in the user's words, before any tool has run.
+        stampProgressNote(
+          workItemId,
+          narrationForAssessment(gate.assessment),
+          lastProgressNote,
+        );
+      }
+
       const result = await runTask(
         { taskId: workItem.taskId, workingDir: process.cwd(), approvedTools },
         async (conversationId, message, taskRunId) => {
@@ -554,8 +761,13 @@ export function runWorkItemInBackground(workItemId: string): RunWorkItemResult {
                 toolsUsed.add(e.toolName);
                 stampProgressNote(
                   workItemId,
-                  progressNoteForToolStart(e.toolName, e.input ?? {}),
+                  progressNoteForToolStart(
+                    e.toolName,
+                    e.input ?? {},
+                    knowledgeByPath,
+                  ),
                   lastProgressNote,
+                  trailSteps,
                 );
               }
             },

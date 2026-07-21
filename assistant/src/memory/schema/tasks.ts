@@ -86,6 +86,20 @@ export const workItems = sqliteTable("work_items", {
   completedElsewhere: integer("completed_elsewhere").notNull().default(0),
   autoFiledBy: text("auto_filed_by"),
   autoFileConfidence: real("auto_file_confidence"),
+  // 314-work-item-assessment. The pre-run assessment verdict: what Cue
+  // understood the task to be, and whether it can actually do it with the
+  // context it has. Written by work-items/work-item-assessment.ts before the
+  // execution turn; null verdict = never assessed (pre-314 behaviour).
+  // assessmentInputHash is the cache key — a matching hash reuses the stored
+  // verdict instead of paying for another LLM call.
+  assessmentVerdict: text("assessment_verdict"), // 'execute' | 'clarify' | 'not_ai_task' | 'blocked'
+  assessmentUnderstanding: text("assessment_understanding"),
+  assessmentPlan: text("assessment_plan"), // set with 'execute'
+  assessmentQuestion: text("assessment_question"), // set with 'clarify' — exactly one question
+  assessmentMissing: text("assessment_missing"), // set with 'blocked' — the one missing thing
+  assessmentConfidence: real("assessment_confidence"),
+  assessmentInputHash: text("assessment_input_hash"),
+  assessmentAt: integer("assessment_at"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
@@ -256,10 +270,14 @@ export const workItemEvents = sqliteTable("work_item_events", {
   workItemId: text("work_item_id")
     .notNull()
     .references(() => workItems.id, { onDelete: "cascade" }),
-  kind: text("kind").notNull(), // 'created' | 'status_changed' | 'run_started' | 'run_finished' | 'approved'
+  kind: text("kind").notNull(), // 'created' | 'status_changed' | 'run_started' | 'run_finished' | 'approved' | 'assessed' | 'run_step'
   fromStatus: text("from_status"),
   toStatus: text("to_status"),
-  actor: text("actor"), // 'user' | 'runner' | 'triage' | 'system'
+  actor: text("actor"), // 'user' | 'runner' | 'triage' | 'assessor' | 'system'
+  // 314-work-item-assessment: human-readable narration for this row ("Reading
+  // Q2-deck.pdf from project knowledge"). Set on 'assessed' and 'run_step'
+  // rows; null on lifecycle-only rows.
+  detail: text("detail"),
   at: integer("at").notNull(),
 });
 

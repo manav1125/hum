@@ -81,6 +81,35 @@ export interface WorkItem {
    * the item but wasn't sure, which clients render as the amber "?" card.
    */
   autoFileConfidence: number | null;
+  /**
+   * Pre-run assessment (314). Before the execution turn, Cue judges whether it
+   * understands the task and can actually do it with the context it has:
+   * 'execute' (with a plain-words {@link assessmentPlan}), 'clarify' (with the
+   * single {@link assessmentQuestion} it needs answered), 'not_ai_task' (a
+   * human action — the UI should stop offering a misleading Run), or 'blocked'
+   * (with the one {@link assessmentMissing} thing it lacks). null = never
+   * assessed; the run proceeds exactly as it did pre-314 (fail-open).
+   */
+  assessmentVerdict: string | null;
+  /** One plain sentence naming what Cue understood the task to be. */
+  assessmentUnderstanding: string | null;
+  /** 1–2 lines, plain words, of what Cue will actually do (verdict 'execute'). */
+  assessmentPlan: string | null;
+  /** Exactly ONE high-value question (verdict 'clarify'). */
+  assessmentQuestion: string | null;
+  /** The one specific missing thing — a connector, a file, an access (verdict 'blocked'). */
+  assessmentMissing: string | null;
+  /** The assessor's 0–1 confidence in its verdict. */
+  assessmentConfidence: number | null;
+  /**
+   * Hash of everything the verdict was derived from (title, notes, task
+   * context, project brief + knowledge, capabilities). The cache key: a
+   * matching hash reuses the stored verdict instead of paying for another LLM
+   * call, so repeated dispatches and re-renders cost nothing.
+   */
+  assessmentInputHash: string | null;
+  /** Epoch ms the stored verdict was produced. */
+  assessmentAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -149,6 +178,14 @@ export function createWorkItem(opts: {
     completedElsewhere: 0,
     autoFiledBy: null,
     autoFileConfidence: null,
+    assessmentVerdict: null,
+    assessmentUnderstanding: null,
+    assessmentPlan: null,
+    assessmentQuestion: null,
+    assessmentMissing: null,
+    assessmentConfidence: null,
+    assessmentInputHash: null,
+    assessmentAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -244,6 +281,14 @@ export function updateWorkItem(
       | "completedElsewhere"
       | "autoFiledBy"
       | "autoFileConfidence"
+      | "assessmentVerdict"
+      | "assessmentUnderstanding"
+      | "assessmentPlan"
+      | "assessmentQuestion"
+      | "assessmentMissing"
+      | "assessmentConfidence"
+      | "assessmentInputHash"
+      | "assessmentAt"
     >
   >,
   opts?: { actor?: string },

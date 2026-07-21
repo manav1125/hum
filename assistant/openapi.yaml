@@ -32576,6 +32576,59 @@ paths:
                             The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
                             item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep
                             scored the item but was not sure (clients render the amber "?" triage card).
+                        assessmentVerdict:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - execute
+                                - clarify
+                                - not_ai_task
+                                - blocked
+                            - type: "null"
+                          description:
+                            '"execute" = Cue understands it and has what it needs (see assessmentPlan); "clarify" = under-specified,
+                            surface assessmentQuestion and let the answer land as task context; "not_ai_task" = a human
+                            action — do NOT offer a Run affordance as the primary action; "blocked" = assessmentMissing
+                            names the one thing Cue lacks (offer the fix, e.g. link the connector or attach the file).
+                            null = not assessed.'
+                        assessmentUnderstanding:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            One plain sentence naming what Cue understood the task to be — show this so the user can catch a misread
+                            before the work happens.
+                        assessmentPlan:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            1-2 lines, plain words, of what Cue will actually do. Set with verdict "execute"; shown as/just before the
+                            run starts.
+                        assessmentQuestion:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            Exactly ONE question. Set with verdict "clarify"; the item is parked until answered (answering it as task
+                            context re-opens assessment).
+                        assessmentMissing:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The one specific missing thing — a connector, a file, an access. Set with verdict "blocked".
+                        assessmentConfidence:
+                          anyOf:
+                            - type: number
+                            - type: "null"
+                          description: The assessor's 0-1 confidence in its verdict.
+                        assessmentAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Epoch ms the stored verdict was produced.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -32611,6 +32664,13 @@ paths:
                         - completedElsewhere
                         - autoFiledBy
                         - autoFileConfidence
+                        - assessmentVerdict
+                        - assessmentUnderstanding
+                        - assessmentPlan
+                        - assessmentQuestion
+                        - assessmentMissing
+                        - assessmentConfidence
+                        - assessmentAt
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -40494,6 +40554,59 @@ paths:
                             The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
                             item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep
                             scored the item but was not sure (clients render the amber "?" triage card).
+                        assessmentVerdict:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - execute
+                                - clarify
+                                - not_ai_task
+                                - blocked
+                            - type: "null"
+                          description:
+                            '"execute" = Cue understands it and has what it needs (see assessmentPlan); "clarify" = under-specified,
+                            surface assessmentQuestion and let the answer land as task context; "not_ai_task" = a human
+                            action — do NOT offer a Run affordance as the primary action; "blocked" = assessmentMissing
+                            names the one thing Cue lacks (offer the fix, e.g. link the connector or attach the file).
+                            null = not assessed.'
+                        assessmentUnderstanding:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            One plain sentence naming what Cue understood the task to be — show this so the user can catch a misread
+                            before the work happens.
+                        assessmentPlan:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            1-2 lines, plain words, of what Cue will actually do. Set with verdict "execute"; shown as/just before the
+                            run starts.
+                        assessmentQuestion:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            Exactly ONE question. Set with verdict "clarify"; the item is parked until answered (answering it as task
+                            context re-opens assessment).
+                        assessmentMissing:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The one specific missing thing — a connector, a file, an access. Set with verdict "blocked".
+                        assessmentConfidence:
+                          anyOf:
+                            - type: number
+                            - type: "null"
+                          description: The assessor's 0-1 confidence in its verdict.
+                        assessmentAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description: Epoch ms the stored verdict was produced.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -40529,6 +40642,13 @@ paths:
                         - completedElsewhere
                         - autoFiledBy
                         - autoFileConfidence
+                        - assessmentVerdict
+                        - assessmentUnderstanding
+                        - assessmentPlan
+                        - assessmentQuestion
+                        - assessmentMissing
+                        - assessmentConfidence
+                        - assessmentAt
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -40707,6 +40827,59 @@ paths:
                           The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
                           item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep scored
                           the item but was not sure (clients render the amber "?" triage card).
+                      assessmentVerdict:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - execute
+                              - clarify
+                              - not_ai_task
+                              - blocked
+                          - type: "null"
+                        description:
+                          '"execute" = Cue understands it and has what it needs (see assessmentPlan); "clarify" = under-specified,
+                          surface assessmentQuestion and let the answer land as task context; "not_ai_task" = a human
+                          action — do NOT offer a Run affordance as the primary action; "blocked" = assessmentMissing
+                          names the one thing Cue lacks (offer the fix, e.g. link the connector or attach the file).
+                          null = not assessed.'
+                      assessmentUnderstanding:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          One plain sentence naming what Cue understood the task to be — show this so the user can catch a misread
+                          before the work happens.
+                      assessmentPlan:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          1-2 lines, plain words, of what Cue will actually do. Set with verdict "execute"; shown as/just before the
+                          run starts.
+                      assessmentQuestion:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Exactly ONE question. Set with verdict "clarify"; the item is parked until answered (answering it as task
+                          context re-opens assessment).
+                      assessmentMissing:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The one specific missing thing — a connector, a file, an access. Set with verdict "blocked".
+                      assessmentConfidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: The assessor's 0-1 confidence in its verdict.
+                      assessmentAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms the stored verdict was produced.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -40742,6 +40915,13 @@ paths:
                       - completedElsewhere
                       - autoFiledBy
                       - autoFileConfidence
+                      - assessmentVerdict
+                      - assessmentUnderstanding
+                      - assessmentPlan
+                      - assessmentQuestion
+                      - assessmentMissing
+                      - assessmentConfidence
+                      - assessmentAt
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -41005,6 +41185,16 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        detail:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            'Human-readable narration for this row, when it carries any: the assessment verdict on an "assessed" row
+                            ("Understood: … Plan: …"), or one step of the run on a "run_step" row ("Reading Q2-deck.pdf
+                            from project knowledge"). Always derived from something that really happened — a verdict Cue
+                            produced or a tool call it started. null on lifecycle-only rows (created / status_changed /
+                            run_started / …).'
                         at:
                           type: integer
                           minimum: -9007199254740991
@@ -41016,6 +41206,7 @@ paths:
                         - fromStatus
                         - toStatus
                         - actor
+                        - detail
                         - at
                       additionalProperties: false
                   cycleTimeMs:

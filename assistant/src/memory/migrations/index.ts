@@ -306,6 +306,7 @@ export { migrateLlmUsageAgentAttribution } from "./308-llm-usage-agent-attributi
 export { migrateMissionSweepAt } from "./309-mission-sweep-at.js";
 export { migrateConversationProcessingFlags } from "./310-conversation-processing-flags.js";
 export { migrateAutomations } from "./313-automations.js";
+export { migrateWorkItemAssessment } from "./314-work-item-assessment.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

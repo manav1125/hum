@@ -36,7 +36,16 @@ export type WorkItemEventKind =
   // The owner marked the item done as "completed elsewhere" — the work
   // happened outside Cue. Distinct from "approved" (which signs off on a run
   // Cue performed) so the act/ledger never credits Cue with the outcome.
-  | "completed_elsewhere";
+  | "completed_elsewhere"
+  // 314: the pre-run assessment produced a verdict for this item. `detail`
+  // carries the human narration ("Cue understood … and will …" / "Cue needs
+  // you: <question>"); the structured verdict lives on the work-item row
+  // (assessment_*) and in the `work_item_assessed` push.
+  | "assessed"
+  // 314: one legible step of a live run — `detail` is the human-readable
+  // narration line derived from the tool call that just started ("Reading
+  // Q2-deck.pdf from project knowledge"). Deduplicated and capped per run.
+  | "run_step";
 
 export interface WorkItemEvent {
   id: string;
@@ -45,6 +54,12 @@ export interface WorkItemEvent {
   fromStatus: string | null;
   toStatus: string | null;
   actor: string | null;
+  /**
+   * Human-readable narration for this row, when the row carries any
+   * ('assessed' / 'run_step'). Always derived from something that really
+   * happened — a verdict Cue produced, or a tool call it actually started.
+   */
+  detail: string | null;
   at: number;
 }
 
@@ -55,6 +70,8 @@ export function recordWorkItemEvent(opts: {
   fromStatus?: string;
   toStatus?: string;
   actor?: string;
+  /** Human narration for the row; see {@link WorkItemEvent.detail}. */
+  detail?: string;
 }): void {
   try {
     const db = getDb();
@@ -66,6 +83,7 @@ export function recordWorkItemEvent(opts: {
         fromStatus: opts.fromStatus ?? null,
         toStatus: opts.toStatus ?? null,
         actor: opts.actor ?? null,
+        detail: opts.detail ?? null,
         at: Date.now(),
       })
       .run();

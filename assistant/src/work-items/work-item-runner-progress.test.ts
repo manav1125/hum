@@ -55,6 +55,50 @@ describe("progressNoteForToolStart", () => {
     ).toBe("Compiling the weekly digest");
   });
 
+  test("file reads name the file instead of the tool", () => {
+    expect(
+      progressNoteForToolStart("file_read", { path: "/tmp/wk/notes/plan.md" }),
+    ).toBe("Reading plan.md");
+    expect(
+      progressNoteForToolStart("file_write", { path: "/tmp/wk/out/draft.md" }),
+    ).toBe("Writing draft.md");
+  });
+
+  test("a project-knowledge file read says where the file came from", () => {
+    const knowledge = new Map([
+      ["/tmp/wk/knowledge/abc123.pdf", "Q2-deck.pdf"],
+      ["abc123.pdf", "Q2-deck.pdf"],
+    ]);
+    expect(
+      progressNoteForToolStart(
+        "file_read",
+        { path: "/tmp/wk/knowledge/abc123.pdf" },
+        knowledge,
+      ),
+    ).toBe("Reading Q2-deck.pdf from project knowledge");
+    // A path that is not project knowledge is still named honestly — never
+    // labelled as knowledge it isn't.
+    expect(
+      progressNoteForToolStart(
+        "file_read",
+        { path: "/tmp/other.pdf" },
+        knowledge,
+      ),
+    ).toBe("Reading other.pdf");
+  });
+
+  test("any tool's own activity line beats a generic label", () => {
+    expect(
+      progressNoteForToolStart("bash", {
+        activity: "Converting the deck to PDF",
+      }),
+    ).toBe("Converting the deck to PDF");
+    const long = "x".repeat(200);
+    expect(
+      progressNoteForToolStart("bash", { activity: long }).length,
+    ).toBeLessThanOrEqual(120);
+  });
+
   test("other tools get a humanized 'Running …' label", () => {
     expect(progressNoteForToolStart("file_read", {})).toBe("Running file read");
     expect(progressNoteForToolStart("bash", {})).toBe("Running bash");
