@@ -119,14 +119,21 @@ for (const fx of FIXTURES) {
 process.stderr.write("\ndispatched; waiting for assessments…\n");
 
 // Poll until every item has been assessed (or we give up on it).
-const deadline = Date.now() + 5 * 60_000;
+const deadline = Date.now() + 8 * 60_000;
 const seen = new Map<string, Record<string, unknown>>();
 while (Date.now() < deadline && seen.size < created.length) {
   await new Promise((r) => setTimeout(r, 5_000));
-  for (const { id } of created) {
-    if (seen.has(id)) continue;
-    const item = await api("GET", `work-items/${id}`).catch(() => null);
-    const got = item?.item ?? item;
+  // Fetch in parallel: polling serially took longer than the poll interval,
+  // which is what made the first run look like a mass fail-open.
+  const pending = created.filter(({ id }) => !seen.has(id));
+  const items = await Promise.all(
+    pending.map(({ id }) =>
+      api("GET", `work-items/${id}`)
+        .then((r) => [id, r?.item ?? r] as const)
+        .catch(() => [id, null] as const),
+    ),
+  );
+  for (const [id, got] of items) {
     if (got?.assessmentVerdict) seen.set(id, got);
   }
   process.stderr.write(`${seen.size}/${created.length} `);

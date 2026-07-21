@@ -132,6 +132,13 @@ export interface CapabilitySnapshot {
 const CAPABILITY_PROBES: ReadonlyArray<{
   line: string;
   segments: readonly string[];
+  /**
+   * Extra check for capabilities whose tool can be registered while the thing
+   * it talks to is not set up. Absent = the tool existing is proof enough.
+   * Throwing counts as not configured — an overclaim is worse than an
+   * underclaim, because the assessor turns claims into promises.
+   */
+  configured?: () => boolean;
 }> = [
   {
     line: "search the web and read web pages",
@@ -154,8 +161,20 @@ const CAPABILITY_PROBES: ReadonlyArray<{
     segments: ["file"],
   },
   {
-    line: "place and take phone calls, and send messages on connected channels",
-    segments: ["call", "message", "sms", "send"],
+    // Gated on real credentials, not on the tool existing. A registered call
+    // tool with no Twilio account behind it made the assessor promise to
+    // "call the dentist's office and speak with the receptionist" — the exact
+    // kind of confident, undeliverable plan this whole pass exists to stop.
+    line: "place and take phone calls",
+    segments: ["call", "phone", "sms"],
+    configured: () => {
+      const twilio = getConfig().twilio;
+      return Boolean(twilio?.accountSid && twilio?.phoneNumber);
+    },
+  },
+  {
+    line: "send messages on the channels the user has connected",
+    segments: ["message", "send"],
   },
   {
     line: "recall the user's personal memory — people, preferences, past work",
@@ -197,9 +216,19 @@ export function buildCapabilitySnapshot(): CapabilitySnapshot {
     segments = new Set<string>();
   }
 
-  const lines = CAPABILITY_PROBES.filter((probe) =>
-    probe.segments.some((segment) => segments.has(segment)),
-  ).map((probe) => probe.line);
+  const lines = CAPABILITY_PROBES.filter((probe) => {
+    if (!probe.segments.some((segment) => segments.has(segment))) return false;
+    if (!probe.configured) return true;
+    try {
+      return probe.configured();
+    } catch (err) {
+      log.debug(
+        { err: String(err), line: probe.line },
+        "capability probe unreadable — treating as not configured",
+      );
+      return false;
+    }
+  }).map((probe) => probe.line);
 
   let connectors: string[] = [];
   try {

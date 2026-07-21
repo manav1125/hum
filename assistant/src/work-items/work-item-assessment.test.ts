@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, test } from "bun:test";
 
+import { getConfig } from "../config/loader.js";
 import { uploadAttachment } from "../memory/attachments-store.js";
 import { getDb } from "../memory/db-connection.js";
 import { initializeDb } from "../memory/db-init.js";
@@ -228,6 +229,19 @@ describe("buildCapabilitySnapshot", () => {
     // is registered; the shape and stability are what matter here.
     expect(Array.isArray(snapshot.lines)).toBe(true);
     expect(snapshot.fingerprint).toBe(buildCapabilitySnapshot().fingerprint);
+  });
+
+  // Regression: the snapshot used to claim phone calls whenever a call tool
+  // was registered, so with no Twilio account configured the assessor read
+  // "Call the dentist to book a cleaning" as execute and planned to speak to
+  // the receptionist. A capability the assessor states becomes a promise.
+  test("does not claim phone calls when no phone account is configured", () => {
+    const twilio = getConfig().twilio;
+    const configured = Boolean(twilio?.accountSid && twilio?.phoneNumber);
+    const claimsCalls = buildCapabilitySnapshot().lines.some((line) =>
+      line.includes("phone calls"),
+    );
+    expect(claimsCalls).toBe(configured);
   });
 });
 
