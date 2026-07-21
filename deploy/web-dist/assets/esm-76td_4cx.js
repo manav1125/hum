@@ -1,2 +1,0 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-C5c95jAt.js","assets/dist-C5-6iGwl.js"])))=>i.map(i=>d[i]);
-import{_ as e}from"./react-vendor-B_AHUFZ_.js";import{i as t}from"./dist-C5-6iGwl.js";var n;(function(e){e.Light=`light`,e.Dark=`dark`})(n||={});var r=t(`SafeArea`,{web:()=>e(()=>import(`./web-C5c95jAt.js`).then(e=>new e.SafeAreaWeb),__vite__mapDeps([0,1]))});export{r as SafeArea};
