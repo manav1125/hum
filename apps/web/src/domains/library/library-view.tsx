@@ -118,7 +118,7 @@ export interface LibraryViewProps {
 export function LibraryView({
   assistantId,
   assistantName,
-  title,
+  title: _title,
   onNewConversation,
   onOpenDocument,
   onOpenApp,

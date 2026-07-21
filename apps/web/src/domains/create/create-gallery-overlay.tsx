@@ -182,9 +182,13 @@ function SelectedBadge() {
 
 /**
  * Round-4 frame 59 (mobile): EXACT / INSPIRED rides as a CORNER chip on the
- * thumbnail, never inline with the name. Fix rule applied: every chip gets an
- * opaque / blurred-glass background so it stays legible over any thumbnail
- * content (the mock's translucent INSPIRED chip vanished into title bars).
+ * thumbnail, never inline with the name.
+ *
+ * 4.1 corner-badge rule (all badges over thumbnails): badges are always
+ * OPAQUE, and the chip tone follows the ART, not the fidelity — solid light
+ * chip (#F4F4F6, ink text) on dark artwork; dark glass chip
+ * (rgba(10,12,18,.78) + blur + hairline) on light or busy artwork. Never a
+ * translucent white chip over content. Both fidelities use the same rule.
  */
 const cornerChipBase: React.CSSProperties = {
   fontFamily: mono,
@@ -195,26 +199,68 @@ const cornerChipBase: React.CSSProperties = {
   lineHeight: 1.3,
 };
 
-const cornerChipTones: Record<"exact" | "inspired", React.CSSProperties> = {
-  exact: { background: "#F4F4F6", color: "#050508" },
-  inspired: {
-    background: "rgba(24,28,40,.88)",
-    color: "#E7E7EE",
-    border: "1px solid rgba(255,255,255,.16)",
+/** Chip tone bucket, decided by the artwork behind the badge. */
+export type CornerChipTone = "light-chip" | "dark-glass";
+
+const cornerChipTones: Record<CornerChipTone, React.CSSProperties> = {
+  /** Solid light chip — for DARK artwork. */
+  "light-chip": { background: "#F4F4F6", color: "#050508" },
+  /** Dark glass chip — for LIGHT / BUSY artwork (frame 59's drawn values). */
+  "dark-glass": {
+    background: "rgba(10,12,18,.78)",
+    color: "#F4F4F6",
+    border: "1px solid rgba(255,255,255,.18)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
   },
 };
 
+/**
+ * Tone-by-art: if the template exposes a background/dominant color, its
+ * luminance decides the chip — dark art gets the solid light chip, light art
+ * the dark glass chip. Unknown/unparseable art defaults to DARK GLASS (the
+ * correct read for the light/busy slide artwork dominating the library).
+ * Exported for tests.
+ */
+export function chipToneForArt(
+  artColor: string | null | undefined,
+): CornerChipTone {
+  const lum = hexLuminance(artColor);
+  if (lum == null) return "dark-glass";
+  return lum < 0.5 ? "light-chip" : "dark-glass";
+}
+
+/** Perceptual luminance 0–1 for #rgb / #rrggbb; null when unparseable. */
+function hexLuminance(color: string | null | undefined): number | null {
+  if (!color) return null;
+  const hex = color.trim().replace(/^#/, "");
+  const full =
+    hex.length === 3
+      ? hex
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
 function CornerFidelityBadge({
   fidelity,
   mode,
+  artColor,
   onChange,
 }: {
   fidelity: TemplateFidelity;
   mode: "exact" | "inspired";
+  /** The artwork's background/dominant color (template palette bg). */
+  artColor?: string | null;
   onChange: (m: "exact" | "inspired") => void;
 }) {
+  const tone = cornerChipTones[chipToneForArt(artColor)];
   if (fidelity === "both") {
     // ONE corner chip (the frame's rule — never a wide toggle over the
     // thumbnail): it shows the active mode; tapping it flips exact/inspired
@@ -233,7 +279,7 @@ function CornerFidelityBadge({
           top: 8,
           right: 8,
           ...cornerChipBase,
-          ...cornerChipTones[mode],
+          ...tone,
           cursor: "pointer",
         }}
       >
@@ -248,7 +294,7 @@ function CornerFidelityBadge({
         top: 8,
         right: 8,
         ...cornerChipBase,
-        ...cornerChipTones[fidelity === "exact" ? "exact" : "inspired"],
+        ...tone,
       }}
     >
       {fidelity === "exact" ? "EXACT" : "INSPIRED"}
@@ -1077,11 +1123,13 @@ function SlideCard({
           inBrand={previewInBrand}
           visible={preview}
         />
-        {/* Corner mono badge (mobile) — opaque chip over any thumbnail. */}
+        {/* Corner mono badge (mobile) — always opaque; tone follows the ART
+            (template bg luminance), not the fidelity (round-4.1 rule). */}
         {isMobile ? (
           <CornerFidelityBadge
             fidelity={t.fidelity}
             mode={fidelityMode}
+            artColor={t.palette.bg}
             onChange={onFidelity}
           />
         ) : null}

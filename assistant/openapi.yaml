@@ -25763,6 +25763,13 @@ paths:
                             - type: string
                             - type: "null"
                           description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                        sweepAt:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly cadence; null = legacy
+                            rolling-interval scheduling (clock-less)
                         budgetCents:
                           anyOf:
                             - type: integer
@@ -25893,6 +25900,7 @@ paths:
                         - mode
                         - brief
                         - cadence
+                        - sweepAt
                         - budgetCents
                         - spentCents
                         - continuationSummary
@@ -25978,6 +25986,13 @@ paths:
                           - type: string
                           - type: "null"
                         description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                      sweepAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly cadence; null = legacy
+                          rolling-interval scheduling (clock-less)
                       budgetCents:
                         anyOf:
                           - type: integer
@@ -26028,6 +26043,7 @@ paths:
                       - mode
                       - brief
                       - cadence
+                      - sweepAt
                       - budgetCents
                       - spentCents
                       - continuationSummary
@@ -26073,6 +26089,10 @@ paths:
                     - hourly
                     - daily
                     - weekly
+                sweepAt:
+                  description: Sweep clock "HH:mm" (24h, daemon-local tz); default 08:00
+                  type: string
+                  pattern: ^([01]?\d|2[0-3]):[0-5]\d$
                 budgetCents:
                   type: integer
                   minimum: 0
@@ -26179,6 +26199,13 @@ paths:
                           - type: string
                           - type: "null"
                         description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                      sweepAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly cadence; null = legacy
+                          rolling-interval scheduling (clock-less)
                       budgetCents:
                         anyOf:
                           - type: integer
@@ -26309,6 +26336,7 @@ paths:
                       - mode
                       - brief
                       - cadence
+                      - sweepAt
                       - budgetCents
                       - spentCents
                       - continuationSummary
@@ -26389,6 +26417,13 @@ paths:
                           - type: string
                           - type: "null"
                         description: "Cycle cadence: hourly | daily | weekly; null = daily"
+                      sweepAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly cadence; null = legacy
+                          rolling-interval scheduling (clock-less)
                       budgetCents:
                         anyOf:
                           - type: integer
@@ -26439,6 +26474,7 @@ paths:
                       - mode
                       - brief
                       - cadence
+                      - sweepAt
                       - budgetCents
                       - spentCents
                       - continuationSummary
@@ -26505,6 +26541,12 @@ paths:
                         - daily
                         - weekly
                     - type: "null"
+                sweepAt:
+                  anyOf:
+                    - type: string
+                      pattern: ^([01]?\d|2[0-3]):[0-5]\d$
+                    - type: "null"
+                  description: Sweep clock "HH:mm" (24h, daemon-local tz); null reverts to clock-less rolling-interval scheduling
                 budgetCents:
                   anyOf:
                     - type: integer
@@ -37409,7 +37451,7 @@ paths:
           required: false
           schema:
             type: string
-          description: "Group by: actor, provider, model, conversation, call_site, inference_profile, schedule (required)"
+          description: "Group by: actor, provider, model, conversation, call_site, inference_profile, schedule, agent (required)"
         - name: scheduleId
           in: query
           required: false

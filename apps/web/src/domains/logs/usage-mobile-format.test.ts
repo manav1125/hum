@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
+import { UsageRequestError } from "@/domains/logs/usage-api";
 import {
   buildSpendBars,
+  buildSpendGroupRows,
   formatTokensCompact,
   humanizeUsageActor,
+  isGroupByUnsupported,
   spendCaption,
 } from "@/domains/logs/usage-mobile-format";
-import type { UsageDayBucket } from "@/domains/logs/usage-types";
+import type {
+  UsageDayBucket,
+  UsageGroupBreakdown,
+} from "@/domains/logs/usage-types";
 
 function bucket(partial: Partial<UsageDayBucket>): UsageDayBucket {
   return {
@@ -39,6 +45,122 @@ describe("humanizeUsageActor", () => {
   });
 });
 
+function breakdownRow(
+  partial: Partial<UsageGroupBreakdown> & { group: string },
+): UsageGroupBreakdown {
+  return {
+    groupId: null,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheCreationTokens: 0,
+    totalCacheReadTokens: 0,
+    totalEstimatedCostUsd: 0,
+    eventCount: 0,
+    ...partial,
+  };
+}
+
+describe("isGroupByUnsupported", () => {
+  test("only a 400 from the usage endpoint reads as unsupported", () => {
+    expect(isGroupByUnsupported(new UsageRequestError(400, "bad"))).toBe(true);
+    // 5xx / network failures must surface, not silently degrade to BY ACTOR.
+    expect(isGroupByUnsupported(new UsageRequestError(500, "boom"))).toBe(
+      false,
+    );
+    expect(isGroupByUnsupported(new UsageRequestError(0, "offline"))).toBe(
+      false,
+    );
+    expect(isGroupByUnsupported(new Error("nope"))).toBe(false);
+    expect(isGroupByUnsupported(undefined)).toBe(false);
+  });
+});
+
+describe("buildSpendGroupRows", () => {
+  test("agent mode keeps daemon labels verbatim (roster names + Cue)", () => {
+    const rows = buildSpendGroupRows(
+      [
+        breakdownRow({
+          group: "Ops",
+          groupId: "agent-ops",
+          groupKey: "agent-ops",
+          totalEstimatedCostUsd: 2,
+          eventCount: 4,
+        }),
+        breakdownRow({
+          group: "Cue",
+          groupKey: null,
+          totalEstimatedCostUsd: 1,
+          eventCount: 9,
+        }),
+      ],
+      "agent",
+    );
+    expect(rows.map((r) => r.label)).toEqual(["Ops", "Cue"]);
+    expect(rows[0].key).toBe("agent-ops");
+    // null groupKey/groupId falls back to the display label as key.
+    expect(rows[1].key).toBe("Cue");
+    expect(rows[0].widthPct).toBe(100);
+    expect(rows[1].widthPct).toBe(50);
+  });
+
+  test("actor mode humanizes subsystem ids", () => {
+    const rows = buildSpendGroupRows(
+      [
+        breakdownRow({
+          group: "main_agent",
+          totalEstimatedCostUsd: 1,
+          eventCount: 1,
+        }),
+      ],
+      "actor",
+    );
+    expect(rows[0].label).toBe("Main agent");
+  });
+
+  test("drops empty groups, sorts by spend, caps at 5", () => {
+    const rows = buildSpendGroupRows(
+      [
+        breakdownRow({ group: "empty" }),
+        ...[1, 2, 3, 4, 5, 6].map((n) =>
+          breakdownRow({
+            group: `agent-${n}`,
+            totalEstimatedCostUsd: n,
+            eventCount: 1,
+          }),
+        ),
+      ],
+      "agent",
+    );
+    expect(rows).toHaveLength(5);
+    expect(rows.map((r) => r.label)).toEqual([
+      "agent-6",
+      "agent-5",
+      "agent-4",
+      "agent-3",
+      "agent-2",
+    ]);
+  });
+
+  test("zero-cost-but-active groups keep a visible 4% floor", () => {
+    const rows = buildSpendGroupRows(
+      [
+        breakdownRow({
+          group: "Ops",
+          totalEstimatedCostUsd: 10,
+          eventCount: 1,
+        }),
+        breakdownRow({
+          group: "Growth",
+          totalEstimatedCostUsd: 0.01,
+          eventCount: 1,
+        }),
+      ],
+      "agent",
+    );
+    expect(rows[1].widthPct).toBe(4);
+  });
+});
+
 describe("buildSpendBars", () => {
   const week = [
     bucket({ date: "2026-07-13", totalEstimatedCostUsd: 0.4, eventCount: 40 }),
@@ -58,6 +180,17 @@ describe("buildSpendBars", () => {
     expect(bars[3].heightPct).toBe(0);
   });
 
+  test("round-4.1: true-$0 days are hairline ticks, never the floor", () => {
+    const bars = buildSpendBars(week, "daily");
+    // Nonzero days keep the floor and are NOT ticks.
+    expect(bars[0].zeroTick).toBe(false);
+    expect(bars[2].zeroTick).toBe(false);
+    expect(bars[2].heightPct).toBe(6);
+    // The true-$0 day is a tick with no floored height.
+    expect(bars[3].zeroTick).toBe(true);
+    expect(bars[3].heightPct).toBe(0);
+  });
+
   test("all-zero window has no peak and no phantom bars", () => {
     const bars = buildSpendBars(
       [bucket({ date: "2026-07-13" }), bucket({ date: "2026-07-14" })],
@@ -65,6 +198,8 @@ describe("buildSpendBars", () => {
     );
     expect(bars.every((b) => !b.isPeak)).toBe(true);
     expect(bars.every((b) => b.heightPct === 0)).toBe(true);
+    // Every $0 bucket renders the hairline tick.
+    expect(bars.every((b) => b.zeroTick)).toBe(true);
   });
 
   test("weekday labels for a week, day-of-month for a month", () => {

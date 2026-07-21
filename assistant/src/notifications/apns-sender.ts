@@ -181,6 +181,24 @@ export interface ApnsAlert {
   data?: Record<string, unknown>;
 }
 
+/**
+ * Build the APNs JSON payload for an alert. Custom `data` keys are spread
+ * at the TOP LEVEL next to `aps` — that placement is the wire contract
+ * with the iOS shell: `CueNotificationRouter.deepLinkURL` reads
+ * `userInfo["path"]` (and friends) directly off the payload root, not from
+ * a nested container. Exported for the contract test.
+ */
+export function buildApnsPayload(alert: ApnsAlert): Record<string, unknown> {
+  return {
+    aps: {
+      alert: { title: alert.title, body: alert.body },
+      sound: "default",
+      ...(alert.threadId ? { "thread-id": alert.threadId } : {}),
+    },
+    ...(alert.data ?? {}),
+  };
+}
+
 export type ApnsSendResult =
   | { ok: true }
   | {
@@ -220,14 +238,7 @@ export async function sendApnsAlert(
     return { ok: false, reason: `jwt_mint_failed: ${String(err)}` };
   }
 
-  const body = JSON.stringify({
-    aps: {
-      alert: { title: alert.title, body: alert.body },
-      sound: "default",
-      ...(alert.threadId ? { "thread-id": alert.threadId } : {}),
-    },
-    ...(alert.data ?? {}),
-  });
+  const body = JSON.stringify(buildApnsPayload(alert));
 
   return await new Promise<ApnsSendResult>((resolve) => {
     let settled = false;

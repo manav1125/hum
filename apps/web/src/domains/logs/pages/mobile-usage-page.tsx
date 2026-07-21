@@ -7,14 +7,18 @@
  * DATA (all real, same endpoints as the desktop Usage tab):
  *  · tiles  — usage/totals (eventCount / totalEstimatedCostUsd / token split)
  *  · chart  — usage/daily buckets (hourly for Today, daily otherwise), tz'd
- *  · bars   — usage/breakdown?groupBy=actor (subsystem actors like
- *             "main_agent" — per-AGENT attribution doesn't exist in the
- *             usage store yet, so the section is honestly titled BY ACTOR)
+ *  · bars   — usage/breakdown?groupBy=agent (real roster-agent attribution,
+ *             stamped by the daemon at usage-record time; unattributed house
+ *             work reads as "Cue"). Old daemons without the dimension 400 —
+ *             the section falls back to groupBy=actor with its original
+ *             BY ACTOR title + footnote.
  *
  * The frame's chart bug (percentage-height bars inside auto-height flex
  * columns rendered 0-tall) is built CORRECTLY here: the bar rail has a fixed
  * height, columns are `height:100%; justify-content:flex-end`, and bar
- * heights come from `buildSpendBars` (% of peak with a visible floor).
+ * heights come from `buildSpendBars` (% of peak with a 6% floor for nonzero
+ * buckets; a TRUE-$0 bucket renders a 2px mono hairline tick, never the
+ * floor — round-4.1).
  */
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -28,8 +32,9 @@ import {
 } from "@/domains/logs/usage-api";
 import {
   buildSpendBars,
+  buildSpendGroupRows,
   formatTokensCompact,
-  humanizeUsageActor,
+  isGroupByUnsupported,
   spendCaption,
   type SpendBar,
 } from "@/domains/logs/usage-mobile-format";
@@ -92,6 +97,28 @@ export function Mv3UsagePage() {
       }),
   });
 
+  const agentQuery = useQuery({
+    queryKey: [
+      "usage-breakdown",
+      assistantId,
+      window_.from,
+      window_.to,
+      "agent",
+      null,
+    ],
+    queryFn: () =>
+      fetchUsageBreakdown(assistantId, {
+        from: window_.from,
+        to: window_.to,
+        groupBy: "agent",
+      }),
+    // An old daemon rejects the dimension outright — retrying won't help.
+    retry: (failureCount, error) =>
+      !isGroupByUnsupported(error) && failureCount < 2,
+  });
+  // Old-daemon fallback: only fires when groupBy=agent came back 400.
+  const agentUnsupported =
+    agentQuery.isError && isGroupByUnsupported(agentQuery.error);
   const actorQuery = useQuery({
     queryKey: [
       "usage-breakdown",
@@ -107,7 +134,10 @@ export function Mv3UsagePage() {
         to: window_.to,
         groupBy: "actor",
       }),
+    enabled: agentUnsupported,
   });
+  const groupMode = agentUnsupported ? ("actor" as const) : ("agent" as const);
+  const groupQuery = agentUnsupported ? actorQuery : agentQuery;
 
   const totals = totalsQuery.data;
   const bars = useMemo(
@@ -119,24 +149,16 @@ export function Mv3UsagePage() {
     bars.find((b) => b.isPeak) ??
     null;
 
-  const actors = useMemo(() => {
-    const groups = [...(actorQuery.data?.breakdown ?? [])]
-      .filter((g) => g.totalEstimatedCostUsd > 0 || g.eventCount > 0)
-      .sort((a, b) => b.totalEstimatedCostUsd - a.totalEstimatedCostUsd)
-      .slice(0, 5);
-    const max = Math.max(...groups.map((g) => g.totalEstimatedCostUsd), 0);
-    return groups.map((g, i) => ({
-      key: g.groupKey ?? g.groupId ?? g.group,
-      label: humanizeUsageActor(g.group),
-      costUsd: g.totalEstimatedCostUsd,
-      widthPct:
-        max > 0 ? Math.max((g.totalEstimatedCostUsd / max) * 100, 4) : 0,
-      tint: ACTOR_TINTS[i % ACTOR_TINTS.length],
-    }));
-  }, [actorQuery.data]);
+  const actors = useMemo(
+    () =>
+      buildSpendGroupRows(groupQuery.data?.breakdown ?? [], groupMode).map(
+        (row, i) => ({ ...row, tint: ACTOR_TINTS[i % ACTOR_TINTS.length] }),
+      ),
+    [groupQuery.data, groupMode],
+  );
 
   const anyError =
-    totalsQuery.isError && dailyQuery.isError && actorQuery.isError;
+    totalsQuery.isError && dailyQuery.isError && groupQuery.isError;
 
   const pickRange = (next: UsageTimeRange) => {
     if (next === range) return;
@@ -211,7 +233,7 @@ export function Mv3UsagePage() {
             onClick={() => {
               void totalsQuery.refetch();
               void dailyQuery.refetch();
-              void actorQuery.refetch();
+              void groupQuery.refetch();
             }}
             style={{
               marginTop: 8,
@@ -369,7 +391,7 @@ export function Mv3UsagePage() {
             )}
           </div>
 
-          {/* Per-actor tinted spend bars. */}
+          {/* Per-agent tinted spend bars (BY ACTOR on pre-308 daemons). */}
           <div style={rise(0.3)}>
             <div
               style={{
@@ -378,7 +400,7 @@ export function Mv3UsagePage() {
                 padding: "6px 4px 8px",
               }}
             >
-              By actor
+              {groupMode === "agent" ? "By agent" : "By actor"}
             </div>
             {actors.length === 0 ? (
               <div
@@ -388,7 +410,7 @@ export function Mv3UsagePage() {
                   padding: "2px 4px",
                 }}
               >
-                {actorQuery.isLoading
+                {groupQuery.isLoading
                   ? "Loading…"
                   : "No attributed spend in this period"}
               </div>
@@ -465,7 +487,8 @@ export function Mv3UsagePage() {
                 ))}
               </div>
             )}
-            {actors.length > 0 ? (
+            {actors.length > 0 && groupMode === "actor" ? (
+              // Only on old daemons that predate per-agent attribution.
               <div
                 style={{
                   fontSize: 10.5,
@@ -544,22 +567,40 @@ function SpendBarColumn({
     >
       <span
         aria-hidden
-        style={{
-          width: "100%",
-          height: `${bar.heightPct}%`,
-          minHeight: bar.costUsd > 0 ? 3 : 2,
-          background: bar.isPeak
-            ? "linear-gradient(#7FA3F2, #3D6EE8)"
-            : bar.costUsd > 0
-              ? "color-mix(in srgb, var(--mv3-accent) 40%, transparent)"
-              : "color-mix(in srgb, var(--mv3-text) 8%, transparent)",
-          borderRadius: "5px 5px 2px 2px",
-          boxShadow: bar.isPeak ? "0 0 14px rgba(61,110,232,.4)" : "none",
-          outline: selected && !bar.isPeak
-            ? "1.5px solid var(--mv3-accent)"
-            : "none",
-          outlineOffset: 1,
-        }}
+        style={
+          bar.zeroTick
+            ? {
+                // Round-4.1 frame 61: a TRUE-$0 bucket is a 2px mono
+                // hairline tick, never the 6% floor — zero must not look
+                // like spend.
+                width: "100%",
+                height: 2,
+                background:
+                  "color-mix(in srgb, var(--mv3-faint) 35%, transparent)",
+                borderRadius: 2,
+                outline: selected
+                  ? "1.5px solid var(--mv3-accent)"
+                  : "none",
+                outlineOffset: 1,
+              }
+            : {
+                width: "100%",
+                height: `${bar.heightPct}%`,
+                minHeight: 3,
+                background: bar.isPeak
+                  ? "linear-gradient(#7FA3F2, #3D6EE8)"
+                  : "color-mix(in srgb, var(--mv3-accent) 40%, transparent)",
+                borderRadius: "5px 5px 2px 2px",
+                boxShadow: bar.isPeak
+                  ? "0 0 14px rgba(61,110,232,.4)"
+                  : "none",
+                outline:
+                  selected && !bar.isPeak
+                    ? "1.5px solid var(--mv3-accent)"
+                    : "none",
+                outlineOffset: 1,
+              }
+        }
       />
       <span
         style={{

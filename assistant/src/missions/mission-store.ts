@@ -57,6 +57,12 @@ export interface Mission {
   brief: string | null;
   /** 'hourly' | 'daily' | 'weekly'; null = default (daily). */
   cadence: string | null;
+  /**
+   * Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly
+   * cadence; hourly ignores it. Null = legacy rolling-interval scheduling
+   * (pre-migration-309 rows) — clients render the clock-less fallback.
+   */
+  sweepAt: string | null;
   /** Hard spend cap in cents; null = uncapped. */
   budgetCents: number | null;
   spentCents: number;
@@ -138,6 +144,7 @@ export function createMission(opts: {
   mode?: MissionMode;
   brief?: string;
   cadence?: string;
+  sweepAt?: string;
   budgetCents?: number;
   pinned?: boolean;
   sortIndex?: number;
@@ -154,6 +161,9 @@ export function createMission(opts: {
     mode: opts.mode ?? null,
     brief: opts.brief ?? null,
     cadence: opts.cadence ?? null,
+    // New missions get a real sweep clock by default; only legacy rows are
+    // clock-less.
+    sweepAt: opts.sweepAt ?? "08:00",
     budgetCents: opts.budgetCents ?? null,
     spentCents: 0,
     continuationSummary: null,
@@ -211,6 +221,7 @@ export function updateMission(
       | "mode"
       | "brief"
       | "cadence"
+      | "sweepAt"
       | "budgetCents"
       | "spentCents"
       | "continuationSummary"

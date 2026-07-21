@@ -11,6 +11,7 @@ import { generateKeyPairSync, verify } from "node:crypto";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  buildApnsPayload,
   createApnsJwt,
   isApnsConfigured,
   resolveApnsConfig,
@@ -85,6 +86,46 @@ describe("createApnsJwt", () => {
       signature,
     );
     expect(valid).toBe(true);
+  });
+});
+
+describe("buildApnsPayload", () => {
+  test("spreads custom data at the payload root — the iOS router's userInfo contract", () => {
+    // CueNotificationRouter.deepLinkURL reads userInfo["path"] (and the
+    // other custom keys) directly off the payload root, next to `aps`.
+    const payload = buildApnsPayload({
+      title: "Your morning brief is ready",
+      body: "3 finished overnight",
+      threadId: "cue-morning-brief",
+      data: {
+        kind: "morning_brief",
+        path: "/assistant/brief",
+        dateKey: "2026-07-20",
+      },
+    });
+
+    expect(payload["path"]).toBe("/assistant/brief");
+    expect(payload["kind"]).toBe("morning_brief");
+    expect(payload["dateKey"]).toBe("2026-07-20");
+    expect(payload["aps"]).toEqual({
+      alert: {
+        title: "Your morning brief is ready",
+        body: "3 finished overnight",
+      },
+      sound: "default",
+      "thread-id": "cue-morning-brief",
+    });
+    // Custom keys are NOT nested under a container the router doesn't read.
+    expect(payload["data"]).toBeUndefined();
+  });
+
+  test("no data and no threadId yields a bare aps envelope", () => {
+    const payload = buildApnsPayload({ title: "T", body: "B" });
+    expect(Object.keys(payload)).toEqual(["aps"]);
+    expect(payload["aps"]).toEqual({
+      alert: { title: "T", body: "B" },
+      sound: "default",
+    });
   });
 });
 

@@ -4,6 +4,7 @@
  *  · charter in quotes, "MISSION · ON TRACK" leg, agent + cadence line
  *    (no invented clock time)
  *  · work rows keep the taxonomy incl. ○ parked ("parked — waiting for ▶")
+ *    and the round-4.1 queued solid faint-blue ring ("runs next, no ▶ needed")
  *  · REAL pause wiring: the chip PATCHes status and swaps to ▶ Resume
  *  · sweeps render honest "no action" days, and the section is omitted with
  *    an empty event feed
@@ -39,6 +40,7 @@ function mission(over: Partial<Mission>): Mission {
       "Every investor and prospect hears from us within 48h of any signal. Nothing goes cold.",
     status: "active",
     cadence: "daily",
+    sweepAt: "08:00",
     budgetCents: null,
     spentCents: 0,
     rollup: {
@@ -172,6 +174,8 @@ describe("Mv3MissionDetail", () => {
           projectId: "p-events",
           autoRunEligibility: "parked",
         }),
+        // Queued-not-parked (round-4.1): solid faint-blue ring, "runs next".
+        wi({ id: "q1", title: "Follow-up sweep — Notion leads" }),
         // Filed OUTSIDE the mission's projects — must not render.
         wi({ id: "x1", title: "Unrelated task", projectId: "p-other" }),
       ],
@@ -195,9 +199,10 @@ describe("Mv3MissionDetail", () => {
     expect(
       screen.getByText(/“Every investor and prospect hears from us/),
     ).toBeTruthy();
-    // Real attribution + cadence with no fabricated clock time.
+    // Real attribution + the REAL sweep clock (mission.sweepAt, not the
+    // frame's fabricated "8am").
     expect(screen.getByText("Growth runs it")).toBeTruthy();
-    expect(screen.getByText("· sweeps daily")).toBeTruthy();
+    expect(screen.getByText("· sweeps daily · 8:00 AM")).toBeTruthy();
     expect(screen.queryByText(/8am/)).toBeNull();
     // Work rows across projects, taxonomy states intact.
     expect(
@@ -208,11 +213,28 @@ describe("Mv3MissionDetail", () => {
     expect(screen.getByText(/Seed raise · ready for review/)).toBeTruthy();
     // ○ parked row.
     expect(screen.getByText(/Events · parked — waiting for ▶/)).toBeTruthy();
+    // Queued row (round-4.1): drawn ring + the "runs on its own" sub-line,
+    // distinct from parked's dashed mono.
+    expect(
+      screen.getByText(/Seed raise · queued — runs next, no ▶ needed/),
+    ).toBeTruthy();
+    expect(
+      document.querySelector('[data-state-tile="queued"]'),
+    ).toBeTruthy();
     // Fenced: the unlinked item stays out.
     expect(screen.queryByText("Unrelated task")).toBeNull();
     // Sweeps: activity + the honest no-action day.
     expect(screen.getByText(/Today .* — 1 item queued/)).toBeTruthy();
     expect(screen.getByText(/Yesterday — no action/)).toBeTruthy();
+  });
+
+  test("legacy mission without a sweep clock keeps the clock-less cadence line", () => {
+    MISSION = mission({ sweepAt: null });
+    ITEMS = {};
+    EVENTS = [];
+    renderPage();
+    expect(screen.getByText("· sweeps daily")).toBeTruthy();
+    expect(screen.queryByText(/AM|PM/)).toBeNull();
   });
 
   test("pause chip drives the REAL mission PATCH; paused shows ▶ Resume", () => {

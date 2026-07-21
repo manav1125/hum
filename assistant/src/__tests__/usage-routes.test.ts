@@ -550,6 +550,32 @@ describe("usage routes", () => {
       ]);
     });
 
+    test("accepts groupBy=agent and labels the unattributed bucket Cue", () => {
+      const { day1, day2 } = seedEvents();
+      const from = day1 - 1000;
+      const to = day2 + 1000;
+
+      // Nothing in seedEvents maps to a staffed work-item run, so every
+      // event lands in the house bucket.
+      const body = dispatch(
+        "GET",
+        `usage/breakdown?from=${from}&to=${to}&groupBy=agent`,
+      ) as {
+        breakdown: Array<{
+          group: string;
+          groupId: string | null;
+          groupKey: string | null;
+          eventCount: number;
+        }>;
+      };
+
+      expect(body.breakdown).toHaveLength(1);
+      expect(body.breakdown[0].group).toBe("Cue");
+      expect(body.breakdown[0].groupId).toBeNull();
+      expect(body.breakdown[0].groupKey).toBeNull();
+      expect(body.breakdown[0].eventCount).toBe(3);
+    });
+
     test("accepts groupBy=schedule and labels groups with schedule names", () => {
       seedScheduleRouteEvents();
 
@@ -628,6 +654,12 @@ describe("usage routes", () => {
           "GET",
           "usage/series?from=0&to=999999999999&groupBy=conversation",
         ),
+      ).toThrow(BadRequestError);
+    });
+
+    test("rejects groupBy=agent (breakdown-only dimension)", () => {
+      expect(() =>
+        dispatch("GET", "usage/series?from=0&to=999999999999&groupBy=agent"),
       ).toThrow(BadRequestError);
     });
 

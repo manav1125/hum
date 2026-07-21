@@ -39,6 +39,10 @@ export const USAGE_GROUP_LABELS: Record<UsageGroupBy, string> = {
   actor: "Actor",
   conversation: "Conversation",
   schedule: "Schedule",
+  // Mobile-only dimension for now (breakdown endpoint, daemons ≥ migration
+  // 308); deliberately absent from USAGE_GROUP_BY_OPTIONS so the desktop
+  // picker — which also drives the series endpoint — doesn't offer it.
+  agent: "Agent",
 };
 
 export const USAGE_GROUP_BY_OPTIONS: Array<{

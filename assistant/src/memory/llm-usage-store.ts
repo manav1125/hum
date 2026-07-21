@@ -33,6 +33,41 @@ import {
 // Write
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve the roster agent a conversation's spend is attributable to, at
+ * usage-record time: conversation → work item (via the indexed
+ * `last_run_conversation_id` attribution key, see migration 306) → `assignee`
+ * → roster row in `agents` (name matched case-insensitively, mirroring
+ * agent-store.getAgentSpend). Returns the `agents.id` to stamp on the usage
+ * row, or null for house ("Cue") work — chat, schedules, unstaffed items, or
+ * assignees with no roster row.
+ *
+ * Best-effort by design: attribution must never break usage recording, so
+ * lookup failures degrade to null.
+ */
+function resolveAgentIdForConversation(
+  conversationId: string | null,
+): string | null {
+  if (!conversationId) return null;
+  try {
+    const rows = rawAll<{ agent_id: string | null }>(
+      /*sql*/ `
+      SELECT a.id AS agent_id
+      FROM work_items wi
+      JOIN agents a
+        ON LOWER(TRIM(a.name)) = LOWER(TRIM(COALESCE(wi.assignee, '')))
+      WHERE wi.last_run_conversation_id = ?1
+      ORDER BY wi.updated_at DESC
+      LIMIT 1
+      `,
+      conversationId,
+    );
+    return rows[0]?.agent_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function recordUsageEvent(
   input: UsageEventInput,
   pricing: PricingResult,
@@ -49,6 +84,7 @@ export function recordUsageEvent(
     estimatedCostUsd: pricing.estimatedCostUsd,
     pricingStatus: pricing.pricingStatus,
     assistantVersion: APP_VERSION,
+    agentId: resolveAgentIdForConversation(input.conversationId),
   };
   db.insert(llmUsageEvents)
     .values({
@@ -77,6 +113,7 @@ export function recordUsageEvent(
       // the assistant happens to be running on at upload time. See
       // migration 267 + `TelemetryEventBase.assistant_version` (wire).
       assistantVersion: event.assistantVersion,
+      agentId: event.agentId,
     })
     .run();
   return event;
@@ -108,6 +145,7 @@ function rowToUsageEvent(row: {
   pricingStatus: string;
   llmCallCount: number | null;
   assistantVersion: string | null;
+  agentId: string | null;
 }): UsageEvent {
   return {
     id: row.id,
@@ -131,6 +169,7 @@ function rowToUsageEvent(row: {
     pricingStatus: row.pricingStatus as "priced" | "unpriced",
     llmCallCount: row.llmCallCount,
     assistantVersion: row.assistantVersion,
+    agentId: row.agentId,
   };
 }
 
@@ -233,6 +272,7 @@ export function queryUnreportedUsageEvents(
       estimatedCostUsd: llmUsageEvents.estimatedCostUsd,
       pricingStatus: llmUsageEvents.pricingStatus,
       assistantVersion: llmUsageEvents.assistantVersion,
+      agentId: llmUsageEvents.agentId,
       llmCallCount: llmUsageEvents.llmCallCount,
       conversationType: conversations.conversationType,
       // Null when conversationId is null (no parent conversation).
@@ -616,6 +656,7 @@ export const USAGE_GROUP_BY_DIMENSIONS = [
   "call_site",
   "inference_profile",
   "schedule",
+  "agent",
 ] as const;
 
 export type GroupByDimension = (typeof USAGE_GROUP_BY_DIMENSIONS)[number];
@@ -630,7 +671,7 @@ export const USAGE_SERIES_GROUP_BY_DIMENSIONS = [
 ] as const satisfies readonly GroupByDimension[];
 
 const GROUP_BY_COLUMNS: Record<
-  Exclude<GroupByDimension, "conversation" | "schedule">,
+  Exclude<GroupByDimension, "conversation" | "schedule" | "agent">,
   string
 > = {
   actor: "actor",
@@ -657,7 +698,8 @@ function mapGroupRow(
   const includeGroupKey =
     groupBy === "call_site" ||
     groupBy === "inference_profile" ||
-    groupBy === "schedule";
+    groupBy === "schedule" ||
+    groupBy === "agent";
   return {
     group: row.group_label ?? displayUsageGroup(groupBy, row.group_key),
     groupId: row.group_id,
@@ -759,6 +801,36 @@ export function getUsageGroupBreakdown(
     return rows.map((row) => mapGroupRow(row, groupBy));
   }
 
+  // Agent grouping reads the write-time `agent_id` stamp (see
+  // recordUsageEvent) and resolves display names from the roster so renames
+  // reflect immediately. NULL agent_id — chat, schedules, house work, and
+  // pre-migration-308 rows — reads as "Cue". A stamped id whose roster row
+  // was deleted keeps the raw id rather than lying it into the Cue bucket.
+  if (groupBy === "agent") {
+    const where = buildUsageAggregationWhere(range, normalizedFilter, "e");
+    const rows = rawAll<GroupRow>(
+      /*sql*/ `
+      SELECT
+        e.agent_id                                       AS group_key,
+        e.agent_id                                       AS group_id,
+        MAX(agent_roster.name)                           AS group_label,
+        COALESCE(SUM(e.input_tokens), 0)                 AS total_input_tokens,
+        COALESCE(SUM(e.output_tokens), 0)                AS total_output_tokens,
+        COALESCE(SUM(e.cache_creation_input_tokens), 0)  AS total_cache_creation_tokens,
+        COALESCE(SUM(e.cache_read_input_tokens), 0)      AS total_cache_read_tokens,
+        COALESCE(SUM(e.estimated_cost_usd), 0)           AS total_estimated_cost_usd,
+        COALESCE(SUM(COALESCE(e.llm_call_count, 1)), 0)  AS event_count
+      FROM llm_usage_events e
+      LEFT JOIN agents agent_roster ON agent_roster.id = e.agent_id
+      WHERE ${where.sql}
+      GROUP BY e.agent_id
+      ORDER BY total_estimated_cost_usd DESC
+      `,
+      ...where.params,
+    );
+    return rows.map((row) => mapGroupRow(row, groupBy));
+  }
+
   const column = GROUP_BY_COLUMNS[groupBy];
   const where = buildUsageAggregationWhere(range, normalizedFilter, "e");
   const rows = rawAll<GroupRow>(
@@ -792,8 +864,8 @@ export function getUsageGroupedSeries(
   filter?: UsageAggregationFilter,
 ): UsageGroupedSeriesBucket[] {
   assertGroupByDimension(groupBy);
-  if (groupBy === "conversation") {
-    throw new Error("Grouped usage series does not support conversation");
+  if (groupBy === "conversation" || groupBy === "agent") {
+    throw new Error(`Grouped usage series does not support ${groupBy}`);
   }
 
   const normalizedFilter = normalizeUsageAggregationFilter(filter);

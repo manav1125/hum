@@ -256,6 +256,17 @@ export const llmUsageEvents = sqliteTable(
      * persisted before migration 267 ran.
      */
     assistantVersion: text("assistant_version"),
+    /**
+     * Roster agent (`agents.id`) this call's spend is attributable to,
+     * resolved at RECORD time via the run conversation → work item →
+     * assignee chain (see `recordUsageEvent`). Stamping at write time keeps
+     * attribution truthful after re-runs — `work_items` only remembers the
+     * LATEST run conversation, so a read-time join would silently drop
+     * superseded runs. NULL = house ("Cue") work: chat, schedules, memory
+     * jobs, unstaffed work items, and all rows persisted before
+     * migration 308.
+     */
+    agentId: text("agent_id"),
   },
   (table) => [
     index("idx_llm_usage_events_conversation_id").on(table.conversationId),

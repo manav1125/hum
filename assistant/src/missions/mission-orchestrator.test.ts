@@ -460,7 +460,11 @@ describe("guards", () => {
     const base = createMission({ title: "M", outcome: "x" });
     expect(isMissionCycleDue(base, now)).toBe(true); // never ran
 
+    // Clear the default sweep clock — these assertions cover the legacy
+    // rolling-interval path, which must stay time-of-day independent. The
+    // clock path has its own suite (mission-sweep-clock.test.ts).
     const ranRecently = updateMission(base.id, {
+      sweepAt: null,
       lastCycleAt: now - 60 * 60 * 1000, // 1h ago, daily cadence
     })!;
     expect(isMissionCycleDue(ranRecently, now)).toBe(false);
@@ -470,5 +474,14 @@ describe("guards", () => {
 
     const paused = updateMission(base.id, { status: "paused" })!;
     expect(isMissionCycleDue(paused, now)).toBe(false);
+  });
+
+  test("new missions default to a 08:00 sweep clock; PATCHing it to null reverts to rolling", () => {
+    const mission = createMission({ title: "M2", outcome: "x" });
+    expect(mission.sweepAt).toBe("08:00");
+    const cleared = updateMission(mission.id, { sweepAt: null })!;
+    expect(cleared.sweepAt).toBeNull();
+    const retimed = updateMission(mission.id, { sweepAt: "06:30" })!;
+    expect(retimed.sweepAt).toBe("06:30");
   });
 });

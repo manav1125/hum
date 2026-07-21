@@ -8,17 +8,22 @@
  *  · listing    — the existing workspace/tree endpoint, walked breadth-first
  *                 (bounded: depth ≤ 3, ≤ 24 directory fetches) and flattened
  *                 to the newest 50 files
- *  · thumbnails — the spec's first-page render endpoint does NOT exist; the
- *                 sanctioned degrade ships instead: images render themselves
- *                 (workspace/file/content blob), everything else paints the
- *                 tinted type-chip block
+ *  · thumbnails — no daemon render endpoint exists; images render themselves
+ *                 (workspace/file/content blob) and PDFs get a REAL
+ *                 first-page render client-side via lazy-loaded pdf.js
+ *                 (pdf-thumbnails.ts: on-screen only, one at a time, ≤2×
+ *                 card size, 4s budget, memory+IndexedDB cache; any failure
+ *                 silently keeps the chip). Decks/apps keep type chips —
+ *                 Library apps have no preview asset and nothing maps a
+ *                 workspace file to an app, so there's no honest artwork.
+ *                 Everything else paints the tinted type-chip block.
  *  · tap        — an in-app preview sheet (image / markdown / text via the
  *                 file endpoints); other types say so honestly and offer
  *                 share/download. No native Quick Look claims.
  *  · ⇪          — navigator.share with the real file when the platform
  *                 allows it, else a blob download.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { FileMarkdown, isMarkdown } from "@/components/file-markdown";
@@ -32,6 +37,7 @@ import {
   typeTint,
   type WorkspaceFileEntry,
 } from "@/domains/workspace/mobile/files-gallery-model";
+import { getPdfThumbnail } from "@/domains/workspace/mobile/pdf-thumbnails";
 import { formatFileSize } from "@/domains/workspace/utils/format-file-size";
 import {
   workspaceFileContentGet,
@@ -193,7 +199,66 @@ const chipStyle = (tones: {
   padding: "2px 6px",
 });
 
-/** Thumbnail block: real image when the artifact IS an image, tinted type
+/**
+ * On-screen-gated first-page PDF thumbnail. Nothing (network, pdf.js, the
+ * worker) moves until the card actually intersects the viewport; the heavy
+ * lifting + all perf guardrails live in pdf-thumbnails.ts. Resolves to an
+ * object URL, or null — the caller keeps the tinted chip silently.
+ */
+function usePdfThumbnail(
+  assistantId: string,
+  entry: WorkspaceFileEntry | null,
+): { hostRef: React.RefObject<HTMLDivElement | null>; url: string | null } {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  const path = entry?.path ?? null;
+  const size = entry?.size ?? null;
+  const modifiedAt = entry?.modifiedAt ?? null;
+
+  useEffect(() => {
+    setUrl(null);
+    if (path == null || modifiedAt == null) return;
+    const node = hostRef.current;
+    if (!node) return;
+    const target = { path, size, modifiedAt };
+    let started = false;
+    let disposed = false;
+    const start = (w: number, h: number) => {
+      if (started) return;
+      started = true;
+      void getPdfThumbnail(assistantId, target, w || 180, h || 90).then(
+        (result) => {
+          if (!disposed) setUrl(result);
+        },
+      );
+    };
+    if (typeof IntersectionObserver === "undefined") {
+      // No observer (old engines / test envs): render eagerly — degraded but
+      // functional, mirroring app-card's guard.
+      const rect = node.getBoundingClientRect();
+      start(rect.width, rect.height);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      for (const intersection of entries) {
+        if (!intersection.isIntersecting) continue;
+        const rect = intersection.boundingClientRect;
+        start(rect.width, rect.height);
+        observer.disconnect();
+      }
+    });
+    observer.observe(node);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, [assistantId, path, size, modifiedAt]);
+
+  return { hostRef, url };
+}
+
+/** Thumbnail block: real image when the artifact IS an image, real pdf.js
+ *  first-page render for PDFs (chip fallback on any failure), tinted type
  *  block otherwise (the sanctioned degrade — no fake page renders). */
 function ThumbBlock({
   assistantId,
@@ -208,19 +273,25 @@ function ThumbBlock({
   const chip = fileTypeChip(entry.name, entry.mimeType);
   const tones = typeTint(chip);
   const objectUrl = useImageObjectUrl(assistantId, image ? entry.path : null);
+  const pdf = !image && chip === "PDF";
+  const { hostRef, url: pdfUrl } = usePdfThumbnail(
+    assistantId,
+    pdf ? entry : null,
+  );
+  const artwork = image ? objectUrl : pdf ? pdfUrl : null;
   return (
     <div
+      ref={hostRef}
       aria-hidden
       style={{
         height,
         position: "relative",
-        background:
-          image && objectUrl
-            ? `left top / cover no-repeat url("${objectUrl}")`
-            : tones.blockBg,
+        background: artwork
+          ? `left top / cover no-repeat url("${artwork}")`
+          : tones.blockBg,
       }}
     >
-      {!(image && objectUrl) ? (
+      {!artwork ? (
         <span
           style={{
             position: "absolute",

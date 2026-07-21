@@ -24,9 +24,12 @@ export type UsageGroupBy =
   | "conversation"
   | "task"
   | "profile"
-  | "schedule";
+  | "schedule"
+  // Per-agent attribution (daemon migration 308+). Breakdown-only — old
+  // daemons 400 on it, callers fall back to "actor".
+  | "agent";
 
-export type UsageSeriesGroupBy = Exclude<UsageGroupBy, "conversation">;
+export type UsageSeriesGroupBy = Exclude<UsageGroupBy, "conversation" | "agent">;
 
 export type UsageTotals = UsageTotalsGetResponse;
 

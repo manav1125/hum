@@ -36,6 +36,26 @@ function publishEvent(msg: ServerMessage): void {
 
 const missionModeSchema = z.enum(["observe", "assist", "autonomous"]);
 
+/** Sweep clock wire format: 24h "HH:mm" (leading zero optional on the hour). */
+const SWEEP_AT_PATTERN = /^([01]?\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Validate + normalize a sweep clock string. Handlers coerce the body
+ * manually (the zod requestBody is declarative), so the format is enforced
+ * here; normalization zero-pads the hour ("8:00" → "08:00") to keep the
+ * stored representation canonical.
+ */
+function parseSweepAtInput(value: string): string {
+  const trimmed = value.trim();
+  if (!SWEEP_AT_PATTERN.test(trimmed)) {
+    throw new BadRequestError(
+      `Invalid sweepAt "${value}" — expected 24h "HH:mm" (e.g. "08:00")`,
+    );
+  }
+  const [hour, minute] = trimmed.split(":");
+  return `${hour.padStart(2, "0")}:${minute}`;
+}
+
 const missionSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -53,6 +73,12 @@ const missionSchema = z.object({
     .string()
     .nullable()
     .describe("Cycle cadence: hourly | daily | weekly; null = daily"),
+  sweepAt: z
+    .string()
+    .nullable()
+    .describe(
+      'Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly cadence; null = legacy rolling-interval scheduling (clock-less)',
+    ),
   budgetCents: z.number().int().nullable(),
   spentCents: z.number().int(),
   continuationSummary: z
@@ -161,6 +187,11 @@ export const ROUTES: RouteDefinition[] = [
       mode: missionModeSchema.optional(),
       brief: z.string().optional(),
       cadence: z.enum(["hourly", "daily", "weekly"]).optional(),
+      sweepAt: z
+        .string()
+        .regex(SWEEP_AT_PATTERN)
+        .optional()
+        .describe('Sweep clock "HH:mm" (24h, daemon-local tz); default 08:00'),
       budgetCents: z.number().int().min(0).optional(),
       pinned: z.boolean().optional(),
       sortIndex: z.number().int().optional(),
@@ -175,6 +206,7 @@ export const ROUTES: RouteDefinition[] = [
         mode?: MissionMode;
         brief?: string;
         cadence?: string;
+        sweepAt?: string;
         budgetCents?: number;
         pinned?: boolean;
         sortIndex?: number;
@@ -191,6 +223,9 @@ export const ROUTES: RouteDefinition[] = [
         ...(b.mode ? { mode: b.mode } : {}),
         ...(typeof b.brief === "string" ? { brief: b.brief } : {}),
         ...(typeof b.cadence === "string" ? { cadence: b.cadence } : {}),
+        ...(typeof b.sweepAt === "string"
+          ? { sweepAt: parseSweepAtInput(b.sweepAt) }
+          : {}),
         ...(typeof b.budgetCents === "number"
           ? { budgetCents: b.budgetCents }
           : {}),
@@ -245,6 +280,13 @@ export const ROUTES: RouteDefinition[] = [
         mode: missionModeSchema.nullable(),
         brief: z.string().nullable(),
         cadence: z.enum(["hourly", "daily", "weekly"]).nullable(),
+        sweepAt: z
+          .string()
+          .regex(SWEEP_AT_PATTERN)
+          .nullable()
+          .describe(
+            'Sweep clock "HH:mm" (24h, daemon-local tz); null reverts to clock-less rolling-interval scheduling',
+          ),
         budgetCents: z.number().int().min(0).nullable(),
         pinned: z.boolean(),
         sortIndex: z.number().int().nullable(),
@@ -263,6 +305,7 @@ export const ROUTES: RouteDefinition[] = [
         mode?: MissionMode | null;
         brief?: string | null;
         cadence?: string | null;
+        sweepAt?: string | null;
         budgetCents?: number | null;
         pinned?: boolean;
         sortIndex?: number | null;
@@ -276,6 +319,10 @@ export const ROUTES: RouteDefinition[] = [
       if (raw.mode !== undefined) updates.mode = raw.mode;
       if (raw.brief !== undefined) updates.brief = raw.brief;
       if (raw.cadence !== undefined) updates.cadence = raw.cadence;
+      if (raw.sweepAt !== undefined) {
+        updates.sweepAt =
+          raw.sweepAt === null ? null : parseSweepAtInput(raw.sweepAt);
+      }
       if (raw.budgetCents !== undefined) updates.budgetCents = raw.budgetCents;
       // The store column is 0/1; accept a boolean at the wire and normalize.
       if (raw.pinned !== undefined) updates.pinned = raw.pinned ? 1 : 0;

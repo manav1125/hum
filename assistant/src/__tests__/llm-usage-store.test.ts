@@ -1736,3 +1736,224 @@ describe("recordUsageEvent — assistantVersion stamping", () => {
     expect(event.assistantVersion).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Per-agent attribution — recordUsageEvent stamps `agent_id` at write time by
+// resolving conversation → work item (last_run_conversation_id) → assignee →
+// roster agent, and groupBy=agent reads the stamp with roster display names.
+// ---------------------------------------------------------------------------
+
+describe("per-agent usage attribution", () => {
+  const now = 1_700_000_000_000;
+
+  function seedRoster() {
+    const db = getDb();
+    db.run(
+      `INSERT INTO tasks (id, title, template, status, created_at, updated_at)
+       VALUES ('task-1', 'Seeded task', 'do the thing', 'active', ${now}, ${now})`,
+    );
+    db.run(
+      `INSERT INTO agents (id, name, tier, hard_stop_enabled, paused, created_at, updated_at)
+       VALUES ('agent-ops', 'Ops', '1', 0, 0, ${now}, ${now})`,
+    );
+    db.run(
+      `INSERT INTO agents (id, name, tier, hard_stop_enabled, paused, created_at, updated_at)
+       VALUES ('agent-growth', 'Growth', '1', 0, 0, ${now}, ${now})`,
+    );
+  }
+
+  function seedWorkItem(opts: {
+    id: string;
+    assignee: string | null;
+    conversationId: string;
+  }) {
+    const db = getDb();
+    const assignee = opts.assignee === null ? "NULL" : `'${opts.assignee}'`;
+    db.run(
+      `INSERT INTO work_items (
+         id, task_id, title, status, priority_tier, assignee,
+         last_run_conversation_id, recovery_attempts, completed_elsewhere,
+         created_at, updated_at
+       ) VALUES (
+         '${opts.id}', 'task-1', 'Item ${opts.id}', 'running', 1, ${assignee},
+         '${opts.conversationId}', 0, 0, ${now}, ${now}
+       )`,
+    );
+  }
+
+  beforeEach(() => {
+    const db = getDb();
+    db.run(`DELETE FROM llm_usage_events`);
+    db.run(`DELETE FROM work_items`);
+    db.run(`DELETE FROM agents`);
+    db.run(`DELETE FROM tasks`);
+    seedRoster();
+  });
+
+  test("stamps the roster agent id when the conversation belongs to a staffed run", () => {
+    seedWorkItem({
+      id: "wi-1",
+      assignee: "ops", // case-insensitive match against roster name "Ops"
+      conversationId: "conv-run-1",
+    });
+
+    const event = recordUsageEvent(
+      makeInput({ conversationId: "conv-run-1" }),
+      pricedResult,
+    );
+    expect(event.agentId).toBe("agent-ops");
+
+    const [persisted] = listUsageEvents();
+    expect(persisted.agentId).toBe("agent-ops");
+  });
+
+  test("stamps null for house work: no conversation, unknown conversation, or unstaffed item", () => {
+    seedWorkItem({
+      id: "wi-null",
+      assignee: null, // reads as "cue" — no roster row
+      conversationId: "conv-unstaffed",
+    });
+
+    expect(recordUsageEvent(makeInput(), pricedResult).agentId).toBeNull();
+    expect(
+      recordUsageEvent(makeInput({ conversationId: "conv-chat" }), pricedResult)
+        .agentId,
+    ).toBeNull();
+    expect(
+      recordUsageEvent(
+        makeInput({ conversationId: "conv-unstaffed" }),
+        pricedResult,
+      ).agentId,
+    ).toBeNull();
+  });
+
+  test("stamps null when the assignee has no roster row", () => {
+    seedWorkItem({
+      id: "wi-ghost",
+      assignee: "Nonexistent Role",
+      conversationId: "conv-ghost",
+    });
+    expect(
+      recordUsageEvent(
+        makeInput({ conversationId: "conv-ghost" }),
+        pricedResult,
+      ).agentId,
+    ).toBeNull();
+  });
+
+  test("groupBy=agent breaks down by roster name with a Cue bucket for unattributed spend", () => {
+    seedWorkItem({
+      id: "wi-ops",
+      assignee: "Ops",
+      conversationId: "conv-ops",
+    });
+    seedWorkItem({
+      id: "wi-growth",
+      assignee: "Growth",
+      conversationId: "conv-growth",
+    });
+
+    insertEventAt(
+      1000,
+      { conversationId: "conv-ops", inputTokens: 100 },
+      { estimatedCostUsd: 0.3, pricingStatus: "priced" },
+    );
+    insertEventAt(
+      2000,
+      { conversationId: "conv-ops", inputTokens: 200 },
+      { estimatedCostUsd: 0.2, pricingStatus: "priced" },
+    );
+    insertEventAt(
+      3000,
+      { conversationId: "conv-growth", inputTokens: 300 },
+      { estimatedCostUsd: 0.1, pricingStatus: "priced" },
+    );
+    // House work: plain chat conversation, no work item.
+    insertEventAt(
+      4000,
+      { conversationId: "conv-chat", inputTokens: 400 },
+      { estimatedCostUsd: 0.05, pricingStatus: "priced" },
+    );
+
+    const groups = getUsageGroupBreakdown({ from: 0, to: 5000 }, "agent");
+    expect(groups).toHaveLength(3);
+
+    // Ordered by cost descending.
+    expect(groups[0]).toMatchObject({
+      group: "Ops",
+      groupId: "agent-ops",
+      groupKey: "agent-ops",
+      totalInputTokens: 300,
+      eventCount: 2,
+    });
+    expect(groups[0].totalEstimatedCostUsd).toBeCloseTo(0.5);
+    expect(groups[1]).toMatchObject({
+      group: "Growth",
+      groupId: "agent-growth",
+      groupKey: "agent-growth",
+      totalInputTokens: 300,
+      eventCount: 1,
+    });
+    expect(groups[2]).toMatchObject({
+      group: "Cue",
+      groupId: null,
+      groupKey: null,
+      totalInputTokens: 400,
+      eventCount: 1,
+    });
+  });
+
+  test("a stamped agent whose roster row was deleted keeps the raw id, never folds into Cue", () => {
+    seedWorkItem({
+      id: "wi-ops",
+      assignee: "Ops",
+      conversationId: "conv-ops",
+    });
+    insertEventAt(
+      1000,
+      { conversationId: "conv-ops", inputTokens: 100 },
+      { estimatedCostUsd: 0.1, pricingStatus: "priced" },
+    );
+    const db = getDb();
+    db.run(`DELETE FROM agents WHERE id = 'agent-ops'`);
+
+    const groups = getUsageGroupBreakdown({ from: 0, to: 5000 }, "agent");
+    expect(groups).toHaveLength(1);
+    expect(groups[0].group).toBe("agent-ops");
+    expect(groups[0].groupId).toBe("agent-ops");
+  });
+
+  test("attribution stays stamped after the work item is re-run into a new conversation", () => {
+    seedWorkItem({
+      id: "wi-ops",
+      assignee: "Ops",
+      conversationId: "conv-run-1",
+    });
+    const first = recordUsageEvent(
+      makeInput({ conversationId: "conv-run-1" }),
+      pricedResult,
+    );
+    expect(first.agentId).toBe("agent-ops");
+
+    // Re-run: the work item now points at a NEW conversation. The old
+    // event's stamp must survive (a read-time join would drop it).
+    const db = getDb();
+    db.run(
+      `UPDATE work_items SET last_run_conversation_id = 'conv-run-2' WHERE id = 'wi-ops'`,
+    );
+    const [persisted] = listUsageEvents();
+    expect(persisted.agentId).toBe("agent-ops");
+
+    const second = recordUsageEvent(
+      makeInput({ conversationId: "conv-run-2" }),
+      pricedResult,
+    );
+    expect(second.agentId).toBe("agent-ops");
+  });
+
+  test("grouped series rejects the agent dimension", () => {
+    expect(() =>
+      getUsageGroupedSeries({ from: 0, to: 5000 }, "agent", "daily"),
+    ).toThrow(/does not support agent/);
+  });
+});

@@ -102,4 +102,11 @@ export interface UsageEvent extends UsageEventInput {
    * See `migrations/267-llm-usage-events-add-assistant-version.ts`.
    */
   assistantVersion: string | null;
+  /**
+   * Roster agent (`agents.id`) this call's spend is attributable to. Not
+   * provided by callers — resolved at record time by `recordUsageEvent` via
+   * the run-conversation → work-item → assignee chain. `null` = house
+   * ("Cue") work, or rows persisted before migration 308.
+   */
+  agentId: string | null;
 }

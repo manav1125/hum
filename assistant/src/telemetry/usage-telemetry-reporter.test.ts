@@ -216,6 +216,7 @@ function makeUsageEvent(
     estimatedCostUsd: 0.001,
     pricingStatus: "priced",
     assistantVersion: "test-app-version",
+    agentId: null,
     conversationType: "standard",
     turnIndex: 1,
     llmCallCount: 1,

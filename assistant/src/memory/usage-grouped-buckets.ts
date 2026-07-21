@@ -46,6 +46,13 @@ export function displayUsageGroup(
   if (groupBy === "schedule") {
     return groupKey ?? "Other";
   }
+  if (groupBy === "agent") {
+    // NULL agent_id = house work (chat, schedules, unstaffed items, rows
+    // predating migration 308) — reads as the implicit house agent. A
+    // non-null key only reaches here when the roster row is gone (deleted
+    // agent); keep the raw id rather than mis-attributing to Cue.
+    return groupKey ?? "Cue";
+  }
   return groupKey ?? "Other";
 }
 

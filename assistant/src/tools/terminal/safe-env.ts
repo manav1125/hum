@@ -92,6 +92,14 @@ export const SAFE_ENV_VARS = [
   "CUE_BACKUP_S3_ENDPOINT",
   "CUE_BACKUP_S3_REGION",
   "CUE_BACKUP_S3_PREFIX",
+  // APNs push coordinates (non-secret identifiers). The signing key itself
+  // (CUE_APNS_KEY_P8, and the file behind CUE_APNS_KEY_PATH) is credential
+  // material and is deliberately NOT forwarded — key material stays
+  // daemon-only.
+  "CUE_APNS_KEY_ID",
+  "CUE_APNS_TEAM_ID",
+  "CUE_APNS_BUNDLE_ID",
+  "CUE_APNS_ENV",
 ] as const;
 
 export const KATA_SAFE_ENV_VARS = [

@@ -2212,15 +2212,14 @@ export function Mv3ArchiveLeaf() {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications (settings/notifications) — honest leaf (UAT P1: the You
-// footer's Notifications link used to land on the Appearance leaf via the
-// desktop page's gated redirect).
+// Notifications (settings/notifications) — frame 62.
 //
 // Platform-hosted sessions get the real organization-notifications page
-// (lazy, inside the v3 shell). Everyone else gets the honest state of the
-// world: this instance has NO device-push pipeline and NO per-category
-// notification preference endpoints — so no toggles are faked. Cue reaches
-// you through connected channels; the leaf links their setup surface.
+// (lazy, inside the v3 shell). Self-host/cloud daemons that expose the
+// device-push preference config (`notifications.push`, daemon ≥ the
+// device-push wave) get the four category toggles + quiet hours wired to
+// real config PATCH. Older daemons keep the honest degrade: no faked
+// toggles — Cue reaches you through connected channels.
 // ---------------------------------------------------------------------------
 
 const NotificationsPageLazy = lazy(() =>
@@ -2229,11 +2228,111 @@ const NotificationsPageLazy = lazy(() =>
   })),
 );
 
+/** Local mirror of the daemon's `notifications.push` config (the generated
+ * SDK types predate the schema — read/patch go through a cast). */
+interface PushPrefs {
+  categories: {
+    needsYou: boolean;
+    reviewReady: boolean;
+    morningBrief: boolean;
+    mentions: boolean;
+  };
+  quietHours: {
+    start: string | null;
+    end: string | null;
+    timezone: string | null;
+  };
+}
+
+type PushCategoryKey = keyof PushPrefs["categories"];
+
+const PUSH_CATEGORY_ROWS: Array<{
+  key: PushCategoryKey;
+  name: string;
+  line: string;
+}> = [
+  {
+    key: "needsYou",
+    name: "Needs you",
+    line: "Approvals waiting on your decision",
+  },
+  {
+    key: "reviewReady",
+    name: "Review ready",
+    line: "Background work finished, ready for review",
+  },
+  {
+    key: "morningBrief",
+    name: "Morning brief",
+    line: "The daily overnight summary",
+  },
+  {
+    key: "mentions",
+    name: "Mentions",
+    line: "Channel mentions — nothing sends these yet",
+  },
+];
+
+function readPushPrefs(config: unknown): PushPrefs | null {
+  const push = (
+    config as { notifications?: { push?: Partial<PushPrefs> } } | undefined
+  )?.notifications?.push;
+  if (!push || typeof push !== "object" || !push.categories) return null;
+  return {
+    categories: {
+      needsYou: push.categories.needsYou !== false,
+      reviewReady: push.categories.reviewReady !== false,
+      morningBrief: push.categories.morningBrief !== false,
+      mentions: push.categories.mentions !== false,
+    },
+    quietHours: {
+      start: push.quietHours?.start ?? null,
+      end: push.quietHours?.end ?? null,
+      timezone: push.quietHours?.timezone ?? null,
+    },
+  };
+}
+
 export function Mv3NotificationsLeaf() {
   const navigate = useNavigate();
   const platformNotifications =
     useClientFeatureFlagStore.use.platformNotifications();
   const platformGate = usePlatformGate({ platformHostedOnly: true });
+
+  const assistantId = useActiveAssistantId();
+  const queryClient = useQueryClient();
+  const { data: config, isLoading } = useQuery({
+    ...configGetOptions({ path: { assistant_id: assistantId } }),
+    staleTime: 30_000,
+  });
+  const pushPrefs = readPushPrefs(config);
+
+  const configMutation = useConfigPatchMutation({
+    onSuccess: (data) => {
+      configGetSetQueryData(
+        queryClient,
+        { path: { assistant_id: assistantId } },
+        data,
+      );
+      haptic.success();
+    },
+    onError: () => haptic.error(),
+  });
+
+  const patchPush = (push: {
+    categories?: Partial<PushPrefs["categories"]>;
+    quietHours?: Partial<PushPrefs["quietHours"]>;
+  }) => {
+    if (configMutation.isPending) return;
+    configMutation.mutate({
+      path: { assistant_id: assistantId },
+      // The generated body type predates notifications.push; the daemon's
+      // config PATCH deep-merges and schema-validates server-side.
+      body: { notifications: { push } } as unknown as Record<string, never>,
+    });
+  };
+
+  const quietOn = Boolean(pushPrefs?.quietHours.start && pushPrefs?.quietHours.end);
 
   if (platformNotifications && platformGate !== "gated") {
     return (
@@ -2256,6 +2355,119 @@ export function Mv3NotificationsLeaf() {
             <NotificationsPageLazy />
           </Suspense>
         </div>
+      </Mv3SettingsScreen>
+    );
+  }
+
+  if (pushPrefs) {
+    const deviceTimezone = (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+      } catch {
+        return null;
+      }
+    })();
+
+    return (
+      <Mv3SettingsScreen
+        title="Notifications"
+        sub="What pages your phone"
+        tint="lavender"
+        testId="mv3-settings-notifications"
+      >
+        <SectionCard eyebrow="Push notifications" delay={0.1}>
+          {PUSH_CATEGORY_ROWS.map((row, i) => (
+            <ToggleRow
+              key={row.key}
+              name={row.name}
+              line={row.line}
+              on={pushPrefs.categories[row.key]}
+              disabled={configMutation.isPending}
+              isLast={i === PUSH_CATEGORY_ROWS.length - 1}
+              onToggle={() =>
+                patchPush({
+                  categories: { [row.key]: !pushPrefs.categories[row.key] },
+                })
+              }
+            />
+          ))}
+        </SectionCard>
+        <SectionCard eyebrow="Quiet hours" delay={0.16}>
+          <ToggleRow
+            name="Quiet hours"
+            line={
+              quietOn
+                ? `Pushes pause ${pushPrefs.quietHours.start} – ${pushPrefs.quietHours.end}`
+                : "Pause pushes overnight"
+            }
+            on={quietOn}
+            disabled={configMutation.isPending}
+            isLast={!quietOn}
+            onToggle={() =>
+              patchPush({
+                quietHours: quietOn
+                  ? { start: null, end: null }
+                  : { start: "22:00", end: "08:00", timezone: deviceTimezone },
+              })
+            }
+          />
+          {quietOn ? (
+            <div style={{ ...rowShell(true) }}>
+              <RowText name="Window" />
+              <input
+                type="time"
+                aria-label="Quiet hours start"
+                value={pushPrefs.quietHours.start ?? "22:00"}
+                disabled={configMutation.isPending}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    patchPush({ quietHours: { start: e.target.value } });
+                  }
+                }}
+                style={quietTimeInputStyle}
+              />
+              <span style={{ color: "var(--mv3-faint)", fontSize: 12 }} aria-hidden>
+                –
+              </span>
+              <input
+                type="time"
+                aria-label="Quiet hours end"
+                value={pushPrefs.quietHours.end ?? "08:00"}
+                disabled={configMutation.isPending}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    patchPush({ quietHours: { end: e.target.value } });
+                  }
+                }}
+                style={quietTimeInputStyle}
+              />
+            </div>
+          ) : null}
+        </SectionCard>
+        <SectionCard eyebrow="Also reaches you" delay={0.22}>
+          <button
+            type="button"
+            className="cue-pressable"
+            onClick={() => {
+              haptic.light();
+              navigate(routes.contacts.root);
+            }}
+            style={{ ...rowShell(true), cursor: "pointer" }}
+          >
+            <RowText
+              name="Connected channels"
+              line="Telegram · WhatsApp · email — instant, where you already are"
+            />
+            <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+              ›
+            </span>
+          </button>
+        </SectionCard>
+        <Mv3SettingsNote>
+          Pushes land on phones with the Cue app installed. During quiet
+          hours nothing pages your phone — approvals and review items still
+          wait for you in-app.
+        </Mv3SettingsNote>
       </Mv3SettingsScreen>
     );
   }
@@ -2304,13 +2516,25 @@ export function Mv3NotificationsLeaf() {
         </button>
       </SectionCard>
       <Mv3SettingsNote>
-        This instance doesn&rsquo;t send device push notifications yet, so
-        there are no notification toggles to set here — anything urgent
-        arrives through your connected channels.
+        {isLoading
+          ? "Checking this instance's push support…"
+          : "This instance doesn't send device push notifications yet, so there are no notification toggles to set here — anything urgent arrives through your connected channels."}
       </Mv3SettingsNote>
     </Mv3SettingsScreen>
   );
 }
+
+const quietTimeInputStyle: React.CSSProperties = {
+  fontFamily: "inherit",
+  fontSize: 12.5,
+  color: "var(--mv3-text)",
+  background: "color-mix(in srgb, var(--mv3-text) 6%, transparent)",
+  border: "1px solid var(--mv3-line)",
+  borderRadius: 8,
+  padding: "5px 7px",
+  colorScheme: "dark light",
+  flexShrink: 0,
+};
 
 // ---------------------------------------------------------------------------
 // Route → adapted leaf map (consumed by MobileSettingsLayout).

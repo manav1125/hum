@@ -18,6 +18,10 @@
  * Guarantees:
  *   - Never throws and never blocks the caller (all failures are logged).
  *   - No-op when APNs is unconfigured or no devices are registered.
+ *   - Preference-gated: per-category toggles + quiet hours from
+ *     `notifications.push` config are enforced at send time (push-prefs.ts);
+ *     work-item completions ride the `reviewReady` category and approval
+ *     requests ride `needsYou`. Suppressed sends are logged, not deferred.
  *   - Throttled: at most one push per work item per minute, one push per
  *     confirmation requestId ever, and one confirmation push per
  *     conversation per minute (an agent turn can emit several approvals
@@ -33,6 +37,7 @@ import {
   sendApnsAlert,
 } from "./apns-sender.js";
 import { listPushDevices, removePushDevice } from "./push-device-store.js";
+import { checkPushGate, type PushCategory } from "./push-prefs.js";
 
 const log = getLogger("push-dispatch");
 
@@ -64,6 +69,22 @@ function shouldThrottle(key: string, now: number): boolean {
   if (last !== undefined && now - last < THROTTLE_WINDOW_MS) return true;
   lastSentAt.set(key, now);
   pruneTracking();
+  return false;
+}
+
+/**
+ * Category/quiet-hours gate (notifications.push config). Checked before any
+ * throttle state is recorded so a suppressed push does not consume the
+ * item's one-shot/throttle budget. Suppressions are logged (event metadata
+ * only — never notification content beyond the category).
+ */
+function passesPushPrefs(category: PushCategory, itemId: string): boolean {
+  const gate = checkPushGate(category);
+  if (gate.allowed) return true;
+  log.info(
+    { category, itemId, reason: gate.reason },
+    "APNs push suppressed by push preferences",
+  );
   return false;
 }
 
@@ -123,6 +144,7 @@ export async function dispatchPushForServerMessage(
       // auto-completed and `failed` runs surface in-app.
       if (msg.status !== "awaiting_review") return;
       if (!isApnsConfigured()) return;
+      if (!passesPushPrefs("reviewReady", msg.workItemId)) return;
 
       const now = Date.now();
       if (shouldThrottle(`wi:${msg.workItemId}`, now)) return;
@@ -150,6 +172,7 @@ export async function dispatchPushForServerMessage(
 
     if (msg.type === "confirmation_request") {
       if (!isApnsConfigured()) return;
+      if (!passesPushPrefs("needsYou", msg.requestId)) return;
 
       if (sentConfirmationRequestIds.has(msg.requestId)) return;
       sentConfirmationRequestIds.add(msg.requestId);

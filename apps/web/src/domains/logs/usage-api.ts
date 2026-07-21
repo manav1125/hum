@@ -144,10 +144,16 @@ async function throwOnBadResponse(
   response: Response | undefined,
   fallbackMessage: string,
 ): Promise<never> {
-  const text = await response
-    ?.clone()
-    .text()
-    .catch(() => "");
+  let text = "";
+  try {
+    // The generated client has usually consumed the body already, in which
+    // case clone() itself throws synchronously ("Response body is already
+    // used") — the try block (not a .catch on the promise) is what keeps
+    // this function's contract of ALWAYS throwing UsageRequestError.
+    text = (await response?.clone().text()) ?? "";
+  } catch {
+    text = "";
+  }
   throw new UsageRequestError(
     response?.status ?? 0,
     text || response?.statusText || fallbackMessage,

@@ -537,10 +537,66 @@ function cadenceToMs(cadence: string | null): number {
   }
 }
 
-/** @internal Exported for testing. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** "HH:mm" (24h) → hour/minute, or null for anything malformed. */
+function parseSweepAt(
+  sweepAt: string | null,
+): { hour: number; minute: number } | null {
+  if (!sweepAt) return null;
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(sweepAt.trim());
+  if (!match) return null;
+  return { hour: Number(match[1]), minute: Number(match[2]) };
+}
+
+/**
+ * First occurrence of the local wall-clock time `hour:minute` STRICTLY after
+ * `after` (epoch ms), computed in the daemon's timezone via local Date
+ * setters — DST transitions resolve the way the wall clock does.
+ *
+ * @internal Exported for testing.
+ */
+export function nextSweepOccurrenceAfter(
+  after: number,
+  hour: number,
+  minute: number,
+): number {
+  const d = new Date(after);
+  d.setHours(hour, minute, 0, 0);
+  if (d.getTime() <= after) {
+    d.setDate(d.getDate() + 1);
+    // Re-anchor: crossing a DST boundary with setDate can shift the
+    // wall-clock time.
+    d.setHours(hour, minute, 0, 0);
+  }
+  return d.getTime();
+}
+
+/**
+ * @internal Exported for testing.
+ *
+ * Dueness rules:
+ *  - never-ran missions are due immediately (unchanged);
+ *  - hourly cadence is a rolling interval (sweepAt ignored, unchanged);
+ *  - daily + sweepAt: due at the first occurrence of the sweep clock after
+ *    the last cycle — one sweep per day, anchored to the wall clock in the
+ *    daemon's tz rather than drifting with restarts/manual runs;
+ *  - weekly + sweepAt: due at the sweep clock on the 7th day after the last
+ *    cycle (anchor = lastCycleAt + 6 days, then the next clock occurrence);
+ *  - null/malformed sweepAt (legacy rows): rolling interval, so old data
+ *    keeps its exact pre-clock behavior.
+ */
 export function isMissionCycleDue(mission: Mission, now = Date.now()): boolean {
   if (mission.status !== "active") return false;
   if (mission.lastCycleAt == null) return true;
+  const sweep = parseSweepAt(mission.sweepAt);
+  if (sweep && mission.cadence !== "hourly") {
+    const anchor =
+      mission.cadence === "weekly"
+        ? mission.lastCycleAt + 6 * DAY_MS
+        : mission.lastCycleAt;
+    return now >= nextSweepOccurrenceAfter(anchor, sweep.hour, sweep.minute);
+  }
   return now - mission.lastCycleAt >= cadenceToMs(mission.cadence);
 }
 

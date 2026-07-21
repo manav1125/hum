@@ -26,6 +26,12 @@ export const missions = sqliteTable("missions", {
   brief: text("brief"),
   /** Cycle cadence: 'hourly' | 'daily' | 'weekly'. Null = default (daily). */
   cadence: text("cadence"),
+  /**
+   * Wall-clock sweep time "HH:mm" (24h, daemon-local tz) for daily/weekly
+   * cadence; hourly ignores it. Null = legacy rolling-interval scheduling
+   * (rows predating migration 309). New missions default to "08:00".
+   */
+  sweepAt: text("sweep_at"),
   /** Hard spend cap in cents; null = uncapped. */
   budgetCents: integer("budget_cents"),
   /** Cents spent by orchestrator cycles so far (LLM usage where trackable). */

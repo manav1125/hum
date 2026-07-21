@@ -9,11 +9,15 @@
  *   in quotes (agent grammar) → owning agent + cadence on one line + a quiet
  *   ‖ Pause chip (resume swaps to ▶ blue) → "WORK UNDER THIS MISSION ·
  *   ACROSS N PROJECTS" rows keeping the taxonomy states incl. the new
- *   ○ parked dashed ring → "RECENT SWEEPS" honest about "no action" days.
+ *   ○ parked dashed ring and the 4.1 queued solid faint-blue ring ("will run
+ *   on its own" vs parked's "waiting for you") → "RECENT SWEEPS" honest
+ *   about "no action" days.
  *
  * HONESTY NOTES (deviations from the drawn frame, all data-bound):
- *   · cadence renders "sweeps daily" — the mission model has no sweep TIME,
- *     so the frame's "8am" is not fabricated.
+ *   · cadence renders "sweeps daily · 8:00 AM" from the mission's REAL
+ *     `sweepAt` clock (daemon migration 309; new missions default 08:00).
+ *     Legacy rows without a clock keep the clock-less "sweeps daily" —
+ *     still nothing fabricated.
  *   · the owning agent comes from real work-item attribution (assignee →
  *     roster); with nothing attributable the line reads "Cue runs it".
  *   · Pause is REAL — the same mission PATCH (status paused/active) the
@@ -65,7 +69,7 @@ const STATE_SUB: Record<RowState, string> = {
   running: "running now",
   review: "ready for review",
   parked: "parked — waiting for ▶",
-  queued: "queued",
+  queued: "queued — runs next, no ▶ needed",
 };
 
 /** The 22px leading state tile per taxonomy (incl. the ○ parked dashed ring). */
@@ -121,23 +125,34 @@ function StateTile({ state }: { state: RowState }) {
       </span>
     );
   }
+  // Queued (round-4.1, frame 58): solid hollow ring in faint blue — visibly
+  // "will run on its own", vs parked's dashed mono "waiting for you".
+  // Drawn 1.5px solid rgba(127,163,242,.55); --mv3-micro is that exact blue
+  // in dark and re-tones to the AA blue in light (no new colors this round).
   return (
     <span
       aria-hidden
+      data-state-tile="queued"
       style={{
         width: 22,
         height: 22,
         borderRadius: 7,
-        background: "color-mix(in srgb, var(--mv3-faint) 10%, transparent)",
-        color: "var(--mv3-faint)",
+        background: "color-mix(in srgb, var(--mv3-faint) 8%, transparent)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 11,
         flexShrink: 0,
       }}
     >
-      ·
+      <span
+        style={{
+          width: 12,
+          height: 12,
+          borderRadius: "50%",
+          border:
+            "1.5px solid color-mix(in srgb, var(--mv3-micro) 55%, transparent)",
+        }}
+      />
     </span>
   );
 }
@@ -491,7 +506,7 @@ export function Mv3MissionDetail({ missionId }: { missionId: string }) {
               flexShrink: 0,
             }}
           >
-            · {cadenceLine(mission.cadence)}
+            · {cadenceLine(mission.cadence, mission.sweepAt)}
           </span>
           {/* Quiet pause chip — REAL mission PATCH; resume swaps to ▶ blue.
               Drawn ~26px, ≥44pt hit target via padding + negative margin. */}

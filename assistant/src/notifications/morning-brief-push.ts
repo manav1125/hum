@@ -41,7 +41,11 @@ import {
 import { getLogger } from "../util/logger.js";
 import { isApnsConfigured } from "./apns-sender.js";
 import { emitNotificationSignal } from "./emit-signal.js";
+import { localClock } from "./local-clock.js";
 import { sendAlertToAllDevices } from "./push-dispatch.js";
+import { checkPushGate } from "./push-prefs.js";
+
+export { localClock } from "./local-clock.js";
 
 const log = getLogger("morning-brief-push");
 
@@ -122,52 +126,6 @@ export function parseBriefTime(raw: string | undefined): number {
   const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(raw ?? "");
   if (!match) return DEFAULT_TIME_MINUTES;
   return Number(match[1]) * 60 + Number(match[2]);
-}
-
-interface LocalClock {
-  /** Calendar date key, e.g. "2026-07-18", in the effective timezone. */
-  dateKey: string;
-  minutesOfDay: number;
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/**
- * Resolve the wall clock in the given IANA timezone (null/invalid = the
- * daemon's local timezone — the caveat the brief route already documents).
- */
-export function localClock(now: Date, timezone: string | null): LocalClock {
-  if (timezone) {
-    try {
-      const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: timezone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-      }).formatToParts(now);
-      const get = (type: string): string =>
-        parts.find((p) => p.type === type)?.value ?? "";
-      const dateKey = `${get("year")}-${get("month")}-${get("day")}`;
-      const minutesOfDay = Number(get("hour")) * 60 + Number(get("minute"));
-      if (
-        /^\d{4}-\d{2}-\d{2}$/.test(dateKey) &&
-        Number.isFinite(minutesOfDay)
-      ) {
-        return { dateKey, minutesOfDay };
-      }
-    } catch {
-      // Invalid timezone string — fall through to daemon-local.
-    }
-  }
-  return {
-    dateKey: `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`,
-    minutesOfDay: now.getHours() * 60 + now.getMinutes(),
-  };
 }
 
 /**
@@ -264,10 +222,20 @@ export async function sendMorningBriefPush(
   // (no platform credentials on self-host) but daemon-local APNs is
   // configured, page registered devices directly. Skipped when the platform
   // channel delivered, so platform-hosted phones never get a double push.
+  // The mirror is additionally category/quiet-hours gated (notifications.push)
+  // — suppression only mutes the device push; the in-app brief above already
+  // went through the pipeline.
   const platformDelivered = result.deliveryResults.some(
     (r) => r.channel === "platform" && r.status === "sent",
   );
-  if (!platformDelivered && isApnsConfigured()) {
+  const gate = checkPushGate("morningBrief");
+  if (!gate.allowed) {
+    log.info(
+      { dateKey, reason: gate.reason },
+      "Morning brief APNs mirror suppressed by push preferences",
+    );
+  }
+  if (!platformDelivered && isApnsConfigured() && gate.allowed) {
     await sendAlertToAllDevices({
       title: copy.title,
       body: copy.body,

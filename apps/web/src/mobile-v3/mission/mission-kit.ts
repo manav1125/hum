@@ -106,10 +106,32 @@ export function sweepsFromEvents(
   return rows;
 }
 
-/** "sweeps daily" — straight from the cadence field, no invented clock time. */
-export function cadenceLine(cadence: string | null): string {
+/**
+ * "sweeps daily · 8:00 AM" — cadence straight from the mission, the clock
+ * from its `sweepAt` ("HH:mm", daemon-local). Legacy rows without a sweep
+ * clock (pre-migration-309 daemons or sweepAt PATCHed to null) keep the
+ * clock-less "sweeps daily" — never invent a time. Hourly cadence has no
+ * meaningful clock, so it stays clock-less too.
+ */
+export function cadenceLine(
+  cadence: string | null,
+  sweepAt?: string | null,
+): string {
   const c = cadence === "hourly" || cadence === "weekly" ? cadence : "daily";
-  return `sweeps ${c}`;
+  if (c === "hourly") return "sweeps hourly";
+  const clockLabel = sweepAt ? formatSweepAt(sweepAt) : null;
+  return clockLabel ? `sweeps ${c} · ${clockLabel}` : `sweeps ${c}`;
+}
+
+/** "08:00" → "8:00 AM" · "21:30" → "9:30 PM"; null for malformed input. */
+export function formatSweepAt(sweepAt: string): string | null {
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(sweepAt.trim());
+  if (!match) return null;
+  const hour24 = Number(match[1]);
+  const minute = match[2];
+  const meridiem = hour24 < 12 ? "AM" : "PM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${minute} ${meridiem}`;
 }
 
 /**

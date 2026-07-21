@@ -147,6 +147,7 @@ import {
   migrateLlmRequestLogProvider,
   migrateLlmRequestLogsCreatedAtIndex,
   migrateLlmUsageAddRawUsage,
+  migrateLlmUsageAgentAttribution,
   migrateLlmUsageAttribution,
   migrateLlmUsageEventsAddAssistantVersion,
   migrateMemoryGraphImageRefs,
@@ -163,6 +164,7 @@ import {
   migrateMessagesConversationCreatedAtIndex,
   migrateMessagesFtsBackfill,
   migrateMessagesRoleCreatedAtIndex,
+  migrateMissionSweepAt,
   migrateNormalizePhoneIdentities,
   migrateNormalizeSlackExternalContent,
   migrateNormalizeUserFileByPrincipal,
@@ -552,6 +554,8 @@ export function initializeDb(): void {
     migrateWorkItemAutoRunEligibility,
     migrateWorkItemsRunConversationIndex,
     migrateWorkItemHygiene,
+    migrateLlmUsageAgentAttribution,
+    migrateMissionSweepAt,
   ];
 
   // Run each migration step, catching and logging individual failures so one

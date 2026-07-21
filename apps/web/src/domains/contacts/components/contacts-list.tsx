@@ -21,7 +21,7 @@ interface ContactsListProps {
 }
 
 export function ContactsList({
-  loading,
+  loading: _loading,
   guardian,
   assistantName,
   regularContacts,

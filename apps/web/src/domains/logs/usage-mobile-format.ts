@@ -5,7 +5,8 @@
  * testable in isolation.
  */
 
-import type { UsageDayBucket } from "./usage-types";
+import { UsageRequestError } from "./usage-api";
+import type { UsageDayBucket, UsageGroupBreakdown } from "./usage-types";
 
 /** 2 400 000 → "2.4M" · 512 340 → "512.3k" · 930 → "930". */
 export function formatTokensCompact(count: number): string {
@@ -30,6 +31,50 @@ export function humanizeUsageActor(group: string): string {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
+/**
+ * True when a breakdown request failed because the daemon predates the
+ * `groupBy=agent` dimension (migration 308) — those daemons reject the
+ * unknown dimension with a 400. Network failures / 5xx are NOT "unsupported":
+ * the caller should surface those instead of silently degrading to BY ACTOR.
+ */
+export function isGroupByUnsupported(error: unknown): boolean {
+  return error instanceof UsageRequestError && error.status === 400;
+}
+
+/** Which grouping the BY AGENT/BY ACTOR section is actually showing. */
+export type SpendGroupMode = "agent" | "actor";
+
+export interface SpendGroupRow {
+  key: string;
+  label: string;
+  costUsd: number;
+  /** 4–100 (% of the top group); 0 when every group is $0. */
+  widthPct: number;
+}
+
+/**
+ * Breakdown rows → the section's display rows: drop empty groups, sort by
+ * spend, keep the top 5, and scale bar widths to the top group. Agent-mode
+ * labels come from the daemon verbatim (roster names, "Cue" for house work);
+ * actor-mode labels are humanized snake_case subsystem ids.
+ */
+export function buildSpendGroupRows(
+  breakdown: readonly UsageGroupBreakdown[],
+  mode: SpendGroupMode,
+): SpendGroupRow[] {
+  const groups = [...breakdown]
+    .filter((g) => g.totalEstimatedCostUsd > 0 || g.eventCount > 0)
+    .sort((a, b) => b.totalEstimatedCostUsd - a.totalEstimatedCostUsd)
+    .slice(0, 5);
+  const max = Math.max(...groups.map((g) => g.totalEstimatedCostUsd), 0);
+  return groups.map((g) => ({
+    key: g.groupKey ?? g.groupId ?? g.group,
+    label: mode === "agent" ? g.group : humanizeUsageActor(g.group),
+    costUsd: g.totalEstimatedCostUsd,
+    widthPct: max > 0 ? Math.max((g.totalEstimatedCostUsd / max) * 100, 4) : 0,
+  }));
+}
+
 export interface SpendBar {
   bucketId: string;
   /** Short axis label ("Mon" / "14" / "6a"). */
@@ -41,12 +86,18 @@ export interface SpendBar {
   /** 0–100 — bar height as % of the peak bucket. */
   heightPct: number;
   isPeak: boolean;
+  /**
+   * True-$0 bucket (round-4.1 frame 61): renders as a 2px mono hairline
+   * tick, NEVER the 6% floor — zero must not look like spend.
+   */
+  zeroTick: boolean;
 }
 
 /**
  * Bucket list → bar models. Heights are % of the peak bucket's cost, with a
  * 6% visible floor for any non-zero bucket (a $0.001 day must still paint).
- * Peak = highest cost; ties resolve to the earliest bucket.
+ * True-$0 buckets carry `zeroTick` instead of the floor (a 2px mono hairline
+ * in the renderer). Peak = highest cost; ties resolve to the earliest bucket.
  */
 export function buildSpendBars(
   buckets: readonly UsageDayBucket[],
@@ -70,6 +121,7 @@ export function buildSpendBars(
       eventCount: bucket.eventCount,
       heightPct: cost > 0 ? Math.max(raw, 6) : 0,
       isPeak: i === peakIndex,
+      zeroTick: cost <= 0,
     };
   });
 }
