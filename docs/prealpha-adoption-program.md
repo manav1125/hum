@@ -107,15 +107,28 @@ Renumber all migrations into our registry · never adopt UUIDv7/requestId/flat-c
 this program · strip WorkOS/velay/credits references · exclude memory-relocation churn · every
 workstream lands with tests + a prod smoke + rollback notes.
 
-## Lock decisions needed
-1. **Program window**: ~6–7 working days before alpha invites. (User pre-approved "a few more
-   days" — confirm the week.)
-2. **Advisor brain**: (a) open-weight strong model via OpenRouter (kimi-k3 / glm-5 quality tier —
-   zero new deps, recommend to start) or (b) fund the stored Anthropic key and use Claude. Can flip
-   later via config.
-3. **Phone channel**: provide Twilio account/number now (small recurring cost) or slip WS-G to
-   post-alpha.
-4. **Extension distribution**: OK to submit to Chrome Web Store under your developer account
-   (one-time $5 fee if not registered) + sideload zip for alpha meanwhile?
-5. **Plugins curation**: we curate + pin the alpha catalog (3 seeds), community submissions
-   post-alpha. OK?
+## Lock decisions
+1. **Program window** — ✅ LOCKED: ~6–7 working days, "do it right." User offers design help for
+   mobile / web / OS X (see the design-ask list below).
+2. **Advisor brain** — ✅ LOCKED: **kimi-k3 primary, glm-5.2 configured fallback**. Both probed on
+   the prod OpenRouter key (2026-07-21): tools + 1M ctx, both reason well; kimi-k3 sharper, glm-5.2
+   ~5× cheaper input ($0.95 vs $3/M). Advisor fires selectively to bound cost. Anthropic/Claude
+   remains a later config flip if desired. Wire in WS-B via our call-site routing
+   (CUE_ADVISOR_MODEL / config).
+3. **Phone channel** — OPEN: provide a Twilio account/number during the week, or WS-G slips
+   post-alpha (doesn't block anything else).
+4. **Extension distribution** — OPEN: OK to submit to Chrome Web Store under your dev account
+   ($5 one-time if unregistered)? Alpha users sideload the zip meanwhile regardless.
+5. **Plugins curation** — OPEN: we curate + commit-pin the alpha catalog (3 seeds), community
+   submissions open post-alpha. Confirm.
+
+## Design-ask list (user offered to help — prioritized per platform)
+**Mobile (v3 grammar):** Plugins surface (browse/installed/detail/permissions — reuse skill-detail
+sheet grammar) · Watchers+Playbooks config (a watcher = a monitor card; a playbook = trigger→action
+w/ autonomy dial) · desktop-organizer plan card (the review-before-move UI) · phone-channel setup
+sheet (like Telegram's).
+**Web (serif HQ):** plugin marketplace + detail on desktop HQ · watchers/playbooks board ·
+phone-channel + call-transcript surfaces · desktop-control consent/plan cards.
+**OS X (Cue Live overlay):** the unified act-loop states — "about to do X" pre-action affordance,
+approval prompt in-overlay, ActionVerifier progress/settle states, desktop-organizer live progress
+overlay. This is the highest-value design surface (net-new interaction model).
