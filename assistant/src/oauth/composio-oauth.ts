@@ -28,11 +28,16 @@ import type {
   OAuthConnectionRequest,
   OAuthConnectionResponse,
 } from "./connection.js";
+import {
+  recordConnectorFailure,
+  recordConnectorSuccess,
+} from "./connector-health-store.js";
 
 const log = getLogger("composio-oauth");
 const COMPOSIO_BASE = "https://backend.composio.dev/api/v3";
-// The request proxy lives on the v3.1 surface.
-const COMPOSIO_PROXY_URL =
+// The request proxy lives on the v3.1 surface. Exported for the connector
+// health probe, which runs its liveness checks through the same proxy.
+export const COMPOSIO_PROXY_URL =
   "https://backend.composio.dev/api/v3.1/tools/execute/proxy";
 const CONN_ID_TTL_MS = 5 * 60_000;
 
@@ -243,15 +248,38 @@ class ComposioOAuthConnection implements OAuthConnection {
       );
     }
     const { endpoint, params } = buildProxyArgs(req);
-    const resp = await proxyRequest(this.creds, connId, {
-      endpoint,
-      method: req.method,
-      body: req.body,
-      headers: params,
-      signal: req.signal,
-    });
+    let resp: ComposioProxyResponse;
+    try {
+      resp = await proxyRequest(this.creds, connId, {
+        endpoint,
+        method: req.method,
+        body: req.body,
+        headers: params,
+        signal: req.signal,
+      });
+    } catch (err) {
+      // Passive health signal: a proxy-level failure is connection-shaped
+      // (Composio couldn't complete an authenticated call for this toolkit).
+      recordConnectorFailure(
+        toolkit,
+        err instanceof Error ? err.message : String(err),
+      );
+      throw err;
+    }
+    const status = resp.status ?? 200;
+    // Passive health signal: 401/403 from the provider means the stored
+    // connection is broken; any other provider verdict proves the connection
+    // authenticated (even a 404 had to get past auth to be a 404).
+    if (status === 401 || status === 403) {
+      recordConnectorFailure(
+        toolkit,
+        `Provider rejected the connection (HTTP ${status}) — reconnect to fix`,
+      );
+    } else {
+      recordConnectorSuccess(toolkit);
+    }
     return {
-      status: resp.status ?? 200,
+      status,
       headers: resp.headers ?? {},
       body: resp.data ?? null,
     };

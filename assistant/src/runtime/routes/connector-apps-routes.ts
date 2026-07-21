@@ -24,6 +24,12 @@ import { z } from "zod";
 
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
+import {
+  type ConnectedAccountInfo,
+  type ConnectorHealth,
+  connectorHealthFor,
+  kickHealthRefresh,
+} from "./connector-health.js";
 import { BadRequestError, InternalError } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 
@@ -54,6 +60,12 @@ export interface ConnectorApp {
   logoUrl?: string;
   /** Whether THIS install has an ACTIVE Composio connection for the app. */
   connected: boolean;
+  /**
+   * Verified health for connected apps — evidence of real authenticated
+   * calls succeeding or failing (see `connector-health.ts`). Absent on
+   * disconnected apps.
+   */
+  health?: ConnectorHealth;
 }
 
 /**
@@ -279,33 +291,57 @@ async function loadCatalog(
 }
 
 // ---------------------------------------------------------------------------
-// Connected state — one connected_accounts call, briefly memoized.
+// Connected state — one connected_accounts call, briefly memoized. Beyond
+// the slug set, keep each ACTIVE account's id (the health probe calls the
+// Composio request proxy per connected-account id) and its `is_disabled`
+// flag (the only trustworthy attention signal in the metadata itself).
 // ---------------------------------------------------------------------------
 
-let connectedMemo: { at: number; slugs: Set<string> } | null = null;
+let connectedMemo: {
+  at: number;
+  accounts: Map<string, ConnectedAccountInfo>;
+} | null = null;
 
-async function connectedSlugs(
+async function connectedAccounts(
   creds: ComposioCreds | null,
-): Promise<Set<string>> {
-  if (!creds) return new Set();
+): Promise<Map<string, ConnectedAccountInfo>> {
+  if (!creds) return new Map();
   if (connectedMemo && Date.now() - connectedMemo.at < CONNECTED_TTL_MS) {
-    return connectedMemo.slugs;
+    return connectedMemo.accounts;
   }
   try {
     const data = (await composio(
       creds,
       "GET",
       `/connected_accounts?user_ids=${encodeURIComponent(creds.userId)}&statuses=ACTIVE&limit=100`,
-    )) as { items?: Array<{ toolkit?: { slug?: string } }> };
-    const slugs = new Set(
-      (data.items ?? []).map((c) => c.toolkit?.slug ?? "").filter(Boolean),
-    );
-    connectedMemo = { at: Date.now(), slugs };
-    return slugs;
+    )) as {
+      items?: Array<{
+        id?: string;
+        toolkit?: { slug?: string };
+        is_disabled?: boolean;
+      }>;
+    };
+    const accounts = new Map<string, ConnectedAccountInfo>();
+    for (const item of data.items ?? []) {
+      const slug = item.toolkit?.slug;
+      if (!slug || typeof item.id !== "string" || accounts.has(slug)) continue;
+      accounts.set(slug, {
+        id: item.id,
+        isDisabled: item.is_disabled === true,
+      });
+    }
+    connectedMemo = { at: Date.now(), accounts };
+    return accounts;
   } catch (err) {
     log.warn({ err }, "connected_accounts fetch failed");
-    return connectedMemo?.slugs ?? new Set();
+    return connectedMemo?.accounts ?? new Map();
   }
+}
+
+/** Test hook: drop the module memos so a test starts from a clean slate. */
+export function resetConnectorAppsMemosForTest(): void {
+  connectedMemo = null;
+  catalogMemo = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,10 +350,20 @@ async function connectedSlugs(
 
 async function handleListConnectorApps({ queryParams = {} }: RouteHandlerArgs) {
   const creds = readCreds();
-  const [{ apps, source }, connected] = await Promise.all([
+  const [{ apps, source }, accounts] = await Promise.all([
     loadCatalog(creds),
-    connectedSlugs(creds),
+    connectedAccounts(creds),
   ]);
+
+  // Stale-while-revalidate health: never block the list on probes — kick a
+  // single-flight, TTL-bounded background sweep and serve what's cached.
+  // `?refreshHealth=1` shortens the TTL to a 30s cooldown for an on-demand
+  // re-check (clients poll the list to pick up landed results).
+  if (creds && accounts.size > 0) {
+    const force =
+      queryParams.refreshHealth === "1" || queryParams.refreshHealth === "true";
+    kickHealthRefresh(creds.apiKey, accounts, force);
+  }
 
   const query = (queryParams.query ?? "").trim().toLowerCase();
   const filtered = query
@@ -332,7 +378,16 @@ async function handleListConnectorApps({ queryParams = {} }: RouteHandlerArgs) {
   return {
     configured: creds !== null,
     source,
-    apps: filtered.map((a) => ({ ...a, connected: connected.has(a.slug) })),
+    apps: filtered.map((a) => {
+      const account = accounts.get(a.slug);
+      return {
+        ...a,
+        connected: account !== undefined,
+        ...(account !== undefined
+          ? { health: connectorHealthFor(a.slug, account) }
+          : {}),
+      };
+    }),
   };
 }
 
@@ -404,6 +459,35 @@ async function handleConnectConnectorApp({ body = {} }: RouteHandlerArgs) {
 // Route definitions (shared HTTP + IPC)
 // ---------------------------------------------------------------------------
 
+const connectorHealthSchema = z
+  .object({
+    status: z
+      .enum(["ok", "attention", "unknown"])
+      .describe(
+        "Verified health verdict: 'ok' = a real authenticated call " +
+          "succeeded recently; 'attention' = the provider rejected the " +
+          "connection (or it's disabled) — reconnect; 'unknown' = linked " +
+          "but no recent evidence either way.",
+      ),
+    lastSuccessAt: z
+      .string()
+      .optional()
+      .describe("ISO time of the last successful call."),
+    lastErrorAt: z
+      .string()
+      .optional()
+      .describe("ISO time of the last connection-shaped failure."),
+    lastError: z.string().optional().describe("Human-readable last failure."),
+    checkedAt: z
+      .string()
+      .optional()
+      .describe("ISO time the active liveness probe last ran for this app."),
+  })
+  .describe(
+    "Health signal for a connected app, combining passive call outcomes " +
+      "with a cached liveness probe. Absent on disconnected apps.",
+  );
+
 const connectorAppSchema = z.object({
   slug: z.string(),
   name: z.string(),
@@ -417,6 +501,7 @@ const connectorAppSchema = z.object({
         "when missing or when the image fails to load.",
     ),
   connected: z.boolean(),
+  health: connectorHealthSchema.optional(),
 });
 
 export const ROUTES: RouteDefinition[] = [
@@ -439,6 +524,14 @@ export const ROUTES: RouteDefinition[] = [
         name: "query",
         schema: { type: "string" },
         description: "Case-insensitive filter over name, slug, and category.",
+      },
+      {
+        name: "refreshHealth",
+        schema: { type: "string" },
+        description:
+          "Pass '1' to request an on-demand background health re-probe " +
+          "(cooldown-limited). The response still returns immediately with " +
+          "cached health — poll the list to pick up fresh results.",
       },
     ],
     responseBody: z.object({

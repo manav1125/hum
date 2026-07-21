@@ -10,11 +10,15 @@
  * (`connectorappsGet`) — the same read the desktop Tools & Apps page and the
  * command-center tile trust. Logos are the catalog's brand `logoUrl`s
  * (ConnectorAppLogo falls back to a monogram only if an image fails).
- * Per-app "what flowed today" lines are NOT rendered — no per-connector
- * activity/health source exists yet (the daemon only exposes a boolean
- * "an ACTIVE Composio account exists"), so connected tiles carry an honest
- * "Linked" status line — never "live"/"working" — plus a footnote that
- * status reflects setup, not verified health.
+ * HEALTH: connected tiles render the daemon's per-app `health` verdict
+ * (evidence of real authenticated calls — passive proxy outcomes + a cached
+ * liveness probe; see `lib/connector-health.ts`):
+ *  · attention → amber tile + "Needs attention", detail sheet leads with the
+ *    last error and Reconnect;
+ *  · ok → "Linked · working ✓ Nh ago" (only with a genuine success signal);
+ *  · unknown → the honest "Linked" + the setup-not-health footnote.
+ * The page requests `refreshHealth=1` so opening it kicks an on-demand
+ * probe (cooldown-limited server-side) and briefly polls to pick up results.
  *
  * Leaves (extrapolation grant — frame 11's row grammar):
  *  · connector detail sheet — status, category, reconnect (real OAuth);
@@ -36,6 +40,14 @@ import {
   connectorappsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
+import {
+  attentionCount,
+  connectionStatusLine,
+  connectionsMeta,
+  hasUnknownConnections,
+  healthStatus,
+  relativeAge,
+} from "@/lib/connector-health";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -62,8 +74,10 @@ const CATEGORY_DESC: Record<string, string> = {
 
 const CONNECT_POLL_MS = 3_000;
 const CONNECT_POLL_WINDOW_MS = 120_000;
+/** Poll briefly after mount so the health probe kicked by this page lands. */
+const HEALTH_POLL_WINDOW_MS = 30_000;
 
-function LiveDot() {
+function LiveDot({ tone = "green" }: { tone?: "green" | "amber" }) {
   return (
     <span
       aria-hidden
@@ -71,8 +85,11 @@ function LiveDot() {
         width: 8,
         height: 8,
         borderRadius: "50%",
-        background: "var(--mv3-green)",
-        boxShadow: "0 0 8px rgba(111,214,154,.8)",
+        background: tone === "amber" ? "var(--mv3-amber)" : "var(--mv3-green)",
+        boxShadow:
+          tone === "amber"
+            ? "0 0 8px rgba(217,168,78,.8)"
+            : "0 0 8px rgba(111,214,154,.8)",
         flexShrink: 0,
       }}
     />
@@ -92,17 +109,22 @@ function ConnectedTile({
     haptic.light();
     onPress();
   };
+  // HONESTY (UAT P1 → F5 probe): the status line reflects VERIFIED health
+  // from the daemon — "working ✓" only with a real success signal,
+  // "Needs attention" only on positive evidence of breakage, plain
+  // "Linked" otherwise. a11y: the tile is a real button.
+  const status = healthStatus(app.health);
+  const statusLine = connectionStatusLine(app.health);
   return (
     <GlassCard
       radius={18}
       padding="13px 14px"
       blur={delay < 0.4}
-      // HONESTY (UAT P1): the daemon only knows a login exists (Composio
-      // ACTIVE account) — it has no health/last-success signal, so this tile
-      // says "Linked", never "live". a11y: the tile is a real button.
       role="button"
       tabIndex={0}
-      aria-label={`${app.name} — linked. Open connection details`}
+      aria-label={`${app.name} — ${
+        status === "attention" ? "needs attention" : "linked"
+      }. Open connection details`}
       onKeyDown={(e: React.KeyboardEvent) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -110,7 +132,10 @@ function ConnectedTile({
         }
       }}
       style={{
-        border: "1px solid rgba(111,214,154,.3)",
+        border:
+          status === "attention"
+            ? "1px solid var(--mv3-amber-card-border)"
+            : "1px solid rgba(111,214,154,.3)",
         cursor: "pointer",
         ...rise(delay),
       }}
@@ -130,15 +155,21 @@ function ConnectedTile({
           imgSize={18}
           chipStyle={{ background: "#fff", fontSize: 14 }}
         />
-        <LiveDot />
+        <LiveDot tone={status === "attention" ? "amber" : "green"} />
       </div>
       <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 9 }}>
         {app.name}
       </div>
       <div
-        style={{ fontSize: 10.5, color: "var(--mv3-muted)", marginTop: 2 }}
+        style={{
+          fontSize: 10.5,
+          color:
+            status === "attention" ? "var(--mv3-amber)" : "var(--mv3-muted)",
+          fontWeight: status === "attention" ? 600 : undefined,
+          marginTop: 2,
+        }}
       >
-        Linked
+        {statusLine}
       </div>
     </GlassCard>
   );
@@ -154,12 +185,18 @@ export function Mv3ConnectionsPage() {
   const [addQuery, setAddQuery] = useState("");
   const [busySlug, setBusySlug] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [pollUntil, setPollUntil] = useState(0);
+  // Poll briefly on mount so the health probe this page kicks (below) lands
+  // without a manual refresh; a connect flow extends the window.
+  const [pollUntil, setPollUntil] = useState(
+    () => Date.now() + HEALTH_POLL_WINDOW_MS,
+  );
 
   const appsQuery = useQuery({
     ...connectorappsGetOptions({
       path: { assistant_id: assistantId },
-      query: {},
+      // Ask the daemon for an on-demand health re-probe (cooldown-limited
+      // server-side; the response never blocks on it).
+      query: { refreshHealth: "1" },
     }),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
@@ -173,7 +210,7 @@ export function Mv3ConnectionsPage() {
       void queryClient.invalidateQueries({
         queryKey: connectorappsGetQueryKey({
           path: { assistant_id: assistantId },
-          query: {},
+          query: { refreshHealth: "1" },
         }),
       });
     },
@@ -208,6 +245,12 @@ export function Mv3ConnectionsPage() {
   const connectable = appsQuery.data?.configured === true;
   const connected = apps.filter((a) => a.connected);
   const total = apps.length;
+  const needAttention = attentionCount(apps);
+  const anyUnknown = hasUnknownConnections(apps);
+  // The sheet tracks the live row (health can land while it's open).
+  const detailApp = detail
+    ? (apps.find((a) => a.slug === detail.slug) ?? detail)
+    : null;
 
   const availableMatches = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
@@ -232,7 +275,9 @@ export function Mv3ConnectionsPage() {
       sub={
         appsQuery.isLoading
           ? "Checking what's plugged in…"
-          : `${connected.length} linked · everything flows into the orbit`
+          : needAttention > 0
+            ? connectionsMeta(connected.length, needAttention)
+            : `${connected.length} linked · everything flows into the orbit`
       }
     >
       {appsQuery.isError ? (
@@ -273,19 +318,22 @@ export function Mv3ConnectionsPage() {
                   />
                 ))}
               </div>
-              {/* The honest line: linked ≠ verified healthy (no probe yet). */}
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--mv3-faint)",
-                  textAlign: "center",
-                  padding: "0 8px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Status reflects setup, not live health — if an app
-                misbehaves, open it and Reconnect.
-              </div>
+              {/* The honest line — only while some app still lacks verified
+                  evidence (rows with ✓/attention already reflect reality). */}
+              {anyUnknown ? (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--mv3-faint)",
+                    textAlign: "center",
+                    padding: "0 8px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Plain &ldquo;Linked&rdquo; reflects setup, not verified
+                  health — if an app misbehaves, open it and Reconnect.
+                </div>
+              ) : null}
             </>
           ) : !appsQuery.isLoading ? (
             <GlassCard padding="18px 16px">
@@ -412,23 +460,23 @@ export function Mv3ConnectionsPage() {
 
       {/* Connector detail leaf (sheet). */}
       <SheetShell
-        open={detail !== null}
+        open={detailApp !== null}
         onClose={() => setDetail(null)}
-        label={detail ? `${detail.name} connection` : "Connection"}
+        label={detailApp ? `${detailApp.name} connection` : "Connection"}
       >
-        {detail ? (
+        {detailApp ? (
           <div style={{ padding: "2px 2px 8px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <ConnectorAppLogo
-                name={detail.name}
-                logoUrl={detail.logoUrl}
+                name={detailApp.name}
+                logoUrl={detailApp.logoUrl}
                 size={44}
                 imgSize={26}
                 chipStyle={{ background: "#fff", fontSize: 18 }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 17, fontWeight: 700 }}>
-                  {detail.name}
+                  {detailApp.name}
                 </div>
                 <div
                   style={{
@@ -437,52 +485,110 @@ export function Mv3ConnectionsPage() {
                     marginTop: 1,
                   }}
                 >
-                  {CATEGORY_DESC[detail.category] ?? detail.category}
+                  {CATEGORY_DESC[detailApp.category] ?? detailApp.category}
                 </div>
               </div>
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11.5,
-                  color: "var(--mv3-green)",
-                }}
-              >
-                <LiveDot /> linked
-              </span>
+              {healthStatus(detailApp.health) === "attention" ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: "var(--mv3-amber)",
+                  }}
+                >
+                  <LiveDot tone="amber" /> needs attention
+                </span>
+              ) : (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 11.5,
+                    color: "var(--mv3-green)",
+                  }}
+                >
+                  <LiveDot />{" "}
+                  {healthStatus(detailApp.health) === "ok"
+                    ? "working"
+                    : "linked"}
+                </span>
+              )}
             </div>
 
-            <div
-              style={{
-                marginTop: 14,
-                background: "var(--mv3-btn2-bg)",
-                border: "1px solid var(--mv3-btn2-border)",
-                borderRadius: 12,
-                padding: "11px 13px",
-                fontSize: 12.5,
-                color: "var(--mv3-muted)",
-                lineHeight: 1.5,
-              }}
-            >
-              Linked means the sign-in is set up — it doesn&rsquo;t verify
-              recent calls are succeeding. If this app has stopped working,
-              Reconnect re-runs the sign-in. Everything it shares flows into
-              your instance only — nothing leaves without your say-so.
-            </div>
+            {healthStatus(detailApp.health) === "attention" ? (
+              // The verified-broken card: what failed, when it last worked,
+              // and Reconnect (below) as the way out.
+              <div
+                style={{
+                  marginTop: 14,
+                  background: "var(--mv3-amber-card-bg)",
+                  border: "1px solid var(--mv3-amber-card-border)",
+                  borderRadius: 12,
+                  padding: "11px 13px",
+                  fontSize: 12.5,
+                  color: "var(--mv3-text)",
+                  lineHeight: 1.5,
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>
+                  This connection is failing
+                  {detailApp.health?.lastErrorAt
+                    ? ` — last error ${relativeAge(detailApp.health.lastErrorAt)}`
+                    : ""}
+                  .
+                </div>
+                {detailApp.health?.lastError ? (
+                  <div style={{ marginTop: 4, color: "var(--mv3-muted)" }}>
+                    {detailApp.health.lastError}
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 4, color: "var(--mv3-muted)" }}>
+                  {detailApp.health?.lastSuccessAt
+                    ? `Last worked ${relativeAge(detailApp.health.lastSuccessAt)}. `
+                    : ""}
+                  Reconnect re-runs the sign-in and usually fixes it.
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  marginTop: 14,
+                  background: "var(--mv3-btn2-bg)",
+                  border: "1px solid var(--mv3-btn2-border)",
+                  borderRadius: 12,
+                  padding: "11px 13px",
+                  fontSize: 12.5,
+                  color: "var(--mv3-muted)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {healthStatus(detailApp.health) === "ok" &&
+                detailApp.health?.lastSuccessAt
+                  ? `Verified working — the last successful call was ${relativeAge(
+                      detailApp.health.lastSuccessAt,
+                    )}. `
+                  : "Linked means the sign-in is set up — it doesn't verify recent calls are succeeding. If this app has stopped working, Reconnect re-runs the sign-in. "}
+                Everything it shares flows into your instance only — nothing
+                leaves without your say-so.
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <button
                 type="button"
-                disabled={!connectable || busySlug === detail.slug}
-                onClick={() => connect(detail.slug)}
+                disabled={!connectable || busySlug === detailApp.slug}
+                onClick={() => connect(detailApp.slug)}
                 style={{
                   ...primaryBtn,
                   opacity:
-                    !connectable || busySlug === detail.slug ? 0.6 : 1,
+                    !connectable || busySlug === detailApp.slug ? 0.6 : 1,
                 }}
               >
-                {busySlug === detail.slug ? "Opening…" : "Reconnect"}
+                {busySlug === detailApp.slug ? "Opening…" : "Reconnect"}
               </button>
             </div>
             <div

@@ -2,12 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChartColumn,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Gift,
   MessageSquareText,
   Settings as SettingsIcon,
   Shield,
   SlidersHorizontal,
+  SunMoon,
 } from "lucide-react";
 import { lazy, useState } from "react";
 import { useNavigate } from "react-router";
@@ -145,12 +147,13 @@ interface PreferencesMenuContentProps {
   onEarnCredits: () => void;
 }
 
-function PreferencesMenuContent({
+export function PreferencesMenuContent({
   onClose,
   onShareFeedback,
   onEarnCredits,
 }: PreferencesMenuContentProps) {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const user = useAuthStore.use.user();
   const platformGate = usePlatformGate();
   const billingPlatformGate = usePlatformGate({ platformHostedOnly: true });
@@ -166,7 +169,24 @@ function PreferencesMenuContent({
 
   return (
     <>
-      <ThemeToggle className="px-2 py-0" />
+      {isMobile ? (
+        // On touch, the inline System/Light/Dark segment is a footgun: a
+        // single mis-tap (or stray arrow key) commits AND persists a theme
+        // change from inside a transient sheet — the likely cause of "the
+        // app spontaneously went light". Mobile gets a quiet link into the
+        // Appearance settings leaf instead; desktop keeps the segment.
+        <PanelItem
+          icon={SunMoon}
+          label="Appearance"
+          expandChevron={ChevronRight}
+          onSelect={() => {
+            onClose();
+            navigate(routes.settings.general);
+          }}
+        />
+      ) : (
+        <ThemeToggle className="px-2 py-0" />
+      )}
 
       <div className="my-2 border-t border-[var(--border-subtle)]" />
 

@@ -31,6 +31,10 @@ const responses = new Map<string, unknown>();
 /**
  * Register a static response for an IPC method. Every call to that method
  * returns the same response regardless of params.
+ *
+ * A function value is invoked per call (and may throw to simulate a
+ * connection-level failure), which lets tests script sequences like
+ * "fail once, then succeed" for retry coverage.
  */
 export function mockIpcResponse(method: string, response: unknown): void {
   responses.set(method, response);
@@ -43,6 +47,9 @@ export function clearIpcMocks(): void {
 
 function handleCall(method: string): unknown {
   const response = responses.get(method);
+  if (typeof response === "function") {
+    return (response as () => unknown)();
+  }
   if (response !== undefined) return response;
   return undefined;
 }

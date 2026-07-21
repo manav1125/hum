@@ -8273,6 +8273,37 @@ paths:
                           type: string
                         connected:
                           type: boolean
+                        health:
+                          type: object
+                          properties:
+                            status:
+                              type: string
+                              enum:
+                                - ok
+                                - attention
+                                - unknown
+                              description:
+                                "Verified health verdict: 'ok' = a real authenticated call succeeded recently; 'attention' = the provider
+                                rejected the connection (or it's disabled) — reconnect; 'unknown' = linked but no recent
+                                evidence either way."
+                            lastSuccessAt:
+                              description: ISO time of the last successful call.
+                              type: string
+                            lastErrorAt:
+                              description: ISO time of the last connection-shaped failure.
+                              type: string
+                            lastError:
+                              description: Human-readable last failure.
+                              type: string
+                            checkedAt:
+                              description: ISO time the active liveness probe last ran for this app.
+                              type: string
+                          required:
+                            - status
+                          additionalProperties: false
+                          description:
+                            Health signal for a connected app, combining passive call outcomes with a cached liveness probe. Absent on
+                            disconnected apps.
                       required:
                         - slug
                         - name
@@ -8291,6 +8322,14 @@ paths:
           schema:
             type: string
           description: Case-insensitive filter over name, slug, and category.
+        - name: refreshHealth
+          in: query
+          required: false
+          schema:
+            type: string
+          description:
+            Pass '1' to request an on-demand background health re-probe (cooldown-limited). The response still returns
+            immediately with cached health — poll the list to pick up fresh results.
   /v1/connector-apps/connect:
     post:
       operationId: connectorapps_connect_post
@@ -24569,6 +24608,8 @@ paths:
                             - channelTs
                           additionalProperties: false
                         voiceTurn:
+                          type: boolean
+                        taskRunContext:
                           type: boolean
                         interrupted:
                           type: boolean

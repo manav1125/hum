@@ -470,8 +470,12 @@ export async function classifyRisk(
   const gatewayResult = await ipcClassifyRisk(ipcParams);
 
   if (!gatewayResult) {
+    // The IPC layer already retried once on connection failures and logged
+    // the transport detail. Fail closed (the tool call is denied), but keep
+    // the model-facing error calm and actionable — a raw transport error
+    // here reads as scary and unrecoverable when it's usually a blip.
     throw new Error(
-      `Gateway IPC classify_risk failed for tool "${toolName}" — gateway is unreachable or returned an invalid response`,
+      `The safety-check service was briefly unavailable, so the "${toolName}" call was not run — try the step again.`,
     );
   }
 

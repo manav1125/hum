@@ -90,6 +90,63 @@ export function isValidCronExpression(expr: string): boolean {
   }
 }
 
+/**
+ * Thrown by `createSchedule` when an enabled schedule with the same
+ * normalized name and identical recurrence expression already exists.
+ * Callers map it to a 409-style "already exists" error (route: Conflict;
+ * LLM tool: an isError result) — existing duplicates are never deleted.
+ */
+export class DuplicateScheduleError extends Error {
+  readonly existingId: string;
+  readonly existingName: string;
+
+  constructor(existing: Pick<ScheduleJob, "id" | "name">) {
+    super(
+      `A schedule named "${existing.name}" with the same recurrence already ` +
+        `exists (id: ${existing.id}). Update or re-enable the existing ` +
+        `schedule instead of creating a duplicate.`,
+    );
+    this.name = "DuplicateScheduleError";
+    this.existingId = existing.id;
+    this.existingName = existing.name;
+  }
+}
+
+/** Case/whitespace-insensitive comparison key for schedule names. */
+function normalizeScheduleName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Find a live (enabled, not cancelled/fired) recurring schedule whose
+ * normalized name and recurrence expression both match. Name normalization
+ * happens in JS, so candidates are narrowed by expression in SQL first —
+ * the schedule table is small.
+ */
+function findDuplicateEnabledSchedule(
+  name: string,
+  expression: string,
+): ScheduleJob | null {
+  const db = getDb();
+  const nameKey = normalizeScheduleName(name);
+  const rows = db
+    .select()
+    .from(scheduleJobs)
+    .where(
+      and(
+        eq(scheduleJobs.enabled, true),
+        eq(scheduleJobs.cronExpression, expression),
+      ),
+    )
+    .all();
+  for (const row of rows) {
+    const job = parseJobRow(row);
+    if (job.status === "cancelled" || job.status === "fired") continue;
+    if (normalizeScheduleName(job.name) === nameKey) return job;
+  }
+  return null;
+}
+
 export function createSchedule(params: {
   name: string;
   description?: string;
@@ -134,6 +191,17 @@ export function createSchedule(params: {
 
   if (params.mode === "wake" && !params.wakeConversationId) {
     throw new Error("Wake schedules require wakeConversationId");
+  }
+
+  // Dedupe-on-create: creating an exact duplicate (same normalized name +
+  // identical recurrence expression) of a live enabled schedule is always a
+  // mistake — reject it instead of quietly stacking copies that all fire.
+  // One-shots (no expression) are exempt: their identity is nextRunAt.
+  if (expression != null) {
+    const duplicate = findDuplicateEnabledSchedule(params.name, expression);
+    if (duplicate) {
+      throw new DuplicateScheduleError(duplicate);
+    }
   }
 
   const db = getDb();

@@ -13,6 +13,7 @@ import {
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { healthStatus, relativeAge } from "@/lib/connector-health";
 import { Mv3ConnectionsPage } from "@/mobile-v3/you/connections-page";
 import { TelegramSetupSheet } from "@/domains/intelligence/telegram-setup-sheet";
 import { connectorsAvailable } from "@/runtime/connectors";
@@ -74,6 +75,8 @@ const C = {
   t3: "var(--mv1-t3)",
   green: "var(--mv1-green)",
   greenWash: "var(--mv1-green-wash)",
+  amber: "var(--mv1-amber)",
+  amberWash: "rgba(201, 138, 27, 0.14)",
   violet: "var(--mv1-violet)",
   violetS: "var(--mv1-violet-strong)",
 } as const;
@@ -132,6 +135,14 @@ function ConnectorRow({
   coachAnchor?: string;
 }) {
   const desc = CATEGORY_DESC[connector.category] ?? connector.category;
+  // Verified health (daemon probe + passive call signals). "working ✓" only
+  // renders with a genuine success timestamp; attention flips the pill amber
+  // and surfaces Reconnect.
+  const status = connector.connected ? healthStatus(connector.health) : null;
+  const workingAge =
+    status === "ok" && connector.health?.lastSuccessAt
+      ? relativeAge(connector.health.lastSuccessAt)
+      : null;
   return (
     <div
       data-slot="connector-row"
@@ -173,23 +184,67 @@ function ConnectorRow({
           }}
         >
           {desc}
+          {workingAge ? (
+            <span style={{ color: C.green }}> · working ✓ {workingAge}</span>
+          ) : null}
+          {status === "attention" && connector.health?.lastError ? (
+            <span style={{ color: C.amber }}>
+              {" "}
+              · {connector.health.lastError}
+            </span>
+          ) : null}
         </div>
       </div>
       {connector.connected ? (
         <>
           <span
+            title={
+              status === "attention"
+                ? (connector.health?.lastError ??
+                  "The connection is failing — reconnect to fix")
+                : undefined
+            }
             style={{
               fontFamily: mono,
               fontSize: 10,
-              background: C.greenWash,
-              color: C.green,
+              background: status === "attention" ? C.amberWash : C.greenWash,
+              color: status === "attention" ? C.amber : C.green,
               padding: "3px 9px",
               borderRadius: 6,
               marginRight: 6,
+              whiteSpace: "nowrap",
             }}
           >
-            CONNECTED
+            {status === "attention" ? "NEEDS ATTENTION" : "CONNECTED"}
           </span>
+          {status === "attention" && (
+            <button
+              type="button"
+              className="cue-pressable"
+              disabled={busy || !connectable}
+              onClick={onConnect}
+              title={`Reconnect ${connector.name} — re-runs the sign-in`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 12.5,
+                fontWeight: 600,
+                background: C.chip,
+                color: "#fff",
+                border: "none",
+                borderRadius: 9,
+                padding: mobile ? "10px 14px" : "8px 14px",
+                minHeight: mobile ? 40 : undefined,
+                marginRight: 6,
+                opacity: connectable ? 1 : 0.5,
+                cursor: busy || !connectable ? "default" : "pointer",
+              }}
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              Reconnect
+            </button>
+          )}
           {manageable && (
             <button
               type="button"
@@ -372,7 +427,9 @@ function ConnectorsPageDesktop() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [tipDismissed, setTipDismissed] = useState(false);
-  const [pollUntil, setPollUntil] = useState(0);
+  // Poll briefly on mount so the health probe kicked by refreshHealth=1
+  // lands without a manual refresh; a connect flow extends the window.
+  const [pollUntil, setPollUntil] = useState(() => Date.now() + 30_000);
   // Per-tool Manage is an Electron desktop surface — gate the button only.
   const [manageable, setManageable] = useState(false);
 
@@ -384,7 +441,9 @@ function ConnectorsPageDesktop() {
     ...connectorappsGetOptions({
       path: { assistant_id: assistantId },
       // Filter client-side so typing doesn't refetch per keystroke.
-      query: {},
+      // refreshHealth asks the daemon for an on-demand health re-probe
+      // (cooldown-limited server-side; the list never blocks on it).
+      query: { refreshHealth: "1" },
     }),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
@@ -398,7 +457,7 @@ function ConnectorsPageDesktop() {
       void queryClient.invalidateQueries({
         queryKey: connectorappsGetQueryKey({
           path: { assistant_id: assistantId },
-          query: {},
+          query: { refreshHealth: "1" },
         }),
       });
     },
@@ -448,6 +507,9 @@ function ConnectorsPageDesktop() {
   const availableOverflow = availableMatches.length - availableConnectors.length;
   const total = connectors.length;
   const connectedTotal = connectors.filter((c) => c.connected).length;
+  const attentionTotal = connectors.filter(
+    (c) => c.connected && healthStatus(c.health) === "attention",
+  ).length;
   const availTotal = total - connectedTotal;
   const pct = total > 0 ? Math.round((connectedTotal / total) * 100) : 0;
 
@@ -791,7 +853,16 @@ function ConnectorsPageDesktop() {
 
       {connected.length > 0 && (
         <>
-          <div style={sectionLabel}>Connected · {connectedTotal}</div>
+          <div style={sectionLabel}>
+            Connected · {connectedTotal}
+            {attentionTotal > 0 ? (
+              <span style={{ color: C.amber }}>
+                {" "}
+                · {attentionTotal} need{attentionTotal === 1 ? "s" : ""}{" "}
+                attention
+              </span>
+            ) : null}
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {connected.map((c) => (
               <ConnectorRow

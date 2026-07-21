@@ -26,6 +26,7 @@ import {
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { client } from "@/generated/daemon/client.gen";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
+import { attentionCount, connectionsMeta } from "@/lib/connector-health";
 import { useBrandProfiles } from "@/pages/brand-kit/use-brand-kit";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { haptic } from "@/utils/haptics";
@@ -258,6 +259,7 @@ export function Mv3YouPage() {
   });
   const liveCount =
     appsQuery.data?.apps.filter((a) => a.connected).length ?? null;
+  const attention = attentionCount(appsQuery.data?.apps ?? []);
 
   const agentsQuery = useQuery({
     ...agentsGetOptions({ path: { assistant_id: assistantId } }),
@@ -373,10 +375,12 @@ export function Mv3YouPage() {
           label="Connections"
           meta={
             liveCount != null && liveCount > 0
-              ? `${liveCount} linked`
+              ? connectionsMeta(liveCount, attention)
               : undefined
           }
-          metaColor="var(--mv3-green)"
+          metaColor={
+            attention > 0 ? "var(--mv3-amber)" : "var(--mv3-green)"
+          }
           onPress={() => navigate(routes.connectors)}
         />
         <NavRow

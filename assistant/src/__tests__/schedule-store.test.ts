@@ -34,6 +34,7 @@ import {
   createScheduleRun,
   deleteSchedule,
   describeCronExpression,
+  DuplicateScheduleError,
   failOneShot,
   getSchedule,
   listSchedules,
@@ -1344,5 +1345,97 @@ describe("describeCronExpression", () => {
 
   test("returns description for valid cron expression", () => {
     expect(describeCronExpression("0 9 * * *")).toBe("Every day at 9:00 AM");
+  });
+});
+
+// ── createSchedule dedupe-on-create ─────────────────────────────────
+// Prod grew three identical "Gym Reminder" schedules; creating an exact
+// duplicate (same normalized name + identical cron) of a live enabled
+// schedule is now rejected with DuplicateScheduleError. Existing rows are
+// never deleted.
+
+describe("createSchedule dedupe-on-create", () => {
+  beforeEach(() => {
+    const db = getDb();
+    db.run("DELETE FROM cron_runs");
+    db.run("DELETE FROM cron_jobs");
+  });
+
+  function createGymReminder(overrides?: {
+    name?: string;
+    cronExpression?: string;
+    enabled?: boolean;
+  }) {
+    return createSchedule({
+      name: overrides?.name ?? "Gym Reminder",
+      cronExpression: overrides?.cronExpression ?? "0 7 * * *",
+      message: "Time to hit the gym",
+      syntax: "cron",
+      enabled: overrides?.enabled,
+    });
+  }
+
+  test("rejects an exact duplicate of an enabled schedule", () => {
+    const original = createGymReminder();
+    expect(() => createGymReminder()).toThrow(DuplicateScheduleError);
+    try {
+      createGymReminder();
+      throw new Error("expected DuplicateScheduleError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DuplicateScheduleError);
+      const dup = err as DuplicateScheduleError;
+      expect(dup.existingId).toBe(original.id);
+      expect(dup.message).toContain("already");
+      expect(dup.message).toContain("Gym Reminder");
+    }
+    // The original is untouched and still the only row.
+    const all = listSchedules();
+    expect(all.length).toBe(1);
+    expect(all[0].id).toBe(original.id);
+  });
+
+  test("name matching is case- and whitespace-insensitive", () => {
+    createGymReminder();
+    expect(() => createGymReminder({ name: "  gym   REMINDER " })).toThrow(
+      DuplicateScheduleError,
+    );
+  });
+
+  test("same name with a different cron is allowed", () => {
+    createGymReminder();
+    const evening = createGymReminder({ cronExpression: "0 19 * * *" });
+    expect(evening.id).toBeTruthy();
+    expect(listSchedules().length).toBe(2);
+  });
+
+  test("same cron with a different name is allowed", () => {
+    createGymReminder();
+    const other = createGymReminder({ name: "Morning stretch" });
+    expect(other.id).toBeTruthy();
+    expect(listSchedules().length).toBe(2);
+  });
+
+  test("a disabled schedule does not block re-creation", () => {
+    const original = createGymReminder();
+    updateSchedule(original.id, { enabled: false });
+    const recreated = createGymReminder();
+    expect(recreated.id).not.toBe(original.id);
+    expect(listSchedules().length).toBe(2);
+  });
+
+  test("one-shot schedules (no expression) are exempt", () => {
+    const fireAt = Date.now() + 60_000;
+    createSchedule({
+      name: "Gym Reminder",
+      message: "one shot",
+      nextRunAt: fireAt,
+    });
+    const second = createSchedule({
+      name: "Gym Reminder",
+      message: "one shot",
+      nextRunAt: fireAt,
+    });
+    expect(second.id).toBeTruthy();
+    expect(listSchedules().length).toBe(2);
   });
 });

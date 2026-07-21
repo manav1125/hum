@@ -82,6 +82,18 @@ mock.module("react-router", () => ({
   useNavigate: () => () => {},
 }));
 
+// PreferencesMenuContent (rendered directly below) reaches through the
+// platform-gate / org-readiness hooks; stub them at the hook boundary so
+// the SSR render doesn't need the full store graph.
+mock.module("@/hooks/use-platform-gate", () => ({
+  usePlatformGate: () => "gated",
+  useActiveAssistantIsPlatformHosted: () => false,
+}));
+
+mock.module("@/hooks/use-is-org-ready", () => ({
+  useIsOrgReady: () => true,
+}));
+
 mock.module("@/components/share-feedback-modal", () => ({
   ShareFeedbackModal: () => null,
 }));
@@ -100,7 +112,16 @@ mock.module("@/domains/chat/components/credits-card", () => ({
     createElement("div", { "data-testid": "credits-card" }, "Credits"),
 }));
 
-import { PreferencesMenu } from "@/domains/chat/components/preferences-menu";
+import {
+  PreferencesMenu,
+  PreferencesMenuContent,
+} from "@/domains/chat/components/preferences-menu";
+
+const contentProps = {
+  onClose: () => {},
+  onShareFeedback: () => {},
+  onEarnCredits: () => {},
+};
 
 beforeEach(() => {
   isMobileRef.value = false;
@@ -138,5 +159,28 @@ describe("PreferencesMenu", () => {
     isMobileRef.value = true;
     const html = renderToStaticMarkup(createElement(PreferencesMenu));
     expect(html).toContain("Preferences");
+  });
+});
+
+describe("PreferencesMenuContent", () => {
+  test("desktop keeps the inline theme segment", () => {
+    isMobileRef.value = false;
+    const html = renderToStaticMarkup(
+      createElement(PreferencesMenuContent, contentProps),
+    );
+    expect(html).toContain("theme-toggle");
+    expect(html).not.toContain("Appearance");
+  });
+
+  test("mobile replaces the theme segment with an Appearance link row", () => {
+    // Regression guard: the embedded System/Light/Dark segment persisted a
+    // theme change on a single mis-tap inside the transient sheet. Mobile
+    // must render a navigation row instead of the segment.
+    isMobileRef.value = true;
+    const html = renderToStaticMarkup(
+      createElement(PreferencesMenuContent, contentProps),
+    );
+    expect(html).toContain("Appearance");
+    expect(html).not.toContain("theme-toggle");
   });
 });

@@ -19,4 +19,8 @@ if (unknown) {
   process.exit(1);
 }
 
-program.parse();
+// parseAsync (not parse) so async command actions are awaited: with bare
+// parse() the action's promise floats, and any failure after the sync
+// portion can be lost or surface as an unhandled rejection instead of a
+// deliberate non-zero exit.
+await program.parseAsync();

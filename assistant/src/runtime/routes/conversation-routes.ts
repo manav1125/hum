@@ -149,6 +149,7 @@ import {
 } from "./tool-call-confirmation-enrichment.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 import { RouteResponse } from "./types.js";
+import { sanitizeAssistantWireText } from "./wire-text-sanitizer.js";
 
 const log = getLogger("conversation-routes");
 
@@ -913,17 +914,24 @@ export function handleListMessages({
     // messages are untouched. The filter is applied consistently to the flat
     // text, the segments, the contentOrder text refs, and the text blocks of
     // contentBlocks.
+    //
+    // The same pass sanitizes unparsed DeepSeek/DSML tool-call markup that
+    // old rows persisted as assistant prose (see wire-text-sanitizer.ts).
+    // Read-only cleanup: stored history is never mutated.
     let text = rendered.text;
     let textSegments = rendered.textSegments;
     let contentOrder = rendered.contentOrder;
     let contentBlocks = rendered.contentBlocks;
+    let thinkingSegments = rendered.thinkingSegments;
     if (m.role === "assistant") {
+      const cleanWireText = (value: string): string =>
+        sanitizeAssistantWireText(
+          value.replace(NO_RESPONSE_INLINE_RE, ""),
+        ).trim();
       const keepIndices: number[] = [];
       const filteredSegments: string[] = [];
       for (let i = 0; i < rendered.textSegments.length; i++) {
-        const cleaned = rendered.textSegments[i]
-          .replace(NO_RESPONSE_INLINE_RE, "")
-          .trim();
+        const cleaned = cleanWireText(rendered.textSegments[i]);
         if (cleaned.length > 0) {
           keepIndices.push(i);
           filteredSegments.push(cleaned);
@@ -940,17 +948,20 @@ export function handleListMessages({
         })
         .filter((e): e is string => e !== undefined);
       textSegments = filteredSegments;
-      text = rendered.text.replace(NO_RESPONSE_INLINE_RE, "").trim();
+      text = cleanWireText(rendered.text);
       contentBlocks = rendered.contentBlocks
         .map((block) =>
           block.type === "text"
             ? {
                 type: "text" as const,
-                text: block.text.replace(NO_RESPONSE_INLINE_RE, "").trim(),
+                text: cleanWireText(block.text),
               }
             : block,
         )
         .filter((block) => block.type !== "text" || block.text.length > 0);
+      thinkingSegments = rendered.thinkingSegments.map((segment) =>
+        sanitizeAssistantWireText(segment),
+      );
     }
 
     const alignedContentOrder = aligned.rewriteContentOrder(contentOrder);
@@ -975,9 +986,7 @@ export function handleListMessages({
       ...(toolCalls.length > 0 ? { toolCalls } : {}),
       ...(rendered.surfaces.length > 0 ? { surfaces: rendered.surfaces } : {}),
       ...(textSegments.length > 0 ? { textSegments } : {}),
-      ...(rendered.thinkingSegments.length > 0
-        ? { thinkingSegments: rendered.thinkingSegments }
-        : {}),
+      ...(thinkingSegments.length > 0 ? { thinkingSegments } : {}),
       ...(alignedContentOrder.length > 0
         ? { contentOrder: alignedContentOrder }
         : {}),

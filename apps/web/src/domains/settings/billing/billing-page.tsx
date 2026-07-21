@@ -1,9 +1,9 @@
-import { Loader2 } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { Navigate, useNavigate, useSearchParams } from "react-router";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { BillingOnboardingModal } from "@/domains/settings/billing/pro-onboarding/billing-onboarding-modal";
 import { AdjustPlanModal } from "@/domains/settings/components/adjust-plan-modal";
@@ -16,11 +16,17 @@ import { PlanCard } from "@/domains/settings/components/plan-card";
 import { ReferralPanel } from "@/domains/settings/components/referral-panel";
 import { TierUpgradeResizeModal } from "@/domains/settings/components/tier-upgrade-resize-modal";
 import { organizationsBillingSummaryRetrieveOptions } from "@/generated/api/@tanstack/react-query.gen";
+import { configPlatformGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import {
   useActiveAssistantIsPlatformHosted,
   useActiveAssistantLifecycleIsLoading,
   usePlatformGate,
 } from "@/hooks/use-platform-gate";
+import {
+  derivePlatformBillingUrl,
+  platformBillingHost,
+} from "@/lib/billing/platform-billing-url";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { routes } from "@/utils/routes";
 import { Notice } from "@vellumai/design-library/components/notice";
 import { toast } from "@vellumai/design-library/components/toast";
@@ -59,6 +65,50 @@ function BillingStatusHandler() {
   }, [searchParams, navigate, queryClient]);
 
   return null;
+}
+
+/**
+ * External "Manage billing on <platform>" link for the self-host billing
+ * page (the `billingGate === "disabled"` branch, where no platform session
+ * exists so the in-app billing UI cannot render).
+ *
+ * The platform base URL comes from the daemon's existing client-visible
+ * config surface (`GET /v1/assistants/{id}/config/platform`, which reads
+ * `platform.baseUrl`). When the daemon is unreachable, the read fails, or
+ * only an internal default is reported, the link falls back to the Cue
+ * platform (justcue.ai) — see `derivePlatformBillingUrl`.
+ */
+export function ManagePlatformBillingLink() {
+  // Raw store read, not `useActiveAssistantId()`: settings routes are not
+  // mounted under `<ActiveAssistantGate>`, so the id can legitimately be null
+  // (e.g. a platform build with no session) — in that case the query stays
+  // disabled and the link settles straight to the fallback.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const enabled = assistantId !== null;
+  const { data, isPending } = useQuery({
+    ...configPlatformGetOptions({ path: { assistant_id: assistantId ?? "" } }),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  // Hold the link until the daemon read settles so the label never flashes
+  // from the fallback host to the configured one. A disabled query never
+  // settles, so it renders the fallback immediately.
+  if (enabled && isPending) return null;
+
+  const billingUrl = derivePlatformBillingUrl(data?.baseUrl);
+  return (
+    <a
+      href={billingUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-[var(--content-emphasised)] underline hover:opacity-80"
+    >
+      Manage billing on {platformBillingHost(billingUrl)}
+      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+    </a>
+  );
 }
 
 export function BillingPage() {
@@ -110,7 +160,10 @@ export function BillingPage() {
     return (
       <div className="space-y-4">
         <Notice tone="info">
-          Log in to the Cue platform to manage billing and usage.
+          <div className="space-y-1.5">
+            <p>Billing for this assistant is managed on the Cue platform.</p>
+            <ManagePlatformBillingLink />
+          </div>
         </Notice>
       </div>
     );

@@ -36,6 +36,22 @@ import { Spinner } from "./util/spinner.js";
 import { timeAgo } from "./util/time.js";
 import { truncate } from "./util/truncate.js";
 
+// This module is the interactive chat UI (`startCli`), loaded by the
+// `assistant` default action — it is NOT the CLI entry point and registers
+// no subcommands. Running it directly (`bun run src/cli.ts config set ...`)
+// used to evaluate the imports and exit 0 having executed nothing, which
+// read as a successful-but-silent no-op. Fail loudly instead and point at
+// the real entry point.
+if (import.meta.main) {
+  process.stderr.write(
+    "src/cli.ts is the interactive chat UI module, not the assistant CLI entry point.\n" +
+      "It registers no subcommands, so nothing was executed.\n" +
+      "Run commands via the real entry point instead:\n" +
+      "  bun run src/index.ts <command>   (or the `assistant` binary)\n",
+  );
+  process.exit(1);
+}
+
 /** Stable conversation key used by the built-in CLI. */
 const CLI_CONVERSATION_KEY = "builtin-cli:default";
 

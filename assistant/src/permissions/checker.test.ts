@@ -219,7 +219,7 @@ describe("Permission Checker (gateway IPC)", () => {
     test("throws when gateway returns undefined (unreachable)", async () => {
       mockIpcClassifyRiskResult = undefined;
       await expect(classifyRisk("bash", { command: "ls" })).rejects.toThrow(
-        /Gateway IPC classify_risk failed/,
+        /safety-check service was briefly unavailable/,
       );
     });
 
@@ -496,7 +496,7 @@ describe("Permission Checker (gateway IPC)", () => {
           { command: "gateway-unreachable-test-cmd" },
           "/home/user/project",
         ),
-      ).rejects.toThrow(/Gateway IPC classify_risk failed/);
+      ).rejects.toThrow(/safety-check service was briefly unavailable/);
     });
 
     // ── Stale-threshold refresh before prompting ────────────────────────────

@@ -29,6 +29,7 @@ import {
   createScheduleRun,
   deleteSchedule,
   describeCronExpression,
+  DuplicateScheduleError,
   getLastScheduleConversationId,
   getSchedule,
   getScheduleRuns,
@@ -41,7 +42,12 @@ import { getScheduleUsageSummaries } from "../../schedule/schedule-usage-store.j
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { parseEpochMillisRange } from "./epoch-millis-range.js";
-import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
+import {
+  BadRequestError,
+  ConflictError,
+  InternalError,
+  NotFoundError,
+} from "./errors.js";
 import {
   paginateRuns,
   parseRunsBeforeCursor,
@@ -293,6 +299,11 @@ function handleCreateSchedule(body: Record<string, unknown>) {
     });
     log.info({ id: job.id, name: job.name }, "Schedule created");
   } catch (err) {
+    // 409 so clients can render "already exists" distinctly from a
+    // validation failure. Existing schedules are never touched.
+    if (err instanceof DuplicateScheduleError) {
+      throw new ConflictError(err.message);
+    }
     if (err instanceof Error) throw new BadRequestError(err.message);
     throw err;
   }

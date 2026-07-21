@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 
+import { dedupeContactsForDisplay } from "../../contacts/contact-presentation.js";
 import {
   getAssistantContactMetadata,
   getChannelById,
@@ -143,14 +144,20 @@ function handleListContacts(queryParams: Record<string, string>) {
     });
     return {
       ok: true,
-      contacts: contacts.map(withGuardianNameOverride),
+      // Presentation-layer cleanup (dedupe by normalized name + strip
+      // degenerate note bodies) — stored rows are never mutated. The name
+      // override runs first so guardian rows are compared by the name
+      // clients actually see.
+      contacts: dedupeContactsForDisplay(
+        contacts.map(withGuardianNameOverride),
+      ),
     };
   }
 
   const contacts = listContacts(limit, role, contactType);
   return {
     ok: true,
-    contacts: contacts.map(withGuardianNameOverride),
+    contacts: dedupeContactsForDisplay(contacts.map(withGuardianNameOverride)),
   };
 }
 

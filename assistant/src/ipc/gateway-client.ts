@@ -137,21 +137,19 @@ export async function ipcGetVelayStatus(): Promise<VelayTunnelStatus | null> {
   };
 }
 
-/**
- * Classify risk for a tool invocation via the gateway's persistent IPC
- * connection.
- *
- * Uses `ipcCallPersistent` (not the one-shot `ipcCall`) because risk
- * classification is on the hot path for every tool invocation and the
- * persistent connection avoids per-call connect overhead.
- *
- * Returns `undefined` when the gateway is unreachable, the response is
- * malformed, or the call fails for any reason — callers should throw
- * since there is no local fallback (gateway is a hard dependency).
- */
-export async function ipcClassifyRisk(
+/** Backoff before the single classify_risk retry on a connection failure. */
+const CLASSIFY_RISK_RETRY_DELAY_MS = 250;
+
+type ClassifyRiskAttempt =
+  | { status: "ok"; result: ClassificationResult }
+  /** Gateway answered but the payload is unusable — retrying won't help. */
+  | { status: "invalid" }
+  /** Transport-level failure (socket error, timeout) — worth one retry. */
+  | { status: "unreachable"; err: unknown };
+
+async function attemptClassifyRisk(
   params: ClassifyRiskParams,
-): Promise<ClassificationResult | undefined> {
+): Promise<ClassifyRiskAttempt> {
   try {
     const result = await ipcCallPersistent(
       "classify_risk",
@@ -164,7 +162,7 @@ export async function ipcClassifyRisk(
         { result },
         "ipcClassifyRisk: gateway returned non-object response",
       );
-      return undefined;
+      return { status: "invalid" };
     }
 
     const obj = result as Record<string, unknown>;
@@ -173,14 +171,61 @@ export async function ipcClassifyRisk(
         { result },
         "ipcClassifyRisk: gateway response missing 'risk' field",
       );
-      return undefined;
+      return { status: "invalid" };
     }
 
-    return result as ClassificationResult;
+    return { status: "ok", result: result as ClassificationResult };
   } catch (err) {
-    log.warn({ err }, "ipcClassifyRisk: persistent IPC call failed");
-    return undefined;
+    return { status: "unreachable", err };
   }
+}
+
+/**
+ * Classify risk for a tool invocation via the gateway's persistent IPC
+ * connection.
+ *
+ * Uses `ipcCallPersistent` (not the one-shot `ipcCall`) because risk
+ * classification is on the hot path for every tool invocation and the
+ * persistent connection avoids per-call connect overhead.
+ *
+ * Connection-level failures (socket error, timeout) get exactly one retry
+ * after a short backoff on a fresh connection — a brief gateway blip
+ * otherwise fails every in-flight tool call. Invalid responses are not
+ * retried: the gateway answered, so retrying returns the same payload.
+ *
+ * Returns `undefined` when the gateway stays unreachable or the response
+ * is malformed — callers must treat that as a denial and throw, since
+ * there is no local fallback (the gateway is a hard dependency and the
+ * gate must fail closed).
+ */
+export async function ipcClassifyRisk(
+  params: ClassifyRiskParams,
+  opts?: { retryDelayMs?: number },
+): Promise<ClassificationResult | undefined> {
+  const first = await attemptClassifyRisk(params);
+  if (first.status === "ok") return first.result;
+  if (first.status === "invalid") return undefined;
+
+  log.warn(
+    { err: first.err },
+    "ipcClassifyRisk: persistent IPC call failed — retrying once on a fresh connection",
+  );
+  // The singleton may hold a dead socket after a gateway restart; rebuild it
+  // so the retry re-connects instead of reusing the broken transport.
+  resetPersistentClient();
+  await new Promise((resolve) =>
+    setTimeout(resolve, opts?.retryDelayMs ?? CLASSIFY_RISK_RETRY_DELAY_MS),
+  );
+
+  const second = await attemptClassifyRisk(params);
+  if (second.status === "ok") return second.result;
+  if (second.status === "unreachable") {
+    log.warn(
+      { err: second.err },
+      "ipcClassifyRisk: retry failed — gateway unreachable",
+    );
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
