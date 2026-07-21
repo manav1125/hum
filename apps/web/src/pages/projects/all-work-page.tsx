@@ -20,6 +20,7 @@ import { useActivitySync } from "@/hooks/use-activity-sync";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { dismissLeave } from "@/mobile-v3/undo-toast";
 import { fullPatchBody, isAutoFiled } from "@/mobile-v3/work-kit";
+import { AssessmentSignal, holdReason } from "@/pages/hq/assessment-kit";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { useAddTasksStore } from "@/stores/add-tasks-store";
 
@@ -302,6 +303,9 @@ function AllWorkPageDesktop() {
                             : C.amber
                       }
                       title={item.title}
+                      // A held task explains itself in the assessor's own
+                      // words; every other row keeps its usual second line.
+                      subtitle={holdReason(full)}
                       provenance={item.provenance}
                       meta={
                         // The ✨ pill already names the destination.
@@ -322,6 +326,9 @@ function AllWorkPageDesktop() {
                       last={i === Math.min(group.items.length, 20) - 1}
                       actions={
                         <>
+                          {/* Parked by the pre-run assessment: this row is
+                              waiting on a person, not on Cue. */}
+                          <AssessmentSignal item={full} />
                           {autoFiled && item.projectId ? (
                             // Frame D2 — provenance said out loud, Move › on
                             // hover.

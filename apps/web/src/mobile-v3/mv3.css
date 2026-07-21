@@ -297,6 +297,18 @@
   }
 }
 
+/* Long unbroken strings (URLs, tokens, long email addresses, IDs) arrive from
+ * the daemon inside titles, progress notes and captured asks. At 390px an
+ * unbroken run overflows its block and — because several mv3 page roots use
+ * `overflow: clip` to forbid sideways drift — gets sheared mid-token instead
+ * of wrapping. `break-word` is inherited, so this one rule protects every mv3
+ * surface without touching intrinsic sizing (unlike `anywhere`); rows that
+ * deliberately truncate use `white-space: nowrap` + ellipsis and are
+ * unaffected. */
+[data-mv3] {
+  overflow-wrap: break-word;
+}
+
 /* Mobile scroll regions are gesture-scrolled — desktop scrollbar gutters
  * reading as chrome inside mv3 surfaces (and the mobile chat reskin) are a
  * UAT flag. Hide them within every mv3-marked surface; scrolling itself is

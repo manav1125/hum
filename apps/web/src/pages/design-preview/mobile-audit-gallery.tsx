@@ -1,0 +1,1105 @@
+/**
+ * Mobile-v3 audit harness — a backend-free preview that mounts the REAL
+ * mobile-v3 page components at phone width so their layout can be measured
+ * (`scrollWidth === clientWidth`, action-row bounds) without the app router,
+ * auth, or a live daemon.
+ *
+ * Dev-only; never part of the product IA. Entry:
+ *   /design-preview.html?gallery=mobile&screen=<key>
+ * `?screen=` omitted renders an index of the available keys.
+ *
+ * Network is stubbed by swapping `globalThis.fetch` for a path-matching
+ * responder (see `FIXTURES`) — every daemon/platform read resolves to canned
+ * JSON so the surfaces render populated instead of in their empty state.
+ */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Component, lazy, Suspense, useEffect } from "react";
+import { MemoryRouter, Route, Routes } from "react-router";
+
+import { TabBarV3 } from "@/mobile-v3";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
+
+const ASSISTANT_ID = "a-preview";
+const NOW = Date.now();
+const MIN = 60_000;
+
+/** A work item shaped like `workitemsGet`'s rows. */
+function workItem(over: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: "wi-1",
+    taskId: "t-1",
+    title: "Draft the Q3 partner-update email",
+    notes: null,
+    status: "running",
+    priorityTier: 1,
+    sortIndex: 1,
+    projectId: "p-1",
+    dueAt: NOW + 90 * MIN,
+    labels: null,
+    assignee: "cue",
+    context: null,
+    sourceContext: JSON.stringify({ sender: "Priya Raman" }),
+    lastActivityAt: NOW - 12 * MIN,
+    lastRunId: "r-1",
+    lastRunConversationId: "c-1",
+    lastRunStatus: "running",
+    lastProgressNote: "Pulling the pipeline numbers from the CRM…",
+    sourceType: "email",
+    sourceId: "m-1",
+    approvalStatus: null,
+    autoRunEligibility: null,
+    ranProvenance: null,
+    completedElsewhere: false,
+    createdAt: NOW - 40 * MIN,
+    updatedAt: NOW - 12 * MIN,
+    ...over,
+  };
+}
+
+/** Real-world nasties: an unbroken URL/token and a very long title. */
+const LONG_TITLE =
+  "Reconcile the September invoices with the bank export and flag every unmatched row for Priya before Friday's close";
+const UNBREAKABLE =
+  "https://app.example.com/reports/2026-09/reconciliation?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abcdefghijklmnop";
+
+const WORK_ITEMS = [
+  workItem({}),
+  workItem({
+    id: "wi-2",
+    taskId: "t-2",
+    title: "Reconcile the September invoices with the bank export",
+    status: "awaiting_review",
+    lastProgressNote: null,
+    lastRunStatus: "succeeded",
+    sourceType: "slack",
+    sourceContext: JSON.stringify({ sender: "Finance channel" }),
+  }),
+  workItem({
+    id: "wi-3",
+    taskId: "t-3",
+    title: "Summarise the customer-advisory-board transcript",
+    status: "pending",
+    projectId: null,
+    lastProgressNote: null,
+    lastRunConversationId: null,
+    lastRunStatus: null,
+  }),
+  workItem({
+    id: "wi-4",
+    taskId: "t-4",
+    title: "Ship the pricing-page copy revision",
+    status: "done",
+    ranProvenance: "auto",
+    lastProgressNote: null,
+  }),
+  workItem({
+    id: "wi-5",
+    taskId: "t-5",
+    title: "Chase the unsigned MSA from Northwind Logistics",
+    status: "failed",
+    lastProgressNote: null,
+    lastRunStatus: "failed",
+  }),
+];
+
+function project(over: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: "p-1",
+    title: "Partner growth & quarterly comms",
+    emoji: "🤝",
+    color: null,
+    status: "active",
+    category: "Growth",
+    context: "Quarterly partner comms and pipeline hygiene",
+    sortIndex: 1,
+    pinned: 0,
+    missionId: "m-1",
+    createdAt: NOW - 30 * 24 * 60 * MIN,
+    updatedAt: NOW - 2 * 60 * MIN,
+    stats: {
+      counts: {
+        queued: 2,
+        running: 1,
+        awaiting_review: 1,
+        done: 12,
+        open: 4,
+        total: 16,
+      },
+      nextTask: {
+        id: "wi-1",
+        title: "Draft the Q3 partner-update email",
+        status: "running",
+        dueAt: NOW + 90 * MIN,
+        priorityTier: 1,
+      },
+    },
+    ...over,
+  };
+}
+
+const PROJECTS = [
+  project({}),
+  project({
+    id: "p-2",
+    title: "Finance operations — month-end close",
+    emoji: "📊",
+    category: "Operations",
+    sortIndex: 2,
+  }),
+];
+
+const EVENTS = [
+  {
+    id: "e-1",
+    workItemId: "wi-1",
+    kind: "created",
+    fromStatus: null,
+    toStatus: null,
+    at: NOW - 40 * MIN,
+    actor: "cue",
+    detail: null,
+  },
+  {
+    id: "e-2",
+    workItemId: "wi-1",
+    kind: "status_changed",
+    fromStatus: "pending",
+    toStatus: "queued",
+    at: NOW - 30 * MIN,
+    actor: "cue",
+    detail: null,
+  },
+  {
+    id: "e-3",
+    workItemId: "wi-1",
+    kind: "run_started",
+    fromStatus: "queued",
+    toStatus: "running",
+    at: NOW - 22 * MIN,
+    actor: "cue",
+    detail: null,
+  },
+];
+
+const MISSIONS = [
+  {
+    id: "m-1",
+    title: "Grow partner-sourced pipeline",
+    outcome: "Partner-sourced ARR up 30% by the end of Q4",
+    metric: "partner_arr",
+    horizon: NOW + 60 * 24 * 60 * MIN,
+    status: "active",
+    mode: "assist",
+    brief: "Keep partner comms warm and surface every stalled deal.",
+    cadence: "weekly",
+    sweepAt: "09:00",
+    budgetCents: 5000,
+    spentCents: 1200,
+    continuationSummary: null,
+    pinned: 0,
+    sortIndex: 1,
+    lastCycleAt: NOW - 20 * 60 * MIN,
+    createdAt: NOW - 20 * 24 * 60 * MIN,
+    updatedAt: NOW - 60 * MIN,
+    rollup: {
+      projects: [
+        { id: "p-1", title: "Partner growth & quarterly comms", emoji: "🤝", status: "active" },
+      ],
+      counts: {
+        queued: 2,
+        running: 1,
+        awaiting_review: 1,
+        done: 9,
+        failed: 0,
+        open: 4,
+        total: 13,
+      },
+      spentCents: 1200,
+      budgetCents: 5000,
+    },
+  },
+];
+
+/**
+ * Path-suffix → JSON body. First match wins; `null` body means "fall through
+ * to the generic empty shape".
+ */
+/** `?state=` knob so a screen's edge cases (empty / long / other status) can be
+ *  measured without editing fixtures. */
+const STATE = new URLSearchParams(globalThis.location?.search ?? "").get(
+  "state",
+);
+
+const LONG_EVENTS = Array.from({ length: 24 }, (_, i) => ({
+  ...EVENTS[i % EVENTS.length],
+  id: `e-long-${i}`,
+  kind: `step_${i}`,
+  fromStatus: null,
+  toStatus: null,
+  at: NOW - (40 - i) * MIN,
+}));
+
+const FIXTURES: [RegExp, () => unknown][] = [
+  [
+    /\/work-items\/[^/]+\/events$/,
+    () => ({
+      events:
+        STATE === "long" ? LONG_EVENTS : STATE === "empty" ? [] : EVENTS,
+    }),
+  ],
+  [
+    /\/work-items\/[^/]+\/output$/,
+    () => ({
+      output: {
+        summary:
+          "Reconciled 42 of 44 September invoices against the bank export. Two rows need a human call: an unmatched $1,240 ACH credit and a duplicated vendor reference.",
+        highlights: [
+          "42/44 matched automatically",
+          "Unmatched: ACH credit $1,240 (2026-09-18)",
+          "Duplicate vendor ref NW-2291 appears twice",
+        ],
+      },
+    }),
+  ],
+  [
+    /\/work-items$/,
+    () => ({
+      items:
+        STATE === "review"
+          ? [{ ...WORK_ITEMS[0], status: "awaiting_review" }, ...WORK_ITEMS.slice(1)]
+          : STATE === "stress"
+            ? WORK_ITEMS.map((w) => ({
+                ...w,
+                title: `${LONG_TITLE} ${UNBREAKABLE}`,
+                lastProgressNote: `Fetching ${UNBREAKABLE}`,
+                sourceContext: JSON.stringify({
+                  sender: "priya.raman@northwind-logistics-international.example",
+                }),
+              }))
+            : WORK_ITEMS,
+    }),
+  ],
+  [/\/projects\/[^/]+\/work-items$/, () => ({ items: WORK_ITEMS })],
+  [/\/projects$/, () => ({ projects: PROJECTS })],
+  [/\/missions\/[^/]+\/events$/, () => ({ events: [] })],
+  [/\/missions\/[^/]+$/, () => ({ mission: MISSIONS[0] })],
+  [/\/missions$/, () => ({ missions: MISSIONS })],
+  [/\/schedules$/, () => ({ schedules: [] })],
+  [/\/activity$/, () => ({ items: [], events: [] })],
+  [
+    /\/agents$/,
+    () => ({
+      agents: [
+        {
+          id: "ag-1",
+          name: "Ops",
+          role: "Keeps the operational loop tidy",
+          status: "active",
+          modelPin: null,
+          toolScopes: null,
+          budgetCents: 5000,
+          spentCents: 900,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        {
+          id: "ag-2",
+          name: "Growth",
+          role: "Runs partner and lifecycle outreach",
+          status: "paused",
+          modelPin: null,
+          toolScopes: null,
+          budgetCents: 3000,
+          spentCents: 2900,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+    }),
+  ],
+  [/\/agents\/spend$/, () => ({ agents: [] })],
+  [
+    /\/guardrails$/,
+    () => ({
+      checkpoints: [
+        {
+          id: "cp-1",
+          template: "send_message",
+          label: "Ask before sending anything on my behalf",
+          pattern: "autonomy:message",
+          scope: "everywhere",
+          thresholdCents: null,
+          enabled: 1,
+          isDefault: 1,
+          enforced: true,
+          enforcedVia: "permission-checker",
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        {
+          id: "cp-2",
+          template: "spend_over",
+          label: "Ask before spending more than $20",
+          pattern: "autonomy:money",
+          scope: "everywhere",
+          thresholdCents: 2000,
+          enabled: 1,
+          isDefault: 1,
+          enforced: true,
+          enforcedVia: "permission-checker",
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+      agents: [],
+      ledger: {
+        recentActs: [
+          {
+            id: "act-1",
+            agent: "Ops",
+            workItemId: "wi-4",
+            missionId: "m-1",
+            kind: "run_completed",
+            title: "Ship the pricing-page copy revision",
+            reversed: 0,
+            reversedAt: null,
+            estMinutesSaved: 25,
+            costCents: 9,
+            model: "claude-haiku-4-5",
+            createdAt: NOW - 3 * 60 * MIN,
+          },
+        ],
+        heldItems: [],
+        summary: {
+          actCount: 14,
+          reversedCount: 1,
+          heldCount: 0,
+          estMinutesSaved: 320,
+          totalCents: 640,
+          byModel: [
+            {
+              model: "claude-haiku-4-5",
+              costCents: 640,
+              calls: 210,
+              share: 1,
+            },
+          ],
+          byMission: [
+            {
+              missionId: "m-1",
+              missionTitle: "Grow partner-sourced pipeline",
+              costCents: 420,
+              runs: 9,
+            },
+          ],
+        },
+      },
+    }),
+  ],
+  [
+    /\/skills$/,
+    () => ({
+      skills: [
+        {
+          id: "sk-1",
+          name: "Competitive brief",
+          description:
+            "Research competitors and produce a positioning and messaging comparison with content gaps.",
+          emoji: "🔭",
+          kind: "installed",
+          status: "enabled",
+          category: "Research",
+          origin: "vellum",
+        },
+        {
+          id: "sk-2",
+          name: "Month-end close checklist",
+          description:
+            "Reconcile invoices against the bank export and flag every unmatched row.",
+          emoji: "📚",
+          kind: "catalog",
+          status: "available",
+          category: "Finance & operations",
+          origin: "vellum",
+        },
+      ],
+    }),
+  ],
+  [
+    /\/skills\/categories$/,
+    () => ({ categories: ["Research", "Finance & operations", "Growth"] }),
+  ],
+  [
+    /\/plugins$/,
+    () => ({
+      plugins: [
+        {
+          id: "cue-slack-bridge",
+          name: "cue-slack-bridge",
+          description:
+            "Bridges Slack channels into the inbound pipeline with per-channel triage rules.",
+          version: "1.4.2",
+          disabled: false,
+        },
+        {
+          id: "cue-calendar-sync",
+          name: "cue-calendar-sync",
+          description: "Two-way calendar sync for scheduled runs.",
+          version: "0.9.0",
+          disabled: true,
+        },
+      ],
+    }),
+  ],
+  [
+    /\/connector-apps$/,
+    () => ({
+      configured: true,
+      source: "composio",
+      apps: [
+        {
+          slug: "gmail",
+          name: "Gmail",
+          category: "Email",
+          connected: true,
+          health: { status: "ok", lastSuccessAt: new Date(NOW).toISOString() },
+        },
+        {
+          slug: "slack",
+          name: "Slack",
+          category: "Messaging",
+          connected: true,
+          health: {
+            status: "attention",
+            lastError: "The workspace revoked the token — reconnect Slack.",
+          },
+        },
+        {
+          slug: "google-calendar",
+          name: "Google Calendar",
+          category: "Scheduling",
+          connected: false,
+        },
+      ],
+    }),
+  ],
+  [
+    /\/trust\/rules$/,
+    () => ({
+      rules: [
+        {
+          id: "tr-1",
+          triggerType: "sender",
+          triggerValue: "Priya Raman",
+          action: "auto_confirm",
+          label: "Auto-confirm anything Priya Raman sends",
+          enabled: 1,
+          sourceWorkItemId: null,
+          sourceTaskId: null,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+    }),
+  ],
+  [
+    /\/acts$/,
+    () => ({
+      acts: [
+        {
+          id: "act-1",
+          agent: "Ops",
+          workItemId: "wi-4",
+          missionId: "m-1",
+          kind: "run_completed",
+          title: "Ship the pricing-page copy revision",
+          reversed: 0,
+          reversedAt: null,
+          estMinutesSaved: 25,
+          costCents: 9,
+          model: "claude-haiku-4-5",
+          createdAt: NOW - 3 * 60 * MIN,
+        },
+        {
+          id: "act-2",
+          agent: "Growth",
+          workItemId: "wi-2",
+          missionId: "m-1",
+          kind: "message_drafted",
+          title: "Reconcile the September invoices with the bank export",
+          reversed: 1,
+          reversedAt: NOW - 30 * MIN,
+          estMinutesSaved: 40,
+          costCents: 14,
+          model: "claude-haiku-4-5",
+          createdAt: NOW - 5 * 60 * MIN,
+        },
+      ],
+    }),
+  ],
+  [
+    /\/conversations$/,
+    () => ({
+      conversations: [
+        {
+          id: "c-1",
+          title: "Q3 partner-update email — draft and tone pass",
+          createdAt: NOW - 3 * 60 * MIN,
+          updatedAt: NOW - 12 * MIN,
+          lastMessageAt: NOW - 12 * MIN,
+          conversationType: "standard",
+          source: "web",
+        },
+        {
+          id: "c-2",
+          title: "Month-end close: unmatched ACH credit investigation",
+          createdAt: NOW - 26 * 60 * MIN,
+          updatedAt: NOW - 90 * MIN,
+          lastMessageAt: NOW - 90 * MIN,
+          conversationType: "background",
+          source: "schedule",
+        },
+      ],
+    }),
+  ],
+  // The watcher/playbook routes answer with bare arrays, not envelopes.
+  [
+    /\/watchers\/list$/,
+    () => [
+      {
+        id: "w-1",
+        name: "Contracts inbox — unsigned older than 5 days",
+        providerId: "gmail",
+        enabled: true,
+        pollIntervalMs: 900_000,
+        intakeMode: "came_in",
+        watermark: null,
+        status: "ok",
+        lastPollAt: NOW - 6 * MIN,
+        lastError: null,
+        configJson: null,
+        credentialService: "gmail",
+        health: "ok",
+      },
+      {
+        id: "w-2",
+        name: "Finance Slack channel",
+        providerId: "slack",
+        enabled: false,
+        pollIntervalMs: 300_000,
+        intakeMode: "came_in",
+        watermark: null,
+        status: "reauth",
+        lastPollAt: NOW - 3 * 60 * MIN,
+        lastError: "The workspace revoked the token — reconnect Slack.",
+        configJson: null,
+        credentialService: "slack",
+        health: "reauth",
+      },
+    ],
+  ],
+  [/\/watchers\/providers$/, () => []],
+  [
+    /\/playbooks\/list$/,
+    () => [
+      {
+        id: "pb-1",
+        name: "Weekly partner digest",
+        triggerText: "Every Monday at 09:00",
+        channel: "email",
+        watcherId: "w-1",
+        action: "draft_and_send",
+        autonomyLevel: "draft",
+        priority: 1,
+        enabled: true,
+        lastFiredAt: NOW - 26 * 60 * MIN,
+        effectiveAutonomy: "draft",
+        autonomyCeiling: "auto",
+        autonomyCapped: false,
+        globalDial: "assist",
+      },
+    ],
+  ],
+  [
+    /\/brief\/morning$/,
+    () => ({
+      brief: {
+        greeting: "Good morning",
+        summary: "Three things want you before lunch.",
+        sections: [],
+      },
+    }),
+  ],
+];
+
+function mockBody(url: string): unknown {
+  for (const [re, make] of FIXTURES) {
+    if (re.test(url.split("?")[0] ?? url)) return make();
+  }
+  // Generic shape: every list-ish accessor in the app reads `?? []`.
+  return {
+    items: [],
+    events: [],
+    conversations: [],
+    skills: [],
+    categories: [],
+    plugins: [],
+    apps: [],
+    connections: [],
+    schedules: [],
+    agents: [],
+    acts: [],
+    rules: [],
+    memories: [],
+    entries: [],
+    sources: [],
+    installed: [],
+    profiles: [],
+    results: [],
+    ok: true,
+  };
+}
+
+let installed = false;
+function installMockFetch(): void {
+  if (installed) return;
+  installed = true;
+  const real = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = ((input: any, init?: any) => {
+    const url = typeof input === "string" ? input : (input?.url ?? "");
+    // `window.__mockCalls` is the debugging hook: it tells you which endpoints
+    // a surface actually reads, so a blank screen can be traced to a missing
+    // fixture rather than guessed at.
+    ((globalThis as any).__mockCalls ??= []).push(url);
+    if (typeof url === "string" && url.includes("/v1/")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(mockBody(url)), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return real(input, init);
+  }) as typeof fetch;
+}
+
+const WatchLivePage = lazy(() =>
+  import("@/mobile-v3/watch/watch-live-page").then((m) => ({
+    default: m.WatchLivePage,
+  })),
+);
+const ReviewQueuePage = lazy(() =>
+  import("@/mobile-v3/review/review-queue-page").then((m) => ({
+    default: m.ReviewQueuePage,
+  })),
+);
+const ReviewIndexPage = lazy(() =>
+  import("@/mobile-v3/review/review-index-page").then((m) => ({
+    default: m.ReviewIndexPage,
+  })),
+);
+const CameInPage = lazy(() =>
+  import("@/mobile-v3/triage/came-in-page").then((m) => ({
+    default: m.CameInPage,
+  })),
+);
+const BriefPage = lazy(() =>
+  import("@/mobile-v3/brief/brief-page").then((m) => ({
+    default: m.BriefPage,
+  })),
+);
+const Mv3Today = lazy(() =>
+  import("@/mobile-v3/today/mv3-today").then((m) => ({ default: m.Mv3Today })),
+);
+const Mv3MissionDetail = lazy(() =>
+  import("@/mobile-v3/mission/mission-detail-page").then((m) => ({
+    default: m.Mv3MissionDetail,
+  })),
+);
+const Mv3Projects = lazy(() =>
+  import("@/pages/projects/mv3-projects").then((m) => ({
+    default: m.Mv3Projects,
+  })),
+);
+const Mv3AllWork = lazy(() =>
+  import("@/pages/projects/mv3-all-work").then((m) => ({
+    default: m.Mv3AllWork,
+  })),
+);
+const Mv3YouPage = lazy(() =>
+  import("@/mobile-v3/you/you-page").then((m) => ({ default: m.Mv3YouPage })),
+);
+const Mv3AgentsPage = lazy(() =>
+  import("@/mobile-v3/you/agents-page").then((m) => ({
+    default: m.Mv3AgentsPage,
+  })),
+);
+const Mv3SkillsPage = lazy(() =>
+  import("@/mobile-v3/you/skills-page").then((m) => ({
+    default: m.Mv3SkillsPage,
+  })),
+);
+const Mv3PluginsPage = lazy(() =>
+  import("@/mobile-v3/you/plugins-page").then((m) => ({
+    default: m.Mv3PluginsPage,
+  })),
+);
+const Mv3ConnectionsPage = lazy(() =>
+  import("@/mobile-v3/you/connections-page").then((m) => ({
+    default: m.Mv3ConnectionsPage,
+  })),
+);
+const Mv3AutomationsPage = lazy(() =>
+  import("@/mobile-v3/you/automations-page").then((m) => ({
+    default: m.Mv3AutomationsPage,
+  })),
+);
+const Mv3RulesPage = lazy(() =>
+  import("@/mobile-v3/you/rules-page").then((m) => ({
+    default: m.Mv3RulesPage,
+  })),
+);
+const Mv3MemoryPage = lazy(() =>
+  import("@/mobile-v3/you/memory-page").then((m) => ({
+    default: m.Mv3MemoryPage,
+  })),
+);
+const Mv3LedgerPage = lazy(() =>
+  import("@/mobile-v3/you/ledger-page").then((m) => ({
+    default: m.Mv3LedgerPage,
+  })),
+);
+const Mv3ExplorePage = lazy(() =>
+  import("@/mobile-v3/you/explore-page").then((m) => ({
+    default: m.Mv3ExplorePage,
+  })),
+);
+const Mv3IdentityPage = lazy(() =>
+  import("@/mobile-v3/you/identity-page").then((m) => ({
+    default: m.Mv3IdentityPage,
+  })),
+);
+const ChatsIndexPage = lazy(() =>
+  import("@/mobile-v3/chats/chats-index-page").then((m) => ({
+    default: m.ChatsIndexPage,
+  })),
+);
+const OrganizerRemotePage = lazy(() =>
+  import("@/mobile-v3/organizer/organizer-remote-page").then((m) => ({
+    default: m.OrganizerRemotePage,
+  })),
+);
+
+interface Screen {
+  key: string;
+  label: string;
+  /** Initial MemoryRouter entry; the route pattern is derived from `route`. */
+  entry: string;
+  route: string;
+  element: React.ReactNode;
+  /** Whether the real shell shows the tab bar on this surface. */
+  tabBar?: boolean;
+}
+
+const SCREENS: Screen[] = [
+  {
+    key: "watch-live",
+    label: "Watch live (run)",
+    entry: "/assistant/work/wi-1/live",
+    route: "/assistant/work/:workItemId/live",
+    element: <WatchLivePage />,
+    tabBar: true,
+  },
+  {
+    key: "today",
+    label: "Today / HQ",
+    entry: "/assistant/hq",
+    route: "/assistant/hq",
+    element: (
+      <Mv3Today
+        assistantId={ASSISTANT_ID}
+        userName="Manav"
+        move={{
+          hasMove: true,
+          itemId: "wi-2",
+          kind: "work_item",
+          headline: "Reconcile the September invoices with the bank export",
+          reasoning:
+            "Two rows still need a human call and the close is Friday.",
+          actions: [
+            { id: "a1", label: "Review", kind: "open_thread" },
+            { id: "a2", label: "Snooze", kind: "snooze" },
+          ],
+        }}
+        review={WORK_ITEMS.filter((i) => i.status === "awaiting_review") as any}
+        running={WORK_ITEMS.filter((i) => i.status === "running") as any}
+        cameIn={WORK_ITEMS.filter((i) => i.status === "pending") as any}
+        degraded={false}
+      />
+    ),
+    tabBar: true,
+  },
+  {
+    key: "review-queue",
+    label: "Review pager",
+    entry: "/assistant/review-queue",
+    route: "/assistant/review-queue",
+    element: <ReviewQueuePage />,
+    tabBar: true,
+  },
+  {
+    key: "review-index",
+    label: "Review index",
+    entry: "/assistant/review",
+    route: "/assistant/review",
+    element: <ReviewIndexPage />,
+    tabBar: true,
+  },
+  {
+    key: "came-in",
+    label: "Came in today (triage)",
+    entry: "/assistant/came-in",
+    route: "/assistant/came-in",
+    element: <CameInPage />,
+    tabBar: true,
+  },
+  {
+    key: "brief",
+    label: "Morning brief",
+    entry: "/assistant/brief",
+    route: "/assistant/brief",
+    element: <BriefPage />,
+  },
+  {
+    key: "mission",
+    label: "Mission detail",
+    entry: "/assistant/missions/m-1",
+    route: "/assistant/missions/:missionId",
+    element: <Mv3MissionDetail missionId="m-1" />,
+    tabBar: true,
+  },
+  {
+    key: "projects",
+    label: "Projects",
+    entry: "/assistant/projects",
+    route: "/assistant/projects",
+    element: <Mv3Projects />,
+    tabBar: true,
+  },
+  {
+    key: "all-work",
+    label: "All work",
+    entry: "/assistant/work",
+    route: "/assistant/work",
+    element: <Mv3AllWork />,
+    tabBar: true,
+  },
+  {
+    key: "chats",
+    label: "Chats index",
+    entry: "/assistant/conversations",
+    route: "/assistant/conversations",
+    element: <ChatsIndexPage />,
+    tabBar: true,
+  },
+  {
+    key: "you",
+    label: "You",
+    entry: "/assistant/channels",
+    route: "/assistant/channels",
+    element: <Mv3YouPage />,
+    tabBar: true,
+  },
+  {
+    key: "agents",
+    label: "You › Agents",
+    entry: "/assistant/agents",
+    route: "/assistant/agents",
+    element: <Mv3AgentsPage />,
+    tabBar: true,
+  },
+  {
+    key: "skills",
+    label: "You › Skills",
+    entry: "/assistant/skills",
+    route: "/assistant/skills",
+    element: <Mv3SkillsPage assistantId={ASSISTANT_ID} />,
+    tabBar: true,
+  },
+  {
+    key: "plugins",
+    label: "You › Plugins",
+    entry: "/assistant/plugins",
+    route: "/assistant/plugins",
+    element: <Mv3PluginsPage assistantId={ASSISTANT_ID} />,
+    tabBar: true,
+  },
+  {
+    key: "connections",
+    label: "You › Connections",
+    entry: "/assistant/connections",
+    route: "/assistant/connections",
+    element: <Mv3ConnectionsPage />,
+    tabBar: true,
+  },
+  {
+    key: "automations",
+    label: "You › Automations",
+    entry: "/assistant/automations",
+    route: "/assistant/automations",
+    element: <Mv3AutomationsPage />,
+    tabBar: true,
+  },
+  {
+    key: "rules",
+    label: "You › Rules",
+    entry: "/assistant/rules",
+    route: "/assistant/rules",
+    element: <Mv3RulesPage />,
+    tabBar: true,
+  },
+  {
+    key: "memory",
+    label: "You › Memory",
+    entry: "/assistant/memory",
+    route: "/assistant/memory",
+    element: <Mv3MemoryPage />,
+    tabBar: true,
+  },
+  {
+    key: "ledger",
+    label: "You › Ledger",
+    entry: "/assistant/ledger",
+    route: "/assistant/ledger",
+    element: <Mv3LedgerPage />,
+    tabBar: true,
+  },
+  {
+    key: "explore",
+    label: "Explore",
+    entry: "/assistant/explore",
+    route: "/assistant/explore",
+    element: <Mv3ExplorePage />,
+    tabBar: true,
+  },
+  {
+    key: "identity",
+    label: "Identity",
+    entry: "/assistant/identity",
+    route: "/assistant/identity",
+    element: <Mv3IdentityPage assistantId={ASSISTANT_ID} />,
+    tabBar: true,
+  },
+  {
+    key: "organizer",
+    label: "Organizer remote",
+    entry: "/assistant/organizer",
+    route: "/assistant/organizer",
+    element: <OrganizerRemotePage />,
+    tabBar: true,
+  },
+];
+
+/** Surfaces a render crash instead of a blank screen (fixture mismatches). */
+class Boundary extends Component<
+  { children: React.ReactNode },
+  { err: string | null }
+> {
+  state = { err: null as string | null };
+  static getDerivedStateFromError(e: unknown) {
+    return { err: e instanceof Error ? `${e.message}\n${e.stack}` : String(e) };
+  }
+  render() {
+    if (this.state.err)
+      return (
+        <pre
+          data-slot="preview-error"
+          style={{ padding: 16, fontSize: 11, whiteSpace: "pre-wrap" }}
+        >
+          {this.state.err}
+        </pre>
+      );
+    return this.props.children;
+  }
+}
+
+function Index() {
+  return (
+    <div style={{ padding: 24, fontFamily: "system-ui" }}>
+      <h1 style={{ fontSize: 18, marginBottom: 12 }}>Mobile audit harness</h1>
+      <ul style={{ lineHeight: 1.9 }}>
+        {SCREENS.map((s) => (
+          <li key={s.key}>
+            <a href={`?gallery=mobile&screen=${s.key}`}>{s.label}</a>{" "}
+            <code style={{ opacity: 0.5 }}>{s.key}</code>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Module scope on purpose: child effects run BEFORE the parent's, so a
+// useEffect here would install the stub after the first queries have already
+// fired against the real network.
+installMockFetch();
+useResolvedAssistantsStore.setState({ activeAssistantId: ASSISTANT_ID });
+
+const client = new QueryClient({
+  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+});
+
+export function MobileAuditGallery() {
+  const params = new URLSearchParams(globalThis.location?.search ?? "");
+  const key = params.get("screen");
+  const screen = SCREENS.find((s) => s.key === key);
+  const theme = params.get("theme") ?? "light";
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  if (!screen) return <Index />;
+
+  // Mirrors `root-layout`'s app-shell box so measurements match production.
+  return (
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[screen.entry]}>
+        <div
+          data-slot="root-layout"
+          className="app-shell"
+          style={{
+            background: "var(--surface-base)",
+            height: "100dvh",
+            paddingBottom:
+              "var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))",
+            paddingLeft:
+              "var(--safe-area-inset-left, env(safe-area-inset-left, 0px))",
+            paddingRight:
+              "var(--safe-area-inset-right, env(safe-area-inset-right, 0px))",
+            isolation: "isolate",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            className="flex min-w-0 flex-col overflow-hidden w-full"
+            style={{ flex: "1 1 0%", minHeight: 0 }}
+          >
+            <Suspense fallback={<div />}>
+              <Boundary>
+              <Routes>
+                <Route path={screen.route} element={screen.element} />
+                <Route path="*" element={<div>no route</div>} />
+              </Routes>
+              </Boundary>
+            </Suspense>
+          </div>
+          {screen.tabBar ? <TabBarV3 /> : null}
+          <div id="viewport-overlays" />
+        </div>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}

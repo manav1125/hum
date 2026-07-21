@@ -82,18 +82,28 @@ function dedupeTrail<T extends { kind: string; fromStatus: string | null; toStat
   return out;
 }
 
-/** One timeline node: ✓ done · pulsing current · dashed future. */
+/**
+ * One timeline node: ✓ done · pulsing current · dashed future.
+ *
+ * `grow` lets a node absorb the stream's leftover height so a SHORT trail
+ * still spans header→controls instead of stacking at the top over a dead
+ * void (the node's rail line is `flex:1`, so the growth reads as a longer
+ * connector, not as empty space). Nodes never shrink below their content —
+ * `minHeight: 0` is deliberately NOT set — so a long trail simply scrolls.
+ */
 function StreamNode({
   variant,
   title,
   meta,
   last = false,
+  grow = false,
   titleColor,
 }: {
   variant: "done" | "current" | "future";
   title: string;
   meta?: string | null;
   last?: boolean;
+  grow?: boolean;
   titleColor?: string;
 }) {
   return (
@@ -101,6 +111,7 @@ function StreamNode({
       style={{
         display: "flex",
         gap: 12,
+        flex: grow ? "1 1 auto" : "0 0 auto",
         ...(variant === "future" ? { opacity: 0.5 } : {}),
       }}
     >
@@ -195,6 +206,10 @@ function StreamNode({
             fontWeight: variant === "future" ? 400 : 600,
             color: titleColor ?? "var(--mv3-text)",
             lineHeight: 1.35,
+            // Progress notes carry raw URLs/tokens from the runner; without
+            // this an unbroken string shoots past the right edge and the
+            // page root's `overflow: clip` shears it mid-token.
+            overflowWrap: "anywhere",
           }}
         >
           {title}
@@ -206,6 +221,7 @@ function StreamNode({
               fontSize: 10,
               color: "var(--mv3-faint)",
               marginTop: 3,
+              overflowWrap: "anywhere",
             }}
           >
             {meta}
@@ -216,18 +232,50 @@ function StreamNode({
   );
 }
 
+/**
+ * A control-bar button. `flex-basis: 140px` + `flex-wrap` on the row is what
+ * keeps the bar honest at 390px: two buttons share the row, a third wraps to
+ * its own full-width row rather than squeezing every label until it clips
+ * ("Take ov"). `minWidth: 0` + the ellipsis span below are the last-resort
+ * guard for a label that still can't fit (iOS text-size boosting, a longer
+ * translation).
+ */
 const barBtn: React.CSSProperties = {
-  flex: 1,
+  flex: "1 1 140px",
+  minWidth: 0,
   background: "var(--mv3-btn2-bg)",
   color: "var(--mv3-text)",
   border: "1px solid var(--mv3-btn2-border)",
   borderRadius: 14,
-  padding: 13,
+  padding: "13px 10px",
   minHeight: 48,
   fontSize: 14,
   fontWeight: 600,
   fontFamily: "inherit",
   cursor: "pointer",
+};
+
+/**
+ * One rendered row of the stream. The trail's tail is a "current + future"
+ * pair while running, a single violet future node while awaiting review, and
+ * nothing once the item is terminal — flattening it lets the renderer mark
+ * the true last node and pick which node absorbs the region's slack.
+ */
+interface StreamNodeSpec {
+  key: string;
+  variant: "done" | "current" | "future";
+  title: string;
+  meta?: string | null;
+  titleColor?: string;
+}
+
+/** Label wrapper: never let a control's text spill out of its button. */
+const barBtnLabel: React.CSSProperties = {
+  display: "block",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
 export function WatchLivePage() {
@@ -263,6 +311,44 @@ export function WatchLivePage() {
     item?.lastActivityAt ??
     item?.updatedAt ??
     now;
+
+  // The rendered timeline, flattened so the last node (and the node that
+  // absorbs the leftover height) can be identified by index.
+  const nodes: StreamNodeSpec[] = [
+    ...trail.map(
+      (e): StreamNodeSpec => ({
+        key: e.id,
+        variant: "done",
+        title: stepLabel(e),
+        meta: clockTimeSeconds(e.at),
+      }),
+    ),
+    ...(running
+      ? ([
+          {
+            key: "current",
+            variant: "current",
+            title: item?.lastProgressNote ?? "Cue is working on this…",
+            titleColor: "var(--mv3-micro)",
+            meta: "now",
+          },
+          {
+            key: "future",
+            variant: "future",
+            title: "Finish → your review",
+          },
+        ] satisfies StreamNodeSpec[])
+      : item?.status === "awaiting_review"
+        ? ([
+            {
+              key: "future",
+              variant: "future",
+              title: "Waiting on your review",
+              titleColor: "var(--mv3-violet)",
+            },
+          ] satisfies StreamNodeSpec[])
+        : []),
+  ];
 
   const queryClient = useQueryClient();
   const stop = useMutation({
@@ -358,7 +444,7 @@ export function WatchLivePage() {
         {running ? <LivePulseBadge size={22} /> : null}
       </div>
 
-      {/* The step stream. */}
+      {/* The step stream — owns the scroll region. */}
       <div
         style={{
           flex: 1,
@@ -368,6 +454,8 @@ export function WatchLivePage() {
           padding: "8px 22px 12px",
           position: "relative",
           zIndex: 2,
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         {!item && !all.isLoading ? (
@@ -375,37 +463,32 @@ export function WatchLivePage() {
             This work item isn&apos;t here anymore — it may have been archived.
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {trail.map((e) => (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              // Fill the region so a 3-step trail stretches its connectors
+              // down to the controls instead of leaving a dead void; a long
+              // trail overflows this and the parent scrolls it.
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
+            {nodes.map((n, i) => (
               <StreamNode
-                key={e.id}
-                variant="done"
-                title={stepLabel(e)}
-                meta={clockTimeSeconds(e.at)}
+                key={n.key}
+                variant={n.variant}
+                title={n.title}
+                meta={n.meta}
+                titleColor={n.titleColor}
+                last={i === nodes.length - 1}
+                // The node just above the tail absorbs the slack, so its rail
+                // line runs down to the tail step ("Finish → your review")
+                // instead of the region ending in a dead void. Steps
+                // themselves keep their spec spacing.
+                grow={i === Math.max(0, nodes.length - 2)}
               />
             ))}
-            {running ? (
-              <>
-                <StreamNode
-                  variant="current"
-                  title={item?.lastProgressNote ?? "Cue is working on this…"}
-                  titleColor="var(--mv3-micro)"
-                  meta="now"
-                />
-                <StreamNode
-                  variant="future"
-                  title="Finish → your review"
-                  last
-                />
-              </>
-            ) : item?.status === "awaiting_review" ? (
-              <StreamNode
-                variant="future"
-                title="Waiting on your review"
-                titleColor="var(--mv3-violet)"
-                last
-              />
-            ) : null}
           </div>
         )}
       </div>
@@ -419,7 +502,7 @@ export function WatchLivePage() {
           zIndex: 5,
         }}
       >
-        <div style={{ display: "flex", gap: 9 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
           {running ? (
             <button
               type="button"
@@ -433,7 +516,9 @@ export function WatchLivePage() {
               }}
               style={{ ...barBtn, opacity: stop.isPending ? 0.6 : 1 }}
             >
-              {stop.isPending ? "Stopping…" : "⏹ Stop"}
+              <span style={barBtnLabel}>
+                {stop.isPending ? "Stopping…" : "⏹ Stop"}
+              </span>
             </button>
           ) : null}
           {item?.lastRunConversationId ? (
@@ -446,7 +531,7 @@ export function WatchLivePage() {
               }}
               style={barBtn}
             >
-              Take over
+              <span style={barBtnLabel}>Take over</span>
             </button>
           ) : null}
           {item?.status === "awaiting_review" ? (
@@ -459,14 +544,14 @@ export function WatchLivePage() {
               }}
               style={{
                 ...barBtn,
-                flex: 1.4,
+                flex: "1.4 1 140px",
                 background: "linear-gradient(160deg, #4E7CEC, #3560CC)",
                 color: "#fff",
                 border: "none",
                 boxShadow: "var(--mv3-primary-btn-shadow)",
               }}
             >
-              Review ›
+              <span style={barBtnLabel}>Review ›</span>
             </button>
           ) : null}
         </div>

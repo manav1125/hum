@@ -601,21 +601,42 @@ export async function assessWorkItem(
     }
 
     const prompt = buildAssessmentPrompt(input);
-    const text = await withDeadline(
-      model(prompt, { timeoutMs: cfg.timeoutMs }).catch((err: unknown) => {
-        log.debug({ err: String(err) }, "assessment model call failed");
-        return null;
-      }),
-      cfg.timeoutMs,
-    );
-    if (!text) return NOT_ASSESSED;
+
+    // One retry. A burst of dispatches (auto-run draining a queue, or a user
+    // running several tasks at once) puts the whole batch through the flash
+    // provider at the same moment, and the slow half of that burst used to
+    // fall out silently — the feature looked healthy while most tasks ran
+    // unassessed. A second attempt costs one cheap call and recovers them.
+    let text: string | null = null;
+    let lastFailure = "no reply";
+    for (let attempt = 1; attempt <= 2 && !text; attempt += 1) {
+      text = await withDeadline(
+        model(prompt, { timeoutMs: cfg.timeoutMs }).catch((err: unknown) => {
+          lastFailure = String(err);
+          return null;
+        }),
+        cfg.timeoutMs,
+      );
+      if (!text && lastFailure === "no reply") {
+        lastFailure = `no reply within ${cfg.timeoutMs}ms`;
+      }
+    }
+    if (!text) {
+      // Warn, not debug: this is the feature silently not happening, and the
+      // only outward sign is a task that runs with no verdict attached.
+      log.warn(
+        { workItemId: input.item.id, reason: lastFailure },
+        "work-item assessment produced no reply (running unassessed)",
+      );
+      return NOT_ASSESSED;
+    }
 
     const parsed = parseAssessmentResponse(text, {
       notAiTaskMinConfidence: cfg.notAiTaskMinConfidence,
     });
     if (!parsed) {
-      log.debug(
-        { workItemId: input.item.id },
+      log.warn(
+        { workItemId: input.item.id, replyPreview: text.slice(0, 200) },
         "assessment reply unparseable (running unassessed)",
       );
       return NOT_ASSESSED;

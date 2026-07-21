@@ -56,9 +56,9 @@ const AssessmentConfigSchema = z
       .number({ error: "workItems.assessment.timeoutMs must be a number" })
       .int("workItems.assessment.timeoutMs must be an integer")
       .positive("workItems.assessment.timeoutMs must be positive")
-      .default(12_000)
+      .default(30_000)
       .describe(
-        "Hard deadline on the assessment call. On timeout the run proceeds unassessed (fail-open).",
+        "Hard deadline on each assessment attempt (two are made). On timeout the run proceeds unassessed (fail-open). Generous by design: the run it precedes takes minutes, and a burst of dispatches slows the flash provider enough that a tight deadline drops most of the batch.",
       ),
     notAiTaskMinConfidence: z
       .number({

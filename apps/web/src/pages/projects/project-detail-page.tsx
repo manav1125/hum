@@ -19,6 +19,11 @@ import { C, mono, serif } from "@/domains/activity/theme";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { dismissLeave } from "@/mobile-v3/undo-toast";
+import {
+  AssessmentSignal,
+  holdReason,
+  holdsForYou,
+} from "@/pages/hq/assessment-kit";
 import { HqStyle } from "@/pages/hq/hq-kit";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { routes } from "@/utils/routes";
@@ -39,6 +44,9 @@ import {
   useProjects,
   useProjectWorkItems,
 } from "./use-projects";
+
+/** DOM id of the knowledge panel — the destination for a blocked task's fix. */
+const KNOWLEDGE_ANCHOR = "project-knowledge";
 
 const DAY_MS = 24 * 3_600_000;
 const LIVE_STATUSES = new Set([
@@ -68,6 +76,9 @@ function BoardRow({
   const running = item.status === "running";
   const done = item.status === "done";
   const review = item.status === "awaiting_review";
+  // The pre-run assessment held this one back — it is waiting on a person, and
+  // that has to be readable without opening the row.
+  const hold = done ? null : holdsForYou(item);
   const dueSoon =
     item.dueAt != null &&
     item.dueAt <= now + DAY_MS &&
@@ -86,18 +97,21 @@ function BoardRow({
     chip = statusChip(item.status);
   }
 
-  // Progress/evidence line: the runner's live note while running; the
-  // non-default assignee otherwise.
+  // Progress/evidence line: the runner's live note while running; the reason
+  // it is holding when the assessment parked it; the non-default assignee
+  // otherwise.
   const note = running
     ? {
         text: item.lastProgressNote ?? "Cue is working on this…",
         color: C.blueS,
       }
-    : review
-      ? { text: "ready — waits on you", color: C.amber }
-      : item.assignee && item.assignee !== "cue"
-        ? { text: `@${item.assignee}` }
-        : null;
+    : hold
+      ? { text: holdReason(item) ?? "", color: C.amber }
+      : review
+        ? { text: "ready — waits on you", color: C.amber }
+        : item.assignee && item.assignee !== "cue"
+          ? { text: `@${item.assignee}` }
+          : null;
 
   return (
     <div
@@ -108,6 +122,7 @@ function BoardRow({
         sourceType={done ? null : item.sourceType}
         title={item.title}
         chip={done ? null : chip}
+        chipNode={hold ? <AssessmentSignal item={item} /> : null}
         note={done ? null : note}
         live={running}
         emphasis={
@@ -115,7 +130,7 @@ function BoardRow({
             ? "done"
             : running
               ? "next"
-              : review || dueSoon
+              : hold || review || dueSoon
                 ? "blocked"
                 : "none"
         }
@@ -334,11 +349,15 @@ function ProjectDetailPageDesktop() {
               initial={project.context}
               accent={C.blue}
             />
-            <ProjectKnowledge
-              assistantId={assistantId}
-              projectId={projectId}
-              accent={C.violet}
-            />
+            {/* Anchored: a task blocked on a missing file links straight here
+                from its drawer (see `onAttachKnowledge` below). */}
+            <div id={KNOWLEDGE_ANCHOR} style={{ scrollMarginTop: 24 }}>
+              <ProjectKnowledge
+                assistantId={assistantId}
+                projectId={projectId}
+                accent={C.violet}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -559,6 +578,11 @@ function ProjectDetailPageDesktop() {
           projects={projects}
           currentProjectId={projectId}
           onClose={() => setOpenTaskId(null)}
+          onAttachKnowledge={() =>
+            document
+              .getElementById(KNOWLEDGE_ANCHOR)
+              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+          }
         />
       ) : null}
 

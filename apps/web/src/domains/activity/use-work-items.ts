@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { workitemsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { WorkitemsGetData } from "@/generated/daemon/types.gen";
+import type { AssessedItem } from "@/pages/hq/assessment-kit";
 
 import { asRecord, num, str } from "./theme";
 
@@ -33,6 +34,12 @@ export interface WorkItemView {
   labels: string[];
   /** "cue" | "you" | contact name; null reads as "cue". */
   assignee: string | null;
+  /**
+   * The item's pre-run assessment fields, passed through unread so any
+   * Activity surface can show the verdict (see `pages/hq/assessment-kit`).
+   * Null when the payload carried none — an older daemon, or an opaque row.
+   */
+  assessed: AssessedItem | null;
 }
 
 /**
@@ -97,6 +104,17 @@ function narrow(raw: unknown): WorkItemView | null {
     projectId: str(rec.projectId),
     labels,
     assignee: str(rec.assignee),
+    assessed: str(rec.assessmentVerdict)
+      ? {
+          assessmentVerdict: str(rec.assessmentVerdict),
+          assessmentUnderstanding: str(rec.assessmentUnderstanding),
+          assessmentPlan: str(rec.assessmentPlan),
+          assessmentQuestion: str(rec.assessmentQuestion),
+          assessmentMissing: str(rec.assessmentMissing),
+          assessmentConfidence: num(rec.assessmentConfidence),
+          assessmentAt: num(rec.assessmentAt),
+        }
+      : null,
   };
 }
 

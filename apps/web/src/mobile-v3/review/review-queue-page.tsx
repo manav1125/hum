@@ -611,15 +611,17 @@ export function ReviewQueuePage() {
             </button>
           </div>
 
-          {/* Quick-note chips — a tap submits the correction + reruns. */}
+          {/* Quick-note chips — a tap submits the correction + reruns.
+              WRAPS rather than scrolling sideways: the set is fixed and short,
+              and a horizontal strip cut the last chip mid-word at 390px, which
+              reads as broken overflow rather than as an affordance. */}
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               gap: 7,
               marginTop: 10,
               paddingBottom: 12,
-              overflowX: "auto",
-              WebkitOverflowScrolling: "touch",
             }}
           >
             {REDO_CHIPS.map((chip) => (

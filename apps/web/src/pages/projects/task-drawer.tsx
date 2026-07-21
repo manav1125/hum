@@ -3,8 +3,10 @@
  *
  * Slides in from the right (bottom sheet on mobile) over a project's board.
  * Restyled to the Cue-HQ-Build Round 5 · B2 drawer frame: a mono TASK label,
- * the one-card-language header (source badge · title · status chip), a LIVE
- * progress panel while the runner is working, and a "FILED TO" move control
+ * the one-card-language header (source badge · title · status chip), the
+ * pre-run assessment panel (what Cue understood and what it will do, or the
+ * one thing it needs first), a LIVE progress panel while the runner is
+ * working, and a "FILED TO" move control
  * that speaks the §4 reassign-menu language (current project highlighted,
  * sibling projects one tap away, "moving teaches Cue"). Every existing flow
  * stays: Run / Approve / Redo, open thread, per-task context, source snapshot,
@@ -30,10 +32,17 @@ import {
 import { client } from "@/generated/daemon/client.gen";
 import { MicroLabel } from "@/pages/hq/hq-kit";
 import {
+  AssessmentPanel,
+  blockedFixKind,
+  readAssessment,
+  type AssessmentFix,
+} from "@/pages/hq/assessment-kit";
+import {
   ReassignMenu,
   ReassignTeachToast,
   type ReassignTarget,
 } from "@/pages/hq/reassign-menu";
+import { routes } from "@/utils/routes";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ItemCard, statusChip } from "./item-card";
@@ -100,12 +109,19 @@ export function TaskDrawer({
   projects,
   currentProjectId,
   onClose,
+  onAttachKnowledge,
 }: {
   assistantId: string;
   item: BoardItem;
   projects: ProjectView[];
   currentProjectId: string;
   onClose: () => void;
+  /**
+   * Take the user to this project's knowledge panel. Supplied by the board
+   * behind the drawer; when it's absent a `blocked` verdict that wants a file
+   * says what's needed instead of offering a button with nowhere to go.
+   */
+  onAttachKnowledge?: () => void;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -192,6 +208,12 @@ export function TaskDrawer({
   const scrollToFiledTo = () =>
     filedToRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+  // The pre-run verdict, when the daemon produced one. A non-`execute` verdict
+  // means the run was HELD, so the drawer's loud ▶ row stands down and the
+  // panel below owns the honest framing (plus the override).
+  const assessment = readAssessment(item);
+  const held = assessment != null && assessment.verdict !== "execute";
+
   const canRun = item.status === "queued" || item.status === "pending";
   const canDoneElsewhere =
     item.status === "queued" ||
@@ -211,7 +233,9 @@ export function TaskDrawer({
         if (item.status === "awaiting_review") {
           e.preventDefault();
           approve.mutate({ ...pathOpts, body: {} });
-        } else if (canRun) {
+        } else if (canRun && !held) {
+          // A held task never runs on a stray ↵ — the override is a deliberate
+          // click inside the assessment panel.
           e.preventDefault();
           run.mutate(pathOpts);
         }
@@ -228,8 +252,8 @@ export function TaskDrawer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-arm per item/status only
-  }, [item.id, item.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-arm per item/status/verdict only
+  }, [item.id, item.status, held]);
 
   const source = parseSource(item.sourceContext);
   const cycleTime = events.data?.cycleTimeMs ?? null;
@@ -244,6 +268,49 @@ export function TaskDrawer({
     });
     setContextDirty(false);
   };
+
+  /**
+   * Answer the assessor's ONE question. The answer lands in the task's own
+   * context — the same field the Context box below writes, and the same field
+   * the run reads — which changes the assessment's input hash, so Cue looks at
+   * the task again instead of asking twice.
+   */
+  const answerQuestion = (answer: string) => {
+    const question = assessment?.question;
+    const entry = question ? `${question}\n${answer}` : answer;
+    const merged = [context.trim(), entry].filter(Boolean).join("\n\n");
+    patch.mutate(
+      { ...pathOpts, body: fullBody(item, { context: merged }) },
+      {
+        onSuccess: () => {
+          setContext(merged);
+          setContextDirty(false);
+        },
+      },
+    );
+  };
+
+  /** The one real destination that clears a `blocked` verdict, when we have one. */
+  const blockedFix = ((): AssessmentFix | null => {
+    if (assessment?.verdict !== "blocked") return null;
+    const kind = blockedFixKind(assessment.missing);
+    if (kind === "connect") {
+      return {
+        label: "Connect an account",
+        onClick: () => navigate(routes.connectors),
+      };
+    }
+    if (kind === "attach" && onAttachKnowledge) {
+      return {
+        label: "Attach it to this project",
+        onClick: () => {
+          onClose();
+          onAttachKnowledge();
+        },
+      };
+    }
+    return null;
+  })();
 
   const moveTo = (projectId: string) => {
     const dest = projects.find((p) => p.id === projectId);
@@ -351,6 +418,29 @@ export function TaskDrawer({
           ) : null}
         </div>
 
+        {/* What Cue understood before it ran this, in plain words. Absent on an
+            item that was never assessed — that renders exactly as before. */}
+        {assessment ? (
+          <AssessmentPanel
+            assessment={assessment}
+            running={running}
+            onAnswer={
+              assessment.verdict === "clarify" ? answerQuestion : undefined
+            }
+            answerPending={patch.isPending}
+            answerFailed={patch.isError}
+            onMarkDone={
+              assessment.verdict === "not_ai_task" && canDoneElsewhere
+                ? () => doneElsewhere.mutate()
+                : undefined
+            }
+            markDonePending={doneElsewhere.isPending}
+            onRunAnyway={canRun ? () => run.mutate(pathOpts) : undefined}
+            runPending={run.isPending}
+            fix={blockedFix}
+          />
+        ) : null}
+
         {/* LIVE — the runner's progress note, agents-at-work style */}
         {running ? (
           <div
@@ -388,7 +478,10 @@ export function TaskDrawer({
             padding: 6,
           }}
         >
-          {canRun && (
+          {/* Held by the assessment → no loud ▶ here. The panel above says why
+              and carries the override, so we never offer "have Cue handle it"
+              for something Cue has just said it cannot handle yet. */}
+          {canRun && !held && (
             <DrawerAction
               glyph="▶"
               glyphColor={C.blue}
@@ -643,51 +736,71 @@ export function TaskDrawer({
               </div>
             ) : null}
             <div style={{ display: "grid", gap: 8 }}>
-              {trail.slice(0, 12).map((e) => (
-                <div
-                  key={e.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 12,
-                    color: C.t2,
-                  }}
-                >
-                  <span
-                    aria-hidden
+              {trail.slice(0, 24).map((e) => {
+                // `assessed` and `run_step` rows carry a human sentence in
+                // `detail` ("Reading Q2-deck.pdf from project knowledge"), so
+                // the trail reads like an account of the run rather than a
+                // list of status codes. Lifecycle rows keep their transition.
+                const narration = e.detail?.trim() ? e.detail.trim() : null;
+                return (
+                  <div
+                    key={e.id}
                     style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 999,
-                      background: C.blue,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ color: C.t1 }}>
-                    {e.toStatus
-                      ? `${e.fromStatus ?? "—"} → ${e.toStatus}`
-                      : e.kind}
-                  </span>
-                  {e.actor ? (
-                    <span
-                      style={{ fontFamily: mono, fontSize: 10.5, color: C.t3 }}
-                    >
-                      {e.actor}
-                    </span>
-                  ) : null}
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      fontFamily: mono,
-                      fontSize: 10.5,
-                      color: C.t3,
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 8,
+                      fontSize: 12,
+                      color: C.t2,
                     }}
                   >
-                    {relativeTime(e.at)}
-                  </span>
-                </div>
-              ))}
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 999,
+                        background: narration ? C.t3 : C.blue,
+                        flexShrink: 0,
+                        alignSelf: "center",
+                      }}
+                    />
+                    <span
+                      style={{
+                        color: narration ? C.t2 : C.t1,
+                        flex: 1,
+                        minWidth: 0,
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {narration ??
+                        (e.toStatus
+                          ? `${e.fromStatus ?? "—"} → ${e.toStatus}`
+                          : e.kind)}
+                    </span>
+                    {!narration && e.actor ? (
+                      <span
+                        style={{
+                          fontFamily: mono,
+                          fontSize: 10.5,
+                          color: C.t3,
+                        }}
+                      >
+                        {e.actor}
+                      </span>
+                    ) : null}
+                    <span
+                      style={{
+                        fontFamily: mono,
+                        fontSize: 10.5,
+                        color: C.t3,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {relativeTime(e.at)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </Section>
         ) : null}

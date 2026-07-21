@@ -204,6 +204,7 @@ export function ItemCard({
   title,
   tag,
   chip,
+  chipNode,
   action,
   note,
   live = false,
@@ -220,6 +221,13 @@ export function ItemCard({
   tag?: ReactNode;
   /** Slot ④ — mono ring-tone chip; collapses when absent. */
   chip?: ItemChip | null;
+  /**
+   * Slot ④, state variant — a work-loop <StateBadge/> rendered INSTEAD of the
+   * mono chip (never beside it, so the anatomy keeps its five slots). Used
+   * when the row's most honest status is a loop state, e.g. a task the pre-run
+   * assessment parked because it needs a person.
+   */
+  chipNode?: ReactNode;
   /** Slot ⑤ — ONE primary action; collapses when absent. */
   action?: ReactNode;
   /** Progress/evidence line under the title row (live notes, "Ops wrote it"). */
@@ -294,7 +302,11 @@ export function ItemCard({
           {title}
         </span>
         {live ? <LiveBars color={C.blue} /> : null}
-        {chip ? (
+        {chipNode ? (
+          <span style={{ flexShrink: 0, display: "inline-flex" }}>
+            {chipNode}
+          </span>
+        ) : chip ? (
           <span
             style={{
               fontFamily: mono,

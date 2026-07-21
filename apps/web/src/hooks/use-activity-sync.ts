@@ -18,8 +18,9 @@
  * - Untyped events — not (yet) in the union, so the parser wraps them as
  *   `{ type: "unknown", rawType, data }` (see `lib/streaming/parse-helpers.ts`).
  *   We route those off `rawType`: `work_item_status_changed`,
- *   `work_item_completed` (P2 contract), `tasks_changed`,
- *   `task_run_conversation_created`, `surface_action_completed`.
+ *   `work_item_assessed` (the pre-run verdict), `work_item_completed`
+ *   (P2 contract), `tasks_changed`, `task_run_conversation_created`,
+ *   `surface_action_completed`.
  *
  * Invalidation targets generated query keys by their `_id` discriminator
  * (the first key part `{ _id }`, set by the SDK's `createQueryKey`) rather than
@@ -143,6 +144,19 @@ export function useActivitySync(
             // A status flip can also flip the Done lane's heartbeat
             // companions; cheap to keep them honest.
             invalidateGenerated("heartbeatRunsGet");
+            // The runner broadcasts this on every distinct progress note, and
+            // each of those also appends a `run_step` row — so an open task
+            // trail grows as the run happens instead of on the next poll.
+            invalidateGenerated("workitemsByIdEventsGet");
+            return;
+          case "work_item_assessed":
+            // The pre-run verdict (what Cue understood / the one question it
+            // needs answered). The values live on the work item itself, so the
+            // honest move is to refetch the item rather than trust the push
+            // payload — a client that missed this event is still correct.
+            refreshWorkItems();
+            invalidateGenerated("projectsByIdWorkitemsGet");
+            invalidateGenerated("workitemsByIdEventsGet");
             return;
           case "work_item_completed": {
             // P2 contract: terminal transition carrying the result inline.
@@ -192,6 +206,10 @@ export function useActivitySync(
       predicate: (q) =>
         isGeneratedQueryKey(q.queryKey, "activityGet") ||
         isGeneratedQueryKey(q.queryKey, "workitemsGet") ||
+        // Assessment verdicts ride on the item and its trail, so a gap must
+        // not leave a task showing a question it has already been answered.
+        isGeneratedQueryKey(q.queryKey, "projectsByIdWorkitemsGet") ||
+        isGeneratedQueryKey(q.queryKey, "workitemsByIdEventsGet") ||
         isGeneratedQueryKey(q.queryKey, "pendinginteractionsGet") ||
         isGeneratedQueryKey(q.queryKey, "schedulesGet") ||
         isGeneratedQueryKey(q.queryKey, "subagentsGet") ||

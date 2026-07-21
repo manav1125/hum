@@ -45,6 +45,7 @@ import { getBudgetConfig } from "@/lib/budget-api";
 import { haptic } from "@/utils/haptics";
 import { relativeTime } from "@/domains/activity/theme";
 import { BuildOutTiles } from "@/pages/command-center/build-out-tiles";
+import { AssessmentSignal, holdReason } from "@/pages/hq/assessment-kit";
 import {
   dismissMeter,
   readSetupState,
@@ -1285,6 +1286,9 @@ function CameInReassignStrip({
                 >
                   {item.title}
                 </span>
+                {/* Held by the pre-run assessment: it is waiting on you, and
+                    the strip has to say so before you click into it. */}
+                <AssessmentSignal item={item} />
                 {unfiled ? null : autoFiled ? (
                   <AutoFiledPill
                     projectTitle={tagLabel ?? "project"}
@@ -1320,6 +1324,20 @@ function CameInReassignStrip({
                   </button>
                 )}
               </div>
+              {/* Why it is holding, in the assessor's own words. */}
+              {holdReason(item) ? (
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: C.amber,
+                    lineHeight: 1.45,
+                    marginTop: 5,
+                    marginLeft: 28,
+                  }}
+                >
+                  {holdReason(item)}
+                </div>
+              ) : null}
               {/* Low-confidence unfiled item — asks, doesn't guess. */}
               {unfiled ? (
                 <div style={{ marginTop: 8 }}>

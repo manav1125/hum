@@ -351,6 +351,38 @@ describe("assessWorkItem — persistence, caching, fail-open", () => {
     expect(result.assessment).toBeNull();
     expect(getWorkItem(item.id)!.assessmentVerdict).toBeNull();
   });
+
+  // Regression: a live burst of 14 dispatches left 9 of them silently
+  // unassessed, because one slow provider reply was the end of it. Under
+  // load, the slow half of a batch is exactly the half that must recover.
+  test("retries once when the first attempt comes back empty", async () => {
+    const item = createWorkItem({ taskId, title: "Summarise Q2 costs" });
+    let calls = 0;
+    const result = await assessWorkItem(inputFor(item.id), async () => {
+      calls += 1;
+      if (calls === 1) return null;
+      return JSON.stringify({
+        verdict: "execute",
+        understanding: "Summarise the Q2 costs.",
+        plan: "Read the deck and pull the cost lines.",
+        confidence: 0.9,
+      });
+    });
+    expect(calls).toBe(2);
+    expect(result.assessment?.verdict).toBe("execute");
+    expect(getWorkItem(item.id)!.assessmentVerdict).toBe("execute");
+  });
+
+  test("gives up after the second attempt rather than retrying forever", async () => {
+    const item = createWorkItem({ taskId, title: "Summarise Q2 costs" });
+    let calls = 0;
+    const result = await assessWorkItem(inputFor(item.id), async () => {
+      calls += 1;
+      return null;
+    });
+    expect(calls).toBe(2);
+    expect(result.assessment).toBeNull();
+  });
 });
 
 describe("narrationForAssessment", () => {
