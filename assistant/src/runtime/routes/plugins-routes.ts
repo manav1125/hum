@@ -61,6 +61,7 @@ import {
   PluginNotUpgradableError,
   upgradePlugin,
 } from "../../cli/lib/upgrade-plugin.js";
+import { seedPluginEmbeddings } from "../../plugins/registry/embedding-seed.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import {
   BadRequestError,
@@ -459,6 +460,28 @@ const pluginUpgradeResponseSchema = z.object({
     ),
 });
 
+const pluginSeedEmbeddingsRequestSchema = z.object({
+  includeUnreviewed: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also seed unreviewed manifests indexed from allowlisted sources. Defaults to false (curated + community-reviewed entries only).",
+    ),
+});
+
+const pluginSeedEmbeddingsResponseSchema = z.object({
+  seeded: z
+    .number()
+    .describe(
+      "Number of plugin manifests upserted into the shared embedding collection. `0` when the embedding backend is unavailable (deterministic search still works).",
+    ),
+  skipped: z
+    .number()
+    .describe(
+      "Number of candidates not seeded (duplicate slugs, or all candidates when the backend was unavailable).",
+    ),
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -800,6 +823,35 @@ async function handleUpgradePlugin({
 }
 
 // ---------------------------------------------------------------------------
+// Handler — seed embeddings
+// ---------------------------------------------------------------------------
+
+/**
+ * Seed the curated + indexed plugin registry into the shared Qdrant
+ * embedding space. Unlike the other plugin operations this genuinely needs
+ * the running daemon (embedding backend + Qdrant connection), so it is only
+ * reachable over HTTP/IPC — the CLI's `plugins reindex --embed` calls it via
+ * `seedPluginEmbeddingsViaDaemon`. Best-effort by contract: an unavailable
+ * embedding backend yields `{ seeded: 0 }` rather than an error.
+ */
+async function handleSeedPluginEmbeddings({ body = {} }: RouteHandlerArgs) {
+  const includeUnreviewed =
+    typeof body.includeUnreviewed === "boolean"
+      ? body.includeUnreviewed
+      : undefined;
+  try {
+    const result = await seedPluginEmbeddings(
+      includeUnreviewed !== undefined ? { includeUnreviewed } : {},
+    );
+    return { seeded: result.seeded, skipped: result.skipped };
+  } catch (err) {
+    throw new InternalError(
+      err instanceof Error ? err.message : "plugin embedding seed failed",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Route definitions
 // ---------------------------------------------------------------------------
 
@@ -1033,5 +1085,21 @@ export const ROUTES: RouteDefinition[] = [
       },
     },
     handler: handleUpgradePlugin,
+  },
+  {
+    operationId: "plugins_seed_embeddings",
+    endpoint: "plugins/seed-embeddings",
+    method: "POST",
+    policy: {
+      requiredScopes: ["settings.write"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "Seed the plugin registry into the shared embedding space",
+    description:
+      "Upsert the curated + already-indexed plugin manifests into the shared `memory_v2_concept_pages` Qdrant collection (under a `plugins/` slug prefix) so plugin discovery shares the skill embedding space. Unlike the other plugin routes, this requires the running daemon's embedding backend and Qdrant connection — it is the daemon-side half of the CLI's `assistant plugins reindex --embed` (the manifest fetch/cache half runs locally in the CLI). Best-effort: an unavailable embedding backend returns 200 with `seeded: 0` (deterministic search still works) rather than an error.",
+    tags: ["plugins"],
+    requestBody: pluginSeedEmbeddingsRequestSchema,
+    responseBody: pluginSeedEmbeddingsResponseSchema,
+    handler: handleSeedPluginEmbeddings,
   },
 ];

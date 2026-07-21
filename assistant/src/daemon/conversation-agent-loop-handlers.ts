@@ -14,6 +14,7 @@ import type {
   TurnChannelContext,
   TurnInterfaceContext,
 } from "../channels/types.js";
+import { isAssistantFeatureFlagEnabled } from "../config/assistant-feature-flags.js";
 import { getConfig } from "../config/loader.js";
 import { recordEstimate } from "../context/estimator-calibration.js";
 import { stripInjectionsForCompaction } from "../context/strip-injections.js";
@@ -182,6 +183,19 @@ export interface EventHandlerState {
    * absorbs the reserved row into the error message.
    */
   assistantRowAwaitingFinalization: boolean;
+  /**
+   * Non-critical end-of-turn side-effects deferred off the send→idle critical
+   * path when the `defer-turn-finalize` flag is on (WS-B, adapted from upstream
+   * 6f808914a4). Each closure runs the memory indexing + attention projection +
+   * log-attribution backfills that `handleMessageComplete` would otherwise
+   * `await` inline before the terminal SSE. The orchestrator drains this array
+   * AFTER emitting the terminal activity state and BEFORE `drainQueue`, so the
+   * next turn still sees a fully-indexed history. The authoritative row write,
+   * the crash-recovery in-flight marker clear, and the persisted-seq record
+   * always stay inline — only retrieval/attention/log bookkeeping defers. When
+   * the flag is off the array stays empty (effects run inline as before).
+   */
+  readonly deferredFinalizeEffects: Array<() => Promise<void>>;
   readonly pendingToolResults: Map<string, PendingToolResult>;
   /**
    * Reservation of the grouped `user` tool-result row for the current batch,
@@ -353,6 +367,7 @@ export function createEventHandlerState(): EventHandlerState {
     providerErrorUserMessage: null,
     lastAssistantMessageId: undefined,
     assistantRowAwaitingFinalization: false,
+    deferredFinalizeEffects: [],
     pendingToolResults: new Map(),
     pendingToolResultRowReservation: undefined,
     persistedToolUseIds: new Set(),
@@ -1714,6 +1729,98 @@ export function handleMaxTokensReached(
   } as UiSurfaceShow);
 }
 
+/**
+ * The turn's DEFERRABLE non-critical side-effects: memory indexing and
+ * attention projection. Extracted from {@link handleMessageComplete} so it can
+ * run either inline (default) or deferred off the send→idle path
+ * (`defer-turn-finalize` flag; drained by the orchestrator after the terminal
+ * SSE). Every step is individually try/caught "best-effort" — a memory hiccup
+ * must never escalate a successful generation into a turn-level throw, and
+ * (when deferred) a throw here must not reach past the already-emitted terminal
+ * SSE.
+ *
+ * The message_id log backfills deliberately STAY inline in the caller (they are
+ * not deferrable): each fires per-LLM-call and claims "all NULL-message_id log
+ * rows belong to this call". If deferred to end-of-turn, a multi-round turn's
+ * earlier-round backfill would sweep up later rounds' still-NULL rows and
+ * mis-attribute them. They are cheap indexed UPDATEs, not the latency cost —
+ * the memory indexer is — so only indexing/projection defers.
+ */
+async function runMessageFinalizeSideEffects(args: {
+  assistantMessageId: string;
+  conversationId: string;
+  contentJson: string;
+  rlog: pino.Logger;
+}): Promise<void> {
+  const { assistantMessageId, conversationId, contentJson, rlog } = args;
+
+  // `reserveMessage` + `updateMessageContent` are CRUD-only: they don't run
+  // the memory indexer or the attention-cursor projector (unlike `addMessage`,
+  // which runs both as side-effects of the insert). Both are invoked explicitly
+  // here to keep the assistant row's external state (Qdrant segments,
+  // conversation attention cursor) in lockstep with the finalized content.
+  const finalizedRow = getMessageById(assistantMessageId, conversationId);
+  if (!finalizedRow) return;
+
+  let provenanceTrustClass:
+    | "guardian"
+    | "trusted_contact"
+    | "unknown"
+    | undefined;
+  let automated: boolean | undefined;
+  if (finalizedRow.metadata) {
+    try {
+      const parsedMeta = messageMetadataSchema.safeParse(
+        JSON.parse(finalizedRow.metadata),
+      );
+      if (parsedMeta.success) {
+        provenanceTrustClass = parsedMeta.data.provenanceTrustClass;
+        automated = parsedMeta.data.automated;
+      }
+    } catch {
+      // Malformed metadata JSON — fall through with undefined fields,
+      // matching the legacy behavior in `addMessage`.
+    }
+  }
+  try {
+    await indexMessageNow(
+      {
+        messageId: assistantMessageId,
+        conversationId,
+        role: "assistant",
+        content: contentJson,
+        createdAt: finalizedRow.createdAt,
+        scopeId: "default",
+        provenanceTrustClass,
+        automated,
+      },
+      getConfig().memory,
+    );
+  } catch (err) {
+    rlog.warn(
+      { err, conversationId, messageId: assistantMessageId },
+      "Failed to index assistant message for memory (non-fatal)",
+    );
+  }
+  try {
+    const attentionStateChanged = projectAssistantMessage({
+      conversationId,
+      messageId: assistantMessageId,
+      messageAt: finalizedRow.createdAt,
+    });
+    if (attentionStateChanged) {
+      void publishSyncInvalidation([
+        conversationMetadataSyncTag(conversationId),
+      ]);
+    }
+  } catch (err) {
+    rlog.warn(
+      { err, conversationId, messageId: assistantMessageId },
+      "Failed to project assistant message for attention tracking (non-fatal)",
+    );
+  }
+}
+
 export async function handleMessageComplete(
   state: EventHandlerState,
   deps: EventHandlerDeps,
@@ -1872,94 +1979,33 @@ export async function handleMessageComplete(
   state.currentThinkingTimestamps = [];
   state.lastPersistedContentSeq = undefined;
 
-  // ── Indexing + attention projection ──
-  // `reserveMessage` + `updateMessageContent` are CRUD-only: they don't run
-  // the memory indexer or the attention-cursor projector (unlike `addMessage`,
-  // which runs both as side-effects of the insert). Because the assistant row
-  // is reserved empty and finalized via `updateMessageContent`, both must be
-  // invoked explicitly here to keep the assistant row's external state
-  // (Qdrant segments, conversation attention cursor) in lockstep with the
-  // finalized content. Both are non-fatal — a memory hiccup must not
-  // escalate a successful generation into a turn-level throw. Indexing
-  // intentionally fires AFTER `updateContent` succeeds so we never index
-  // the empty reserved placeholder.
-  const finalizedRow = getMessageById(
-    assistantMessageId,
-    deps.ctx.conversationId,
-  );
-  if (finalizedRow) {
-    let provenanceTrustClass:
-      | "guardian"
-      | "trusted_contact"
-      | "unknown"
-      | undefined;
-    let automated: boolean | undefined;
-    if (finalizedRow.metadata) {
-      try {
-        const parsedMeta = messageMetadataSchema.safeParse(
-          JSON.parse(finalizedRow.metadata),
-        );
-        if (parsedMeta.success) {
-          provenanceTrustClass = parsedMeta.data.provenanceTrustClass;
-          automated = parsedMeta.data.automated;
-        }
-      } catch {
-        // Malformed metadata JSON — fall through with undefined fields,
-        // matching the legacy behavior in `addMessage`.
-      }
-    }
-    try {
-      await indexMessageNow(
-        {
-          messageId: assistantMessageId,
-          conversationId: deps.ctx.conversationId,
-          role: "assistant",
-          content: contentJson,
-          createdAt: finalizedRow.createdAt,
-          scopeId: "default",
-          provenanceTrustClass,
-          automated,
-        },
-        getConfig().memory,
-      );
-    } catch (err) {
-      deps.rlog.warn(
-        {
-          err,
-          conversationId: deps.ctx.conversationId,
-          messageId: assistantMessageId,
-        },
-        "Failed to index assistant message for memory (non-fatal)",
-      );
-    }
-    try {
-      const attentionStateChanged = projectAssistantMessage({
-        conversationId: deps.ctx.conversationId,
-        messageId: assistantMessageId,
-        messageAt: finalizedRow.createdAt,
-      });
-      if (attentionStateChanged) {
-        void publishSyncInvalidation([
-          conversationMetadataSyncTag(deps.ctx.conversationId),
-        ]);
-      }
-    } catch (err) {
-      deps.rlog.warn(
-        {
-          err,
-          conversationId: deps.ctx.conversationId,
-          messageId: assistantMessageId,
-        },
-        "Failed to project assistant message for attention tracking (non-fatal)",
-      );
-    }
+  // ── Indexing + attention projection + log attribution ──
+  // These are the turn's NON-critical bookkeeping: memory indexing (Qdrant
+  // segments), attention-cursor projection, and message_id backfill on the
+  // turn's log rows. None gate reply delivery — they only feed the NEXT turn's
+  // retrieval, a sidebar indicator, and log attribution. When the
+  // `defer-turn-finalize` flag is on they run AFTER the terminal SSE (drained
+  // by the orchestrator before the next turn); otherwise they run inline here,
+  // exactly as before. Either way the authoritative row write, the
+  // crash-recovery in-flight marker clear, and the persisted-seq record above
+  // have already run synchronously — only this bookkeeping moves.
+  const deferredFinalize = (): Promise<void> =>
+    runMessageFinalizeSideEffects({
+      assistantMessageId,
+      conversationId: deps.ctx.conversationId,
+      contentJson,
+      rlog: deps.rlog,
+    });
+  if (isAssistantFeatureFlagEnabled("defer-turn-finalize", getConfig())) {
+    state.deferredFinalizeEffects.push(deferredFinalize);
+  } else {
+    await deferredFinalize();
   }
 
-  // Backfill message_id on all LLM request logs from this turn.
-  // The agent loop is single-threaded per conversation, so all rows with
-  // message_id IS NULL belong to the current turn. The reserved id was
-  // available before the LLM call ran but the logs are inserted DURING
-  // the call, so the sweep still runs here.
+  // Backfill message_id on this LLM call's log rows. INLINE always (never
+  // deferred): fires per-call and claims "all NULL-message_id rows are this
+  // call's", so it must run before the next call inserts fresh NULL rows —
+  // see `runMessageFinalizeSideEffects`'s docstring. Cheap indexed UPDATEs.
   try {
     backfillMessageIdOnLogs(deps.ctx.conversationId, assistantMessageId);
   } catch (err) {

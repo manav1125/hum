@@ -1,5 +1,6 @@
 import { ProviderError } from "../../util/errors.js";
 import { AnthropicProvider } from "../anthropic/client.js";
+import { modelEffortCeilings } from "../model-catalog.js";
 import {
   clampReasoningEffort,
   EFFORT_TO_REASONING_EFFORT,
@@ -21,6 +22,7 @@ export interface OpenRouterProviderOptions {
 }
 
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const OPENROUTER_MODEL_EFFORT_CEILINGS = modelEffortCeilings("openrouter");
 const OPENROUTER_APP_ATTRIBUTION_HEADERS = {
   "HTTP-Referer": "https://www.vellum.ai",
   "X-OpenRouter-Title": "Cue Assistant",
@@ -337,6 +339,21 @@ export class OpenRouterProvider extends OpenAIChatCompletionsProvider {
         ? config.model.trim()
         : undefined;
     return override ?? this.defaultModel;
+  }
+
+  /**
+   * Per-model `reasoning_effort` ceiling (adopted from upstream 6b6658e2f4):
+   * some OpenRouter-served models (e.g. xAI Grok) accept only `low|medium|high`
+   * and 4xx on Vellum's `xhigh`/`max` tiers. Consult the catalog-declared
+   * `maxEffort` for the effective model, falling back to the provider default.
+   */
+  protected override resolveMaxReasoningEffort(
+    model: string,
+  ): "high" | "xhigh" | "max" {
+    return (
+      OPENROUTER_MODEL_EFFORT_CEILINGS.get(model) ??
+      super.resolveMaxReasoningEffort(model)
+    );
   }
 
   private getAnthropicInner(): AnthropicProvider {

@@ -21,6 +21,11 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
   // One-shot screenshot → answer; the prompt never repeats, so caching would
   // only ever pay the write premium.
   cueLiveVision: { profile: "balanced", disableCache: true },
+  // The advisor's actual model is pinned per-call by `agent/advisor.ts`
+  // (resolveAdvisorModel), so this profile is only a transport fallback. Each
+  // consult is a unique one-shot prompt, so caching would only pay the write
+  // premium.
+  advisor: { profile: "balanced", disableCache: true },
   subagentSpawn: { profile: "balanced" },
   compactionAgent: { profile: "balanced" },
   analyzeConversation: { profile: "balanced" },

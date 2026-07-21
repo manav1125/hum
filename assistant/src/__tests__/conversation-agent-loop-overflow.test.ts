@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import type { LoopToolExecutor } from "../agent/loop.js";
-import type { LLMConfig } from "../config/schemas/llm.js";
+import { type LLMConfig, LLMSchema } from "../config/schemas/llm.js";
 import type { ServerMessage } from "../daemon/message-protocol.js";
 import { resetPluginRegistryAndRegisterDefaults } from "../plugins/defaults/index.js";
 import type { Message, Provider, ToolDefinition } from "../providers/types.js";
@@ -93,6 +93,7 @@ const defaultLlmConfig: LLMConfig = {
   toolPruning: { enabled: true, keepTools: [] },
   flashTier: { enabled: false, maxUserChars: 280 },
   visionTier: { enabled: true },
+  advisor: LLMSchema.parse({}).advisor,
 };
 
 let mockLlmConfig: LLMConfig = structuredClone(defaultLlmConfig);

@@ -342,6 +342,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "Reads a screenshot of the owner's screen to answer 'what's here / what next' and to pick the next on-screen action. MUST be a vision-capable model — unlike every other call site this one cannot degrade to text, and a text-only model fails the request outright.",
     domain: "agentLoop",
   },
+  advisor: {
+    id: "advisor",
+    displayName: "Advisor consult",
+    description:
+      "A mid-task second opinion from a stronger model before the main brain commits a high-stakes or uncertain action. Fires selectively (see agent/advisor.ts) and its per-call model override wins; pin a stronger model here.",
+    domain: "agentLoop",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage

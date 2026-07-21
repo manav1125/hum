@@ -663,6 +663,24 @@ describe("classifyConversationError", () => {
       expect(result.retryable).toBe(false);
     });
 
+    it("classifies OpenRouter 403 'Key limit exceeded' as PROVIDER_BILLING, not invalid key", () => {
+      providerRoutingSources.openrouter = "user-key";
+      const err = new ProviderError(
+        "OpenRouter API error (403): Key limit exceeded",
+        "openrouter",
+        403,
+      );
+      const result = classifyConversationError(err, baseCtx);
+      expect(result.code).toBe("PROVIDER_BILLING");
+      expect(result.errorCategory).toBe("provider_billing");
+    });
+
+    it("still classifies a generic 403 (no spend-cap prose) as PROVIDER_INVALID_KEY", () => {
+      const err = new ProviderError("Forbidden", "openrouter", 403);
+      const result = classifyConversationError(err, baseCtx);
+      expect(result.code).toBe("PROVIDER_INVALID_KEY");
+    });
+
     it("classifies ProviderError with 400 as PROVIDER_API (retryable)", () => {
       const err = new ProviderError("Bad request", "anthropic", 400);
       const result = classifyConversationError(err, baseCtx);

@@ -14,6 +14,7 @@ import {
   like,
   lt,
   lte,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -56,6 +57,7 @@ import {
 } from "./conversation-disk-view.js";
 import { ensureDisplayOrderMigration } from "./conversation-display-order-migration.js";
 import { ensureGroupMigration } from "./conversation-group-migration.js";
+import { BACKGROUND_CONVERSATION_TYPES } from "./conversation-types.js";
 import { runAsyncSqlite } from "./db-async-query.js";
 import { getDb, getSqliteFrom } from "./db-connection.js";
 import { forkGraphMemoryState } from "./graph/graph-memory-state-store.js";
@@ -1770,6 +1772,38 @@ export function getLastUserMessageTimestamp(): number {
     .select({ createdAt: messages.createdAt })
     .from(messages)
     .where(eq(messages.role, "user"))
+    .orderBy(desc(messages.createdAt))
+    .limit(1)
+    .get();
+  return row?.createdAt ?? 0;
+}
+
+/**
+ * Most recent user-message timestamp (epoch ms) from an INTERACTIVE (live
+ * human) conversation, or `0` when none exists.
+ *
+ * Distinct from {@link getLastUserMessageTimestamp}: background machinery
+ * (retrospective forks, scheduled/heartbeat wakes) also writes `role = "user"`
+ * rows, so on an always-on install the plain query never looks quiet and
+ * quiet-gated maintenance (VACUUM, truncating WAL checkpoint) could starve
+ * indefinitely. This joins to `conversations` and excludes
+ * {@link BACKGROUND_CONVERSATION_TYPES} so the "is a human active?" signal
+ * reflects only real interactive turns.
+ */
+export function getLastInteractiveUserMessageTimestamp(): number {
+  const db = getDb();
+  const row = db
+    .select({ createdAt: messages.createdAt })
+    .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+    .where(
+      and(
+        eq(messages.role, "user"),
+        notInArray(conversations.conversationType, [
+          ...BACKGROUND_CONVERSATION_TYPES,
+        ]),
+      ),
+    )
     .orderBy(desc(messages.createdAt))
     .limit(1)
     .get();

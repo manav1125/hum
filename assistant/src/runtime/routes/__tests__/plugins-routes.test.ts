@@ -177,6 +177,21 @@ mock.module("../../../cli/lib/upgrade-plugin.js", () => ({
   upgradePlugin: upgradeSpy,
 }));
 
+// Mock seedPluginEmbeddings: the real seed talks to Qdrant + the embedding
+// backend (covered by embedding-seed.test.ts); here we isolate the route's
+// argument forwarding, result projection, and error mapping.
+const seedEmbeddingsSpy = mock(
+  async (_opts?: {
+    includeUnreviewed?: boolean;
+  }): Promise<{ seeded: number; skipped: number }> => {
+    throw new Error("seedEmbeddingsSpy default impl not configured");
+  },
+);
+
+mock.module("../../../plugins/registry/embedding-seed.js", () => ({
+  seedPluginEmbeddings: seedEmbeddingsSpy,
+}));
+
 import {
   BadRequestError,
   ConflictError,
@@ -200,6 +215,7 @@ const getHandler = findHandler("plugins_get");
 const installHandler = findHandler("plugins_install");
 const inspectHandler = findHandler("plugins_inspect");
 const upgradeHandler = findHandler("plugins_upgrade");
+const seedEmbeddingsHandler = findHandler("plugins_seed_embeddings");
 
 function invoke(args: RouteHandlerArgs = {}): {
   plugins: Array<Record<string, unknown>>;
@@ -1244,5 +1260,80 @@ describe("POST /v1/plugins/:name/upgrade", () => {
     }
     expect(caught).toBeInstanceOf(InternalError);
     expect((caught as Error).message).toContain("ECONNRESET");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// plugins_seed_embeddings (POST /v1/plugins/seed-embeddings)
+// ---------------------------------------------------------------------------
+
+async function invokeSeedEmbeddings(args: RouteHandlerArgs = {}): Promise<{
+  seeded: number;
+  skipped: number;
+}> {
+  return (await seedEmbeddingsHandler(args)) as {
+    seeded: number;
+    skipped: number;
+  };
+}
+
+describe("plugins_seed_embeddings handler", () => {
+  beforeEach(() => {
+    seedEmbeddingsSpy.mockReset();
+  });
+
+  test("projects the lib's { seeded, skipped } result", async () => {
+    seedEmbeddingsSpy.mockImplementation(async () => ({
+      seeded: 4,
+      skipped: 1,
+    }));
+
+    const result = await invokeSeedEmbeddings({ body: {} });
+    expect(result).toEqual({ seeded: 4, skipped: 1 });
+  });
+
+  test("forwards includeUnreviewed from the request body", async () => {
+    seedEmbeddingsSpy.mockImplementation(async () => ({
+      seeded: 0,
+      skipped: 0,
+    }));
+
+    await invokeSeedEmbeddings({ body: { includeUnreviewed: true } });
+    expect(seedEmbeddingsSpy).toHaveBeenCalledWith({ includeUnreviewed: true });
+  });
+
+  test("omits includeUnreviewed when absent (lib default applies)", async () => {
+    seedEmbeddingsSpy.mockImplementation(async () => ({
+      seeded: 0,
+      skipped: 0,
+    }));
+
+    await invokeSeedEmbeddings({ body: {} });
+    expect(seedEmbeddingsSpy).toHaveBeenCalledWith({});
+  });
+
+  test("an unavailable backend (seeded: 0) is a success, not an error", async () => {
+    seedEmbeddingsSpy.mockImplementation(async () => ({
+      seeded: 0,
+      skipped: 7,
+    }));
+
+    const result = await invokeSeedEmbeddings({ body: {} });
+    expect(result).toEqual({ seeded: 0, skipped: 7 });
+  });
+
+  test("unknown errors → InternalError with original message preserved", async () => {
+    seedEmbeddingsSpy.mockImplementation(async () => {
+      throw new Error("qdrant down");
+    });
+
+    let caught: unknown;
+    try {
+      await invokeSeedEmbeddings({ body: {} });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(InternalError);
+    expect((caught as Error).message).toContain("qdrant down");
   });
 });

@@ -1303,6 +1303,24 @@ export function isModelInCatalog(provider: string, modelId: string): boolean {
   return entry?.models.some((m) => m.id === modelId) ?? false;
 }
 
+/**
+ * Per-model `reasoning_effort` ceilings for a provider, as a `modelId → cap`
+ * map. Models without a declared `maxEffort` are absent (they inherit the
+ * provider default). Providers whose upstream API rejects Vellum's higher
+ * effort tiers on specific models (Fireworks DeepSeek, OpenRouter Grok) build
+ * this once and consult it in `resolveMaxReasoningEffort`, so the ceiling lives
+ * in one place — the catalog — rather than being hand-maintained per client.
+ */
+export function modelEffortCeilings(
+  providerId: string,
+): ReadonlyMap<string, "high" | "xhigh" | "max"> {
+  return new Map(
+    PROVIDER_CATALOG.find((p) => p.id === providerId)?.models.flatMap((m) =>
+      m.maxEffort ? ([[m.id, m.maxEffort]] as const) : [],
+    ) ?? [],
+  );
+}
+
 /** Return the unique catalog provider that owns a model ID, if known. */
 export function getCatalogProviderForModel(
   modelId: string,

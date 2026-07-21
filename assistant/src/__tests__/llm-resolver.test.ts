@@ -259,6 +259,7 @@ describe("resolveCallSiteConfig", () => {
       toolPruning: { enabled: true, keepTools: [] },
       flashTier: { enabled: false, maxUserChars: 280 },
       visionTier: { enabled: true },
+      advisor: LLMSchema.parse({}).advisor,
     };
     expect(() => resolveCallSiteConfig("mainAgent", llm)).toThrow(
       /references undefined profile "nonexistent"/,
@@ -487,6 +488,7 @@ describe("resolveCallSiteConfig", () => {
       toolPruning: { enabled: true, keepTools: [] },
       flashTier: { enabled: false, maxUserChars: 280 },
       visionTier: { enabled: true },
+      advisor: LLMSchema.parse({}).advisor,
     };
     const resolved = resolveCallSiteConfig("mainAgent", llm);
     // Falls through to default.

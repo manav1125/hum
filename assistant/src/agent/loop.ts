@@ -49,6 +49,11 @@ import {
 import { ProviderError } from "../util/errors.js";
 import { getLogger } from "../util/logger.js";
 import { isRetryableNetworkError } from "../util/retry.js";
+import {
+  consultAdvisor,
+  formatAdvisorGuidance,
+  resolveAdvisorRouteForRound,
+} from "./advisor.js";
 import { CompactionCircuit } from "./compaction-circuit.js";
 
 const log = getLogger("agent-loop");
@@ -645,6 +650,14 @@ export interface AgentLoopConstructorOptions {
    * result-time pass and the post-turn truncation covers the turn instead.
    */
   resolveConversationDir?: () => string | null;
+  /**
+   * Whether a tool is high-stakes/destructive (`defaultRiskLevel === "high"`),
+   * used by the advisor gate (`agent/advisor.ts`) to decide whether to consult
+   * a stronger model before committing the round's proposed action. Injected
+   * (rather than resolved in-loop) so the loop stays decoupled from the tool
+   * registry. Defaults to "nothing is high-stakes" — the advisor never fires.
+   */
+  isHighStakesTool?: (toolName: string) => boolean;
 }
 
 export class AgentLoop {
@@ -669,6 +682,9 @@ export class AgentLoop {
   /** See {@link AgentLoopConstructorOptions.resolveConversationDir}. */
   private readonly resolveConversationDir: (() => string | null) | null;
 
+  /** See {@link AgentLoopConstructorOptions.isHighStakesTool}. */
+  private readonly isHighStakesTool: (toolName: string) => boolean;
+
   /**
    * Loop-held compaction circuit breaker. The loop has a 1:1 lifetime with its
    * conversation, so it is the source of truth for the cross-turn failure
@@ -689,6 +705,7 @@ export class AgentLoop {
       resolveSystemPrompt,
       conversationId,
       resolveConversationDir,
+      isHighStakesTool,
     } = options;
     this.provider = provider;
     this.systemPrompt = systemPrompt;
@@ -699,6 +716,7 @@ export class AgentLoop {
     this.toolExecutor = toolExecutor ?? null;
     this.conversationId = conversationId;
     this.resolveConversationDir = resolveConversationDir ?? null;
+    this.isHighStakesTool = isHighStakesTool ?? (() => false);
     this.compactionCircuit = new CompactionCircuit(this.conversationId);
   }
 
@@ -911,6 +929,10 @@ export class AgentLoop {
     let newMessagesStart = history.length;
     let toolUseTurns = 0;
     let postModelCallContinues = 0;
+    // Advisor consults spent this run. Bounds the extra latency/cost of the
+    // escalation (`llm.advisor.maxConsultsPerTurn`); once exhausted the gate
+    // short-circuits and rounds execute un-advised.
+    let advisorConsultsThisTurn = 0;
     let lastLlmCallTime = 0;
     let exitReason: ExitReason | null = null;
     // Armed at the end of a tool-use iteration so the budget gate runs at the
@@ -1801,6 +1823,74 @@ export class AgentLoop {
           }
           await stopTurn("aborted_post_response");
           break;
+        }
+
+        // Advisor escalation (WS-B, `agent/advisor.ts`): before committing a
+        // high-stakes or uncertain tool round, consult a stronger model and
+        // feed its critique back so the main brain reconsiders BEFORE the tool
+        // runs. Selective (only destructive-tool / explicit-uncertainty
+        // rounds), cost-bounded (`llm.advisor.maxConsultsPerTurn`), and
+        // fail-open (a null consult falls straight through to execution).
+        const advisorRoute = resolveAdvisorRouteForRound({
+          llm: getConfig().llm,
+          proposedToolUses: toolUseBlocks.map((t) => ({ name: t.name })),
+          assistantText: assistantTextOf(response.content),
+          isHighStakesTool: this.isHighStakesTool,
+          alreadyConsulted:
+            advisorConsultsThisTurn >=
+            getConfig().llm.advisor.maxConsultsPerTurn,
+        });
+        if (advisorRoute != null) {
+          advisorConsultsThisTurn++;
+          rlog.info(
+            {
+              turn: toolUseTurns,
+              reason: advisorRoute.reason,
+              model: advisorRoute.model,
+              consult: advisorConsultsThisTurn,
+            },
+            "advisor_consult_start",
+          );
+          const advice = await consultAdvisor({
+            send: (h, o) => this.provider.sendMessage(h, o),
+            // The assistant tool_use message is already appended to `history`;
+            // drop it so the consult carries no dangling (unanswered) tool_use.
+            priorHistory: history.slice(0, -1),
+            proposedContent: response.content,
+            route: advisorRoute,
+            advisor: getConfig().llm.advisor,
+            selectionSeed: this.conversationId,
+            ...(signal ? { signal } : {}),
+          });
+          if (advice != null) {
+            rlog.info(
+              { turn: toolUseTurns, advisorModel: advice.model },
+              "advisor_consult_applied",
+            );
+            // Hold the proposed tools: answer each tool_use with the advisor's
+            // guidance instead of executing, then re-query so the model
+            // reconsiders. Mirrors the cancellation synthesis above — the
+            // tool_use/tool_result invariant stays intact.
+            const guidance = formatAdvisorGuidance(advice);
+            const guidanceBlocks: ContentBlock[] = toolUseBlocks.map(
+              (toolUse) => ({
+                type: "tool_result" as const,
+                tool_use_id: toolUse.id,
+                content: guidance,
+                is_error: false,
+              }),
+            );
+            history.push({ role: "user", content: guidanceBlocks });
+            for (const toolUse of toolUseBlocks) {
+              await onEvent({
+                type: "tool_result",
+                toolUseId: toolUse.id,
+                content: guidance,
+                isError: false,
+              });
+            }
+            continue;
+          }
         }
 
         // Execute all tools concurrently for reduced latency.

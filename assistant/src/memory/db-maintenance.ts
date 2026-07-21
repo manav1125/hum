@@ -4,7 +4,7 @@ import { getConfig } from "../config/loader.js";
 import { getLogger } from "../util/logger.js";
 import { getDbPath } from "../util/platform.js";
 import { getMemoryCheckpoint, setMemoryCheckpoint } from "./checkpoints.js";
-import { getLastUserMessageTimestamp } from "./conversation-crud.js";
+import { getLastInteractiveUserMessageTimestamp } from "./conversation-crud.js";
 import { runAsyncSqlite } from "./db-async-query.js";
 import { getSqlite } from "./db-connection.js";
 
@@ -117,7 +117,7 @@ export async function maybeRunDbMaintenance(nowMs = Date.now()): Promise<void> {
   // The checkpoint below is only written once maintenance actually runs, so a
   // deferred run is simply retried on a later (still-idle) worker tick.
   if (quietPeriodMs > 0) {
-    const lastUserMessageAt = getLastUserMessageTimestamp();
+    const lastUserMessageAt = getLastInteractiveUserMessageTimestamp();
     if (lastUserMessageAt > 0 && nowMs - lastUserMessageAt < quietPeriodMs) {
       return;
     }

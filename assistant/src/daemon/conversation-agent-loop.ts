@@ -1636,6 +1636,33 @@ export async function runAgentLoopImpl(
     // inherit stale in-task-run scope from the turn that just finished.
     ctx.taskRunId = undefined;
 
+    // Drain any deferred turn-finalize effects (WS-B `defer-turn-finalize`):
+    // the terminal activity-state SSE has already been emitted (so the client
+    // flipped stop→send), and these ran off the critical path. Drained BEFORE
+    // `drainQueue` so the next queued turn still sees a fully-indexed history.
+    // Each effect is best-effort internally; the outer guard ensures a throw
+    // can never reach past the terminal SSE and reject an otherwise-complete
+    // turn. Empty (a no-op) whenever the flag is off.
+    if (state.deferredFinalizeEffects.length > 0) {
+      const deferredTailStart = Date.now();
+      const effectCount = state.deferredFinalizeEffects.length;
+      for (const effect of state.deferredFinalizeEffects) {
+        try {
+          await effect();
+        } catch (err) {
+          rlog.warn(
+            { err, conversationId: ctx.conversationId },
+            "Deferred turn-finalize effect failed (non-fatal)",
+          );
+        }
+      }
+      state.deferredFinalizeEffects.length = 0;
+      rlog.info(
+        { deferredTailMs: Date.now() - deferredTailStart, effectCount },
+        "deferred_turn_finalize_drained",
+      );
+    }
+
     // Consolidation deferred to compaction: keeping assistant + tool_result
     // messages unconsolidated preserves the exact message structure sent to
     // the API, enabling stable prefix caching across turns.  Compaction

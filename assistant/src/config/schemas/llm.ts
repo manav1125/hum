@@ -88,6 +88,11 @@ export const LLMCallSiteEnum = z.enum([
   // every Look with "This model doesn't support image input". Point this at a
   // vision-capable model; it's the only call site that can't fall back to text.
   "cueLiveVision",
+  // The advisor consult (WS-B): a mid-task second opinion from a stronger
+  // model before the main brain commits a high-stakes/uncertain action. Its
+  // own call site so operators can pin provider/model/effort independently of
+  // mainAgent; the per-call model override in `agent/advisor.ts` still wins.
+  "advisor",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 
@@ -566,12 +571,126 @@ const VisionTierSchema = z
 
 export type VisionTierConfig = z.infer<typeof VisionTierSchema>;
 
+/**
+ * Advisor escalation (WS-B): before the main brain commits a high-stakes or
+ * uncertain action, consult a stronger model for a second opinion and feed the
+ * critique back into the loop before executing.
+ *
+ * The gate is SELECTIVE (see `agent/advisor.ts`): it fires only on a
+ * tool-bearing round that either (a) proposes a high-stakes / destructive tool
+ * or (b) carries explicit uncertainty in the assistant's own text — and never
+ * more than `maxConsultsPerTurn` times per turn, so the extra round-trip is
+ * bounded. A consult that errors or returns nothing fails OPEN: the round runs
+ * exactly as it would have without the advisor.
+ *
+ * The advisor model is routed via the per-call `config.model` override (the
+ * same mechanism as flash/vision-tier), so the advisor call runs on the
+ * mainAgent transport but a different model. `CUE_ADVISOR_MODEL` env-overrides
+ * `model` for self-host operators.
+ *
+ * Default ON with a bounded consult budget: the whole point is to catch a bad
+ * irreversible action before it runs, so it must be on by default, but the
+ * cost bound keeps a runaway turn from consulting on every round.
+ */
+const AdvisorSchema = z
+  .object({
+    enabled: z
+      .boolean()
+      .default(true)
+      .describe(
+        "When true (default), high-stakes or uncertain tool-bearing rounds consult the advisor model before executing. Set false to disable the second-opinion escalation entirely.",
+      ),
+    model: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Model id for the advisor consult. Overridden by the CUE_ADVISOR_MODEL env var; when neither is set, defaults to moonshotai/kimi-k3. Should be a stronger model than the main brain and servable by the mainAgent provider (the transport is not re-routed).",
+      ),
+    fallbackModel: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Model id tried when the primary advisor model errors. Defaults to z-ai/glm-5.2. Set to the empty case (unset) to disable the fallback.",
+      ),
+    consultOnDestructiveTools: z
+      .boolean()
+      .default(true)
+      .describe(
+        "When true (default), a round that proposes a high-stakes/destructive tool (defaultRiskLevel === 'high') triggers a consult.",
+      ),
+    consultOnUncertainty: z
+      .boolean()
+      .default(true)
+      .describe(
+        "When true (default), a tool-bearing round whose assistant text expresses explicit uncertainty (hedging/low-confidence language) triggers a consult.",
+      ),
+    uncertaintyMarkers: z
+      .array(z.string().min(1))
+      .default([
+        "i'm not sure",
+        "i am not sure",
+        "i'm not certain",
+        "i am not certain",
+        "not entirely sure",
+        "not entirely certain",
+        "i'm unsure",
+        "hard to say",
+        "difficult to say",
+        "it's unclear",
+        "it is unclear",
+        "i could be wrong",
+        "i might be wrong",
+        "no guarantee",
+        "double-check",
+        "double check",
+        "please verify",
+        "you should verify",
+        "not confident",
+        "low confidence",
+      ])
+      .describe(
+        "Lowercased substrings that, when found in the assistant's own text, count as explicit uncertainty (a low-confidence proxy — the provider gives no numeric confidence).",
+      ),
+    maxConsultsPerTurn: z
+      .number()
+      .int()
+      .positive()
+      .default(2)
+      .describe(
+        "Hard cap on advisor consults per user turn. Bounds the extra latency/cost of the escalation; once reached, later rounds skip the gate.",
+      ),
+    idleTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(20_000)
+      .describe(
+        "Abort the consult after this many ms with no streamed token (a reasoning advisor spends most of its window thinking, so this is idle-based, not wall-clock).",
+      ),
+    maxTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(90_000)
+      .describe(
+        "Absolute backstop for a single consult, independent of streaming progress.",
+      ),
+  })
+  .describe(
+    "Advisor escalation: consult a stronger model before committing high-stakes/uncertain actions",
+  );
+
+export type AdvisorConfig = z.infer<typeof AdvisorSchema>;
+
 export const LLMSchema = z
   .object({
     default: LLMConfigBase.default(LLMConfigBase.parse({})),
     toolPruning: ToolPruningSchema.default(ToolPruningSchema.parse({})),
     flashTier: FlashTierSchema.default(FlashTierSchema.parse({})),
     visionTier: VisionTierSchema.default(VisionTierSchema.parse({})),
+    advisor: AdvisorSchema.default(AdvisorSchema.parse({})),
     profiles: z.record(z.string().min(1), ProfileEntry).default({}),
     // Presentation-only order for named profiles. The resolver ignores this;
     // clients use it to render profile pickers consistently.

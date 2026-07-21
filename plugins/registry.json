@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "name": "cue-plugin-registry",
+  "owner": {
+    "name": "Cue",
+    "url": "https://github.com/vellum-ai/vellum-assistant"
+  },
+  "docs": "Backed by assistant/src/plugins/registry/ (types/registry-file/indexer/search/embedding-seed). This file is the curated, commit-pinned, security-reviewed allowlist that backs `cue plugins search/reindex/versions/publish`. It scales like the skills marketplace: `sources` are the GitHub repos/orgs the indexer crawls for plugin manifests (package.json declaring an @vellumai/plugin-api peerDependency); `plugins` are the reviewed, pinned entries surfaced by default. Community repos are added post-alpha via PR (see `cue plugins publish`).",
+  "reviewStatuses": {
+    "curated": "First-party or hand-reviewed by the Cue team; pinned to a specific commit; surfaced by default.",
+    "community": "Submitted via PR, license + manifest verified, pinned to a commit; surfaced with a third-party notice.",
+    "unreviewed": "Indexed from an allowlisted source but not yet hand-reviewed; only shown when --allow-unreviewed is passed."
+  },
+  "sources": [
+    {
+      "address": "vellum-ai/simple-memory",
+      "kind": "github",
+      "label": "Vellum reference plugins",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "curated",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/admin-copilot",
+      "kind": "github",
+      "label": "Vellum admin copilot",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "curated",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/agent-wrapped",
+      "kind": "github",
+      "label": "Vellum agent-wrapped",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "curated",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/git-workflow",
+      "kind": "github",
+      "label": "Vellum git workflow",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "curated",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/cofounder",
+      "kind": "github",
+      "label": "Vellum cofounder",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "curated",
+      "license": "MIT"
+    },
+    {
+      "address": "vellum-ai/level-up",
+      "kind": "github",
+      "label": "Vellum level-up",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "curated",
+      "license": "MIT"
+    },
+    {
+      "address": "AnitaKirkovska/model-router",
+      "kind": "github",
+      "label": "model-router (community)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "AnitaKirkovska/dynamic-notch",
+      "kind": "github",
+      "label": "dynamic-notch (community)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    },
+    {
+      "address": "JuliusBrussee/caveman",
+      "kind": "github",
+      "label": "caveman (community)",
+      "enabled": true,
+      "builtIn": true,
+      "reviewStatus": "community",
+      "license": "MIT"
+    }
+  ],
+  "plugins": [
+    {
+      "name": "caveman",
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman",
+        "ref": "63a91ecadbf4c4719a4602a5abb00883f9966034"
+      },
+      "description": "Ultra-compressed communication mode that strips filler words to cut token usage.",
+      "category": "productivity",
+      "homepage": "https://github.com/JuliusBrussee/caveman",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "icon": "🦴",
+      "surfaces": ["hooks"]
+    },
+    {
+      "name": "simple-memory",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/simple-memory",
+        "ref": "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3"
+      },
+      "description": "Reference memory plugin that exercises the full plugin API with low-cost variants of the memory defaults. Useful as a template when authoring a plugin.",
+      "category": "memory",
+      "homepage": "https://github.com/vellum-ai/simple-memory",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "surfaces": ["hooks", "tools"]
+    },
+    {
+      "name": "model-router",
+      "source": {
+        "source": "github",
+        "repo": "AnitaKirkovska/model-router",
+        "ref": "605100d27b"
+      },
+      "description": "Route each turn to a model chosen by intent — cheap models for simple asks, stronger models for hard reasoning — via a pre-model-call hook.",
+      "category": "productivity",
+      "homepage": "https://github.com/AnitaKirkovska/model-router",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "surfaces": ["hooks"]
+    },
+    {
+      "name": "admin-copilot",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/admin-copilot",
+        "ref": "d30596aa50a1c702f5d74e05c45bd965d14e2107"
+      },
+      "description": "Proactive chief-of-staff: a morning digest, propose-then-confirm inbox triage, calendar prep, and a weekly competitor brief.",
+      "category": "productivity",
+      "homepage": "https://github.com/vellum-ai/admin-copilot",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "icon": "🧑‍💼",
+      "surfaces": ["skills"]
+    },
+    {
+      "name": "agent-wrapped",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/agent-wrapped",
+        "ref": "7e5e7971a38a90120cee9b1e393b733622e24d17"
+      },
+      "description": "Your agent's year in review: conversations, days together, memories formed, top topics, and total tokens + LLM calls. Presents the stats as data in chat.",
+      "category": "creative",
+      "homepage": "https://github.com/vellum-ai/agent-wrapped",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "icon": "🎁",
+      "surfaces": ["tools"]
+    },
+    {
+      "name": "level-up",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/level-up",
+        "ref": "d3cbb50f8a"
+      },
+      "description": "Surfaces a first-class \"Level Up\" diff card whenever the assistant edits its own skills or plugins, so you can see how it improved itself after the fact.",
+      "category": "developer",
+      "homepage": "https://github.com/vellum-ai/level-up",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "surfaces": ["hooks", "routes"]
+    },
+    {
+      "name": "dynamic-notch",
+      "source": {
+        "source": "github",
+        "repo": "AnitaKirkovska/dynamic-notch",
+        "ref": "9729c3685d60d00d1de73a183b03122b9fa1f8f4"
+      },
+      "description": "Put your assistant inside your MacBook's notch: click to chat, hold to talk, and get a floating task bulb while it works, with live-streamed replies and per-sentence voice.",
+      "category": "interface",
+      "homepage": "https://github.com/AnitaKirkovska/dynamic-notch",
+      "license": "MIT",
+      "reviewStatus": "community",
+      "surfaces": ["apps", "routes"]
+    },
+    {
+      "name": "git-workflow",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/git-workflow",
+        "ref": "829407aa93"
+      },
+      "description": "Opinionated git helper skills: branch, commit, and PR conventions applied consistently across repos.",
+      "category": "developer",
+      "homepage": "https://github.com/vellum-ai/git-workflow",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "surfaces": ["skills"]
+    },
+    {
+      "name": "cofounder",
+      "source": {
+        "source": "github",
+        "repo": "vellum-ai/cofounder",
+        "ref": "547adf1c0db0cbb32855ff0e4ef46c056248bdea"
+      },
+      "description": "AI co-founder that remembers your company context, challenges your thinking, and tracks your decisions.",
+      "category": "productivity",
+      "homepage": "https://github.com/vellum-ai/cofounder",
+      "license": "MIT",
+      "reviewStatus": "curated",
+      "icon": "🤝",
+      "surfaces": ["hooks", "tools"]
+    }
+  ]
+}

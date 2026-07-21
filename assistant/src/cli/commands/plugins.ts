@@ -24,12 +24,23 @@ import {
   PluginNotFoundError,
 } from "../lib/install-from-github.js";
 import { listInstalledPlugins } from "../lib/list-installed-plugins.js";
+import { seedPluginEmbeddingsViaDaemon } from "../lib/plugin-embedding-client.js";
 import type { FingerprintComparison } from "../lib/plugin-fingerprint.js";
+import {
+  PluginPublishError,
+  preparePluginPublish,
+} from "../lib/plugin-publish.js";
+import {
+  findRegistryPlugin,
+  reindexAllSources,
+  searchPluginRegistry,
+} from "../lib/plugin-registry.js";
 import { registerCommand } from "../lib/register-command.js";
 import {
-  InvalidSearchPatternError,
-  searchPlugins,
-} from "../lib/search-plugins.js";
+  disablePlugin,
+  enablePlugin,
+  isPluginDisabled,
+} from "../lib/toggle-plugin.js";
 import {
   PluginNotInstalledError,
   uninstallPlugin,
@@ -144,7 +155,13 @@ Examples:
           const rows = installed.map((p) => ({
             name: p.name,
             version: p.packageJson?.version ?? "—",
-            status: p.issues.length === 0 ? "ok" : p.issues.join("; "),
+            status: isPluginDisabled(p.name)
+              ? p.issues.length === 0
+                ? "disabled"
+                : `disabled; ${p.issues.join("; ")}`
+              : p.issues.length === 0
+                ? "ok"
+                : p.issues.join("; "),
           }));
           const nameW = Math.max(4, ...rows.map((r) => r.name.length));
           const versionW = Math.max(7, ...rows.map((r) => r.version.length));
@@ -215,61 +232,290 @@ Examples:
       plugins
         .command("search <query>")
         .description(
-          "Search the plugins/marketplace.json catalog for plugin names matching <query> (case-insensitive regex)",
+          "Search the curated plugin registry by keyword (name, description, surfaces) — ranked like skill_search",
         )
         .option("--json", "Emit machine-readable JSON instead of a table")
-        .action(async (query: string, opts: { json?: boolean }) => {
-          try {
-            const result = await searchPlugins(
-              { query },
-              { fetch: globalThis.fetch.bind(globalThis) },
-            );
-
-            if (opts.json) {
-              process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-              return;
-            }
-
-            // Logged after the JSON early-return: the CLI logger writes info
-            // to stdout, which would otherwise corrupt --json output.
-            log.info(
-              {
-                query: result.query,
-                ref: result.ref,
-                matchCount: result.matches.length,
-              },
-              "external plugin search",
-            );
-
-            if (result.matches.length === 0) {
-              console.log(`No plugins matched "${result.query}".`);
-              return;
-            }
-
-            const nameW = Math.max(
-              4,
-              ...result.matches.map((m) => m.name.length),
-            );
-            const pad = (s: string, w: number) => s + " ".repeat(w - s.length);
-            console.log(`${pad("NAME", nameW)}  PATH`);
-            for (const m of result.matches) {
-              console.log(`${pad(m.name, nameW)}  ${m.path}`);
-            }
-            console.log("");
-            console.log(
-              `${result.matches.length} match${result.matches.length === 1 ? "" : "es"} for "${result.query}".`,
-            );
-          } catch (err) {
-            if (err instanceof InvalidSearchPatternError) {
-              console.error(err.message);
+        .option("--limit <n>", "Maximum results (default 8, max 25)")
+        .option(
+          "--all",
+          "Include unreviewed manifests indexed from allowlisted sources",
+        )
+        .action(
+          (
+            query: string,
+            opts: { json?: boolean; limit?: string; all?: boolean },
+          ) => {
+            const limit = opts.limit ? Number(opts.limit) : undefined;
+            if (limit !== undefined && (!Number.isFinite(limit) || limit < 1)) {
+              console.error(
+                "Plugin search failed: --limit must be a number ≥ 1",
+              );
               process.exitCode = 1;
               return;
             }
+            const ranked = searchPluginRegistry(query, {
+              ...(limit !== undefined ? { limit } : {}),
+              includeUnreviewed: opts.all ?? false,
+            });
+
+            if (opts.json) {
+              process.stdout.write(
+                JSON.stringify(
+                  ranked.map((r) => ({ ...r.candidate, score: r.score })),
+                  null,
+                  2,
+                ) + "\n",
+              );
+              return;
+            }
+
+            log.info(
+              { query, matchCount: ranked.length },
+              "plugin registry search",
+            );
+
+            if (ranked.length === 0) {
+              console.log(
+                `No plugins matched "${query.trim()}". Try broader keywords, ` +
+                  "or `plugins reindex` to pull the latest manifests from allowlisted sources.",
+              );
+              return;
+            }
+
+            console.log(
+              `Found ${ranked.length} plugin${ranked.length === 1 ? "" : "s"} matching "${query.trim()}":\n`,
+            );
+            ranked.forEach(({ candidate }, i) => {
+              const tags = [
+                candidate.reviewStatus,
+                candidate.availability === "curated" ? "pinned" : "indexed",
+                ...(candidate.surfaces.length > 0
+                  ? [candidate.surfaces.join("/")]
+                  : []),
+              ].join(", ");
+              console.log(`${i + 1}. ${candidate.name} [${tags}]`);
+              console.log(`   ${oneLine(candidate.description)}`);
+              const activate =
+                candidate.availability === "curated"
+                  ? `   Install: assistant plugins install ${candidate.name}`
+                  : `   From ${candidate.source} — review, then: assistant plugins install ${candidate.source} (untrusted)`;
+              console.log(activate);
+            });
+          },
+        );
+
+      plugins
+        .command("reindex")
+        .description(
+          "Fetch and index plugin manifests from the allowlisted registry sources",
+        )
+        .option("--force", "Bypass the 24h index cache")
+        .option(
+          "--embed",
+          "Also seed indexed + curated plugins into the shared skill/plugin embedding space",
+        )
+        .option("--json", "Emit machine-readable JSON")
+        .action(
+          async (opts: {
+            force?: boolean;
+            embed?: boolean;
+            json?: boolean;
+          }) => {
+            try {
+              // The manifest fetch/cache is pure file-io — done locally.
+              const { items, errors } = await reindexAllSources({
+                force: opts.force ?? false,
+              });
+              // Seeding into Qdrant needs the running daemon, so it goes over
+              // IPC. A missing/unavailable embedding backend is not an error
+              // there (returns seeded: 0); only an unreachable daemon is.
+              let embedded: { seeded: number; skipped: number } | null = null;
+              let embedError: string | null = null;
+              if (opts.embed) {
+                const seedResult = await seedPluginEmbeddingsViaDaemon();
+                if (seedResult.ok) {
+                  embedded = seedResult.result;
+                } else {
+                  embedError = seedResult.unreachable
+                    ? `embedding seed skipped: the assistant daemon must be running to seed the embedding space (${seedResult.error}). Start it, then rerun with --embed.`
+                    : `embedding seed failed: ${seedResult.error}`;
+                }
+              }
+
+              if (opts.json) {
+                process.stdout.write(
+                  JSON.stringify(
+                    {
+                      indexed: items.length,
+                      errors,
+                      embedded,
+                      ...(embedError ? { embedError } : {}),
+                    },
+                    null,
+                    2,
+                  ) + "\n",
+                );
+                if (embedError) process.exitCode = 1;
+                return;
+              }
+
+              console.log(
+                `Indexed ${items.length} plugin manifest${items.length === 1 ? "" : "s"} from the registry sources.`,
+              );
+              if (embedded) {
+                console.log(
+                  `Seeded ${embedded.seeded} plugin${embedded.seeded === 1 ? "" : "s"} into the embedding space` +
+                    (embedded.seeded === 0
+                      ? " (embedding backend unavailable — deterministic search still works)."
+                      : "."),
+                );
+              }
+              for (const e of errors) {
+                console.log(`  ! ${e.address}: ${e.error}`);
+              }
+              if (embedError) {
+                console.error(embedError);
+                process.exitCode = 1;
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              console.error(`Plugin reindex failed: ${message}`);
+              process.exitCode = 1;
+            }
+          },
+        );
+
+      plugins
+        .command("versions <name>")
+        .description("Show the registry pin and the installed pin for a plugin")
+        .option("--json", "Emit machine-readable JSON")
+        .action((name: string, opts: { json?: boolean }) => {
+          const registry = findRegistryPlugin(name);
+          const installed = listInstalledPlugins().find((p) => p.name === name);
+          const result = {
+            name,
+            registryPin: registry
+              ? {
+                  repo: registry.source.repo,
+                  ref: registry.source.ref,
+                  reviewStatus: registry.reviewStatus,
+                  ...(registry.source.path
+                    ? { path: registry.source.path }
+                    : {}),
+                }
+              : null,
+            installed: installed
+              ? {
+                  version: installed.packageJson?.version ?? null,
+                  disabled: isPluginDisabled(name),
+                }
+              : null,
+          };
+
+          if (opts.json) {
+            process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+            return;
+          }
+
+          console.log(name);
+          console.log("─".repeat(44));
+          if (result.registryPin) {
+            console.log(
+              `registry   ${result.registryPin.repo}@${shortSha(result.registryPin.ref)} (${result.registryPin.reviewStatus})`,
+            );
+          } else {
+            console.log("registry   not in the curated registry");
+          }
+          if (result.installed) {
+            console.log(
+              `installed  ${result.installed.version ?? "—"}${result.installed.disabled ? " (disabled)" : ""}`,
+            );
+          } else {
+            console.log("installed  not installed");
+          }
+        });
+
+      plugins
+        .command("disable <name>")
+        .description(
+          "Disable an installed plugin (writes a .disabled sentinel; its code stops loading next turn)",
+        )
+        .action((name: string) => {
+          try {
+            const result = disablePlugin({ name });
+            console.log(
+              result.changed
+                ? `Disabled plugin "${result.name}". It will not load on the next turn.`
+                : `Plugin "${result.name}" is already disabled.`,
+            );
+          } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            console.error(`Plugin search failed: ${message}`);
+            console.error(`Plugin disable failed: ${message}`);
             process.exitCode = 1;
           }
         });
+
+      plugins
+        .command("enable <name>")
+        .description(
+          "Re-enable a disabled plugin (removes its .disabled sentinel)",
+        )
+        .action((name: string) => {
+          try {
+            const result = enablePlugin({ name });
+            console.log(
+              result.changed
+                ? `Enabled plugin "${result.name}". It will load on the next turn.`
+                : `Plugin "${result.name}" is already enabled.`,
+            );
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error(`Plugin enable failed: ${message}`);
+            process.exitCode = 1;
+          }
+        });
+
+      plugins
+        .command("publish <repo>")
+        .description(
+          "Validate a plugin repo and prepare a curated-registry submission (PR-based; does not host code)",
+        )
+        .option("--path <dir>", "Repo subdirectory holding the plugin root")
+        .option("--json", "Emit the registry entry as JSON")
+        .action(
+          async (repo: string, opts: { path?: string; json?: boolean }) => {
+            try {
+              const prep = await preparePluginPublish(repo, {
+                ...(opts.path ? { path: opts.path } : {}),
+              });
+
+              if (opts.json) {
+                process.stdout.write(
+                  JSON.stringify(prep.registryEntry, null, 2) + "\n",
+                );
+                return;
+              }
+
+              console.log(
+                `Validated plugin "${prep.pluginName}" in ${prep.address} @ ${shortSha(prep.commit)}.`,
+              );
+              console.log("");
+              for (const line of prep.instructions) console.log(line);
+              console.log("");
+              console.log("Registry entry to add:");
+              console.log(JSON.stringify(prep.registryEntry, null, 2));
+            } catch (err) {
+              if (err instanceof PluginPublishError) {
+                console.error(err.message);
+                process.exitCode = 1;
+                return;
+              }
+              const message = err instanceof Error ? err.message : String(err);
+              console.error(`Plugin publish failed: ${message}`);
+              process.exitCode = 1;
+            }
+          },
+        );
 
       plugins
         .command("uninstall <name>")
@@ -379,6 +625,12 @@ Examples:
 /** Abbreviate a commit SHA for display; passes through non-SHA / null values. */
 function shortSha(sha: string | null): string {
   return sha ? sha.slice(0, 7) : "—";
+}
+
+/** First line of `text`, trimmed and ellipsized to `maxLength`. */
+function oneLine(text: string, maxLength = 200): string {
+  const line = text.split("\n")[0].trim();
+  return line.length > maxLength ? `${line.slice(0, maxLength - 1)}…` : line;
 }
 
 /**

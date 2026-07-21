@@ -77,11 +77,26 @@ export function getDb(): DrizzleDb {
   ensureDataDir();
   const sqlite = new Database(getDbPath());
   sqlite.exec("PRAGMA journal_mode=WAL");
-  sqlite.exec("PRAGMA synchronous=FULL");
+  // synchronous=NORMAL under WAL (adopted from upstream 590433ef9c): FULL
+  // fsyncs on every commit, which dominates write-heavy conversation/memory
+  // paths. Under WAL, NORMAL preserves DB integrity across process/OS crashes
+  // and only risks losing the last few committed transactions on a hard power
+  // loss — an acceptable trade for this DB (high write volume, low durability
+  // stakes; the gateway/trust DB, where a lost commit could reopen a trust
+  // gap, stays FULL). A/B-revertable via `CUE_SQLITE_SYNCHRONOUS=FULL`.
+  const synchronous =
+    process.env.CUE_SQLITE_SYNCHRONOUS?.trim().toUpperCase() === "FULL"
+      ? "FULL"
+      : "NORMAL";
+  sqlite.exec(`PRAGMA synchronous=${synchronous}`);
   sqlite.exec("PRAGMA busy_timeout=5000");
   sqlite.exec("PRAGMA foreign_keys = ON");
   sqlite.exec("PRAGMA cache_size=-256000");
   sqlite.exec("PRAGMA temp_store=MEMORY");
+  // WAL hygiene (adopted from upstream 50f2f83bcc): cap the WAL file so a write
+  // burst can't leave a permanently huge WAL (disk + slow crash-recovery scan).
+  // Any WAL reset also truncates the file back to this ceiling. 64 MiB.
+  sqlite.exec("PRAGMA journal_size_limit=67108864");
   const db = drizzle(sqlite, { schema });
   setStoredDb(db, () => sqlite.close());
   return db;

@@ -95,7 +95,7 @@ import {
   isActivationMomentParam,
 } from "../telemetry/activation-funnel.js";
 import { ToolExecutor } from "../tools/executor.js";
-import { getAllToolDefinitions } from "../tools/registry.js";
+import { getAllToolDefinitions, getTool } from "../tools/registry.js";
 import type { ToolPruningScanCache } from "../tools/tool-pruning.js";
 import type { ToolLifecycleEvent } from "../tools/types.js";
 import type { OnboardingContext } from "../types/onboarding-context.js";
@@ -767,6 +767,11 @@ export class Conversation {
           conv.createdAt,
         );
       },
+      // Advisor gate (`agent/advisor.ts`) high-stakes signal: a tool whose
+      // registered default risk is "high" (destructive/irreversible). Derived
+      // from the tool registry so the loop stays decoupled from tool metadata.
+      isHighStakesTool: (toolName: string) =>
+        getTool(toolName)?.defaultRiskLevel === "high",
     });
     createContextWindowManager({
       provider,

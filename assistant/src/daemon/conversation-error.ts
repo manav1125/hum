@@ -86,6 +86,13 @@ const PROVIDER_BILLING_PATTERNS = [
   /insufficient.*credits?/i,
   /requires more credits/i,
   /can only afford/i,
+  // OpenRouter returns 403 "Key limit exceeded" when a BYOK key's configured
+  // per-key spend cap is reached (adopted from upstream dcedda36dc). That is a
+  // billing condition, not a bad key — without this it falls through the
+  // generic 401/403 branch and (wrongly) tells the user to replace a valid
+  // key. Anchored on contiguous "key limit" so it can't swallow "rate limit
+  // exceeded" or generic invalid-key prose.
+  /key limit (?:has been )?(?:exceeded|reached)/i,
 ];
 
 // Overloaded patterns — provider is capacity-constrained (distinct from rate limiting)
@@ -312,6 +319,17 @@ function classifyCore(
         retryable: false,
         errorCategory: "context_too_large",
       };
+    }
+    if (error.statusCode === 403 && isProviderBillingError(message)) {
+      // A 403 whose body is a spend-cap message (OpenRouter "Key limit
+      // exceeded") is a BILLING condition, not a bad key — classify it as
+      // billing before the generic 401/403 invalid-key branch so the user is
+      // told to add funds, not replace a valid key. 401 is never a spend cap,
+      // so this is scoped to 403.
+      if (isManagedBalanceError(error)) {
+        return managedBalanceClassification();
+      }
+      return providerBillingClassification();
     }
     if (error.statusCode === 401 || error.statusCode === 403) {
       // Both managed-proxy and user-key 401/403s reach this branch.
