@@ -71,16 +71,32 @@ per-watcher toggles; guardian trust rules apply).
 - Needs from user: Twilio account + a number (~$1–15/mo + usage) — lock decision below.
 Risk: MEDIUM (telephony edge cases; flag-gated, receptionist-only for alpha).
 
-## Days 5–7 — WS-H: Desktop-control unification (research in flight)
-- Thesis: one substrate (host proxies — already in our daemon) with two faces: Cue Live (visible,
-  interactive, premium) and quiet capability (file access, terminal, app control) usable from ANY
-  conversation including cloud→Mac. Adopt upstream's post-fork client maturation; our Electron app
-  gains the host_file/host_bash/host_cu executors it lacks; directory-scoped trust rules gate file
-  ops.
-- Alpha demo: "clean up my Desktop / organize my downloads / pull the files for this project" from
-  chat, with a review-before-move plan card.
-- Scope finalizes when the deep-dive agent reports; held to fit days 5–7.
-Risk: MEDIUM-HIGH (touches user files — plan-first UX + trust rules mandatory).
+## Days 5–7 — WS-H: Desktop-control unification (scope FINAL, deep-dive complete)
+Finding: the daemon substrate (host_bash/file/transfer/cu/browser/app_control proxies, directory-
+scoped trust rules, cloud→Mac routing) is COMPLETE in our fork, and bash/file/transfer/browser
+already execute in our Electron app — cloud conversations can drive Mac files/terminal TODAY. The
+gap is the computer-use/app-control EXECUTORS (our Electron stubs return "not implemented"; the
+Swift stack sits unported in the retiring clients/macos).
+1. Port the CU/app-control stack into apps/macos per upstream `92fc32090b`: mac-helper
+   ComputerUse/AppControl Swift (source exists in our clients/macos — includes upstream's new
+   ActionVerifier verify→execute→settle→observe), shared-cu-helper sidecar, the two thin executors.
+   Same signed helper binary → inherits Cue Live's existing TCC grants, zero new permission
+   prompts. Effort M (not L).
+2. Re-platform Cue Live "act" onto the computer_use_* loop: goals become real conversation turns —
+   gaining AX-element grounding (click-by-element, not raw pixels), per-action approvals + trust
+   rules, step caps + loop detection, ActionVerifier, Mission Control visibility. Cue Live keeps
+   guidance/look as-is and keeps its moat (summon hotkey, POINT overlay, phone remote pause — the
+   pause generalizes to any host-proxy run). Upstream has NOTHING like Cue Live's co-present mode.
+3. `desktop-organizer` skill (alpha demo): read-only inventory pass → categorized plan card →
+   MOVE-NEVER-DELETE into ~/Desktop/Cue Archive/<date>/ with a moves.tsv manifest (one-command
+   undo); consent contract adopted from upstream's system-storage-cleanup (exact path + size +
+   consequence, protected-path denylist); the demo moment = one "Always allow in ~/Desktop/*"
+   directory-scoped rule, then it runs unattended.
+4. Small adopts: folder drag-drop as path-reference (`0606da42cd` — "drop a folder, say organize
+   this"), TCC identity fixes, forged-host-event security block (`9be578154d`), flapping-SSE
+   tolerance, symlink-resolve risk classification if missing.
+Risk: MEDIUM (was MEDIUM-HIGH — the substrate being done + move-never-delete + existing TCC grants
+de-risk it).
 
 ## Sprinkle (inside other waves)
 Followups tracker (fits filing/commitments) · in-conversation search · retry-turn button · iOS
