@@ -31,6 +31,19 @@ Rollback lever: `workItems.assessment.gate=false` (assess + narrate, never block
    claims now require the thing behind them to be configured — the assessor turns every
    claim into a promise.
 
+**KNOWN LIMIT — the restart window (measured, not theoretical).** For roughly the first
+minutes after a daemon restart (i.e. after every deploy), the assessment call fails and the
+task runs **unassessed**, because fail-open is deliberate. Reproduced twice on prod: "Pay the
+architect invoice" dispatched ~30s after a deploy ran with no verdict; the identical task on
+a warm daemon returned `not_ai_task` and parked. Both retries fire back-to-back into the same
+cold provider, so they do not help. Spacing the retries was tried and reverted — it could not
+be validated (the observed failure outlasted ~60s of attempts) and it made the suite sleep.
+Options for a real fix, in preference order: (a) hold dispatch until a provider resolves
+rather than assessing against a cold one; (b) mark an item that ran unassessed so the UI can
+say "Cue did not get to check this" instead of it being indistinguishable from a cleared run;
+(c) longer retry horizon. **Until then: after a deploy, avoid running money/irreversible
+tasks for a few minutes.**
+
 **Known limits:** `not_ai_task` precision is judged by one flash model — over-asking is the
 safe direction and the guards enforce it; memory isn't retrieved at assessment time, so a
 task answerable only from memory can over-clarify; the mobile task sheet still offers ▶ on
