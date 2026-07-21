@@ -23,7 +23,11 @@ daemon restart silently dropped in-flight turns. 8 picks, 31 tests, typecheck+li
 - Wake-content fencing (`--external-content`).
 Risk: LOW. All small, mapped, test-covered picks.
 
-## Days 2–3 — WS-B: Send-path, providers, supervision (U2 core)  [deploy 2]
+## Days 2–3 — WS-B: Send-path, providers, supervision (U2 core)  [deploy 2] ✅ SHIPPED 2026-07-21
+Deployed with WS-C (image deployment-01KY1SJFV7CRG9JFY42Y08X53F). Advisor live (code default:
+enabled, kimi-k3/glm-5.2). Prod turns verified clean post-deploy (send-path no regression). This
+restart also ACTIVATED WS-A crash recovery. turn-finalize deferral shipped flag-OFF (A/B later).
+
 - Turn-finalize deferral off the send path + in-flight delta file + WAL hygiene +
   synchronous=NORMAL — the durable latency architecture.
 - Provider-error normalization + explainable resolution preflight (outage-day killer).
