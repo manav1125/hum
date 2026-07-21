@@ -27995,6 +27995,188 @@ paths:
       responses:
         "200":
           description: Successful response
+  /v1/organizer/session:
+    get:
+      operationId: organizer_session_get
+      summary: Remote view of the desktop-organizer run on the Mac
+      description:
+        "What the daemon genuinely knows about a desktop-organizer run: the approvable plan, move progress, and
+        done tally (execution runs on the paired Mac via host_bash — nothing is deleted, everything moves into Cue
+        Archive/<date>), plus the list of connected Macs the run can target. The plan/progress fields stay inactive
+        until the skill reports back; the connected-Mac targets are live."
+      tags:
+        - organizer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    type: object
+                    properties:
+                      active:
+                        type: boolean
+                      machineName:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastSeenAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sessionStartedAt:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      plan:
+                        anyOf:
+                          - type: object
+                            properties:
+                              root:
+                                type: string
+                              scannedCount:
+                                type: number
+                              archiveBase:
+                                type: string
+                              categories:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    key:
+                                      type: string
+                                    label:
+                                      type: string
+                                    icon:
+                                      type: string
+                                    count:
+                                      type: number
+                                    destination:
+                                      type: string
+                                    included:
+                                      type: boolean
+                                  required:
+                                    - key
+                                    - label
+                                    - icon
+                                    - count
+                                    - destination
+                                    - included
+                                  additionalProperties: false
+                              protectedNote:
+                                type: string
+                            required:
+                              - root
+                              - scannedCount
+                              - archiveBase
+                              - categories
+                              - protectedNote
+                            additionalProperties: false
+                          - type: "null"
+                      progress:
+                        anyOf:
+                          - type: object
+                            properties:
+                              movedCount:
+                                type: number
+                              totalCount:
+                                type: number
+                              currentCategory:
+                                anyOf:
+                                  - type: string
+                                  - type: "null"
+                              perCategory:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    key:
+                                      type: string
+                                    label:
+                                      type: string
+                                    moved:
+                                      type: number
+                                    total:
+                                      type: number
+                                    done:
+                                      type: boolean
+                                  required:
+                                    - key
+                                    - label
+                                    - moved
+                                    - total
+                                    - done
+                                  additionalProperties: false
+                            required:
+                              - movedCount
+                              - totalCount
+                              - currentCategory
+                              - perCategory
+                            additionalProperties: false
+                          - type: "null"
+                      done:
+                        anyOf:
+                          - type: object
+                            properties:
+                              movedTotal:
+                                type: number
+                              archivePath:
+                                type: string
+                              undoAvailable:
+                                type: boolean
+                            required:
+                              - movedTotal
+                              - archivePath
+                              - undoAvailable
+                            additionalProperties: false
+                          - type: "null"
+                    required:
+                      - active
+                      - machineName
+                      - lastSeenAt
+                      - sessionStartedAt
+                      - plan
+                      - progress
+                      - done
+                    additionalProperties: false
+                  targets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        clientId:
+                          type: string
+                        machineName:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        interfaceId:
+                          type: string
+                        connectedAt:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        lastSeenAt:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        online:
+                          type: boolean
+                      required:
+                        - clientId
+                        - machineName
+                        - interfaceId
+                        - connectedAt
+                        - lastSeenAt
+                        - online
+                      additionalProperties: false
+                required:
+                  - session
+                  - targets
+                additionalProperties: false
   /v1/outputs:
     get:
       operationId: outputs_get
@@ -28541,6 +28723,174 @@ paths:
                   - userId
                   - velayTunnel
                 additionalProperties: false
+  /v1/playbooks/create:
+    post:
+      operationId: playbooks_create_post
+      summary: Create a playbook
+      description: Create a trigger→action playbook rule.
+      tags:
+        - playbooks
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                trigger_text:
+                  type: string
+                  minLength: 1
+                action:
+                  type: string
+                  minLength: 1
+                channel:
+                  type: string
+                watcher_id:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                autonomy_level:
+                  type: string
+                  enum:
+                    - auto
+                    - draft
+                    - notify
+                priority:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                enabled:
+                  type: boolean
+              required:
+                - name
+                - trigger_text
+                - action
+              additionalProperties: false
+  /v1/playbooks/delete:
+    post:
+      operationId: playbooks_delete_post
+      summary: Delete a playbook
+      description: Delete a playbook by ID.
+      tags:
+        - playbooks
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                playbook_id:
+                  type: string
+                  minLength: 1
+              required:
+                - playbook_id
+              additionalProperties: false
+  /v1/playbooks/list:
+    post:
+      operationId: playbooks_list_post
+      summary: List playbooks
+      description: List playbooks (with server-computed effective autonomy + the global dial), or get one by ID.
+      tags:
+        - playbooks
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                playbook_id:
+                  type: string
+                enabled_only:
+                  default: false
+                  type: boolean
+                watcher_id:
+                  type: string
+              additionalProperties: false
+  /v1/playbooks/update:
+    post:
+      operationId: playbooks_update_post
+      summary: Update a playbook
+      description: Update an existing playbook rule.
+      tags:
+        - playbooks
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                playbook_id:
+                  type: string
+                  minLength: 1
+                name:
+                  type: string
+                trigger_text:
+                  type: string
+                action:
+                  type: string
+                channel:
+                  type: string
+                watcher_id:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                autonomy_level:
+                  type: string
+                  enum:
+                    - auto
+                    - draft
+                    - notify
+                priority:
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                enabled:
+                  type: boolean
+              required:
+                - playbook_id
+              additionalProperties: false
   /v1/playground/seed-conversation:
     post:
       operationId: playground_seedconversation_post
@@ -28710,10 +29060,12 @@ paths:
       operationId: plugins_by_name_get
       summary: Get a plugin's detail view
       description:
-        Resolve a single plugin's tracked metadata (description, homepage, license, version, source) plus its
-        README markdown. Unions the locally installed copy, the marketplace manifest, and the plugin's repository at the
-        pinned ref — preferring the installed copy. Names that are neither installed nor present in the catalog return
-        404. Powers the web plugin detail page; mirrors `GET /v1/skills/:id`.
+        Resolve a single plugin's tracked metadata (description, homepage, license, version, source, reviewStatus,
+        surfaces, category, icon) plus its README markdown. Unions the locally installed copy, the curated
+        `plugins/registry.json` entry, and the plugin's repository at the pinned commit — preferring the installed copy.
+        Reads the SAME on-disk catalog the search route lists, so any card returned by search resolves here. Names that
+        are neither installed nor present in the catalog return 404. Powers the web plugin detail page; mirrors `GET
+        /v1/skills/:id`.
       tags:
         - plugins
       responses:
@@ -28765,7 +29117,7 @@ paths:
                             type: string
                           ref:
                             type: string
-                            description: Pinned git ref the plugin is fetched from.
+                            description: Pinned git ref (commit) the plugin is fetched from.
                         required:
                           - kind
                           - repo
@@ -28773,7 +29125,35 @@ paths:
                         additionalProperties: false
                         description: "Origin of the match: a whitelisted external plugin repository."
                       - type: "null"
-                    description: Pinned origin from the marketplace entry, or null when an installed copy has no catalog entry.
+                    description: Pinned origin from the curated registry entry, or null when an installed copy has no catalog entry.
+                  reviewStatus:
+                    anyOf:
+                      - type: string
+                        enum:
+                          - curated
+                          - community
+                          - unreviewed
+                        description:
+                          "Curation posture: `curated` (first-party / hand-reviewed), `community` (PR-submitted, license + manifest
+                          verified), or `unreviewed`. The HTTP browse surface only ever returns curated/community —
+                          unreviewed discovery stays CLI-gated."
+                      - type: "null"
+                    description: Curation posture from the registry entry, or null when an installed copy has no registry entry.
+                  surfaces:
+                    type: array
+                    items:
+                      type: string
+                    description: Plugin surfaces the entry contributes (hooks/tools/skills/routes/apps); `[]` when unknown or none declared.
+                  category:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description: Free-form grouping hint from the registry; null when absent.
+                  icon:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                    description: Display emoji/icon from the registry entry; null when it ships none.
                   readme:
                     anyOf:
                       - type: string
@@ -28781,7 +29161,9 @@ paths:
                     description: README markdown, or null when the plugin ships none.
                   ref:
                     type: string
-                    description: Git ref the catalog metadata / README were resolved at.
+                    description:
+                      "Git ref the README was resolved at: the registry entry's pinned commit when one claims the name, else the
+                      fallback ref."
                   artifact:
                     anyOf:
                       - type: object
@@ -28811,6 +29193,10 @@ paths:
                   - license
                   - version
                   - source
+                  - reviewStatus
+                  - surfaces
+                  - category
+                  - icon
                   - readme
                   - ref
                   - artifact
@@ -29235,9 +29621,12 @@ paths:
       operationId: plugins_search_get
       summary: Search the plugin catalog
       description:
-        List installable plugins from the curated `plugins/marketplace.json` catalog. The query is an ECMAScript
-        regex matched case-insensitively against the plugin name (e.g. `memory`, `^simple`). Empty query returns every
-        entry. Mirrors the CLI's `assistant plugins search`.
+        List installable plugins from the curated, commit-pinned `plugins/registry.json` catalog — the SAME on-disk
+        source the CLI `plugins search`, the detail route, and the embedding seed read, so every match here resolves on
+        `GET /v1/plugins/:name`. The query is an ECMAScript regex matched case-insensitively against the plugin name
+        (e.g. `memory`, `^simple`). Empty query returns every curated entry. Only curated + community (hand-reviewed)
+        entries are returned; unreviewed discovery stays CLI-gated. Each match carries its curation metadata
+        (reviewStatus, surfaces, category, license, homepage, icon).
       tags:
         - plugins
       responses:
@@ -29253,7 +29642,9 @@ paths:
                     description: Echo of the requested query (ECMAScript regex source).
                   ref:
                     type: string
-                    description: Git ref the catalog was listed at.
+                    description:
+                      Catalog source identifier. Always `"registry"` — the browse catalog is the on-disk curated
+                      `plugins/registry.json`, not a live git ref.
                   matches:
                     type: array
                     items:
@@ -29264,10 +29655,10 @@ paths:
                           description: Install name. Matches `assistant plugins install <name>`.
                         path:
                           type: string
-                          description: "Human-readable origin: a `github:owner/repo@ref` locator for the external plugin."
+                          description: "Human-readable origin: a `github:owner/repo[/path]@ref` locator (the pinned commit)."
                         description:
-                          description: Short description, when known (external entries only today).
                           type: string
+                          description: Short description from the curated registry entry.
                         source:
                           type: object
                           properties:
@@ -29282,19 +29673,61 @@ paths:
                               type: string
                             ref:
                               type: string
-                              description: Pinned git ref the plugin is fetched from.
+                              description: Pinned git ref (commit) the plugin is fetched from.
                           required:
                             - kind
                             - repo
                             - ref
                           additionalProperties: false
                           description: "Origin of the match: a whitelisted external plugin repository."
+                        reviewStatus:
+                          type: string
+                          enum:
+                            - curated
+                            - community
+                            - unreviewed
+                          description:
+                            "Curation posture: `curated` (first-party / hand-reviewed), `community` (PR-submitted, license + manifest
+                            verified), or `unreviewed`. The HTTP browse surface only ever returns curated/community —
+                            unreviewed discovery stays CLI-gated."
+                        surfaces:
+                          type: array
+                          items:
+                            type: string
+                          description: Plugin surfaces the entry contributes (hooks/tools/skills/routes/apps); `[]` when it declares none.
+                        category:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Free-form grouping hint (e.g. `productivity`); `null` when absent.
+                        license:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: SPDX license expression; `null` when absent.
+                        homepage:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Project homepage URL; `null` when absent.
+                        icon:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Display emoji/icon; `null` when the entry ships none.
                       required:
                         - name
                         - path
+                        - description
                         - source
+                        - reviewStatus
+                        - surfaces
+                        - category
+                        - license
+                        - homepage
+                        - icon
                       additionalProperties: false
-                    description: Directory matches, sorted alphabetically by name.
+                    description: Curated catalog matches, sorted alphabetically by name.
                 required:
                   - query
                   - ref
@@ -29307,14 +29740,62 @@ paths:
           schema:
             type: string
           description:
-            ECMAScript regex pattern matched case-insensitively against catalog directory names. Empty/missing matches
+            ECMAScript regex pattern matched case-insensitively against catalog plugin names. Empty/missing matches
             everything.
         - name: ref
           in: query
           required: false
           schema:
             type: string
-          description: Optional git ref to list the catalog at. Defaults to the CLI's `DEFAULT_PLUGIN_REF` (typically `main`).
+          description:
+            "Accepted for backward compatibility but ignored: the browse catalog is the on-disk curated registry, not a
+            live git ref."
+  /v1/plugins/seed-embeddings:
+    post:
+      operationId: plugins_seedembeddings_post
+      summary: Seed the plugin registry into the shared embedding space
+      description:
+        "Upsert the curated + already-indexed plugin manifests into the shared `memory_v2_concept_pages` Qdrant
+        collection (under a `plugins/` slug prefix) so plugin discovery shares the skill embedding space. Unlike the
+        other plugin routes, this requires the running daemon's embedding backend and Qdrant connection — it is the
+        daemon-side half of the CLI's `assistant plugins reindex --embed` (the manifest fetch/cache half runs locally in
+        the CLI). Best-effort: an unavailable embedding backend returns 200 with `seeded: 0` (deterministic search still
+        works) rather than an error."
+      tags:
+        - plugins
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  seeded:
+                    type: number
+                    description:
+                      Number of plugin manifests upserted into the shared embedding collection. `0` when the embedding backend is
+                      unavailable (deterministic search still works).
+                  skipped:
+                    type: number
+                    description: Number of candidates not seeded (duplicate slugs, or all candidates when the backend was unavailable).
+                required:
+                  - seeded
+                  - skipped
+                additionalProperties: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                includeUnreviewed:
+                  description:
+                    Also seed unreviewed manifests indexed from allowlisted sources. Defaults to false (curated +
+                    community-reviewed entries only).
+                  type: boolean
+              additionalProperties: false
   /v1/profiler/runs:
     get:
       operationId: profiler_runs_get
@@ -37879,7 +38360,6 @@ paths:
                   minLength: 1
                 action_prompt:
                   type: string
-                  minLength: 1
                 poll_interval_ms:
                   type: integer
                   minimum: 15000
@@ -37891,10 +38371,14 @@ paths:
                   additionalProperties: {}
                 credential_service:
                   type: string
+                intake_mode:
+                  type: string
+                  enum:
+                    - came_in
+                    - agent
               required:
                 - name
                 - provider
-                - action_prompt
               additionalProperties: false
   /v1/watchers/delete:
     post:
@@ -37989,6 +38473,30 @@ paths:
                   default: false
                   type: boolean
               additionalProperties: false
+  /v1/watchers/providers:
+    post:
+      operationId: watchers_providers_post
+      summary: List watcher providers
+      description: List the available watcher source providers (id, display name, required credential).
+      tags:
+        - watchers
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: {}
+                additionalProperties: {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              additionalProperties: false
   /v1/watchers/update:
     post:
       operationId: watchers_update_post
@@ -38030,6 +38538,11 @@ paths:
                   propertyNames:
                     type: string
                   additionalProperties: {}
+                intake_mode:
+                  type: string
+                  enum:
+                    - came_in
+                    - agent
               required:
                 - watcher_id
               additionalProperties: false

@@ -33,10 +33,7 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { GlassCard } from "@/mobile-v3/glass-card";
 import { mv3Mono } from "@/mobile-v3/mv3-kit";
 import { SheetShell } from "@/mobile-v3/sheet-shell";
-import {
-  assertHasResponse,
-  extractErrorMessage,
-} from "@/utils/api-errors";
+import { assertHasResponse, extractErrorMessage } from "@/utils/api-errors";
 import { haptic } from "@/utils/haptics";
 
 type Stage = "token" | "verify" | "done";
@@ -169,7 +166,9 @@ function VerifySpinner() {
   );
 }
 
-function stepCardStyle(state: "pending" | "active" | "done"): React.CSSProperties {
+function stepCardStyle(
+  state: "pending" | "active" | "done",
+): React.CSSProperties {
   if (state === "active") {
     return {
       border: "1.5px solid var(--mv3-accent)",
@@ -232,7 +231,11 @@ export function TelegramSetupSheet({
   });
   const snapshot = (
     readinessQuery.data?.snapshots as
-      | Array<{ channel: string; ready: boolean; channelHandle?: string | null }>
+      | Array<{
+          channel: string;
+          ready: boolean;
+          channelHandle?: string | null;
+        }>
       | undefined
   )?.find((s) => s.channel === "telegram");
 
@@ -373,9 +376,8 @@ export function TelegramSetupSheet({
                   + deep link, not a tracked completion). */}
               <StepBadge n={1} state="done" />
               <span style={{ fontSize: 13, flex: 1 }}>
-                Message{" "}
-                <b style={{ color: "var(--mv3-micro)" }}>@BotFather</b>, create
-                a bot
+                Message <b style={{ color: "var(--mv3-micro)" }}>@BotFather</b>,
+                create a bot
               </span>
               <a
                 href="https://t.me/botfather"
@@ -604,9 +606,7 @@ export function TelegramSetupSheet({
               fontFamily: "inherit",
               marginTop: 12,
               cursor:
-                !token.trim() || saveMutation.isPending
-                  ? "default"
-                  : "pointer",
+                !token.trim() || saveMutation.isPending ? "default" : "pointer",
             }}
           >
             {saveMutation.isPending

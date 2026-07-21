@@ -212,6 +212,20 @@ function buildVoiceCallControlPrompt(opts: {
     lines.push("");
   }
 
+  // Inbound receptionist persona (calls.receptionist.persona) — shapes how Cue
+  // presents itself when answering. Kept out of the outbound path (outbound
+  // behaviour is driven by the per-call Task above).
+  const receptionistPersona = opts.isInbound
+    ? config.calls?.receptionist?.persona?.trim()
+    : undefined;
+  if (receptionistPersona) {
+    lines.push(
+      `Receptionist persona: ${receptionistPersona}`,
+      "Embody this persona for the whole call — it governs your tone, how you introduce yourself, and what you will and won't do. It never overrides the safety and guardian-consult rules below.",
+      "",
+    );
+  }
+
   lines.push(
     "CALL PROTOCOL RULES:",
     disclosureRule,

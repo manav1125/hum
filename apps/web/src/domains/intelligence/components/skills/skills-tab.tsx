@@ -362,8 +362,8 @@ function SkillsTabDesktop({ assistantId, initialSkillId }: SkillsTabProps) {
           </div>
           <div style={{ fontSize: 13, color: C.t2, marginTop: 5 }}>
             <span data-slot="skills-active-count">{activeCount}</span>{" "}
-            {activeCount === 1 ? "is" : "are"} active right now.
-            Describe any task in chat and Cue will build a skill for it.
+            {activeCount === 1 ? "is" : "are"} active right now. Describe any
+            task in chat and Cue will build a skill for it.
           </div>
         </div>
         <div style={{ position: "relative", flexShrink: 0 }}>

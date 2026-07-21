@@ -38,6 +38,7 @@ import {
   connectorappsConnectPostMutation,
   connectorappsGetOptions,
   connectorappsGetQueryKey,
+  integrationsTwilioConfigGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
 import {
@@ -54,6 +55,7 @@ import { routes } from "@/utils/routes";
 import { GlassCard } from "../glass-card";
 import { SheetShell } from "../sheet-shell";
 import { microLabel, primaryBtn, rise } from "../mv3-kit";
+import { PhoneSetupSheet } from "./phone-setup-sheet";
 import { YouScreen } from "./you-kit";
 
 type ConnectorApp = ConnectorappsGetResponses[200]["apps"][number];
@@ -181,6 +183,7 @@ export function Mv3ConnectionsPage() {
   const queryClient = useQueryClient();
 
   const [detail, setDetail] = useState<ConnectorApp | null>(null);
+  const [phoneOpen, setPhoneOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [busySlug, setBusySlug] = useState<string | null>(null);
@@ -202,6 +205,17 @@ export function Mv3ConnectionsPage() {
     refetchOnWindowFocus: true,
     refetchInterval: () => (Date.now() < pollUntil ? CONNECT_POLL_MS : false),
   });
+
+  // Phone channel (Twilio) — a live credential pair + assigned number promotes
+  // the row to "live" with the number shown.
+  const phoneQuery = useQuery({
+    ...integrationsTwilioConfigGetOptions({ path: { assistant_id: assistantId } }),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+  const phoneLive =
+    phoneQuery.data?.hasCredentials === true && !!phoneQuery.data?.phoneNumber;
+  const phoneNumber = phoneQuery.data?.phoneNumber;
 
   const connectMutation = useMutation({
     ...connectorappsConnectPostMutation(),
@@ -442,6 +456,85 @@ export function Mv3ConnectionsPage() {
             </div>
           </GlassCard>
 
+          {/* Phone line (Twilio) — the frame-73 Phone row that joins
+              Connections; opens the on-device setup sheet. */}
+          <GlassCard
+            radius={18}
+            padding="13px 15px"
+            blur={false}
+            role="button"
+            tabIndex={0}
+            aria-label={
+              phoneLive
+                ? `Phone line live on ${phoneNumber}. Open phone setup`
+                : "Set up your phone line"
+            }
+            style={{
+              cursor: "pointer",
+              border: phoneLive
+                ? "1px solid rgba(111,214,154,.3)"
+                : undefined,
+              ...rise(0.55),
+            }}
+            onKeyDown={(e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                haptic.light();
+                setPhoneOpen(true);
+              }
+            }}
+            onClick={() => {
+              haptic.light();
+              setPhoneOpen(true);
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <span
+                aria-hidden
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 9,
+                  background: "#F22F46",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff">
+                  <path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z" />
+                </svg>
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>Phone line</div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: phoneLive
+                      ? "var(--mv3-green)"
+                      : "var(--mv3-muted)",
+                    marginTop: 1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {phoneLive
+                    ? `Live · ${phoneNumber} — Cue answers as your receptionist`
+                    : "Twilio · let Cue answer your calls"}
+                </div>
+              </div>
+              {phoneLive ? (
+                <LiveDot />
+              ) : (
+                <span style={{ color: "var(--mv3-faint)" }} aria-hidden>
+                  ›
+                </span>
+              )}
+            </div>
+          </GlassCard>
+
           {note ? (
             <div
               role="status"
@@ -457,6 +550,14 @@ export function Mv3ConnectionsPage() {
           ) : null}
         </>
       )}
+
+      <PhoneSetupSheet
+        open={phoneOpen}
+        onClose={() => {
+          setPhoneOpen(false);
+          void phoneQuery.refetch();
+        }}
+      />
 
       {/* Connector detail leaf (sheet). */}
       <SheetShell

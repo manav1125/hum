@@ -6,19 +6,26 @@
  * most authoritative for each field:
  *   1. The locally installed copy under `<workspacePluginsDir>/<name>/`, when
  *      present — its `package.json` and `README.md` are read straight off disk.
- *   2. The curated `plugins/marketplace.json` entry, for external
- *      ecosystem plugins (description / homepage / license / pinned source).
+ *   2. The curated `plugins/registry.json` entry (description / homepage /
+ *      license / pinned source / reviewStatus / surfaces / category / icon).
+ *      This is the SAME on-disk catalog the search route, the CLI `plugins
+ *      search`, and the embedding seed read, so a card that appears in search
+ *      always resolves here on detail.
  *   3. The plugin's own external repository at the pinned `owner/repo[/path]`,
  *      fetched via the GitHub Contents API for the README and any
  *      `package.json` fields the manifest doesn't carry.
  *
- * The `source` field is the marketplace entry's pinned origin when one claims
- * the name, otherwise `null` — an installed copy with no catalog entry has no
- * advertised origin. Name-collision precedence matches {@link ./search-plugins}
- * and {@link ./install-from-github}: a marketplace entry owns its name, so the
- * detail page advertises the external source the catalog and installer use. A
- * same-named `plugins/<name>/` directory is that plugin's adapter stub, not a
- * standalone plugin, so it does not override the claim.
+ * The `source` field is the registry entry's pinned origin when one claims the
+ * name, otherwise `null` — an installed copy with no catalog entry has no
+ * advertised origin. Name-collision precedence matches {@link ./install-from-github}:
+ * a registry entry owns its name, so the detail page advertises the external
+ * source the catalog uses. A same-named `plugins/<name>/` directory is that
+ * plugin's adapter stub, not a standalone plugin, so it does not override the
+ * claim.
+ *
+ * Installs still resolve through the full-SHA `plugins/marketplace.json` pin
+ * flow (see {@link ./install-from-github}); the registry is the browse/search/
+ * detail source of truth, not the install-resolution layer.
  *
  * Designed for direct programmatic use with an injected `fetch`, mirroring the
  * sibling plugin libraries.
@@ -27,6 +34,11 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { findRegistryPlugin } from "../../plugins/registry/registry-file.js";
+import type {
+  PluginRegistryEntry,
+  PluginReviewStatus,
+} from "../../plugins/registry/types.js";
 import { getWorkspacePluginsDir } from "../../util/platform.js";
 import {
   DEFAULT_PLUGIN_REF,
@@ -34,10 +46,6 @@ import {
   sanitizePluginName,
 } from "./install-from-github.js";
 import { parsePluginArtifact, type PluginArtifact } from "./plugin-artifact.js";
-import {
-  fetchMarketplaceEntries,
-  type MarketplaceEntry,
-} from "./plugin-marketplace.js";
 import type { PluginMatchSource } from "./search-plugins.js";
 
 /** Recognised README filenames, matched case-insensitively against a listing. */
@@ -64,7 +72,13 @@ interface PluginManifestFields {
 export interface PluginDetailsOptions {
   /** Install name (kebab-case directory name). */
   readonly name: string;
-  /** Git ref to read catalog metadata / README from. Defaults to {@link DEFAULT_PLUGIN_REF}. */
+  /**
+   * Fallback git ref reported when the plugin has no curated registry entry
+   * (installed-only). The curated catalog is on-disk `plugins/registry.json`
+   * (no ref); when a registry entry claims the name the response `ref` is the
+   * entry's pinned commit — the ref the README is actually read at. Defaults to
+   * {@link DEFAULT_PLUGIN_REF}.
+   */
   readonly ref?: string;
 }
 
@@ -74,6 +88,14 @@ export interface PluginDetailsDeps {
   readonly fetch: FetchLike;
   /** Override the workspace plugins directory. Falls back to {@link getWorkspacePluginsDir}. */
   readonly workspacePluginsDir?: string;
+  /**
+   * Override the curated-registry lookup. Defaults to {@link findRegistryPlugin}
+   * (reads `plugins/registry.json`). Injected by tests to supply a fixture
+   * entry without touching the on-disk registry file.
+   */
+  readonly findRegistryEntry?: (
+    name: string,
+  ) => PluginRegistryEntry | undefined;
 }
 
 /** Resolved detail view for a single plugin. */
@@ -92,12 +114,29 @@ export interface PluginDetails {
   readonly version: string | null;
   /**
    * Pinned origin, mirroring the catalog's {@link PluginMatchSource}; `null`
-   * when an installed copy has no marketplace entry to advertise an origin.
+   * when an installed copy has no registry entry to advertise an origin.
    */
   readonly source: PluginMatchSource | null;
+  /**
+   * Curation posture from the registry entry (`curated` / `community` /
+   * `unreviewed`); `null` when an installed copy has no registry entry.
+   */
+  readonly reviewStatus: PluginReviewStatus | null;
+  /**
+   * Plugin surfaces the entry contributes (hooks/tools/skills/routes/apps),
+   * from the registry entry; `[]` when unknown or the entry declares none.
+   */
+  readonly surfaces: string[];
+  /** Free-form grouping hint (e.g. `productivity`) from the registry; `null` otherwise. */
+  readonly category: string | null;
+  /** Display emoji/icon from the registry entry; `null` when it ships none. */
+  readonly icon: string | null;
   /** README markdown, or `null` when the plugin ships none. */
   readonly readme: string | null;
-  /** Git ref the catalog metadata / README were resolved at. */
+  /**
+   * Git ref the README was resolved at: the registry entry's pinned commit when
+   * one claims the name, otherwise the fallback {@link PluginDetailsOptions.ref}.
+   */
   readonly ref: string;
   /**
    * Prebuilt client artifact (download URL + sha256) declared in the
@@ -123,9 +162,9 @@ export class PluginDetailsNotFoundError extends Error {
  * Resolve the detail view for {@link opts.name}.
  *
  * Throws {@link PluginDetailsNotFoundError} when the name is neither installed
- * locally nor present in the marketplace catalog. Network failures while
+ * locally nor present in the curated registry catalog. Network failures while
  * enriching from GitHub degrade to the fields
- * already known from disk / the manifest rather than failing the whole view —
+ * already known from disk / the registry rather than failing the whole view —
  * a detail page that renders metadata without a README beats a hard error.
  */
 export async function getPluginDetails(
@@ -133,25 +172,26 @@ export async function getPluginDetails(
   deps: PluginDetailsDeps,
 ): Promise<PluginDetails> {
   const name = sanitizePluginName(opts.name);
-  const ref = opts.ref ?? DEFAULT_PLUGIN_REF;
+  const fallbackRef = opts.ref ?? DEFAULT_PLUGIN_REF;
   const { fetch: fetchFn } = deps;
 
   const pluginsDir = deps.workspacePluginsDir ?? getWorkspacePluginsDir();
   const local = readLocalPlugin(pluginsDir, name);
 
-  const marketplaceEntry = await findMarketplaceEntry(name, ref, fetchFn);
+  const lookup = deps.findRegistryEntry ?? findRegistryPlugin;
+  const registryEntry = lookup(name) ?? null;
 
-  if (!local.installed && !marketplaceEntry) {
-    throw new PluginDetailsNotFoundError(name, ref);
+  if (!local.installed && !registryEntry) {
+    throw new PluginDetailsNotFoundError(name, fallbackRef);
   }
 
-  const source: PluginMatchSource | null = marketplaceEntry
+  const source: PluginMatchSource | null = registryEntry
     ? {
         kind: "github",
-        repo: marketplaceEntry.source.repo,
-        ref: marketplaceEntry.source.ref,
-        ...(marketplaceEntry.source.path
-          ? { path: marketplaceEntry.source.path }
+        repo: registryEntry.source.repo,
+        ref: registryEntry.source.ref,
+        ...(registryEntry.source.path
+          ? { path: registryEntry.source.path }
           : {}),
       }
     : null;
@@ -162,26 +202,35 @@ export async function getPluginDetails(
 
   const readme = local.readme ?? remote.readme;
 
+  // The README (and remote package.json) are read at the entry's pinned commit;
+  // report that ref so it matches what was actually fetched. An installed-only
+  // plugin with no registry entry falls back to the caller-supplied ref.
+  const ref = source ? source.ref : fallbackRef;
+
   return {
     name,
     installed: local.installed,
     description:
       local.manifest.description ??
-      marketplaceEntry?.description ??
+      registryEntry?.description ??
       remote.manifest.description ??
       null,
     homepage:
       local.manifest.homepage ??
-      marketplaceEntry?.homepage ??
+      registryEntry?.homepage ??
       remote.manifest.homepage ??
       null,
     license:
       local.manifest.license ??
-      marketplaceEntry?.license ??
+      registryEntry?.license ??
       remote.manifest.license ??
       null,
     version: local.manifest.version ?? remote.manifest.version ?? null,
     source,
+    reviewStatus: registryEntry?.reviewStatus ?? null,
+    surfaces: registryEntry?.surfaces ?? [],
+    category: registryEntry?.category ?? null,
+    icon: registryEntry?.icon ?? null,
     readme,
     ref,
     artifact: local.manifest.artifact ?? remote.manifest.artifact,
@@ -322,21 +371,6 @@ async function fetchRawFile(
     if (!res.ok) return null;
     return await res.text();
   } catch {
-    return null;
-  }
-}
-
-async function findMarketplaceEntry(
-  name: string,
-  ref: string,
-  fetchFn: FetchLike,
-): Promise<MarketplaceEntry | null> {
-  try {
-    const entries = await fetchMarketplaceEntries({ fetch: fetchFn }, { ref });
-    return entries.find((e) => e.name === name) ?? null;
-  } catch {
-    // A missing or malformed manifest degrades to "no external entry" — the
-    // marketplace is supplementary, never required to render a detail view.
     return null;
   }
 }

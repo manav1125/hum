@@ -62,7 +62,10 @@ function relativeTime(iso: string | null | undefined): string | null {
 
 function sessionMinutes(iso: string | null): string | null {
   if (!iso) return null;
-  const m = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000));
+  const m = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(iso).getTime()) / 60_000),
+  );
   return m < 1 ? "<1 min" : `${m} min`;
 }
 
@@ -463,8 +466,8 @@ export function CueLiveRemoteViewer() {
             lineHeight: 1.5,
           }}
         >
-          Can't reach the live view right now — your Cue instance may be
-          offline or need an update.
+          Can't reach the live view right now — your Cue instance may be offline
+          or need an update.
         </div>
       ) : isLoading ? (
         <div

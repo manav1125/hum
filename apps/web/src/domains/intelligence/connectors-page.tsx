@@ -504,7 +504,8 @@ function ConnectorsPageDesktop() {
   const connected = connectors.filter((c) => c.connected && matches(c));
   const availableMatches = connectors.filter((c) => !c.connected && matches(c));
   const availableConnectors = availableMatches.slice(0, AVAILABLE_CAP);
-  const availableOverflow = availableMatches.length - availableConnectors.length;
+  const availableOverflow =
+    availableMatches.length - availableConnectors.length;
   const total = connectors.length;
   const connectedTotal = connectors.filter((c) => c.connected).length;
   const attentionTotal = connectors.filter(
@@ -546,8 +547,7 @@ function ConnectorsPageDesktop() {
             color: C.t2,
           }}
         >
-          Couldn&apos;t load the app catalog — the assistant may be
-          unreachable.{" "}
+          Couldn&apos;t load the app catalog — the assistant may be unreachable.{" "}
           <button
             type="button"
             onClick={() => void appsQuery.refetch()}
@@ -617,9 +617,7 @@ function ConnectorsPageDesktop() {
           </div>
           <div style={{ fontSize: 13, color: C.t2, marginTop: 5 }}>
             You&apos;ve connected{" "}
-            <span data-slot="connectors-connected-total">
-              {connectedTotal}
-            </span>{" "}
+            <span data-slot="connectors-connected-total">{connectedTotal}</span>{" "}
             of {total}. Each one unlocks new things Cue can handle on its own.
           </div>
           <div
@@ -650,7 +648,9 @@ function ConnectorsPageDesktop() {
                 }}
               />
             </span>
-            <span style={{ fontFamily: mono, fontSize: 11, color: C.heroAccent }}>
+            <span
+              style={{ fontFamily: mono, fontSize: 11, color: C.heroAccent }}
+            >
               {pct}%
             </span>
           </div>

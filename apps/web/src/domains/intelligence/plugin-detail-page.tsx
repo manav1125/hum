@@ -1,25 +1,40 @@
+/**
+ * PluginDetailPage — the W2 plugin detail page (cue-web-parityplus.html),
+ * reached from a marketplace card. Serif-HQ grammar: an editorial header with
+ * the source repo + pinned commit + version, a consent panel (the SAME ✓ / ‖
+ * vocabulary as the mobile detail sheet), declared surfaces, an app-preview
+ * affordance, version history, and Install / Upgrade / Uninstall actions.
+ *
+ * Honesty (the HTTP plugin surface is thinner than the design imagined):
+ *  · `GET /v1/plugins/:name` returns description / homepage / license /
+ *    version / source / readme / artifact — but NO declared-surface or
+ *    capability manifest. So the consent panel stands behind the one signal it
+ *    can (review posture derived from the source org), and the per-surface
+ *    "declared surfaces" list is flagged NEEDS BACKEND rather than faked.
+ *  · Version history is real: it reads the installed vs marketplace commit
+ *    (+ committer timestamps) from `GET /v1/plugins/:name/inspect`.
+ *  · The app-preview affordance is the real prebuilt-client `artifact`
+ *    download when present; otherwise it's flagged NEEDS BACKEND (no preview
+ *    endpoint) rather than mocked.
+ *  · install / uninstall / upgrade are wired to the real routes. There is no
+ *    separate enable/disable route — uninstall is the removal (flagged).
+ *
+ * Mounted under `IntelligenceLayout`; gated by the same `external-plugins`
+ * feature flag as `PluginsPage`.
+ */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowDownToLine,
-  ArrowLeft,
-  ArrowUpCircle,
-  Download,
-  ExternalLink,
-  Loader2,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Link, Navigate, useParams } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { FileMarkdown } from "@/components/file-markdown";
-import { UpdateAvailableBadge } from "@/domains/intelligence/components/plugins/update-available-badge";
 import {
   hasLocalEdits,
   type PluginDrift,
   usePluginDrift,
 } from "@/domains/intelligence/use-plugin-drift";
+import { isOfficialRepo } from "@/mobile-v3/you/plugin-detail-sheet";
 import {
   pluginsByNameGetOptions,
   pluginsByNameGetQueryKey,
@@ -33,27 +48,43 @@ import {
 import type { PluginsByNameGetResponse } from "@/generated/daemon/types.gen";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { routes } from "@/utils/routes";
-import { Button, Card, ConfirmDialog, toast } from "@vellumai/design-library";
+import { ConfirmDialog, toast } from "@vellumai/design-library";
 
-/** First 7 chars of a commit SHA, matching git's default short form. */
+const C = {
+  ink: "var(--mv1-ink)",
+  blue: "var(--mv1-blue)",
+  bg: "var(--mv1-canvas)",
+  card: "var(--mv1-card)",
+  line: "var(--mv1-line)",
+  line2: "var(--mv1-line-strong)",
+  t1: "var(--mv1-t1)",
+  t2: "var(--mv1-t2)",
+  t3: "var(--mv1-t3)",
+  violet: "var(--mv1-violet)",
+  violetWash: "var(--mv1-violet-strong)",
+  green: "var(--mv1-success, #2E9E6B)",
+  amber: "var(--mv1-warning, #C8811E)",
+  danger: "var(--mv1-danger, #C0473C)",
+} as const;
+const SERIF = "'Instrument Serif', Georgia, serif";
+const MONO = "'DM Mono', ui-monospace, monospace";
+
+/** First 7 chars of a commit SHA. */
 function shortSha(sha: string | null): string {
   return sha ? sha.slice(0, 7) : "unknown";
 }
 
-/**
- * Detail page for a single plugin, reached by clicking a row in the
- * Plugins tab. Renders the plugin's README plus the metadata we track
- * (source, homepage, license, version) and Install / Upgrade / Remove
- * actions. When the installed copy is behind the marketplace pin, an
- * "Update available" badge and an Upgrade button appear; upgrading a
- * locally-edited copy prompts for confirmation first.
- *
- * Mounted under `IntelligenceLayout` so the "About Assistant" heading
- * and tab bar stay in place (the Plugins tab reads active via the
- * layout's `pathname.startsWith` check). Gated by the same
- * `external-plugins` feature flag as `PluginsPage` — a direct deep-link
- * with the flag off redirects back to Identity.
- */
+function fmtDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function PluginDetailPage() {
   const hasHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
   const externalPlugins = useAssistantFeatureFlagStore.use.externalPlugins();
@@ -107,11 +138,9 @@ export function PluginDetailPage() {
       toast.success(`Installed ${name ?? "plugin"}`);
     },
   });
-
   const removeMutation = usePluginsByNameDeleteMutation({
     onSuccess: invalidate,
   });
-
   const upgradeMutation = usePluginsByNameUpgradePostMutation({
     onSuccess: (result) => {
       invalidate();
@@ -123,44 +152,24 @@ export function PluginDetailPage() {
     },
   });
 
-  // Wait for the first /feature-flags response before deciding to
-  // redirect, mirroring PluginsPage — rendering nothing for one frame
-  // beats bouncing a user who genuinely has the flag enabled.
-  if (!hasHydrated) {
-    return null;
-  }
+  if (!hasHydrated) return null;
+  if (!externalPlugins) return <Navigate to={routes.identity} replace />;
+  if (!name) return <Navigate to={routes.plugins} replace />;
 
-  if (!externalPlugins) {
-    return <Navigate to={routes.identity} replace />;
-  }
-
-  if (!name) {
-    return <Navigate to={routes.plugins} replace />;
-  }
-
-  const handleInstall = () => {
+  const handleInstall = () =>
     installMutation.mutate({
       path: { assistant_id: assistantId },
       body: { name },
     });
-  };
-
   const confirmRemove = () => {
     setConfirmingRemove(false);
-    removeMutation.mutate({
-      path: { assistant_id: assistantId, name },
-    });
+    removeMutation.mutate({ path: { assistant_id: assistantId, name } });
   };
-
-  const runUpgrade = () => {
+  const runUpgrade = () =>
     upgradeMutation.mutate({
       path: { assistant_id: assistantId, name },
       body: {},
     });
-  };
-
-  // Local edits would be clobbered by the re-install, so confirm first;
-  // a clean copy upgrades directly.
   const handleUpgrade = () => {
     if (hasLocalEdits(drift)) {
       setConfirmingUpgrade(true);
@@ -168,83 +177,133 @@ export function PluginDetailPage() {
     }
     runUpgrade();
   };
-
   const confirmUpgrade = () => {
     setConfirmingUpgrade(false);
     runUpgrade();
   };
 
   const plugin = detailQuery.data ?? null;
+  const actionError =
+    installMutation.isError ||
+    removeMutation.isError ||
+    upgradeMutation.isError;
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="mb-4 flex items-start gap-3">
-        <Button asChild variant="ghost">
-          <Link to={routes.plugins} aria-label="Back to plugins">
-            <ArrowLeft aria-hidden />
-          </Link>
-        </Button>
-        <Header
-          name={name}
-          plugin={plugin}
-          drift={drift}
-          onInstall={handleInstall}
-          onRemove={() => setConfirmingRemove(true)}
-          onUpgrade={handleUpgrade}
-          isInstalling={installMutation.isPending}
-          isRemoving={removeMutation.isPending}
-          isUpgrading={upgradeMutation.isPending}
-        />
-      </div>
+    <div
+      style={{
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        color: C.t1,
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        height: "100%",
+        padding: "0 0 24px",
+      }}
+    >
+      <Link
+        to={routes.plugins}
+        aria-label="Back to plugins"
+        style={{
+          fontSize: 13,
+          color: C.t2,
+          textDecoration: "none",
+          marginBottom: 12,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        ‹ Plugins
+      </Link>
 
-      {(installMutation.isError ||
-        removeMutation.isError ||
-        upgradeMutation.isError) && (
-        <ActionError
-          message={
-            installMutation.isError
-              ? "Failed to install plugin. Please try again."
-              : removeMutation.isError
-                ? "Failed to remove plugin. Please try again."
-                : "Failed to upgrade plugin. Please try again."
-          }
-        />
-      )}
+      {detailQuery.isLoading ? (
+        <Centered>
+          <Loader2 className="size-6 animate-spin" color={C.t3} />
+        </Centered>
+      ) : detailQuery.isError || !plugin ? (
+        <EmptyState />
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <Hero
+            plugin={plugin}
+            drift={drift}
+            installing={installMutation.isPending}
+            removing={removeMutation.isPending}
+            upgrading={upgradeMutation.isPending}
+            onInstall={handleInstall}
+            onUpgrade={handleUpgrade}
+            onRemove={() => setConfirmingRemove(true)}
+          />
 
-      <Card.Root asChild>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {detailQuery.isLoading ? (
-            <LoadingState />
-          ) : detailQuery.isError || !plugin ? (
-            <DetailErrorState />
-          ) : (
-            <>
-              <Metadata plugin={plugin} />
+          {actionError ? (
+            <div
+              role="alert"
+              style={{
+                fontSize: 13,
+                color: C.danger,
+                background:
+                  "color-mix(in srgb, var(--mv1-danger) 8%, transparent)",
+                borderRadius: 10,
+                padding: "10px 14px",
+                margin: "14px 0",
+              }}
+            >
+              {installMutation.isError
+                ? "Failed to install plugin. Please try again."
+                : removeMutation.isError
+                  ? "Failed to uninstall plugin. Please try again."
+                  : "Failed to upgrade plugin. Please try again."}
+            </div>
+          ) : null}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 320px",
+              gap: 20,
+              marginTop: 18,
+              alignItems: "start",
+            }}
+          >
+            {/* README */}
+            <div
+              style={{
+                border: `1px solid ${C.line}`,
+                borderRadius: 14,
+                background: C.card,
+                padding: "20px 22px",
+                minWidth: 0,
+              }}
+            >
               {plugin.readme ? (
                 <FileMarkdown content={plugin.readme} />
               ) : (
-                <p
-                  className="text-body-medium-lighter"
-                  style={{ color: "var(--content-tertiary)" }}
-                >
+                <p style={{ fontSize: 13, color: C.t2 }}>
                   This plugin doesn&apos;t ship a README.
                 </p>
               )}
-            </>
-          )}
+            </div>
+
+            {/* Side column */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <ConsentPanel plugin={plugin} />
+              <SurfacesPanel />
+              <AppPreviewPanel plugin={plugin} />
+              <ProvenancePanel plugin={plugin} drift={drift} />
+            </div>
+          </div>
         </div>
-      </Card.Root>
+      )}
 
       <ConfirmDialog
         open={confirmingRemove}
-        title="Remove plugin"
+        title="Uninstall plugin"
         message={`Remove "${plugin?.name ?? name}" from this assistant?`}
-        confirmLabel="Remove"
+        confirmLabel="Uninstall"
         destructive
         onConfirm={confirmRemove}
         onCancel={() => setConfirmingRemove(false)}
       />
-
       <ConfirmDialog
         open={confirmingUpgrade}
         title="Upgrade plugin"
@@ -258,252 +317,534 @@ export function PluginDetailPage() {
   );
 }
 
-interface HeaderProps {
-  name: string;
-  plugin: PluginsByNameGetResponse | null;
-  drift: PluginDrift | undefined;
-  onInstall: () => void;
-  onRemove: () => void;
-  onUpgrade: () => void;
-  isInstalling: boolean;
-  isRemoving: boolean;
-  isUpgrading: boolean;
-}
+/* ─────────────────────────────────── Hero ────────────────────────────────── */
 
-function Header({
-  name,
+function Hero({
   plugin,
   drift,
+  installing,
+  removing,
+  upgrading,
   onInstall,
-  onRemove,
   onUpgrade,
-  isInstalling,
-  isRemoving,
-  isUpgrading,
-}: HeaderProps) {
-  const installed = plugin?.installed ?? false;
-  const isExternal = plugin?.source?.kind === "github";
-  const artifact = plugin?.artifact ?? null;
+  onRemove,
+}: {
+  plugin: PluginsByNameGetResponse;
+  drift: PluginDrift | undefined;
+  installing: boolean;
+  removing: boolean;
+  upgrading: boolean;
+  onInstall: () => void;
+  onUpgrade: () => void;
+  onRemove: () => void;
+}) {
+  const official = isOfficialRepo(
+    plugin.source?.kind === "github" ? plugin.source.repo : null,
+  );
   const updateAvailable = drift?.status === "update-available";
-  const upgradeTitle = updateAvailable
-    ? `Upgrade ${shortSha(drift?.local?.commit ?? null)} \u2192 ${shortSha(
-        drift?.remote?.commit ?? null,
-      )}`
-    : undefined;
-
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center text-2xl">
-          {isExternal ? "📦" : "🧩"}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h2
-              className="truncate text-title-medium"
-              style={{ color: "var(--content-default)" }}
-            >
-              {plugin?.name ?? name}
-            </h2>
-            {plugin?.version ? (
-              <span
-                className="shrink-0 text-body-small-default"
-                style={{ color: "var(--content-tertiary)" }}
-              >
-                v{plugin.version}
-              </span>
-            ) : null}
-            {isExternal ? (
-              <span
-                className="shrink-0 rounded px-1.5 py-0.5 text-body-small-default"
-                style={{
-                  backgroundColor: "var(--surface-secondary)",
-                  color: "var(--content-tertiary)",
-                }}
-              >
-                external
-              </span>
-            ) : null}
-            {updateAvailable ? <UpdateAvailableBadge /> : null}
-          </div>
-          {plugin?.description ? (
-            <p
-              className="mt-0.5 line-clamp-2 text-body-medium-lighter"
-              style={{ color: "var(--content-secondary)" }}
-            >
-              {plugin.description}
-            </p>
+    <div
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        background: C.ink,
+        borderRadius: 16,
+        padding: "22px 24px",
+        display: "flex",
+        alignItems: "center",
+        gap: 18,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(340px 160px at 90% 50%,rgba(127,119,221,.22),transparent 70%)",
+        }}
+      />
+      <span
+        aria-hidden
+        style={{
+          position: "relative",
+          width: 52,
+          height: 52,
+          borderRadius: 14,
+          background: "rgba(167,159,240,.22)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 26,
+          flexShrink: 0,
+        }}
+      >
+        🧩
+      </span>
+      <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            style={{ fontFamily: SERIF, fontSize: 26, letterSpacing: "-.3px" }}
+          >
+            {plugin.name}
+          </span>
+          <span
+            style={{
+              fontFamily: MONO,
+              fontSize: 10,
+              letterSpacing: ".05em",
+              textTransform: "uppercase",
+              color: official ? "#BFD0FF" : "rgba(255,255,255,.6)",
+              background: official
+                ? "rgba(127,163,242,.24)"
+                : "rgba(255,255,255,.1)",
+              borderRadius: 5,
+              padding: "3px 8px",
+            }}
+          >
+            {official ? "Cue official" : "Community"}
+          </span>
+          {plugin.version ? (
+            <span style={{ fontSize: 13, color: "rgba(255,255,255,.65)" }}>
+              v{plugin.version}
+            </span>
+          ) : null}
+          {plugin.installed ? (
+            <span style={{ fontSize: 12, color: C.violetWash }}>
+              ✓ Installed
+            </span>
           ) : null}
         </div>
+        {plugin.description ? (
+          <div
+            style={{
+              fontSize: 13.5,
+              color: "rgba(255,255,255,.72)",
+              marginTop: 5,
+              lineHeight: 1.5,
+              maxWidth: 620,
+            }}
+          >
+            {plugin.description}
+          </div>
+        ) : null}
       </div>
 
-      {plugin ? (
-        installed ? (
-          <div className="flex shrink-0 items-center gap-2">
-            {artifact ? (
-              <Button asChild leftIcon={<Download aria-hidden />}>
-                <a href={artifact.url} download>
-                  {artifact.label ?? "Download"}
-                </a>
-              </Button>
-            ) : null}
+      {/* Actions */}
+      <div
+        style={{
+          position: "relative",
+          flexShrink: 0,
+          display: "flex",
+          gap: 8,
+        }}
+      >
+        {plugin.installed ? (
+          <>
             {updateAvailable ? (
-              <Button
-                type="button"
-                onClick={onUpgrade}
-                disabled={isUpgrading}
-                title={upgradeTitle}
-                leftIcon={
-                  isUpgrading ? (
-                    <Loader2 className="animate-spin" aria-hidden />
-                  ) : (
-                    <ArrowUpCircle aria-hidden />
-                  )
-                }
-              >
-                Upgrade
-              </Button>
+              <HeroButton onClick={onUpgrade} disabled={upgrading}>
+                {upgrading ? "Upgrading…" : "Upgrade"}
+              </HeroButton>
             ) : null}
-            <Button
-              type="button"
-              variant="dangerOutline"
-              onClick={onRemove}
-              disabled={isRemoving}
-              leftIcon={
-                isRemoving ? (
-                  <Loader2 className="animate-spin" aria-hidden />
-                ) : (
-                  <Trash2 aria-hidden />
-                )
-              }
-            >
-              Remove
-            </Button>
-          </div>
+            <HeroButton variant="danger" onClick={onRemove} disabled={removing}>
+              {removing ? "Uninstalling…" : "Uninstall"}
+            </HeroButton>
+          </>
         ) : (
-          <Button
-            type="button"
-            onClick={onInstall}
-            disabled={isInstalling}
-            leftIcon={
-              isInstalling ? (
-                <Loader2 className="animate-spin" aria-hidden />
-              ) : (
-                <ArrowDownToLine aria-hidden />
-              )
-            }
-          >
-            Install
-          </Button>
-        )
+          <HeroButton onClick={onInstall} disabled={installing}>
+            {installing ? "Installing…" : "Install"}
+          </HeroButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HeroButton({
+  children,
+  onClick,
+  disabled,
+  variant = "primary",
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  variant?: "primary" | "danger";
+}) {
+  const bg = variant === "danger" ? "transparent" : C.violet;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        fontSize: 12.5,
+        fontWeight: 500,
+        fontFamily: "inherit",
+        color: "#fff",
+        background: bg,
+        border:
+          variant === "danger" ? "1px solid rgba(255,255,255,.35)" : "none",
+        borderRadius: 9,
+        padding: "9px 16px",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ─────────────────────────────── Side panels ─────────────────────────────── */
+
+function Panel({
+  title,
+  children,
+  note,
+}: {
+  title: string;
+  children: React.ReactNode;
+  note?: string;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        background: C.card,
+        padding: "15px 16px",
+      }}
+    >
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 10.5,
+          letterSpacing: ".1em",
+          textTransform: "uppercase",
+          color: C.t3,
+          marginBottom: 11,
+        }}
+      >
+        {title}
+      </div>
+      {children}
+      {note ? (
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 9.5,
+            letterSpacing: ".08em",
+            textTransform: "uppercase",
+            color: C.t3,
+            marginTop: 11,
+          }}
+        >
+          {note}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function Metadata({ plugin }: { plugin: PluginsByNameGetResponse }) {
-  const repo = plugin.source?.kind === "github" ? plugin.source.repo : "Local";
-  const repoHref =
-    plugin.source?.kind === "github"
-      ? `https://github.com/${plugin.source.repo}`
-      : null;
+function ConsentPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
+  const official = isOfficialRepo(
+    plugin.source?.kind === "github" ? plugin.source.repo : null,
+  );
+  return (
+    <Panel title="What it can reach">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 9,
+          fontSize: 13,
+          color: official ? C.t1 : C.amber,
+          lineHeight: 1.5,
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            color: official ? C.green : C.amber,
+            fontWeight: official ? 400 : 700,
+            marginTop: 1,
+          }}
+        >
+          {official ? "✓" : "‖"}
+        </span>
+        <span>
+          {official
+            ? "First-party — reviewed and pinned to a commit."
+            : "Community source — Cue hasn't first-party reviewed it."}{" "}
+          A plugin can add tools, hooks, and app surfaces that run inside Cue;
+          anything sensitive still asks before it acts.
+        </span>
+      </div>
+    </Panel>
+  );
+}
 
-  const rows: { label: string; value: string; href?: string }[] = [
-    {
-      label: "Source",
-      value: repo,
-      href: repoHref ?? undefined,
-    },
-  ];
-  if (plugin.homepage) {
-    rows.push({
-      label: "Homepage",
-      value: plugin.homepage,
-      href: plugin.homepage,
-    });
+function SurfacesPanel() {
+  // The detail route does not return the manifest's declared surfaces
+  // (tools / hooks / routes / apps), so we surface the honest note rather
+  // than fabricate a list. The card stays so W2's structure matches the
+  // frame and lights up the moment the backend exposes surfaces.
+  return (
+    <Panel
+      title="Declared surfaces"
+      note="Needs backend · not exposed by this build"
+    >
+      <div style={{ fontSize: 13, color: C.t2, lineHeight: 1.5 }}>
+        The per-surface manifest (tools, hooks, routes, apps) isn&apos;t
+        returned by the plugin detail endpoint yet. The README below documents
+        what this plugin contributes.
+      </div>
+    </Panel>
+  );
+}
+
+function AppPreviewPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
+  const artifact = plugin.artifact;
+  if (artifact) {
+    return (
+      <Panel title="App preview">
+        <div style={{ fontSize: 13, color: C.t2, lineHeight: 1.5 }}>
+          Ships a prebuilt client — it appears after install and a restart.
+        </div>
+        <a
+          href={artifact.url}
+          download
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            marginTop: 10,
+            fontSize: 12.5,
+            color: C.blue,
+            textDecoration: "none",
+            fontWeight: 500,
+          }}
+        >
+          {artifact.label ?? "Download client"} ↓
+        </a>
+      </Panel>
+    );
   }
-  if (plugin.license) {
-    rows.push({ label: "License", value: plugin.license });
-  }
+  return (
+    <Panel title="App preview" note="Needs backend · no preview endpoint">
+      <div style={{ fontSize: 13, color: C.t2, lineHeight: 1.5 }}>
+        Any surfaces this plugin adds load after install and a restart. A live
+        in-page preview isn&apos;t available yet.
+      </div>
+    </Panel>
+  );
+}
+
+function ProvenancePanel({
+  plugin,
+  drift,
+}: {
+  plugin: PluginsByNameGetResponse;
+  drift: PluginDrift | undefined;
+}) {
+  const repo = plugin.source?.kind === "github" ? plugin.source.repo : null;
+  const repoHref = repo ? `https://github.com/${repo}` : null;
+  const pinned = plugin.source?.ref ? shortSha(plugin.source.ref) : null;
+
+  const localCommit = drift?.local?.commit ?? null;
+  const localAt = fmtDate(drift?.local?.committedAt);
+  const remoteCommit = drift?.remote?.commit ?? null;
+  const remoteAt = fmtDate(drift?.remote?.committedAt);
+  const updateAvailable = drift?.status === "update-available";
 
   return (
-    <dl
-      className="mb-5 grid gap-x-6 gap-y-2 border-b pb-5 sm:grid-cols-[max-content_1fr]"
-      style={{ borderColor: "var(--border-base)" }}
-    >
-      {rows.map((row) => (
-        <div key={row.label} className="contents">
-          <dt
-            className="text-body-small-default"
-            style={{ color: "var(--content-tertiary)" }}
-          >
-            {row.label}
-          </dt>
-          <dd
-            className="min-w-0 truncate text-body-small-default"
-            style={{ color: "var(--content-secondary)" }}
-          >
-            {row.href ? (
+    <Panel title="Source & version">
+      <dl style={{ display: "grid", gap: 9, margin: 0 }}>
+        {repo ? (
+          <Row label="Source">
+            {repoHref ? (
               <a
-                href={row.href}
+                href={repoHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 underline"
-                style={{ color: "var(--primary-base, #60a5fa)" }}
+                style={{ color: C.blue, textDecoration: "none" }}
               >
-                {row.value}
-                <ExternalLink className="h-3 w-3" aria-hidden />
+                {repo} ↗
               </a>
             ) : (
-              row.value
+              repo
             )}
-          </dd>
+          </Row>
+        ) : null}
+        {plugin.license ? <Row label="License">{plugin.license}</Row> : null}
+        {plugin.version ? <Row label="Version">v{plugin.version}</Row> : null}
+        {pinned ? (
+          <Row label="Pinned">
+            <span style={{ fontFamily: MONO }}>{pinned}</span>
+          </Row>
+        ) : null}
+      </dl>
+
+      {/* Version history — real installed vs marketplace commits. */}
+      {drift ? (
+        <div
+          style={{
+            marginTop: 13,
+            paddingTop: 12,
+            borderTop: `1px solid ${C.line}`,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: 9.5,
+              letterSpacing: ".08em",
+              textTransform: "uppercase",
+              color: C.t3,
+              marginBottom: 8,
+            }}
+          >
+            Version history
+          </div>
+          {localCommit ? (
+            <HistoryRow
+              dot={C.green}
+              label={`Installed · ${shortSha(localCommit)}`}
+              meta={localAt ?? "current"}
+            />
+          ) : null}
+          {updateAvailable && remoteCommit ? (
+            <HistoryRow
+              dot={C.violet}
+              label={`Available · ${shortSha(remoteCommit)}`}
+              meta={remoteAt ?? "marketplace pin"}
+            />
+          ) : !updateAvailable && plugin.installed ? (
+            <div style={{ fontSize: 12, color: C.t2 }}>
+              Up to date with the marketplace pin.
+            </div>
+          ) : null}
         </div>
-      ))}
-    </dl>
+      ) : null}
+    </Panel>
   );
 }
 
-function LoadingState() {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-center py-12">
-      <Loader2
-        className="h-6 w-6 animate-spin"
-        style={{ color: "var(--content-tertiary)" }}
-      />
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "72px 1fr",
+        gap: 10,
+        alignItems: "baseline",
+      }}
+    >
+      <dt style={{ fontSize: 12, color: C.t3 }}>{label}</dt>
+      <dd
+        style={{
+          margin: 0,
+          fontSize: 12.5,
+          color: C.t2,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {children}
+      </dd>
     </div>
   );
 }
 
-function DetailErrorState() {
+function HistoryRow({
+  dot,
+  label,
+  meta,
+}: {
+  dot: string;
+  label: string;
+  meta: string;
+}) {
   return (
     <div
-      className="flex flex-col items-center justify-center gap-2 py-12 text-center"
-      style={{ color: "var(--content-tertiary)" }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        padding: "3px 0",
+      }}
     >
-      <TriangleAlert className="h-6 w-6" aria-hidden />
-      <p className="text-body-medium-default">
-        We couldn&apos;t load this plugin.
-      </p>
-      <p className="text-body-small-default">
+      <span
+        aria-hidden
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: dot,
+          flexShrink: 0,
+        }}
+      />
+      <span style={{ fontSize: 12.5, color: C.t1, fontFamily: MONO }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 11, color: C.t3, marginLeft: "auto" }}>
+        {meta}
+      </span>
+    </div>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "48px 0",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.line}`,
+        borderRadius: 14,
+        background: C.card,
+        padding: "48px 24px",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: 26, marginBottom: 8 }} aria-hidden>
+        ⚠
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: C.t1 }}>
+        We couldn&apos;t load this plugin
+      </div>
+      <p style={{ fontSize: 13, color: C.t2, marginTop: 4 }}>
         It may not exist, or your assistant may be on an older build.
       </p>
-    </div>
-  );
-}
-
-function ActionError({ message }: { message: string }) {
-  return (
-    <div
-      className="mb-3 flex items-center gap-2 rounded px-3 py-2 text-body-small-default"
-      style={{
-        backgroundColor: "var(--surface-secondary)",
-        color: "var(--content-warning, var(--content-tertiary))",
-      }}
-      role="alert"
-    >
-      <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />
-      {message}
     </div>
   );
 }

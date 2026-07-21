@@ -38,6 +38,7 @@ import {
 import type { RouteHandlerArgs } from "../runtime/routes/types.js";
 import { RouteResponse } from "../runtime/routes/types.js";
 import { getLogger } from "../util/logger.js";
+import { kickCallActionItemCapture } from "./call-action-item-capture.js";
 import { persistCallCompletionMessage } from "./call-conversation-messages.js";
 import { createInboundVoiceSession } from "./call-domain.js";
 import { logDeadLetterEvent } from "./call-recovery.js";
@@ -705,6 +706,10 @@ function processStatusCallback(params: Record<string, string>): void {
             );
           });
           fireCallCompletionNotifier(session.conversationId, session.id);
+          // Extract action items from the transcript into work items. Best-
+          // effort + idempotent per session (a graceful END_CALL may have
+          // already finalized via finalizeCall()).
+          kickCallActionItemCapture(session.id, session.conversationId);
         }
       }
     } catch (postErr) {

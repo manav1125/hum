@@ -142,6 +142,9 @@ export const routes = {
   voice: r("/assistant/voice"),
   identity: r("/assistant/identity"),
   cueLive: r("/assistant/cue-live"),
+  // Desktop control — approve + mirror a run that executes on the paired Mac
+  // (web W5 serif / mobile organizer remote frames 71/72).
+  desktopControl: r("/assistant/desktop-control"),
   connectors: r("/assistant/connectors"),
   connector: (slug: string) => dyn(r("/assistant/connectors"), slug),
   channels: r("/assistant/channels"),

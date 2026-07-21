@@ -28,6 +28,7 @@ import { client } from "@/generated/daemon/client.gen";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { attentionCount, connectionsMeta } from "@/lib/connector-health";
 import { useBrandProfiles } from "@/pages/brand-kit/use-brand-kit";
+import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
@@ -270,6 +271,13 @@ export function Mv3YouPage() {
 
   const { active: activeBrand } = useBrandProfiles(assistantId);
 
+  // Plugins is an unstable surface gated by the `external-plugins` flag
+  // (mirrors the desktop IntelligenceLayout tab + the PluginsPage redirect);
+  // wait for hydration so the row doesn't flicker in for flag-off users.
+  const flagsHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
+  const externalPlugins = useAssistantFeatureFlagStore.use.externalPlugins();
+  const showPlugins = flagsHydrated && externalPlugins;
+
   return (
     <YouScreen
       tint="lavender"
@@ -402,6 +410,18 @@ export function Mv3YouPage() {
           label="Skills & marketplace"
           onPress={() => navigate(routes.skills)}
         />
+        {showPlugins ? (
+          <NavRow
+            icon={
+              <span style={{ fontSize: 15, color: "#A79FF0" }} aria-hidden>
+                🧩
+              </span>
+            }
+            iconBg="rgba(167,159,240,.15)"
+            label="Plugins"
+            onPress={() => navigate(routes.plugins)}
+          />
+        ) : null}
         <NavRow
           icon={
             <span style={{ fontSize: 14, color: "#4FC7C7" }} aria-hidden>

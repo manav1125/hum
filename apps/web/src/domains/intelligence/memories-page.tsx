@@ -820,7 +820,8 @@ function RailContent({
             flex: 1,
             textAlign: "center",
             fontSize: 12.5,
-            background: "color-mix(in srgb, var(--mv1-danger) 14%, transparent)",
+            background:
+              "color-mix(in srgb, var(--mv1-danger) 14%, transparent)",
             color: "var(--mv1-danger)",
             border:
               "1px solid color-mix(in srgb, var(--mv1-danger) 40%, transparent)",

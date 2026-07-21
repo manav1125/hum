@@ -1,11 +1,12 @@
 /**
  * Tests for {@link getPluginDetails}.
  *
- * Network is replaced with an in-memory GitHub Contents API fixture passed via
- * the `fetch` dependency, and the installed-copy path is exercised against a
- * real temp directory passed via `workspacePluginsDir` — no globals are
- * monkey-patched. The fixture answers three URL shapes:
- *   - the marketplace manifest file (raw JSON body),
+ * The curated catalog entry is injected via the `findRegistryEntry` dependency
+ * (the on-disk `plugins/registry.json` is never touched), the external repo is
+ * a in-memory GitHub Contents API fixture passed via `fetch`, and the
+ * installed-copy path runs against a real temp directory passed via
+ * `workspacePluginsDir` — no globals are monkey-patched. The fetch fixture
+ * answers two URL shapes:
  *   - directory listings (`/contents/<path>` → entry array or 404),
  *   - raw file downloads (a listing entry's `download_url`).
  */
@@ -15,6 +16,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import type {
+  PluginRegistryEntry,
+  PluginSourceRef,
+} from "../../../plugins/registry/types.js";
 import type { FetchLike } from "../install-from-github.js";
 import {
   getPluginDetails,
@@ -33,8 +38,6 @@ function fileEntry(name: string, downloadUrl: string): ContentEntry {
 }
 
 interface FixtureConfig {
-  /** Manifest object served at `plugins/marketplace.json`. Omit for 404. */
-  marketplace?: unknown;
   /** Directory listings keyed by `<owner>/<repo>[/<path>]`. Missing key → 404. */
   listings?: Record<string, ContentEntry[]>;
   /** Raw file bodies keyed by `download_url`. Missing key → 404. */
@@ -53,13 +56,6 @@ function makeFetch(config: FixtureConfig): FetchLike {
 
     for (const needle of config.failOn ?? []) {
       if (url.includes(needle)) throw new Error(`network down: ${needle}`);
-    }
-
-    if (url.includes("marketplace.json")) {
-      if (config.marketplace === undefined) {
-        return new Response("not found", { status: 404 });
-      }
-      return new Response(JSON.stringify(config.marketplace), { status: 200 });
     }
 
     if (config.raw && url in config.raw) {
@@ -94,6 +90,37 @@ function splitOnce(s: string, sep: string): [string, string] {
   return [s.slice(0, i), s.slice(i + sep.length)];
 }
 
+/** Build a `findRegistryEntry` dep that returns `entry` for its `name`. */
+function registryLookup(
+  ...entries: PluginRegistryEntry[]
+): (name: string) => PluginRegistryEntry | undefined {
+  return (name) => entries.find((e) => e.name === name);
+}
+
+function regEntry(
+  name: string,
+  source: PluginSourceRef,
+  overrides: Partial<PluginRegistryEntry> = {},
+): PluginRegistryEntry {
+  return {
+    name,
+    source,
+    description: overrides.description ?? `${name} description`,
+    reviewStatus: overrides.reviewStatus ?? "curated",
+    ...(overrides.homepage !== undefined
+      ? { homepage: overrides.homepage }
+      : {}),
+    ...(overrides.license !== undefined ? { license: overrides.license } : {}),
+    ...(overrides.category !== undefined
+      ? { category: overrides.category }
+      : {}),
+    ...(overrides.icon !== undefined ? { icon: overrides.icon } : {}),
+    ...(overrides.surfaces !== undefined
+      ? { surfaces: overrides.surfaces }
+      : {}),
+  };
+}
+
 let workspace: string;
 
 beforeEach(() => {
@@ -105,26 +132,27 @@ afterEach(() => {
 });
 
 describe("getPluginDetails", () => {
-  test("resolves an external plugin: manifest metadata + repo README/package.json", async () => {
-    // GIVEN a marketplace entry for an external, not-installed plugin
-    const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "caveman",
-            source: {
-              source: "github",
-              repo: "example-org/caveman",
-              ref: "1111111111111111111111111111111111111111",
-            },
-            description: "manifest description",
-            homepage: "https://example.com/caveman",
-            license: "MIT",
-          },
-        ],
+  test("resolves an external plugin: registry metadata + repo README/package.json", async () => {
+    // GIVEN a curated registry entry for an external, not-installed plugin
+    const entry = regEntry(
+      "caveman",
+      {
+        source: "github",
+        repo: "example-org/caveman",
+        ref: "1111111111111111111111111111111111111111",
       },
-      // AND the external repo root lists a README and package.json
+      {
+        description: "manifest description",
+        homepage: "https://example.com/caveman",
+        license: "MIT",
+        reviewStatus: "community",
+        surfaces: ["hooks"],
+        category: "productivity",
+        icon: "🦴",
+      },
+    );
+    // AND the external repo root lists a README and package.json
+    const fetch = makeFetch({
       listings: {
         "example-org/caveman": [
           fileEntry("README.md", "raw://caveman/readme"),
@@ -141,13 +169,17 @@ describe("getPluginDetails", () => {
       },
     });
 
-    // WHEN we resolve the detail view at a ref
+    // WHEN we resolve the detail view
     const details = await getPluginDetails(
-      { name: "caveman", ref: "v1" },
-      { fetch, workspacePluginsDir: workspace },
+      { name: "caveman" },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
-    // THEN the source is the external repo and the README comes from it
+    // THEN the source is the pinned external repo and the README comes from it
     expect(details.source).toEqual({
       kind: "github",
       repo: "example-org/caveman",
@@ -155,38 +187,32 @@ describe("getPluginDetails", () => {
     });
     expect(details.installed).toBe(false);
     expect(details.readme).toContain("Grug brain plugin");
-    // AND manifest fields win over the repo package.json for description/homepage
+    // AND registry fields win over the repo package.json for description/homepage
     expect(details.description).toBe("manifest description");
     expect(details.homepage).toBe("https://example.com/caveman");
     expect(details.license).toBe("MIT");
-    // AND version falls back to the repo package.json (manifest has none)
+    // AND version falls back to the repo package.json (registry has none)
     expect(details.version).toBe("1.8.2");
-    expect(details.ref).toBe("v1");
+    // AND the curation metadata is surfaced from the registry entry
+    expect(details.reviewStatus).toBe("community");
+    expect(details.surfaces).toEqual(["hooks"]);
+    expect(details.category).toBe("productivity");
+    expect(details.icon).toBe("🦴");
+    // AND the reported ref is the entry's pinned commit (where the README was read)
+    expect(details.ref).toBe("1111111111111111111111111111111111111111");
   });
 
-  test("reads an external plugin at its pinned source ref, not the catalog ref", async () => {
-    // GIVEN a marketplace entry pinned to a ref that differs from the catalog
-    // ref the detail view is resolved at
-    const marketplace = {
-      name: "vellum",
-      plugins: [
-        {
-          name: "caveman",
-          source: {
-            source: "github",
-            repo: "example-org/caveman",
-            ref: "2222222222222222222222222222222222222222",
-          },
-        },
-      ],
-    };
+  test("reads an external plugin at its pinned source ref, not a caller ref", async () => {
+    // GIVEN a registry entry pinned to a specific commit
+    const entry = regEntry("caveman", {
+      source: "github",
+      repo: "example-org/caveman",
+      ref: "2222222222222222222222222222222222222222",
+    });
     // AND a fetch that records the ref query param of every contents request
     const contentsRefs = new Map<string, string>();
     const fetch = (async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("marketplace.json")) {
-        return new Response(JSON.stringify(marketplace), { status: 200 });
-      }
       if (url.includes("/contents")) {
         const ref = new URL(url).searchParams.get("ref") ?? "";
         const key = url.includes("example-org/caveman") ? "external" : "other";
@@ -205,60 +231,26 @@ describe("getPluginDetails", () => {
       return new Response("unexpected url: " + url, { status: 500 });
     }) as FetchLike;
 
-    // WHEN we resolve the detail view at the catalog ref `main`
+    // WHEN we resolve the detail view passing a differing fallback ref
     const details = await getPluginDetails(
       { name: "caveman", ref: "main" },
-      { fetch, workspacePluginsDir: workspace },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
     // THEN the external repo is read at the plugin's pinned ref, not `main`
     expect(contentsRefs.get("external")).toBe(
       "2222222222222222222222222222222222222222",
     );
-    // AND the pinned external repo is the only contents request — no other
-    // GitHub lookups are made for the name
+    // AND the pinned external repo is the only contents request
     expect(contentsRefs.has("other")).toBe(false);
     // AND the README from the pinned ref is surfaced
     expect(details.readme).toContain("Caveman");
-  });
-
-  test("resolves the external marketplace source for an uninstalled plugin", async () => {
-    // GIVEN a marketplace entry for "simple-memory" and no installed copy
-    const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "simple-memory",
-            source: {
-              source: "github",
-              repo: "example-org/simple-memory",
-              ref: "9999999999999999999999999999999999999999",
-            },
-          },
-        ],
-      },
-      listings: {
-        "example-org/simple-memory": [
-          fileEntry("README.md", "raw://ext/readme"),
-        ],
-      },
-      raw: { "raw://ext/readme": "# Simple Memory (external)" },
-    });
-
-    // WHEN we resolve the detail view
-    const details = await getPluginDetails(
-      { name: "simple-memory" },
-      { fetch, workspacePluginsDir: workspace },
-    );
-
-    // THEN the external marketplace source is used
-    expect(details.source).toEqual({
-      kind: "github",
-      repo: "example-org/simple-memory",
-      ref: "9999999999999999999999999999999999999999",
-    });
-    expect(details.readme).toContain("external");
+    // AND the reported ref is the pinned commit, not the caller's fallback
+    expect(details.ref).toBe("2222222222222222222222222222222222222222");
   });
 
   test("prefers an installed copy's README and package.json over the repo", async () => {
@@ -271,22 +263,17 @@ describe("getPluginDetails", () => {
       JSON.stringify({ version: "2.0.0", license: "Apache-2.0" }),
     );
 
-    // AND a marketplace entry + external repo that would otherwise be used
-    const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "caveman",
-            source: {
-              source: "github",
-              repo: "example-org/caveman",
-              ref: "1111111111111111111111111111111111111111",
-            },
-            description: "manifest description",
-          },
-        ],
+    // AND a registry entry + external repo that would otherwise be used
+    const entry = regEntry(
+      "caveman",
+      {
+        source: "github",
+        repo: "example-org/caveman",
+        ref: "1111111111111111111111111111111111111111",
       },
+      { description: "manifest description" },
+    );
+    const fetch = makeFetch({
       listings: {
         "example-org/caveman": [fileEntry("README.md", "raw://caveman/readme")],
       },
@@ -296,10 +283,14 @@ describe("getPluginDetails", () => {
     // WHEN we resolve the detail view
     const details = await getPluginDetails(
       { name: "caveman" },
-      { fetch, workspacePluginsDir: workspace },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
-    // THEN the installed README + version/license win; manifest fills the gap
+    // THEN the installed README + version/license win; registry fills the gap
     expect(details.installed).toBe(true);
     expect(details.readme).toBe("# Installed Caveman");
     expect(details.version).toBe("2.0.0");
@@ -307,49 +298,82 @@ describe("getPluginDetails", () => {
     expect(details.description).toBe("manifest description");
   });
 
+  test("resolves an installed-only plugin with no registry entry", async () => {
+    // GIVEN an installed copy on disk and NO registry entry claiming the name
+    const target = join(workspace, "homegrown");
+    mkdirSync(target, { recursive: true });
+    writeFileSync(join(target, "README.md"), "# Homegrown");
+    writeFileSync(
+      join(target, "package.json"),
+      JSON.stringify({ version: "0.1.0", description: "local only" }),
+    );
+    const fetch = makeFetch({});
+
+    // WHEN we resolve the detail view with an empty registry
+    const details = await getPluginDetails(
+      { name: "homegrown", ref: "main" },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(),
+      },
+    );
+
+    // THEN it renders from disk with a null source + null curation metadata,
+    // and falls back to the caller-supplied ref
+    expect(details.installed).toBe(true);
+    expect(details.source).toBeNull();
+    expect(details.reviewStatus).toBeNull();
+    expect(details.surfaces).toEqual([]);
+    expect(details.category).toBeNull();
+    expect(details.icon).toBeNull();
+    expect(details.description).toBe("local only");
+    expect(details.version).toBe("0.1.0");
+    expect(details.readme).toBe("# Homegrown");
+    expect(details.ref).toBe("main");
+  });
+
   test("throws PluginDetailsNotFoundError when nothing claims the name", async () => {
-    // GIVEN no installed copy and an empty marketplace
-    const fetch = makeFetch({
-      marketplace: { name: "vellum", plugins: [] },
-    });
+    // GIVEN no installed copy and an empty registry
+    const fetch = makeFetch({});
 
     // WHEN / THEN resolving an unknown name rejects with the not-found error
     await expect(
       getPluginDetails(
         { name: "ghost" },
-        { fetch, workspacePluginsDir: workspace },
+        {
+          fetch,
+          workspacePluginsDir: workspace,
+          findRegistryEntry: registryLookup(),
+        },
       ),
     ).rejects.toBeInstanceOf(PluginDetailsNotFoundError);
   });
 
-  test("degrades to manifest metadata when the repo listing fails", async () => {
-    // GIVEN a marketplace entry whose external repo listing errors out
-    const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "caveman",
-            source: {
-              source: "github",
-              repo: "example-org/caveman",
-              ref: "1111111111111111111111111111111111111111",
-            },
-            description: "manifest description",
-            license: "MIT",
-          },
-        ],
+  test("degrades to registry metadata when the repo listing fails", async () => {
+    // GIVEN a registry entry whose external repo listing errors out
+    const entry = regEntry(
+      "caveman",
+      {
+        source: "github",
+        repo: "example-org/caveman",
+        ref: "1111111111111111111111111111111111111111",
       },
-      failOn: ["example-org/caveman"],
-    });
+      { description: "manifest description", license: "MIT" },
+    );
+    const fetch = makeFetch({ failOn: ["example-org/caveman"] });
 
     // WHEN we resolve the detail view
     const details = await getPluginDetails(
-      { name: "caveman", ref: "v1" },
-      { fetch, workspacePluginsDir: workspace },
+      { name: "caveman" },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
-    // THEN it still renders manifest metadata with a null README rather than throwing
+    // THEN it still renders registry metadata with a null README rather than throwing
     expect(details.readme).toBeNull();
     expect(details.description).toBe("manifest description");
     expect(details.license).toBe("MIT");
@@ -362,13 +386,17 @@ describe("getPluginDetails", () => {
 
   test("rejects an invalid (path-traversal) plugin name", async () => {
     // GIVEN a name that fails the install-name sanitizer
-    const fetch = makeFetch({ marketplace: { name: "vellum", plugins: [] } });
+    const fetch = makeFetch({});
 
     // WHEN / THEN resolution throws before any lookup
     await expect(
       getPluginDetails(
         { name: "../escape" },
-        { fetch, workspacePluginsDir: workspace },
+        {
+          fetch,
+          workspacePluginsDir: workspace,
+          findRegistryEntry: registryLookup(),
+        },
       ),
     ).rejects.toThrow();
   });
@@ -377,20 +405,12 @@ describe("getPluginDetails", () => {
     // GIVEN an external plugin whose repo package.json declares a complete
     // vellum.artifact (https url + 64-hex sha256)
     const sha = "a".repeat(64);
+    const entry = regEntry("dynamic-notch", {
+      source: "github",
+      repo: "example-org/dynamic-notch",
+      ref: "1111111111111111111111111111111111111111",
+    });
     const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "dynamic-notch",
-            source: {
-              source: "github",
-              repo: "example-org/dynamic-notch",
-              ref: "1111111111111111111111111111111111111111",
-            },
-          },
-        ],
-      },
       listings: {
         "example-org/dynamic-notch": [
           fileEntry("package.json", "raw://notch/pkg"),
@@ -413,7 +433,11 @@ describe("getPluginDetails", () => {
     // WHEN we resolve the detail view
     const details = await getPluginDetails(
       { name: "dynamic-notch" },
-      { fetch, workspacePluginsDir: workspace },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
     // THEN the artifact descriptor is surfaced, including its optional label
@@ -442,21 +466,13 @@ describe("getPluginDetails", () => {
       }),
     );
 
-    // AND a marketplace entry + repo package.json declaring a different artifact
+    // AND a registry entry + repo package.json declaring a different artifact
+    const entry = regEntry("dynamic-notch", {
+      source: "github",
+      repo: "example-org/dynamic-notch",
+      ref: "1111111111111111111111111111111111111111",
+    });
     const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "dynamic-notch",
-            source: {
-              source: "github",
-              repo: "example-org/dynamic-notch",
-              ref: "1111111111111111111111111111111111111111",
-            },
-          },
-        ],
-      },
       listings: {
         "example-org/dynamic-notch": [
           fileEntry("package.json", "raw://notch/pkg"),
@@ -477,7 +493,11 @@ describe("getPluginDetails", () => {
     // WHEN we resolve the detail view
     const details = await getPluginDetails(
       { name: "dynamic-notch" },
-      { fetch, workspacePluginsDir: workspace },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
     // THEN the installed copy's artifact wins
@@ -490,20 +510,12 @@ describe("getPluginDetails", () => {
   test("treats a placeholder sha256 as no artifact yet", async () => {
     // GIVEN a repo package.json with a url but an empty (placeholder) sha256 —
     // the bootstrap state before a release workflow fills the digest in
+    const entry = regEntry("dynamic-notch", {
+      source: "github",
+      repo: "example-org/dynamic-notch",
+      ref: "1111111111111111111111111111111111111111",
+    });
     const fetch = makeFetch({
-      marketplace: {
-        name: "vellum",
-        plugins: [
-          {
-            name: "dynamic-notch",
-            source: {
-              source: "github",
-              repo: "example-org/dynamic-notch",
-              ref: "1111111111111111111111111111111111111111",
-            },
-          },
-        ],
-      },
       listings: {
         "example-org/dynamic-notch": [
           fileEntry("package.json", "raw://notch/pkg"),
@@ -524,7 +536,11 @@ describe("getPluginDetails", () => {
     // WHEN we resolve the detail view
     const details = await getPluginDetails(
       { name: "dynamic-notch" },
-      { fetch, workspacePluginsDir: workspace },
+      {
+        fetch,
+        workspacePluginsDir: workspace,
+        findRegistryEntry: registryLookup(entry),
+      },
     );
 
     // THEN no artifact is surfaced (a client must not offer an unverifiable download)

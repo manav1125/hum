@@ -26,6 +26,20 @@ const CallsDisclosureConfigSchema = z
     "Controls whether and how the assistant discloses its nature at the start of a phone call",
   );
 
+const CallsReceptionistConfigSchema = z
+  .object({
+    persona: z
+      .string({ error: "calls.receptionist.persona must be a string" })
+      .max(600, "calls.receptionist.persona must be at most 600 characters")
+      .default("")
+      .describe(
+        "Free-text persona for the inbound receptionist — how Cue should present itself and behave when answering calls (e.g. 'Warm, concise front-desk assistant for Acme; take a message and never quote prices'). Empty falls back to the default warm greeting.",
+      ),
+  })
+  .describe(
+    "Inbound receptionist persona — shapes how Cue answers incoming phone calls",
+  );
+
 const CallsSafetyConfigSchema = z
   .object({
     denyCategories: z
@@ -217,6 +231,9 @@ export const CallsConfigSchema = z
       .describe(
         "Maximum interval between steady-state guardian wait updates (ms)",
       ),
+    receptionist: CallsReceptionistConfigSchema.default(
+      CallsReceptionistConfigSchema.parse({}),
+    ),
     disclosure: CallsDisclosureConfigSchema.default(
       CallsDisclosureConfigSchema.parse({}),
     ),

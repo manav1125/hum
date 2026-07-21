@@ -811,6 +811,9 @@ describe("AssistantConfigSchema", () => {
       guardianWaitUpdateInitialWindowMs: 30000,
       guardianWaitUpdateSteadyMinIntervalMs: 20000,
       guardianWaitUpdateSteadyMaxIntervalMs: 30000,
+      receptionist: {
+        persona: "",
+      },
       disclosure: {
         enabled: true,
         text: 'At the very beginning of the call, introduce yourself as an assistant calling on behalf of the person you represent. Do not say "AI assistant".',

@@ -105,6 +105,10 @@ function installedDetail(name: string): PluginsByNameGetResponse {
   return {
     name,
     installed: true,
+    reviewStatus: "curated",
+    surfaces: [],
+    category: null,
+    icon: null,
     description: "Surfaces a Level Up diff card.",
     homepage: null,
     license: "MIT",

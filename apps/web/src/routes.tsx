@@ -1078,6 +1078,17 @@ export const routeTree = [
                             },
                           },
                           {
+                            // Desktop control — web W5 / mobile 71-72 remote of
+                            // a run that executes on the paired Mac.
+                            path: "desktop-control",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/desktop-control-page").then(
+                                  (m) => m.DesktopControlPage,
+                                ),
+                            },
+                          },
+                          {
                             path: "connectors",
                             lazy: {
                               Component: () =>

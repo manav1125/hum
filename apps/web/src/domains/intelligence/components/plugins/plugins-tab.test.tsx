@@ -1,19 +1,30 @@
 /**
- * Tests for the Plugins tab: installed + catalog sections rendered
- * together, catalog suppression of already-installed entries.
+ * Tests for the desktop Plugins marketplace (spec W1): the installed section,
+ * the registry Explore section, official/community badge derivation, catalog
+ * suppression of already-installed entries, and the update-available flag on
+ * an installed card behind the marketplace pin.
  *
- * Strategy: pre-populate the React Query cache with the data we want
- * the tab to render — `renderToStaticMarkup` is single-pass, so a
- * useQuery whose queryFn hasn't resolved yet always reports
- * `isLoading=true`. Pre-populating skips the pending state on first
- * render.
+ * Strategy: pre-populate the React Query cache with the data we want the tab
+ * to render — `renderToStaticMarkup` is single-pass, so a useQuery whose
+ * queryFn hasn't resolved yet always reports `isLoading=true`. Pre-populating
+ * skips the pending state on first render. happy-dom's `matchMedia` reports
+ * `matches: false` for the mobile query, so `useIsMobile()` renders the
+ * desktop branch under test.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router";
+
+// `useIsMobile` reads `window.matchMedia` via `useSyncExternalStore` with no
+// server snapshot, which throws under `renderToStaticMarkup`. Pin it to the
+// desktop branch (the surface under test here).
+mock.module("@/hooks/use-is-mobile", () => ({
+  useIsMobile: () => false,
+  MOBILE_MEDIA_QUERY: "(max-width: 767px)",
+}));
 
 import {
   pluginsByNameInspectGetQueryKey,
@@ -32,16 +43,11 @@ import type {
 
 import { PluginsTab } from "./plugins-tab";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 const ASSISTANT_ID = "asst-1";
 
 interface CachedState {
   installed?: PluginsGetResponse;
   catalog?: PluginsSearchGetResponse;
-  /** Inspect results keyed by plugin name, seeded for the row's drift query. */
   drift?: Record<string, PluginsByNameInspectGetResponse>;
 }
 
@@ -53,7 +59,7 @@ function renderTab(state: CachedState): string {
     client.setQueryData(
       pluginsGetQueryKey({
         path: { assistant_id: ASSISTANT_ID },
-        query: { q: undefined },
+        query: {},
       } as Options<PluginsGetData>),
       state.installed,
     );
@@ -62,7 +68,7 @@ function renderTab(state: CachedState): string {
     client.setQueryData(
       pluginsSearchGetQueryKey({
         path: { assistant_id: ASSISTANT_ID },
-        query: { q: undefined },
+        query: {},
       } as Options<PluginsSearchGetData>),
       state.catalog,
     );
@@ -85,8 +91,6 @@ function renderTab(state: CachedState): string {
 }
 
 function Wrapper({ children }: { children: ReactNode }) {
-  // Catalog/installed rows render react-router `<Link>`s, which need a
-  // router context to resolve their `to` into an `<a href>`.
   return (
     <MemoryRouter>
       <div>{children}</div>
@@ -94,10 +98,6 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-/**
- * Minimal inspect result for the row's drift query. The row only reads
- * `status`, so the local/remote blocks just need to be schema-valid.
- */
 function driftResponse(
   name: string,
   status: PluginsByNameInspectGetResponse["status"],
@@ -135,23 +135,15 @@ function driftResponse(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe("PluginsTab", () => {
-  beforeEach(() => {
-    // No per-test state to reset — each renderTab builds a fresh
-    // QueryClient.
-  });
-
-  test("renders both section headers", () => {
+describe("PluginsTab (desktop W1)", () => {
+  test("renders the registry hero + Explore section", () => {
     const html = renderTab({
       installed: { plugins: [] },
       catalog: { query: "", ref: "main", matches: [] },
     });
-    expect(html).toContain("Installed");
-    expect(html).toContain("Available to install");
+    expect(html).toContain("The plugin registry");
+    expect(html).toContain("Explore the registry");
+    expect(html).toContain("Submit a plugin");
   });
 
   test("lists installed plugins under the Installed header", () => {
@@ -168,13 +160,12 @@ describe("PluginsTab", () => {
       },
       catalog: { query: "", ref: "main", matches: [] },
     });
+    expect(html).toContain("Installed");
     expect(html).toContain("simple-memory");
     expect(html).toContain("v0.1.0");
-    expect(html).toContain("Memory plugin");
   });
 
-  test("flags an installed plugin that is behind the marketplace pin", () => {
-    // GIVEN an installed plugin whose inspect result reports drift
+  test("flags an installed plugin behind the marketplace pin", () => {
     const html = renderTab({
       installed: {
         plugins: [
@@ -187,16 +178,12 @@ describe("PluginsTab", () => {
         ],
       },
       catalog: { query: "", ref: "main", matches: [] },
-      drift: {
-        "level-up": driftResponse("level-up", "update-available"),
-      },
+      drift: { "level-up": driftResponse("level-up", "update-available") },
     });
-    // THEN the row advertises the available update
     expect(html).toContain("Update available");
   });
 
   test("does not flag an installed plugin that is up to date", () => {
-    // GIVEN an installed plugin whose inspect result reports no drift
     const html = renderTab({
       installed: {
         plugins: [
@@ -209,15 +196,12 @@ describe("PluginsTab", () => {
         ],
       },
       catalog: { query: "", ref: "main", matches: [] },
-      drift: {
-        "level-up": driftResponse("level-up", "up-to-date"),
-      },
+      drift: { "level-up": driftResponse("level-up", "up-to-date") },
     });
-    // THEN no update badge is rendered
     expect(html).not.toContain("Update available");
   });
 
-  test("renders catalog matches linking to the detail page", () => {
+  test("renders catalog matches with source repo, badge, and detail link", () => {
     const html = renderTab({
       installed: { plugins: [] },
       catalog: {
@@ -226,6 +210,13 @@ describe("PluginsTab", () => {
         matches: [
           {
             name: "apollo-bot-brain",
+            description: "test plugin",
+            reviewStatus: "curated" as const,
+            surfaces: [],
+            category: null,
+            license: null,
+            homepage: null,
+            icon: null,
             path: "github:acme/apollo-bot-brain@1111111111111111111111111111111111111111",
             source: {
               kind: "github",
@@ -237,12 +228,40 @@ describe("PluginsTab", () => {
       },
     });
     expect(html).toContain("apollo-bot-brain");
-    expect(html).toContain(
-      "github:acme/apollo-bot-brain@1111111111111111111111111111111111111111",
-    );
+    // The source repo is shown on the card (W1 revision requirement).
+    expect(html).toContain("acme/apollo-bot-brain");
+    // A non-vellum-ai repo reads as Community.
+    expect(html).toContain("Community");
     expect(html).toContain('href="/assistant/plugins/apollo-bot-brain"');
-    // The inline CLI install hint was replaced by the detail page.
-    expect(html).not.toContain("assistant plugins install");
+  });
+
+  test("derives an Official badge for first-party repos", () => {
+    const html = renderTab({
+      installed: { plugins: [] },
+      catalog: {
+        query: "",
+        ref: "main",
+        matches: [
+          {
+            name: "simple-memory",
+            description: "test plugin",
+            reviewStatus: "curated" as const,
+            surfaces: [],
+            category: null,
+            license: null,
+            homepage: null,
+            icon: null,
+            path: "github:vellum-ai/simple-memory@ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
+            source: {
+              kind: "github",
+              repo: "vellum-ai/simple-memory",
+              ref: "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
+            },
+          },
+        ],
+      },
+    });
+    expect(html).toContain("Official");
   });
 
   test("suppresses catalog entries that are already installed", () => {
@@ -263,6 +282,13 @@ describe("PluginsTab", () => {
         matches: [
           {
             name: "simple-memory",
+            description: "test plugin",
+            reviewStatus: "curated" as const,
+            surfaces: [],
+            category: null,
+            license: null,
+            homepage: null,
+            icon: null,
             path: "github:vellum-ai/simple-memory@ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
             source: {
               kind: "github",
@@ -272,6 +298,13 @@ describe("PluginsTab", () => {
           },
           {
             name: "apollo-bot-brain",
+            description: "test plugin",
+            reviewStatus: "curated" as const,
+            surfaces: [],
+            category: null,
+            license: null,
+            homepage: null,
+            icon: null,
             path: "github:acme/apollo-bot-brain@1111111111111111111111111111111111111111",
             source: {
               kind: "github",
@@ -282,11 +315,9 @@ describe("PluginsTab", () => {
         ],
       },
     });
-    // CatalogRow renders the origin locator in a `title` attribute, which is
-    // unique to the catalog row — the installed row links to the same detail
-    // page (`/assistant/plugins/<name>`) but renders no such title. Asserting
-    // on the title attribute proves the already-installed entry was suppressed
-    // without colliding with the shared `/assistant/plugins/<name>` href.
+    // The catalog card renders the origin locator in a `title` attribute,
+    // unique to the Explore card. The already-installed entry is suppressed
+    // from Explore, so its locator title is absent; the other remains.
     expect(html).not.toContain(
       'title="github:vellum-ai/simple-memory@ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3"',
     );
@@ -295,19 +326,11 @@ describe("PluginsTab", () => {
     );
   });
 
-  test("shows the installed empty state when nothing is installed", () => {
+  test("shows the empty explore state when the registry is empty", () => {
     const html = renderTab({
       installed: { plugins: [] },
       catalog: { query: "", ref: "main", matches: [] },
     });
-    expect(html).toContain("No Plugins Installed");
-  });
-
-  test("shows the catalog empty state when no catalog matches exist", () => {
-    const html = renderTab({
-      installed: { plugins: [] },
-      catalog: { query: "", ref: "main", matches: [] },
-    });
-    expect(html).toContain("Catalog is empty");
+    expect(html).toContain("Nothing to explore");
   });
 });

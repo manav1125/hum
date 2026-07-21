@@ -74,6 +74,12 @@ mock.module("@/generated/daemon/@tanstack/react-query.gen", () => ({
   connectorappsConnectPostMutation: () => ({
     mutationFn: async () => ({ redirectUrl: "https://example.com/oauth" }),
   }),
+  // The Phone-line row reads the Twilio config; stub it as not-configured so
+  // the row renders in its "set up" state.
+  integrationsTwilioConfigGetOptions: () => ({
+    queryKey: ["twilio-config-test"],
+    queryFn: async () => ({ success: true, hasCredentials: false }),
+  }),
 }));
 
 import { Mv3ConnectionsPage } from "./connections-page";

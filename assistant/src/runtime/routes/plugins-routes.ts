@@ -41,17 +41,13 @@ import {
   type InstalledPluginInfo,
   listInstalledPlugins,
 } from "../../cli/lib/list-installed-plugins.js";
-import { getPluginCatalog } from "../../cli/lib/plugin-catalog-cache.js";
 import {
   getPluginDetails,
   PluginDetailsNotFoundError,
 } from "../../cli/lib/plugin-details.js";
 import {
   assertValidSearchPattern,
-  filterPluginCatalog,
   InvalidSearchPatternError,
-  PluginCatalogUnavailableError,
-  type PluginSearchMatch,
 } from "../../cli/lib/search-plugins.js";
 import {
   PluginNotInstalledError,
@@ -61,7 +57,12 @@ import {
   PluginNotUpgradableError,
   upgradePlugin,
 } from "../../cli/lib/upgrade-plugin.js";
+import {
+  listRegistryCatalog,
+  type RegistryCatalogMatch,
+} from "../../plugins/registry/catalog.js";
 import { seedPluginEmbeddings } from "../../plugins/registry/embedding-seed.js";
+import type { PluginReviewStatus } from "../../plugins/registry/types.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import {
   BadRequestError,
@@ -107,6 +108,12 @@ const pluginsListResponseSchema = z.object({
   plugins: z.array(pluginInfoSchema),
 });
 
+const pluginReviewStatusSchema = z
+  .enum(["curated", "community", "unreviewed"])
+  .describe(
+    "Curation posture: `curated` (first-party / hand-reviewed), `community` (PR-submitted, license + manifest verified), or `unreviewed`. The HTTP browse surface only ever returns curated/community — unreviewed discovery stays CLI-gated.",
+  );
+
 const pluginMatchSourceSchema = z
   .object({
     kind: z.literal("github"),
@@ -119,7 +126,9 @@ const pluginMatchSourceSchema = z
       .describe(
         "Directory within the repo, when the plugin is not at the root.",
       ),
-    ref: z.string().describe("Pinned git ref the plugin is fetched from."),
+    ref: z
+      .string()
+      .describe("Pinned git ref (commit) the plugin is fetched from."),
   })
   .describe("Origin of the match: a whitelisted external plugin repository.");
 
@@ -130,23 +139,50 @@ const pluginSearchMatchSchema = z.object({
   path: z
     .string()
     .describe(
-      "Human-readable origin: a `github:owner/repo@ref` locator for the external plugin.",
+      "Human-readable origin: a `github:owner/repo[/path]@ref` locator (the pinned commit).",
     ),
   description: z
     .string()
-    .optional()
-    .describe("Short description, when known (external entries only today)."),
+    .describe("Short description from the curated registry entry."),
   source: pluginMatchSourceSchema,
+  reviewStatus: pluginReviewStatusSchema,
+  surfaces: z
+    .array(z.string())
+    .describe(
+      "Plugin surfaces the entry contributes (hooks/tools/skills/routes/apps); `[]` when it declares none.",
+    ),
+  category: z
+    .string()
+    .nullable()
+    .describe(
+      "Free-form grouping hint (e.g. `productivity`); `null` when absent.",
+    ),
+  license: z
+    .string()
+    .nullable()
+    .describe("SPDX license expression; `null` when absent."),
+  homepage: z
+    .string()
+    .nullable()
+    .describe("Project homepage URL; `null` when absent."),
+  icon: z
+    .string()
+    .nullable()
+    .describe("Display emoji/icon; `null` when the entry ships none."),
 });
 
 const pluginsSearchResponseSchema = z.object({
   query: z
     .string()
     .describe("Echo of the requested query (ECMAScript regex source)."),
-  ref: z.string().describe("Git ref the catalog was listed at."),
+  ref: z
+    .string()
+    .describe(
+      'Catalog source identifier. Always `"registry"` — the browse catalog is the on-disk curated `plugins/registry.json`, not a live git ref.',
+    ),
   matches: z
     .array(pluginSearchMatchSchema)
-    .describe("Directory matches, sorted alphabetically by name."),
+    .describe("Curated catalog matches, sorted alphabetically by name."),
 });
 
 const pluginUninstallResponseSchema = z.object({
@@ -191,7 +227,27 @@ const pluginDetailsResponseSchema = z.object({
   source: pluginMatchSourceSchema
     .nullable()
     .describe(
-      "Pinned origin from the marketplace entry, or null when an installed copy has no catalog entry.",
+      "Pinned origin from the curated registry entry, or null when an installed copy has no catalog entry.",
+    ),
+  reviewStatus: pluginReviewStatusSchema
+    .nullable()
+    .describe(
+      "Curation posture from the registry entry, or null when an installed copy has no registry entry.",
+    ),
+  surfaces: z
+    .array(z.string())
+    .describe(
+      "Plugin surfaces the entry contributes (hooks/tools/skills/routes/apps); `[]` when unknown or none declared.",
+    ),
+  category: z
+    .string()
+    .nullable()
+    .describe("Free-form grouping hint from the registry; null when absent."),
+  icon: z
+    .string()
+    .nullable()
+    .describe(
+      "Display emoji/icon from the registry entry; null when it ships none.",
     ),
   readme: z
     .string()
@@ -199,7 +255,9 @@ const pluginDetailsResponseSchema = z.object({
     .describe("README markdown, or null when the plugin ships none."),
   ref: z
     .string()
-    .describe("Git ref the catalog metadata / README were resolved at."),
+    .describe(
+      "Git ref the README was resolved at: the registry entry's pinned commit when one claims the name, else the fallback ref.",
+    ),
   artifact: z
     .object({
       url: z
@@ -516,30 +574,39 @@ function projectPlugin(entry: InstalledPluginInfo): PluginView {
 interface PluginMatchView {
   name: string;
   path: string;
-  description?: string;
+  description: string;
   source: { kind: "github"; repo: string; path?: string; ref: string };
+  reviewStatus: PluginReviewStatus;
+  surfaces: string[];
+  category: string | null;
+  license: string | null;
+  homepage: string | null;
+  icon: string | null;
 }
 
 /**
- * Re-pack a `readonly` lib match into a mutable wire object so the route
+ * Re-pack a registry catalog match into a mutable wire object so the route
  * serializer's `Record<string, unknown>` contract holds. The wire shape is
- * identical to {@link PluginSearchMatch}.
+ * {@link pluginSearchMatchSchema}.
  */
-function projectMatch(m: PluginSearchMatch): PluginMatchView {
-  const view: PluginMatchView = {
+function projectMatch(m: RegistryCatalogMatch): PluginMatchView {
+  return {
     name: m.name,
     path: m.path,
+    description: m.description,
     source: {
       kind: "github",
       repo: m.source.repo,
       ref: m.source.ref,
       ...(m.source.path !== undefined ? { path: m.source.path } : {}),
     },
+    reviewStatus: m.reviewStatus,
+    surfaces: [...m.surfaces],
+    category: m.category,
+    license: m.license,
+    homepage: m.homepage,
+    icon: m.icon,
   };
-  if (m.description !== undefined) {
-    view.description = m.description;
-  }
-  return view;
 }
 
 function matchesQuery(plugin: PluginView, needle: string): boolean {
@@ -576,44 +643,36 @@ interface PluginsSearchResponse {
   matches: PluginMatchView[];
 }
 
+/**
+ * Identifier reported in the search response's `ref` field. The browse catalog
+ * is the on-disk curated `plugins/registry.json` — the SAME source the CLI
+ * `plugins search`, detail, and the embedding seed read — so there is no live
+ * git ref to report and no network I/O to rate-limit. This keeps search and
+ * detail consistent: every match here resolves on `GET /v1/plugins/:name`.
+ */
+const REGISTRY_CATALOG_REF = "registry";
+
 async function handleSearchPlugins({
   queryParams = {},
 }: RouteHandlerArgs): Promise<PluginsSearchResponse> {
-  // Empty string is a legitimate "match everything" query per the lib's
-  // contract — accept it without forcing the caller to pick a sentinel.
+  // Empty string is a legitimate "match everything" query — an empty regex
+  // matches every name, so an empty/absent `q` returns the full curated set.
   const query = queryParams.q ?? "";
-  const ref = queryParams.ref?.trim() || DEFAULT_PLUGIN_REF;
 
   try {
-    // Reject a malformed regex before any network I/O so a user typo is a
-    // cheap deterministic 400 — never a wasted GitHub request that could
-    // surface as 503 on a cold cache when upstream is rate-limited.
+    // Reject a malformed regex up front so a user typo is a cheap deterministic
+    // 400. `assertValidSearchPattern` compiles the same case-insensitive regex
+    // used below, so a passing assert guarantees the RegExp constructor here
+    // never throws.
     assertValidSearchPattern(query);
-    // The catalog is cached per ref (and served stale on upstream failure),
-    // so repeated searches don't re-hit GitHub's unauthenticated rate limit.
-    // Filtering by the query is an in-memory operation over that catalog.
-    const catalog = await getPluginCatalog(ref, {
-      fetch: globalThis.fetch.bind(globalThis),
-    });
-    const matches = filterPluginCatalog(catalog, query);
-    // Re-pack `readonly` lib types into mutable copies so the route
-    // serializer's `Record<string, unknown>` contract holds. The wire
-    // shape is identical.
-    return {
-      query,
-      ref: catalog.ref,
-      matches: matches.map(projectMatch),
-    };
+    const matcher = new RegExp(query, "i");
+    const matches = listRegistryCatalog()
+      .filter((m) => matcher.test(m.name))
+      .map(projectMatch);
+    return { query, ref: REGISTRY_CATALOG_REF, matches };
   } catch (err) {
     if (err instanceof InvalidSearchPatternError) {
       throw new BadRequestError(err.message);
-    }
-    // A rate-limited or unavailable upstream (with no cache to fall back on)
-    // is transient and retryable — surface it as 503 rather than a
-    // misleading 500 so the client can show a "temporarily unavailable"
-    // state and retry later.
-    if (err instanceof PluginCatalogUnavailableError) {
-      throw new ServiceUnavailableError(err.message);
     }
     throw new InternalError(
       err instanceof Error ? err.message : "plugin catalog search failed",
@@ -889,20 +948,20 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Search the plugin catalog",
     description:
-      "List installable plugins from the curated `plugins/marketplace.json` catalog. The query is an ECMAScript regex matched case-insensitively against the plugin name (e.g. `memory`, `^simple`). Empty query returns every entry. Mirrors the CLI's `assistant plugins search`.",
+      "List installable plugins from the curated, commit-pinned `plugins/registry.json` catalog — the SAME on-disk source the CLI `plugins search`, the detail route, and the embedding seed read, so every match here resolves on `GET /v1/plugins/:name`. The query is an ECMAScript regex matched case-insensitively against the plugin name (e.g. `memory`, `^simple`). Empty query returns every curated entry. Only curated + community (hand-reviewed) entries are returned; unreviewed discovery stays CLI-gated. Each match carries its curation metadata (reviewStatus, surfaces, category, license, homepage, icon).",
     tags: ["plugins"],
     queryParams: [
       {
         name: "q",
         schema: { type: "string" },
         description:
-          "ECMAScript regex pattern matched case-insensitively against catalog directory names. Empty/missing matches everything.",
+          "ECMAScript regex pattern matched case-insensitively against catalog plugin names. Empty/missing matches everything.",
       },
       {
         name: "ref",
         schema: { type: "string" },
         description:
-          "Optional git ref to list the catalog at. Defaults to the CLI's `DEFAULT_PLUGIN_REF` (typically `main`).",
+          "Accepted for backward compatibility but ignored: the browse catalog is the on-disk curated registry, not a live git ref.",
       },
     ],
     responseBody: pluginsSearchResponseSchema,
@@ -948,7 +1007,7 @@ export const ROUTES: RouteDefinition[] = [
     },
     summary: "Get a plugin's detail view",
     description:
-      "Resolve a single plugin's tracked metadata (description, homepage, license, version, source) plus its README markdown. Unions the locally installed copy, the marketplace manifest, and the plugin's repository at the pinned ref — preferring the installed copy. Names that are neither installed nor present in the catalog return 404. Powers the web plugin detail page; mirrors `GET /v1/skills/:id`.",
+      "Resolve a single plugin's tracked metadata (description, homepage, license, version, source, reviewStatus, surfaces, category, icon) plus its README markdown. Unions the locally installed copy, the curated `plugins/registry.json` entry, and the plugin's repository at the pinned commit — preferring the installed copy. Reads the SAME on-disk catalog the search route lists, so any card returned by search resolves here. Names that are neither installed nor present in the catalog return 404. Powers the web plugin detail page; mirrors `GET /v1/skills/:id`.",
     tags: ["plugins"],
     pathParams: [
       {

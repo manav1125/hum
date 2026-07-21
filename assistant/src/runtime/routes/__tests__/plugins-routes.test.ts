@@ -54,12 +54,7 @@ import {
   PluginDetailsNotFoundError,
   type PluginDetailsOptions,
 } from "../../../cli/lib/plugin-details.js";
-import type {
-  PluginCatalog,
-  PluginSearchMatch,
-  SearchPluginsDeps,
-} from "../../../cli/lib/search-plugins.js";
-import { PluginCatalogUnavailableError } from "../../../cli/lib/search-plugins.js";
+import type { RegistryCatalogMatch } from "../../../plugins/registry/catalog.js";
 import {
   PluginNotInstalledError,
   type UninstallPluginOptions,
@@ -80,18 +75,14 @@ mock.module("../../../cli/lib/list-installed-plugins.js", () => ({
   listInstalledPlugins: () => installedFixture,
 }));
 
-// Mock the catalog cache: `getCatalogSpy` records every invocation and
-// returns the (unfiltered) catalog the route then filters in memory via the
-// real `filterPluginCatalog`. The real `search-plugins.js` module is left
-// unmocked so filtering + error classes behave exactly as in production.
-const getCatalogSpy = mock(
-  async (_ref: string, _deps: SearchPluginsDeps): Promise<PluginCatalog> => {
-    throw new Error("getCatalogSpy default impl not configured");
-  },
-);
+// Mock the curated registry catalog: `listCatalogSpy` returns the on-disk
+// `plugins/registry.json` browse catalog the search route filters in memory.
+// The real `search-plugins.js` (regex validation) is left unmocked so the
+// 400-on-bad-pattern path behaves exactly as in production.
+const listCatalogSpy = mock((): RegistryCatalogMatch[] => []);
 
-mock.module("../../../cli/lib/plugin-catalog-cache.js", () => ({
-  getPluginCatalog: getCatalogSpy,
+mock.module("../../../plugins/registry/catalog.js", () => ({
+  listRegistryCatalog: listCatalogSpy,
 }));
 
 // Mock uninstallPlugin. The handler's error mapping is the wiring under
@@ -226,12 +217,12 @@ function invoke(args: RouteHandlerArgs = {}): {
 async function invokeSearch(args: RouteHandlerArgs = {}): Promise<{
   query: string;
   ref: string;
-  matches: PluginSearchMatch[];
+  matches: Array<Record<string, unknown>>;
 }> {
   return (await searchHandler(args)) as {
     query: string;
     ref: string;
-    matches: PluginSearchMatch[];
+    matches: Array<Record<string, unknown>>;
   };
 }
 
@@ -412,180 +403,157 @@ describe("GET /v1/plugins", () => {
 // GET /v1/plugins/search
 // ---------------------------------------------------------------------------
 
-function catalog(
-  ref: string,
-  matches: readonly PluginSearchMatch[],
-): PluginCatalog {
-  return { ref, matches };
+function regMatch(
+  overrides: Partial<RegistryCatalogMatch> & { name: string },
+): RegistryCatalogMatch {
+  const repo = overrides.source?.repo ?? `example-org/${overrides.name}`;
+  const ref =
+    overrides.source?.ref ?? "1111111111111111111111111111111111111111";
+  return {
+    name: overrides.name,
+    path: overrides.path ?? `github:${repo}@${ref}`,
+    description: overrides.description ?? `${overrides.name} description`,
+    source: overrides.source ?? { kind: "github", repo, ref },
+    reviewStatus: overrides.reviewStatus ?? "curated",
+    surfaces: overrides.surfaces ?? [],
+    category: overrides.category ?? null,
+    license: overrides.license ?? null,
+    homepage: overrides.homepage ?? null,
+    icon: overrides.icon ?? null,
+  };
 }
 
 describe("GET /v1/plugins/search", () => {
   beforeEach(() => {
-    getCatalogSpy.mockClear();
+    listCatalogSpy.mockClear();
     // Default to a happy-path empty catalog; individual tests override.
-    getCatalogSpy.mockImplementation(async (ref) => catalog(ref, []));
+    listCatalogSpy.mockImplementation(() => []);
   });
 
-  test("resolves the catalog at the requested ref and filters by ?q=", async () => {
-    getCatalogSpy.mockImplementation(async (ref) =>
-      catalog(ref, [
-        {
-          name: "simple-memory",
-          path: "github:vellum-ai/simple-memory@ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
-          source: {
-            kind: "github",
-            repo: "vellum-ai/simple-memory",
-            ref: "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
-          },
+  test("lists the on-disk registry catalog and filters by ?q= (regex on name)", async () => {
+    listCatalogSpy.mockImplementation(() => [
+      regMatch({
+        name: "simple-memory",
+        source: {
+          kind: "github",
+          repo: "vellum-ai/simple-memory",
+          ref: "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
         },
-        {
-          name: "caveman",
-          path: "github:JuliusBrussee/caveman@v1.8.2",
-          description: "Ultra-compressed communication mode.",
-          source: {
-            kind: "github",
-            repo: "JuliusBrussee/caveman",
-            ref: "v1.8.2",
-          },
-        },
-      ]),
-    );
+        description: "Reference memory plugin.",
+        reviewStatus: "curated",
+        surfaces: ["hooks", "tools"],
+        category: "memory",
+        license: "MIT",
+        homepage: "https://example.com/simple-memory",
+      }),
+      regMatch({ name: "caveman", reviewStatus: "community" }),
+    ]);
 
     const result = await invokeSearch({
-      queryParams: { q: "^simple", ref: "my-feature-branch" },
+      queryParams: { q: "^simple", ref: "ignored-branch" },
     });
 
-    // The cache was consulted once at the requested ref.
-    expect(getCatalogSpy).toHaveBeenCalledTimes(1);
-    const [ref] = getCatalogSpy.mock.calls[0]!;
-    expect(ref).toBe("my-feature-branch");
+    // The on-disk registry is read once — no network, no ref selection.
+    expect(listCatalogSpy).toHaveBeenCalledTimes(1);
 
-    // The query is applied in-memory by the real filter: `^simple` matches
-    // only `simple-memory`, and the source discriminator is preserved.
+    // `^simple` matches only `simple-memory`; the response `ref` is the
+    // registry sentinel and the curation metadata is surfaced verbatim.
     expect(result).toEqual({
       query: "^simple",
-      ref: "my-feature-branch",
+      ref: "registry",
       matches: [
         {
           name: "simple-memory",
           path: "github:vellum-ai/simple-memory@ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
+          description: "Reference memory plugin.",
           source: {
             kind: "github",
             repo: "vellum-ai/simple-memory",
             ref: "ed09a4c01bf18e4ac8859faee94cb65c7cbd1ca3",
           },
+          reviewStatus: "curated",
+          surfaces: ["hooks", "tools"],
+          category: "memory",
+          license: "MIT",
+          homepage: "https://example.com/simple-memory",
+          icon: null,
         },
       ],
     });
   });
 
-  test("missing ?q= matches all (empty-string query) at the default ref", async () => {
-    getCatalogSpy.mockImplementation(async (ref) =>
-      catalog(ref, [
-        {
-          name: "caveman",
-          path: "github:JuliusBrussee/caveman@v1.8.2",
-          source: {
-            kind: "github",
-            repo: "JuliusBrussee/caveman",
-            ref: "v1.8.2",
-          },
-        },
-      ]),
-    );
+  test("missing ?q= matches all (empty-string query)", async () => {
+    listCatalogSpy.mockImplementation(() => [
+      regMatch({ name: "caveman" }),
+      regMatch({ name: "cofounder" }),
+    ]);
     const result = await invokeSearch();
-    const [ref] = getCatalogSpy.mock.calls[0]!;
-    // No ref supplied → route resolves the default ref before caching.
-    expect(ref).toBe("main");
     expect(result.query).toBe("");
-    expect(result.matches.map((m) => m.name)).toEqual(["caveman"]);
+    expect(result.ref).toBe("registry");
+    expect(result.matches.map((m) => m.name)).toEqual(["caveman", "cofounder"]);
   });
 
-  test("whitespace-only ?ref= falls back to the default ref", async () => {
-    await invokeSearch({ queryParams: { q: "x", ref: "   " } });
-    const [ref] = getCatalogSpy.mock.calls[0]!;
-    expect(ref).toBe("main");
+  test("?ref= is accepted but ignored (registry is on-disk, not a git ref)", async () => {
+    listCatalogSpy.mockImplementation(() => [regMatch({ name: "caveman" })]);
+    const result = await invokeSearch({ queryParams: { q: "x", ref: "   " } });
+    expect(result.ref).toBe("registry");
+    expect(listCatalogSpy).toHaveBeenCalledTimes(1);
   });
 
-  test("supplies a bound globalThis.fetch as the catalog loader's fetch dep", async () => {
-    await invokeSearch({ queryParams: { q: "memory" } });
-    const [, deps] = getCatalogSpy.mock.calls[0]!;
-    expect(typeof deps.fetch).toBe("function");
+  test("preserves a repo subpath in the projected source", async () => {
+    listCatalogSpy.mockImplementation(() => [
+      regMatch({
+        name: "nested",
+        source: {
+          kind: "github",
+          repo: "acme/monorepo",
+          ref: "2222222222222222222222222222222222222222",
+          path: "plugins/nested",
+        },
+      }),
+    ]);
+    const result = await invokeSearch({ queryParams: { q: "nested" } });
+    expect(result.matches[0]!.source).toEqual({
+      kind: "github",
+      repo: "acme/monorepo",
+      ref: "2222222222222222222222222222222222222222",
+      path: "plugins/nested",
+    });
   });
 
-  test("InvalidSearchPatternError → BadRequestError (400), before any catalog load", async () => {
-    // GIVEN a malformed regex query and a cold cache
+  test("InvalidSearchPatternError → BadRequestError (400), before any catalog read", async () => {
+    // GIVEN a malformed regex query
     // WHEN the search runs
-    // THEN it's a deterministic 400 AND the catalog is never loaded, so a
-    // user typo can't waste a GitHub request (which would otherwise surface
-    // as 503 on a rate-limited cold cache).
+    // THEN it's a deterministic 400 AND the catalog is never read — a user
+    // typo is a cheap, side-effect-free failure.
     await expect(
       invokeSearch({ queryParams: { q: "(" } }),
     ).rejects.toBeInstanceOf(BadRequestError);
-    expect(getCatalogSpy).not.toHaveBeenCalled();
-  });
-
-  test("PluginCatalogUnavailableError → ServiceUnavailableError (503)", async () => {
-    getCatalogSpy.mockImplementation(async () => {
-      throw new PluginCatalogUnavailableError(
-        "GitHub contents listing failed for plugins @ main: HTTP 403",
-        403,
-      );
-    });
-
-    // A rate-limited upstream (with no cache to fall back on) is transient
-    // and retryable — the route surfaces it as 503, not a misleading 500.
-    await expect(
-      invokeSearch({ queryParams: { q: "memory" } }),
-    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(listCatalogSpy).not.toHaveBeenCalled();
   });
 
   test("unknown errors → InternalError with original message preserved", async () => {
-    getCatalogSpy.mockImplementation(async () => {
-      throw new Error("GitHub contents listing failed: HTTP 404");
+    listCatalogSpy.mockImplementation(() => {
+      throw new Error("registry.json read failed");
     });
 
     await expect(
       invokeSearch({ queryParams: { q: "memory" } }),
     ).rejects.toMatchObject({
       // The route wraps in InternalError so callers see a 500 response
-      // with the upstream message attached.
+      // with the underlying message attached.
       constructor: InternalError,
-      message: expect.stringContaining("GitHub contents listing failed"),
+      message: expect.stringContaining("registry.json read failed"),
     });
   });
 
-  test("re-packs readonly match array into a mutable copy", async () => {
-    const frozenMatches = Object.freeze([
-      Object.freeze({
-        name: "a",
-        path: "github:acme/a@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        source: {
-          kind: "github",
-          repo: "acme/a",
-          ref: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        } as const,
-      }),
-    ]) as readonly PluginSearchMatch[];
-    getCatalogSpy.mockImplementation(async (ref) =>
-      catalog(ref, frozenMatches),
-    );
+  test("returns a fresh mutable array the serializer can reach into", async () => {
+    listCatalogSpy.mockImplementation(() => [regMatch({ name: "a" })]);
 
     const result = await invokeSearch({ queryParams: { q: "a" } });
-    // The route returns a non-frozen array we can mutate without
-    // touching the lib's internal cache. This matters when serializers
-    // (or downstream test fixtures) reach in.
     expect(Object.isFrozen(result.matches)).toBe(false);
     expect(() =>
-      result.matches.push({
-        name: "b",
-        path: "x",
-        source: {
-          kind: "github",
-          repo: "acme/b",
-          ref: "cccccccccccccccccccccccccccccccccccccccc",
-        },
-      }),
+      result.matches.push({ name: "b" } as unknown as Record<string, unknown>),
     ).not.toThrow();
   });
 });
@@ -703,6 +671,10 @@ function pluginDetails(overrides: Partial<PluginDetails> = {}): PluginDetails {
       repo: "JuliusBrussee/caveman",
       ref: "63a91ecadbf4c4719a4602a5abb00883f9966034",
     },
+    reviewStatus: overrides.reviewStatus ?? null,
+    surfaces: overrides.surfaces ?? [],
+    category: overrides.category ?? null,
+    icon: overrides.icon ?? null,
     readme: overrides.readme ?? null,
     ref: overrides.ref ?? "main",
     artifact: overrides.artifact ?? null,

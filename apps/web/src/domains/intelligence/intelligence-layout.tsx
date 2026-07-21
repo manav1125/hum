@@ -31,6 +31,7 @@ const BASE_INTELLIGENCE_TABS: readonly IntelligenceTab[] = [
   // relationship dossier (/assistant/people) instead.
   { label: "Connections", to: routes.contacts.root },
   { label: "Cue Live", to: routes.cueLive },
+  { label: "Desktop control", to: routes.desktopControl },
   { label: "Skills", to: routes.skills },
   { label: "Memory", to: routes.memory },
   { label: "Workspace", to: routes.workspace },

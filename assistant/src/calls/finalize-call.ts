@@ -1,4 +1,5 @@
 import { getLogger } from "../util/logger.js";
+import { kickCallActionItemCapture } from "./call-action-item-capture.js";
 import { persistCallCompletionMessage } from "./call-conversation-messages.js";
 import { fireCallCompletionNotifier } from "./call-state.js";
 import { expirePendingQuestions } from "./call-store.js";
@@ -17,4 +18,7 @@ export function finalizeCall(
     );
   });
   fireCallCompletionNotifier(conversationId, callSessionId);
+  // Turn the finished transcript into work items (best-effort, idempotent per
+  // session — the Twilio terminal status callback may also reach here).
+  kickCallActionItemCapture(callSessionId, conversationId);
 }
