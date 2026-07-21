@@ -32,6 +32,7 @@ import {
   dispose as disposeCueLive,
   installCueLive,
   isCueLiveEnabled,
+  setAssistantConnectionProbe,
   setCueLiveEnabledGetter,
   setGuidanceFetcher,
   setSttFetcher,
@@ -72,6 +73,7 @@ import { installLoginItem, installLoginItemIpc } from "./login-item";
 import { installLockfileWatcher } from "./lockfile-watcher";
 import {
   installHostProxyBridge,
+  hasAssistantConnection,
   requestAssistantRoute,
 } from "./host-proxy-router";
 import "./executors/host-bash-executor"; // side-effect: registers host_bash executor
@@ -421,6 +423,9 @@ app
     // one; otherwise fall back to the self-host instance the renderer is
     // already signed in to. Without that last hop, a self-host install has no
     // registered connection at all and every summon reaches nothing.
+    // Let the stream check-in back off while nothing is reachable, instead of
+    // polling (and warning) every few seconds into a void.
+    setAssistantConnectionProbe(hasAssistantConnection);
     setGuidanceFetcher(
       async (path, body) =>
         (await requestAssistantRoute(path, body)) ??

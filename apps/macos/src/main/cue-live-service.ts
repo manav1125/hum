@@ -350,6 +350,19 @@ async function speakText(
   }
 }
 
+/**
+ * Whether an assistant is reachable, injected by `index.ts` — the same DI seam
+ * as {@link setGuidanceFetcher}, rather than importing the router here (that
+ * would drag the router's module graph into every test that mocks this file).
+ * Defaults to "assume reachable" so an unwired build behaves as before.
+ */
+let assistantConnectionProbe: () => boolean = () => true;
+
+/** Wire the assistant-reachability probe. See {@link assistantConnectionProbe}. */
+export const setAssistantConnectionProbe = (probe: () => boolean): void => {
+  assistantConnectionProbe = probe;
+};
+
 export const setGuidanceFetcher = (fetcher: GuidanceFetcher | null): void => {
   guidanceFetcher = fetcher;
 };
@@ -795,6 +808,12 @@ const CUE_LIVE_STREAM_PATH = "/cuelive/session/stream";
 
 /** How often the Mac checks in while it is NOT streaming. */
 const CHECKIN_IDLE_MS = 4_000;
+/**
+ * Idle cadence while no assistant is reachable at all. Checking in every
+ * {@link CHECKIN_IDLE_MS} in that state is pure noise — there is nobody to
+ * arm the stream — so back off until a connection exists.
+ */
+const CHECKIN_DISCONNECTED_MS = 30_000;
 /** Fallback cadence if the daemon's negotiated interval is unreadable. */
 const FRAME_FALLBACK_INTERVAL_MS = 900;
 /**
@@ -888,7 +907,9 @@ export const stopScreenStream = async (): Promise<void> => {
     });
     log.info("[cue-live] screen stream stopped from this Mac");
   } catch (err) {
-    log.warn(`[cue-live] stopping the screen stream failed: ${errMessage(err)}`);
+    log.warn(
+      `[cue-live] stopping the screen stream failed: ${errMessage(err)}`,
+    );
   }
 };
 
@@ -911,7 +932,9 @@ const pushOneFrame = async (
   if (!cap.ok || !cap.data) {
     // No permission, no display — stop rather than leave the viewer waiting on
     // a picture this Mac cannot produce.
-    log.warn(`[cue-live] stream capture unavailable: ${cap.reason ?? "unknown"}`);
+    log.warn(
+      `[cue-live] stream capture unavailable: ${cap.reason ?? "unknown"}`,
+    );
     return { keepStreaming: false };
   }
 
@@ -954,6 +977,9 @@ const streamTick = async (): Promise<void> => {
     }
 
     if (!streamLoop.streaming) {
+      // Nobody to check in with: the owner arms the stream from the daemon,
+      // so with no assistant connected there is nothing this call can learn.
+      if (!assistantConnectionProbe()) return;
       const raw = await guidanceFetcher(CUE_LIVE_CHECKIN_PATH, {
         cueLiveRunning: started,
         screenRecordingGranted: lastKnownScreenRecording,
@@ -989,7 +1015,9 @@ const scheduleStreamTick = (): void => {
   if (streamLoop.timer) clearTimeout(streamLoop.timer);
   const wait = streamLoop.streaming
     ? Math.max(streamLoop.intervalMs, 400)
-    : CHECKIN_IDLE_MS;
+    : assistantConnectionProbe()
+      ? CHECKIN_IDLE_MS
+      : CHECKIN_DISCONNECTED_MS;
   streamLoop.timer = setTimeout(() => {
     void streamTick().finally(() => {
       if (streamLoop.timer !== null) scheduleStreamTick();

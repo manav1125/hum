@@ -443,6 +443,17 @@ async function requestCloudRoute<T>(
  * hint that the request was never sent. Returns null when nothing is connected,
  * auth fails, or the request errors — callers treat it as best-effort.
  */
+/**
+ * Whether any assistant (local or cloud) is reachable right now.
+ *
+ * Polling callers check this first: without it a background loop calls
+ * {@link requestAssistantRoute} on every tick and each miss logs a warning,
+ * which buries the log in noise while the app is simply idle.
+ */
+export function hasAssistantConnection(): boolean {
+  return Boolean(activeLocalConnection() ?? activeCloudConnection());
+}
+
 export async function requestAssistantRoute<T = unknown>(
   routePath: string,
   body: unknown,

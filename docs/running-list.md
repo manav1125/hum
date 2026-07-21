@@ -1,6 +1,40 @@
-# Cue — running list to alpha (living doc, updated 2026-07-21)
+# Cue — running list to alpha (living doc, updated 2026-07-22)
 
 Legend: ✅ proven working · 🟡 shipped, not yet proven/activated · 🔧 needs build/fix · 👤 needs you · 🎨 needs design
+
+## Task-execution intelligence — the moat (shipped 2026-07-22)
+**The problem:** HQ ran every task the same way. A one-line errand and a fully-briefed
+project task both went straight to an agent turn, so ~half the user's real tasks
+("Buy oat milk", "Pay Architect", "Call the dentist") were "run" into `awaiting_review`
+with plausible output and no way to see what Cue had understood.
+
+**Shipped:** a cheap pre-run assessment reading exactly what the run reads (title/notes,
+the assembled context preamble, a live capability snapshot, the prior run). Four verdicts —
+`execute` (+ plan shown before it starts), `clarify` (one question, parks), `not_ai_task`,
+`blocked` (names the missing thing). Non-execute parks the item; the turn is never spent.
+Money movement and signing are always the user's own action. UI renders it on HQ, the
+project board, All work, Activity→Cued and the task drawer; the trail reads as sentences.
+Rollback lever: `workItems.assessment.gate=false` (assess + narrate, never block).
+
+**Evidence (real model, real tasks on prod — `assistant/qa/assessment-eval.ts`):**
+- 14/14 assessed (was 5/14 before the reliability fix), 13/14 verdicts defensible.
+- "wire the aef fund capital call" / "Pay Architect" → `not_ai_task`, conf 1.0
+- "Send Q3 invoice to AEF fund" → `blocked`: "a linked email or messaging account"
+- "Call the dentist" → `blocked`: "a linked phone or messaging account"
+- "List co-working spaces in Canggu" → `execute` → ran → completed.
+
+**Two defects this evaluation caught that no unit test could:**
+1. A burst of 14 dispatches left 9 silently unassessed — one slow flash reply was the end
+   of it, and the failure logged at `debug`. Now 30s per attempt, one retry, warn on giving up.
+2. The capability snapshot claimed "can place phone calls" because a tool *name* matched,
+   so Cue planned to "speak with the receptionist" with no Twilio account. Capability
+   claims now require the thing behind them to be configured — the assessor turns every
+   claim into a promise.
+
+**Known limits:** `not_ai_task` precision is judged by one flash model — over-asking is the
+safe direction and the guards enforce it; memory isn't retrieved at assessment time, so a
+task answerable only from memory can over-clarify; the mobile task sheet still offers ▶ on
+a held task (mobile pass outstanding).
 
 ## Cue Live — interaction model (decided 2026-07-21, user)
 **Purpose:** Cue watches your screen/life to *capture tasks & todos* and *help complete them* — ambient chief-of-staff, not a remote-desktop tool.
