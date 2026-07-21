@@ -9,7 +9,12 @@ full U1–U3 map and the desktop-control unification.
 (each gated by typecheck/tests/smoke + a prod verification pass). Alpha gate at the end: full
 regression sweep + one clean quiet day.
 
-## Day 1 — WS-A: Resilience & security core (U1)  [deploy 1]
+## Day 1 — WS-A: Resilience & security core (U1)  [deploy 1] ✅ SHIPPED 2026-07-21
+Deployed (image deployment-01KY1P91FD006VW51P0HWZP3P6). Migration 310 applied on prod (both
+columns verified). Crash-recovery armed (conversations.resumeProcessingOnStartup=true; activates
+on next restart). Finding: crash recovery was ENTIRELY ABSENT in our fork (in-memory only) — every
+daemon restart silently dropped in-flight turns. 8 picks, 31 tests, typecheck+lint clean.
+
 - Crash recovery / auto-resume interrupted turns (`01d6ea39ca`, migration renumbered) — kills the
   hung-turn class for good.
 - Streamed tool-call JSON retry (`085b64f28e`) + tool-name aliasing (`c6e3338969`) + skill tools
