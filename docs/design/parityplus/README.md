@@ -1,5 +1,16 @@
 # Cue Parity+ — three surfaces, one backend
 
+## Revision round (accepted-with-fixes) — applied
+- Scope-chip wording normalized everywhere to **"Always allow in <path>"** (overlay had two variants).
+- OS X organizer counts fixed to **68** (Duplicates 16 unchecked) — plan header, CTA, progress, done; scan total stays 84.
+- W1 marketplace cards now show the **source repo** (stacked above surface-type · count).
+- Plugin consent "ask-first" row unified mobile↔web: **‖ (amber) "Uses Stripe — asks to link first"**.
+- W3 playbook AUTO chip under an Assist dial now carries **🔒 + capped note** (matches mobile's padlock).
+- **Web dark theme** added (W6): re-toned exemplar + full serif-HQ token map; all W1–W5 map through it, prefers-color-scheme + ⋯ override.
+- OS X **state-tinted scrim** documented as an intentional rule (warm on needs-you/stuck, cool on done).
+- NEEDS BACKEND tags added to web "Open preview" (and "Submit a plugin" already had one).
+
+
 Three self-contained files, one per platform brief. Each is the spec — inspect inline styles. Shared vocabulary across all three (a watcher is a watcher; a plugin's consent rows read the same; the state taxonomy colors mean the same thing everywhere). Honesty rule throughout: no affordance the backend can't honor — NEEDS BACKEND is flagged on-frame where a drawn thing outruns capability.
 
 ═══════════════════════════════════════════
