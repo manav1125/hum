@@ -9,28 +9,10 @@
  * light canvas onto dark chrome. Editorial serif + DM Mono label fonts.
  */
 
-export const C = {
-  ink: "var(--mv1-t1)",
-  blue: "var(--mv1-blue)",
-  blueS: "var(--mv1-blue-strong)",
-  blueW: "var(--mv1-blue-wash)",
-  violet: "var(--mv1-violet)",
-  violetS: "var(--mv1-violet-strong)",
-  bg: "var(--mv1-canvas)",
-  surface: "var(--mv1-card)",
-  sunken: "var(--mv1-sunken)",
-  line: "var(--mv1-line)",
-  line2: "var(--mv1-line-strong)",
-  t1: "var(--mv1-t1)",
-  t2: "var(--mv1-t2)",
-  t3: "var(--mv1-t3)",
-  green: "var(--mv1-green)",
-  amber: "var(--mv1-amber)",
-  danger: "var(--mv1-danger)",
-} as const;
-
-export const mono = "'DM Mono', ui-monospace, monospace";
-export const serif = "'Instrument Serif', Georgia, serif";
+// The serif-HQ palette + type tokens now live at the top-level so non-activity
+// HQ domains (calls, intelligence) can consume them without a cross-domain
+// import. Re-exported here so activity's own consumers are unchanged.
+export { C, mono, serif } from "@/lib/hq-theme";
 
 /** Small helpers shared by the section components for narrowing opaque payloads. */
 export function asRecord(value: unknown): Record<string, unknown> | null {

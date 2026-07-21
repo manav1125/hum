@@ -31,7 +31,7 @@ import {
   messagesGetOptions,
   workitemsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
-import { C, mono, serif } from "@/domains/activity/theme";
+import { C, mono, serif } from "@/lib/hq-theme";
 import { routes } from "@/utils/routes";
 
 // ── View model ───────────────────────────────────────────────────────────
