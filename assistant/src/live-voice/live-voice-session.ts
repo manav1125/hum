@@ -5,6 +5,11 @@ import type {
   VoiceTurnHandle,
   VoiceTurnOptions,
 } from "../calls/voice-session-bridge.js";
+import { getConfig } from "../config/loader.js";
+import type {
+  LiveVoiceConfig,
+  LiveVoiceFrontModelConfig,
+} from "../config/schemas/live-voice.js";
 import { INTERNAL_GUARDIAN_TRUST_CONTEXT } from "../daemon/trust-context.js";
 import {
   createConversation,
@@ -64,10 +69,19 @@ import type {
   StreamingTranscriber,
   SttStreamServerEvent,
 } from "../stt/types.js";
+import { pickAckPhrase } from "./ack-phrases.js";
+import {
+  createVoiceFrontDecider,
+  type VoiceFrontDecider,
+} from "./front-decision.js";
 import type {
   LiveVoiceAudioArchiveResult,
   LiveVoiceAudioArchiveRole,
 } from "./live-voice-archive.js";
+import {
+  type LiveVoiceCredentialReadiness,
+  resolveLiveVoiceCredentialReadiness,
+} from "./live-voice-credential-preflight.js";
 import {
   getLiveVoiceMetricsAggregateFields,
   type LiveVoiceMetricsClock,
@@ -154,6 +168,26 @@ export interface LiveVoiceSessionOptions {
    * (single-turn) sessions, which self-terminate. Overridable for tests.
    */
   fullDuplexIdleTimeoutMs?: number;
+  /**
+   * Live-voice config block driving the credential preflight + front-model
+   * presence layer. Defaults to `getConfig().liveVoice`; injectable so tests
+   * can flip flags without touching global config.
+   */
+  liveVoiceConfig?: LiveVoiceConfig;
+  /**
+   * STT/TTS credential preflight resolver (WS-E). `undefined` → the real
+   * resolver, gated by `liveVoiceConfig.credentialPreflight`. Pass `null` to
+   * force the preflight off, or a stub to control the verdict in tests.
+   */
+  resolveCredentialReadiness?:
+    | (() => Promise<LiveVoiceCredentialReadiness>)
+    | null;
+  /**
+   * Front-model presence layer (semantic endpointing + LLM-phrased acks).
+   * `undefined` → built from `liveVoiceConfig.frontModel` when a front-model
+   * feature is enabled; injectable for tests. `null` forces static-only acks.
+   */
+  frontDecider?: VoiceFrontDecider | null;
 }
 
 interface ActiveAssistantTurn {
@@ -172,6 +206,15 @@ interface ActiveAssistantTurn {
   assistantAudioChunks: Buffer[];
   assistantAudioMimeType: string;
   assistantAudioSampleRate?: number;
+  /**
+   * Presence layer (WS-E): a `first_delta` spoken-ack timer armed when the
+   * turn starts and cleared once the assistant produces its first spoken
+   * delta (or the turn ends). `firstDeltaSeen` short-circuits the timer;
+   * `ackFired` guards against a double ack.
+   */
+  ackTimer: ReturnType<typeof setTimeout> | null;
+  firstDeltaSeen: boolean;
+  ackFired: boolean;
 }
 
 export class LiveVoiceSession implements LiveVoiceSessionContract {
@@ -200,12 +243,23 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   private metricsTurnStarted = false;
   private metricsTurnFinished = false;
   private sessionEndMetricsEmitted = false;
+  private readonly options: LiveVoiceSessionOptions;
+  /**
+   * Effective live-voice config, resolved once at `start()` from
+   * `options.liveVoiceConfig` or `getConfig().liveVoice`. Null until start.
+   */
+  private liveVoiceConfig: LiveVoiceConfig | null = null;
+  /** Front-model presence layer, built at `start()` when a feature is on. */
+  private frontDecider: VoiceFrontDecider | null = null;
+  /** Rotates static ack phrases so consecutive acks vary. */
+  private ackCounter = 0;
 
   constructor(
     context: LiveVoiceSessionFactoryContext,
     options: LiveVoiceSessionOptions = {},
   ) {
     this.context = context;
+    this.options = options;
     this.resolveTranscriber =
       options.resolveTranscriber ?? defaultResolveStreamingTranscriber;
     this.startVoiceTurn = options.startVoiceTurn ?? null;
@@ -225,6 +279,54 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     });
   }
 
+  /**
+   * Resolve the effective live-voice config once per session and build the
+   * front-model presence layer if any of its features are enabled. Reading
+   * config here (not in the constructor) keeps construction side-effect-free
+   * and lets tests that never call `start()` skip config entirely.
+   */
+  private resolveLiveVoiceSettings(): LiveVoiceConfig {
+    if (this.liveVoiceConfig) return this.liveVoiceConfig;
+
+    const config = this.options.liveVoiceConfig ?? getConfig().liveVoice;
+    this.liveVoiceConfig = config;
+
+    const front = config.frontModel;
+    const wantsFrontModel = front.spokenAcks || front.semanticEndpointing;
+    if (this.options.frontDecider !== undefined) {
+      this.frontDecider = this.options.frontDecider;
+    } else if (wantsFrontModel) {
+      this.frontDecider = createVoiceFrontDecider({ config: front });
+    }
+    return config;
+  }
+
+  private get frontModelConfig(): LiveVoiceFrontModelConfig | null {
+    return this.liveVoiceConfig?.frontModel ?? null;
+  }
+
+  /**
+   * The credential-preflight resolver to run at `start()`, or null to skip.
+   * An explicit `options.resolveCredentialReadiness` always wins (including an
+   * explicit `null` to force-disable). Otherwise the real resolver runs only
+   * when `liveVoice.credentialPreflight` is on AND the session uses the real
+   * (default) streaming-transcriber resolver: a caller that injects its own
+   * transcriber has bypassed the real STT credential path (this is how the
+   * unit tests drive sessions), so validating real credentials there would be
+   * both meaningless and wrong. The daemon's `createLiveVoiceSession` injects
+   * no transcriber, so production sessions always get the preflight.
+   */
+  private resolveCredentialPreflight(
+    config: LiveVoiceConfig,
+  ): (() => Promise<LiveVoiceCredentialReadiness>) | null {
+    if (this.options.resolveCredentialReadiness !== undefined) {
+      return this.options.resolveCredentialReadiness;
+    }
+    if (!config.credentialPreflight) return null;
+    if (this.options.resolveTranscriber !== undefined) return null;
+    return resolveLiveVoiceCredentialReadiness;
+  }
+
   get finalTranscriptText(): string {
     return this.finalTranscriptSegments.join(" ");
   }
@@ -232,7 +334,33 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
   async start(): Promise<void> {
     if (this.state !== "initializing") return;
 
+    const liveVoiceConfig = this.resolveLiveVoiceSettings();
+
     try {
+      // Credential preflight (WS-E): reject the session at `start` when the STT
+      // or TTS credentials it needs are missing or non-streaming, with a clear
+      // message, instead of connecting a transcriber and then falling silent
+      // mid-conversation. Fail-safe: any preflight error is swallowed and the
+      // session proceeds to the existing transcriber-resolution path, which has
+      // its own failure handling — the preflight can only ever add a clearer
+      // early rejection, never block an otherwise-working stack.
+      const preflight = this.resolveCredentialPreflight(liveVoiceConfig);
+      if (preflight) {
+        let readiness: LiveVoiceCredentialReadiness | null = null;
+        try {
+          readiness = await preflight();
+        } catch {
+          readiness = null;
+        }
+        if (this.isClosed) return;
+        if (readiness?.status === "not-ready") {
+          return await this.failStartup(
+            readiness.userMessage,
+            LiveVoiceProtocolErrorCode.CredentialsUnavailable,
+          );
+        }
+      }
+
       // Ensure a persisted `conversations` row exists for the id this session
       // attaches turns to. A live-voice session opened without a conversationId
       // (e.g. the Voice surface with no active chat) falls back to the socket
@@ -646,10 +774,19 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       userAudioChunks: this.currentUserAudioChunks,
       assistantAudioChunks: [],
       assistantAudioMimeType: "audio/pcm",
+      ackTimer: null,
+      firstDeltaSeen: false,
+      ackFired: false,
     };
 
     await this.sendFrame({ type: "thinking", turnId });
     if (!this.isActiveAssistantTurn(token)) return;
+
+    // Presence layer (WS-E): arm a floor-holding spoken-ack timer. If the
+    // assistant is slow to produce its first spoken delta, a short "one sec"
+    // is spoken so a slow turn feels responsive instead of dead-silent.
+    // Cleared the moment the first delta arrives (or the turn ends).
+    this.armFirstDeltaAckTimer(token, turnId, content);
 
     try {
       const handle = await this.startVoiceTurn({
@@ -676,6 +813,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
         callbacks: {
           assistant_text_delta: (msg) => {
             if (!this.isForwardingAssistantText(token)) return;
+            this.noteFirstAssistantDelta(token);
             this.markFirstAssistantDelta(turnId);
             void this.sendFrame({
               type: "assistant_text_delta",
@@ -975,6 +1113,110 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
       });
   }
 
+  /**
+   * Arm the floor-holding spoken-ack timer for a turn (WS-E presence layer).
+   * No-op unless `liveVoice.frontModel.spokenAcks` is on and the session can
+   * actually speak (a TTS streamer is wired). On expiry — i.e. the assistant
+   * has produced no spoken delta within `ackFirstDeltaTimeoutMs` — a short
+   * ack is spoken so the wait doesn't feel like the assistant stopped
+   * responding.
+   */
+  private armFirstDeltaAckTimer(
+    token: symbol,
+    turnId: string,
+    content: string,
+  ): void {
+    const front = this.frontModelConfig;
+    if (!front?.spokenAcks || !this.streamTtsAudio) return;
+
+    const activeTurn = this.activeAssistantTurn;
+    if (activeTurn?.token !== token || activeTurn.firstDeltaSeen) return;
+
+    const timer = setTimeout(() => {
+      void this.fireSpokenAck(token, turnId, content);
+    }, front.ackFirstDeltaTimeoutMs);
+    // Don't let a pending ack timer hold the process open (mirrors the idle
+    // timer). `unref` is present on the Node/Bun timer handle.
+    (timer as { unref?: () => void }).unref?.();
+    activeTurn.ackTimer = timer;
+  }
+
+  /**
+   * Record that a turn produced its first spoken delta: cancel any pending
+   * ack timer so no floor-holder speaks over a reply that already started.
+   */
+  private noteFirstAssistantDelta(token: symbol): void {
+    const activeTurn = this.activeAssistantTurn;
+    if (activeTurn?.token !== token) return;
+    activeTurn.firstDeltaSeen = true;
+    this.clearAckTimer(activeTurn);
+  }
+
+  private clearAckTimer(turn: ActiveAssistantTurn): void {
+    if (turn.ackTimer !== null) {
+      clearTimeout(turn.ackTimer);
+      turn.ackTimer = null;
+    }
+  }
+
+  /**
+   * Speak one short floor-holding acknowledgement for a still-silent turn.
+   * Picks an LLM-phrased ack when `llmAckText` is on and the front decider is
+   * available (falling back to a static rotation phrase), then queues it on the
+   * turn's TTS queue ahead of the eventual reply audio. Re-checks every guard
+   * after the (possibly awaited) ack-text step so a turn that produced its
+   * first delta or ended in the meantime never gets an ack spoken over it.
+   */
+  private async fireSpokenAck(
+    token: symbol,
+    turnId: string,
+    content: string,
+  ): Promise<void> {
+    const front = this.frontModelConfig;
+    if (!front?.spokenAcks || !this.streamTtsAudio) return;
+    if (!this.canFireAck(token)) return;
+
+    const activeTurn = this.activeAssistantTurn;
+    if (!activeTurn) return;
+    activeTurn.ackFired = true;
+
+    let ackText: string | null = null;
+    if (front.llmAckText && this.frontDecider) {
+      ackText = await this.frontDecider.generateAckText(
+        { transcriptSoFar: content },
+        activeTurn.abortController.signal,
+      );
+    }
+    if (!ackText) {
+      ackText = pickAckPhrase("first_delta", this.ackCounter);
+      this.ackCounter += 1;
+    }
+
+    // The ack-text step may have awaited: re-verify the turn is still silent
+    // and live before speaking, so we never talk over a reply that started.
+    if (!this.canFireAck(token)) return;
+
+    this.enqueueTtsSegment(token, ackText);
+    this.metrics.markSpokenAck("first_delta", turnId);
+  }
+
+  /**
+   * Whether a `first_delta` ack may still speak: the turn is the active one,
+   * has produced no delta, has not already fired an ack, and is otherwise
+   * live (not completed / finalized / aborted / closed).
+   */
+  private canFireAck(token: symbol): boolean {
+    const activeTurn = this.activeAssistantTurn;
+    return (
+      activeTurn?.token === token &&
+      !activeTurn.firstDeltaSeen &&
+      !activeTurn.assistantCompleted &&
+      !activeTurn.finalized &&
+      !activeTurn.abortController.signal.aborted &&
+      !this.isClosed
+    );
+  }
+
   private collectUserAudio(chunk: Buffer): void {
     const turnId = this.ensureTurnId();
     this.currentUserAudioChunks.push(Buffer.from(chunk));
@@ -1042,6 +1284,7 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     if (turn.finalized) return;
 
     turn.finalized = true;
+    this.clearAckTimer(turn);
     await this.archiveBufferedAudio({
       turnId: turn.turnId,
       userMessageId: turn.userMessageId,
@@ -1217,12 +1460,15 @@ export class LiveVoiceSession implements LiveVoiceSessionContract {
     });
   }
 
-  private async failStartup(message: string): Promise<never> {
+  private async failStartup(
+    message: string,
+    code: LiveVoiceProtocolErrorCode = LiveVoiceProtocolErrorCode.InvalidField,
+  ): Promise<never> {
     this.state = "failed";
     this.clearIdleTimer();
     await this.sendFrame({
       type: "error",
-      code: LiveVoiceProtocolErrorCode.InvalidField,
+      code,
       message,
     });
     throw new LiveVoiceSessionStartupError(message);

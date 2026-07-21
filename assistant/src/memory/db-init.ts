@@ -53,6 +53,7 @@ import {
   migrateAgentActsCostModelTitle,
   migrateAgentToolScopes,
   migrateAssistantContactMetadata,
+  migrateAutomations,
   migrateBackfillAudioAttachmentMimeTypes,
   migrateBackfillContactInteractionStats,
   migrateBackfillGuardianPrincipalId,
@@ -558,6 +559,7 @@ export function initializeDb(): void {
     migrateLlmUsageAgentAttribution,
     migrateMissionSweepAt,
     migrateConversationProcessingFlags,
+    migrateAutomations,
   ];
 
   // Run each migration step, catching and logging individual failures so one

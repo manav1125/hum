@@ -305,6 +305,7 @@ export { migrateWorkItemHygiene } from "./307-work-item-hygiene.js";
 export { migrateLlmUsageAgentAttribution } from "./308-llm-usage-agent-attribution.js";
 export { migrateMissionSweepAt } from "./309-mission-sweep-at.js";
 export { migrateConversationProcessingFlags } from "./310-conversation-processing-flags.js";
+export { migrateAutomations } from "./313-automations.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

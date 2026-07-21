@@ -148,6 +148,9 @@ export const routes = {
   impact: r("/assistant/impact"),
   plugins: r("/assistant/plugins"),
   plugin: (name: string) => dyn(r("/assistant/plugins"), name),
+  // Automations (WS-F) — Watchers + Playbooks. Mobile: a You-cluster leaf
+  // (frames 69/70). Desktop: the serif-HQ board (web W3).
+  automations: r("/assistant/automations"),
   skills: r("/assistant/skills"),
   // Skill marketplace — Explore / Sources / Installed over GitHub-ingested
   // SKILL.md sources. Lives next to Skills in the Intelligence tab rail and

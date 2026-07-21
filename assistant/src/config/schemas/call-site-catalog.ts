@@ -349,6 +349,13 @@ const CATALOG_RECORD: CatalogRecord = {
       "A mid-task second opinion from a stronger model before the main brain commits a high-stakes or uncertain action. Fires selectively (see agent/advisor.ts) and its per-call model override wins; pin a stronger model here.",
     domain: "agentLoop",
   },
+  voiceFrontDecision: {
+    id: "voiceFrontDecision",
+    displayName: "Voice front decision",
+    description:
+      "Cue Live's front-model presence layer: decides end-of-turn (mid-thought vs finished) and phrases short spoken acknowledgements while the main brain works. Sits on the end-of-turn hot path — pin a fast, cheap, low-latency model; depth does not matter.",
+    domain: "agentLoop",
+  },
 };
 
 // Source of truth for call-site display metadata. API responses and usage

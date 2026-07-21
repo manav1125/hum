@@ -26,6 +26,17 @@ export const CALL_SITE_DEFAULTS: Record<LLMCallSite, CallSiteDefaultConfig> = {
   // consult is a unique one-shot prompt, so caching would only pay the write
   // premium.
   advisor: { profile: "balanced", disableCache: true },
+  // Cue Live's front-model presence layer (WS-E): a one-bit endpoint decision
+  // or a one-shot ack phrasing on the end-of-turn hot path. Cost-optimized for
+  // latency, low output budget, and never cached (each prompt is unique).
+  voiceFrontDecision: {
+    profile: "cost-optimized",
+    maxTokens: 64,
+    effort: "low",
+    thinking: { enabled: false, streamThinking: false },
+    temperature: 0,
+    disableCache: true,
+  },
   subagentSpawn: { profile: "balanced" },
   compactionAgent: { profile: "balanced" },
   analyzeConversation: { profile: "balanced" },

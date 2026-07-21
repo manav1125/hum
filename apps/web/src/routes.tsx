@@ -1115,6 +1115,16 @@ export const routeTree = [
                             },
                           },
                           {
+                            // Automations (WS-F) — Watchers + Playbooks.
+                            path: "automations",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/automations/automations-page").then(
+                                  (m) => m.AutomationsPage,
+                                ),
+                            },
+                          },
+                          {
                             path: "plugins/:name",
                             lazy: {
                               Component: () =>

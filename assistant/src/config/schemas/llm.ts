@@ -93,6 +93,11 @@ export const LLMCallSiteEnum = z.enum([
   // own call site so operators can pin provider/model/effort independently of
   // mainAgent; the per-call model override in `agent/advisor.ts` still wins.
   "advisor",
+  // Cue Live's front-model presence layer (WS-E): a tiny, fast model that
+  // decides end-of-turn (mid-thought vs finished) and phrases short spoken
+  // acknowledgements. Pin a fast, cheap, low-latency model here — it sits on
+  // the end-of-turn hot path, so latency matters far more than depth.
+  "voiceFrontDecision",
 ]);
 export type LLMCallSite = z.infer<typeof LLMCallSiteEnum>;
 

@@ -32,6 +32,11 @@ export const LiveVoiceProtocolErrorCode = {
   MissingRequiredField: "missing_required_field",
   InvalidField: "invalid_field",
   InvalidAudioPayload: "invalid_audio_payload",
+  // The session cannot start because the STT/TTS credentials it needs are
+  // missing or non-streaming (WS-E credential preflight). Distinct from
+  // transport/field errors so clients can surface a "voice unavailable"
+  // affordance instead of a generic error.
+  CredentialsUnavailable: "credentials_unavailable",
 } as const;
 
 export type LiveVoiceProtocolErrorCode =

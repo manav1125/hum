@@ -10,11 +10,20 @@ export type LiveVoiceMetricsEvent =
   | "final_transcript"
   | "first_assistant_delta"
   | "first_tts_audio"
+  | "ack_spoken"
   | "turn_completed"
   | "turn_cancelled"
   | "session_ended";
 
 type LiveVoiceTurnStatus = "active" | "completed" | "cancelled";
+
+/**
+ * Which floor-holding spoken acknowledgement actually spoke during a turn.
+ * `first_delta` = the assistant was slow to produce its first spoken delta;
+ * `tool_use` = the turn started a (guaranteed-slow) tool call. Turns that
+ * never needed an ack leave this `null`.
+ */
+export type LiveVoiceSpokenAckKind = "first_delta" | "tool_use";
 
 interface LiveVoiceMetricsCollectorOptions {
   sessionId: string;
@@ -56,6 +65,7 @@ interface LiveVoiceTurnMetrics {
   turnId: string;
   status: LiveVoiceTurnStatus;
   cancellationReason: string | null;
+  ackSpoken: LiveVoiceSpokenAckKind | null;
   timestamps: LiveVoiceTurnTimestamps;
   durations: LiveVoiceTurnDurations;
 }
@@ -106,6 +116,7 @@ interface MutableTurn {
   turnId: string;
   status: LiveVoiceTurnStatus;
   cancellationReason: string | null;
+  ackSpoken: LiveVoiceSpokenAckKind | null;
   timestamps: LiveVoiceTurnTimestamps;
 }
 
@@ -151,6 +162,7 @@ export class LiveVoiceMetricsCollector {
       turnId,
       status: "active",
       cancellationReason: null,
+      ackSpoken: null,
       timestamps: {
         startedAtMs: this.timestamp(),
         firstAudioAtMs: null,
@@ -213,6 +225,22 @@ export class LiveVoiceMetricsCollector {
       turn.timestamps.firstTtsAudioAtMs = this.timestamp();
     }
     return this.emit("first_tts_audio", turn.turnId);
+  }
+
+  /**
+   * Record that a floor-holding spoken acknowledgement spoke this turn. Only
+   * the first ack per turn is recorded (subsequent calls are no-ops), so the
+   * field reflects "did an ack cover the wait", not a running count.
+   */
+  markSpokenAck(
+    kind: LiveVoiceSpokenAckKind,
+    turnId?: string,
+  ): LiveVoiceMetricsFrame {
+    const turn = this.ensureActiveTurn(turnId);
+    if (turn.ackSpoken === null) {
+      turn.ackSpoken = kind;
+    }
+    return this.emit("ack_spoken", turn.turnId);
   }
 
   completeTurn(turnId?: string): LiveVoiceTurnMetrics {
@@ -377,6 +405,7 @@ function cloneMutableTurn(turn: MutableTurn): MutableTurn {
     turnId: turn.turnId,
     status: turn.status,
     cancellationReason: turn.cancellationReason,
+    ackSpoken: turn.ackSpoken,
     timestamps: { ...turn.timestamps },
   };
 }
@@ -387,6 +416,7 @@ function snapshotTurn(turn: MutableTurn): LiveVoiceTurnMetrics {
     turnId: turn.turnId,
     status: turn.status,
     cancellationReason: turn.cancellationReason,
+    ackSpoken: turn.ackSpoken,
     timestamps,
     durations: {
       firstAudioToFirstPartialMs: duration(

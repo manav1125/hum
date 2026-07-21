@@ -415,6 +415,25 @@ export function Mv3YouPage() {
         />
         <NavRow
           icon={
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#4FC7C7"
+              strokeWidth="1.8"
+              aria-hidden
+            >
+              <circle cx="12" cy="12" r="3" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          }
+          iconBg="rgba(79,199,199,.15)"
+          label="Automations — watchers & playbooks"
+          onPress={() => navigate(routes.automations)}
+        />
+        <NavRow
+          icon={
             <span
               aria-hidden
               style={{

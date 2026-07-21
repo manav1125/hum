@@ -16,6 +16,7 @@ import {
   recordWatcherInventoryIfDue,
   recordWatcherLlmProcessed,
 } from "./telemetry.js";
+import { fileWatcherEventsToCameIn } from "./watcher-intake.js";
 import {
   claimDueWatchers,
   completeWatcherPoll,
@@ -209,6 +210,33 @@ export async function runWatchersOnce(
   for (const watcher of claimed) {
     const pendingEvents = getPendingEvents(watcher.id);
     if (pendingEvents.length === 0) continue;
+
+    // ── Came-in intake (WS-F) ─────────────────────────────────────
+    // 'came_in' watchers file each new event into the Came-in lane (via
+    // playbooks, or as a parked work item). 'agent' watchers keep the legacy
+    // background-LLM path below.
+    if (watcher.intakeMode === "came_in") {
+      const dispositions = await fileWatcherEventsToCameIn(
+        watcher,
+        pendingEvents,
+      );
+      for (const event of pendingEvents) {
+        const disposition = dispositions.get(event.id);
+        if (disposition === "error") {
+          updateEventDisposition(event.id, "error", "Came-in filing failed");
+        } else {
+          updateEventDisposition(
+            event.id,
+            "notify",
+            disposition === "playbook"
+              ? "Handled by a playbook"
+              : "Filed to Came-in",
+          );
+        }
+      }
+      processed++;
+      continue;
+    }
 
     const eventSummaries = pendingEvents
       .map(

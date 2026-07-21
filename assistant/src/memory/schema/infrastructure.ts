@@ -112,9 +112,47 @@ export const watchers = sqliteTable("watchers", {
   nextPollAt: integer("next_poll_at").notNull(),
   configJson: text("config_json"),
   credentialService: text("credential_service").notNull(),
+  // 'came_in' — file new events into the Came-in lane as work items, then run
+  // playbook evaluation (default for watchers created via the Automations UI).
+  // 'agent' — legacy path: process events through a background LLM job using
+  // action_prompt. Pre-existing rows backfill to 'agent' (see migration 313).
+  intakeMode: text("intake_mode").notNull().default("agent"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
+
+/**
+ * Playbooks — first-class trigger→action automation rules (WS-F). A playbook
+ * scopes to a channel and/or a specific watcher, matches incoming items by a
+ * case-insensitive substring, and produces a work item whose autonomy is
+ * capped by the global trust dial. See playbooks/ for the store, the
+ * autonomy-cap enforcement point, and the runtime evaluator.
+ */
+export const playbooks = sqliteTable(
+  "playbooks",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    triggerText: text("trigger_text").notNull(),
+    channel: text("channel").notNull().default("*"),
+    watcherId: text("watcher_id"),
+    action: text("action").notNull(),
+    // Requested autonomy: 'auto' | 'draft' | 'notify'. Effective autonomy is
+    // this clamped against the global dial at fire/read time — never stored
+    // pre-downgraded, so the UI can show the honest 🔒 capped state.
+    autonomyLevel: text("autonomy_level").notNull().default("draft"),
+    priority: integer("priority").notNull().default(0),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    lastFiredAt: integer("last_fired_at"),
+    scopeId: text("scope_id").notNull().default("default"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_playbooks_enabled_priority").on(table.enabled, table.priority),
+    index("idx_playbooks_watcher").on(table.watcherId),
+  ],
+);
 
 export const watcherEvents = sqliteTable("watcher_events", {
   id: text("id").primaryKey(),

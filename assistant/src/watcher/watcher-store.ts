@@ -25,6 +25,9 @@ export interface Watcher {
   nextPollAt: number;
   configJson: string | null;
   credentialService: string;
+  /** 'came_in' — file events into the Came-in lane + run playbooks;
+   *  'agent' — legacy background-LLM processing of action_prompt. */
+  intakeMode: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -52,12 +55,15 @@ export function createWatcher(params: {
   pollIntervalMs?: number;
   enabled?: boolean;
   configJson?: string | null;
+  /** Defaults to 'came_in' — new watchers feed the Came-in lane + playbooks. */
+  intakeMode?: string;
 }): Watcher {
   const db = getDb();
   const id = uuid();
   const now = Date.now();
   const pollIntervalMs = params.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const enabled = params.enabled ?? true;
+  const intakeMode = params.intakeMode ?? "came_in";
 
   const row = {
     id,
@@ -75,6 +81,7 @@ export function createWatcher(params: {
     nextPollAt: enabled ? now : 0,
     configJson: params.configJson ?? null,
     credentialService: params.credentialService,
+    intakeMode,
     createdAt: now,
     updatedAt: now,
   };
@@ -112,6 +119,7 @@ export function updateWatcher(
     pollIntervalMs?: number;
     enabled?: boolean;
     configJson?: string | null;
+    intakeMode?: string;
   },
 ): Watcher | null {
   const db = getDb();
@@ -127,6 +135,7 @@ export function updateWatcher(
   if (updates.pollIntervalMs !== undefined)
     set.pollIntervalMs = updates.pollIntervalMs;
   if (updates.configJson !== undefined) set.configJson = updates.configJson;
+  if (updates.intakeMode !== undefined) set.intakeMode = updates.intakeMode;
 
   if (updates.enabled !== undefined) {
     set.enabled = updates.enabled;
@@ -451,6 +460,7 @@ function parseWatcherRow(row: typeof watchers.$inferSelect): Watcher {
     nextPollAt: row.nextPollAt,
     configJson: row.configJson,
     credentialService: row.credentialService,
+    intakeMode: row.intakeMode,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
