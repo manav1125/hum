@@ -1,14 +1,22 @@
 /**
  * Data layer for the Automations surfaces (WS-F) — watchers + playbooks.
  *
- * Uses raw `client.post` against the daemon `/v1/watchers/*` and
- * `/v1/playbooks/*` routes (these are global daemon routes, not part of the
- * generated per-assistant SDK). The playbook list carries the server-computed
- * effective autonomy + the global trust dial, so the UI never recomputes the
- * cap — it renders exactly what the server enforces.
+ * Every call goes to the per-assistant route (`/v1/assistants/{id}/watchers/*`,
+ * `/v1/playbooks/*`), which is what the generated SDK exposes and — critically —
+ * the ONLY shape the self-hosted auth interceptor recognises: it matches
+ * `/v1/assistants/{id}/…` and attaches the bearer token. These hooks used to
+ * post to bare `/v1/watchers/list`, which slipped past that matcher, went out
+ * with NO Authorization header, and came back 401 — so on a self-hosted
+ * instance every watcher and playbook read, create, update and delete failed
+ * silently and the surface rendered a confident "0 watchers".
+ *
+ * The playbook list carries the server-computed effective autonomy + the global
+ * trust dial, so the UI never recomputes the cap — it renders exactly what the
+ * server enforces.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { client } from "@/generated/daemon/client.gen";
 
 export type GlobalDial = "observe" | "assist" | "autonomous";
@@ -54,47 +62,67 @@ export interface WatcherProvider {
   requiredCredentialService: string;
 }
 
-async function post<T>(url: string, body: Record<string, unknown>): Promise<T> {
+/**
+ * POST a daemon automations route for one assistant.
+ *
+ * `path` is the route tail ("watchers/list"); the assistant prefix is added
+ * here so no call site can reintroduce the unauthenticated bare form.
+ */
+async function post<T>(
+  assistantId: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const url = `/v1/assistants/${assistantId}/${path}`;
   const { data, response } = await client.post({ url, body });
   if (!response?.ok) {
-    throw new Error(`${url} failed (${response?.status ?? "?"})`);
+    throw new Error(`${path} failed (${response?.status ?? "?"})`);
   }
   return data as T;
 }
 
 export function useWatchers() {
+  const assistantId = useActiveAssistantId();
   return useQuery({
-    queryKey: ["automations", "watchers"],
-    queryFn: () => post<Watcher[]>("/v1/watchers/list", {}),
+    queryKey: ["automations", "watchers", assistantId],
+    queryFn: () => post<Watcher[]>(assistantId!, "watchers/list", {}),
+    enabled: Boolean(assistantId),
     staleTime: 15_000,
   });
 }
 
 export function usePlaybooks() {
+  const assistantId = useActiveAssistantId();
   return useQuery({
-    queryKey: ["automations", "playbooks"],
+    queryKey: ["automations", "playbooks", assistantId],
     queryFn: () =>
       post<{ globalDial: GlobalDial; playbooks: Playbook[] }>(
-        "/v1/playbooks/list",
+        assistantId!,
+        "playbooks/list",
         {},
       ),
+    enabled: Boolean(assistantId),
     staleTime: 15_000,
   });
 }
 
 export function useWatcherProviders() {
+  const assistantId = useActiveAssistantId();
   return useQuery({
-    queryKey: ["automations", "providers"],
-    queryFn: () => post<WatcherProvider[]>("/v1/watchers/providers", {}),
+    queryKey: ["automations", "providers", assistantId],
+    queryFn: () =>
+      post<WatcherProvider[]>(assistantId!, "watchers/providers", {}),
+    enabled: Boolean(assistantId),
     staleTime: 5 * 60_000,
   });
 }
 
 export function useToggleWatcher() {
+  const assistantId = useActiveAssistantId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { id: string; enabled: boolean }) =>
-      post("/v1/watchers/update", {
+      post(assistantId!, "watchers/update", {
         watcher_id: vars.id,
         enabled: vars.enabled,
       }),
@@ -104,6 +132,7 @@ export function useToggleWatcher() {
 }
 
 export function useCreateWatcher() {
+  const assistantId = useActiveAssistantId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: {
@@ -111,17 +140,22 @@ export function useCreateWatcher() {
       provider: string;
       poll_interval_ms?: number;
       config?: Record<string, unknown>;
-    }) => post("/v1/watchers/create", { ...vars, intake_mode: "came_in" }),
+    }) =>
+      post(assistantId!, "watchers/create", {
+        ...vars,
+        intake_mode: "came_in",
+      }),
     onSettled: () =>
       void qc.invalidateQueries({ queryKey: ["automations", "watchers"] }),
   });
 }
 
 export function useDeleteWatcher() {
+  const assistantId = useActiveAssistantId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      post("/v1/watchers/delete", { watcher_id: id }),
+      post(assistantId!, "watchers/delete", { watcher_id: id }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["automations", "watchers"] });
       void qc.invalidateQueries({ queryKey: ["automations", "playbooks"] });
@@ -130,6 +164,7 @@ export function useDeleteWatcher() {
 }
 
 export function useCreatePlaybook() {
+  const assistantId = useActiveAssistantId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: {
@@ -140,17 +175,18 @@ export function useCreatePlaybook() {
       watcher_id?: string | null;
       autonomy_level: Autonomy;
       priority: number;
-    }) => post("/v1/playbooks/create", vars),
+    }) => post(assistantId!, "playbooks/create", vars),
     onSettled: () =>
       void qc.invalidateQueries({ queryKey: ["automations", "playbooks"] }),
   });
 }
 
 export function useTogglePlaybook() {
+  const assistantId = useActiveAssistantId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (vars: { id: string; enabled: boolean }) =>
-      post("/v1/playbooks/update", {
+      post(assistantId!, "playbooks/update", {
         playbook_id: vars.id,
         enabled: vars.enabled,
       }),
@@ -160,10 +196,11 @@ export function useTogglePlaybook() {
 }
 
 export function useDeletePlaybook() {
+  const assistantId = useActiveAssistantId();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      post("/v1/playbooks/delete", { playbook_id: id }),
+      post(assistantId!, "playbooks/delete", { playbook_id: id }),
     onSettled: () =>
       void qc.invalidateQueries({ queryKey: ["automations", "playbooks"] }),
   });
