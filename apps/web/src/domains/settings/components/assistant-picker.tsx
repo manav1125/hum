@@ -5,6 +5,7 @@ import { setSelectedAssistant } from "@/assistant/selection";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { DetailCard } from "@/components/detail-card";
 import { assistantsListOptions } from "@/generated/api/@tanstack/react-query.gen";
+import { getSelfHostedIngressUrl } from "@/lib/self-hosted/connection";
 import type { Assistant } from "@/generated/api/types.gen";
 import { Button } from "@vellumai/design-library/components/button";
 import { Tag } from "@vellumai/design-library/components/tag";
@@ -16,7 +17,12 @@ const PLATFORM_LIST_OPTIONS = assistantsListOptions({
 
 export function AssistantPicker() {
   const activeAssistantId = useActiveAssistantId();
-  const listQuery = useQuery(PLATFORM_LIST_OPTIONS);
+  // A self-hosted install owns exactly one assistant and has no platform
+  // account to list from — the request would go out unauthenticated and 401.
+  const listQuery = useQuery({
+    ...PLATFORM_LIST_OPTIONS,
+    enabled: !getSelfHostedIngressUrl(),
+  });
   const platformAssistants = (listQuery.data?.results ?? []) as Assistant[];
 
   if (listQuery.isPending || platformAssistants.length < 2) {

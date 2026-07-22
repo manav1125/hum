@@ -170,32 +170,37 @@ export async function getAssistant(
 
   // No ID provided — prefer platform-managed assistants, fall back to local.
   // Query platform first to avoid pagination issues with hosting=all.
-  const platformResult = await assistantsList({
-    query: { hosting: "platform" },
-    throwOnError: false,
-  });
+  //
+  // A self-hosted install has no platform account to ask: the request is not
+  // rewritten to the owner's gateway, so it goes to the platform unauthenticated
+  // and comes back 401 on every load. Skip straight to local there.
+  const platformResult = getSelfHostedIngressUrl()
+    ? null
+    : await assistantsList({
+        query: { hosting: "platform" },
+        throwOnError: false,
+      });
 
-  assertHasResponse(
-    platformResult.response,
-    platformResult.error,
-    "Failed to get assistant.",
-  );
+  if (platformResult) {
+    assertHasResponse(
+      platformResult.response,
+      platformResult.error,
+      "Failed to get assistant.",
+    );
 
-  if (!platformResult.response.ok) {
-    return {
-      ok: false,
-      status: platformResult.response.status,
-      error: toErrorObject(platformResult.error, platformResult.response),
-    };
-  }
-
-  const platformResults = platformResult.data?.results ?? [];
-  if (platformResults.length > 0) {
-    return {
-      ok: true,
-      status: platformResult.response.status,
-      data: platformResults[0]!,
-    };
+    // A failed platform lookup is not fatal — the local path below may still
+    // find the assistant. Returning here used to strand any install whose
+    // platform query could not succeed.
+    if (platformResult.response.ok) {
+      const platformResults = platformResult.data?.results ?? [];
+      if (platformResults.length > 0) {
+        return {
+          ok: true,
+          status: platformResult.response.status,
+          data: platformResults[0]!,
+        };
+      }
+    }
   }
 
   // No platform assistant found — try local.
