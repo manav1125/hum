@@ -119,7 +119,7 @@ describe("AssistantConfigSchema", () => {
     expect(result.timeouts).toEqual({
       shellDefaultTimeoutSec: 120,
       shellMaxTimeoutSec: 600,
-      permissionTimeoutSec: 300,
+      permissionTimeoutSec: 3600,
       toolExecutionTimeoutSec: 120,
       providerStreamTimeoutSec: 1800,
     });
@@ -630,7 +630,7 @@ describe("AssistantConfigSchema", () => {
     });
     expect(result.timeouts.shellDefaultTimeoutSec).toBe(30);
     expect(result.timeouts.shellMaxTimeoutSec).toBe(600);
-    expect(result.timeouts.permissionTimeoutSec).toBe(300);
+    expect(result.timeouts.permissionTimeoutSec).toBe(3600);
   });
 
   test("accepts zero for non-negative fields", () => {
@@ -2145,7 +2145,7 @@ describe("loadConfig with schema validation", () => {
     const config = loadConfig();
     expect(config.timeouts.shellDefaultTimeoutSec).toBe(120);
     expect(config.timeouts.shellMaxTimeoutSec).toBe(600);
-    expect(config.timeouts.permissionTimeoutSec).toBe(300);
+    expect(config.timeouts.permissionTimeoutSec).toBe(3600);
   });
 
   test("preserves valid fields when other fields are invalid", () => {
@@ -2179,7 +2179,7 @@ describe("loadConfig with schema validation", () => {
     const config = loadConfig();
     expect(config.timeouts.shellDefaultTimeoutSec).toBe(30);
     expect(config.timeouts.shellMaxTimeoutSec).toBe(600);
-    expect(config.timeouts.permissionTimeoutSec).toBe(300);
+    expect(config.timeouts.permissionTimeoutSec).toBe(3600);
   });
 
   test("falls back for invalid contextWindow relationship", () => {

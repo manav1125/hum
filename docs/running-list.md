@@ -2,6 +2,47 @@
 
 Legend: ✅ proven working · 🟡 shipped, not yet proven/activated · 🔧 needs build/fix · 👤 needs you · 🎨 needs design
 
+## "Slow, then it randomly disconnects" — root-caused 2026-07-22
+Four independent faults produced one experience. Two server, two client.
+
+**S1 · Embedding worker starved the daemon of CPU (the big one).** ONNX Runtime defaults to
+one intra-op thread per core, so a single embedding batch took BOTH vCPUs of the
+`shared-cpu-2x` and the daemon's single event loop was not scheduled — measured during a
+stall window: **CPU steal 91.3%, idle 1.1%**, daemon on 2.4% of one core, `blkio` delay **0**
+(so NOT disk), 0 major faults. Fix: pin `intraOpNumThreads=1` + `interOp=1` + sequential
+(`CUE_EMBED_ONNX_THREADS`), renice workers to +10 (`CUE_EMBED_WORKER_NICENESS`), bump
+RUNTIME_VERSION so installs regenerate. Measured on the real worker: parallelism 3.97x → 1.00x
+and **15% less total CPU**. After deploy: **steal 91.3% → 4.3%, idle 1.1% → 46.2%**, worker
+running `NI 10`.
+*Two suspects were ruled OUT with evidence — don't re-chase them:* the 64MiB WAL is the
+configured `journal_size_limit` reuse ceiling, not a checkpoint storm; and
+`memory_v2_activation_logs` at ~113KB/row is its 300-concept cap working, not runaway
+telemetry.
+
+**S2 · `git status` killed at 1MiB every heartbeat.** `/workspace` held 46,408 untracked
+conversation scratch dirs → 1.3MiB of porcelain vs child_process's 1MiB default → killed
+mid-walk, **86 consecutive heartbeat failures**, ~1s of wasted tree walk paid twice per turn.
+Fix: `conversations/` added to `/workspace/.gitignore` (runtime data, like `data/`/`logs/`;
+the 7 tracked files stay tracked) + explicit `workspaceGit.maxOutputBytes` (64MiB) and a named
+`git_output_overflow` error. **46,421 lines → 240; ~1000ms → 15ms; 86 failures → 0.**
+
+**C1 · The SSE transport retired itself permanently.** The reconnect budget was refunded only
+on a *data* frame, but an idle stream carries only heartbeat comments — five flaps across
+*hours* burned it for good. Any frame now refunds it.
+**C2 · Recovery existed only on the chat page.** `sse.closed`'s sole subscriber was mounted in
+the chat view, so on Library/Home/Projects a give-up was terminal for the session. The service
+now owns a capped never-give-up timer, cancelled on hidden/suspend.
+Also: "Failed to open app" was a one-shot POST whose error was thrown as a parsed body (not an
+`Error`), so the message never survived — now retryable and honest; and an intentional
+local-mode `AbortError` was read as lost connectivity, degrading the app on every visibility
+resume.
+
+**Still open:** ~46k conversation scratch dirs (596MB) remain on disk — ignored by git but
+worth pruning; a **data** decision, not a code fix. The embedding worker's unexplained
+~30-min post-boot CPU burst has no matching `memory_jobs` rows — some caller outside the job
+queue. And `shared-cpu-2x` gave only 0.73 of a core to a spinner even when idle: if background
+ML stays, a performance CPU is the durable answer.
+
 ## Task-execution intelligence — the moat (shipped 2026-07-22)
 **The problem:** HQ ran every task the same way. A one-line errand and a fully-briefed
 project task both went straight to an agent turn, so ~half the user's real tasks
