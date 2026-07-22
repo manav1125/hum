@@ -37,11 +37,32 @@ Also: "Failed to open app" was a one-shot POST whose error was thrown as a parse
 local-mode `AbortError` was read as lost connectivity, degrading the app on every visibility
 resume.
 
-**Still open:** ~46k conversation scratch dirs (596MB) remain on disk — ignored by git but
-worth pruning; a **data** decision, not a code fix. The embedding worker's unexplained
-~30-min post-boot CPU burst has no matching `memory_jobs` rows — some caller outside the job
-queue. And `shared-cpu-2x` gave only 0.73 of a core to a spinner even when idle: if background
-ML stays, a performance CPU is the durable answer.
+**S3 · The host was starving us (RESOLVED 2026-07-22).** After S1 removed our own CPU
+contribution, steal was still **58.7% sustained** on `shared-cpu-2x` with our worker at 9%
+and niced — neighbours, not us. A single-threaded daemon that is not scheduled cannot answer
+inside the gateway timeout, which is the 504 / "Gateway Timeout" users hit. Resized to
+**`shared-cpu-4x`** (4 vCPU, kept 4GB): **steal 58.7% → 1.4%, idle 34.1% → 90.6%**, and the
+endpoints that were 504ing (`next-move`, `home/state`, `brand-profiles`, `missions`) all
+return 200 in 0.37–0.44s. Cost ≈ **+$2/mo**. `performance-2x` (+$41/mo) was NOT needed — the
+daemon needs ONE free core, not two, so more shared cores beat dedicated ones here. Do not
+roll this to the fleet without measuring steal per instance; this was a sample of one.
+
+**Still open:** ~46k conversation scratch dirs remain on disk — but they are NOT debris: only
+7 are truly empty, 4,721 hold real messages and 103 attachment files hold 412MB. Do not
+bulk-delete. The embedding worker's unexplained ~30-min post-boot CPU burst has no matching
+`memory_jobs` rows — some caller outside the job queue.
+
+## Verify in the real app, not with curl (2026-07-22)
+`assistant/qa/e2e-app-pass.ts` drives the **signed-in desktop app over CDP** across every
+route (desktop + 390px) and reports console errors, failed requests, dead-end screens and
+overflow. It exists because the previous habit could not find what it found: Automations had
+been 401ing on **every** call since WS-F shipped — all nine watcher/playbook operations went
+out with no Authorization header, because the self-hosted interceptor only rewrites
+`/v1/assistants/{id}/{segment}` and the hooks used bare `/v1/watchers/*`. The surface then
+rendered a confident "WATCHERS · 0". **curl returns 200 for those endpoints and the component
+tests mock the client — both were green the whole time.** Same root shape fixed in
+`getAssistant()` (platform listing that can only 401, and which returned instead of falling
+through to local) and the Settings picker/upgrade card.
 
 ## Task-execution intelligence — the moat (shipped 2026-07-22)
 **The problem:** HQ ran every task the same way. A one-line errand and a fully-briefed
