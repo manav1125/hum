@@ -148,11 +148,20 @@ health state says the true thing on both surfaces.
 **Also:** the browser-extension install hint pointed at `vellum-assistant-browser` — a
 DIFFERENT publisher's extension. Now points at Cue's own deterministic id.
 
-## Connector reality on this instance (2026-07-22)
-`oauth_connections` is **empty**; `provider_connections` holds only LLM providers; no channels
-configured; exactly **one** inbound channel event ever (Slack, 20 Jun). So Watchers/Playbooks
-cannot be proven end-to-end without the user connecting an account (an OAuth action only they
-can take). Any product claim about inbox/calendar watching is currently unbacked.
+## Connector reality on this instance (CORRECTED 2026-07-23)
+**Earlier claim of "zero connected accounts" was WRONG — I only checked the native OAuth
+table.** The real connectors live in `config.mcp.servers`: **11 enabled Composio MCP servers**
+— Gmail, Google Calendar, Google Drive, Google Sheets, Slack, GitHub, Linear, Airtable,
+HubSpot, Notion (+ the composio workbench). They are REAL and heavily used (194
+COMPOSIO_REMOTE_WORKBENCH calls, Sheets/Calendar/Slack invocations in `tool_invocations`).
+`oauth_connections` (native) IS empty, and only one inbound channel event ever (Slack, 20 Jun).
+**The architecture gap:** the capability snapshot, task-assessment, and watcher credential-health
+ALL read only native `oauth_connections`, so they believe nothing is connected. This makes the
+assessment moat tell the model "LINKED ACCOUNTS: none" when Gmail/Slack/etc. are usable, and
+makes last night's watcher `not_connected` copy ("Google isn't connected") misleading. Fix in
+flight: make the capability view MCP-aware, with the native-poller-vs-agent-reach distinction
+(an MCP connection lets the AGENT act on Gmail, but a native Gmail *watcher* still needs a
+native token to poll Google's REST API).
 
 ## Verify in the real app, not with curl (2026-07-22)
 `assistant/qa/e2e-app-pass.ts` drives the **signed-in desktop app over CDP** across every
