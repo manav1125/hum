@@ -19,6 +19,32 @@ interface LoadedApp {
   html: string;
 }
 
+/**
+ * Turn whatever `appsByIdOpenPost` threw into a message worth showing.
+ *
+ * With `throwOnError: true` the generated client throws the *parsed error
+ * body*, not an `Error` — so the previous `err instanceof Error` check
+ * essentially never matched and every failure, including a gateway 504 or a
+ * dropped connection, rendered the same contentless "Failed to open app".
+ * Naming the actual failure is what lets a user (or a support bundle) tell a
+ * missing app apart from a stalled daemon.
+ */
+export function describeOpenFailure(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string" && err) return err;
+  if (err && typeof err === "object") {
+    const body = err as { error?: unknown; message?: unknown; detail?: unknown };
+    for (const field of [body.error, body.message, body.detail]) {
+      if (typeof field === "string" && field) return field;
+      if (field && typeof field === "object") {
+        const nested = (field as { message?: unknown }).message;
+        if (typeof nested === "string" && nested) return nested;
+      }
+    }
+  }
+  return "Failed to open app";
+}
+
 export function LibraryDetailPage() {
   const { appId } = useParams<{ appId: string }>();
   const assistantId = useActiveAssistantId();
@@ -27,6 +53,12 @@ export function LibraryDetailPage() {
   const [app, setApp] = useState<LoadedApp | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  // Bumping this re-runs the load effect. The open request is a one-shot
+  // POST with no query-client retry behind it, so a daemon that was briefly
+  // stalled (gateway 504, transport drop) used to strand the user on a
+  // terminal "Failed to open app / Back to Library" screen even though the
+  // very next request would have succeeded.
+  const [reloadNonce, setReloadNonce] = useState(0);
   const requestRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -51,13 +83,17 @@ export function LibraryDetailPage() {
       })
       .catch((err) => {
         if (requestRef.current !== appId) return;
-        setError(err instanceof Error ? err.message : "Failed to open app");
+        setError(describeOpenFailure(err));
       });
 
     return () => {
       requestRef.current = null;
     };
-  }, [assistantId, appId]);
+  }, [assistantId, appId, reloadNonce]);
+
+  const handleRetry = useCallback(() => {
+    setReloadNonce((n) => n + 1);
+  }, []);
 
   const handleClose = useCallback(() => {
     void navigate(routes.library.root);
@@ -91,13 +127,22 @@ export function LibraryDetailPage() {
         <p className="text-body-medium-lighter text-[var(--content-tertiary)]">
           {error}
         </p>
-        <button
-          type="button"
-          onClick={handleClose}
-          className="text-body-medium-default text-[var(--primary-base)] underline"
-        >
-          Back to Library
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="text-body-medium-default text-[var(--primary-base)] underline"
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            onClick={handleClose}
+            className="text-body-medium-default text-[var(--content-tertiary)] underline"
+          >
+            Back to Library
+          </button>
+        </div>
       </div>
     );
   }

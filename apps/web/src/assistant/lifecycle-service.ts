@@ -39,6 +39,7 @@ import {
   TRANSPORT_ERROR_MESSAGE,
 } from "@/assistant/lifecycle";
 import { subscribe } from "@/lib/event-bus";
+import { isPlatformFeaturesDisabledAbort } from "@/lib/platform-features-abort";
 import { ASSISTANT_QUERY_KEY, assistantQueryKey } from "@/assistant/queries";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import type { AssistantState } from "@/assistant/types";
@@ -49,6 +50,20 @@ import { isAuthenticated, type SessionStatus } from "@/stores/session-status";
 
 const PROBE_RETRY_DELAY_MS = 4_000;
 const PROBE_RETRY_LIMIT_MS = 60_000;
+
+/**
+ * Render a thrown value as a readable `Name: message` string.
+ *
+ * `DOMException` (fetch aborts, timeouts) has no useful `toString()` in the
+ * Electron renderer console — it prints `[object DOMException]`, hiding both
+ * the abort reason and whether the failure was even a network problem.
+ */
+function describeThrown(err: unknown): string {
+  if (err instanceof DOMException || err instanceof Error) {
+    return `${err.name}: ${err.message}`;
+  }
+  return String(err);
+}
 
 export interface LifecycleServiceInputs {
   sessionStatus: SessionStatus;
@@ -253,7 +268,20 @@ class AssistantLifecycleService {
       }
       await this.applyServerStateUpdate(result);
     } catch (err) {
-      console.error("Error checking assistant status:", err);
+      // A platform request aborted by the local-mode gate never left the
+      // client — it is a configuration no-op, not a connectivity failure.
+      // Degrading on it made a perfectly healthy self-hosted app announce
+      // itself unreachable on every visibility/power resume, which reads to
+      // the user as "it randomly loses connection while I'm in the app".
+      if (isPlatformFeaturesDisabledAbort(err)) return;
+      // `console.error("…", domException)` renders as `[object DOMException]`
+      // in the Electron renderer log — the single least useful thing a
+      // connectivity bug report can contain. Log the name and message.
+      console.error(
+        "Error checking assistant status:",
+        describeThrown(err),
+        err,
+      );
       captureError(err, { context: "check_assistant" });
       if (generation !== this.generation) return;
       // A thrown fetch is a transport failure (the request never got

@@ -401,6 +401,34 @@ describe("WorkspaceGitService", () => {
       expect(status.clean).toBe(false);
       expect(status.staged).toContain("file.txt");
     });
+
+    test("survives porcelain output larger than the child_process 1 MiB default", async () => {
+      // `child_process`' default maxBuffer is 1 MiB. `git status --porcelain`
+      // emits one line per changed path, so a workspace carrying tens of
+      // thousands of untracked entries (observed in production: ~46k
+      // conversation directories, ~1.4 MiB of porcelain) blew straight past
+      // it — the child was killed mid-walk with
+      // ERR_CHILD_PROCESS_STDIO_MAXBUFFER, getStatus() threw, and every
+      // turn-boundary and heartbeat commit failed forever while still
+      // paying the full tree walk each time.
+      const service = new WorkspaceGitService(testDir);
+      await service.ensureInitialized();
+
+      // Written at the repo root: git collapses a wholly-untracked
+      // subdirectory into one porcelain line, so nesting them would not
+      // reproduce the volume. ~210 bytes per entry × 6000 ≈ 1.25 MiB.
+      const namePrefix = "f".repeat(200);
+      const fileCount = 6000;
+      for (let i = 0; i < fileCount; i++) {
+        writeFileSync(join(testDir, `${namePrefix}${i}.txt`), "x");
+      }
+
+      const status = await service.getStatus();
+
+      expect(status.clean).toBe(false);
+      expect(status.untracked.length).toBeGreaterThanOrEqual(fileCount);
+      expect(status.untracked).toContain(`${namePrefix}${fileCount - 1}.txt`);
+    }, 60_000);
   });
 
   describe("mutex locking", () => {

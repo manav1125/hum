@@ -38,6 +38,14 @@ export const WorkspaceGitConfigSchema = z
       .describe(
         "Timeout for interactive git operations like status and diff (ms)",
       ),
+    maxOutputBytes: z
+      .number({ error: "workspaceGit.maxOutputBytes must be a number" })
+      .int("workspaceGit.maxOutputBytes must be an integer")
+      .positive("workspaceGit.maxOutputBytes must be a positive integer")
+      .default(64 * 1024 * 1024)
+      .describe(
+        "Maximum stdout/stderr a single git subprocess may produce before it is killed (bytes). The child_process default is 1 MiB, which `git status --porcelain` exceeds on a workspace with tens of thousands of untracked paths — the child is killed mid-walk and every commit fails.",
+      ),
     enrichmentQueueSize: z
       .number({ error: "workspaceGit.enrichmentQueueSize must be a number" })
       .int("workspaceGit.enrichmentQueueSize must be an integer")

@@ -347,6 +347,50 @@ describe("lifecycleService — bootstrap branches", () => {
     );
   });
 
+  test("a local-mode platform-features abort is NOT treated as a transport failure", async () => {
+    // `platformFeaturesGate` aborts platform-bound requests in local mode
+    // with a deliberate AbortError — the request never left the client.
+    // Treating it as a transport failure degraded a perfectly healthy
+    // self-hosted app to the error/unreachable surface on every
+    // visibility or power resume (the repeating
+    // `Error checking assistant status: [object DOMException]` in the
+    // desktop log), which reads to the user as random disconnects.
+    getAssistantMock.mockImplementationOnce(async () => {
+      throw new DOMException(
+        "Platform features disabled in local mode",
+        "AbortError",
+      );
+    });
+
+    lifecycleService.setInputs({
+      ...baseInputs,
+      queryClient: makeQueryClient(),
+    });
+    await lifecycleService.checkAssistant();
+
+    expect(useAssistantLifecycleStore.getState().assistantState.kind).not.toBe(
+      "error",
+    );
+  });
+
+  test("a genuine abort (network/timeout) still degrades to a transient error", async () => {
+    // The exemption above must stay narrow: any other DOMException is a
+    // real transport failure and must keep its degrade/auto-retry path.
+    getAssistantMock.mockImplementationOnce(async () => {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    });
+
+    lifecycleService.setInputs({
+      ...baseInputs,
+      queryClient: makeQueryClient(),
+    });
+    await lifecycleService.checkAssistant();
+
+    expect(useAssistantLifecycleStore.getState().assistantState.kind).toBe(
+      "error",
+    );
+  });
+
   test("gateway-auth short-circuit writes active state without calling the server", async () => {
     isGatewayAuthModeMock.mockImplementation(() => true);
 

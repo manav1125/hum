@@ -13,9 +13,16 @@
  *     show "online"; when none are connected the picker says so. Offline
  *     "last seen 3d ago · Wake" for a *disconnected* Mac needs persistence the
  *     daemon doesn't keep yet — flagged inline, never faked.
- *   • LIVE RUN — REAL. This is the web view of the Cue Live overlay loop, so it
- *     reuses `GET cuelive/session` (verified act steps, pausable/stoppable) —
- *     the exact honest source the mobile remote viewer uses.
+ *   • LIVE RUN — REAL, and never more confident than its source. It reuses
+ *     `GET cuelive/session`, whose `active` flag only means "a Mac called in
+ *     within the last two minutes" and whose `goal` survives a run that simply
+ *     stopped reporting. So this surface claims "running" only when a Mac is on
+ *     the other end AND a step landed inside the freshness window; otherwise it
+ *     says it is waiting, or that nothing has reported. A step is labelled
+ *     `verified` only when the observation carries the daemon's own verify
+ *     beat — a recorded step is "done", not verified.
+ *   • Both panels resolve the same {@link MacLink}, so the run card and the
+ *     which-Mac picker can never claim opposite things about the connection.
  *   • PLAN / CONSENT — driven by `organizer/session`'s `plan`, which stays
  *     inactive until the desktop-organizer skill reports its plan back into the
  *     daemon (see `routes/organizer-session.ts`). Until then the card shows the
@@ -43,6 +50,15 @@ import { OrganizerRemotePage } from "@/mobile-v3/organizer/organizer-remote-page
 
 const POLL_MS = 5_000;
 
+/**
+ * How long a run may go without the Mac reporting a step before this surface
+ * stops calling it "running". The act loop reports on every step and its own
+ * model call is capped at 20s, so a minute and a half of silence means the run
+ * is not progressing — whatever the daemon's coarse 2-minute "active" window
+ * still says.
+ */
+const RUN_STALE_MS = 90_000;
+
 const serif = "'Instrument Serif', Georgia, serif";
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -62,6 +78,46 @@ const C = {
 type OrgSession = OrganizerSessionGetResponse["session"];
 type Target = OrganizerSessionGetResponse["targets"][number];
 type LiveSession = CueliveSessionGetResponse;
+type LiveObservation = LiveSession["observations"][number];
+
+/**
+ * One reconciled answer to "is a Mac on the other end of this?", shared by the
+ * run card and the which-Mac picker so the two can never contradict each other.
+ *
+ * They read different daemon state and neither alone is the truth:
+ *   · `organizer/session.targets` — host_bash hub subscribers, scoped to the
+ *     calling actor and fail-closed. Authoritative when non-empty; a Mac whose
+ *     subscription carries no principal is invisible here even while it works.
+ *   · `cuelive/session` — a global in-memory recorder of the calls a Mac makes.
+ *     Fresh observations prove a Mac is talking to Cue, but can't name it.
+ */
+type MacLink =
+  /** The roster names at least one connected Mac. */
+  | { state: "connected" }
+  /** Nothing in the roster, but a Mac reported a step just now. */
+  | { state: "reporting" }
+  /** No roster entry and no recent report — nothing is on the other end. */
+  | { state: "none" };
+
+function newestObservationAt(live: LiveSession | null): number | null {
+  const at = live?.observations?.[0]?.at;
+  if (!at) return null;
+  const ms = new Date(at).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function resolveMacLink(
+  targets: Target[],
+  live: LiveSession | null,
+  now: number,
+): MacLink {
+  if (targets.length > 0) return { state: "connected" };
+  const last = newestObservationAt(live);
+  if (live?.active && last !== null && now - last <= RUN_STALE_MS) {
+    return { state: "reporting" };
+  }
+  return { state: "none" };
+}
 
 function relativeTime(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -270,12 +326,101 @@ function PlanCard({
 
 /* ── live run (reuses the Cue Live overlay loop) ───────────────────────── */
 
+/** A bare `Step 4` marker — a counter, not something that happened. */
+const BARE_STEP = /^step\s+\d+$/i;
+
+/**
+ * The daemon writes act-step summaries as `Step N — <goal>` / `Run finished —
+ * <goal>`, so every row repeats the request the card already shows as its
+ * headline. Strip that echo and keep only the part that says what happened.
+ */
+export function stripGoalEcho(summary: string, goalText: string): string {
+  const s = summary.trim();
+  const goal = goalText.trim();
+  if (!goal) return s;
+  if (s === goal) return "";
+  const suffix = ` — ${goal}`;
+  return s.endsWith(suffix) ? s.slice(0, -suffix.length).trim() : s;
+}
+
+/**
+ * The verify beat is the ONLY evidence the daemon has that a step landed, and
+ * it sets it only where a host round-trip actually reported back. A `done`
+ * observation without one means "recorded", not "verified" — say that.
+ */
+export function stepStatusLabel(ob: {
+  status: LiveObservation["status"];
+  verify?: LiveObservation["verify"];
+}): string {
+  if (ob.verify) return ob.verify;
+  if (ob.status === "held") return "held";
+  if (ob.status === "active") return "working";
+  return "done";
+}
+
+export interface StepRow {
+  id: number;
+  text: string;
+  status: LiveObservation["status"];
+  verify?: LiveObservation["verify"];
+}
+
+/**
+ * Rows the daemon can actually back. Drops the goal echo, drops rows whose
+ * only content was a step counter, and drops repeats — a step list that
+ * restates the request four times is noise pretending to be progress.
+ */
+export function stepRows(
+  observations: LiveObservation[],
+  goalText: string,
+  limit = 6,
+): StepRow[] {
+  const rows: StepRow[] = [];
+  const seen = new Set<string>();
+  for (const ob of observations) {
+    const head = stripGoalEcho(ob.summary ?? "", goalText);
+    const detail = (ob.detail ?? "").trim();
+    // No detail and nothing but a counter left → the row said nothing.
+    const text = detail || (BARE_STEP.test(head) ? "" : head);
+    if (!text) continue;
+    if (seen.has(text)) continue;
+    seen.add(text);
+    rows.push({
+      id: ob.id,
+      text,
+      status: ob.status,
+      verify: ob.verify ?? undefined,
+    });
+    if (rows.length >= limit) break;
+  }
+  return rows;
+}
+
+/** The honest headline for the run card, given the goal and the Mac link. */
+export type RunPhase = "running" | "waiting" | "stalled" | "ended";
+
+export function runPhase(
+  goal: { done: boolean },
+  link: MacLink,
+  lastStepAt: number | null,
+  now: number,
+): RunPhase {
+  if (goal.done) return "ended";
+  if (link.state === "none") return "waiting";
+  if (lastStepAt === null || now - lastStepAt > RUN_STALE_MS) return "stalled";
+  return "running";
+}
+
 function LiveRun({
   live,
   assistantId,
+  link,
+  now,
 }: {
   live: LiveSession | null;
   assistantId: string;
+  link: MacLink;
+  now: number;
 }) {
   const queryClient = useQueryClient();
   const sessionKey = cueliveSessionGetOptions({
@@ -304,7 +449,7 @@ function LiveRun({
     onSuccess: (data) => queryClient.setQueryData(sessionKey, data.session),
   });
 
-  if (!live?.active || !live.goal) {
+  if (!live?.goal) {
     const last = relativeTime(live?.lastSeenAt);
     return (
       <div style={panel}>
@@ -312,8 +457,8 @@ function LiveRun({
         <div
           style={{ fontSize: 13.5, color: C.t2, marginTop: 8, lineHeight: 1.5 }}
         >
-          No run in flight. When Cue drives your Mac, its verified steps stream
-          here — the web view of the overlay loop, pausable.
+          No run in flight. When Cue drives your Mac, the steps it reports
+          stream here — the web view of the overlay loop, pausable.
           {last ? ` Last active ${last}.` : ""}
         </div>
       </div>
@@ -322,94 +467,154 @@ function LiveRun({
 
   const goal = live.goal;
   const paused = live.paused;
-  const steps = live.observations.slice(0, 6);
+  const lastStepAt = newestObservationAt(live);
+  const phase = runPhase(goal, link, lastStepAt, now);
+  const rows = stepRows(live.observations, goal.text);
+  const sinceLastStep = relativeTime(live.observations[0]?.at ?? null);
+
+  // The eyebrow may only claim what the daemon can back. "Running" needs a Mac
+  // on the other end AND a step reported inside the freshness window; anything
+  // else says plainly what is actually true.
+  const eyebrow =
+    phase === "ended"
+      ? goal.stoppedRemotely
+        ? "Last run · stopped"
+        : "Last run · finished"
+      : phase === "waiting"
+        ? "Waiting for a Mac"
+        : phase === "stalled"
+          ? "No step reported"
+          : paused
+            ? `Paused from the web · step ${goal.step}`
+            : `Running on ${live.watching?.appName ?? "your Mac"} · step ${goal.step}`;
+  const eyebrowColor =
+    phase === "running" && !paused
+      ? C.green
+      : phase === "ended"
+        ? C.t3
+        : C.amber;
+
+  const note =
+    phase === "waiting"
+      ? "No Mac is connected, so nothing is executing. Cue will not start this run until one is — open Cue on your Mac to pair it."
+      : phase === "stalled"
+        ? `Your Mac hasn’t reported a step${sinceLastStep ? ` since ${sinceLastStep}` : ""}. Cue can’t confirm this is still moving — stop it and ask again if it stays like this.`
+        : null;
+
+  // Pause only means something while a run is genuinely in flight. Stop stays
+  // available on an open goal: it arms a one-shot abort the Mac consumes on its
+  // next call, which is honest even when the Mac has gone quiet.
+  const canPause = phase === "running";
+  const canStop = phase !== "ended";
 
   return (
     <div style={panel}>
-      <div style={{ ...microLabel, color: paused ? C.amber : C.green }}>
-        {paused ? "Paused from the web" : "Running on"}{" "}
-        {live.watching?.appName ?? "your Mac"} · step {goal.step}
-      </div>
+      <div style={{ ...microLabel, color: eyebrowColor }}>{eyebrow}</div>
       <div
         style={{ fontFamily: serif, fontSize: 20, color: C.t1, marginTop: 8 }}
       >
         {goal.text}
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        {steps.map((ob) => (
-          <div
-            key={ob.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "7px 0",
-              fontSize: 13.5,
-              color: ob.status === "active" ? C.t1 : C.t2,
-            }}
-          >
-            <span
-              aria-hidden
+      {note ? (
+        <div
+          style={{ fontSize: 13, color: C.t2, marginTop: 8, lineHeight: 1.5 }}
+        >
+          {note}
+        </div>
+      ) : null}
+
+      {rows.length > 0 ? (
+        <div style={{ marginTop: 14 }}>
+          {rows.map((row) => (
+            <div
+              key={row.id}
               style={{
-                color:
-                  ob.status === "active"
-                    ? C.blue
-                    : ob.status === "held"
-                      ? C.amber
-                      : C.green,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "7px 0",
+                fontSize: 13.5,
+                color: row.status === "active" ? C.t1 : C.t2,
               }}
             >
-              {ob.status === "active" ? "◷" : ob.status === "held" ? "⏸" : "✓"}
-            </span>
-            <span style={{ flex: 1 }}>{ob.summary}</span>
-            <span style={{ fontFamily: mono, fontSize: 10, color: C.t3 }}>
-              {ob.status === "active"
-                ? "verifying"
-                : ob.status === "held"
-                  ? "held"
-                  : "verified"}
-            </span>
-          </div>
-        ))}
-      </div>
+              <span
+                aria-hidden
+                style={{
+                  color:
+                    row.status === "active"
+                      ? C.blue
+                      : row.status === "held"
+                        ? C.amber
+                        : row.verify === "verified"
+                          ? C.green
+                          : C.t3,
+                }}
+              >
+                {row.status === "active"
+                  ? "◷"
+                  : row.status === "held"
+                    ? "⏸"
+                    : row.verify === "verified"
+                      ? "✓"
+                      : "·"}
+              </span>
+              <span style={{ flex: 1 }}>{row.text}</span>
+              <span style={{ fontFamily: mono, fontSize: 10, color: C.t3 }}>
+                {stepStatusLabel(row)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12.5, color: C.t3, marginTop: 12 }}>
+          No step detail reported — Cue has the goal but nothing has come back
+          describing what it did.
+        </div>
+      )}
 
-      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-        <button
-          type="button"
-          disabled={pause.isPending}
-          onClick={() => pause.mutate(!paused)}
-          style={{
-            background: C.sunken,
-            color: C.t1,
-            border: `1px solid ${C.line}`,
-            borderRadius: 9,
-            padding: "8px 16px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          {paused ? "▶ Resume" : "⏸ Pause"}
-        </button>
-        <button
-          type="button"
-          disabled={stop.isPending}
-          onClick={() => stop.mutate()}
-          style={{
-            background:
-              "color-mix(in srgb, var(--mv1-danger) 12%, transparent)",
-            color: "var(--mv1-danger)",
-            border:
-              "1px solid color-mix(in srgb, var(--mv1-danger) 35%, transparent)",
-            borderRadius: 9,
-            padding: "8px 16px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          ■ Stop
-        </button>
-      </div>
+      {canPause || canStop ? (
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          {canPause ? (
+            <button
+              type="button"
+              disabled={pause.isPending}
+              onClick={() => pause.mutate(!paused)}
+              style={{
+                background: C.sunken,
+                color: C.t1,
+                border: `1px solid ${C.line}`,
+                borderRadius: 9,
+                padding: "8px 16px",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              {paused ? "▶ Resume" : "⏸ Pause"}
+            </button>
+          ) : null}
+          {canStop ? (
+            <button
+              type="button"
+              disabled={stop.isPending}
+              onClick={() => stop.mutate()}
+              style={{
+                background:
+                  "color-mix(in srgb, var(--mv1-danger) 12%, transparent)",
+                color: "var(--mv1-danger)",
+                border:
+                  "1px solid color-mix(in srgb, var(--mv1-danger) 35%, transparent)",
+                borderRadius: 9,
+                padding: "8px 16px",
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              ■ Stop
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -420,10 +625,12 @@ function WhichMac({
   targets,
   selectedId,
   onSelect,
+  link,
 }: {
   targets: Target[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  link: MacLink;
 }) {
   return (
     <div style={panel}>
@@ -437,8 +644,19 @@ function WhichMac({
             lineHeight: 1.5,
           }}
         >
-          No Mac is connected right now. The run can&rsquo;t start until one is
-          — open Cue on your Mac to pair it.
+          {link.state === "reporting" ? (
+            <>
+              A Mac is reporting steps to Cue right now, but it isn&rsquo;t
+              listed as a paired target for your account — so Cue can&rsquo;t
+              name it or aim a new run at it. Reopen Cue on that Mac to pair it
+              properly.
+            </>
+          ) : (
+            <>
+              No Mac is connected right now. The run can&rsquo;t start until one
+              is — open Cue on your Mac to pair it.
+            </>
+          )}
         </div>
       ) : (
         <div
@@ -533,10 +751,25 @@ function DesktopControlWeb() {
 
   const targets = orgQuery.data?.targets ?? [];
   const session = orgQuery.data?.session ?? null;
+  const live = liveQuery.data ?? null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected =
     targets.find((t) => t.clientId === selectedId) ?? targets[0] ?? null;
   const machine = session?.machineName ?? selected?.machineName ?? null;
+
+  // Both panels below read this one answer, so they cannot disagree about
+  // whether a Mac is on the other end. "Now" is the last time either query
+  // actually reached the daemon (success or failure) rather than a clock read
+  // in render: it advances on the POLL_MS cadence, and it stops advancing when
+  // the daemon stops answering — which is precisely when a run must not keep
+  // being described as fresh.
+  const now = Math.max(
+    liveQuery.dataUpdatedAt,
+    liveQuery.errorUpdatedAt,
+    orgQuery.dataUpdatedAt,
+    orgQuery.errorUpdatedAt,
+  );
+  const link = resolveMacLink(targets, live, now);
 
   return (
     <div
@@ -576,12 +809,18 @@ function DesktopControlWeb() {
         </div>
       )}
 
-      <LiveRun live={liveQuery.data ?? null} assistantId={assistantId ?? ""} />
+      <LiveRun
+        live={live}
+        assistantId={assistantId ?? ""}
+        link={link}
+        now={now}
+      />
 
       <WhichMac
         targets={targets}
         selectedId={selected?.clientId ?? null}
         onSelect={setSelectedId}
+        link={link}
       />
     </div>
   );

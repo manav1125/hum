@@ -43,6 +43,7 @@ import {
   getSelfHostedActorToken,
   getSelfHostedIngressUrl,
 } from "@/lib/self-hosted/connection";
+import { PLATFORM_FEATURES_DISABLED_ABORT_REASON } from "@/lib/platform-features-abort";
 import { getClientRegistrationHeaders } from "@/lib/telemetry/client-identity";
 import { getDeviceId } from "@/runtime/device-id";
 import { isElectron } from "@/runtime/is-electron";
@@ -366,7 +367,7 @@ export function platformFeaturesGate(request: Request): Request {
   );
   const aborted = new AbortController();
   aborted.abort(
-    new DOMException("Platform features disabled in local mode", "AbortError"),
+    new DOMException(PLATFORM_FEATURES_DISABLED_ABORT_REASON, "AbortError"),
   );
   return new Request(request.url, { signal: aborted.signal });
 }

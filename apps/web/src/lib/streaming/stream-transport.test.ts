@@ -809,6 +809,53 @@ describe("subscribeEvents onStreamOpen / onStreamClose", () => {
     }
   });
 
+  test("a heartbeat-only stream refunds the reconnect budget so it never retires", async () => {
+    // The transport retires a stream after STREAM_MAX_RECONNECT_ATTEMPTS
+    // (5) and then calls onError, which is terminal for the transport.
+    // The budget used to be refunded only when a *data* payload reached
+    // the for-await loop — but an idle stream between turns carries
+    // nothing except heartbeat comments, so a connection that flapped
+    // five times over a long idle session was retired permanently even
+    // though every single attempt had genuinely connected. A frame of
+    // any kind proves the connection works and must refund the budget.
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            // One heartbeat comment (no `data:` line), then a clean end
+            // so the transport schedules another reconnect.
+            controller.enqueue(new TextEncoder().encode(": ping\n\n"));
+            controller.close();
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      );
+    }) as unknown as typeof fetch;
+
+    const onError = mock(() => {});
+    const onStreamOpen = mock(() => {});
+
+    const stream = subscribeEvents("asst-1", () => {}, onError, {
+      idleTimeoutMs: 5_000,
+      reconnectBaseDelayMs: 1,
+      onStreamOpen,
+    });
+
+    try {
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Without the refund the transport caps out at 1 initial connect +
+      // 5 reconnects and then gives up for good.
+      expect(onStreamOpen).toHaveBeenCalled();
+      expect(fetchCallCount).toBeGreaterThan(6);
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      stream.cancel();
+    }
+  });
+
   test("does not fire onStreamOpen when the initial connect never establishes", async () => {
     // Reject every fetch so the connection never opens; the handle still
     // exists, but a caller mirroring liveness must never see "connected".

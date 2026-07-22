@@ -41,6 +41,35 @@ import { useSSEConnectedStore } from "@/stores/sse-connected-store";
 
 const RESUME_DEDUP_WINDOW_MS = 1000;
 
+/**
+ * Backoff schedule for the service-level recovery timer that runs after the
+ * transport has exhausted its own reconnect budget (see
+ * `stream-transport.ts`). The transport gives up after five attempts —
+ * roughly a minute — and reports the give-up through `onError`. Before this
+ * timer existed, that was terminal: the only things that could reopen the
+ * stream were an app/power resume or `reachability.retry-requested`, and the
+ * latter is published exclusively by `useEventStream`, which is mounted only
+ * while a chat conversation is open. A user sitting on Library, Projects or
+ * Home during a daemon stall therefore lost live updates for the rest of the
+ * session with no way back short of a reload.
+ *
+ * The service owns recovery instead, because the service is what stays
+ * mounted for the whole app. Backoff is capped and never gives up: a
+ * connection that cannot be established is retried every minute, which is
+ * cheap and self-heals the moment the daemon comes back.
+ */
+const RECOVERY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000] as const;
+
+export interface SseAttachOptions {
+  /**
+   * Backoff schedule for the post-give-up recovery reopen. Defaults to
+   * {@link RECOVERY_DELAYS_MS}; mainly exposed so tests don't have to wait
+   * out a five-second timer (same convention as `reconnectBaseDelayMs` in
+   * `stream-transport.ts`).
+   */
+  recoveryDelaysMs?: readonly number[];
+}
+
 export interface SseService {
   /**
    * Open the SSE connection for `assistantId`, wire the bounce-policy
@@ -50,11 +79,15 @@ export interface SseService {
    * assistant becomes active and the returned detach when it changes
    * or unmounts.
    */
-  attach(assistantId: string): () => void;
+  attach(assistantId: string, options?: SseAttachOptions): () => void;
 }
 
 export const sseService: SseService = {
-  attach(assistantId) {
+  attach(assistantId, options) {
+    const recoveryDelaysMs =
+      options?.recoveryDelaysMs && options.recoveryDelaysMs.length > 0
+        ? options.recoveryDelaysMs
+        : RECOVERY_DELAYS_MS;
     // `seq` is per-assistant, so the resumable cursor from a previous
     // assistant is meaningless on this connection's seq space. Clear it
     // so this attachment starts cold (like a fresh page load): the first
@@ -101,9 +134,45 @@ export const sseService: SseService = {
     // Pending timer for a delayed debug-triggered reconnect, so detach
     // can cancel a reconnect that hasn't fired yet.
     let debugReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    // Pending timer for the post-give-up recovery reopen, plus how many
+    // times we've already given up in a row (drives the backoff index).
+    let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+    let recoveryAttempts = 0;
+
+    const cancelRecovery = () => {
+      if (recoveryTimer !== null) {
+        clearTimeout(recoveryTimer);
+        recoveryTimer = null;
+      }
+    };
+
+    /**
+     * Schedule a reopen after the transport gave up. Never stops retrying —
+     * a dead stream with no scheduled recovery is a dead end, and dead ends
+     * are exactly what the user experiences as "it randomly disconnects and
+     * never comes back".
+     */
+    const scheduleRecovery = () => {
+      if (cancelled || recoveryTimer !== null) return;
+      const delay =
+        recoveryDelaysMs[
+          Math.min(recoveryAttempts, recoveryDelaysMs.length - 1)
+        ]!;
+      recoveryAttempts += 1;
+      recoveryTimer = setTimeout(() => {
+        recoveryTimer = null;
+        if (cancelled || current) return;
+        nextOpenCause = "error";
+        open();
+      }, delay);
+    };
 
     const open = () => {
       if (cancelled || current) return;
+      // Any explicit open (resume, unlock, reachability retry, anchor)
+      // supersedes a queued recovery reopen. The recovery callback clears
+      // its own handle before calling through, so this is a no-op there.
+      cancelRecovery();
       const causeAtOpen = nextOpenCause;
       nextOpenCause = "resume";
       // Did THIS stream ever genuinely establish (a frame arrived)? A transport
@@ -129,6 +198,11 @@ export const sseService: SseService = {
             level: "warning",
             message: err.message,
           });
+          // The transport only calls back here once it has exhausted its
+          // own retries, so this is a give-up, not a single drop. Own the
+          // recovery rather than relying on a chat-scoped consumer to
+          // notice — `sse.closed` has no subscriber outside ChatPage.
+          scheduleRecovery();
         },
         {
           onReconnect: (cause) => {
@@ -138,6 +212,10 @@ export const sseService: SseService = {
           },
           onStreamOpen: () => {
             everOpened = true;
+            // A live stream clears the give-up history so the next outage
+            // starts its backoff from the short end again.
+            recoveryAttempts = 0;
+            cancelRecovery();
             setConnected(true);
           },
           onStreamClose: () => setConnected(false),
@@ -198,6 +276,11 @@ export const sseService: SseService = {
     };
 
     const teardownIfOpen = () => {
+      // Also drop a pending recovery reopen: `app.hidden` / `power.suspend`
+      // mean "stop talking to the daemon", and the matching resume handler
+      // reopens. Leaving the timer armed would reconnect behind a hidden
+      // renderer or a sleeping machine.
+      cancelRecovery();
       if (!current) return;
       teardown();
     };
@@ -278,6 +361,7 @@ export const sseService: SseService = {
     return () => {
       cancelled = true;
       clearSseReconnectHandler(reconnectForDebug);
+      cancelRecovery();
       if (debugReconnectTimer !== null) {
         clearTimeout(debugReconnectTimer);
         debugReconnectTimer = null;

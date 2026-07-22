@@ -162,13 +162,16 @@ describe("sseService.attach — connection lifecycle", () => {
   });
 
   test("publishes sse.closed on transport error", () => {
-    sseService.attach("asst-1");
+    const detach = sseService.attach("asst-1");
 
     activeOnError!(new Error("network error"));
 
     expect(publishSpy).toHaveBeenCalledWith("sse.closed", {
       reason: "network error",
     });
+    // A give-up arms the service-level recovery timer; detach so it can't
+    // reopen a stream in the middle of a later test.
+    detach();
   });
 
   test("detach cancels the SSE", () => {
@@ -281,12 +284,15 @@ describe("sseService.attach — SSE-connected store wiring", () => {
   });
 
   test("marks the store disconnected on a transport error (retries exhausted)", () => {
-    sseService.attach("asst-1");
+    const detach = sseService.attach("asst-1");
     activeOnStreamOpen!();
     expect(useSSEConnectedStore.getState().isConnected).toBe(true);
 
     activeOnError!(new Error("network error"));
     expect(useSSEConnectedStore.getState().isConnected).toBe(false);
+    // A give-up arms the service-level recovery timer; detach so it can't
+    // reopen a stream in the middle of a later test.
+    detach();
   });
 
   test("marks the store disconnected on a graceful teardown (app.hidden)", () => {
@@ -494,6 +500,75 @@ describe("sseService.attach — reachability bounce", () => {
       cause: "error",
     });
   });
+});
+
+describe("sseService.attach — recovery after the transport gives up", () => {
+  // `onError` only fires once the transport has burned its whole reconnect
+  // budget, so it means "gave up", not "one drop". Nothing else in the app
+  // recovers from it: `sse.closed` is consumed only by `useEventStream`,
+  // which is mounted while a chat conversation is open — a user sitting on
+  // Library or Home during a daemon stall lost live updates permanently.
+  test("reopens the stream after the transport reports a terminal failure", async () => {
+    sseService.attach("asst-1", { recoveryDelaysMs: [20] });
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(1);
+
+    activeOnError!(new Error("Stream connection failed"));
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(2);
+  }, 5_000);
+
+  test("labels the recovery reopen cause='error' so consumers reconcile", async () => {
+    sseService.attach("asst-1", { recoveryDelaysMs: [20] });
+    activeOnStreamOpen!();
+    activeOnError!(new Error("Stream connection failed"));
+    publishSpy.mockClear();
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(publishSpy).toHaveBeenCalledWith("sse.opened", {
+      assistantId: "asst-1",
+      cause: "error",
+    });
+  }, 5_000);
+
+  test("keeps retrying after a recovery attempt also gives up", async () => {
+    sseService.attach("asst-1", { recoveryDelaysMs: [20] });
+
+    activeOnError!(new Error("Stream connection failed"));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(2);
+
+    // The reopened stream fails too — recovery must not be one-shot.
+    activeOnError!(new Error("Stream connection failed"));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(3);
+  }, 5_000);
+
+  test("detach cancels a pending recovery reopen", async () => {
+    const detach = sseService.attach("asst-1", { recoveryDelaysMs: [30] });
+    activeOnError!(new Error("Stream connection failed"));
+    subscribeEventsMock.mockClear();
+
+    detach();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(subscribeEventsMock).not.toHaveBeenCalled();
+  }, 5_000);
+
+  test("app.hidden cancels a pending recovery reopen (no reconnect behind a hidden renderer)", async () => {
+    sseService.attach("asst-1", { recoveryDelaysMs: [30] });
+    activeOnError!(new Error("Stream connection failed"));
+    subscribeEventsMock.mockClear();
+
+    eventBus.publish("app.hidden", { signal: "visibility" });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(subscribeEventsMock).not.toHaveBeenCalled();
+  }, 5_000);
 });
 
 describe("sseService.attach — debug-driven reconnect", () => {

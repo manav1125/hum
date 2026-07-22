@@ -78,6 +78,14 @@ const WORKSPACE_GITIGNORE_RULES = [
   "session-token",
 ];
 
+/**
+ * Fallback cap on a git subprocess' stdout/stderr when
+ * `workspaceGit.maxOutputBytes` is absent (bare config in tests, older config
+ * files). Deliberately far above `child_process`' 1 MiB default: workspace
+ * `git status --porcelain` output scales with the number of changed paths.
+ */
+const DEFAULT_GIT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+
 const NULL_GIT_OID = "0000000000000000000000000000000000000000";
 
 const WORKSPACE_BRANCH_GUARD_HOOK = `#!/bin/sh
@@ -860,6 +868,13 @@ export class WorkspaceGitService {
    * prevent hung operations (e.g. stale git lock files). The timeout is
    * intentionally short for interactive workspace operations — background
    * enrichment jobs use their own dedicated timeout.
+   *
+   * `maxBuffer` is set explicitly because `child_process`' 1 MiB default is
+   * far below what a real workspace produces: `git status --porcelain` emits
+   * one line per changed path, so a workspace carrying tens of thousands of
+   * untracked conversation directories blows the default, the child is killed
+   * mid-walk with `ERR_CHILD_PROCESS_STDIO_MAXBUFFER`, and every commit fails
+   * forever while still paying the full tree walk on each turn and heartbeat.
    */
   private async execGit(
     args: string[],
@@ -867,11 +882,14 @@ export class WorkspaceGitService {
   ): Promise<{ stdout: string; stderr: string }> {
     const config = getConfig();
     const timeoutMs = config.workspaceGit?.interactiveGitTimeoutMs ?? 10_000;
+    const maxBuffer =
+      config.workspaceGit?.maxOutputBytes ?? DEFAULT_GIT_MAX_OUTPUT_BYTES;
     try {
       const { stdout, stderr } = await execFileAsync("git", args, {
         cwd: this.workspaceDir,
         encoding: "utf-8",
         timeout: timeoutMs,
+        maxBuffer,
         env: cleanGitEnv(this.workspaceDir),
         signal: options?.signal,
       });
@@ -889,9 +907,26 @@ export class WorkspaceGitService {
       const isPermissionError =
         gitErr.code === "EACCES" ||
         gitErr.stderr?.includes("Permission denied");
+      // An output overflow is a workspace-shape problem, not a transient git
+      // fault, and it is invisible in the raw message ("stdout maxBuffer
+      // length exceeded"). Name it so the log says what to do about it.
+      const isOutputOverflow =
+        gitErr.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+      if (isOutputOverflow) {
+        log.error(
+          {
+            workspaceDir: this.workspaceDir,
+            args,
+            maxBuffer,
+          },
+          "git_output_overflow — git produced more output than workspaceGit.maxOutputBytes allows and was killed; workspace commits cannot succeed until the workspace is trimmed or the limit is raised",
+        );
+      }
       const prefix = isPermissionError
         ? "Git permission error"
-        : "Git command failed";
+        : isOutputOverflow
+          ? `Git output exceeded ${maxBuffer} bytes (workspaceGit.maxOutputBytes)`
+          : "Git command failed";
       const enhanced = new Error(
         `${prefix}: git ${args.join(" ")}\n` +
           `Error: ${gitErr.message}\n` +

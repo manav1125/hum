@@ -21,6 +21,8 @@ import {
   readSetupState,
   resetSetupStateCache,
   SETUP_STEP_IDS,
+  shouldShowSetupMeter,
+  type AccountUsageSignals,
 } from "./setup-state";
 
 const KEY = "cue:hq-setup-progress";
@@ -123,5 +125,84 @@ describe("setup-state v1 → v2 backward compatibility", () => {
     const state = freshState();
     expect(state.started).toBe(false);
     expect(meterProgress(state, SETUP_STEP_IDS).doneCount).toBe(0);
+  });
+});
+
+/**
+ * The meter's progress record lives only in this browser profile's
+ * localStorage, and only `/assistant/hq/setup` ever writes it. So an account
+ * that predates that flow reads a pristine "0 OF 6" no matter how long it has
+ * been running missions — which is what nagged a weeks-old account to "choose
+ * what Cue is for". These pin the honesty gate.
+ */
+describe("setup meter visibility", () => {
+  const idle: AccountUsageSignals = {
+    missionCount: 0,
+    projectCount: 0,
+    scheduleCount: 0,
+    workItemCount: 0,
+    hasIdentity: false,
+  };
+
+  function progressFor(state = freshState()) {
+    return meterProgress(state, SETUP_STEP_IDS);
+  }
+
+  it("shows for a genuinely fresh account with nothing in it", () => {
+    const state = freshState();
+    expect(shouldShowSetupMeter(state, progressFor(state), idle)).toBe(true);
+  });
+
+  it("stays quiet on an established account that never ran the flow", () => {
+    // GIVEN no local record at all (the pristine "0 OF 6" case)…
+    const state = freshState();
+    expect(state.started).toBe(false);
+    // …but an account that plainly has real work in it
+    const established = { ...idle, missionCount: 4, workItemCount: 37 };
+    expect(shouldShowSetupMeter(state, progressFor(state), established)).toBe(
+      false,
+    );
+  });
+
+  it("counts any single real signal as established", () => {
+    const state = freshState();
+    const p = progressFor(state);
+    for (const usage of [
+      { ...idle, missionCount: 1 },
+      { ...idle, projectCount: 1 },
+      { ...idle, scheduleCount: 1 },
+      { ...idle, workItemCount: 1 },
+      { ...idle, hasIdentity: true },
+    ]) {
+      expect(shouldShowSetupMeter(state, p, usage)).toBe(false);
+    }
+  });
+
+  it("keeps the meter for a user who DID start the flow and skipped steps", () => {
+    seedV1({
+      started: true,
+      steps: { mode: "skipped" },
+      fork: null,
+      meterDismissed: false,
+      completedAt: null,
+    });
+    const state = freshState();
+    const established = { ...idle, missionCount: 9 };
+    // Their own half-finished setup — theirs to finish or dismiss.
+    expect(shouldShowSetupMeter(state, progressFor(state), established)).toBe(
+      true,
+    );
+  });
+
+  it("respects an explicit dismissal even on a fresh account", () => {
+    seedV1({
+      started: true,
+      steps: {},
+      fork: null,
+      meterDismissed: true,
+      completedAt: null,
+    });
+    const state = freshState();
+    expect(shouldShowSetupMeter(state, progressFor(state), idle)).toBe(false);
   });
 });

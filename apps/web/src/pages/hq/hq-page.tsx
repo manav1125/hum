@@ -48,8 +48,10 @@ import { BuildOutTiles } from "@/pages/command-center/build-out-tiles";
 import { AssessmentSignal, holdReason } from "@/pages/hq/assessment-kit";
 import {
   dismissMeter,
-  readSetupState,
+  shouldShowSetupMeter,
   useSetupProgress,
+  useSetupState,
+  type AccountUsageSignals,
 } from "@/pages/hq-onboarding/setup-state";
 import {
   useProjects,
@@ -971,11 +973,27 @@ function dayPart(): string {
  * of the deck (and the pulse) until every tracked step is done, or until the
  * user dismisses it ("this never nags"). Mono microlabel + a subtle progress
  * rail; the × calls `dismissMeter` (forever). Hidden when done===total.
+ *
+ * `usage` is the honesty gate: progress lives in localStorage only, so an
+ * account that never ran `/assistant/hq/setup` (or reached HQ from another
+ * browser / the desktop shell's own origin) reads a pristine "0 OF 6" however
+ * long it has been running missions. When there's no local record of setup
+ * being started AND the account plainly has real work in it, the meter stays
+ * off rather than nagging an established user to "choose what Cue is for".
  */
-function SetupMeter() {
+function SetupMeter({ usage }: { usage: AccountUsageSignals }) {
   const { done, total, nextStep, nextLabel } = useSetupProgress();
-  const dismissed = readSetupState().meterDismissed;
-  if (done >= total || dismissed || !nextStep) return null;
+  // Subscribed read (not the raw snapshot) so dismissing re-renders the meter.
+  const state = useSetupState();
+  if (
+    !shouldShowSetupMeter(
+      state,
+      { doneCount: done, total, next: nextStep },
+      usage,
+    )
+  ) {
+    return null;
+  }
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
     <div
@@ -1625,6 +1643,37 @@ export function HqPage() {
     [missions],
   );
   const hasMissions = deckMissions.length > 0;
+
+  // Real-usage evidence for the first-run meter. The meter's own progress is
+  // localStorage-only, so this is what stops it nagging an account that has
+  // obviously been running for weeks (see `shouldShowSetupMeter`).
+  const setupUsage: AccountUsageSignals = useMemo(
+    () => ({
+      missionCount: missions.length,
+      projectCount: projects.length,
+      scheduleCount: schedules.length,
+      workItemCount:
+        review.items.length +
+        running.items.length +
+        queued.items.length +
+        done.items.length,
+      hasIdentity:
+        (profile?.identity ?? "").trim().length > 0 ||
+        (profile?.direction ?? "").trim().length > 0,
+    }),
+    [
+      missions.length,
+      projects.length,
+      schedules.length,
+      review.items.length,
+      running.items.length,
+      queued.items.length,
+      done.items.length,
+      profile?.identity,
+      profile?.direction,
+    ],
+  );
+
   // The next-move card and the Needs-you lane read the same stores — when the
   // move IS one of the review items, the emphasized card replaces its row.
   const reviewItems = review.items.filter((item) => item.id !== move.itemId);
@@ -1725,7 +1774,7 @@ export function HqPage() {
         </header>
 
         {/* SETTING UP · N OF M — non-shaming first-run meter (self-hides). */}
-        {!isLoading ? <SetupMeter /> : null}
+        {!isLoading ? <SetupMeter usage={setupUsage} /> : null}
 
         {/* Build-out tiles — live counts, deep-linking. Render only once
             setup is COMPLETE (the component gates itself), so this never

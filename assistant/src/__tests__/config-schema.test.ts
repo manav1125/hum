@@ -680,6 +680,7 @@ describe("AssistantConfigSchema", () => {
       failureBackoffBaseMs: 2000,
       failureBackoffMaxMs: 60000,
       interactiveGitTimeoutMs: 10000,
+      maxOutputBytes: 64 * 1024 * 1024,
       enrichmentQueueSize: 50,
       enrichmentConcurrency: 1,
       enrichmentJobTimeoutMs: 30000,

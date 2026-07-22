@@ -41,7 +41,7 @@ export function FeatureTour() {
   const enabled =
     surface != null && (surface.gate?.() ?? true) && !coachDisabled();
 
-  const tour = useFeatureTour(steps, { enabled });
+  const tour = useFeatureTour(steps, { enabled, surfaceId: surface?.id });
 
   if (!tour.activeStep || !tour.targetEl) return null;
 
@@ -57,7 +57,11 @@ export function FeatureTour() {
       stepIndex={tour.stepIndex}
       stepCount={tour.stepCount}
       onNext={tour.hasNext ? tour.next : undefined}
-      onSkip={tour.stepCount > 1 ? tour.skip : undefined}
+      // Always offered: a tip the user can't permanently turn off is nagware,
+      // and most surfaces carry a single step (so a `stepCount > 1` gate left
+      // them with no opt-out at all). "Skip tour" is global — no more tips
+      // anywhere — which is exactly what someone hitting it is asking for.
+      onSkip={tour.skip}
       onDismiss={tour.dismiss}
     >
       {step.body}

@@ -290,6 +290,61 @@ export function meterProgress(
 }
 
 // ---------------------------------------------------------------------------
+// "Is this actually a first run?" — the honesty gate on the meter
+// ---------------------------------------------------------------------------
+
+/**
+ * Live evidence, read from the daemon on HQ, that this account is already in
+ * use. Counts are whatever the page has loaded; `hasIdentity` is true once the
+ * company profile carries a name or a direction.
+ */
+export interface AccountUsageSignals {
+  missionCount: number;
+  projectCount: number;
+  scheduleCount: number;
+  /** Work items in any lane (inbound / running / review / done). */
+  workItemCount: number;
+  hasIdentity: boolean;
+}
+
+/** Any real usage at all — one mission, one project, one captured item… */
+export function hasRealUsage(s: AccountUsageSignals): boolean {
+  return (
+    s.missionCount > 0 ||
+    s.projectCount > 0 ||
+    s.scheduleCount > 0 ||
+    s.workItemCount > 0 ||
+    s.hasIdentity
+  );
+}
+
+/**
+ * Whether the "SETTING UP · N OF M" meter is allowed to show.
+ *
+ * The progress record lives only in this browser profile's localStorage and is
+ * written only by `/assistant/hq/setup`. An account that predates that flow —
+ * or that reached HQ from a different browser, or from the desktop app's
+ * bundled `app://` origin — therefore reads a pristine "0 of 6" no matter how
+ * long it has been running missions. Nagging that user to "choose what Cue is
+ * for" is the product claiming a state it cannot back up.
+ *
+ * So: when there is no local record that setup was ever STARTED, but the
+ * account demonstrably has real work in it, stay quiet. A user who did start
+ * the flow and skipped steps keeps the gentle meter — that one is theirs.
+ */
+export function shouldShowSetupMeter(
+  state: SetupState,
+  progress: MeterProgress,
+  usage: AccountUsageSignals,
+): boolean {
+  if (state.meterDismissed) return false;
+  if (progress.next === null) return false;
+  if (progress.doneCount >= progress.total) return false;
+  if (!state.started && hasRealUsage(usage)) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Public meter contract — the tiny hook the HQ setup meter consumes.
 // ---------------------------------------------------------------------------
 

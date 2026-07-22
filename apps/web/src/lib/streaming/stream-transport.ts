@@ -265,6 +265,15 @@ export function subscribeEvents(
             // the real "connected" boundary. Pairs with onStreamClose.
             if (!cancelled && !streamOpened) {
               streamOpened = true;
+              // A frame of ANY kind — data event or heartbeat comment —
+              // proves this attempt genuinely connected, so the reconnect
+              // budget has done its job and must be refunded here rather
+              // than in the for-await loop below. The loop only sees data
+              // payloads: an idle stream (heartbeats only, no events
+              // between turns) would otherwise keep spending from a
+              // budget it never replenishes, and five flaps spread over
+              // hours would retire the transport permanently.
+              reconnectCount = 0;
               options.onStreamOpen?.();
             }
             const isData =
