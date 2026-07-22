@@ -219,6 +219,44 @@ export function getLoopLagWarnMs(): number | undefined {
 }
 
 /**
+ * CUE_EMBED_ONNX_THREADS — integer, default: 1
+ * Number of ONNX Runtime intra-op threads the embed and rerank worker
+ * subprocesses may use.
+ *
+ * ONNX Runtime defaults to one intra-op thread per core. On a small box
+ * (the 2-vCPU shared instances Cue self-hosts on) that means a single
+ * background embedding batch occupies *every* CPU, leaving the daemon's
+ * single event loop nothing to be scheduled on — the loop then reports
+ * multi-second `event_loop_blocked` stalls even though it is doing no work
+ * of its own. Background embedding is throughput work; the daemon's loop is
+ * interactive, so the worker is pinned to one thread and always leaves a CPU
+ * free.
+ *
+ * Measured on bge-small-en-v1.5, batch of 32: default threading burns
+ * ~4.6s CPU per batch at ~4.8x parallelism; one thread burns ~2.7s CPU at
+ * 1.0x. Capping is cheaper in total CPU as well as kinder to the loop —
+ * only per-batch wall time goes up.
+ *
+ * Raise it on machines with cores to spare; values below 1 are ignored.
+ */
+export function getEmbedOnnxThreads(): number {
+  const n = int("CUE_EMBED_ONNX_THREADS");
+  return n !== undefined && n >= 1 ? n : 1;
+}
+
+/**
+ * CUE_EMBED_WORKER_NICENESS — integer, default: 10
+ * Scheduling niceness applied to the embed and rerank worker subprocesses
+ * after spawn. Background ML work must yield to the daemon's event loop when
+ * both are runnable. Set to 0 to disable renicing. Negative values require
+ * privileges and are ignored if the OS rejects them.
+ */
+export function getEmbedWorkerNiceness(): number {
+  const n = int("CUE_EMBED_WORKER_NICENESS");
+  return n !== undefined ? n : 10;
+}
+
+/**
  * CUE_LOG_FULL_LLM_PAYLOADS — boolean, default: false
  * When set, `llm_request_logs` rows store raw LLM request/response payloads
  * verbatim instead of truncating individual strings over 64KB (in practice:

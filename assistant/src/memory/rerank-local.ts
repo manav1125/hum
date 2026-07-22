@@ -5,7 +5,11 @@ import type { RerankDtype } from "../config/schemas/memory-v2.js";
 import { getLogger } from "../util/logger.js";
 import { getEmbeddingModelsDir } from "../util/platform.js";
 import { PromiseGuard } from "../util/promise-guard.js";
-import { EmbeddingRuntimeManager } from "./embedding-runtime-manager.js";
+import {
+  deprioritizeWorker,
+  EmbeddingRuntimeManager,
+  onnxThreadArg,
+} from "./embedding-runtime-manager.js";
 
 const log = getLogger("memory-rerank-local");
 
@@ -155,12 +159,15 @@ export class LocalRerankBackend {
         this.model,
         modelCacheDir,
         this.dtype,
+        onnxThreadArg(),
       ],
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
       cwd: embeddingModelsDir,
     });
+
+    deprioritizeWorker(proc.pid);
 
     this.workerProc = proc;
     this.startStdoutReader();

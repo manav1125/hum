@@ -14,7 +14,11 @@ import {
   getEmbedWorkerPidPath,
 } from "../util/platform.js";
 import { PromiseGuard } from "../util/promise-guard.js";
-import { EmbeddingRuntimeManager } from "./embedding-runtime-manager.js";
+import {
+  deprioritizeWorker,
+  EmbeddingRuntimeManager,
+  onnxThreadArg,
+} from "./embedding-runtime-manager.js";
 import {
   type EmbeddingBackend,
   type EmbeddingInput,
@@ -233,12 +237,21 @@ export class LocalEmbeddingBackend implements EmbeddingBackend {
     );
 
     const proc = Bun.spawn({
-      cmd: [bunPath, "--smol", workerPath, this.model, modelCacheDir],
+      cmd: [
+        bunPath,
+        "--smol",
+        workerPath,
+        this.model,
+        modelCacheDir,
+        onnxThreadArg(),
+      ],
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
       cwd: embeddingModelsDir,
     });
+
+    deprioritizeWorker(proc.pid);
 
     // Type-compatible assignment
     this.workerProc = proc;
