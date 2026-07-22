@@ -15,6 +15,7 @@
 
 import { isTokenExpired } from "@vellumai/credential-storage";
 
+import { isProviderMcpConnected } from "../capabilities/mcp-connectors.js";
 import type { Services } from "../config/schemas/services.js";
 import { getConnectionAccessTokenResult } from "../oauth/credential-token-resolver.js";
 import {
@@ -702,7 +703,8 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
  * Used by the watcher engine for pre-poll gating.
  */
 /**
- * Whether ANY account is connected for a provider.
+ * Whether a NATIVE OAuth account is connected for a provider — i.e. whether a
+ * native REST poller can authenticate.
  *
  * {@link checkCredentialForProvider} returns `null` for two opposite
  * situations — "healthy, nothing to report" and "there is no connection at
@@ -711,6 +713,14 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
  * pre-poll gate saw `null`, read it as healthy, called the API anyway, and
  * stored Google's raw 404 HTML page as the watcher's error. Ask this first
  * when the distinction matters; it makes no network calls.
+ *
+ * This is deliberately NATIVE-ONLY and must stay that way: a native poller
+ * (e.g. the Gmail watcher) authenticates with a native OAuth access token that
+ * an MCP/Composio connection does NOT provide. Broadening this to count MCP
+ * coverage would tell the watcher pre-poll gate a provider is pollable when it
+ * is not, reintroducing the 404-HTML-as-error bug above. For the broader
+ * "can the agent act on this provider at all?" question (native OR MCP), use
+ * {@link isProviderAgentReachable}.
  */
 export function hasCredentialConnection(provider: string): boolean {
   const providerRow = getProvider(provider);
@@ -720,6 +730,31 @@ export function hasCredentialConnection(provider: string): boolean {
   } catch {
     // Unreadable connection store: report "not connected" rather than
     // claiming a connection we cannot see.
+    return false;
+  }
+}
+
+/**
+ * Whether a provider is reachable by the AGENT — either a native OAuth
+ * connection exists OR an enabled MCP/Composio server covers it.
+ *
+ * Deliberately broader than {@link hasCredentialConnection}. The distinction
+ * is load-bearing and must not be flattened:
+ *  - `hasCredentialConnection` = "a native REST poller can authenticate"
+ *    (native OAuth token present). The watcher pre-poll gate needs THIS.
+ *  - `isProviderAgentReachable` = "the agent can act on this provider"
+ *    (native OR MCP). The linked-account/honesty surfaces use THIS, so we do
+ *    not tell the user "Google isn't connected" when Gmail is in fact reachable
+ *    through an enabled MCP server.
+ *
+ * Makes no network calls; fail-soft (an unreadable config degrades to the
+ * native answer).
+ */
+export function isProviderAgentReachable(provider: string): boolean {
+  if (hasCredentialConnection(provider)) return true;
+  try {
+    return isProviderMcpConnected(provider);
+  } catch {
     return false;
   }
 }

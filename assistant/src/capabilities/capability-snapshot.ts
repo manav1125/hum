@@ -22,6 +22,7 @@ import { getDb } from "../memory/db-connection.js";
 import { oauthConnections } from "../memory/schema/oauth.js";
 import { getRegisteredToolNames } from "../tasks/tool-sanitizer.js";
 import { getLogger } from "../util/logger.js";
+import { listMcpConnectedProviders } from "./mcp-connectors.js";
 
 const log = getLogger("capability-snapshot");
 
@@ -146,7 +147,15 @@ export function buildCapabilitySnapshot(): CapabilitySnapshot {
     }
   }).map((probe) => probe.line);
 
-  let connectors: string[] = [];
+  // Reconcile the TWO connector systems into one honest view. A provider wired
+  // through an enabled MCP/Composio server (composio_gmail, …) is just as
+  // connected, from the agent's standpoint, as a native OAuth link — but the
+  // snapshot used to derive `connectors` purely from `oauth_connections`. On an
+  // instance whose accounts are all wired through MCP that returned [], so the
+  // assessment told the model "LINKED ACCOUNTS: none" and wrongly blocked tasks
+  // the agent could do. Native ∪ MCP-reachable, de-duped so a provider connected
+  // both ways appears once. Each source is independently fail-soft.
+  const native = new Set<string>();
   try {
     // Read the connection table directly rather than through the oauth store:
     // this is a read-only capability probe, and the store sits in the daemon's
@@ -156,13 +165,17 @@ export function buildCapabilitySnapshot(): CapabilitySnapshot {
       .from(oauthConnections)
       .where(eq(oauthConnections.status, "active"))
       .all();
-    connectors = [...new Set(rows.map((r) => r.provider))].sort();
+    for (const r of rows) native.add(r.provider);
   } catch (err) {
     log.debug(
       { err: String(err) },
-      "connections unavailable for capability snapshot",
+      "native connections unavailable for capability snapshot",
     );
   }
+  // `listMcpConnectedProviders` never throws (it degrades to an empty set), so
+  // an MCP config problem can never take down the whole connector view.
+  const mcp = listMcpConnectedProviders();
+  const connectors = [...new Set([...native, ...mcp])].sort();
 
   const fingerprint = createHash("sha256")
     .update(JSON.stringify({ lines, connectors }))

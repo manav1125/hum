@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   checkCredentialForProvider,
   hasCredentialConnection,
+  isProviderAgentReachable,
 } from "../../credential-health/credential-health-service.js";
 import { unbindPlaybooksFromWatcher } from "../../playbooks/playbook-store.js";
 import {
@@ -135,8 +136,20 @@ async function resolveWatcherHealth(
     // a provider the user never connected reported "unknown" — and the UI
     // rendered "Token expired — reconnect to resume" for an account that was
     // never connected in the first place.
+    //
+    // `hasCredentialConnection` is NATIVE-only on purpose: this watcher polls
+    // the provider's REST API directly and needs a native OAuth token, which
+    // an MCP/Composio connection does not provide. So a missing native token
+    // still means this poller can't run. BUT the account may be reachable by
+    // the agent through an enabled MCP server — in which case it is simply
+    // FALSE to tell the user the account "isn't connected". Distinguish the
+    // two: only report `not_connected` when NEITHER path covers the provider;
+    // when MCP covers it but native is absent, report `unknown` (we can't
+    // confirm the native poller, but we won't claim nothing is connected).
     if (!hasCredentialConnection(watcher.credentialService)) {
-      return "not_connected";
+      return isProviderAgentReachable(watcher.credentialService)
+        ? "unknown"
+        : "not_connected";
     }
     const health = await checkCredentialForProvider(watcher.credentialService);
     if (!health) return "ok";
