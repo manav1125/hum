@@ -42,6 +42,18 @@ mock.module("../tasks/tool-sanitizer.js", () => ({
   getRegisteredToolNames: () => mockToolNames,
 }));
 
+// Cached Composio ACTIVE-status source. Default "active" so the classic
+// "MCP-backed providers show up" cases hold; individual tests override a slug
+// to "broken"/"unknown" to model an initiated/expired or cold-cache account.
+let mockToolkitStatus: Record<string, "active" | "broken" | "unknown"> = {};
+let defaultStatus: "active" | "broken" | "unknown" = "active";
+
+mock.module("./composio-connection-status.js", () => ({
+  composioToolkitStatus: (slug: string) =>
+    mockToolkitStatus[slug.toLowerCase()] ?? defaultStatus,
+  kickComposioStatusRefresh: () => {},
+}));
+
 const { buildCapabilitySnapshot } = await import("./capability-snapshot.js");
 
 afterEach(() => {
@@ -49,6 +61,8 @@ afterEach(() => {
   mockNativeRows = [];
   mockToolNames = [];
   dbThrows = false;
+  mockToolkitStatus = {};
+  defaultStatus = "active";
 });
 
 describe("buildCapabilitySnapshot connectors reconciliation", () => {
@@ -98,5 +112,67 @@ describe("buildCapabilitySnapshot connectors reconciliation", () => {
     dbThrows = true;
     mockMcpServers = { composio_gmail: { enabled: true } };
     expect(buildCapabilitySnapshot().connectors).toEqual(["google"]);
+  });
+});
+
+describe("buildCapabilitySnapshot honesty — over-claim prevention", () => {
+  // The incident: googlesheets ACTIVE but gmail `initiated`. Both map to
+  // "google". "google" must NOT appear in `connectors` (hard linked accounts),
+  // and must surface as an unverified integration the model verifies first.
+  test("an initiated/expired Composio account is NOT a linked connector", () => {
+    mockNativeRows = [];
+    mockToolkitStatus = { googlesheets: "active", gmail: "broken" };
+    mockMcpServers = {
+      composio_gmail: { enabled: true },
+      composio_googlesheets: { enabled: true },
+    };
+    const snap = buildCapabilitySnapshot();
+    expect(snap.connectors).not.toContain("google");
+    expect(snap.unverifiedConnectors).toContain("google");
+  });
+
+  test("a genuinely ACTIVE Composio account IS a linked connector", () => {
+    mockNativeRows = [];
+    mockToolkitStatus = { slack: "active" };
+    mockMcpServers = { composio_slack: { enabled: true } };
+    const snap = buildCapabilitySnapshot();
+    expect(snap.connectors).toContain("slack");
+    expect(snap.unverifiedConnectors).not.toContain("slack");
+  });
+
+  test("an unverified integration adds a verify-before-relying capability line", () => {
+    mockNativeRows = [];
+    mockToolkitStatus = { gmail: "broken" };
+    mockMcpServers = { composio_gmail: { enabled: true } };
+    const snap = buildCapabilitySnapshot();
+    expect(snap.unverifiedConnectors).toEqual(["google"]);
+    expect(
+      snap.lines.some(
+        (l) => l.includes("NOT confirmed working") && l.includes("google"),
+      ),
+    ).toBe(true);
+  });
+
+  test("a native active token keeps the provider verified despite a broken Composio copy", () => {
+    // Native google OAuth is authoritative — the account works even if the
+    // Composio gmail connection is down, so it stays a linked connector.
+    mockNativeRows = [{ provider: "google" }];
+    mockToolkitStatus = { gmail: "broken" };
+    mockMcpServers = { composio_gmail: { enabled: true } };
+    const snap = buildCapabilitySnapshot();
+    expect(snap.connectors).toContain("google");
+    expect(snap.unverifiedConnectors).not.toContain("google");
+  });
+
+  test("cold cache: MCP providers are unverified, not asserted as linked", () => {
+    mockNativeRows = [];
+    defaultStatus = "unknown";
+    mockMcpServers = {
+      composio_gmail: { enabled: true },
+      composio_slack: { enabled: true },
+    };
+    const snap = buildCapabilitySnapshot();
+    expect(snap.connectors).toEqual([]);
+    expect(snap.unverifiedConnectors).toEqual(["google", "slack"]);
   });
 });

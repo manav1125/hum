@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-// ── Mock config loader — drives listMcpConnectedProviders ────────────
+// ── Mock config loader — drives the enabled-server set ────────────────
 let mockMcpServers: Record<string, { enabled?: boolean }> | undefined = {};
 
 mock.module("../config/loader.js", () => ({
@@ -16,15 +16,36 @@ mock.module("../util/logger.js", () => ({
   }),
 }));
 
+// ── Mock the cached Composio ACTIVE-status source ─────────────────────
+// Keyed by toolkit slug. Unlisted slugs default to `defaultStatus`, letting a
+// test model "cold cache" (unknown) vs a known snapshot with active/broken.
+let mockToolkitStatus: Record<string, "active" | "broken" | "unknown"> = {};
+let defaultStatus: "active" | "broken" | "unknown" = "unknown";
+
+mock.module("./composio-connection-status.js", () => ({
+  composioToolkitStatus: (slug: string) =>
+    mockToolkitStatus[slug.toLowerCase()] ?? defaultStatus,
+}));
+
 const {
   mcpServerKeyToProvider,
+  mcpServerKeyToComposioToolkit,
+  reconcileMcpConnectors,
   listMcpConnectedProviders,
+  listMcpAttentionProviders,
   isProviderMcpConnected,
 } = await import("./mcp-connectors.js");
 
 afterEach(() => {
   mockMcpServers = {};
+  mockToolkitStatus = {};
+  defaultStatus = "unknown";
 });
+
+/** Every listed slug is ACTIVE; unlisted stay at the given default. */
+function allActive(): void {
+  defaultStatus = "active";
+}
 
 describe("mcpServerKeyToProvider", () => {
   test("maps composio toolkit servers to canonical providers", () => {
@@ -34,14 +55,9 @@ describe("mcpServerKeyToProvider", () => {
     expect(mcpServerKeyToProvider("composio_googlesheets")).toBe("google");
     expect(mcpServerKeyToProvider("composio_slack")).toBe("slack");
     expect(mcpServerKeyToProvider("composio_github")).toBe("github");
-    expect(mcpServerKeyToProvider("composio_linear")).toBe("linear");
-    expect(mcpServerKeyToProvider("composio_airtable")).toBe("airtable");
-    expect(mcpServerKeyToProvider("composio_hubspot")).toBe("hubspot");
-    expect(mcpServerKeyToProvider("composio_notion")).toBe("notion");
   });
 
   test("the bare composio workbench backs no single account", () => {
-    // It's a meta-connector (the remote tool workbench), not a linked account.
     expect(mcpServerKeyToProvider("composio")).toBeNull();
   });
 
@@ -53,59 +69,137 @@ describe("mcpServerKeyToProvider", () => {
     expect(mcpServerKeyToProvider("filesystem")).toBeNull();
     expect(mcpServerKeyToProvider("")).toBeNull();
   });
+});
 
-  test("a non-composio server naming a known provider counts", () => {
-    expect(mcpServerKeyToProvider("linear")).toBe("linear");
+describe("mcpServerKeyToComposioToolkit", () => {
+  test("returns the toolkit slug only for per-toolkit composio servers", () => {
+    expect(mcpServerKeyToComposioToolkit("composio_gmail")).toBe("gmail");
+    expect(mcpServerKeyToComposioToolkit("composio_googlesheets")).toBe(
+      "googlesheets",
+    );
+  });
+
+  test("the bare workbench and non-composio servers have no toolkit", () => {
+    expect(mcpServerKeyToComposioToolkit("composio")).toBeNull();
+    expect(mcpServerKeyToComposioToolkit("linear")).toBeNull();
+    expect(mcpServerKeyToComposioToolkit("filesystem")).toBeNull();
   });
 });
 
-describe("listMcpConnectedProviders", () => {
-  test("reconciles the 11 prod servers into deduped providers", () => {
-    // The real prod shape: 10 composio_* toolkits + the bare composio
-    // workbench, all enabled. The 4 Google surfaces collapse to one "google".
+describe("reconcileMcpConnectors — honest ACTIVE reconciliation", () => {
+  test("all enabled composio toolkits ACTIVE → all providers verified", () => {
+    allActive();
     mockMcpServers = {
       composio_gmail: { enabled: true },
       composio_googlecalendar: { enabled: true },
-      composio_googledrive: { enabled: true },
-      composio_googlesheets: { enabled: true },
       composio_slack: { enabled: true },
       composio_github: { enabled: true },
-      composio_linear: { enabled: true },
-      composio_airtable: { enabled: true },
-      composio_hubspot: { enabled: true },
-      composio_notion: { enabled: true },
       composio: { enabled: true },
     };
-    expect([...listMcpConnectedProviders()].sort()).toEqual([
-      "airtable",
-      "github",
-      "google",
-      "hubspot",
-      "linear",
-      "notion",
-      "slack",
-    ]);
+    const { verified, needsAttention } = reconcileMcpConnectors();
+    expect([...verified].sort()).toEqual(["github", "google", "slack"]);
+    expect(needsAttention.size).toBe(0);
   });
 
-  test("an explicitly disabled server is excluded; missing enabled is on", () => {
+  // The core regression: the incident shape. googlesheets ACTIVE, gmail
+  // `initiated` (broken). Both collapse to "google". Because one backing
+  // toolkit is broken, "google" must NOT read as a guaranteed linked account.
+  test("an initiated/expired toolkit keeps its provider OUT of verified", () => {
+    mockToolkitStatus = {
+      googlesheets: "active",
+      gmail: "broken", // OAuth initiated, never completed
+      googlecalendar: "active",
+    };
+    mockMcpServers = {
+      composio_gmail: { enabled: true },
+      composio_googlesheets: { enabled: true },
+      composio_googlecalendar: { enabled: true },
+    };
+    const { verified, needsAttention } = reconcileMcpConnectors();
+    expect(verified.has("google")).toBe(false);
+    expect(needsAttention.has("google")).toBe(true);
+  });
+
+  test("a genuinely ACTIVE provider reads as verified", () => {
+    mockToolkitStatus = { slack: "active" };
+    mockMcpServers = { composio_slack: { enabled: true } };
+    const { verified, needsAttention } = reconcileMcpConnectors();
+    expect(verified.has("slack")).toBe(true);
+    expect(needsAttention.has("slack")).toBe(false);
+  });
+
+  test("cold cache (unknown status) → needs attention, never verified", () => {
+    defaultStatus = "unknown";
+    mockMcpServers = {
+      composio_gmail: { enabled: true },
+      composio_slack: { enabled: true },
+    };
+    const { verified, needsAttention } = reconcileMcpConnectors();
+    expect(verified.size).toBe(0);
+    expect([...needsAttention].sort()).toEqual(["google", "slack"]);
+  });
+
+  test("a non-composio native MCP server is verified without Composio status", () => {
+    // `linear` bare key names a provider and has no Composio dependency.
+    defaultStatus = "unknown";
+    mockMcpServers = { linear: { enabled: true } };
+    const { verified } = reconcileMcpConnectors();
+    expect(verified.has("linear")).toBe(true);
+  });
+
+  test("an explicitly disabled server is excluded entirely", () => {
+    mockToolkitStatus = { gmail: "active", slack: "active" };
     mockMcpServers = {
       composio_gmail: { enabled: false },
       composio_slack: {}, // enabled defaults to true
     };
-    expect([...listMcpConnectedProviders()]).toEqual(["slack"]);
+    const { verified } = reconcileMcpConnectors();
+    expect(verified.has("google")).toBe(false);
+    expect(verified.has("slack")).toBe(true);
   });
 
-  test("no MCP config degrades to an empty set (never throws)", () => {
+  test("no MCP config degrades to empty sets (never throws)", () => {
     mockMcpServers = undefined;
-    expect(listMcpConnectedProviders().size).toBe(0);
+    const { verified, needsAttention } = reconcileMcpConnectors();
+    expect(verified.size).toBe(0);
+    expect(needsAttention.size).toBe(0);
   });
 });
 
-describe("isProviderMcpConnected", () => {
-  test("true for an MCP-covered provider, false for an absent one", () => {
+describe("listMcpConnectedProviders / listMcpAttentionProviders", () => {
+  test("connected = verified only; attention = the rest", () => {
+    mockToolkitStatus = { slack: "active", gmail: "broken" };
+    mockMcpServers = {
+      composio_slack: { enabled: true },
+      composio_gmail: { enabled: true },
+    };
+    expect([...listMcpConnectedProviders()]).toEqual(["slack"]);
+    expect([...listMcpAttentionProviders()]).toEqual(["google"]);
+  });
+});
+
+describe("isProviderMcpConnected — agent reach", () => {
+  test("true for a verified-active provider", () => {
+    mockToolkitStatus = { gmail: "active" };
     mockMcpServers = { composio_gmail: { enabled: true } };
     expect(isProviderMcpConnected("google")).toBe(true);
     expect(isProviderMcpConnected("GOOGLE")).toBe(true); // case-insensitive
+  });
+
+  test("false once a backing toolkit is known-broken", () => {
+    mockToolkitStatus = { gmail: "broken" };
+    mockMcpServers = { composio_gmail: { enabled: true } };
+    expect(isProviderMcpConnected("google")).toBe(false);
+  });
+
+  test("unknown status (cold cache) stays reachable — we won't claim nothing", () => {
+    defaultStatus = "unknown";
+    mockMcpServers = { composio_gmail: { enabled: true } };
+    expect(isProviderMcpConnected("google")).toBe(true);
+  });
+
+  test("false for a provider with no enabled server at all", () => {
+    mockMcpServers = { composio_gmail: { enabled: true } };
     expect(isProviderMcpConnected("slack")).toBe(false);
   });
 });

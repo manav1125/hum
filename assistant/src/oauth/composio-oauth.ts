@@ -22,6 +22,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { recordActiveComposioToolkits } from "../capabilities/composio-connection-status.js";
 import { getLogger } from "../util/logger.js";
 import type {
   OAuthConnection,
@@ -171,9 +172,13 @@ const activeToolkits = async (creds: ComposioCreds): Promise<Set<string>> => {
       creds,
       `/connected_accounts?user_ids=${encodeURIComponent(creds.userId)}&statuses=ACTIVE&limit=100`,
     )) as { items?: Array<{ toolkit?: { slug?: string } }> };
-    return new Set(
-      (data.items ?? []).map((c) => c.toolkit?.slug ?? "").filter(Boolean),
-    );
+    const slugs = (data.items ?? [])
+      .map((c) => c.toolkit?.slug ?? "")
+      .filter(Boolean);
+    // Feed the cheap cached ACTIVE-status snapshot the capability layer reads
+    // (this was a full statuses=ACTIVE fetch, so it is the authoritative set).
+    recordActiveComposioToolkits(slugs);
+    return new Set(slugs);
   } catch {
     return new Set();
   }

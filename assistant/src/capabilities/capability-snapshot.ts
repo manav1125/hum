@@ -22,7 +22,8 @@ import { getDb } from "../memory/db-connection.js";
 import { oauthConnections } from "../memory/schema/oauth.js";
 import { getRegisteredToolNames } from "../tasks/tool-sanitizer.js";
 import { getLogger } from "../util/logger.js";
-import { listMcpConnectedProviders } from "./mcp-connectors.js";
+import { kickComposioStatusRefresh } from "./composio-connection-status.js";
+import { reconcileMcpConnectors } from "./mcp-connectors.js";
 
 const log = getLogger("capability-snapshot");
 
@@ -34,8 +35,22 @@ const log = getLogger("capability-snapshot");
 export interface CapabilitySnapshot {
   /** Human capability lines. */
   lines: string[];
-  /** Linked account providers ("google", "slack", …). */
+  /**
+   * Providers with a VERIFIED live connection ("google", "slack", …) — safe to
+   * assert as a linked account. Native active OAuth ∪ Composio toolkits known
+   * to be ACTIVE. A provider configured but not confirmed live is NOT here (see
+   * `unverifiedConnectors`), so this list never over-claims.
+   */
   connectors: string[];
+  /**
+   * Providers configured through an enabled Composio server but NOT confirmed
+   * live — the connection is `initiated`/expired, or its status is unknown.
+   * These may need reconnection; the model must verify before relying and must
+   * never treat them as guaranteed linked accounts. Optional so existing
+   * snapshot literals (tests, fixtures) need no change; `buildCapabilitySnapshot`
+   * always populates it (possibly empty).
+   */
+  unverifiedConnectors?: string[];
   /** Stable fingerprint — usable as part of a cache key. */
   fingerprint: string;
 }
@@ -147,14 +162,25 @@ export function buildCapabilitySnapshot(): CapabilitySnapshot {
     }
   }).map((probe) => probe.line);
 
-  // Reconcile the TWO connector systems into one honest view. A provider wired
-  // through an enabled MCP/Composio server (composio_gmail, …) is just as
-  // connected, from the agent's standpoint, as a native OAuth link — but the
-  // snapshot used to derive `connectors` purely from `oauth_connections`. On an
-  // instance whose accounts are all wired through MCP that returned [], so the
-  // assessment told the model "LINKED ACCOUNTS: none" and wrongly blocked tasks
-  // the agent could do. Native ∪ MCP-reachable, de-duped so a provider connected
-  // both ways appears once. Each source is independently fail-soft.
+  // Reconcile the TWO connector systems into one HONEST view. A provider wired
+  // through an enabled MCP/Composio server (composio_gmail, …) can be just as
+  // usable, from the agent's standpoint, as a native OAuth link — but only when
+  // the Composio connection is actually ACTIVE. The `enabled` config flag is
+  // set once at connect time and never cleared when the connection dies, so it
+  // over-claims on its own: an enabled `composio_gmail` whose connection is
+  // `initiated`/expired must NOT read as a linked account. So the MCP side is
+  // reconciled against real per-toolkit ACTIVE status and split into verified
+  // vs needs-attention. Each source is independently fail-soft.
+  //
+  // Warm the cached Composio status snapshot for next time without blocking:
+  // single-flight, TTL-bounded, fire-and-forget (never a per-turn network call
+  // on this hot path). This read returns immediately with what is already known.
+  try {
+    kickComposioStatusRefresh();
+  } catch (err) {
+    log.debug({ err: String(err) }, "composio status refresh kick failed");
+  }
+
   const native = new Set<string>();
   try {
     // Read the connection table directly rather than through the oauth store:
@@ -172,15 +198,37 @@ export function buildCapabilitySnapshot(): CapabilitySnapshot {
       "native connections unavailable for capability snapshot",
     );
   }
-  // `listMcpConnectedProviders` never throws (it degrades to an empty set), so
-  // an MCP config problem can never take down the whole connector view.
-  const mcp = listMcpConnectedProviders();
-  const connectors = [...new Set([...native, ...mcp])].sort();
+  // `reconcileMcpConnectors` never throws (it degrades to empty sets), so an
+  // MCP config problem can never take down the whole connector view. A native
+  // active OAuth token is authoritative on its own, so native providers count
+  // as verified regardless of the Composio copy's status.
+  const { verified: mcpVerified, needsAttention: mcpAttention } =
+    reconcileMcpConnectors();
+  const connectors = [...new Set([...native, ...mcpVerified])].sort();
+  // A provider verified via native OR MCP is not "unverified", even if another
+  // of its backing toolkits looks broken — it demonstrably works one way.
+  const verifiedSet = new Set(connectors);
+  const unverifiedConnectors = [...mcpAttention]
+    .filter((p) => !verifiedSet.has(p))
+    .sort();
+
+  if (unverifiedConnectors.length > 0) {
+    // Injected as a capability line so the honesty reaches BOTH the system
+    // prompt and the work-item assessor (both render `lines`) without either
+    // treating these as guaranteed linked accounts. Also steers reconnection to
+    // Cue's own on-demand Connectors surface — which mints a fresh, working
+    // link at click time — instead of a pre-generated, short-lived link.
+    lines.push(
+      `integrations set up but NOT confirmed working right now (may need reconnection — verify before relying on them, do not promise them): ${unverifiedConnectors.join(
+        ", ",
+      )}. To reconnect one, open Cue → Connectors and reconnect it there.`,
+    );
+  }
 
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify({ lines, connectors }))
+    .update(JSON.stringify({ lines, connectors, unverifiedConnectors }))
     .digest("hex")
     .slice(0, 16);
 
-  return { lines, connectors, fingerprint };
+  return { lines, connectors, unverifiedConnectors, fingerprint };
 }

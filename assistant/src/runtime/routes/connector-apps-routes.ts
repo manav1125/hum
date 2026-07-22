@@ -22,6 +22,7 @@ import { join } from "node:path";
 
 import { z } from "zod";
 
+import { recordActiveComposioToolkits } from "../../capabilities/composio-connection-status.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import {
@@ -331,6 +332,9 @@ async function connectedAccounts(
       });
     }
     connectedMemo = { at: Date.now(), accounts };
+    // Feed the cheap cached ACTIVE-status snapshot the capability layer reads
+    // (this was a full statuses=ACTIVE fetch, so it is the authoritative set).
+    recordActiveComposioToolkits(accounts.keys());
     return accounts;
   } catch (err) {
     log.warn({ err }, "connected_accounts fetch failed");
