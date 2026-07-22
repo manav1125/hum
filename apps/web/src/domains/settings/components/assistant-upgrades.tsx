@@ -15,6 +15,7 @@ import type {
   ReleaseChannelEnum,
   ReleaseListItem,
 } from "@/generated/api/types.gen";
+import { getSelfHostedIngressUrl } from "@/lib/self-hosted/connection";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { compareParsed, parseSemver } from "@/utils/semver";
@@ -102,6 +103,11 @@ export function AssistantUpgrades({
 
   useQuery({
     ...assistantsRetrieveOptions({ path: { id: assistantId } }),
+    // `/v1/assistants/{id}/` has no trailing segment, so the self-hosted
+    // interceptor does not rewrite it and the request leaves unauthenticated.
+    // A self-hosted instance is upgraded by redeploying it, not through the
+    // platform release flow this card polls.
+    enabled: !getSelfHostedIngressUrl(),
     refetchInterval: isPollingUpgrade
       ? (query) =>
           pollRefetchInterval(query.state.data?.current_release_version)

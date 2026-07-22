@@ -131,19 +131,25 @@ export async function getAssistant(
     const active =
       assistants.find((a) => a.id === (assistantId ?? activeAssistantId)) ??
       assistants[0];
-    if (active) {
-      return {
-        ok: true,
-        status: 200,
-        data: {
-          id: active.id,
-          name: active.name ?? active.id,
-          status: "active",
-          is_local: false,
-          created: "",
-        } as Assistant,
-      };
-    }
+    // Falling through here would hit the platform assistants listing, which on
+    // a self-hosted install can only 401 — the interceptor rewrites
+    // `/v1/assistants/{id}/{segment}` and nothing shorter, so a bare listing
+    // leaves unauthenticated every time. Synthesise from the id we already
+    // address every daemon route with rather than making a call that cannot
+    // succeed: the store is populated asynchronously, so "not hydrated yet" is
+    // an ordinary early-render state, not an error.
+    const id = active?.id ?? assistantId ?? activeAssistantId ?? "self";
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        id,
+        name: active?.name ?? id,
+        status: "active",
+        is_local: false,
+        created: "",
+      } as Assistant,
+    };
   }
   if (assistantId) {
     const { data, error, response } = await assistantsRetrieve({
