@@ -85,6 +85,16 @@ warnings → **zero** since. Reconnect proven by force-disconnect (back within 5
 **Not yet proven:** no `host_bash` round-trip has actually executed — registration and
 targeting are proven, execution needs a real chat turn.
 
+## ⚠️ KNOWN GAP — surfaces are never persisted, so reopening a thread 404s (found 2026-07-22 night)
+`message_surfaces` on prod holds **0 rows — it has never held one**. Yet reopening the
+landing-page conversation fires `GET /v1/assistants/self/surfaces/<id>?conversationId=…` for
+four ids and gets 404 on each. So `ui_show`/`ui_update` surfaces (task-progress cards, asset
+panels) are broadcast-only: live during the turn, gone on reload, while the client keeps the
+reference and refetches. That is why a thread can show "2 assets" that will not open.
+**Decision needed** (not made mid-session): either persist surfaces and serve them, or have
+the client render from the message payload it already has and stop refetching. Pre-existing —
+not introduced by this wave.
+
 ## ⚠️ KNOWN GAP — the hub never reaps dead clients (documented, NOT fixed)
 Quit the Mac app and it can still be listed as an online target. Entries clear only on a clean
 `dispose()`, a same-`clientId` reconnect, or an explicit `clients/disconnect` — there is no TTL
