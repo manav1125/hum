@@ -90,6 +90,13 @@ function Micro({ children }: { children: React.ReactNode }) {
 
 // ── Watcher card ──────────────────────────────────────────────────────
 function healthMeta(w: Watcher) {
+  if (w.health === "not_connected") {
+    return {
+      label: "not connected",
+      color: AMBER,
+      note: `${w.credentialService} isn't connected — connect it to start`,
+    };
+  }
   if (w.health === "reauth") {
     return {
       label: "reauth",

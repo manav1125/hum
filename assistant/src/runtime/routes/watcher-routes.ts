@@ -4,7 +4,10 @@
 
 import { z } from "zod";
 
-import { checkCredentialForProvider } from "../../credential-health/credential-health-service.js";
+import {
+  checkCredentialForProvider,
+  hasCredentialConnection,
+} from "../../credential-health/credential-health-service.js";
 import { unbindPlaybooksFromWatcher } from "../../playbooks/playbook-store.js";
 import {
   getWatcherProvider,
@@ -117,17 +120,26 @@ function handleWatcherCreate({ body = {} }: RouteHandlerArgs) {
 }
 
 /**
- * Resolve a watcher's connector-health signal for the UI health dot. Maps the
- * credential-health status onto the three states the board renders: 'ok',
- * 'reauth' (dead token — the user must reconnect), or 'unknown'. Best-effort:
- * a failed health probe reads as 'unknown', never blocks the list.
+ * Resolve a watcher's connector-health signal for the UI health dot: 'ok',
+ * 'reauth' (a dead token the user must reconnect), 'not_connected' (no account
+ * for this provider at all — a different sentence to the user, and the only
+ * one they can act on by connecting), or 'unknown'. Best-effort: a failed
+ * health probe reads as 'unknown', never blocks the list.
  */
 async function resolveWatcherHealth(
   watcher: Watcher,
-): Promise<"ok" | "reauth" | "unknown"> {
+): Promise<"ok" | "reauth" | "unknown" | "not_connected"> {
   try {
+    // Ask this first: `checkCredentialForProvider` returns null both for
+    // "healthy" and for "no connection exists", so without this a watcher on
+    // a provider the user never connected reported "unknown" — and the UI
+    // rendered "Token expired — reconnect to resume" for an account that was
+    // never connected in the first place.
+    if (!hasCredentialConnection(watcher.credentialService)) {
+      return "not_connected";
+    }
     const health = await checkCredentialForProvider(watcher.credentialService);
-    if (!health) return "unknown";
+    if (!health) return "ok";
     if (
       health.status === "revoked" ||
       health.status === "missing_token" ||

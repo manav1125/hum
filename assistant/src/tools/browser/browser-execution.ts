@@ -2242,9 +2242,18 @@ function modeTradeoffs(mode: StatusCheckMode): string[] {
   return MODE_TRADEOFFS[mode];
 }
 
+/**
+ * Cue's own extension id, derived from the embedded signing key (see
+ * docs/chrome-store-listing.md). Stable across builds, so this link resolves
+ * as soon as the Web Store item is published. It replaced a link to
+ * `vellum-assistant-browser` — a DIFFERENT publisher's extension, which this
+ * hint was telling users to install.
+ */
+const CUE_EXTENSION_ID = "mhgllmdapjpfdnfnmdihjffclnjknhmc";
+
 function extensionSetupActions(): string[] {
   return [
-    "Install the Cue Chrome extension from the Chrome Web Store: https://chromewebstore.google.com/detail/vellum-assistant-browser/hphbdmpffeigpcdjkckleobjmhhokpne",
+    `Install the Cue browser extension: https://chromewebstore.google.com/detail/${CUE_EXTENSION_ID} — if the listing is not live yet, load the unpacked build from clients/chrome-extension instead.`,
     "Open the extension and pair with your assistant.",
   ];
 }

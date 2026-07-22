@@ -71,7 +71,7 @@ The **Chrome extension** (`extension` mode) is the preferred browser backend. It
 
 If the status check shows the extension is **not available**, encourage the user to install and pair it:
 
-1. Install the **Vellum Assistant Chrome Extension** from the Chrome Web Store: https://chromewebstore.google.com/detail/vellum-assistant-browser/hphbdmpffeigpcdjkckleobjmhhokpne
+1. Install the **Cue browser extension**: https://chromewebstore.google.com/detail/mhgllmdapjpfdnfnmdihjffclnjknhmc — if the listing is not live yet, load the unpacked build from `clients/chrome-extension` instead.
 2. Open the extension in Chrome and pair it with the assistant.
 
 The status response's `userActions` array for the `extension` mode provides these same steps when the extension is not connected.

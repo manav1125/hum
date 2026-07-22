@@ -68,7 +68,11 @@ function providerLabel(id: string): string {
 // ── Watcher card ──────────────────────────────────────────────────────
 function HealthDot({ health }: { health: Watcher["health"] }) {
   const color =
-    health === "ok" ? GREEN : health === "reauth" ? AMBER : "var(--mv3-faint)";
+    health === "ok"
+      ? GREEN
+      : health === "reauth" || health === "not_connected"
+        ? AMBER
+        : "var(--mv3-faint)";
   return (
     <span
       aria-label={
@@ -155,7 +159,9 @@ function WatcherCard({ watcher }: { watcher: Watcher }) {
         >
           {watcher.health === "reauth"
             ? "Token expired — reconnect to resume"
-            : meta}
+            : watcher.health === "not_connected"
+              ? `${watcher.credentialService} isn't connected — connect it to start`
+              : meta}
         </div>
       </div>
       <button

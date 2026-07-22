@@ -21,7 +21,11 @@ import { client } from "@/generated/daemon/client.gen";
 
 export type GlobalDial = "observe" | "assist" | "autonomous";
 export type Autonomy = "auto" | "draft" | "notify";
-export type WatcherHealth = "ok" | "reauth" | "unknown";
+/**
+ * `not_connected` is deliberately distinct from `reauth`: "reconnect to
+ * resume" is the wrong sentence for an account that was never connected.
+ */
+export type WatcherHealth = "ok" | "reauth" | "unknown" | "not_connected";
 
 export interface Watcher {
   id: string;

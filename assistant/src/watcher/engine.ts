@@ -89,8 +89,22 @@ export async function runWatchersOnce(
     // Prevents wasting API calls and burning through circuit breaker
     // attempts on credentials that need manual reauthorization.
     try {
-      const { checkCredentialForProvider } =
+      const { checkCredentialForProvider, hasCredentialConnection } =
         await import("../credential-health/credential-health-service.js");
+
+      // No account connected at all — there is nothing to poll with. Calling
+      // the provider anyway returns a generic error page (a Gmail watcher on
+      // an instance with no Google account stored an entire HTML 404 as its
+      // last error), which tells the user nothing and burns the circuit
+      // breaker on a condition only they can resolve.
+      if (!hasCredentialConnection(watcher.credentialService)) {
+        skipWatcherPoll(
+          watcher.id,
+          `${watcher.credentialService} is not connected`,
+        );
+        continue;
+      }
+
       const health = await checkCredentialForProvider(
         watcher.credentialService,
       );

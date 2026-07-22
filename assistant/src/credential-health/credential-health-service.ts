@@ -701,6 +701,29 @@ export async function checkAllCredentials(): Promise<CredentialHealthReport> {
  *
  * Used by the watcher engine for pre-poll gating.
  */
+/**
+ * Whether ANY account is connected for a provider.
+ *
+ * {@link checkCredentialForProvider} returns `null` for two opposite
+ * situations — "healthy, nothing to report" and "there is no connection at
+ * all" — so callers cannot tell them apart. That ambiguity let a Gmail watcher
+ * be created and polled on an instance with no Google account linked: the
+ * pre-poll gate saw `null`, read it as healthy, called the API anyway, and
+ * stored Google's raw 404 HTML page as the watcher's error. Ask this first
+ * when the distinction matters; it makes no network calls.
+ */
+export function hasCredentialConnection(provider: string): boolean {
+  const providerRow = getProvider(provider);
+  if (!providerRow) return false;
+  try {
+    return listActiveConnectionsByProvider(provider).length > 0;
+  } catch {
+    // Unreadable connection store: report "not connected" rather than
+    // claiming a connection we cannot see.
+    return false;
+  }
+}
+
 export async function checkCredentialForProvider(
   provider: string,
 ): Promise<CredentialHealthResult | null> {

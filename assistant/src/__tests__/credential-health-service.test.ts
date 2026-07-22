@@ -184,7 +184,8 @@ mock.module("../oauth/platform-connection.js", () => ({
 
 // ── Import under test ────────────────────────────────────────────────
 
-const { checkAllCredentials, checkCredentialForProvider, _setFetchFn } =
+const { checkAllCredentials, checkCredentialForProvider,
+  hasCredentialConnection, _setFetchFn } =
   await import("../credential-health/credential-health-service.js");
 
 // Inject mock fetch via the test helper (Bun's global fetch can't be
@@ -733,6 +734,43 @@ describe("credential-health-service", () => {
 
       const result = await checkCredentialForProvider("google");
       expect(result!.status).toBe("missing_token");
+    });
+  });
+
+  // `checkCredentialForProvider` returns null for two OPPOSITE situations —
+  // "healthy, nothing to report" and "no connection exists" — so callers that
+  // must tell them apart ask `hasCredentialConnection` first. Without it a
+  // Gmail watcher was created and polled on an instance with no Google
+  // account: the pre-poll gate read null as healthy, called the API, and
+  // stored Google's raw 404 HTML page as the watcher's last error.
+  describe("hasCredentialConnection", () => {
+    test("false when the provider has no connection at all", () => {
+      addProvider("google");
+      expect(hasCredentialConnection("google")).toBe(false);
+    });
+
+    test("false for a provider that does not exist", () => {
+      expect(hasCredentialConnection("nonesuch")).toBe(false);
+    });
+
+    test("true once an account is connected", () => {
+      addProvider("google");
+      addConnection("google", "conn-1");
+      expect(hasCredentialConnection("google")).toBe(true);
+    });
+
+    test("distinguishes healthy from absent, which null cannot", async () => {
+      addProvider("google");
+      addConnection("google", "conn-1", {
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      });
+      setToken("conn-1");
+
+      // Healthy: the health probe reports nothing to fix...
+      const health = await checkCredentialForProvider("google");
+      expect(health?.status).toBe("healthy");
+      // ...and the connection genuinely exists.
+      expect(hasCredentialConnection("google")).toBe(true);
     });
   });
 });

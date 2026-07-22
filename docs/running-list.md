@@ -52,6 +52,43 @@ roll this to the fleet without measuring steal per instance; this was a sample o
 bulk-delete. The embedding worker's unexplained ~30-min post-boot CPU burst has no matching
 `memory_jobs` rows — some caller outside the job queue.
 
+## 🔴 THE DESKTOP STORY IS DEAD ON SELF-HOST (found 2026-07-22 night)
+**Every desktop capability — computer-use, desktop-organizer, Cue Live look/act, Desktop
+control — is non-functional against a self-hosted instance, and always has been.** Measured on
+prod: `GET /v1/assistants/self/clients` returns only `interfaceId:"web"` clients with
+`capabilities:[]`; `?capability=host_bash` returns `[]`; `organizer/session` returns
+`targets:[]`. The Mac app log shows continuous `[host-proxy-router] no assistant connected`,
+including for `/cuelive/act` and `/cuelive/look` at the exact moment the user tried Cue Live.
+
+**Root cause:** `apps/macos/src/main/host-proxy-router.ts` opens host-proxy connections ONLY
+from `handleLockfileChange()` over `lockfile.assistants` — the local-CLI-daemon model. A
+self-host install (the alpha model) has no lockfile entry at all (`~/.vellum/` has no
+assistants file), so the main process never connects. The renderer connects fine — it is the
+web SPA, which is why it registers as `web`, not `macos`.
+**Watch out:** `organizer-routes.ts` (~118) filters targets on
+`actorPrincipalId !== undefined && === callerPrincipalId` and FAILS CLOSED, so a connection
+that authenticates but carries no principal still yields zero targets.
+**Note:** earlier "Mac E2E proven" results were against a LOCAL daemon, not the cloud
+instance — which is why this was never caught.
+
+## Watchers claimed capabilities they never had (fixed 2026-07-22 night)
+Creating a Gmail watcher on an instance with **no Google account connected** succeeded,
+reported `enabled:true`/`status:idle`, polled immediately, and stored Google's raw **404 HTML
+page** as its `lastError`. Cause: `checkCredentialForProvider()` returns `null` for two
+opposite cases — "healthy" and "no connection exists" — so the engine's pre-poll gate read
+"no account" as healthy and called the API anyway, and the UI showed health `unknown` (and,
+for `reauth`, the copy "Token expired — reconnect to resume" for an account never connected).
+Added `hasCredentialConnection()`; the engine now skips the poll, and a new `not_connected`
+health state says the true thing on both surfaces.
+**Also:** the browser-extension install hint pointed at `vellum-assistant-browser` — a
+DIFFERENT publisher's extension. Now points at Cue's own deterministic id.
+
+## Connector reality on this instance (2026-07-22)
+`oauth_connections` is **empty**; `provider_connections` holds only LLM providers; no channels
+configured; exactly **one** inbound channel event ever (Slack, 20 Jun). So Watchers/Playbooks
+cannot be proven end-to-end without the user connecting an account (an OAuth action only they
+can take). Any product claim about inbox/calendar watching is currently unbacked.
+
 ## Verify in the real app, not with curl (2026-07-22)
 `assistant/qa/e2e-app-pass.ts` drives the **signed-in desktop app over CDP** across every
 route (desktop + 390px) and reports console errors, failed requests, dead-end screens and
