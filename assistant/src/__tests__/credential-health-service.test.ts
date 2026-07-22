@@ -139,8 +139,11 @@ mock.module("../config/schemas/services.js", () => ({
     managedProviders.has(key) ? "managed" : "your-own",
 }));
 
+// MCP server config drives isProviderMcpConnected / isProviderAgentReachable.
+let mockMcpServers: Record<string, { enabled?: boolean }> = {};
+
 mock.module("../config/loader.js", () => ({
-  getConfig: () => ({ services: {} }),
+  getConfig: () => ({ services: {}, mcp: { servers: mockMcpServers } }),
 }));
 
 mock.module("../platform/client.js", () => ({
@@ -185,7 +188,7 @@ mock.module("../oauth/platform-connection.js", () => ({
 // ── Import under test ────────────────────────────────────────────────
 
 const { checkAllCredentials, checkCredentialForProvider,
-  hasCredentialConnection, _setFetchFn } =
+  hasCredentialConnection, isProviderAgentReachable, _setFetchFn } =
   await import("../credential-health/credential-health-service.js");
 
 // Inject mock fetch via the test helper (Bun's global fetch can't be
@@ -270,6 +273,7 @@ describe("credential-health-service", () => {
     managedProviders.clear();
     managedListResponse = { ok: true, status: 200, body: { results: [] } };
     managedPingOutcome = { kind: "status", status: 200 };
+    mockMcpServers = {};
   });
 
   test("returns empty report when no providers exist", async () => {
@@ -771,6 +775,41 @@ describe("credential-health-service", () => {
       expect(health?.status).toBe("healthy");
       // ...and the connection genuinely exists.
       expect(hasCredentialConnection("google")).toBe(true);
+    });
+
+    // The native-poller distinction: MCP coverage means "the agent can act on
+    // this provider", NOT "a native poller can authenticate". hasCredentialConnection
+    // must stay native-only so the watcher pre-poll gate keeps skipping an
+    // MCP-only watcher (whose native REST poll would fail).
+    test("stays NATIVE-only — MCP coverage does not flip it true", () => {
+      mockMcpServers = { composio_gmail: { enabled: true } };
+      // No native Google connection exists...
+      expect(hasCredentialConnection("google")).toBe(false);
+      // ...even though the agent can reach Google via the enabled MCP server.
+      expect(isProviderAgentReachable("google")).toBe(true);
+    });
+  });
+
+  describe("isProviderAgentReachable", () => {
+    test("true when a native OAuth connection exists", () => {
+      addProvider("google");
+      addConnection("google", "conn-1");
+      expect(isProviderAgentReachable("google")).toBe(true);
+    });
+
+    test("true when only an enabled MCP server covers the provider", () => {
+      mockMcpServers = { composio_slack: { enabled: true } };
+      expect(isProviderAgentReachable("slack")).toBe(true);
+    });
+
+    test("false when NEITHER native nor MCP covers the provider", () => {
+      mockMcpServers = { composio_slack: { enabled: true } };
+      expect(isProviderAgentReachable("github")).toBe(false);
+    });
+
+    test("a disabled MCP server does not make a provider reachable", () => {
+      mockMcpServers = { composio_gmail: { enabled: false } };
+      expect(isProviderAgentReachable("google")).toBe(false);
     });
   });
 });

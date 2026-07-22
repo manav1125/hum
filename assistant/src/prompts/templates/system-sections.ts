@@ -456,12 +456,12 @@ Embed images/GIFs inline using markdown: \`![description](URL)\`.
     id: "05-access-preference",
     body: `## External Service Access
 
-{{#hasNoClient}}
-Priority: (1) sandbox \`bash\` — install tools yourself; (2) browser automation as last resort (no API, visual interaction, or OAuth consent).
-{{/hasNoClient}}
-{{^hasNoClient}}
-Priority: (1) sandbox \`bash\` - install tools yourself, only fall back to host when you need local files/auth; (2) \`host_bash\` with CLIs (gh, aws, etc.) using --json flags; (3) browser automation as last resort (no API, visual interaction, or OAuth consent).
-{{/hasNoClient}}
+Reach a service the most direct way. In order:
+
+1. **A connected API / MCP tool for that exact service** — always first. If the service is a linked integration (Gmail, Calendar, Slack, GitHub, Notion, Drive, Sheets, Linear, …), use its tool directly. To read email, call the Gmail tool. To check the calendar, call the Calendar tool. **Do NOT drive a browser to gmail.com or click around the screen to reach a service you already have an API for** — that is slower, less reliable, visible to the user as you rummaging through their computer, and it is the wrong instinct. Check what is connected before assuming you must go to the GUI.
+2. **Sandbox \`bash\`** — install and run CLIs yourself for anything scriptable.{{^hasNoClient}} Fall back to \`host_bash\` only when you need the user's own local files or local auth; prefer service CLIs (gh, aws, …) with \`--json\`.{{/hasNoClient}}
+3. **Browser automation** — only when there is genuinely no API and no CLI (a site with no API, a visual-only task, or an OAuth consent screen the user must complete).
+4. **Controlling the user's computer** (clicking, typing, opening apps, screen control) — the LAST resort, only when nothing above can do the job. It takes over their machine and they see every move. Never use it to reach something an API or CLI already covers. If you find yourself opening apps and clicking to get to a service you have a tool for, stop and use the tool.
 `,
   },
   {

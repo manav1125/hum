@@ -73,3 +73,46 @@ describe("live-status step history", () => {
     expect(slice.lastEventAt).not.toBeNull();
   });
 });
+
+describe("live-status token burn-down", () => {
+  beforeEach(() => {
+    useLiveStatusStore.getState().resetAll();
+  });
+
+  test("usage-progress deltas accumulate input + output across calls", () => {
+    const s = useLiveStatusStore.getState();
+    s.noteTurnStart(CONV);
+    s.noteUsageProgress(CONV, { inputTokens: 1_200, outputTokens: 300 });
+    s.noteUsageProgress(CONV, { inputTokens: 1_500, outputTokens: 800 });
+    const slice = useLiveStatusStore.getState().byConversation[CONV]!;
+    expect(slice.turnTokens).toBe(1_200 + 300 + 1_500 + 800);
+    expect(slice.lastEventAt).not.toBeNull();
+  });
+
+  test("a zero-token delta is a no-op (no phantom lastEventAt bump)", () => {
+    const s = useLiveStatusStore.getState();
+    s.noteTurnStart(CONV);
+    s.noteUsageProgress(CONV, { inputTokens: 0, outputTokens: 0 });
+    const slice = useLiveStatusStore.getState().byConversation[CONV]!;
+    expect(slice.turnTokens).toBe(0);
+    expect(slice.lastEventAt).toBeNull();
+  });
+
+  test("the turn boundary resets the token counter", () => {
+    const s = useLiveStatusStore.getState();
+    s.noteTurnStart(CONV);
+    s.noteUsageProgress(CONV, { inputTokens: 1_000, outputTokens: 500 });
+    s.noteTurnBoundary(CONV);
+    const slice = useLiveStatusStore.getState().byConversation[CONV]!;
+    expect(slice.turnTokens).toBe(0);
+  });
+
+  test("tokens are scoped per conversation", () => {
+    const s = useLiveStatusStore.getState();
+    s.noteUsageProgress("conv-a", { inputTokens: 100, outputTokens: 50 });
+    s.noteUsageProgress("conv-b", { inputTokens: 900, outputTokens: 100 });
+    const by = useLiveStatusStore.getState().byConversation;
+    expect(by["conv-a"]!.turnTokens).toBe(150);
+    expect(by["conv-b"]!.turnTokens).toBe(1_000);
+  });
+});

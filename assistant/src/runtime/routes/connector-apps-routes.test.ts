@@ -10,6 +10,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 
 import {
+  composioToolkitStatus,
+  resetComposioConnectionStatusForTest,
+} from "../../capabilities/composio-connection-status.js";
+import {
   recordConnectorFailure,
   resetConnectorHealthStoreForTest,
 } from "../../oauth/connector-health-store.js";
@@ -97,6 +101,7 @@ describe("connector-apps routes (configured, mocked Composio)", () => {
     "connectors.json",
     "connector-apps-cache.json",
     "connector-health.json",
+    "composio-connection-status.json",
   ];
   const realFetch = globalThis.fetch;
 
@@ -105,6 +110,7 @@ describe("connector-apps routes (configured, mocked Composio)", () => {
     await settleHealthRefreshForTest();
     resetConnectorHealthStoreForTest();
     resetConnectorAppsMemosForTest();
+    resetComposioConnectionStatusForTest();
     for (const f of cleanupFiles) {
       const p = join(ws, f);
       if (existsSync(p)) rmSync(p);
@@ -234,6 +240,68 @@ describe("connector-apps routes (configured, mocked Composio)", () => {
     expect(slack2?.health?.status).toBe("attention");
     expect(slack2?.health?.lastError).toContain("token_revoked");
     expect(slack2?.health?.checkedAt).toBeDefined();
+  });
+
+  it("feeds the ACTIVE set into the capability-layer status cache", async () => {
+    // Bug A wiring: the SAME statuses=ACTIVE query that powers the Connectors
+    // list now also feeds the honest capability view. After a list, gmail/slack
+    // (ACTIVE) read active; notion (not ACTIVE) reads broken — so an enabled
+    // but non-active toolkit can no longer over-claim as a linked account.
+    configureComposio();
+    mockComposio({ slackProbeOk: true });
+    await listApps();
+    expect(composioToolkitStatus("gmail")).toBe("active");
+    expect(composioToolkitStatus("slack")).toBe("active");
+    expect(composioToolkitStatus("notion")).toBe("broken");
+  });
+
+  it("connect re-generates a FRESH link each call and errors cleanly (Bug B)", async () => {
+    // The reconnect link must be minted on demand — never cached and handed
+    // over stale. Each connect call returns Composio's current redirect_url;
+    // a Composio failure surfaces a clean, retryable error rather than a dead
+    // link, so the flow re-generates cleanly instead of reusing a stale one.
+    configureComposio();
+    let createCalls = 0;
+    let failNext = false;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/auth_configs")) {
+        return new Response(JSON.stringify({ items: [{ id: "ac_gmail" }] }));
+      }
+      if (url.includes("/connected_accounts")) {
+        if (failNext) return new Response("upstream boom", { status: 502 });
+        createCalls += 1;
+        return new Response(
+          JSON.stringify({
+            redirect_url: `https://backend.composio.dev/redirect/fresh-${createCalls}`,
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const connect = route("connectConnectorApp");
+    const first = (await connect.handler({ body: { slug: "gmail" } })) as {
+      redirectUrl: string;
+    };
+    const second = (await connect.handler({ body: { slug: "gmail" } })) as {
+      redirectUrl: string;
+    };
+    expect(first.redirectUrl).toBe(
+      "https://backend.composio.dev/redirect/fresh-1",
+    );
+    // A distinct URL on the second call proves the link is generated on demand,
+    // not cached from the first.
+    expect(second.redirectUrl).toBe(
+      "https://backend.composio.dev/redirect/fresh-2",
+    );
+
+    // On Composio failure the flow errors cleanly (caller retries) rather than
+    // returning a stale/dead link.
+    failNext = true;
+    await expect(
+      connect.handler({ body: { slug: "gmail" } }),
+    ).rejects.toThrow(/Couldn't start the gmail connection/);
   });
 
   it("surfaces passive failure signals without any probe", async () => {

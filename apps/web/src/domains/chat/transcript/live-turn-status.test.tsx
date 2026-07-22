@@ -7,6 +7,8 @@ import {
 } from "@/domains/chat/live-status-store";
 import {
   deriveLiveStatus,
+  formatTokens,
+  formatTurnMeta,
   type DeriveLiveStatusInput,
 } from "@/domains/chat/transcript/live-turn-status";
 
@@ -231,6 +233,104 @@ describe("deriveLiveStatus", () => {
     expect(deriveLiveStatus(input({ now: T0 + 2_000 }))?.text).toBe(
       "Cue is reading your message…",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// State machine — the single most important word. The user's core complaint
+// was being unable to tell "Cue is working" from "Cue is waiting on ME" from
+// "Cue looks hung". Each maps to a distinct `state` the UI colours/animates
+// differently; these assert the mapping, not the styling.
+// ---------------------------------------------------------------------------
+
+describe("deriveLiveStatus — state word", () => {
+  test("a running tool is Working", () => {
+    const view = deriveLiveStatus(
+      input({
+        runningTools: [
+          { toolUseId: "t1", toolName: "web_search", startedAt: T0 },
+        ],
+      }),
+    );
+    expect(view?.state).toBe("working");
+    expect(view?.label).toBe("Working");
+    // The action is carried separately from the state word so the desktop
+    // line can render "Working · Searching the web…".
+    expect(view?.activity).toBe("Searching the web…");
+  });
+
+  test("a pending question/approval is Waiting on you — NOT working", () => {
+    const view = deriveLiveStatus(input({ phase: "awaiting_user_input" }));
+    expect(view?.state).toBe("waiting");
+    expect(view?.label).toBe("Waiting on you");
+    // Waiting must be visually un-animated: no brain glyph, and the state is
+    // explicitly not "working" so the component drops the typing-dot wave.
+    expect(view?.state).not.toBe("working");
+    expect(view?.brain).toBeUndefined();
+  });
+
+  test("fresh reasoning is Thinking", () => {
+    const view = deriveLiveStatus(
+      input({ thinkingTail: "weighing the options", thinkingAt: T0 + 900 }),
+    );
+    expect(view?.state).toBe("thinking");
+    expect(view?.label).toBe("Thinking");
+    // Calm thinking adds no action beyond the word; a snag does.
+    expect(view?.activity).toBeNull();
+    const snag = deriveLiveStatus(
+      input({ thinkingTail: "the bash tool keeps erroring", thinkingAt: T0 + 900 }),
+    );
+    expect(snag?.state).toBe("thinking");
+    expect(snag?.activity).toBe("working through a snag");
+  });
+
+  test("a dropped stream is Blocked (Reconnecting) — never a stale Working", () => {
+    const view = deriveLiveStatus(
+      input({ now: T0 + 70_000, sseConnected: false }),
+    );
+    expect(view?.state).toBe("blocked");
+    expect(view?.label).toBe("Reconnecting");
+  });
+
+  test("the elapsed-fallback ladder stays Working (honest, not hung)", () => {
+    const at70 = deriveLiveStatus(input({ now: T0 + 70_000 }));
+    expect(at70?.state).toBe("working");
+    expect(at70?.label).toBe("Working");
+    expect(at70?.text).toBe("Still working — big step in progress");
+    expect(at70?.detail).toBe("1m 10s");
+  });
+
+  test("streaming and daemon-activity rungs are Working with an action", () => {
+    const writing = deriveLiveStatus(input({ phase: "streaming" }));
+    expect(writing?.state).toBe("working");
+    expect(writing?.activity).toBe("writing the reply");
+    const daemon = deriveLiveStatus(
+      input({ statusText: "Processing bash results" }),
+    );
+    expect(daemon?.state).toBe("working");
+    expect(daemon?.activity).toBe("Processing bash results");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Token / step burn-down — the quiet secondary "effort" signal.
+// ---------------------------------------------------------------------------
+
+describe("token + step meta", () => {
+  test("formatTokens is compact and honest", () => {
+    expect(formatTokens(0)).toBe("0");
+    expect(formatTokens(820)).toBe("820");
+    expect(formatTokens(8_234)).toBe("8.2k");
+    expect(formatTokens(42_000)).toBe("42k");
+    expect(formatTokens(1_300_000)).toBe("1.3M");
+  });
+
+  test("formatTurnMeta shows nothing until there is effort to report", () => {
+    expect(formatTurnMeta(0, 0)).toBeNull();
+    expect(formatTurnMeta(1, 0)).toBe("1 step");
+    expect(formatTurnMeta(3, 0)).toBe("3 steps");
+    expect(formatTurnMeta(3, 8_234)).toBe("3 steps · 8.2k tokens");
+    expect(formatTurnMeta(0, 500)).toBe("500 tokens");
   });
 });
 

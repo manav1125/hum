@@ -83,6 +83,10 @@ import { truncate } from "../util/truncate.js";
 import { getWorkspaceGitService } from "../workspace/git-service.js";
 import { commitTurnChanges } from "../workspace/turn-commit.js";
 import { cleanAssistantContent } from "./assistant-attachments.js";
+import {
+  appendClarifyDirective,
+  assessChatClarify,
+} from "./chat-clarify-precheck.js";
 import type { Conversation } from "./conversation.js";
 import {
   createEventHandlerState,
@@ -904,7 +908,34 @@ export async function runAgentLoopImpl(
     contextAssemblyMs = Math.round(
       performance.now() - contextAssemblyStartedAtMs,
     );
-    const runMessages = finalUserPromptCtx.latestMessages;
+    let runMessages = finalUserPromptCtx.latestMessages;
+
+    // Chat clarify pre-check — the chat-side sibling of the work-item pre-run
+    // assessment. For an INTERACTIVE user turn whose message is consequential
+    // AND under-specified ("book the flights"), steer the agent to ask ONE
+    // question first via the existing `ask_question` tool, rather than
+    // inferring the trip/dates/recipient and running for minutes on a guess.
+    // Gated by a cheap heuristic + config so simple/cheap turns pay nothing,
+    // and fully fail-open: any miss runs the turn exactly as before. Skipped
+    // for non-interactive turns (background/scheduled/subagent) where there is
+    // no one present to answer a question.
+    if (options?.isUserMessage && isInteractiveResolved) {
+      try {
+        const clarify = await assessChatClarify(content);
+        if (clarify) {
+          runMessages = appendClarifyDirective(runMessages, clarify.question);
+          rlog.info(
+            { confidence: clarify.confidence },
+            "chat clarify: steering agent to ask one question before running",
+          );
+        }
+      } catch (err) {
+        rlog.debug(
+          { err: String(err) },
+          "chat clarify pre-check threw (running unclarified)",
+        );
+      }
+    }
 
     // Reset the manager's turn-scoped overflow-recovery ladder at the turn
     // boundary so a new turn starts the ladder fresh from the emergency rung.

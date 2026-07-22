@@ -48,6 +48,7 @@ import {
 } from "@/domains/chat/utils/stream-handlers/tool-call-handlers";
 import {
   handleUsageUpdate,
+  handleUsageProgress,
   handleCompactionCircuitOpen,
   handleCompactionCircuitClosed,
   handleTurnProfileAutoRouted,
@@ -318,9 +319,11 @@ export function useStreamEventHandler(
           handleUsageUpdate(event, ctx);
           break;
         // Per-call usage deltas. The top-level chat surface reads running
-        // totals from `usage_update`; per-call deltas are only consumed by
-        // subagent surfaces via the `subagent_event` envelope.
+        // totals from `usage_update`; per-call deltas additionally feed the
+        // live status line's quiet per-turn token burn-down, and are consumed
+        // by subagent surfaces via the `subagent_event` envelope.
         case "usage_progress":
+          handleUsageProgress(event, ctx);
           break;
         case "conversation_list_invalidated":
           // Legacy macOS-only broadcast. Web receives the paired

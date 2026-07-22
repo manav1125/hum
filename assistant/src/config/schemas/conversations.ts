@@ -1,7 +1,41 @@
 import { z } from "zod";
 
+/**
+ * Pre-run clarify pre-check for direct chat turns (see
+ * daemon/chat-clarify-precheck.ts): a cheap heuristic gate plus, only for
+ * consequential + under-specified messages, one flash-tier call that decides
+ * whether to ask ONE clarifying question before the turn runs.
+ */
+const ClarifyConfigSchema = z
+  .object({
+    enabled: z
+      .boolean({ error: "conversations.clarify.enabled must be a boolean" })
+      .default(true)
+      .describe(
+        "Whether the chat clarify pre-check runs. Off = today's behaviour: every chat turn goes straight to execution, inferring under-specified consequential requests instead of asking. Only ever fires for messages that pass the consequential-action heuristic AND a confident model verdict; simple/cheap turns never reach the model call.",
+      ),
+    timeoutMs: z
+      .number({ error: "conversations.clarify.timeoutMs must be a number" })
+      .int("conversations.clarify.timeoutMs must be an integer")
+      .positive("conversations.clarify.timeoutMs must be positive")
+      .default(8_000)
+      .describe(
+        "Hard deadline on the pre-check (provider resolution + the flash call). On timeout the turn proceeds unclarified (fail-open). Tighter than the work-item assessor's because this precedes an interactive reply, not a minutes-long task run.",
+      ),
+    minConfidence: z
+      .number({ error: "conversations.clarify.minConfidence must be a number" })
+      .min(0, "conversations.clarify.minConfidence must be >= 0")
+      .max(1, "conversations.clarify.minConfidence must be <= 1")
+      .default(0.6)
+      .describe(
+        "Minimum model confidence required to actually ask a clarifying question. Below it the turn runs unclarified — over-asking in chat is more annoying than in a task queue, so the bar is biased toward executing.",
+      ),
+  })
+  .describe("Pre-run clarification of under-specified, consequential chat turns");
+
 export const ConversationsConfigSchema = z
   .object({
+    clarify: ClarifyConfigSchema.default(ClarifyConfigSchema.parse({})),
     skipAutoRetitling: z
       .boolean({
         error: "conversations.skipAutoRetitling must be a boolean",

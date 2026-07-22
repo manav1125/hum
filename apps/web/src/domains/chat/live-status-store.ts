@@ -102,9 +102,15 @@ export interface ConversationLiveStatus {
   steps: LiveStep[];
   /** Total tool calls started this turn — survives step-history eviction. */
   stepCount: number;
+  /** Cumulative tokens (input + output) reported by `usage_progress` events
+   *  across every LLM call this turn — the quiet "burn-down" counter shown
+   *  next to the elapsed clock. A UI-only effort signal (not billing), reset
+   *  to 0 at every turn start / boundary. */
+  turnTokens: number;
   /** Wall-clock ms of the most recent live signal for this conversation
-   *  (thinking delta, tool start/end). Null until the first signal. The
-   *  mobile watchdog uses this to detect a genuinely silent stall. */
+   *  (thinking delta, tool start/end, usage progress). Null until the first
+   *  signal. The mobile watchdog uses this to detect a genuinely silent
+   *  stall. */
   lastEventAt: number | null;
 }
 
@@ -129,6 +135,7 @@ export const EMPTY_LIVE_STATUS: ConversationLiveStatus = {
   runningTools: [],
   steps: [],
   stepCount: 0,
+  turnTokens: 0,
   lastEventAt: null,
 };
 
@@ -185,6 +192,12 @@ export interface LiveStatusActions {
     },
   ) => void;
   noteToolEnd: (conversationId: string, toolUseId: string | undefined) => void;
+  /** Accumulate a per-call token delta (`usage_progress`) into this turn's
+   *  running burn-down counter. Cheap and additive; a UI-only effort signal. */
+  noteUsageProgress: (
+    conversationId: string,
+    delta: { inputTokens: number; outputTokens: number },
+  ) => void;
   /** Drop one conversation's slice (its turn reached a terminal state). */
   reset: (conversationId: string) => void;
   /** Drop everything (tests / hard teardown). */
@@ -292,6 +305,20 @@ export const useLiveStatusStore = create<LiveStatusStore>()((set, get) => ({
             ? { ...step, endedAt: now }
             : step,
         ),
+        lastEventAt: now,
+      }),
+    }));
+  },
+
+  noteUsageProgress: (conversationId, { inputTokens, outputTokens }) => {
+    const cur = get().byConversation[conversationId] ?? EMPTY_LIVE_STATUS;
+    const added = Math.max(0, inputTokens) + Math.max(0, outputTokens);
+    if (added === 0) return;
+    const now = Date.now();
+    set((s) => ({
+      byConversation: withSlice(s.byConversation, conversationId, {
+        ...cur,
+        turnTokens: cur.turnTokens + added,
         lastEventAt: now,
       }),
     }));

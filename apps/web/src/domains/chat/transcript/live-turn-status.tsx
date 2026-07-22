@@ -27,7 +27,7 @@
  * so light/dark and the mobile `.cue-mchat` re-binding both work.
  */
 
-import { Brain } from "lucide-react";
+import { Brain, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Typography } from "@vellumai/design-library";
@@ -82,10 +82,37 @@ export function thinkingStatusText(preview: string): string {
     : "Thinking it through…";
 }
 
+/**
+ * The single most important word about the turn, at a glance. Drives the
+ * status line's colour + indicator so the user can tell, without reading,
+ * whether Cue is running (`working`/`thinking`), stuck waiting on THEM
+ * (`waiting` — the one that must never be confused with working), unable to
+ * observe progress (`blocked`), or done (`stopped`).
+ */
+export type LiveState =
+  | "working"
+  | "waiting"
+  | "thinking"
+  | "blocked"
+  | "stopped";
+
 export interface LiveStatusView {
-  /** Stable copy — drives the fade-in animation key, so it must NOT embed
-   *  the ticking elapsed time. */
+  /** The one-word state. Drives the indicator + colour treatment; `waiting`
+   *  is rendered unmistakably distinct from `working`. */
+  state: LiveState;
+  /** The prominent state word shown to the user ("Working", "Waiting on
+   *  you", …). Derived from `state` but branch-specific where a truer word
+   *  exists (e.g. "Reconnecting" for a dropped stream). */
+  label: string;
+  /** Full descriptive headline — unchanged legacy field, still the single
+   *  string the mobile live-activity block renders. Drives the fade-in
+   *  animation key, so it must NOT embed the ticking elapsed time. */
   text: string;
+  /** The current action in plain words, WITHOUT the state word baked in
+   *  ("Searching the web…", "npm run build") — or null when there is no
+   *  distinct action beyond the state itself. The desktop line renders
+   *  `label · activity`; null keeps it to just the state word + elapsed. */
+  activity: string | null;
   /** Optional ticking suffix (elapsed time), rendered without re-animating. */
   detail?: string;
   /** Show the Brain glyph (thinking preview), mirroring the activity card. */
@@ -99,6 +126,34 @@ export function formatElapsed(ms: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m}m ${s}s`;
+}
+
+/**
+ * Compact token count for the quiet burn-down counter ("820", "8.2k",
+ * "1.3M"). Shared with the mobile live-activity block. Effort, not progress —
+ * kept subordinate to the state + current action in both surfaces.
+ */
+export function formatTokens(n: number): string {
+  if (n < 1_000) return `${Math.max(0, Math.round(n))}`;
+  if (n < 1_000_000) {
+    const k = n / 1_000;
+    return `${k < 10 ? k.toFixed(1) : Math.round(k)}k`;
+  }
+  const m = n / 1_000_000;
+  return `${m < 10 ? m.toFixed(1) : Math.round(m)}M`;
+}
+
+/**
+ * The quiet secondary "effort" line — step count and the turn's token
+ * burn-down. Explicitly subordinate to the state word + current action: the
+ * user asked for a token/time read "the way Claude does it", but tokens are
+ * effort, not progress. Returns null when there is nothing to show yet.
+ */
+export function formatTurnMeta(stepCount: number, turnTokens: number): string | null {
+  const parts: string[] = [];
+  if (stepCount > 0) parts.push(`${stepCount} ${stepCount === 1 ? "step" : "steps"}`);
+  if (turnTokens > 0) parts.push(`${formatTokens(turnTokens)} tokens`);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** Humanize a running tool into present-tense status copy. */
@@ -160,19 +215,36 @@ export function deriveLiveStatus(
   // Stream gone while the turn looks active: every rung below reports
   // progress we can no longer observe, so say what is actually happening.
   if (!sseConnected) {
-    return { text: "Reconnecting…" };
+    return {
+      state: "blocked",
+      label: "Reconnecting",
+      text: "Reconnecting…",
+      activity: null,
+    };
   }
 
+  // Waiting on YOU — a pending question/approval. This is the one state the
+  // user has repeatedly been unable to distinguish from "working", so it is
+  // its own state with a distinct (amber, un-animated) treatment downstream.
   if (phase === "awaiting_user_input") {
-    return { text: "Waiting for your input" };
+    return {
+      state: "waiting",
+      label: "Waiting on you",
+      text: "Waiting for your input",
+      activity: null,
+    };
   }
 
   // Running tool — the most recently started one is what the agent is doing.
   const tool = runningTools[runningTools.length - 1];
   if (tool) {
     const elapsed = now - tool.startedAt;
+    const text = toolStatusText(tool);
     return {
-      text: toolStatusText(tool),
+      state: "working",
+      label: "Working",
+      text,
+      activity: text,
       ...(elapsed >= TOOL_ELAPSED_THRESHOLD_MS
         ? { detail: formatElapsed(elapsed) }
         : {}),
@@ -188,27 +260,48 @@ export function deriveLiveStatus(
   const thinkingIsFresh =
     thinkingAt !== null && now - thinkingAt < THINKING_FRESH_MS;
   if (preview && (phase !== "streaming" || thinkingIsFresh)) {
+    const snag = THINKING_SNAG_RE.test(preview);
     return {
+      state: "thinking",
+      label: "Thinking",
       text: thinkingStatusText(preview),
+      // The calm "Thinking it through…" adds nothing beyond the "Thinking"
+      // word, so it's dropped from the desktop line; the honest snag note is
+      // kept because it carries real signal.
+      activity: snag ? "working through a snag" : null,
       brain: true,
     };
   }
 
   // Daemon activity label ("Processing bash results", "Compacting context").
   if (statusText) {
-    return { text: `${statusText}…` };
+    return {
+      state: "working",
+      label: "Working",
+      text: `${statusText}…`,
+      activity: statusText,
+    };
   }
 
   if (phase === "streaming") {
-    return { text: "Writing…" };
+    return {
+      state: "working",
+      label: "Working",
+      text: "Writing…",
+      activity: "writing the reply",
+    };
   }
 
   if (phase === "queued") {
+    const text =
+      pendingQueuedCount > 0
+        ? "Picking up your queued message…"
+        : "Finishing up…";
     return {
-      text:
-        pendingQueuedCount > 0
-          ? "Picking up your queued message…"
-          : "Finishing up…",
+      state: "working",
+      label: "Working",
+      text,
+      activity: pendingQueuedCount > 0 ? "picking up your queued message" : null,
     };
   }
 
@@ -216,13 +309,36 @@ export function deriveLiveStatus(
   // stale-silent during long gaps (model latency, big tool steps the daemon
   // didn't announce).
   const elapsed = turnStartedAt !== null ? now - turnStartedAt : 0;
-  if (elapsed < 5_000) return { text: "Cue is reading your message…" };
-  if (elapsed < 20_000) return { text: "Working on it…" };
+  if (elapsed < 5_000) {
+    return {
+      state: "working",
+      label: "Working",
+      text: "Cue is reading your message…",
+      activity: "reading your message",
+    };
+  }
+  if (elapsed < 20_000) {
+    return {
+      state: "working",
+      label: "Working",
+      text: "Working on it…",
+      activity: null,
+    };
+  }
   if (elapsed < 45_000) {
-    return { text: "Still working…", detail: formatElapsed(elapsed) };
+    return {
+      state: "working",
+      label: "Working",
+      text: "Still working…",
+      activity: null,
+      detail: formatElapsed(elapsed),
+    };
   }
   return {
+    state: "working",
+    label: "Working",
     text: "Still working — big step in progress",
+    activity: null,
     detail: formatElapsed(elapsed),
   };
 }
@@ -251,7 +367,7 @@ export function LiveTurnStatus({
   // running background conversation's thinking/tool signal lives under its
   // own key in the store and never reaches this selector.
   const activeConversationId = useConversationStore.use.activeConversationId();
-  const { turnStartedAt, thinkingTail, thinkingAt, runningTools } =
+  const { turnStartedAt, thinkingTail, thinkingAt, runningTools, stepCount, turnTokens } =
     useLiveStatusForConversation(activeConversationId);
   const sseConnected = useSSEConnectedStore.use.isConnected();
 
@@ -290,51 +406,88 @@ export function LiveTurnStatus({
   });
   if (!view) return null;
 
+  const isWaiting = view.state === "waiting";
+  // Token/step burn-down is meaningful only while Cue is actually running —
+  // never next to "Waiting on you" (it would read as ongoing work) or a
+  // dropped stream (the counter is frozen and would look stalled).
+  const meta =
+    view.state === "working" || view.state === "thinking"
+      ? formatTurnMeta(stepCount, turnTokens)
+      : null;
+
   return (
     <div
       role="status"
       aria-live="polite"
       data-testid="live-turn-status"
+      data-live-state={view.state}
       className="flex min-w-0 items-center gap-2"
     >
-      {/* Left→right typing-dot wave — same phase offsets as the transcript's
-          legacy thinking row / macOS TypingIndicatorView. Respects
-          prefers-reduced-motion via the `.typing-dot` rule in index.css. */}
-      <span aria-hidden className="flex shrink-0 items-center gap-[3px]">
-        {([-0.333, 0, -0.667] as const).map((delay, i) => (
-          <span
-            key={i}
-            className="typing-dot block h-1.5 w-1.5 rounded-full bg-[var(--content-tertiary)]"
-            style={{
-              animation: "typing-dot-pulse 1s ease-in-out infinite",
-              animationDelay: `${delay}s`,
-            }}
-          />
-        ))}
-      </span>
-      {/* Keyed on the stable copy so each new status fades in; the ticking
-          elapsed`detail` updates in place without re-animating. */}
+      {/* Leading indicator. "Waiting on you" is deliberately NOT animated —
+          the typing-dot wave means "actively working", so a pending question
+          gets a static amber question glyph instead, the single strongest cue
+          that the ball is in the user's court. */}
+      {isWaiting ? (
+        <MessageCircleQuestion
+          aria-hidden="true"
+          className="size-4 shrink-0 text-[var(--system-mid-strong)]"
+        />
+      ) : view.brain ? (
+        <Brain
+          aria-hidden="true"
+          className="size-3.5 shrink-0 text-[var(--content-tertiary)]"
+        />
+      ) : (
+        <span aria-hidden className="flex shrink-0 items-center gap-[3px]">
+          {([-0.333, 0, -0.667] as const).map((delay, i) => (
+            <span
+              key={i}
+              className="typing-dot block h-1.5 w-1.5 rounded-full bg-[var(--content-tertiary)]"
+              style={{
+                animation: "typing-dot-pulse 1s ease-in-out infinite",
+                animationDelay: `${delay}s`,
+              }}
+            />
+          ))}
+        </span>
+      )}
+      {/* Keyed on the state word so each new status fades in; the ticking
+          elapsed `detail` + meta update in place without re-animating. */}
       <span
-        key={view.text}
+        key={view.label}
         className="flex min-w-0 items-center gap-1"
         style={{ animation: "fadeInUp 0.25s ease-out" }}
       >
-        {view.brain && (
-          <Brain
-            aria-hidden="true"
-            className="size-3.5 shrink-0 text-[var(--content-tertiary)]"
-          />
-        )}
         <Typography
           variant="body-small-default"
-          className="min-w-0 flex-1 truncate text-left text-[var(--content-tertiary)]"
+          className="min-w-0 flex-1 truncate text-left"
         >
-          {view.text}
+          {/* The single most important word, colour-coded by state. Amber for
+              "Waiting on you" so it is unmistakable against the tertiary grey
+              of a working line. */}
+          <span
+            className={
+              isWaiting
+                ? "font-medium text-[var(--system-mid-strong)]"
+                : "text-[var(--content-secondary)]"
+            }
+          >
+            {view.label}
+          </span>
+          {view.activity ? (
+            <span className="text-[var(--content-tertiary)]">
+              {" "}
+              · {view.activity}
+            </span>
+          ) : null}
           {view.detail ? (
             <span className="text-[var(--content-disabled)]">
               {" "}
               · {view.detail}
             </span>
+          ) : null}
+          {meta ? (
+            <span className="text-[var(--content-disabled)]"> · {meta}</span>
           ) : null}
         </Typography>
       </span>

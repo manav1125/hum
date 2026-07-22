@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, MessageCircleQuestion } from "lucide-react";
 
 import { deriveStepLabelFromName } from "@/domains/chat/components/tool-progress-card/derive-step-label";
 import { requestActiveReconcileAndSettle } from "@/domains/chat/foreground-reconcile";
@@ -47,6 +47,7 @@ import {
 import {
   deriveLiveStatus,
   formatElapsed,
+  formatTokens,
 } from "@/domains/chat/transcript/live-turn-status";
 import { isSending, useTurnStore } from "@/domains/chat/turn-store";
 import { truncate } from "@/domains/chat/utils/truncate";
@@ -106,6 +107,7 @@ export function MobileLiveActivity({
     runningTools,
     steps,
     stepCount,
+    turnTokens,
     lastEventAt,
   } = useLiveStatusForConversation(activeConversationId);
   const sseConnected = useSSEConnectedStore.use.isConnected();
@@ -164,14 +166,22 @@ export function MobileLiveActivity({
   const silentFor = lastSignalAt > 0 ? now - lastSignalAt : 0;
   const showWatchdog = sseConnected && silentFor >= WATCHDOG_SILENCE_MS;
 
+  const isWaiting = view.state === "waiting";
   const visibleSteps = steps.slice(-VISIBLE_STEPS);
 
+  // Effort read (step / elapsed / token burn-down) belongs to a live run,
+  // never to "Waiting on you" — there it would read as ongoing work.
   const subParts: string[] = [];
-  if (stepCount > 0) {
-    subParts.push(`Step ${stepCount}`);
-  }
-  if (elapsedMs >= 3_000) {
-    subParts.push(formatElapsed(elapsedMs));
+  if (!isWaiting) {
+    if (stepCount > 0) {
+      subParts.push(`Step ${stepCount}`);
+    }
+    if (elapsedMs >= 3_000) {
+      subParts.push(formatElapsed(elapsedMs));
+    }
+    if (turnTokens > 0) {
+      subParts.push(`${formatTokens(turnTokens)} tokens`);
+    }
   }
 
   const handleCheckStatus = () => {
@@ -204,27 +214,38 @@ export function MobileLiveActivity({
     >
       <style dangerouslySetInnerHTML={{ __html: BLOCK_STYLES }} />
 
-      {/* Headline: pulse + current activity + step/elapsed micro-line. */}
+      {/* Headline: indicator + current activity + step/elapsed micro-line.
+          "Waiting on you" swaps the working pulse for a static amber question
+          glyph so a pending question can never be mistaken for a running
+          turn. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <LivePulseBadge size={22} />
+        {isWaiting ? (
+          <MessageCircleQuestion
+            aria-hidden
+            size={22}
+            style={{ color: "var(--mv3-amber)", flexShrink: 0 }}
+          />
+        ) : (
+          <LivePulseBadge size={22} />
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Keyed on the copy so each new status fades in; the ticking
-              elapsed line updates in place without re-animating. */}
+          {/* Keyed on the rendered copy so each new status fades in; the
+              ticking elapsed line updates in place without re-animating. */}
           <div
-            key={view.text}
+            key={isWaiting ? view.label : view.text}
             data-mla-fade
             style={{
               fontSize: 13,
               fontWeight: 600,
               lineHeight: 1.3,
-              color: "var(--mv3-text)",
+              color: isWaiting ? "var(--mv3-amber)" : "var(--mv3-text)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               animation: "mlaFadeUp .25s ease-out both",
             }}
           >
-            {view.text}
+            {isWaiting ? view.label : view.text}
             {view.detail ? (
               <span style={{ color: "var(--mv3-faint)", fontWeight: 400 }}>
                 {" "}
@@ -246,8 +267,11 @@ export function MobileLiveActivity({
         </div>
       </div>
 
-      {/* Latest steps mini-stream — quiet, newest last, older ones dim. */}
-      {visibleSteps.length > 0 ? (
+      {/* Latest steps mini-stream — quiet, newest last, older ones dim.
+          Hidden while waiting on the user: the pending ask_question call is
+          still "running", and a pulsing running-dot would undercut the
+          message that Cue has stopped and needs them. */}
+      {!isWaiting && visibleSteps.length > 0 ? (
         <div
           style={{
             display: "flex",

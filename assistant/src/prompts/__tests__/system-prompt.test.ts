@@ -130,8 +130,8 @@ describe("buildSystemPrompt — persona override", () => {
 
 describe("buildSystemPrompt — hasNoClient pin", () => {
   // Marker unique to the `{{^hasNoClient}}` branch of 05-access-preference:
-  // host fallbacks only render when a client is connected.
-  const WITH_CLIENT_MARKER = "`host_bash` with CLIs";
+  // the host fallback only renders when a client is connected.
+  const WITH_CLIENT_MARKER = "Fall back to `host_bash`";
 
   beforeEach(() => {
     mkdirSync(TEST_DIR, { recursive: true });

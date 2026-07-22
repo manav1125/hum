@@ -1,10 +1,13 @@
 import type { ContextWindowUsage } from "@/domains/chat/components/context-window-indicator";
+import { useLiveStatusStore } from "@/domains/chat/live-status-store";
 import { saveContextWindowUsage } from "@/domains/chat/utils/context-window-storage";
+import { resolveConversationId } from "@/domains/chat/utils/stream-handlers/message-handlers";
 import type { StreamHandlerContext } from "@/domains/chat/utils/stream-handlers/types";
 import type {
   CompactionCircuitClosedEvent,
   CompactionCircuitOpenEvent,
   TurnProfileAutoRoutedEvent,
+  UsageProgressEvent,
   UsageUpdateEvent,
 } from "@vellumai/assistant-api";
 
@@ -37,6 +40,25 @@ export function handleUsageUpdate(
     );
   }
   ctx.setContextWindowUsage(usage);
+}
+
+/**
+ * Per-call token deltas (`usage_progress`). The top-level chat surface reads
+ * running context-window totals from `usage_update`; this handler additionally
+ * feeds the live status line's quiet per-turn token burn-down counter, scoped
+ * to the EVENT's conversation so a background turn's tokens never surface in
+ * the transcript being viewed. Unattributable events are dropped.
+ */
+export function handleUsageProgress(
+  event: UsageProgressEvent,
+  ctx: StreamHandlerContext,
+): void {
+  const liveConvId = resolveConversationId(event, ctx);
+  if (!liveConvId) return;
+  useLiveStatusStore.getState().noteUsageProgress(liveConvId, {
+    inputTokens: event.inputTokens,
+    outputTokens: event.outputTokens,
+  });
 }
 
 export function handleCompactionCircuitOpen(
