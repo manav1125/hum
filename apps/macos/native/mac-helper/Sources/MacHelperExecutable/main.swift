@@ -362,7 +362,128 @@ final class MacHelper: @unchecked Sendable {
     }
 
     private func handleCommand(_ line: String) {
+        // Computer-use and app-control dispatch are async + @MainActor (AX +
+        // CGEvent + ScreenCaptureKit), so they can't flow through the
+        // synchronous JsonRpcRouter. Peek at the method and hand the raw line
+        // off to an async dispatcher (which re-parses inside the Task so no
+        // non-Sendable JSON value crosses the isolation boundary), mirroring
+        // upstream 92fc32090b's dispatchCuPerform / dispatchAppControlPerform.
+        if let data = line.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let method = object["method"] as? String,
+           method == "computeruse.perform" || method == "appcontrol.perform" {
+            if method == "computeruse.perform" {
+                dispatchCuPerform(line: line)
+            } else {
+                dispatchAppControlPerform(line: line)
+            }
+            return
+        }
         writeLine(router.handle(line: line))
+    }
+
+    /// Handle `computeruse.perform`: run one host computer-use action cycle
+    /// (map → verify → execute → observe) on the main actor and reply with the
+    /// observation payload. Params match `host-cu-executor.ts`.
+    private func dispatchCuPerform(line: String) {
+        Task { @MainActor in
+            let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            let id = object?["id"] ?? NSNull()
+            let params = object?["params"] as? [String: Any] ?? [:]
+            guard
+                let requestId = params["requestId"] as? String,
+                let conversationId = params["conversationId"] as? String,
+                let toolName = params["toolName"] as? String
+            else {
+                self.writeResponse(JsonRpcCodec.errorResponse(
+                    id: id,
+                    code: JsonRpcErrorCode.invalidParams,
+                    message: "computeruse.perform requires requestId, conversationId, toolName"
+                ))
+                return
+            }
+            let inputRaw = params["input"] as? [String: Any] ?? [:]
+            let input = inputRaw.mapValues { AnyCodable($0) }
+            let stepNumber = (params["stepNumber"] as? NSNumber)?.intValue ?? 0
+            let reasoning = params["reasoning"] as? String
+            let request = HostCuRequest(
+                requestId: requestId,
+                conversationId: conversationId,
+                toolName: toolName,
+                input: input,
+                stepNumber: stepNumber,
+                reasoning: reasoning
+            )
+            let payload = await HostCuActionRunner.perform(request)
+            self.writeResponse(
+                JsonRpcCodec.successResponse(id: id, result: Self.encodeToObject(payload))
+            )
+        }
+    }
+
+    /// Handle `appcontrol.perform`: execute one per-app control action
+    /// (start/observe/press/combo/sequence/type/click/drag/stop) and reply with
+    /// the capture payload. Params match `host-app-control-executor.ts`; the
+    /// `tool` discriminator lives inside `input`.
+    private func dispatchAppControlPerform(line: String) {
+        Task { @MainActor in
+            let object = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any]
+            let id = object?["id"] ?? NSNull()
+            let params = object?["params"] as? [String: Any] ?? [:]
+            guard let requestId = params["requestId"] as? String else {
+                self.writeResponse(JsonRpcCodec.errorResponse(
+                    id: id,
+                    code: JsonRpcErrorCode.invalidParams,
+                    message: "appcontrol.perform requires requestId"
+                ))
+                return
+            }
+            let conversationId = params["conversationId"] as? String ?? ""
+            let toolDict = params["input"] as? [String: Any] ?? [:]
+            do {
+                let inputData = try JSONSerialization.data(withJSONObject: toolDict)
+                let input = try JSONDecoder().decode(HostAppControlInput.self, from: inputData)
+                let request = HostAppControlRequest(
+                    type: "host_app_control_request",
+                    requestId: requestId,
+                    conversationId: conversationId,
+                    input: input
+                )
+                let payload = await AppControlExecutor.perform(request)
+                self.writeResponse(
+                    JsonRpcCodec.successResponse(id: id, result: Self.encodeToObject(payload))
+                )
+            } catch {
+                self.writeResponse(JsonRpcCodec.errorResponse(
+                    id: id,
+                    code: JsonRpcErrorCode.invalidParams,
+                    message: "appcontrol.perform could not decode input: \(error.localizedDescription)"
+                ))
+            }
+        }
+    }
+
+    /// Encode an `Encodable` wire payload to a JSON object suitable for a
+    /// JSON-RPC `result`. Nil optionals are omitted (Codable synthesizes
+    /// `encodeIfPresent`), matching the all-optional result contract the TS
+    /// side validates. Returns an empty object on the (unexpected) encode
+    /// failure so the reply is still well-formed.
+    private static func encodeToObject<T: Encodable>(_ value: T) -> [String: Any] {
+        guard
+            let data = try? JSONEncoder().encode(value),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return [:]
+        }
+        return object
+    }
+
+    private func writeResponse(_ object: [String: Any]) {
+        do {
+            writeLine(try JsonRpcCodec.encodeLine(object))
+        } catch {
+            log("Failed to encode response: \(error.localizedDescription)")
+        }
     }
 
     /// Start/stop local speech-recognition partials (`dictation.partial`

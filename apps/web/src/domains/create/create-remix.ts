@@ -135,29 +135,57 @@ export interface VariationDirective {
   index: number;
   /** Short descriptor of the axis this variation explores ("centered", "dark"). */
   variant: string;
+  /**
+   * What the treatment actually changes, in plain words. There is no way to
+   * preview a variation before it is generated, so the chooser SAYS what each
+   * direction is instead of showing an empty artwork tile — this is the copy
+   * that makes the choice a real one. See create-variations-result.
+   */
+  description: string;
 }
 
 /**
- * The default four variation axes, matching the 4e mock (selected · centered ·
+ * The default four variation axes, matching the 4e mock (faithful · centered ·
  * split · dark). Kept small + tasteful — the point is to compare, not flood.
  */
 export const DEFAULT_VARIATIONS: VariationDirective[] = [
-  { index: 1, variant: "faithful" },
-  { index: 2, variant: "centered" },
-  { index: 3, variant: "split-layout" },
-  { index: 4, variant: "dark" },
+  {
+    index: 1,
+    variant: "faithful",
+    description:
+      "The same layout and emphasis, re-cut — tighter copy and cleaner spacing, nothing moved.",
+  },
+  {
+    index: 2,
+    variant: "centered",
+    description:
+      "Everything centred on one axis: a symmetric hero, centred headline and stacked supporting copy.",
+  },
+  {
+    index: 3,
+    variant: "split-layout",
+    description:
+      "Two columns — copy on one side, the visual on the other, with an asymmetric grid.",
+  },
+  {
+    index: 4,
+    variant: "dark",
+    description:
+      "The palette inverted to a dark ground, with the accent colour carrying the emphasis.",
+  },
 ];
 
 /**
- * MAKE VARIATIONS — one prompt per variation. We fire N seeded generations that
- * share the brief + template but each nudge a different visual axis, so the
- * result grid (4e) is genuinely different alternates to pick between.
+ * The instruction for ONE variation. `total` only affects the phrasing ("2 of
+ * 4"); pass 1 when a single alternate is being made on its own so the copy
+ * doesn't imply siblings that were never generated.
  */
-export function buildVariationPrompts(
+export function buildVariationPrompt(
   asset: RemixAsset,
-  variations: VariationDirective[] = DEFAULT_VARIATIONS,
+  variation: VariationDirective,
   brand?: BrandProfileLike | null,
-): string[] {
+  total = 1,
+): string {
   const noun = assetNoun(asset);
   const intent: CreateIntent = {
     mode: asset.mode,
@@ -165,14 +193,29 @@ export function buildVariationPrompts(
     styleId: asset.styleId,
     brandKitId: asset.brandKitId ?? null,
   };
-  return variations.map((v) => {
-    const instruction =
-      `Make an ALTERNATE of this ${noun} (variation ${v.index} of ` +
-      `${variations.length}) — keep the same content and brand, but explore a ` +
-      `"${v.variant}" treatment: vary the composition, emphasis and layout so ` +
-      `this reads as a distinct option to compare against the others.`;
-    return withContract(instruction, intent, asset.brandKitId ? brand : null);
-  });
+  const position =
+    total > 1 ? ` (variation ${variation.index} of ${total})` : "";
+  const instruction =
+    `Make an ALTERNATE of this ${noun}${position} — keep the same content and ` +
+    `brand, but explore a "${variation.variant}" treatment: ` +
+    `${variation.description} Vary the composition, emphasis and layout so ` +
+    `this reads as a distinct option.`;
+  return withContract(instruction, intent, asset.brandKitId ? brand : null);
+}
+
+/**
+ * MAKE VARIATIONS — one prompt per variation. Each seeded generation shares the
+ * brief + template but nudges a different visual axis, so the result grid (4e)
+ * is genuinely different alternates to pick between.
+ */
+export function buildVariationPrompts(
+  asset: RemixAsset,
+  variations: VariationDirective[] = DEFAULT_VARIATIONS,
+  brand?: BrandProfileLike | null,
+): string[] {
+  return variations.map((v) =>
+    buildVariationPrompt(asset, v, brand, variations.length),
+  );
 }
 
 /**

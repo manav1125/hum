@@ -32530,6 +32530,14 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        originConversationId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            The conversation this item was created FROM — distinct from lastRunConversationId (where the run happened)
+                            and from sourceType/sourceId (which channel it arrived on). Lets the originating thread show
+                            what it spawned.
                         approvalStatus:
                           anyOf:
                             - type: string
@@ -32658,6 +32666,7 @@ paths:
                         - lastProgressNote
                         - sourceType
                         - sourceId
+                        - originConversationId
                         - approvalStatus
                         - autoRunEligibility
                         - ranProvenance
@@ -40508,6 +40517,14 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        originConversationId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            The conversation this item was created FROM — distinct from lastRunConversationId (where the run happened)
+                            and from sourceType/sourceId (which channel it arrived on). Lets the originating thread show
+                            what it spawned.
                         approvalStatus:
                           anyOf:
                             - type: string
@@ -40636,6 +40653,7 @@ paths:
                         - lastProgressNote
                         - sourceType
                         - sourceId
+                        - originConversationId
                         - approvalStatus
                         - autoRunEligibility
                         - ranProvenance
@@ -40676,6 +40694,14 @@ paths:
           schema:
             type: string
           description: Filter to a single project
+        - name: originConversationId
+          in: query
+          required: false
+          schema:
+            type: string
+          description:
+            Filter to the items a single conversation spawned (work_items.origin_conversation_id). Lets a thread show
+            the work it started.
     post:
       operationId: workitems_post
       summary: Create a work item
@@ -40781,6 +40807,14 @@ paths:
                         anyOf:
                           - type: string
                           - type: "null"
+                      originConversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          The conversation this item was created FROM — distinct from lastRunConversationId (where the run happened)
+                          and from sourceType/sourceId (which channel it arrived on). Lets the originating thread show
+                          what it spawned.
                       approvalStatus:
                         anyOf:
                           - type: string
@@ -40909,6 +40943,7 @@ paths:
                       - lastProgressNote
                       - sourceType
                       - sourceId
+                      - originConversationId
                       - approvalStatus
                       - autoRunEligibility
                       - ranProvenance

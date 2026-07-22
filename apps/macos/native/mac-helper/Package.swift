@@ -15,14 +15,12 @@ let package = Package(
             name: "MacHelperExecutable",
             dependencies: ["MacHelperCore"],
             // ComputerUse/ and AppControl/ hold the WS-H computer-use + app-control
-            // port (source copied from clients/macos/vellum-assistant). They are
-            // EXCLUDED from the build until the transport adaptation is finished
-            // on-device — see PORT-NOTES.md. They still reference the retiring
-            // VellumAssistantShared module + a Combine overlay proxy, so compiling
-            // them now would break the helper build. When the port is finished,
-            // remove them from this `exclude` list and register the two JSON-RPC
-            // methods (computeruse.perform / appcontrol.perform) in main.swift.
-            exclude: ["Info.plist", "ComputerUse", "AppControl"],
+            // port (source copied from clients/macos/vellum-assistant, then adapted:
+            // VellumAssistantShared severed, Combine overlay proxy dropped, logger
+            // subsystem pinned to a literal — see PORT-NOTES.md). The two JSON-RPC
+            // methods (computeruse.perform / appcontrol.perform) are registered in
+            // main.swift via an async @MainActor dispatch.
+            exclude: ["Info.plist"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
@@ -39,6 +37,13 @@ let package = Package(
         .testTarget(
             name: "MacHelperCoreTests",
             dependencies: ["MacHelperCore"]
+        ),
+        // Tests for the WS-H computer-use port. `ActionVerifier` (the safety
+        // gate) has no app/AX/CGEvent dependencies, so it unit-tests cleanly by
+        // @testable-importing the executable target.
+        .testTarget(
+            name: "MacHelperExecutableTests",
+            dependencies: ["MacHelperExecutable"]
         ),
     ]
 )

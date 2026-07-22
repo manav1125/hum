@@ -48,6 +48,10 @@ export const SAFE_ENV_VARS = [
   "CES_MANAGED_MODE",
   "VELLUM_DISABLE_CES",
   "IS_CONTAINERIZED",
+  // Where the image baked Playwright's Chromium. Non-secret, and child
+  // processes that shell out to playwright must see it or they re-download
+  // the browser instead of using the baked copy.
+  "PLAYWRIGHT_BROWSERS_PATH",
   "IS_PLATFORM",
   "VELLUM_CLOUD",
   "VELLUM_SANDBOX_RUNTIME",

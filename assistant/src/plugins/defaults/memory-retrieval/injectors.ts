@@ -22,6 +22,7 @@
  * | `now-md`                 | 40    | after-memory-prefix     |
  * | `active-documents`       | 45    | prepend-user-tail       |
  * | `document-comments`      | 46    | prepend-user-tail       |
+ * | `spawned-work`           | 47    | prepend-user-tail       |
  * | `subagent-status`        | 50    | append-user-tail        |
  * | `slack-messages`         | 60    | replace-run-messages    |
  * | `thread-focus`           | 70    | append-user-tail        |
@@ -65,6 +66,7 @@ import { readPkbContext } from "../../../memory/pkb/context.js";
 import { searchPkbFiles } from "../../../memory/pkb/pkb-search.js";
 import { getPkbRoot, PKB_WORKSPACE_SCOPE } from "../../../memory/pkb/types.js";
 import { readMemoryV2StaticContent } from "../../../memory/v2/static-context.js";
+import { buildSpawnedWorkBlock } from "../../../work-items/spawned-work-context.js";
 import type { Message } from "../../../providers/types.js";
 import { getLogger } from "../../../util/logger.js";
 import {
@@ -79,6 +81,13 @@ import {
 import { buildUnifiedTurnContextBlock } from "./unified-turn-context.js";
 
 const pkbReminderLog = getLogger("pkb-reminder");
+const spawnedWorkLog = getLogger("spawned-work-injection");
+
+/**
+ * Block id for the `spawned-work` injection. Exported so the assembly layer
+ * can detect a fresh block and strip the stale copies it replaces.
+ */
+export const SPAWNED_WORK_BLOCK_ID = "spawned-work";
 
 /** Minimum hybrid-search score for a PKB path to surface as an injection hint. */
 const PKB_HINT_THRESHOLD = 0.5;
@@ -111,6 +120,7 @@ export const DEFAULT_INJECTOR_ORDER = {
   nowMd: 40,
   activeDocuments: 45,
   documentComments: 46,
+  spawnedWork: 47,
   subagentStatus: 50,
   slackMessages: 60,
   threadFocus: 70,
@@ -920,6 +930,59 @@ ${sections.join("\n\n")}
 };
 
 /**
+ * `spawned-work` injector — order 47, prepend-user-tail.
+ *
+ * Tells the agent what work THIS conversation already started. A captured
+ * commitment becomes a work item that runs in its own background conversation;
+ * without this block the thread is blind to it, and the observed failure was
+ * exactly that — asked "where are the results", the agent re-did finished
+ * research inline instead of reading it.
+ *
+ * Placed BEFORE the user's text (prepend) rather than after: it has to be read
+ * as standing context for the whole turn, not as a trailing note.
+ *
+ * The block is ephemeral by contract — statuses and results change between
+ * turns, so `applyRuntimeInjections` strips every previous copy whenever this
+ * injector produces a fresh one. A stale "running" left in history would be
+ * the system claiming a state it cannot back up.
+ *
+ * Gating:
+ *  - `mode === "full"` — a minimal-mode turn skips optional blocks.
+ *  - `callSite` is the main reply (or untagged). Background/utility loops
+ *    (compaction, titling, subagents) that share the conversation id must not
+ *    pay for it.
+ *  - the conversation spawned at least one non-archived work item.
+ */
+const spawnedWorkInjector: Injector = {
+  name: "spawned-work",
+  order: DEFAULT_INJECTOR_ORDER.spawnedWork,
+  async produce(ctx: TurnContext): Promise<InjectionBlock | null> {
+    const mode = ctx.mode ?? "full";
+    if (mode !== "full") return null;
+    if (ctx.callSite && ctx.callSite !== "mainAgent") return null;
+    if (!ctx.conversationId) return null;
+    let text: string | null = null;
+    try {
+      text = buildSpawnedWorkBlock(ctx.conversationId);
+    } catch (err) {
+      // A read failure must never cost the user their turn — degrade to the
+      // pre-existing (blind) behaviour rather than throwing mid-assembly.
+      spawnedWorkLog.warn(
+        { err, conversationId: ctx.conversationId },
+        "failed to build spawned-work block",
+      );
+      return null;
+    }
+    if (!text) return null;
+    return {
+      id: SPAWNED_WORK_BLOCK_ID,
+      text,
+      placement: "prepend-user-tail",
+    };
+  },
+};
+
+/**
  * `subagent-status` injector — order 50, append-user-tail.
  *
  * Appends a pre-built `<active_subagents>` block to the tail user message
@@ -1049,6 +1112,7 @@ export const defaultInjectors: Injector[] = [
   nowMdInjector,
   activeDocumentsInjector,
   documentCommentsInjector,
+  spawnedWorkInjector,
   subagentStatusInjector,
   slackMessagesInjector,
   threadFocusInjector,

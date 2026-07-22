@@ -27,10 +27,10 @@ export interface BootstrapConversationOptions {
  * from `systemHint` — no LLM call. Background conversations (heartbeat runs,
  * scheduled jobs, subagents, retrospectives) are created in bulk and rarely
  * read by name, so an LLM-generated title is not worth the tokens. The title
- * is persisted with `AUTO_TITLE_DETERMINISTIC`, which keeps it replaceable:
- * if a user ever sends a message in the conversation, the title-generate
- * hook upgrades it to an LLM title (see
- * `plugins/defaults/title-generate/hooks/user-prompt-submit.ts`).
+ * is persisted with `AUTO_TITLE_DETERMINISTIC` and, because the `systemHint`
+ * already names the work, it stands as the conversation's final title — later
+ * generation passes leave it alone (see `canReplaceTitle` in
+ * `memory/conversation-title-service.ts`).
  */
 export function bootstrapConversation(opts: BootstrapConversationOptions) {
   return createConversation({

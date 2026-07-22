@@ -33,7 +33,7 @@ enum ExecutorError: LocalizedError {
     }
 }
 
-private let log = Logger(subsystem: Bundle.appBundleIdentifier, category: "ActionExecutor")
+private let log = Logger(subsystem: "ai.cue.mac-helper", category: "ActionExecutor")
 
 final class ActionExecutor {
     private let eventSource: CGEventSource?
@@ -43,7 +43,11 @@ final class ActionExecutor {
     }
 
     static func checkAccessibilityPermission(prompt: Bool = false) -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): prompt] as CFDictionary
+        // Reference the key by literal string rather than the global
+        // `kAXTrustedCheckOptionPrompt` var, which Swift 6 flags as
+        // non-concurrency-safe shared mutable state.
+        let promptKey = "AXTrustedCheckOptionPrompt" as CFString
+        let options = [promptKey: prompt] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 

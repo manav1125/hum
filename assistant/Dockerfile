@@ -276,6 +276,20 @@ COPY --from=builder /app /app
 # that don't set WEB_DIST_DIR.
 COPY deploy/web-dist /app/web-dist
 
+# Bake Playwright's Chromium into the image.
+#
+# Without this the FIRST browser call in a fresh container blocks on a runtime
+# `playwright install chromium` (622 MB on disk). Measured on prod 2026-07-22: a single
+# `browser navigate` took 114,135 ms, of which almost all was this download —
+# confirmed by the install landing in /root/.cache/ms-playwright inside the
+# navigate's window. The system libraries Chromium needs are already installed
+# in this stage, so `--with-deps` (which would go through the kata apt shim) is
+# not used. PLAYWRIGHT_BROWSERS_PATH pins the location so the daemon finds the
+# baked copy regardless of which user it runs as.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN cd /app/assistant && bunx playwright install chromium && \
+    chmod -R a+rX /ms-playwright
+
 COPY packages/block-volume-bootstrap/scripts/*.sh /usr/local/bin/
 
 RUN chmod +x \

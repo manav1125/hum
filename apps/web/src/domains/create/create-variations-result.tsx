@@ -1,18 +1,21 @@
 /**
- * Create Studio — 4e · "Make variations · the result".
+ * Create Studio — 4e · "Make variations".
  *
- * A 4-up grid of alternates generated from one asset. Each is selectable; the
- * bottom bar offers **Merge selected** (combine picks) and **Pick this →**
- * (promote the single selected variation to the canonical asset). Desktop is a
- * 2×2 grid panel; mobile is a bottom sheet (per the 4e mock).
+ * The panel has TWO honest modes, decided by whether real previews exist:
  *
- * Wiring: the parent fires N seeded generations (buildVariationPrompts) and
- * feeds their results in as `variations`. Selecting + Pick/Merge re-seeds the
- * conversation via the host callbacks. Rendering each variation's real artifact
- * requires the same iframe/app host the deck viewer uses — that lives outside
- * this domain, so a variation MAY carry a `thumbnail` node the host injects;
- * absent that, we render a labelled placeholder tile (clearly the design's
- * demo-content treatment, not a fake result).
+ *  - **Chooser** (no `preview` on any variation — the situation today). Nothing
+ *    has been generated yet, so there is nothing to show. Each card therefore
+ *    DESCRIBES its direction in words ("Two columns — copy on one side, the
+ *    visual on the other") and the action makes that one. It must never render
+ *    an empty artwork tile: a grey box where a picture should be reads as a
+ *    preview that failed to load, and the user ends up choosing blind.
+ *  - **Results** (the host injected `preview` nodes for generated alternates).
+ *    The 2×2 comparison grid with **Merge selected** and **Pick this →**.
+ *
+ * Rendering a real variation thumbnail needs the same iframe/app host the deck
+ * viewer uses, which lives outside this domain — so results mode activates only
+ * when a host passes previews in. Until one does, the chooser is the truthful
+ * surface, not a placeholder for a missing one.
  */
 
 import { useState } from "react";
@@ -32,16 +35,21 @@ const C = {
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
-/** One generated variation shown in the grid. */
+/** One variation — a direction to make, or a generated alternate. */
 export interface VariationResult {
   /** 1-based index (→ "Variation N"). */
   index: number;
   /** Short axis descriptor, e.g. "centered", "dark". */
   variant: string;
   /**
+   * What this direction changes, in plain words. Shown in chooser mode in place
+   * of artwork that does not exist yet.
+   */
+  description?: string;
+  /**
    * A rendered preview node for this variation (the host injects the real
-   * artifact thumbnail — an iframe or image). When omitted, a placeholder tile
-   * renders in its place.
+   * artifact thumbnail — an iframe or image). Its presence is what switches the
+   * panel from chooser mode into results mode.
    */
   preview?: React.ReactNode;
 }
@@ -51,33 +59,46 @@ export interface VariationsResultProps {
   title: string;
   /** Sub-line under the title (context: template · brand). */
   subtitle?: string;
-  /** The generated variations (typically 4). */
+  /** The variations (typically 4). */
   variations: VariationResult[];
-  /** Re-fire all variations. */
+  /** Re-fire all variations. Only offered in results mode. */
   onRegenerateAll: () => void;
   /**
-   * Promote the single selected variation to the canonical asset. Receives the
-   * chosen variation's index.
+   * Results mode: promote the selected variation to the canonical asset.
+   * Chooser mode: generate that direction. Receives the variation's index.
    */
   onPick: (index: number) => void;
   /**
    * Merge the selected variations into one refined asset. Receives all selected
-   * indexes (≥ 2). No dedicated merge endpoint exists yet — the host re-seeds a
-   * "merge variation N and M" instruction (buildMergePrompt); see create-remix.
+   * indexes (≥ 2). Results mode only — there is nothing to merge before the
+   * alternates exist. No dedicated merge endpoint exists yet: the host re-seeds
+   * a "merge variation N and M" instruction (buildMergePrompt).
    */
   onMerge: (indexes: number[]) => void;
 }
 
-/** Placeholder artifact tile — the design's "demo content" treatment. */
-function PlaceholderTile({ variant }: { variant: string }) {
+/**
+ * Chooser-mode tile: the direction, stated. Deliberately typographic — an
+ * artwork-shaped box with nothing in it would read as a broken preview.
+ */
+function DirectionTile({
+  variant,
+  description,
+}: {
+  variant: string;
+  description?: string;
+}) {
   return (
     <div
       style={{
-        aspectRatio: "16 / 10",
         borderRadius: 8,
-        background: `linear-gradient(135deg, color-mix(in srgb, ${C.blue} 14%, ${C.sunken}), ${C.sunken})`,
-        display: "grid",
-        placeItems: "center",
+        background: C.sunken,
+        border: `1px solid ${C.line}`,
+        padding: "14px 14px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        minHeight: 118,
       }}
     >
       <span
@@ -86,10 +107,14 @@ function PlaceholderTile({ variant }: { variant: string }) {
           fontSize: 10,
           letterSpacing: "0.1em",
           textTransform: "uppercase",
-          color: C.t3,
+          color: C.blueS,
         }}
       >
         {variant}
+      </span>
+      <span style={{ fontSize: 12.5, color: C.t2, lineHeight: 1.45 }}>
+        {description ??
+          `A ${variant} treatment of the same content — generated when you pick it.`}
       </span>
     </div>
   );
@@ -148,7 +173,9 @@ function VariationCard({
         {selected ? <Check size={13} /> : null}
       </span>
       <div style={{ padding: 12 }}>
-        {v.preview ?? <PlaceholderTile variant={v.variant} />}
+        {v.preview ?? (
+          <DirectionTile variant={v.variant} description={v.description} />
+        )}
       </div>
       <div
         style={{
@@ -159,22 +186,34 @@ function VariationCard({
           fontWeight: selected ? 600 : 500,
         }}
       >
-        Variation {v.index} · {selected ? "selected" : v.variant}
+        {v.preview
+          ? `Variation ${v.index} · ${selected ? "selected" : v.variant}`
+          : `Direction ${v.index} · ${selected ? "selected" : "not made yet"}`}
       </div>
     </button>
   );
 }
 
-/** Bottom action bar: N selected · Merge selected · Pick this →. */
+/**
+ * Bottom action bar. Results mode: N selected · Merge selected · Pick this →.
+ * Chooser mode: the merge affordance is absent (there is nothing to merge) and
+ * the primary action names what it will actually do — make the direction.
+ */
 function ActionBar({
   selectedCount,
+  showMerge,
   canMerge,
+  pickLabel,
+  hint,
   onMerge,
   onPick,
   compact,
 }: {
   selectedCount: number;
+  showMerge: boolean;
   canMerge: boolean;
+  pickLabel: string;
+  hint: string;
   onMerge: () => void;
   onPick: () => void;
   compact?: boolean;
@@ -190,40 +229,41 @@ function ActionBar({
       }}
     >
       {!compact ? (
-        <span style={{ fontSize: 12, color: C.t3 }}>
-          {selectedCount} selected
-        </span>
+        <span style={{ fontSize: 12, color: C.t3 }}>{hint}</span>
       ) : null}
-      <button
-        type="button"
-        onClick={onMerge}
-        disabled={!canMerge}
-        style={{
-          marginLeft: compact ? 0 : "auto",
-          flex: compact ? 1 : undefined,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 7,
-          fontSize: 13,
-          fontWeight: 600,
-          color: canMerge ? C.t1 : C.t3,
-          background: C.sunken,
-          border: `1px solid ${C.line}`,
-          borderRadius: 10,
-          padding: "9px 14px",
-          cursor: canMerge ? "pointer" : "not-allowed",
-          opacity: canMerge ? 1 : 0.65,
-        }}
-      >
-        <Copy size={14} />
-        {compact ? "Merge" : "Merge selected"}
-      </button>
+      {showMerge ? (
+        <button
+          type="button"
+          onClick={onMerge}
+          disabled={!canMerge}
+          style={{
+            marginLeft: compact ? 0 : "auto",
+            flex: compact ? 1 : undefined,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 7,
+            fontSize: 13,
+            fontWeight: 600,
+            color: canMerge ? C.t1 : C.t3,
+            background: C.sunken,
+            border: `1px solid ${C.line}`,
+            borderRadius: 10,
+            padding: "9px 14px",
+            cursor: canMerge ? "pointer" : "not-allowed",
+            opacity: canMerge ? 1 : 0.65,
+          }}
+        >
+          <Copy size={14} />
+          {compact ? "Merge" : "Merge selected"}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onPick}
         disabled={selectedCount === 0}
         style={{
+          marginLeft: showMerge || compact ? undefined : "auto",
           flex: compact ? 1 : undefined,
           display: "inline-flex",
           alignItems: "center",
@@ -240,15 +280,16 @@ function ActionBar({
           opacity: selectedCount === 0 ? 0.7 : 1,
         }}
       >
-        Pick this →
+        {pickLabel}
       </button>
     </div>
   );
 }
 
 /**
- * The 4e Make-variations result. Multi-select the alternates, then Merge or
- * Pick. "Pick this" promotes the last-selected variation; "Merge" needs ≥ 2.
+ * The 4e Make-variations panel. With previews it is the comparison grid (Merge
+ * / Pick); without them it is the honest chooser — named directions, and the
+ * primary action generates the selected one.
  */
 export function VariationsResult({
   title,
@@ -259,6 +300,8 @@ export function VariationsResult({
   onMerge,
 }: VariationsResultProps) {
   const isMobile = useIsMobile();
+  // Results mode is earned: it needs at least one real rendered alternate.
+  const hasPreviews = variations.some((v) => v.preview != null);
   // Selection is ordered so "Pick this" can resolve a single primary choice.
   const [selected, setSelected] = useState<number[]>(
     variations.length ? [variations[0].index] : [],
@@ -320,23 +363,27 @@ export function VariationsResult({
           </div>
         ) : null}
       </div>
-      <button
-        type="button"
-        onClick={onRegenerateAll}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 12,
-          color: C.t2,
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-        }}
-      >
-        <RefreshCw size={13} />
-        {isMobile ? "" : "Regenerate all"}
-      </button>
+      {/* Nothing has been generated in chooser mode, so there is nothing to
+          regenerate — offering it would imply results that don't exist. */}
+      {hasPreviews ? (
+        <button
+          type="button"
+          onClick={onRegenerateAll}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            color: C.t2,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          <RefreshCw size={13} />
+          {isMobile ? "" : "Regenerate all"}
+        </button>
+      ) : null}
     </div>
   );
 
@@ -373,7 +420,14 @@ export function VariationsResult({
       {grid}
       <ActionBar
         selectedCount={selected.length}
-        canMerge={selected.length >= 2}
+        showMerge={hasPreviews}
+        canMerge={hasPreviews && selected.length >= 2}
+        pickLabel={hasPreviews ? "Pick this →" : "Make this one →"}
+        hint={
+          hasPreviews
+            ? `${selected.length} selected`
+            : "Nothing is generated yet — pick a direction to make"
+        }
         onMerge={doMerge}
         onPick={doPick}
         compact={isMobile}

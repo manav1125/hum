@@ -4,10 +4,9 @@ import CoreGraphics
 import ImageIO
 import ScreenCaptureKit
 import UniformTypeIdentifiers
-import VellumAssistantShared
 import os
 
-private let log = Logger(subsystem: Bundle.appBundleIdentifier, category: "AppWindowCapture")
+private let log = Logger(subsystem: "ai.cue.mac-helper", category: "AppWindowCapture")
 
 /// Captures the frontmost normal window of a target process by PID.
 ///

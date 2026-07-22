@@ -34,6 +34,7 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
     lastRunStatus: null,
     sourceType: "slack",
     sourceId: "C123",
+    originConversationId: null,
     requiredTools: null,
     approvedTools: null,
     approvalStatus: "none",

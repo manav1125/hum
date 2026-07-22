@@ -469,6 +469,10 @@ async function captureCommitments(
         assignee: "Inbox",
         sourceType: args.sourceChannel,
         sourceId: args.conversationId,
+        // Same id, different question: sourceType/sourceId say which channel
+        // this arrived on, originConversationId says which thread must be able
+        // to see the work it started.
+        originConversationId: args.conversationId,
         ...(commitment.dueAt != null ? { dueAt: commitment.dueAt } : {}),
         sourceContext: JSON.stringify({
           origin: args.sourceChannel,

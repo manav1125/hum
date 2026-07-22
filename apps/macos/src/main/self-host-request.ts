@@ -22,8 +22,11 @@ const SELF_HOST_FLAG_KEY = "cue:selfHost";
  * Read the actor token out of the renderer's localStorage. Returns null when
  * the window is gone, the renderer hasn't finished loading, or the user isn't
  * connected to a self-host instance yet.
+ *
+ * Exported as the token source `index.ts` hands to `self-host-token`, so the
+ * host-proxy connection and these route calls borrow the same one session.
  */
-async function readActorToken(): Promise<string | null> {
+export async function readActorToken(): Promise<string | null> {
   const win = currentMainWindow();
   if (!win || win.webContents.isDestroyed()) return null;
   try {

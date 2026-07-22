@@ -95,6 +95,10 @@ function createWorkItemFast(opts: {
     taskId: task.id,
     title: opts.title,
     priorityTier: 1,
+    // The voice thread that asked for this. The run gets its OWN conversation,
+    // so without this link the thread would have no idea what it spawned — the
+    // failure that had the thread agent re-doing finished research inline.
+    originConversationId: opts.conversationId,
     // A plain to-do is a reminder the user parked, not ready work — mark it
     // so no later auto-run pass (queue drainer, re-triage) can start it.
     ...(opts.autoRun ? {} : { autoRunEligibility: "parked" as const }),

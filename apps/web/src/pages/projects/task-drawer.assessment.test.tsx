@@ -87,6 +87,7 @@ function boardItem(overrides: Partial<BoardItem> = {}): BoardItem {
     lastProgressNote: null,
     sourceType: "email",
     sourceId: null,
+    originConversationId: null,
     approvalStatus: null,
     autoRunEligibility: null,
     ranProvenance: null,

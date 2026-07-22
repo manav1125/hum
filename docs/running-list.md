@@ -71,6 +71,61 @@ that authenticates but carries no principal still yields zero targets.
 **Note:** earlier "Mac E2E proven" results were against a LOCAL daemon, not the cloud
 instance — which is why this was never caught.
 
+## ✅ Mac host-proxy now connects on self-host (fixed + verified live 2026-07-22 night)
+`host-proxy-router` gained a third connection source: a 5s reconciler for the self-hosted
+instance (`selfhost:<origin>` fingerprint), since neither the persisted instance nor the actor
+token is observable as an event. The token is borrowed from the renderer (no second credential
+store) and never logged; `actorPrincipalId` is deliberately NOT sent — the daemon derives it
+server-side from the bearer token, which is what makes the Mac pass `organizer-routes`'
+fail-closed principal filter.
+**Measured:** `clients?capability=host_bash` `[]` → one `macos` client with all five
+capabilities (`host_bash`/`host_file`/`host_cu`/`host_app_control`/`host_browser`),
+`organizer/session.targets` `[]` → one online entry; 250 historical `no assistant connected`
+warnings → **zero** since. Reconnect proven by force-disconnect (back within 5s).
+**Not yet proven:** no `host_bash` round-trip has actually executed — registration and
+targeting are proven, execution needs a real chat turn.
+
+## ⚠️ KNOWN GAP — the hub never reaps dead clients (documented, NOT fixed)
+Quit the Mac app and it can still be listed as an online target. Entries clear only on a clean
+`dispose()`, a same-`clientId` reconnect, or an explicit `clients/disconnect` — there is no TTL
+or staleness concept in `assistant-event-hub.ts` at all.
+**Why `lastActiveAt` cannot be trusted as liveness:** the SSE heartbeat is SERVER-driven
+(`events-routes.ts` ~522 enqueues and calls `hub.touchClient()` on a timer), so the timestamp
+advances as long as the *server's* write succeeds — which it does for a dead client until TCP
+notices. It is evidence the server wrote, not that anyone is listening.
+**A real fix needs client-originated liveness** (a client ping, or counting only
+client-initiated traffic like `host_*_result` POSTs) — a protocol change, deliberately not
+attempted mid-session. Bounded for now: Desktop control's card only claims "Running" when a
+Mac is linked AND a step landed within 90s, so a stale roster entry cannot by itself make the
+UI claim work is happening.
+
+## "Control my browser" drove a cloud browser instead (found + fixed 2026-07-22 night)
+User asked Cue to deploy a landing page to Netlify, saying *"you can control my browser /
+computer"*. Traced from prod `tool_invocations`:
+- `assistant browser navigate → app.netlify.com` took **114,135 ms**. Cause proven, not
+  guessed: `/root/.cache/ms-playwright/chromium-1208` has mtime **inside that navigate's
+  window** — the Dockerfile installed Playwright's system libs but never the browser, so the
+  first browser call in a fresh container downloads **622 MB of Chromium**. Now baked into the
+  image (`PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`); image 726 MB → 981 MB. Any environment
+  that misses the bake now warns before blocking and says afterwards that the delay was a
+  one-time download, not a slow site.
+- With the Mac host-proxy dead and no extension installed, the backend fell through to the
+  **in-container Playwright browser** — no cookies, no session — so "not logged in" was
+  guaranteed and meaningless. The fall-through was logged at `debug` and no tool result named
+  the backend. Every navigate/snapshot/extract/screenshot result now ends with `Browser used:
+  …`, and on `local` says plainly it is not the user's browser and not evidence about their
+  account.
+- `ask_question` then blocked **600,139 ms** offering *"Log in with email (I'll provide
+  credentials)"* — i.e. offering to take the user's password into a cloud browser. Credential
+  solicitation is now refused before the card renders, and the system prompt forbids offering
+  the channel, not just taking custody. Two related surfaces deliberately left open and
+  flagged: `jit-auth.ts::buildAuthForm()` (dead password-form builder) and the `password`
+  field type in the `ui_show` form contract.
+- It also spent three tool calls (`tool_search` → `assistant --help` → `assistant browser
+  --help`) discovering its own capabilities. `buildCapabilitySnapshot()` moved to
+  `capabilities/capability-snapshot.ts` and is now rendered into the system prompt alongside a
+  live reach probe (can it get to the user's browser / Mac), so it stops probing.
+
 ## Watchers claimed capabilities they never had (fixed 2026-07-22 night)
 Creating a Gmail watcher on an instance with **no Google account connected** succeeded,
 reported `enabled:true`/`status:idle`, polled immediately, and stored Google's raw **404 HTML

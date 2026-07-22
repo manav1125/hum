@@ -34,14 +34,23 @@ without checking with you first.
 
 Requires a Cue assistant (get one at justcue.ai) and Chrome 120+.
 
-## Permissions justification  *(store requires a reason per permission — reconcile with final manifest)*
+## Permissions justification  *(RECONCILED against the WS-D final manifest 2026-07-21)*
+Final manifest permissions: **alarms, debugger, storage, tabs** + host `<all_urls>`. (`identity`/`nativeMessaging` are NOT used — the extension talks to the gateway over SSE/HTTP.)
 - **debugger** — Cue drives the page via the Chrome DevTools protocol to navigate, click, type, and
-  read content on tabs you direct it to. This is the core mechanism; without it the extension
-  cannot act.
+  read content on tabs you direct it to. Core mechanism; without it the extension cannot act.
 - **tabs** — to identify and target the specific tab Cue is working in.
-- **nativeMessaging** / host access to the local Cue app + your hosted instance — to connect the
-  extension to your assistant so commands and results can flow.
-(If the rebrand drops any of these, delete its row.)
+- **alarms** — MV3 keepalive so the relay connection to your assistant stays alive and reconnects.
+- **storage** — stores your gateway URL, environment, and connection state locally.
+- host `<all_urls>` — Cue acts on whatever page you direct it to.
+
+## Extension identity (WS-D, deterministic per-env)
+Production extension id (from the embedded Cue key): **mhgllmdapjpfdnfnmdihjffclnjknhmc**
+(dev fgjdoijjdaknpebalabagkblfchpebkp · staging andfdpliflikfgnejjeokmcofpnochic · local mlkohkopfacnbiajpnajjmphoahogfcc).
+Signing keys live at `~/.cue/chrome-extension-keys/*.pem` (NOT in the repo). `cue-production.pem` is
+the CWS signing key — losing it changes the extension id. The gateway origin allowlist
+(`gateway/src/chrome-extension-origins.ts`) is kept in sync with these ids.
+NOTE: if CWS assigns a different id at item creation, update both `extension-environments.json` and
+the gateway allowlist.
 
 ## Privacy practices (data disclosures)
 - Does the extension collect user data? It transmits **website content** and **user activity** ONLY

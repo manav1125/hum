@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import { QuestionPrompter } from "../../permissions/question-prompter.js";
 import { RiskLevel } from "../../permissions/types.js";
+import {
+  type CredentialSolicitation,
+  findCredentialSolicitations,
+  formatCredentialSolicitationRefusal,
+} from "../../security/credential-solicitation.js";
 import type {
   ToolContext,
   ToolDefinition,
@@ -92,6 +97,12 @@ const DESCRIPTION = [
   "Batch related clarifications into one call by passing multiple entries in",
   "`questions` (up to 5). Each question gets its own page with a Skip button.",
   "",
+  "Never use this tool to collect a secret. Do not ask for — or offer to",
+  "receive — a password, API key, access token, 2FA code, or any other",
+  "credential, in a question, an option label, or the free-text slot. Such",
+  "calls are rejected. The user signs in themselves in their own browser, or",
+  'supplies a token via `credential_store` with `action: "prompt"`.',
+  "",
   "When NOT to use this tool:",
   "- The answer is obvious from context or recent conversation.",
   "- The question is genuinely open-ended (more than ~4 plausible answers) —",
@@ -132,6 +143,38 @@ const OPTION_ITEMS_SCHEMA = {
   },
   required: ["id", "label"],
 } as const;
+
+/**
+ * Scan every model-authored string in a question batch — the question, its
+ * description, each option label and description, and the free-text
+ * placeholder — for an offer to receive a secret in chat.
+ *
+ * Exported for tests.
+ */
+export function scanQuestionsForCredentialSolicitation(
+  questions: readonly SingleQuestion[],
+): CredentialSolicitation[] {
+  const fields: { field: string; text: string | undefined }[] = [];
+  questions.forEach((q, qi) => {
+    fields.push({ field: `questions[${qi}].question`, text: q.question });
+    fields.push({ field: `questions[${qi}].description`, text: q.description });
+    fields.push({
+      field: `questions[${qi}].freeTextPlaceholder`,
+      text: q.freeTextPlaceholder,
+    });
+    q.options.forEach((o, oi) => {
+      fields.push({
+        field: `questions[${qi}].options[${oi}].label`,
+        text: o.label,
+      });
+      fields.push({
+        field: `questions[${qi}].options[${oi}].description`,
+        text: o.description,
+      });
+    });
+  });
+  return findCredentialSolicitations(fields);
+}
 
 // ── Tool ────────────────────────────────────────────────────────────
 
@@ -240,6 +283,19 @@ export const askQuestionTool = {
         freeTextPlaceholder: parsed.data.freeTextPlaceholder,
       },
     ];
+
+    // A question card is model-authored text the user answers in chat, which
+    // makes it the one surface where "how do you want to log in?" can quietly
+    // become "paste your password here". Refuse before the card is ever
+    // rendered — see `security/credential-solicitation.ts` for the incident
+    // this backstops.
+    const solicitations = scanQuestionsForCredentialSolicitation(questions);
+    if (solicitations.length > 0) {
+      return {
+        content: formatCredentialSolicitationRefusal(solicitations),
+        isError: true,
+      };
+    }
 
     const prompter = new QuestionPrompter();
     const result = await prompter.prompt({

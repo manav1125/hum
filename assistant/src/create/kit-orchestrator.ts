@@ -15,9 +15,11 @@
  * one-pager/doc → document-editor, social → image) via its normal skill_load
  * routing — matching how the frontend's ?prompt= re-seed path works today.
  *
- * Output capture mirrors work-output-store: after a run's turn completes, the
- * first attachment linked to an ASSISTANT message of the run conversation is
- * the produced deliverable, recorded as the asset's `outputRef`.
+ * Output capture (see kit-output.ts): after a run's turn completes, the first
+ * attachment linked to an ASSISTANT message of the run conversation is the
+ * produced deliverable — or, for the doc-mode formats that never emit an
+ * attachment, the first document surface the run wrote. Either way it is
+ * recorded as the asset's `outputRef`.
  */
 
 import { getOrCreateConversation } from "../daemon/conversation-store.js";
@@ -25,7 +27,7 @@ import type { ServerMessage } from "../daemon/message-protocol.js";
 import { bootstrapConversation } from "../memory/conversation-bootstrap.js";
 import { broadcastMessage } from "../runtime/assistant-event-hub.js";
 import { getLogger } from "../util/logger.js";
-import { firstRunProducedAttachmentId } from "./kit-output.js";
+import { firstRunProducedOutputRef } from "./kit-output.js";
 import {
   getKitWithAssets,
   type Kit,
@@ -120,8 +122,9 @@ async function runAsset(kit: Kit, asset: KitAsset): Promise<void> {
     conversation.headlessLock = false;
 
     // Capture the produced deliverable: the first attachment the run's tools
-    // linked to an assistant message of this conversation.
-    const outputRef = firstRunProducedAttachmentId(conv.id);
+    // linked to an assistant message of this conversation, else the first
+    // document surface it wrote (doc-mode formats never produce attachments).
+    const outputRef = firstRunProducedOutputRef(conv.id);
     updateKitAsset(asset.id, { status: "done", outputRef: outputRef ?? null });
   } catch (err) {
     log.error(

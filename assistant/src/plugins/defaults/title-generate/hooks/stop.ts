@@ -2,15 +2,16 @@
  * Default `stop` hook: triggers the second-pass conversation-title
  * regeneration once a conversation has accumulated enough context.
  *
- * The first title is generated from the opening prompt alone (see
- * `./user-prompt-submit.ts`). After a few exchanges the conversation's real
- * topic is usually clearer, so a single second pass re-titles using the most
- * recent messages. This hook is the trigger — it fires the regeneration when
- * the conversation reaches its third user turn — and delegates the title
- * itself to the service (`memory/conversation-title-service.ts`), which
- * re-checks that the title is still auto-generated, resolves the title
- * provider, persists, and broadcasts the `conversation_title_updated` /
- * `sync_changed` events.
+ * The title is generated from the opening prompt (see
+ * `./user-prompt-submit.ts`) and then stays put. The second pass is a repair
+ * for the conversations where that first attempt produced nothing — by the
+ * third user turn there is enough context to name a conversation still sitting
+ * on a placeholder. This hook is only the trigger; the service
+ * (`memory/conversation-title-service.ts`) decides whether the current title is
+ * replaceable at all, resolves the title provider, persists, and broadcasts the
+ * `conversation_title_updated` / `sync_changed` events. A conversation that
+ * already has a real title costs nothing here — the service returns before any
+ * LLM call.
  *
  * Turn count is read from history rather than an external counter: the number
  * of genuine user prompts — user-role messages that aren't purely tool results

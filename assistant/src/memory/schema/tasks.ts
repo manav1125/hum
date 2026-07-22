@@ -55,6 +55,13 @@ export const workItems = sqliteTable("work_items", {
   lastRunStatus: text("last_run_status"), // 'completed' | 'failed' | null
   sourceType: text("source_type"), // reserved for future bridge (e.g. 'followup', 'triage')
   sourceId: text("source_id"), // reserved for future bridge
+  // 315-work-item-origin-conversation. The conversation this item was created
+  // FROM — distinct from last_run_conversation_id (where the run happened) and
+  // from source_type/source_id (which external CHANNEL it arrived on, which is
+  // legitimately null for a local desktop/voice task). Lets the originating
+  // thread show what it spawned and stops the thread agent re-doing work that
+  // is already running or already done.
+  originConversationId: text("origin_conversation_id"),
   requiredTools: text("required_tools"), // JSON array snapshot of tools needed for this run (null=unknown, []=none, ["bash",...]=specific)
   approvedTools: text("approved_tools"), // JSON array of pre-approved tool names
   approvalStatus: text("approval_status").default("none"), // 'none' | 'approved' | 'denied'

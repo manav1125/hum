@@ -461,6 +461,9 @@ async function captureCallActionItemsInner(
         assignee: "Inbox",
         sourceType: "phone",
         sourceId: args.conversationId,
+        // The call's own conversation — so it can show the follow-ups it
+        // spawned instead of the user finding them only in HQ.
+        originConversationId: args.conversationId,
         ...(action.dueAt != null ? { dueAt: action.dueAt } : {}),
         sourceContext: JSON.stringify({
           origin: "phone",

@@ -20,8 +20,16 @@ import {
   detectCaptchaChallenge,
   formatAuthChallenge,
 } from "./auth-detector.js";
+import {
+  backendDisclosureLines,
+  isUserOwnedBrowser,
+  withBackendDisclosure,
+} from "./backend-disclosure.js";
 import type { RouteHandler } from "./browser-manager.js";
-import { browserManager } from "./browser-manager.js";
+import {
+  browserManager,
+  takePendingColdStartNotice,
+} from "./browser-manager.js";
 import { type BrowserMode, normalizeBrowserMode } from "./browser-mode.js";
 import { BROWSER_MODE } from "./browser-mode-constants.js";
 import {
@@ -604,6 +612,40 @@ function resolveElement(
   };
 }
 
+/**
+ * What to tell the model when navigation lands on a login / 2FA / OAuth wall.
+ *
+ * Backend-aware on purpose. The old guidance was one fixed list ending in "Do
+ * NOT give up or suggest manual sign-in — handle the login flow yourself",
+ * which is sound advice in the user's own Chrome and actively harmful in the
+ * container browser: there, "handle it yourself" has exactly one
+ * implementation, which is to ask the user for their password. That is how a
+ * question card ended up offering "Log in with email (I'll provide
+ * credentials)".
+ *
+ * In every case, asking the user to send a secret through chat is off the
+ * table — the credential store is the only route for a secret the agent uses,
+ * and signing in themselves is the only route for a session the agent cannot.
+ */
+export function loginGuidanceLines(kind: CdpClientKind): string[] {
+  if (!isUserOwnedBrowser(kind)) {
+    return [
+      "",
+      "This login wall is in a browser the user has never signed into — a throwaway profile inside Cue's container, not their browser. Signing in here would not give them anything, and you have no way to reach the session they actually have.",
+      "Stop and tell them: this needs their own browser, and you cannot reach it. Offer the routes that work — they sign in themselves, or they store an API token via `credential_store` with `action: \"prompt\"` and you use the service's API instead.",
+      "Do NOT ask them for a password, a token, or a 2FA code in chat, and do NOT offer to sign in on their behalf.",
+    ];
+  }
+  return [
+    "",
+    "This is the user's own browser, so work the form in place:",
+    "1. Take a snapshot to find the sign-in form elements",
+    "2. Use credential fill to enter email/password from credential_store — never a value the user typed into chat",
+    "3. If a verification code is needed, ask the user to complete that step in the browser themselves; do not collect the code in conversation",
+    "4. Never ask the user for a password or token in chat. If credential_store has nothing for this site, say so and let them sign in themselves — they are already at the browser",
+  ];
+}
+
 // ── browser_navigate ─────────────────────────────────────────────────
 
 export async function executeBrowserNavigate(
@@ -1067,20 +1109,7 @@ export async function executeBrowserNavigate(
             if (postCaptchaAuth) {
               lines.push("");
               lines.push(formatAuthChallenge(postCaptchaAuth));
-              lines.push("");
-              lines.push("Handle this by interacting with the login form:");
-              lines.push(
-                "1. Take a snapshot to find the sign-in form elements",
-              );
-              lines.push(
-                "2. Use credential fill to enter email/password from credential_store",
-              );
-              lines.push(
-                "3. For email verification codes, use ui_show with a form to request the code mid-turn",
-              );
-              lines.push(
-                "4. Do NOT give up or suggest manual sign-in - handle the login flow yourself",
-              );
+              lines.push(...loginGuidanceLines(cdp.kind));
             }
           } else {
             lines.push("");
@@ -1096,22 +1125,23 @@ export async function executeBrowserNavigate(
           // using browser operations + credential_store. Don't hand off.
           lines.push("");
           lines.push(formatAuthChallenge(challenge));
-          lines.push("");
-          lines.push("Handle this by interacting with the login form:");
-          lines.push("1. Take a snapshot to find the sign-in form elements");
-          lines.push(
-            "2. Use credential fill to enter email/password from credential_store",
-          );
-          lines.push(
-            "3. For email verification codes, use ui_show with a form to request the code mid-turn",
-          );
-          lines.push(
-            "4. Do NOT give up or suggest manual sign-in - handle the login flow yourself",
-          );
+          lines.push(...loginGuidanceLines(cdp.kind));
         }
       }
     } catch {
       // Auth/CAPTCHA detection is best-effort; don't fail navigation
+    }
+
+    // Say which browser this actually was. Read from `cdp.kind` AFTER the
+    // navigation, so it reflects the backend the chained client settled on
+    // (including any transport failover), not the first candidate.
+    withBackendDisclosure(lines, cdp.kind);
+
+    // If this call silently paid for a first-run Chromium download, say how
+    // long that took instead of letting it read as a slow site.
+    const coldStart = takePendingColdStartNotice();
+    if (coldStart) {
+      lines.push("", coldStart);
     }
 
     return { content: lines.join("\n"), isError: false };
@@ -1183,11 +1213,16 @@ export async function executeBrowserSnapshot(
       backendNodeMap,
     );
 
+    // A snapshot is the surface most likely to be mistaken for the user's own
+    // session ("it says signed out"), so it discloses its browser too.
     return {
-      content: formatAxSnapshot(
-        { elements, selectorMap: backendNodeMap },
-        { url: currentUrl, title },
-      ),
+      content: [
+        formatAxSnapshot(
+          { elements, selectorMap: backendNodeMap },
+          { url: currentUrl, title },
+        ),
+        ...backendDisclosureLines(cdp.kind),
+      ].join("\n"),
       isError: false,
     };
   } catch (err) {
@@ -1241,9 +1276,12 @@ export async function executeBrowserScreenshot(
     };
 
     return {
-      content: `Screenshot captured (${buffer.length} bytes, ${
-        fullPage ? "full page" : "viewport"
-      })`,
+      content: [
+        `Screenshot captured (${buffer.length} bytes, ${
+          fullPage ? "full page" : "viewport"
+        })`,
+        ...backendDisclosureLines(cdp.kind),
+      ].join("\n"),
       isError: false,
       contentBlocks: [imageBlock],
     };
@@ -2077,6 +2115,8 @@ export async function executeBrowserExtract(
         }
       }
     }
+
+    withBackendDisclosure(lines, cdp.kind);
 
     return { content: lines.join("\n"), isError: false };
   } catch (err) {

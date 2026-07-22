@@ -127,6 +127,10 @@ export const RUNTIME_INJECTION_PREFIXES: InjectionMatcher[] = [
   // and overflow recovery remove a stale spotlight along with the rest of the
   // runtime injections. Full-wrapper shape for the same reason as `<memory>`.
   MEMORY_SPOTLIGHT_MATCHER,
+  // The `<spawned_work>` block is ephemeral (live statuses + run results) and
+  // strip-and-replaced every turn; registered here too so compaction and
+  // overflow recovery drop a stale copy along with the other injections.
+  { prefix: "<spawned_work>", suffix: "</spawned_work>" },
   "<voice_call_control>",
   "<workspace_top_level>", // backward-compat: strip legacy workspace blocks
   // The `<workspace>` top-level block is stripped so each compaction re-injects
@@ -177,6 +181,31 @@ export const WORKSPACE_BLOCK_MATCHERS: readonly InjectionMatcher[] = [
  */
 export function stripWorkspaceInjections(messages: Message[]): Message[] {
   return stripUserTextBlocksByPrefix(messages, [...WORKSPACE_BLOCK_MATCHERS]);
+}
+
+/**
+ * Full-wrapper matcher for the `<spawned_work>` block. Shared by the per-turn
+ * strip-and-replace ({@link stripSpawnedWorkInjections}) and the compaction
+ * pipeline so the two sides recognize exactly the same wrapper.
+ */
+export const SPAWNED_WORK_BLOCK_MATCHER: InjectionMatcher = {
+  prefix: "<spawned_work>",
+  suffix: "</spawned_work>",
+};
+
+/**
+ * Remove `<spawned_work>` blocks from every user message — and ONLY those.
+ *
+ * This block is ephemeral by contract: it reports the LIVE status of the work
+ * the conversation spawned ("running now", "finished — in the Review lane") and
+ * the result text of anything finished. A copy left riding history from an
+ * earlier turn would have the system asserting a state it can no longer back
+ * up — the exact class of lie this product has had to fix three times. Runtime
+ * assembly strips every copy whenever a fresh block is produced, so at most one
+ * current view exists, on the current turn.
+ */
+export function stripSpawnedWorkInjections(messages: Message[]): Message[] {
+  return stripUserTextBlocksByPrefix(messages, [SPAWNED_WORK_BLOCK_MATCHER]);
 }
 
 /**

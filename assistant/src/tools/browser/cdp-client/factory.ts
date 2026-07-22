@@ -613,9 +613,25 @@ export function buildCandidateList(
   }
 
   // 3. Local -- always present as the final fallback.
+  //
+  // When it is the ONLY candidate, the caller is about to drive a throwaway
+  // browser inside this container with none of the user's sessions, and the
+  // tool result would otherwise look identical to driving their real browser.
+  // Log it at info (not debug) and say so in the candidate reason: this
+  // fall-through has to be visible in the daemon log, and `backend-disclosure`
+  // carries the same fact into the model-facing result.
+  const noUserBrowserRoute = candidates.length === 0;
+  if (noUserBrowserRoute) {
+    log.info(
+      { conversationId, sourceActorPrincipalId },
+      "CDP factory: no route to the user's own browser (no extension, no desktop bridge, no cdp-inspect) — falling through to the in-container Playwright browser, which has no cookies or logged-in sessions",
+    );
+  }
   candidates.push({
     kind: "local",
-    reason: "default Playwright fallback",
+    reason: noUserBrowserRoute
+      ? "fall-through: no route to the user's own browser; in-container Playwright browser (no cookies, no user sessions)"
+      : "default Playwright fallback",
     create() {
       const client = createLocalCdpClient(conversationId);
       const backend = createLocalBackend({

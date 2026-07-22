@@ -18,6 +18,26 @@ public struct HostCuRequest: Decodable, Sendable {
     /// cross-client proxy requests routed through HostCuProxy.
     public let targetClientId: String?
 
+    public init(
+        type: String = "host_cu_request",
+        requestId: String,
+        conversationId: String,
+        toolName: String,
+        input: [String: AnyCodable],
+        stepNumber: Int,
+        reasoning: String? = nil,
+        targetClientId: String? = nil
+    ) {
+        self.type = type
+        self.requestId = requestId
+        self.conversationId = conversationId
+        self.toolName = toolName
+        self.input = input
+        self.stepNumber = stepNumber
+        self.reasoning = reasoning
+        self.targetClientId = targetClientId
+    }
+
     private enum CodingKeys: String, CodingKey {
         case type
         case requestId
@@ -372,156 +392,8 @@ public struct HostCuResultPayload: Codable, Sendable {
     }
 }
 
-/// Server-side assistant activity lifecycle event.
-/// Backed by generated `AssistantActivityState`.
-public typealias AssistantActivityStateMessage = AssistantActivityState
-
-/// Request a follow-up suggestion for the current conversation.
-/// Backed by generated `SuggestionRequest`.
-public typealias SuggestionRequestMessage = SuggestionRequest
-
-extension SuggestionRequest {
-    public init(conversationId: String, requestId: String) {
-        self.init(type: "suggestion_request", conversationId: conversationId, requestId: requestId)
-    }
-}
-
-/// Client response to a permission confirmation request.
-/// Backed by generated `ConfirmationResponse`.
-public typealias ConfirmationResponseMessage = ConfirmationResponse
-
-extension ConfirmationResponse {
-    public init(requestId: String, decision: String, selectedPattern: String? = nil, selectedScope: String? = nil) {
-        self.init(type: "confirmation_response", requestId: requestId, decision: decision, selectedPattern: selectedPattern, selectedScope: selectedScope)
-    }
-}
-
-/// Client response to a secret input request.
-/// Backed by generated `SecretResponse`.
-public typealias SecretResponseMessage = SecretResponse
-
-extension SecretResponse {
-    public init(requestId: String, value: String?, delivery: String? = nil) {
-        self.init(type: "secret_response", requestId: requestId, value: value, delivery: delivery)
-    }
-}
-
-/// Sent to add a trust rule (allowlist/denylist) independently of a confirmation response.
-/// Backed by generated `AddTrustRule`.
-public typealias AddTrustRuleMessage = AddTrustRule
-
-extension AddTrustRule {
-    public init(
-        toolName: String,
-        pattern: String,
-        scope: String,
-        decision: String,
-        executionTarget: String? = nil
-    ) {
-        self.init(
-            type: "add_trust_rule",
-            toolName: toolName,
-            pattern: pattern,
-            scope: scope,
-            decision: decision,
-            executionTarget: executionTarget
-        )
-    }
-}
-
-/// Request all trust rules from the daemon.
-/// Backed by generated `TrustRulesList`.
-public typealias TrustRulesListMessage = TrustRulesList
-
-extension TrustRulesList {
-    public init() {
-        self.init(type: "trust_rules_list")
-    }
-}
-
-/// Remove a trust rule by its ID.
-/// Backed by generated `RemoveTrustRule`.
-public typealias RemoveTrustRuleMessage = RemoveTrustRule
-
-extension RemoveTrustRule {
-    public init(id: String) {
-        self.init(type: "remove_trust_rule", id: id)
-    }
-}
-
-/// Update fields on an existing trust rule.
-/// Backed by generated `UpdateTrustRule`.
-public typealias UpdateTrustRuleMessage = UpdateTrustRule
-
-extension UpdateTrustRule {
-    public init(id: String, tool: String? = nil, pattern: String? = nil, scope: String? = nil, decision: String? = nil, priority: Int? = nil) {
-        self.init(type: "update_trust_rule", id: id, tool: tool, pattern: pattern, scope: scope, decision: decision, priority: priority)
-    }
-}
-
-/// Simulate a tool permission check without executing the tool.
-/// Backed by generated `ToolPermissionSimulateRequest`.
-public typealias ToolPermissionSimulateMessage = ToolPermissionSimulateRequest
-
-extension ToolPermissionSimulateRequest {
-    public init(toolName: String, input: [String: AnyCodable], workingDir: String? = nil, isInteractive: Bool? = nil) {
-        self.init(type: "tool_permission_simulate", toolName: toolName, input: input, workingDir: workingDir, isInteractive: isInteractive)
-    }
-}
-
-/// Response from a tool permission simulation.
-/// Backed by generated `ToolPermissionSimulateResponse`.
-public typealias ToolPermissionSimulateResponseMessage = ToolPermissionSimulateResponse
-
-/// Request the list of all registered tool names.
-/// Backed by generated `ToolNamesListRequest`.
-public typealias ToolNamesListMessage = ToolNamesListRequest
-
-extension ToolNamesListRequest {
-    public init() {
-        self.init(type: "tool_names_list")
-    }
-}
-
-/// Response containing all registered tool names.
-/// Backed by generated `ToolNamesListResponse`.
-public typealias ToolNamesListResponseMessage = ToolNamesListResponse
-
-/// Response from opening and scanning a .vellum bundle.
-/// Backed by generated `OpenBundleResponse`.
-public typealias OpenBundleResponseMessage = OpenBundleResponse
-
-// MARK: - Publish / Unpublish Page Messages
-
-/// Sent to publish a static page via Vercel.
-/// Backed by generated `PublishPageRequest`.
-public typealias PublishPageRequestMessage = PublishPageRequest
-
-extension PublishPageRequest {
-    public init(html: String, title: String? = nil, appId: String? = nil) {
-        self.init(type: "publish_page", html: html, title: title, appId: appId)
-    }
-}
-
-/// Response from publishing a static page.
-/// Backed by generated `PublishPageResponse`.
-public typealias PublishPageResponseMessage = PublishPageResponse
-
-/// Sent to unpublish a page and delete its Vercel deployment.
-/// Backed by generated `UnpublishPageRequest`.
-public typealias UnpublishPageRequestMessage = UnpublishPageRequest
-
-extension UnpublishPageRequest {
-    public init(deploymentId: String) {
-        self.init(type: "unpublish_page", deploymentId: deploymentId)
-    }
-}
-
-/// Response from unpublishing a page.
-/// Backed by generated `UnpublishPageResponse`.
-public typealias UnpublishPageResponseMessage = UnpublishPageResponse
-
-// MARK: - Push Notification Device Token (Manual)
-
-/// Sent to register an APNS device token so the daemon can route push notifications.
-/// Kept hand-maintained — not yet part of the generated message contract.
+// NOTE: The trailing daemon<->client message typealiases from the original
+// shared file (AssistantActivityState/SuggestionRequest/trust-rule/publish
+// messages, etc.) were dropped in the mac-helper port — they referenced
+// generated types from VellumAssistantShared and are unused by the
+// computer-use / app-control paths the helper actually runs.

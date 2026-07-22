@@ -11,10 +11,9 @@ import { revertConfigCommit } from "../../config-repo/index.js";
 import { findConversation } from "../../daemon/conversation-registry.js";
 import type { ServerMessage } from "../../daemon/message-protocol.js";
 import { reconcileFeedForWorkItemStatus } from "../../home/feed-writer.js";
-import { getMessages } from "../../memory/conversation-crud.js";
 import { check, classifyRisk } from "../../permissions/checker.js";
 import { getSubagentManager } from "../../subagent/index.js";
-import { createTask, getTask, getTaskRun } from "../../tasks/task-store.js";
+import { createTask, getTask } from "../../tasks/task-store.js";
 import {
   getRegisteredToolNames,
   getToolDescription,
@@ -33,12 +32,17 @@ import {
   deriveRanProvenance,
   withRanProvenance,
 } from "../../work-items/work-item-provenance.js";
+import {
+  extractWorkItemResult,
+  resolveWorkItemRunConversationId,
+} from "../../work-items/work-item-run-result.js";
 import { runWorkItemInBackground } from "../../work-items/work-item-runner.js";
 import {
   createWorkItem,
   deleteWorkItem,
   getWorkItem,
   listWorkItems,
+  listWorkItemsByOriginConversation,
   updateWorkItem,
   type WorkItem,
   type WorkItemStatus,
@@ -101,6 +105,12 @@ export const workItemSchema = z.object({
     ),
   sourceType: z.string().nullable(),
   sourceId: z.string().nullable(),
+  originConversationId: z
+    .string()
+    .nullable()
+    .describe(
+      "The conversation this item was created FROM — distinct from lastRunConversationId (where the run happened) and from sourceType/sourceId (which channel it arrived on). Lets the originating thread show what it spawned.",
+    ),
   approvalStatus: z.string().nullable(),
   autoRunEligibility: z
     .string()
@@ -253,139 +263,14 @@ function broadcastWorkItemStatus(id: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Shared business logic: extracting output from a work item run
-// ---------------------------------------------------------------------------
-
-/**
- * Extract only the latest assistant text block from stored content.
- * Consolidation merges multiple assistant messages into one DB row; scanning
- * from the end keeps task output focused on the final assistant response.
- */
-function extractLatestTextFromContent(content: string): string {
-  try {
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) {
-      for (let i = parsed.length - 1; i >= 0; i--) {
-        const block = parsed[i] as { type?: unknown; text?: unknown };
-        if (block.type !== "text") continue;
-        if (typeof block.text !== "string") continue;
-        if (!block.text.trim()) continue;
-        return block.text;
-      }
-      return "";
-    }
-  } catch {
-    // Plain text content — use as-is
-  }
-  return content;
-}
-
-/** Extract tool_result blocks from a user message's content. */
-function extractToolResults(
-  content: string,
-): Array<{ tool_use_id: string; content: string; is_error?: boolean }> {
-  try {
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .filter((b: { type: string }) => b.type === "tool_result")
-        .map(
-          (b: {
-            tool_use_id: string;
-            content?: string | Array<{ type: string; text?: string }>;
-            is_error?: boolean;
-          }) => {
-            let text = "";
-            if (typeof b.content === "string") {
-              text = b.content;
-            } else if (Array.isArray(b.content)) {
-              text = b.content
-                .filter((c) => c.type === "text" && c.text)
-                .map((c) => c.text!)
-                .join("\n");
-            }
-            return {
-              tool_use_id: b.tool_use_id,
-              content: text,
-              is_error: b.is_error,
-            };
-          },
-        );
-    }
-  } catch {
-    // Not JSON — no tool_result blocks
-  }
-  return [];
-}
-
-/**
- * Build highlights from tool outcomes in the conversation. Scans for
- * tool_use (assistant) and tool_result (user) pairs, extracting concrete
- * outcomes like errors, file paths, and URLs.
- */
-function extractToolHighlights(
-  msgs: Array<{ role: string; content: string }>,
-  maxHighlights: number,
-): string[] {
-  const highlights: string[] = [];
-
-  // Build a map of tool_use_id -> tool name from assistant messages
-  const toolNameById = new Map<string, string>();
-  for (const m of msgs) {
-    if (m.role !== "assistant") continue;
-    try {
-      const parsed = JSON.parse(m.content);
-      if (Array.isArray(parsed)) {
-        for (const block of parsed) {
-          if (block.type === "tool_use" && block.id && block.name) {
-            toolNameById.set(block.id, block.name);
-          }
-        }
-      }
-    } catch {
-      /* skip */
-    }
-  }
-
-  // Scan tool_result messages in reverse order (most recent first)
-  for (
-    let i = msgs.length - 1;
-    i >= 0 && highlights.length < maxHighlights;
-    i--
-  ) {
-    const m = msgs[i];
-    if (m.role !== "user") continue;
-
-    const results = extractToolResults(m.content);
-    for (const result of results) {
-      if (highlights.length >= maxHighlights) break;
-
-      const toolName = toolNameById.get(result.tool_use_id) ?? "tool";
-      const resultText = result.content.trim();
-
-      if (result.is_error) {
-        // Always surface errors
-        const errorSnippet = truncate(resultText, 200, "...");
-        highlights.push(`- ${toolName}: Error — ${errorSnippet}`);
-      } else if (resultText) {
-        // Extract notable signal from successful results: file paths, URLs, or
-        // a short summary of what happened
-        const firstLine = resultText.split("\n")[0].trim();
-        if (firstLine.length > 0 && firstLine.length <= 200) {
-          highlights.push(`- ${toolName}: ${firstLine}`);
-        } else if (firstLine.length > 200) {
-          highlights.push(`- ${toolName}: ${truncate(firstLine, 200, "...")}`);
-        }
-      }
-    }
-  }
-
-  return highlights;
-}
-
-// ---------------------------------------------------------------------------
 // Shared business logic functions (exported for handler reuse)
 // ---------------------------------------------------------------------------
+
+// Run-result extraction lives in the work-items domain (three consumers, only
+// one of them an HTTP handler); re-exported here so existing importers of this
+// module keep working.
+export { extractWorkItemResult, resolveWorkItemRunConversationId };
+export type { WorkItemRunResult } from "../../work-items/work-item-run-result.js";
 
 export interface WorkItemOutputResult {
   success: boolean;
@@ -401,102 +286,6 @@ export interface WorkItemOutputResult {
   };
 }
 
-/**
- * The extracted result of a work-item run: the latest assistant summary plus
- * bullet highlights, anchored to the run conversation. Shared by the
- * `getWorkItemOutput` route (poll-based) and the `work_item_completed` event
- * emitted by the runner (push-based) so both surfaces report the same thing.
- */
-export interface WorkItemRunResult {
-  conversationId: string;
-  summary: string;
-  highlights: string[];
-}
-
-/**
- * Resolve the authoritative conversation id for a work item's most recent run.
- * Prefers the task run's recorded conversationId, falling back to the work
- * item's stored `lastRunConversationId`.
- */
-export function resolveWorkItemRunConversationId(workItem: {
-  lastRunId: string | null;
-  lastRunConversationId: string | null;
-}): { conversationId: string | null; completedAt: number | null } {
-  let conversationId: string | null = null;
-  let completedAt: number | null = null;
-
-  if (workItem.lastRunId) {
-    const run = getTaskRun(workItem.lastRunId);
-    if (run) {
-      conversationId = run.conversationId;
-      completedAt =
-        run.finishedAt != null ? Math.floor(run.finishedAt / 1000) : null;
-    }
-  }
-
-  if (!conversationId) {
-    conversationId = workItem.lastRunConversationId;
-  }
-
-  return { conversationId, completedAt };
-}
-
-/**
- * Extract the summary + highlights for a completed run conversation. This is
- * the single source of truth for work-item result extraction: scan the run's
- * messages for the latest assistant text (summary) and bullet highlights,
- * supplementing with tool outcomes when the prose is thin.
- */
-export function extractWorkItemResult(
-  conversationId: string,
-): WorkItemRunResult {
-  let summary = "";
-  let highlights: string[] = [];
-
-  const msgs = getMessages(conversationId);
-
-  // Find the last assistant message with text content
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i];
-    if (m.role !== "assistant") continue;
-
-    const text = extractLatestTextFromContent(m.content);
-    if (!text.trim()) continue;
-
-    summary = truncate(text, 2000, "");
-
-    // Extract bullet points from the assistant's prose
-    const lines = text.split("\n");
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (
-        (trimmed.startsWith("-") || trimmed.startsWith("*")) &&
-        trimmed.length > 2
-      ) {
-        highlights.push(trimmed);
-        if (highlights.length >= 5) break;
-      }
-    }
-    break;
-  }
-
-  // Supplement with tool outcomes
-  if (highlights.length < 5) {
-    const toolHighlights = extractToolHighlights(msgs, 5 - highlights.length);
-    highlights = [...highlights, ...toolHighlights];
-  }
-
-  // Synthesize from tool results if no assistant summary
-  if (!summary && msgs.length > 0) {
-    const toolHighlights = extractToolHighlights(msgs, 10);
-    if (toolHighlights.length > 0) {
-      summary = "Task completed. Tool outcomes:\n" + toolHighlights.join("\n");
-      highlights = toolHighlights.slice(0, 5);
-    }
-  }
-
-  return { conversationId, summary, highlights };
-}
 
 /**
  * Config-repo (WS5) review items have no run conversation — their "output"
@@ -708,6 +497,12 @@ export const ROUTES: RouteDefinition[] = [
         description: "Filter to a single project",
         schema: { type: "string" },
       },
+      {
+        name: "originConversationId",
+        description:
+          "Filter to the items a single conversation spawned (work_items.origin_conversation_id). Lets a thread show the work it started.",
+        schema: { type: "string" },
+      },
     ],
     responseBody: z.object({
       items: z.array(workItemSchema),
@@ -726,10 +521,22 @@ export const ROUTES: RouteDefinition[] = [
           ? "queued"
           : (status as WorkItemStatus | undefined);
       const projectId = queryParams?.projectId ?? undefined;
-      const items = listWorkItems({
-        ...(resolvedStatus ? { status: resolvedStatus } : {}),
-        ...(projectId ? { projectId } : {}),
-      });
+      const originConversationId =
+        queryParams?.originConversationId ?? undefined;
+      // The origin filter is a dedicated indexed lookup rather than another
+      // `listWorkItems` predicate: it is read per conversation render, and it
+      // deliberately drops archived items (see the store) so a thread never
+      // re-surfaces work the owner filed away.
+      let items = originConversationId
+        ? listWorkItemsByOriginConversation(originConversationId)
+        : listWorkItems({
+            ...(resolvedStatus ? { status: resolvedStatus } : {}),
+            ...(projectId ? { projectId } : {}),
+          });
+      if (originConversationId) {
+        if (resolvedStatus) items = items.filter((i) => i.status === resolvedStatus);
+        if (projectId) items = items.filter((i) => i.projectId === projectId);
+      }
       return { items: annotateWorkItems(items) };
     },
   },

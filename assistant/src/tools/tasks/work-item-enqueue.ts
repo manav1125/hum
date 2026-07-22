@@ -112,6 +112,12 @@ const NON_CHANNEL_EXECUTION_CHANNELS: ReadonlySet<string> = new Set([
  *
  * Returns `{}` for genuine local tasks (desktop / internal transports), so the
  * generic task path is preserved and dedup keys stay channel-distinct.
+ *
+ * This is deliberately ONLY about the channel. The originating CONVERSATION is
+ * a separate concern and is always recorded — see
+ * {@link deriveOriginConversationId}. Conflating the two is what lost the link
+ * for every local/voice task: no channel meant no source row at all, and the
+ * thread that asked for the work could not find what it had spawned.
  */
 function deriveWorkItemSource(
   input: Record<string, unknown>,
@@ -150,6 +156,17 @@ function deriveWorkItemSource(
     sourceType: channel,
     ...(sourceId ? { sourceId } : {}),
   };
+}
+
+/**
+ * The conversation this enqueue happened in, if any. Unlike the channel source
+ * this is never suppressed: a desktop chat, a voice session and a Slack thread
+ * are all conversations that must be able to see the work they started. Returns
+ * `undefined` only when the tool runs outside a conversation (CLI, tests).
+ */
+function deriveOriginConversationId(context: ToolContext): string | undefined {
+  const id = context.conversationId?.trim();
+  return id ? id : undefined;
 }
 
 function handleDuplicate(
@@ -238,6 +255,9 @@ export async function executeTaskListAdd(
     // or `{}` for a genuine local task. Stamped onto the work item so the feed
     // can group/dedup per channel instead of seeing a generic "task".
     const source = deriveWorkItemSource(input, context);
+    // The originating conversation — recorded separately from the channel so a
+    // local/voice task keeps its thread link even though it has no channel.
+    const originConversationId = deriveOriginConversationId(context);
 
     // Sanitize explicit required_tools if provided (including empty array)
     const hasExplicitTools = rawRequiredTools !== undefined;
@@ -282,6 +302,9 @@ export async function executeTaskListAdd(
       const adHocTask = createTask({
         title: titleOverride,
         template: adHocTemplate,
+        ...(originConversationId
+          ? { createdFromConversationId: originConversationId }
+          : {}),
       });
 
       // For ad-hoc items: explicit tools → persist; omitted → null
@@ -296,6 +319,7 @@ export async function executeTaskListAdd(
         priorityTier: priorityTier ?? 1,
         sortIndex,
         requiredTools: adHocRequiredTools,
+        ...(originConversationId ? { originConversationId } : {}),
         ...source,
       });
       // Await the triage + auto-run DECISION (bounded; not the run itself) so
@@ -431,6 +455,7 @@ export async function executeTaskListAdd(
       priorityTier: priorityTier ?? 1,
       sortIndex,
       requiredTools: resolvedRequiredTools,
+      ...(originConversationId ? { originConversationId } : {}),
       ...source,
     });
     // Await the triage + auto-run DECISION (bounded; not the run itself) so

@@ -13,6 +13,7 @@ import {
 } from "@/domains/chat/components/chat-composer/chat-composer";
 import { InChatVoiceOverlay } from "@/domains/chat/components/in-chat-voice-overlay";
 import { QuestionPromptSlot } from "@/domains/chat/components/question-prompt-slot";
+import { SpawnedWorkSlot } from "@/domains/chat/components/spawned-work-slot";
 import {
   ChatScrollArea,
   type ChatScrollAreaProps,
@@ -277,6 +278,7 @@ export function ChatBody({
             </div>
           )}
           {queuedDrawerSlot}
+          <SpawnedWorkSlot />
           <QuestionPromptSlot />
           {channelFooterSlot}
           {isChannelReadonly ? (

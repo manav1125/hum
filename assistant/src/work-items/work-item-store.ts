@@ -30,6 +30,21 @@ export interface WorkItem {
   lastRunStatus: string | null;
   sourceType: string | null;
   sourceId: string | null;
+  /**
+   * The conversation this item was created FROM (315). Three ids about one
+   * item and they mean different things:
+   *   - `originConversationId` — the thread that spawned it (voice call, chat,
+   *     an inbound channel message). Always recorded when a conversation is in
+   *     scope, whatever the channel.
+   *   - `lastRunConversationId` — the separate conversation the RUN happened
+   *     in. A run must not flood the live thread, so it gets its own.
+   *   - `sourceType`/`sourceId` — which external CHANNEL it arrived on, used
+   *     for dedup and feed categorisation. Legitimately null for a local
+   *     desktop/voice task, which is exactly why it cannot carry the link.
+   * Null for items created outside any conversation (CLI, project quick-add,
+   * mission cycles).
+   */
+  originConversationId: string | null;
   requiredTools: string | null;
   approvedTools: string | null;
   approvalStatus: string | null;
@@ -124,6 +139,8 @@ export function createWorkItem(opts: {
   sortIndex?: number;
   sourceType?: string;
   sourceId?: string;
+  /** The conversation this item was created from (see {@link WorkItem}). */
+  originConversationId?: string;
   requiredTools?: string;
   projectId?: string;
   dueAt?: number;
@@ -158,6 +175,7 @@ export function createWorkItem(opts: {
     lastRunStatus: null,
     sourceType: opts.sourceType ?? null,
     sourceId: opts.sourceId ?? null,
+    originConversationId: opts.originConversationId ?? null,
     requiredTools: opts.requiredTools ?? null,
     approvedTools: null,
     approvalStatus: "none",
@@ -212,6 +230,8 @@ export function createWorkItemWithPermissions(opts: {
   sortIndex?: number;
   sourceType?: string;
   sourceId?: string;
+  /** The conversation this item was created from (see {@link WorkItem}). */
+  originConversationId?: string;
   requiredTools?: string;
   /** 'parked' = user parked this task; it must never auto-run (see WorkItem). */
   autoRunEligibility?: "parked";
@@ -444,6 +464,32 @@ export function findRunningWorkItemByRunConversationId(
   return listWorkItems({ status: "running" }).find(
     (i) => i.lastRunConversationId === conversationId,
   );
+}
+
+/**
+ * Every work item spawned FROM the given conversation, newest first.
+ *
+ * This is the read side of the origin link (315): the thread that captured a
+ * commitment can show what it started, and the turn context can tell the agent
+ * what already exists so it answers "where are the results" by reading them
+ * instead of re-running the work in the thread.
+ *
+ * Archived items are excluded — an archived item is off every surface by the
+ * owner's own action, and re-surfacing it in the thread would contradict that.
+ * Everything else (including `failed` and `cancelled`) is returned: a failed
+ * run is exactly the kind of thing the thread must not silently redo.
+ */
+export function listWorkItemsByOriginConversation(
+  conversationId: string,
+): WorkItem[] {
+  const db = getDb();
+  return db
+    .select()
+    .from(workItems)
+    .where(eq(workItems.originConversationId, conversationId))
+    .orderBy(desc(workItems.createdAt))
+    .all()
+    .filter((i) => i.status !== "archived") as WorkItem[];
 }
 
 /** Find all active work items for a given task ID */

@@ -243,6 +243,7 @@ import {
   migrateWorkItemAutoRunEligibility,
   migrateWorkItemHygiene,
   migrateWorkItemLiveness,
+  migrateWorkItemOriginConversation,
   migrateWorkItemPmColumns,
   migrateWorkItemProgressNote,
   migrateWorkItemsRunConversationIndex,
@@ -562,6 +563,7 @@ export function initializeDb(): void {
     migrateConversationProcessingFlags,
     migrateAutomations,
     migrateWorkItemAssessment,
+    migrateWorkItemOriginConversation,
   ];
 
   // Run each migration step, catching and logging individual failures so one

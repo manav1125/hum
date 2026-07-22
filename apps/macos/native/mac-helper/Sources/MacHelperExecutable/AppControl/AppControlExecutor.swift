@@ -2,10 +2,9 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import VellumAssistantShared
 import os
 
-private let log = Logger(subsystem: Bundle.appBundleIdentifier, category: "AppControlExecutor")
+private let log = Logger(subsystem: "ai.cue.mac-helper", category: "AppControlExecutor")
 
 /// Hard cap on how long we'll wait for a target app to become frontmost
 /// after `NSRunningApplication.activate()`. macOS focus transitions are
@@ -50,6 +49,7 @@ private let SEQUENCE_DEFAULT_DURATION_MS = 50
 /// All catch-paths surface as a result payload tagged with the originating
 /// `requestId` so the daemon can correlate failures with the request that
 /// produced them.
+@MainActor
 enum AppControlExecutor {
 
     // MARK: - Focus management

@@ -522,3 +522,89 @@ describe("askQuestionTool definition (batched schema)", () => {
     expect(schema.properties.options).toBeDefined();
   });
 });
+
+// ── Credential solicitation ──────────────────────────────────────────
+//
+// Pins the rule that Cue does not offer to accept a password. Reproduces the
+// exact question card Cue rendered on prod (2026-07-22) when asked to set up a
+// Netlify deploy: it offered "Log in with email (I'll provide credentials)"
+// and then blocked on the answer for 600,139 ms.
+describe("AskQuestionTool credential solicitation", () => {
+  test("does not offer to accept a password — the live Netlify card is refused", async () => {
+    const result = await askQuestionTool.execute(
+      {
+        question: "How do you want to log into Netlify? I can control the browser from here.",
+        options: [
+          { id: "email", label: "Log in with email (I'll provide credentials)" },
+          { id: "cli", label: "Use Netlify CLI instead — I'll give you an access token" },
+        ],
+      },
+      makeContext(),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Refused");
+    expect(result.content).toContain("credential_store");
+    expect(result.content).toContain("signs in themselves");
+    // The card must never reach the user.
+    expect(calls).toHaveLength(0);
+  });
+
+  test.each([
+    "What's your password?",
+    "Paste your API key and I'll finish the setup",
+    "Reply with the 2FA code",
+  ])("refuses a secret request in the question text: %s", async (question) => {
+    const result = await askQuestionTool.execute(
+      {
+        question,
+        options: [
+          { id: "yes", label: "Yes" },
+          { id: "no", label: "No" },
+        ],
+      },
+      makeContext(),
+    );
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("refuses when the solicitation is hidden in the free-text placeholder", async () => {
+    const result = await askQuestionTool.execute(
+      {
+        question: "How should I connect?",
+        options: [
+          { id: "a", label: "OAuth" },
+          { id: "b", label: "Token" },
+        ],
+        freeTextPlaceholder: "Paste your access token here",
+      },
+      makeContext(),
+    );
+    expect(result.isError).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("an ordinary question still goes through", async () => {
+    setNextResult(singleCompleted({ decision: "option", optionId: "a" }));
+    const result = await askQuestionTool.execute(
+      {
+        question: "Which Netlify team should I deploy to?",
+        options: [
+          { id: "a", label: "Personal" },
+          { id: "b", label: "Brinc" },
+        ],
+      },
+      makeContext(),
+    );
+    expect(result.isError).toBe(false);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("the tool description tells the model the rule up front", () => {
+    expect(askQuestionTool.description).toContain(
+      "Never use this tool to collect a secret",
+    );
+    expect(askQuestionTool.description).toContain("credential_store");
+  });
+});

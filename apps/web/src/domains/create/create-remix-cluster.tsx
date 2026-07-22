@@ -24,6 +24,7 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   buildMergePrompt,
   buildRebrandPrompt,
+  buildVariationPrompt,
   buildVariationPrompts,
   DEFAULT_VARIATIONS,
   FANOUT_FORMATS,
@@ -35,6 +36,7 @@ import {
 } from "@/domains/create/create-intent";
 import {
   AlsoMakeChooser,
+  kitAssetsFromRows,
   KitResultView,
   LaterPhaseBadge,
   type KitAsset,
@@ -264,44 +266,46 @@ export function RemixCluster({
   // The launched fan-out kit — polled server-side for per-asset status.
   const kitLauncher = useKitLauncher();
   const [kitId, setKitId] = useState<string | null>(null);
+  const [kitLaunching, setKitLaunching] = useState(false);
+  const [kitLaunchError, setKitLaunchError] = useState<string | null>(null);
   const kitQuery = useKit(kitId);
   const kitTitle = kitQuery.data?.kit?.title ?? `${asset.name} launch kit`;
   // Map the live kit rows → the presentational KitAsset[] the result view
-  // renders, with a status-aware label so "queued / generating… / failed" shows.
-  const kitAssets: KitAsset[] = (kitQuery.data?.kit?.assets ?? []).map((a) => {
-    const fmt = FANOUT_FORMATS.find((f) => f.id === a.format);
-    const suffix =
-      a.status === "running"
-        ? " · generating…"
-        : a.status === "pending"
-          ? " · queued"
-          : a.status === "failed"
-            ? " · failed"
-            : "";
-    return {
-      id: a.id,
-      label: `${fmt?.label ?? a.format}${suffix}`,
-      isSet: a.format === "social",
-      setSize: 3,
-    };
-  });
+  // renders. The row's REAL status, error and decoded output all go through —
+  // the view is what turns them into "queued / generating / ready / failed",
+  // and it needs the output ref to show the artifact that was actually made.
+  const kitAssets: KitAsset[] = kitAssetsFromRows(
+    kitQuery.data?.kit?.assets ?? [],
+    (format) => FANOUT_FORMATS.find((f) => f.id === format)?.label ?? format,
+  );
 
   const pickBrand = (kit: ActiveBrand) => {
     setRebrandOpen(false);
     onReseed(buildRebrandPrompt(asset, kit.id, kit));
   };
 
-  // Make variations (4e): build N variation prompts and fire the first via the
-  // re-seed path (the rest are the same path a batched endpoint / the user can
-  // fire — we don't stack navigations), then open the comparison grid.
+  // Make variations (4e). There is no batched variations endpoint and re-seeds
+  // stack into ONE conversation, so we cannot fire four alternates at once —
+  // which is exactly why the panel opens as a chooser (named directions) rather
+  // than a grid of results that were never made. Opening it generates nothing.
+  //
+  // `fireVariations` is the results-mode "Regenerate all" fallback and re-seeds
+  // the FIRST direction only (one conversation, one seed). It is reachable only
+  // when a host has injected real previews — such a host owns generation and
+  // should pass its own regenerate-all through.
   const fireVariations = () => {
     const prompts = buildVariationPrompts(asset, undefined, brand ?? null);
     if (prompts[0]) onReseed(prompts[0]);
   };
   const openVariations = () => {
-    fireVariations();
     onMakeVariations?.();
     setPanel("variations");
+  };
+  /** Generate exactly the direction the user chose. */
+  const makeVariation = (index: number) => {
+    const directive = DEFAULT_VARIATIONS.find((v) => v.index === index);
+    if (!directive) return;
+    onReseed(buildVariationPrompt(asset, directive, brand ?? null));
   };
 
   // Fan-out (4g): launch ONE coordinated kit server-side — the /v1/kits endpoint
@@ -311,6 +315,8 @@ export function RemixCluster({
   const generateFanout = async (formatIds: string[]) => {
     setPanel("kit");
     setKitId(null);
+    setKitLaunchError(null);
+    setKitLaunching(true);
     const contractPreamble = compileCreateIntent(
       {
         mode: asset.mode,
@@ -332,27 +338,57 @@ export function RemixCluster({
         ...(contractPreamble ? { contractPreamble } : {}),
         title: `${asset.name} launch kit`,
       });
+      if (!id) {
+        setKitLaunchError("The daemon didn't return a kit.");
+        return;
+      }
       setKitId(id);
-    } catch {
-      // Launch failed — the shell stays open; retry from the chooser.
+    } catch (err) {
+      // Launch failed — say so in the shell instead of leaving an empty kit
+      // that looks like it is quietly working.
+      setKitLaunchError(
+        err instanceof Error ? err.message : "The request failed.",
+      );
+    } finally {
+      setKitLaunching(false);
     }
   };
 
+  // Absent host-injected previews these are DIRECTIONS, not results — each
+  // carries the plain-words description the chooser shows in place of artwork
+  // that does not exist yet.
   const variationResults: VariationResult[] =
     variations ??
-    DEFAULT_VARIATIONS.map((v) => ({ index: v.index, variant: v.variant }));
+    DEFAULT_VARIATIONS.map((v) => ({
+      index: v.index,
+      variant: v.variant,
+      description: v.description,
+    }));
+  const variationsAreResults = variationResults.some((v) => v.preview != null);
 
   const panelOverlay =
     panel === "none" ? null : (
       <RemixPanelHost onClose={() => setPanel("none")} mobile={isMobile}>
         {panel === "variations" ? (
           <VariationsResult
-            title={`${variationResults.length} variations`}
-            subtitle={`${asset.name} · in your brand`}
+            title={
+              variationsAreResults
+                ? `${variationResults.length} variations`
+                : `Make a variation of ${asset.name}`
+            }
+            subtitle={
+              variationsAreResults
+                ? `${asset.name}${asset.brandKitId ? " · in your brand" : ""}`
+                : `${variationResults.length} directions · one is generated when you choose`
+            }
             variations={variationResults}
             onRegenerateAll={fireVariations}
             onPick={(index) => {
               setPanel("none");
+              if (!variationsAreResults) {
+                makeVariation(index);
+                return;
+              }
               onReseed(
                 `Pick variation ${index} of this ${asset.noun ?? "asset"} and ` +
                   `promote it to the final version — keep it exactly as generated.`,
@@ -372,6 +408,9 @@ export function RemixCluster({
           <KitResultView
             title={kitTitle}
             assets={kitAssets}
+            isLaunching={kitLaunching}
+            launchError={kitLaunchError}
+            branded={Boolean(asset.brandKitId)}
             onRegenerateAsset={(id) => {
               if (kitId)
                 void kitLauncher
@@ -380,8 +419,11 @@ export function RemixCluster({
             }}
             onDownloadAll={() =>
               // No bundle endpoint yet — approximate via a re-seed that asks the
-              // assistant to zip the kit. TODO(kit-bundle): a real /v1/kits
-              // download endpoint that streams the produced artifacts together.
+              // assistant to zip the kit. Only reachable once at least one asset
+              // has filed a deliverable (the view disables it otherwise), so the
+              // ask is never made against an empty kit.
+              // TODO(kit-bundle): a real /v1/kits download endpoint that streams
+              // the produced artifacts together.
               onReseed("Bundle the whole kit and give me a download link.")
             }
           />

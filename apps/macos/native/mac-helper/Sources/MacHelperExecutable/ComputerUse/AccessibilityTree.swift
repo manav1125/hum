@@ -2,7 +2,7 @@ import ApplicationServices
 import AppKit
 import os
 
-private let log = Logger(subsystem: Bundle.appBundleIdentifier, category: "AXTree")
+private let log = Logger(subsystem: "ai.cue.mac-helper", category: "AXTree")
 
 struct AXElement: Identifiable {
     let id: Int
@@ -85,15 +85,15 @@ final class AccessibilityTreeEnumerator: AccessibilityTreeProviding, @unchecked 
     private static let stateLock = NSLock()
 
     /// Set of app PIDs where we've already enabled enhanced AX. Guarded by `stateLock`.
-    private static var _enhancedAXEnabled: Set<pid_t> = []
+    private nonisolated(unsafe) static var _enhancedAXEnabled: Set<pid_t> = []
 
     /// Tracks the last non-self focused app PID, for fast lookup in enumeratePreviousApp().
     /// Guarded by `stateLock`.
-    private static var _lastFocusedPID: pid_t?
+    private nonisolated(unsafe) static var _lastFocusedPID: pid_t?
 
     /// Whether the NSWorkspace notification observer has been registered.
     /// Only written from the main actor in `setupAppTracker()`, so no lock is needed.
-    private static var appTrackerInstalled = false
+    private nonisolated(unsafe) static var appTrackerInstalled = false
 
     /// Atomically insert `pid` into the enhanced-AX cache.
     /// Returns true if the PID was newly inserted (caller should set the attribute).

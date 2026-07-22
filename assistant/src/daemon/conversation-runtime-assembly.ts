@@ -15,6 +15,7 @@ import { getConfig } from "../config/loader.js";
 import type { LLMCallSite, LLMConfig } from "../config/schemas/llm.js";
 import {
   NOW_SCRATCHPAD_STRIP_PREFIXES,
+  stripSpawnedWorkInjections,
   stripSpotlightInjections,
   stripUserTextBlocksByPrefix,
   stripWorkspaceInjections,
@@ -51,6 +52,7 @@ import {
 } from "../messaging/providers/slack/render-transcript.js";
 import { createContextSummaryMessage } from "../plugins/defaults/compaction/window-manager.js";
 import { getInjectorChain } from "../plugins/defaults/memory-retrieval/injector-chain.js";
+import { SPAWNED_WORK_BLOCK_ID } from "../plugins/defaults/memory-retrieval/injectors.js";
 import {
   MEMORY_V3_BLOCK_ID,
   MEMORY_V3_COMMIT_META_KEY,
@@ -2189,6 +2191,19 @@ export async function applyRuntimeInjections(
   );
   if (workspaceBlockProduced) {
     runMessagesForAssembly = stripWorkspaceInjections(runMessagesForAssembly);
+  }
+
+  // `<spawned_work>` strip-and-replace, same contract as the workspace block:
+  // it reports the LIVE status of the work this conversation spawned and the
+  // result text of anything finished, so a copy from an earlier turn is stale
+  // by construction. When the chain produced a fresh block, drop every previous
+  // one. When it produced nothing (minimal mode, nothing spawned), leave
+  // history alone — the compaction pipeline strips it there.
+  const spawnedWorkBlockProduced = chainBlocks.some(
+    (b) => b.id === SPAWNED_WORK_BLOCK_ID && b.text.length > 0,
+  );
+  if (spawnedWorkBlockProduced) {
+    runMessagesForAssembly = stripSpawnedWorkInjections(runMessagesForAssembly);
   }
 
   // v2 suppression: when the `memory-v3-live` flag is on AND the v3 injector

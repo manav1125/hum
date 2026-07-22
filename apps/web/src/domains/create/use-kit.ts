@@ -61,10 +61,22 @@ export function useKitLauncher() {
   };
 }
 
+/** Fast poll while runs are live; the slow poll a stalled kit backs off to. */
+const KIT_POLL_MS = 2500;
+const KIT_SLOW_POLL_MS = 30_000;
+/**
+ * A kit whose newest asset transition is older than this has stalled — the
+ * runs are fire-and-forget, so an interrupted daemon leaves rows stuck
+ * mid-flight. Keep polling (a restart can still finish them) but stop
+ * hammering, and let the view say the run is taking longer than usual.
+ */
+const KIT_STALL_MS = 12 * 60_000;
+
 /**
  * Poll a kit's status while any asset is still working. Stops polling once
  * every asset is terminal (done/failed) so a finished kit doesn't spin the
- * network. Disabled until a kitId exists.
+ * network, and backs off to a slow poll once a kit has visibly stalled.
+ * Disabled until a kitId exists.
  */
 export function useKit(kitId: string | null) {
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
@@ -74,11 +86,18 @@ export function useKit(kitId: string | null) {
     }),
     enabled: Boolean(assistantId && kitId),
     refetchInterval: (query) => {
-      const assets = query.state.data?.kit?.assets ?? [];
-      const settled =
-        assets.length > 0 &&
-        assets.every((a) => a.status === "done" || a.status === "failed");
-      return settled ? false : 2500;
+      const kit = query.state.data?.kit;
+      if (!kit) return KIT_POLL_MS;
+      // A kit with no assets will never change — nothing is running.
+      if (kit.assets.length === 0) return false;
+      const settled = kit.assets.every(
+        (a) => a.status === "done" || a.status === "failed",
+      );
+      if (settled) return false;
+      const lastChange = Math.max(...kit.assets.map((a) => a.updatedAt));
+      return Date.now() - lastChange > KIT_STALL_MS
+        ? KIT_SLOW_POLL_MS
+        : KIT_POLL_MS;
     },
   });
 }

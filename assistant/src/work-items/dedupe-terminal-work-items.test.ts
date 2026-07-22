@@ -23,6 +23,7 @@ function wi(overrides: Partial<WorkItem> & { id: string }): WorkItem {
     lastRunConversationId: null,
     lastRunStatus: null,
     sourceType: null,
+    originConversationId: null,
     sourceId: null,
     requiredTools: null,
     approvedTools: null,

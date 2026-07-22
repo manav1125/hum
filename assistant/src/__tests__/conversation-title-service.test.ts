@@ -11,12 +11,25 @@ const mockRunBtwSidechain = mock(async (_params: Record<string, unknown>) => ({
   },
 }));
 
+/**
+ * Conversation row every lookup sees. Mutable so a test can put the
+ * conversation into a given title state (`setConversation`) without replacing
+ * the mock implementation; `beforeEach` restores the placeholder default.
+ */
+const DEFAULT_CONVERSATION = {
+  title: "Generating title...",
+  isAutoTitle: 1,
+};
+let conversationRow: { title: string; isAutoTitle: number } = {
+  ...DEFAULT_CONVERSATION,
+};
+function setConversation(row: { title: string; isAutoTitle: number }): void {
+  conversationRow = row;
+}
+
 const mockGetConversation = mock(
   (_conversationId: string) =>
-    ({
-      title: "Generating title...",
-      isAutoTitle: 1,
-    }) as {
+    conversationRow as {
       title: string;
       isAutoTitle: number;
     },
@@ -60,11 +73,37 @@ mock.module("../runtime/sync/resource-sync-events.js", () => ({
 
 import {
   AUTO_TITLE_DETERMINISTIC,
+  AUTO_TITLE_LLM,
+  AUTO_TITLE_USER_SET,
   generateAndPersistConversationTitle,
   queueGenerateConversationTitle,
   regenerateConversationTitle,
   titleMutex,
 } from "../memory/conversation-title-service.js";
+
+/** Provider stub — every call must route through the mocked side-chain. */
+function titleProvider() {
+  return {
+    name: "test-provider",
+    sendMessage: mock(async () => {
+      throw new Error("provider.sendMessage should not be called directly");
+    }),
+  };
+}
+
+/** Make the next side-chain call return `text` verbatim. */
+function nextSidechainText(text: string) {
+  mockRunBtwSidechain.mockImplementationOnce(async () => ({
+    text,
+    hadTextDeltas: true,
+    response: {
+      content: [{ type: "text", text }],
+      model: "test-model",
+      usage: { inputTokens: 10, outputTokens: 5 },
+      stopReason: "end_turn",
+    },
+  }));
+}
 
 describe("conversation-title-service", () => {
   beforeEach(() => {
@@ -74,6 +113,7 @@ describe("conversation-title-service", () => {
     mockUpdateConversationTitle.mockClear();
     mockGetConfiguredProvider.mockClear();
     mockPublishConversationTitleChanged.mockClear();
+    conversationRow = { ...DEFAULT_CONVERSATION };
   });
 
   test("uses the BTW side-chain helper for initial title generation", async () => {
@@ -326,10 +366,9 @@ describe("conversation-title-service", () => {
       },
     ]);
 
-    mockGetConversation.mockReturnValueOnce({
-      title: "Existing Title",
-      isAutoTitle: 1,
-    });
+    // Still on the placeholder, so the pass is allowed to run — what stops it
+    // is the absence of any titleable text.
+    setConversation({ title: "Generating title...", isAutoTitle: 1 });
 
     const provider = {
       name: "test-provider",
@@ -345,7 +384,7 @@ describe("conversation-title-service", () => {
 
     expect(mockRunBtwSidechain).not.toHaveBeenCalled();
     expect(mockUpdateConversationTitle).not.toHaveBeenCalled();
-    expect(result).toEqual({ title: "Existing Title", updated: false });
+    expect(result).toEqual({ title: "Generating title...", updated: false });
   });
 
   test("title prompt content does not contain generation instructions", async () => {
@@ -440,6 +479,193 @@ describe("conversation-title-service", () => {
 
     // Second should have started only after first finished
     expect(callOrder).toEqual(["first:start", "first:end", "second:start"]);
+  });
+
+  // ── Set-once policy ────────────────────────────────────────────────
+  //
+  // The bug this pins: a conversation titled "landing page" from its opening
+  // turn was re-titled "Sur" by the second pass three turns later. A title the
+  // user has already read must not change under them.
+
+  test("second pass never replaces a title that already names the work", async () => {
+    setConversation({
+      title: "Landing Page Build",
+      isAutoTitle: AUTO_TITLE_LLM,
+    });
+
+    const result = await regenerateConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+    });
+
+    expect(result).toEqual({ title: "Landing Page Build", updated: false });
+    // No LLM call at all — the service bails before spending tokens.
+    expect(mockRunBtwSidechain).not.toHaveBeenCalled();
+    expect(mockUpdateConversationTitle).not.toHaveBeenCalled();
+  });
+
+  test("first pass never replaces a deterministic title that names the work", async () => {
+    setConversation({
+      title: "Task: Book the flights",
+      isAutoTitle: AUTO_TITLE_DETERMINISTIC,
+    });
+
+    const result = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      userMessage: "any follow-up message",
+    });
+
+    expect(result).toEqual({ title: "Task: Book the flights", updated: false });
+    expect(mockRunBtwSidechain).not.toHaveBeenCalled();
+    expect(mockUpdateConversationTitle).not.toHaveBeenCalled();
+  });
+
+  test("a boilerplate deterministic title is still upgraded", async () => {
+    setConversation({
+      title: "Untitled Conversation",
+      isAutoTitle: AUTO_TITLE_DETERMINISTIC,
+    });
+
+    const result = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      userMessage: "Help me plan the kickoff",
+    });
+
+    expect(result).toEqual({ title: "Project kickoff", updated: true });
+    expect(mockUpdateConversationTitle).toHaveBeenCalledWith(
+      "conv-1",
+      "Project kickoff",
+      AUTO_TITLE_LLM,
+    );
+  });
+
+  test("the live-voice seed title is replaced by the end-of-call pass", async () => {
+    // "Voice conversation" names the medium, not the conversation — the
+    // end-of-call regeneration is the first pass that can title it.
+    setConversation({
+      title: "Voice conversation",
+      isAutoTitle: AUTO_TITLE_LLM,
+    });
+
+    const result = await regenerateConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+    });
+
+    expect(result).toEqual({ title: "Project kickoff", updated: true });
+  });
+
+  test("a user-set title is never replaced, even when placeholder-shaped", async () => {
+    setConversation({
+      title: "Untitled",
+      isAutoTitle: AUTO_TITLE_USER_SET,
+    });
+
+    const generated = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      userMessage: "Help me plan the kickoff",
+    });
+    const regenerated = await regenerateConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+    });
+
+    expect(generated).toEqual({ title: "Untitled", updated: false });
+    expect(regenerated).toEqual({ title: "Untitled", updated: false });
+    expect(mockUpdateConversationTitle).not.toHaveBeenCalled();
+  });
+
+  // ── Quality floor ──────────────────────────────────────────────────
+
+  test.each([
+    ["Sur", "a clipped fragment"],
+    ["Sure", "a bare acknowledgement"],
+    ["Okay", "a bare acknowledgement"],
+    ["Got it", "a bare acknowledgement"],
+    ["Here you go", "a conversational reply"],
+    ["OK.", "punctuated filler"],
+    ["Untitled", "a placeholder echoed back"],
+    ["Title", "a self-referential non-title"],
+    ["", "an empty completion"],
+  ])("rejects %p (%s) and keeps the deterministic title", async (bad) => {
+    nextSidechainText(bad);
+
+    const result = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      context: {
+        origin: "task",
+        systemHint: "Task: Book the flights",
+      },
+      userMessage: "book my flights",
+    });
+
+    expect(result.title).toBe("Task: Book the flights");
+    expect(mockUpdateConversationTitle).toHaveBeenCalledWith(
+      "conv-1",
+      "Task: Book the flights",
+      AUTO_TITLE_DETERMINISTIC,
+    );
+  });
+
+  test.each([
+    ["Q3 budget", "Q3 budget"],
+    ["Gmail auth fix", "Gmail auth fix"],
+    ["PONG", "PONG"],
+    ["SEO", "SEO"],
+    ["OK Reply", "OK Reply"],
+    // Conversational preamble is peeled off rather than rejected — the real
+    // title is right there behind it.
+    ["Sure, here's the title: Kickoff Plan", "Kickoff Plan"],
+    ["Of course! Docker Volume Mounts", "Docker Volume Mounts"],
+    ["Title: Onboarding Flow", "Onboarding Flow"],
+  ])("accepts %p as a title", async (raw, expected) => {
+    nextSidechainText(raw);
+
+    const result = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      userMessage: "something",
+    });
+
+    expect(result).toEqual({ title: expected, updated: true });
+    expect(mockUpdateConversationTitle).toHaveBeenCalledWith(
+      "conv-1",
+      expected,
+      AUTO_TITLE_LLM,
+    );
+  });
+
+  test("a long token after a short first word does not collapse the title", async () => {
+    // The mechanical path to a 3-character title: word-boundary truncation
+    // dropped everything after the first word when word two blew the budget.
+    nextSidechainText("Sur https://justcue.ai/landing-page-v2-preview");
+
+    const result = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      userMessage: "something",
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.title).not.toBe("Sur");
+    expect(result.title.startsWith("Sur https://justcue.ai")).toBe(true);
+    expect(result.title.length).toBeLessThanOrEqual(40);
+  });
+
+  test("a multi-line completion is stored as a single-line title", async () => {
+    nextSidechainText("Kickoff\nPlan");
+
+    const result = await generateAndPersistConversationTitle({
+      conversationId: "conv-1",
+      provider: titleProvider(),
+      userMessage: "something",
+    });
+
+    expect(result).toEqual({ title: "Kickoff Plan", updated: true });
   });
 
   test("queue continues processing after a failed call", async () => {

@@ -174,6 +174,9 @@ export async function actionItemsToWorkItems(
         priorityTier: 1, // medium default — background triage refines it
         sourceType,
         sourceId: conversationId,
+        // The meeting/voice conversation the action item came out of — so that
+        // thread can show what it spawned and its agent never redoes it.
+        originConversationId: conversationId,
         ...(requiredTools ? { requiredTools } : {}),
       });
       // Rank the fresh capture, file it onto its best-matching project (and thus

@@ -6,6 +6,13 @@
  * gateway; cloud/managed assistants connect to the platform via
  * assistant-scoped URLs with session-token auth.
  *
+ * A THIRD source has no lockfile entry at all: the self-hosted instance this
+ * install is pointed at (`selfHostUrl`). It is reconciled on a timer rather
+ * than from the lockfile — see `reconcileSelfHostConnection`. Without it every
+ * desktop capability is dead for self-host owners: the daemon never sees a
+ * `macos` client, so `host_bash`/`host_cu`/Desktop control have no target and
+ * Cue Live's routes reach nothing.
+ *
  * Incoming SSE messages are dispatched to pluggable executors; unimplemented
  * executors post error results so daemon requests don't hang.
  */
@@ -28,6 +35,11 @@ import { hostCuExecutor } from "./executors/host-cu-executor";
 import { hostAppControlExecutor } from "./executors/host-app-control-executor";
 import { shutdownSharedCuHelper } from "./sidecar/shared-cu-helper";
 import { getSessionToken } from "./session-token-store";
+import { resolveSelfHostUrl } from "./app-config";
+import {
+  getCachedSelfHostActorToken,
+  refreshSelfHostActorToken,
+} from "./self-host-token";
 import log from "./logger";
 
 // ---------------------------------------------------------------------------
@@ -60,7 +72,8 @@ interface AssistantConnection {
         assistantId: string;
         baseUrl: string;
         organizationId?: string;
-      };
+      }
+    | { kind: "selfhost"; assistantId: string; baseUrl: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +130,16 @@ function dispatchMessage(
   const { type } = message;
   const route = executorKindForType(type);
   if (!route) {
-    log.warn("[host-proxy-router] unknown message type, ignoring", { type });
+    // The events stream is the assistant's whole event feed, not a host-proxy
+    // channel: `assistant_thinking_delta`, `tool_use_start`, `usage_progress`
+    // and friends all arrive here and are simply none of our business. Warning
+    // on those buries the log under every conversation. A `host_*` message we
+    // cannot route IS a real defect, so that one still warns.
+    if (type.startsWith("host_")) {
+      log.warn("[host-proxy-router] unroutable host message, ignoring", {
+        type,
+      });
+    }
     return;
   }
 
@@ -278,6 +300,16 @@ const cloudFingerprint = (
   runtimeUrl: string,
   organizationId?: string,
 ): string => `cloud:${runtimeUrl}:${organizationId ?? ""}`;
+const selfHostFingerprint = (baseUrl: string): string => `selfhost:${baseUrl}`;
+
+/**
+ * Connections map key for the self-host instance. It is NOT an assistant id
+ * from the lockfile, so it deliberately cannot collide with one — and the
+ * lockfile prune step skips it (see `handleLockfileChange`).
+ */
+const SELF_HOST_CONNECTION_KEY = "self-host";
+/** Every self-host route is assistant-scoped to the literal `self`. */
+const SELF_HOST_ASSISTANT_ID = "self";
 
 // ---------------------------------------------------------------------------
 // Authenticated daemon requests (for main-process features like Cue Live)
@@ -329,6 +361,15 @@ function activeCloudConnection(): Extract<
     if (conn.target.kind === "cloud") return conn.target;
   }
   return null;
+}
+
+/** The connected self-hosted instance, if any. */
+function activeSelfHostConnection(): Extract<
+  AssistantConnection["target"],
+  { kind: "selfhost" }
+> | null {
+  const conn = connections.get(SELF_HOST_CONNECTION_KEY);
+  return conn && conn.target.kind === "selfhost" ? conn.target : null;
 }
 
 async function readJson<T>(res: Response | null): Promise<T | null> {
@@ -433,6 +474,53 @@ async function requestCloudRoute<T>(
 }
 
 /**
+ * POST to a route on the connected SELF-HOST instance, using the actor token
+ * the renderer's session holds (cached by `self-host-token`). One 401 retry
+ * with a freshly-read token covers the case where the session rotated under us.
+ */
+async function requestSelfHostRoute<T>(
+  target: Extract<AssistantConnection["target"], { kind: "selfhost" }>,
+  routePath: string,
+  body: unknown,
+  timeoutMs: number,
+): Promise<T | null> {
+  const url = `${target.baseUrl}/v1/assistants/${encodeURIComponent(
+    target.assistantId,
+  )}${routePath}`;
+
+  const attempt = async (token: string): Promise<Response | null> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  let token =
+    getCachedSelfHostActorToken() ?? (await refreshSelfHostActorToken());
+  if (!token) return null;
+  let res = await attempt(token);
+  if (res && res.status === 401) {
+    token = await refreshSelfHostActorToken();
+    if (!token) return null;
+    res = await attempt(token);
+  }
+  return readJson<T>(res);
+}
+
+/**
  * POST to a route on whichever assistant this app is connected to, for
  * main-process features (Cue Live) that need a response body.
  *
@@ -451,7 +539,11 @@ async function requestCloudRoute<T>(
  * which buries the log in noise while the app is simply idle.
  */
 export function hasAssistantConnection(): boolean {
-  return Boolean(activeLocalConnection() ?? activeCloudConnection());
+  return Boolean(
+    activeLocalConnection() ??
+    activeCloudConnection() ??
+    activeSelfHostConnection(),
+  );
 }
 
 export async function requestAssistantRoute<T = unknown>(
@@ -463,6 +555,10 @@ export async function requestAssistantRoute<T = unknown>(
   if (local) return requestLocalRoute<T>(local, routePath, body, timeoutMs);
   const cloud = activeCloudConnection();
   if (cloud) return requestCloudRoute<T>(cloud, routePath, body, timeoutMs);
+  const selfHost = activeSelfHostConnection();
+  if (selfHost) {
+    return requestSelfHostRoute<T>(selfHost, routePath, body, timeoutMs);
+  }
   log.warn("[host-proxy-router] no assistant connected — cannot reach route", {
     routePath,
   });
@@ -570,6 +666,116 @@ function connectCloudAssistant(
   });
 }
 
+// -- Self-host instance connection ------------------------------------------
+
+/**
+ * The instance origin this install is pointed at, or null when it isn't
+ * connected to one. `resolveSelfHostUrl` returns the SPA URL
+ * (`https://<instance>/assistant/`); the API lives at the origin.
+ */
+function selfHostBaseUrl(): string | null {
+  const url = resolveSelfHostUrl();
+  return url ? url.origin : null;
+}
+
+/**
+ * Register this Mac as a host-proxy client of the self-hosted instance.
+ *
+ * The SSE client already sends `X-Vellum-Client-Id` / `X-Vellum-Interface-Id:
+ * macos` / `X-Vellum-Machine-Name`, which is what makes the daemon record the
+ * connection as a `macos` client with the five host-proxy capabilities. The
+ * `actorPrincipalId` that host targeting fails closed on is NOT sent from
+ * here — the daemon derives it from the bearer token's auth context, so the
+ * Mac lands under the same principal as the owner's other requests and shows
+ * up in `organizer/session` targets.
+ */
+function connectSelfHostAssistant(baseUrl: string): void {
+  if (connections.has(SELF_HOST_CONNECTION_KEY)) return;
+
+  const authHeaders = (): Record<string, string> => {
+    const token = getCachedSelfHostActorToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const eventsUrl = `${baseUrl}/v1/assistants/${SELF_HOST_ASSISTANT_ID}/events`;
+  const endpointBase = `${baseUrl}/v1/assistants/${SELF_HOST_ASSISTANT_ID}`;
+
+  const sse = new HostProxySseClient({
+    eventsUrl,
+    authHeaders,
+    // Re-read the renderer's session before each reconnect: the actor token
+    // can be re-seeded (new connect link) while the app runs.
+    onRefreshToken: () => refreshSelfHostActorToken(),
+  });
+  const poster = new HostProxyPoster({ endpointBase, authHeaders });
+
+  sse.setMessageCallback((msg) => dispatchMessage(msg, poster));
+  sse.connect();
+
+  connections.set(SELF_HOST_CONNECTION_KEY, {
+    sse,
+    poster,
+    fingerprint: selfHostFingerprint(baseUrl),
+    target: {
+      kind: "selfhost",
+      assistantId: SELF_HOST_ASSISTANT_ID,
+      baseUrl,
+    },
+  });
+  log.info("[host-proxy-router] connected to self-host instance", { baseUrl });
+}
+
+/**
+ * Bring the self-host connection in line with the app's current state:
+ * connected to the instance it is pointed at, disconnected when it isn't, and
+ * reconnected when the instance changes.
+ *
+ * Runs on a timer because neither of its two inputs is observable: the
+ * instance is a persisted setting, and the token lives in the renderer's
+ * localStorage, which is only readable once a window has loaded. It does NOT
+ * spin against an unreachable instance — once a connection exists this is a
+ * no-op and `HostProxySseClient` owns the (backing-off) retry.
+ */
+let loggedMissingSelfHostToken = false;
+
+async function reconcileSelfHostConnection(): Promise<void> {
+  const baseUrl = selfHostBaseUrl();
+  const existing = connections.get(SELF_HOST_CONNECTION_KEY);
+
+  if (!baseUrl) {
+    if (existing) disconnectAssistant(SELF_HOST_CONNECTION_KEY);
+    return;
+  }
+
+  const fingerprint = selfHostFingerprint(baseUrl);
+  if (existing && existing.fingerprint !== fingerprint) {
+    log.info("[host-proxy-router] self-host instance changed, reconnecting", {
+      oldFingerprint: existing.fingerprint,
+      newFingerprint: fingerprint,
+    });
+    disconnectAssistant(SELF_HOST_CONNECTION_KEY);
+  } else if (existing) {
+    return;
+  }
+
+  // Only connect once the session actually has a token: a connection with no
+  // Authorization header would 401-loop and, worse, register nothing while
+  // making the app look connected.
+  const token = await refreshSelfHostActorToken();
+  if (!token) {
+    if (!loggedMissingSelfHostToken) {
+      loggedMissingSelfHostToken = true;
+      log.info(
+        "[host-proxy-router] self-host instance set but no session token yet — waiting",
+      );
+    }
+    return;
+  }
+  loggedMissingSelfHostToken = false;
+
+  connectSelfHostAssistant(baseUrl);
+}
+
 // -- Disconnect -------------------------------------------------------------
 
 function disconnectAssistant(assistantId: string): void {
@@ -620,8 +826,11 @@ function handleLockfileChange(lockfile: Lockfile): void {
     }
   }
 
-  // Disconnect assistants that are no longer in the lockfile
+  // Disconnect assistants that are no longer in the lockfile. The self-host
+  // connection is never in the lockfile — it is reconciled separately — so
+  // pruning it here would tear it down on every lockfile event.
   for (const assistantId of connections.keys()) {
+    if (assistantId === SELF_HOST_CONNECTION_KEY) continue;
     if (!activeIds.has(assistantId)) {
       disconnectAssistant(assistantId);
     }
@@ -633,6 +842,14 @@ function handleLockfileChange(lockfile: Lockfile): void {
 // ---------------------------------------------------------------------------
 
 let unsubscribe: (() => void) | null = null;
+let selfHostTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * How often the self-host connection is reconciled. Short enough that the Mac
+ * registers within seconds of the renderer finishing its first load (that is
+ * when the token becomes readable), long enough to be free.
+ */
+const SELF_HOST_RECONCILE_INTERVAL_MS = 5_000;
 
 /**
  * Wire the host proxy bridge into the app lifecycle. Call once from
@@ -662,9 +879,22 @@ export function installHostProxyBridge(
   const browserExecutor = new HostBrowserExecutor();
   setExecutor("host_browser", browserExecutor);
 
+  // The self-hosted instance has no lockfile entry, so it gets its own
+  // reconcile loop. Without it a self-host install never registers a `macos`
+  // client and every desktop capability has no target.
+  void reconcileSelfHostConnection();
+  selfHostTimer = setInterval(() => {
+    void reconcileSelfHostConnection();
+  }, SELF_HOST_RECONCILE_INTERVAL_MS);
+  selfHostTimer.unref?.();
+
   return () => {
     unsubscribe?.();
     unsubscribe = null;
+    if (selfHostTimer) {
+      clearInterval(selfHostTimer);
+      selfHostTimer = null;
+    }
     for (const assistantId of [...connections.keys()]) {
       disconnectAssistant(assistantId);
     }
@@ -691,15 +921,23 @@ export const __testing = {
   dispatchMessage,
   connectLocalAssistant,
   connectCloudAssistant,
+  connectSelfHostAssistant,
+  reconcileSelfHostConnection,
   disconnectAssistant,
   handleLockfileChange,
+  SELF_HOST_CONNECTION_KEY,
   reset() {
     for (const assistantId of [...connections.keys()]) {
       disconnectAssistant(assistantId);
     }
     executors.clear();
     resolveCliInvocation = null;
+    loggedMissingSelfHostToken = false;
     unsubscribe?.();
     unsubscribe = null;
+    if (selfHostTimer) {
+      clearInterval(selfHostTimer);
+      selfHostTimer = null;
+    }
   },
 };

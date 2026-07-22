@@ -90,9 +90,11 @@ import { installNotifications } from "./notifications";
 import { installPermissionHandler } from "./permissions";
 import { installSelfHostConnect } from "./self-host-connect";
 import {
+  readActorToken,
   requestSelfHostBinary,
   requestSelfHostRoute,
 } from "./self-host-request";
+import { setSelfHostActorTokenReader } from "./self-host-token";
 import { installPermissionsService } from "./permissions-service";
 import { installPowerEvents } from "./power-events";
 import { installConnectivityIpc, installStatusIpc } from "./status";
@@ -485,6 +487,11 @@ app
     // switcher submenu has data on its first right-click.
     const teardownLockfileWatcher = installLockfileWatcher();
     app.on("before-quit", teardownLockfileWatcher);
+    // A self-host install's credential lives in the renderer's session, and
+    // the host proxy needs it to register this Mac as a `macos` client on the
+    // owner's instance. Wire the source BEFORE the bridge installs, so its
+    // first reconcile can already read a token.
+    setSelfHostActorTokenReader(readActorToken);
     const teardownHostProxy = installHostProxyBridge(resolveCliInvocation);
     app.on("before-quit", teardownHostProxy);
     installTray({

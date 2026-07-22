@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import VellumAssistantShared
 
 /// Per-process mouse input helper for the app-control skill.
 ///

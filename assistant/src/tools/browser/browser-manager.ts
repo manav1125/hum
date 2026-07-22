@@ -197,6 +197,36 @@ function getProfileDir(): string {
   return join(getDataDir(), "browser-profile");
 }
 
+// ── Cold-start (first-run Chromium download) reporting ───────────────
+//
+// In a container built without a browser baked in, the FIRST browser call
+// silently blocks on `playwright install chromium` — 622 MB of browser. On
+// prod (2026-07-22) that turned one `browser navigate` into 114,135 ms with no
+// output of any kind until it finished, and the model had no way to know that
+// almost two minutes had gone into fetching a browser rather than loading the
+// page. The image now bakes Chromium in, but any environment that misses that
+// must at least be honest about it: the install records what it did and how
+// long it took, and the next browser tool result says so.
+
+/** Set when a cold Chromium install completes; consumed by the tool layer. */
+let pendingColdStartNotice: string | null = null;
+
+/**
+ * Take (and clear) the note about a first-run Chromium download, if one just
+ * happened. Returns null in the normal case where the browser was already on
+ * disk, so warm calls pay nothing and say nothing.
+ */
+export function takePendingColdStartNotice(): string | null {
+  const notice = pendingColdStartNotice;
+  pendingColdStartNotice = null;
+  return notice;
+}
+
+/** Exported for tests. */
+export function _setPendingColdStartNotice(notice: string | null): void {
+  pendingColdStartNotice = notice;
+}
+
 class BrowserManager {
   private context: BrowserContext | null = null;
   private contextCreating: Promise<BrowserContext> | null = null;
@@ -257,7 +287,13 @@ class BrowserManager {
         }
 
         if (!chromiumInstalled) {
-          log.info("Chromium not installed, installing via playwright...");
+          const installStartedAt = Date.now();
+          log.warn(
+            { timeoutMs: 300_000 },
+            "Chromium is not installed in this environment — downloading it now (622 MB on disk). " +
+              "The browser call that triggered this will block for one to two minutes before the page even starts loading. " +
+              "Bake Chromium into the image to avoid this.",
+          );
           const proc = Bun.spawn(
             ["bunx", "playwright", "install", "--with-deps", "chromium"],
             {
@@ -282,7 +318,15 @@ class BrowserManager {
             ),
           ]);
           if (exitCode === 0) {
-            log.info("Chromium installed successfully");
+            const elapsedMs = Date.now() - installStartedAt;
+            log.info(
+              { elapsedMs },
+              "Chromium installed successfully (first-run download)",
+            );
+            pendingColdStartNotice =
+              `Note: this was the first browser use in this environment. Chromium was not installed, so a one-time ${Math.round(
+                elapsedMs / 1000,
+              )}s browser download happened before the page was touched — that time is not the site being slow, and later browser calls will not pay it.`;
           } else {
             const stderr = await new Response(proc.stderr).text();
             const msg = stderr.trim() || `exited with code ${exitCode}`;
