@@ -17,6 +17,10 @@ import {
   looksLikePathOnlyInput,
 } from "../tools/network/url-safety.js";
 import { getTool, getToolOwner } from "../tools/registry.js";
+import {
+  detectsSpreadsheetBuild,
+  SPREADSHEET_ROUTING_MESSAGE,
+} from "../tools/terminal/spreadsheet-build-detector.js";
 import type { Tool } from "../tools/types.js";
 import {
   getDeprecatedDir,
@@ -528,6 +532,23 @@ export async function check(
   signal?: AbortSignal,
 ): Promise<PermissionCheckResult> {
   signal?.throwIfAborted();
+
+  // Route xlsx-building shell commands to spreadsheet_create *before* any
+  // approval prompt. This brain reaches for openpyxl/pandas/zip-XML in bash
+  // instead of the spreadsheet_create tool; without this, each of the ~10
+  // build steps prompts the user for approval and yields a download-only file
+  // that won't open in the native viewer. Denying here (rather than in the
+  // tool's execute()) means zero prompts — the model sees the routing reason
+  // and switches to spreadsheet_create. See spreadsheet-build-detector.ts.
+  if (toolName === "bash" || toolName === "host_bash") {
+    const command = typeof input.command === "string" ? input.command : "";
+    if (command && detectsSpreadsheetBuild(command)) {
+      return {
+        decision: "deny",
+        reason: SPREADSHEET_ROUTING_MESSAGE,
+      };
+    }
+  }
 
   const classification = await classifyRisk(
     toolName,

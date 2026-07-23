@@ -32,6 +32,10 @@ import type {
   ToolExecutionResult,
 } from "../types.js";
 import { buildSanitizedEnv } from "./safe-env.js";
+import {
+  detectsSpreadsheetBuild,
+  SPREADSHEET_ROUTING_MESSAGE,
+} from "./spreadsheet-build-detector.js";
 
 /** Build a credential ref resolution trace for diagnostic logging. */
 function buildCredentialRefTrace(
@@ -43,39 +47,6 @@ function buildCredentialRefTrace(
 }
 
 const log = getLogger("shell-tool");
-
-/**
- * Commands that hand-assemble a deliverable .xlsx workbook. This brain
- * (DeepSeek-class over OpenRouter) unreliably follows the "load
- * spreadsheet-studio, call spreadsheet_create" routing in the tool
- * descriptions and instead shells out to openpyxl / pandas / ExcelJS —
- * producing a download-only file that won't open in the native viewer and
- * firing a per-command approval prompt for each install/step. A description
- * can't enforce that; this hard guard turns the wrong path into a
- * self-correcting routing signal, deterministically, before any approval.
- */
-const SPREADSHEET_BUILD_PATTERNS: RegExp[] = [
-  /\bopenpyxl\b/i,
-  /\bxlsxwriter\b/i,
-  /\.to_excel\s*\(/i,
-  /\bexceljs\b/i,
-  /new\s+ExcelJS\b/i,
-  /--convert-to[= ]+["']?xlsx/i,
-  /\bwrite_xlsx\b/i,
-  /\bwritexlsx\b/i,
-];
-
-export function detectsSpreadsheetBuild(command: string): boolean {
-  if (SPREADSHEET_BUILD_PATTERNS.some((re) => re.test(command))) return true;
-  // Raw-XML route: zipping an xl/ package into a .xlsx by hand.
-  if (/\.xlsx\b/i.test(command) && /\bzipfile\b/i.test(command)) return true;
-  return false;
-}
-
-const SPREADSHEET_ROUTING_MESSAGE =
-  'Error: do not build a spreadsheet/.xlsx with shell commands (openpyxl, pandas, xlsxwriter, ExcelJS, LibreOffice, or raw XML). ' +
-  'A hand-built file opens only as a download, not in the native spreadsheet viewer, and each command needlessly prompts the user for approval. ' +
-  'Instead: call `skill_load` with skill "spreadsheet-studio", then `skill_execute` the `spreadsheet_create` tool (pass `filename` and a `sheets` array of {name, rows}; use "=" formulas for any derived cell). That delivers a real, openable workbook with no per-command approvals.';
 
 export const shellTool = {
   name: "bash",
@@ -141,14 +112,19 @@ export const shellTool = {
       return { content: "Error: command contains null bytes", isError: true };
     }
 
-    // Route spreadsheet-building shell commands to spreadsheet_create before
-    // they reach an approval prompt. See SPREADSHEET_BUILD_PATTERNS above.
+    // Defense in depth: the approval layer (checker.ts) already denies
+    // xlsx-building bash commands before any prompt, but if one reaches
+    // execution, route it to spreadsheet_create rather than build a
+    // download-only file. See spreadsheet-build-detector.ts.
     if (detectsSpreadsheetBuild(command)) {
       log.info(
         { command: redactSecrets(command) },
         "Blocked hand-built spreadsheet shell command; routing to spreadsheet_create",
       );
-      return { content: SPREADSHEET_ROUTING_MESSAGE, isError: true };
+      return {
+        content: `Error: ${SPREADSHEET_ROUTING_MESSAGE}`,
+        isError: true,
+      };
     }
 
     const background = input.background === true;

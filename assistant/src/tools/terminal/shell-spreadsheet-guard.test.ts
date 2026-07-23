@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { detectsSpreadsheetBuild } from "./shell.js";
+import { detectsSpreadsheetBuild } from "./spreadsheet-build-detector.js";
 
 // The live failure this guards: the brain shells out to openpyxl/pandas to
 // build an .xlsx instead of calling spreadsheet_create, producing a
