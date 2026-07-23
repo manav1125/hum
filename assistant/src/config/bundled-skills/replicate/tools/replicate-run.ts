@@ -1,3 +1,4 @@
+import { uploadAttachmentFromBytes } from "../../../../memory/attachments-store.js";
 import { resolveToolingProviderToken } from "../../../../providers/tooling-credentials.js";
 import type {
   ToolContext,
@@ -5,6 +6,90 @@ import type {
 } from "../../../../tools/types.js";
 
 const REPLICATE_API_BASE = "https://api.replicate.com/v1";
+
+/** Per-file cap for materializing a remote output into a chat attachment. */
+const MAX_MATERIALIZE_BYTES = 50 * 1024 * 1024;
+
+/** Map a content-type / URL to (mimeType, file extension) for a media output. */
+function mediaKindFor(
+  contentType: string,
+  url: string,
+): { mime: string; ext: string } | null {
+  const ct = contentType.split(";")[0].trim().toLowerCase();
+  const known: Record<string, string> = {
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/ogg": "ogg",
+    "audio/webm": "weba",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+  if (known[ct]) return { mime: ct, ext: known[ct] };
+  // Fall back to the URL extension when the server sends a generic type.
+  const m = url.split("?")[0].match(/\.([a-z0-9]{2,4})$/i);
+  const ext = m?.[1]?.toLowerCase();
+  const byExt: Record<string, string> = {
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+    ogg: "audio/ogg",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+    gif: "image/gif",
+  };
+  if (ext && byExt[ext]) return { mime: byExt[ext], ext };
+  if (ct.startsWith("video/") || ct.startsWith("audio/") || ct.startsWith("image/")) {
+    return { mime: ct, ext: ct.split("/")[1] || "bin" };
+  }
+  return null;
+}
+
+/**
+ * Download each media output URL and persist it as a chat attachment so the
+ * generated file auto-appears (and plays) in chat — instead of only being a
+ * text URL the model has to be prompted to fetch later. Non-media or oversized
+ * outputs are left as URLs. Best-effort: a failed download just keeps the URL.
+ */
+async function materializeOutputs(
+  urls: string[],
+  model: string,
+  signal: AbortSignal | undefined,
+): Promise<{ attachmentIds: string[]; filenames: string[] }> {
+  const attachmentIds: string[] = [];
+  const filenames: string[] = [];
+  const base = (model.split("/").pop() ?? "output").replace(/[^a-z0-9-]+/gi, "-");
+  let index = 0;
+  for (const url of urls) {
+    index += 1;
+    try {
+      const res = await fetch(url, signal ? { signal } : {});
+      if (!res.ok) continue;
+      const kind = mediaKindFor(res.headers.get("content-type") ?? "", url);
+      if (!kind) continue; // not a media file — leave as URL
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength === 0 || buf.byteLength > MAX_MATERIALIZE_BYTES) continue;
+      const filename = `${base}${urls.length > 1 ? `-${index}` : ""}.${kind.ext}`;
+      const attachment = uploadAttachmentFromBytes(filename, kind.mime, buf);
+      attachmentIds.push(attachment.id);
+      filenames.push(filename);
+    } catch {
+      // best-effort — keep the URL in the text output
+    }
+  }
+  return { attachmentIds, filenames };
+}
 
 /** Default and ceiling for how long to poll a prediction (seconds). */
 const DEFAULT_WAIT_SECONDS = 120;
@@ -275,8 +360,24 @@ export async function run(
   }
 
   const label = urls.length === 1 ? "1 output" : `${urls.length} outputs`;
+
+  // Materialize media outputs into chat attachments so the generated file
+  // auto-appears (and plays) in chat without the model having to be asked to
+  // "show it". Non-media/oversized outputs stay as URLs.
+  const { attachmentIds, filenames } = await materializeOutputs(
+    urls,
+    model,
+    context.signal,
+  );
+
+  const deliveredNote =
+    attachmentIds.length > 0
+      ? `\nDelivered as ${attachmentIds.length === 1 ? "an attachment" : `${attachmentIds.length} attachments`} in chat: ${filenames.join(", ")}.`
+      : "";
+
   return {
-    content: `Replicate model ${model} produced ${label}:\n${urls.join("\n")}`,
+    content: `Replicate model ${model} produced ${label}:\n${urls.join("\n")}${deliveredNote}`,
     isError: false,
+    ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
   };
 }

@@ -282,6 +282,20 @@ export async function buildWorkbook(parsed: SheetInput[]): Promise<{
       let sheetFormulas = 0;
       const sheetResults = computed.get(sheet.name);
 
+      // Apply column-level number formats FIRST, so per-cell formats set in the
+      // write loop below win. ExcelJS's Column.numFmt setter overwrites the
+      // numFmt of every existing cell in the column — so if this ran after the
+      // cell loop, a column "$#,##0" would clobber a per-cell "0.0%" (a percent
+      // margin row would render as "$1"). Setting it before the cells exist
+      // makes it a column default that per-cell writes override.
+      if (sheet.number_formats) {
+        for (const [col, fmt] of Object.entries(sheet.number_formats)) {
+          if (/^[A-Z]{1,2}$/i.test(col) && typeof fmt === "string") {
+            ws.getColumn(col.toUpperCase()).numFmt = fmt;
+          }
+        }
+      }
+
       for (let r = 0; r < sheet.rows.length; r++) {
         const rowValues = sheet.rows[r];
         const row = ws.getRow(r + 1);
@@ -323,13 +337,6 @@ export async function buildWorkbook(parsed: SheetInput[]): Promise<{
         sheet.column_widths.forEach((w, idx) => {
           ws.getColumn(idx + 1).width = w;
         });
-      }
-      if (sheet.number_formats) {
-        for (const [col, fmt] of Object.entries(sheet.number_formats)) {
-          if (/^[A-Z]{1,2}$/i.test(col) && typeof fmt === "string") {
-            ws.getColumn(col.toUpperCase()).numFmt = fmt;
-          }
-        }
       }
 
       formulaCells += sheetFormulas;

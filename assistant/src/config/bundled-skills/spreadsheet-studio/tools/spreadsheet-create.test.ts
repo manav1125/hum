@@ -107,6 +107,34 @@ describe("spreadsheet_create input validation", () => {
   });
 });
 
+describe("per-cell number format survives column format", () => {
+  // The live bug: a percent margin row inside a column that also has a
+  // "$#,##0" column format rendered as "$1" because the column-level numFmt
+  // pass clobbered the per-cell "0.0%". Column formats must be applied before
+  // per-cell writes so the per-cell format wins.
+  test("a per-cell percent format is not clobbered by a column currency format", async () => {
+    const { buffer } = await buildWorkbook([
+      {
+        name: "Model",
+        rows: [
+          ["Metric", "M1"],
+          ["Revenue", 52500],
+          [{ value: "Gross Margin %", bold: false }, { value: 0.9, format: "0.0%" }],
+        ],
+        header: true,
+        number_formats: { B: "$#,##0" },
+      },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws = wb.getWorksheet("Model")!;
+    // The margin cell keeps its percent format...
+    expect(ws.getRow(3).getCell(2).numFmt).toBe("0.0%");
+    // ...while a plain currency cell in the same column keeps the column format.
+    expect(ws.getRow(2).getCell(2).numFmt).toBe("$#,##0");
+  });
+});
+
 describe("provider-stringified arguments", () => {
   // Open-weight brains over OpenRouter routinely serialize nested tool args as
   // JSON strings. The live failure this guards: `sheets` arrived as a string,

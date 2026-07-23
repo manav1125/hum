@@ -78,16 +78,27 @@ export const AttachmentPreviewModal: FC<AttachmentPreviewModalProps> = ({
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
+  const mime = attachment.mimeType.toLowerCase();
+  const isVideo = mime.startsWith("video/");
+  const isAudio = mime.startsWith("audio/");
+  // Playable media MUST use the real bytes, not a preview thumbnail: for large
+  // videos the daemon ships only a JPEG thumbnail in `previewUrl`, and a
+  // `<video>`/`<audio>` element can't decode a JPEG (symptom: 0:00, no
+  // playback). So force a content fetch for audio/video even when previewUrl
+  // is set, and prefer the fetched blob URL when rendering the player.
+  const needsContentFetch = isVideo || isAudio;
+
   useEffect(() => {
     if (open) {
       closeButtonRef.current?.focus();
     }
   }, [open]);
 
-  // Lazily fetch attachment content as a blob when no previewUrl is supplied.
+  // Lazily fetch attachment content as a blob when no previewUrl is supplied,
+  // or always for playable media (audio/video) whose previewUrl is a thumbnail.
   useEffect(() => {
     if (!open) return;
-    if (attachment.previewUrl) return;
+    if (attachment.previewUrl && !needsContentFetch) return;
     if (!assistantId || !attachment.id) return;
 
     // Synthetic IDs created by the text-parsing fallback
@@ -143,7 +154,7 @@ export const AttachmentPreviewModal: FC<AttachmentPreviewModalProps> = ({
       setIsLoadingPreview(false);
       setPreviewError(null);
     };
-  }, [open, attachment.previewUrl, attachment.id, assistantId]);
+  }, [open, attachment.previewUrl, attachment.id, assistantId, needsContentFetch]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -178,9 +189,10 @@ export const AttachmentPreviewModal: FC<AttachmentPreviewModalProps> = ({
     return null;
   }
 
-  const mime = attachment.mimeType.toLowerCase();
   const isImage = mime.startsWith("image/");
-  const isVideo = mime.startsWith("video/");
+  // Playable media renders from the fetched blob (objectUrl) rather than the
+  // thumbnail previewUrl, so a real video/audio stream decodes and plays.
+  const mediaSrc = objectUrl ?? effectiveUrl;
   // Some uploads come through with a generic application/octet-stream MIME;
   // fall back to the filename extension so a real PDF still gets the inline
   // preview branch.
@@ -242,13 +254,25 @@ export const AttachmentPreviewModal: FC<AttachmentPreviewModalProps> = ({
       );
     }
 
-    if (isVideo && effectiveUrl) {
+    if (isVideo && mediaSrc) {
       return (
         <video
-          src={effectiveUrl}
+          src={mediaSrc}
           controls
+          autoPlay
           className="max-h-[80vh] max-w-[90vw] rounded"
         />
+      );
+    }
+
+    if (isAudio && mediaSrc) {
+      return (
+        <div className="flex w-[min(90vw,520px)] flex-col items-center rounded-lg border border-white/15 bg-white/[0.08] p-8">
+          <p className="mb-4 text-body-medium-default text-white/90">
+            {attachment.filename}
+          </p>
+          <audio src={mediaSrc} controls autoPlay className="w-full" />
+        </div>
       );
     }
 

@@ -284,9 +284,20 @@ export class HostBrowserProxy {
           { requestId, cdpMethod: input.cdpMethod },
           "Host browser proxy request timed out",
         );
+        // Emit a STRUCTURED transport-error envelope (not a bare string) so
+        // ExtensionCdpClient classifies this as a transport-level "timeout"
+        // (a member of TRANSPORT_ERROR_CODES) and the factory FAILS OVER to
+        // the next backend (local Playwright) in auto mode. A connected-but-
+        // dead ("zombie") extension that never returns a host_browser_result
+        // would otherwise hang 30s and then be misread as a non-failover
+        // cdp_error — surfacing to the user as "browser tools are dead"
+        // instead of transparently driving a working browser.
         resolve({
-          content:
-            "Host browser proxy timed out waiting for extension response (check SSE connectivity and /v1/host-browser-result callback failures such as 404/401).",
+          content: JSON.stringify({
+            code: "timeout",
+            message:
+              "Host browser proxy timed out waiting for extension response (the Chrome extension appears connected but is not replying — reinstall/re-pair it to drive your own signed-in browser). Check SSE connectivity and /v1/host-browser-result callback failures such as 404/401.",
+          }),
           isError: true,
         });
       }, timeoutSec * 1000);
