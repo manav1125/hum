@@ -2,12 +2,16 @@
  * Chrome MV3 service worker — Cue browser relay (SSE bridge).
  *
  * Connects to a Cue gateway's SSE `/v1/events` endpoint. The extension
- * pairs with the gateway over loopback (or a user-provided gateway URL)
- * via `POST /v1/pair`, which mints a guardian-bound capability token
+ * pairs with the gateway to obtain a guardian-bound edge token
  * (`Authorization: Bearer <token>`) used on the SSE stream and on the
- * host-browser callback POSTs. There is NO external identity provider in
- * the shipped extension — the gateway's own pairing flow is the sole
- * auth path.
+ * host-browser callback POSTs. Pairing takes one of two paths (see
+ * pair-client.ts + acquirePairToken):
+ *   - a **loopback** desktop-app gateway pairs zero-auth via `POST /v1/pair`;
+ *   - a **remote** self-hosted instance pairs via `POST /v1/pair/session`,
+ *     presenting the user's signed-in `actor_client_v1` session token read
+ *     from the open Cue tab (session-token.ts).
+ * There is NO external identity provider in the shipped extension — the
+ * gateway's own pairing flow is the sole auth path.
  *
  * The worker owns the full connect lifecycle:
  *   - **One-click Connect**: The popup sends `connect` and the worker
@@ -49,6 +53,17 @@ import {
   type HostBrowserSessionInvalidatedEnvelope,
 } from "./host-browser-dispatcher.js";
 import { SseConnection, type SseMode } from "./sse-connection.js";
+import {
+  detectCueGatewayUrl,
+  normalizeOrigin,
+  probeCueGateway,
+} from "./instance-detect.js";
+import {
+  isLoopbackGatewayUrl,
+  requestLoopbackPairToken,
+  requestSessionPairToken,
+} from "./pair-client.js";
+import { readActorSessionToken } from "./session-token.js";
 import { appendEvent, clearEventLog, getEventLog, getOperations, getOperationById, recordCallbackFailure, recordRequest, recordResponse } from "./event-log.js";
 import { getClientId } from "./client-identity.js";
 import {
@@ -80,12 +95,20 @@ import {
 const GATEWAY_URL_STORAGE_KEY = "vellum.selfHostedGatewayUrl";
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:7830";
 
-async function getStoredGatewayUrl(): Promise<string> {
+/**
+ * The raw stored gateway URL, or `null` when the user has never set one and
+ * auto-detection has never persisted one. Callers that need to know whether
+ * a *real* target exists (vs. falling back to the loopback default) use
+ * this instead of {@link getStoredGatewayUrl}.
+ */
+async function getRawStoredGatewayUrl(): Promise<string | null> {
   const result = await chrome.storage.local.get(GATEWAY_URL_STORAGE_KEY);
   const stored = result[GATEWAY_URL_STORAGE_KEY];
-  return typeof stored === "string" && stored.length > 0
-    ? stored
-    : DEFAULT_GATEWAY_URL;
+  return typeof stored === "string" && stored.length > 0 ? stored : null;
+}
+
+async function getStoredGatewayUrl(): Promise<string> {
+  return (await getRawStoredGatewayUrl()) ?? DEFAULT_GATEWAY_URL;
 }
 
 async function setStoredGatewayUrl(url: string): Promise<void> {
@@ -720,7 +743,92 @@ function isAnyConnectionOpen(): boolean {
   return sseConnection !== null && sseConnection.isOpen();
 }
 
-async function doConnect(_options: ConnectOptions): Promise<void> {
+/**
+ * Read every open tab's URL and try to detect a reachable Cue gateway
+ * origin among them. Best-effort — resolves `null` on any failure so the
+ * caller can fall through to other resolution strategies.
+ */
+async function detectGatewayFromOpenTabs(): Promise<string | null> {
+  try {
+    // Order the active/last-focused tab first so, when several Cue tabs are
+    // open, the one the user is looking at wins.
+    const [active, all] = await Promise.all([
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }),
+      chrome.tabs.query({}),
+    ]);
+    const urls: Array<string | undefined> = [
+      ...active.map((t) => t.url),
+      ...all.map((t) => t.url),
+    ];
+    return await detectCueGatewayUrl(urls, fetch);
+  } catch (err) {
+    console.warn("[cue-relay] Gateway auto-detect failed", err);
+    return null;
+  }
+}
+
+/**
+ * Resolve the gateway URL for an interactive connect when the user has not
+ * explicitly entered one. Resolution order:
+ *   1. A reachable Cue instance found among the user's open tabs (the
+ *      common remote self-host case — they're signed into their instance).
+ *   2. The loopback desktop-app gateway, but ONLY if it actually answers
+ *      (so a dead loopback never masquerades as a live connection).
+ * Returns `null` when neither is reachable — the caller surfaces an
+ * actionable "enter your instance URL" state rather than pretending to
+ * connect.
+ */
+async function resolveInteractiveGatewayUrl(): Promise<string | null> {
+  const fromTabs = await detectGatewayFromOpenTabs();
+  if (fromTabs) return fromTabs;
+  try {
+    if (await probeCueGateway(DEFAULT_GATEWAY_URL, fetch)) {
+      return DEFAULT_GATEWAY_URL;
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+/**
+ * Acquire the pairing token for a gateway, choosing the correct path:
+ *
+ *   - **Loopback** gateway → zero-auth `POST /v1/pair` (unchanged).
+ *   - **Remote** self-hosted instance → session-authenticated
+ *     `POST /v1/pair/session`, presenting the user's signed-in
+ *     `actor_client_v1` session token read from the open Cue tab. The session
+ *     token is read only here (on an explicit connect/pair), sent only to that
+ *     instance's own HTTPS origin, and never logged or persisted.
+ *
+ * Throws {@link MissingTokenError} for the actionable "no live session" case
+ * (no matching instance tab / signed out), so the popup can prompt the user to
+ * sign in. Other pairing failures propagate as their underlying error.
+ */
+async function acquirePairToken(gatewayUrl: string): Promise<string | null> {
+  if (isLoopbackGatewayUrl(gatewayUrl)) {
+    const result = await requestLoopbackPairToken(gatewayUrl, fetch);
+    return result.token;
+  }
+
+  const origin = normalizeOrigin(gatewayUrl);
+  if (!origin) {
+    throw new MissingTokenError(`Invalid instance URL: ${gatewayUrl}`);
+  }
+
+  const sessionToken = await readActorSessionToken(origin);
+  if (!sessionToken) {
+    throw new MissingTokenError(
+      "Open and sign in to your Cue instance in this browser, then press Pair. " +
+        "The extension pairs using your signed-in session.",
+    );
+  }
+
+  const result = await requestSessionPairToken(origin, sessionToken, fetch);
+  return result.token;
+}
+
+async function doConnect(options: ConnectOptions): Promise<void> {
   if (isAnyConnectionOpen()) return;
   setConnectionHealth("connecting");
 
@@ -732,32 +840,44 @@ async function doConnect(_options: ConnectOptions): Promise<void> {
   teardownConnections();
 
   currentAuthProfile = "self-hosted";
-  const gatewayUrl = await getStoredGatewayUrl();
+
+  // Resolve the target gateway. Precedence:
+  //   - An explicitly stored URL (user-entered, or a previously detected
+  //     one) always wins.
+  //   - Otherwise, an interactive connect auto-detects the user's instance
+  //     from open tabs (falling back to a *reachable* loopback gateway).
+  //   - A non-interactive connect (bootstrap/keepalive) with nothing stored
+  //     uses the loopback default for backward compatibility.
+  let gatewayUrl = await getRawStoredGatewayUrl();
+  if (!gatewayUrl) {
+    if (options.interactive) {
+      const resolved = await resolveInteractiveGatewayUrl();
+      if (!resolved) {
+        throw new MissingTokenError(
+          "No Cue instance found in your open tabs. Enter your instance URL " +
+            "below (for example https://your-instance.justcue.app), then Pair.",
+        );
+      }
+      gatewayUrl = resolved;
+      // Persist the detected URL so reconnects and callbacks target it too.
+      await setStoredGatewayUrl(gatewayUrl);
+    } else {
+      gatewayUrl = DEFAULT_GATEWAY_URL;
+    }
+  }
 
   // Bail if the user disconnected while we were awaiting above.
   if (!shouldConnect) return;
 
-  // Best-effort pair — if pairing fails the SSE connection will be rejected
-  // by the gateway with a 401. The worker will surface the auth error and
-  // stop reconnecting until the user re-pairs.
+  // Pair to obtain the edge token. A `MissingTokenError` (no live session for a
+  // remote instance) is actionable and must reach the popup so the user can
+  // sign in and retry — it is re-thrown. Any other pairing failure is
+  // best-effort: the SSE connection will be rejected by the gateway with a 401,
+  // the worker surfaces the auth error and stops reconnecting until re-pair.
   try {
-    const pairResp = await fetch(
-      `${gatewayUrl.replace(/\/$/, "")}/v1/pair`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-vellum-interface-id": "chrome-extension",
-        },
-      },
-    );
-    if (pairResp.ok) {
-      const body = (await pairResp.json()) as { token?: string };
-      selfHostedPairToken = body.token ?? null;
-    } else {
-      console.warn("[cue] pair failed:", pairResp.status);
-    }
+    selfHostedPairToken = await acquirePairToken(gatewayUrl);
   } catch (err) {
+    if (err instanceof MissingTokenError) throw err;
     console.warn("[cue] pair request error:", err);
   }
 
@@ -943,6 +1063,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponseFn) => {
       );
     return true; // async
   }
+  if (message.type === "detect-gateway") {
+    // Read-only: probe the user's open tabs for a reachable Cue instance so
+    // the popup can prefill the gateway URL field. Never stores or connects.
+    detectGatewayFromOpenTabs()
+      .then((gatewayUrl) => sendResponseFn({ ok: true, gatewayUrl }))
+      .catch((err) =>
+        sendResponseFn({
+          ok: false,
+          gatewayUrl: null,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    return true; // async
+  }
   if (message.type === "gateway-url-set") {
     const url =
       typeof message.gatewayUrl === "string" ? message.gatewayUrl.trim() : null;
@@ -986,27 +1120,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponseFn) => {
     return true; // async
   }
   if (message.type === "self-hosted-pair") {
-    // The popup calls this when the user clicks "Pair". We attempt
-    // /v1/pair so the popup gets early feedback, and store the JWT so
-    // callbacks work immediately when the popup follows up with "connect".
+    // The popup calls this when the user clicks "Pair". We pair up-front so the
+    // popup gets early feedback, and store the JWT so callbacks work
+    // immediately when the popup follows up with "connect". A loopback gateway
+    // pairs zero-auth; a remote instance pairs with the signed-in session token
+    // read from the open Cue tab (see acquirePairToken).
     (async () => {
       const gatewayUrl = await getStoredGatewayUrl();
       await setStoredUserMode("self-hosted");
-      const pairResp = await fetch(
-        `${gatewayUrl.replace(/\/$/, "")}/v1/pair`,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-vellum-interface-id": "chrome-extension",
-          },
-        },
-      );
-      if (!pairResp.ok) {
-        throw new Error(`Pair failed (${pairResp.status})`);
+      const token = await acquirePairToken(gatewayUrl);
+      if (!token) {
+        throw new Error("Pair failed: gateway returned no token");
       }
-      const body = (await pairResp.json()) as { token?: string };
-      selfHostedPairToken = body.token ?? null;
+      selfHostedPairToken = token;
       sendResponseFn({ ok: true });
     })()
       .catch((err) =>

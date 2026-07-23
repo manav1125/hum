@@ -106,6 +106,7 @@ import {
   handleRevokeDevice,
 } from "./http/routes/devices.js";
 import { handlePair } from "./http/routes/pair.js";
+import { handlePairSession } from "./http/routes/pair-session.js";
 import { createSlackControlPlaneProxyHandler } from "./http/routes/slack-control-plane-proxy.js";
 import { createOAuthAppsProxyHandler } from "./http/routes/oauth-apps-proxy.js";
 import { createOAuthProvidersProxyHandler } from "./http/routes/oauth-providers-proxy.js";
@@ -880,6 +881,20 @@ async function main() {
       method: "POST",
       auth: "none",
       handler: (req, _params, getClientIp) => handlePair(req, getClientIp()),
+    },
+    // ── Session-authenticated REMOTE pairing for the browser extension ──
+    // Unlike /v1/pair (loopback-only, zero-auth), this route is reachable over
+    // the public edge and proves the caller holds the instance owner's live
+    // signed-in session (actor_client_v1 edge token bound to the guardian). It
+    // mints a narrow, guardian-bound chrome_extension_v1 token. Auth is
+    // enforced entirely inside the handler (auth: "custom") so the mint is
+    // bound to the authenticated principal and never falls open on loopback.
+    {
+      path: "/v1/pair/session",
+      method: "POST",
+      auth: "custom",
+      handler: (req, _params, getClientIp) =>
+        handlePairSession(req, getClientIp()),
     },
     // ── Device management (localhost-only, auth: none; self-guards loopback) ──
     {

@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 
 import { useAppContext } from '../AppContext.js';
-import { sendMessage } from '../lib/chrome-message.js';
 import { SelfHostedSettings } from './main/SelfHostedSettings.js';
 import { SessionActions } from './main/SessionActions.js';
 import { StatusCard } from './main/StatusCard.js';
@@ -9,28 +8,15 @@ import { StatusCard } from './main/StatusCard.js';
 /**
  * Main screen showing connection status, activity, and the gateway
  * connection controls. The extension has a single (self-hosted) mode.
+ *
+ * The visible state is derived from the *actual* connection health, never
+ * from "the user picked self-hosted mode". A dead gateway attempt therefore
+ * reads honestly as "not connected — enter your instance URL" instead of a
+ * silent success, and the URL field stays reachable until a real gateway is
+ * reached.
  */
 export function MainScreen() {
-  const { mode, operationCount, selfHostedPaired, setScreen, onSignOut } = useAppContext();
-
-  const [paired, setPaired] = useState(selfHostedPaired);
-
-  useEffect(() => {
-    sendMessage<{
-      ok: boolean;
-      mode: 'self-hosted' | null;
-      selfHostedPaired?: boolean;
-    }>({ type: 'get-session' }).then((response) => {
-      if (!response?.ok) return;
-      if (response.selfHostedPaired) {
-        setPaired(true);
-      }
-    });
-  }, []);
-
-  const handlePaired = useCallback(() => {
-    setPaired(true);
-  }, []);
+  const { mode, health, operationCount, setScreen, onSignOut } = useAppContext();
 
   const handleActivityClick = useCallback(() => {
     setScreen({ name: 'activity' });
@@ -41,13 +27,24 @@ export function MainScreen() {
   }, [setScreen]);
 
   const isSelfHosted = mode === 'self-hosted';
+  const isConnected = health === 'connected';
+  const isConnecting = health === 'connecting' || health === 'reconnecting';
 
-  const showConnectedState = isSelfHosted && paired;
-  const showSelfHostedSettings = isSelfHosted && !paired;
+  // Status card: shown once a connection exists or is being attempted, or
+  // when the last attempt failed (so the error is visible). Hidden only in
+  // the pristine/paused state before any attempt.
+  const showStatusCard = isSelfHosted && health !== 'paused';
+  // Activity list is only meaningful on a live connection.
+  const showConnectedState = isSelfHosted && isConnected;
+  // The gateway URL field must ALWAYS be reachable when not truly connected,
+  // so a self-hosted user can enter or correct their instance URL. It is
+  // hidden only while genuinely connected or actively (re)connecting.
+  const showSelfHostedSettings =
+    isSelfHosted && !isConnected && !isConnecting;
 
   return (
     <div className="flex min-h-[calc(300px-32px)] flex-col">
-      {showConnectedState && <StatusCard />}
+      {showStatusCard && <StatusCard />}
 
       {showConnectedState && (
         <button
@@ -79,7 +76,7 @@ export function MainScreen() {
         </button>
       )}
 
-      {showSelfHostedSettings && <SelfHostedSettings onPaired={handlePaired} />}
+      {showSelfHostedSettings && <SelfHostedSettings />}
 
       <button
         type="button"
@@ -104,7 +101,7 @@ export function MainScreen() {
         </svg>
       </button>
 
-      <SessionActions paired={paired} onBack={onSignOut} />
+      <SessionActions paired={isConnected} onBack={onSignOut} />
     </div>
   );
 }

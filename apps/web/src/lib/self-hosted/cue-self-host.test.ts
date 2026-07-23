@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
   clearSelfHostMode,
   decodeActorTokenExpMs,
+  EXTENSION_SESSION_TOKEN_LS_KEYS,
   getStoredActorToken,
   isCueSelfHostDeploy,
   isSelfHostMode,
@@ -69,6 +70,36 @@ describe("seedCueToken + durable storage", () => {
   test("rejects a mistyped non-JWT paste", () => {
     expect(seedCueToken("garbage")).toBe(false);
     expect(isSelfHostMode()).toBe(false);
+  });
+});
+
+describe("EXTENSION_SESSION_TOKEN_LS_KEYS (browser-extension handoff contract)", () => {
+  // The Cue browser extension reads the signed-in session token out of these
+  // localStorage keys (in order) to pair a remote instance via
+  // POST /v1/pair/session. Lock the contract: a rename here must be mirrored in
+  // clients/chrome-extension/background/session-token.ts or pairing breaks.
+  test("names the durable actor key first, then the gateway-token slot", () => {
+    expect(EXTENSION_SESSION_TOKEN_LS_KEYS).toEqual([
+      LS_ACTOR_TOKEN_KEY,
+      LS_TOKEN_KEY,
+    ]);
+  });
+
+  test("seeding a session populates the first handoff key with the actor token", () => {
+    const token = makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 });
+    seedCueToken(token);
+    // The key the extension reads first must carry the actor_client_v1 token
+    // that POST /v1/pair/session requires.
+    expect(localStorage.getItem(EXTENSION_SESSION_TOKEN_LS_KEYS[0])).toBe(token);
+  });
+
+  test("disconnect clears every handoff key so the extension cannot read a stale token", () => {
+    const token = makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 });
+    seedCueToken(token);
+    clearSelfHostMode();
+    for (const key of EXTENSION_SESSION_TOKEN_LS_KEYS) {
+      expect(localStorage.getItem(key)).toBeNull();
+    }
   });
 });
 

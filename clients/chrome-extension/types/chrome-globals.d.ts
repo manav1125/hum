@@ -341,6 +341,33 @@ interface ChromeActionNamespace {
   setIcon(details: ChromeActionSetIconDetails): Promise<void>;
 }
 
+interface ChromeScriptingInjectionTarget {
+  tabId: number;
+  allFrames?: boolean;
+  frameIds?: number[];
+}
+
+interface ChromeScriptingResult<R> {
+  result?: R;
+  frameId?: number;
+}
+
+interface ChromeScriptingFuncInjection<Args extends unknown[], R> {
+  target: ChromeScriptingInjectionTarget;
+  func: (...args: Args) => R;
+  args?: Args;
+  world?: "ISOLATED" | "MAIN";
+}
+
+interface ChromeScriptingNamespace {
+  // Generic over the injected function's args + return type, matching the
+  // shape of the official @types/chrome `executeScript` overload. This keeps
+  // the injected reader fully type-checked without resorting to `any`.
+  executeScript<Args extends unknown[], R>(
+    injection: ChromeScriptingFuncInjection<Args, R>,
+  ): Promise<Array<ChromeScriptingResult<R>>>;
+}
+
 interface ChromeGlobal {
   action: ChromeActionNamespace;
   alarms: ChromeAlarmsNamespace;
@@ -350,6 +377,7 @@ interface ChromeGlobal {
   tabs: ChromeTabsNamespace;
   windows: ChromeWindowsNamespace;
   debugger: ChromeDebuggerNamespace;
+  scripting: ChromeScriptingNamespace;
 }
 
 declare const chrome: ChromeGlobal;

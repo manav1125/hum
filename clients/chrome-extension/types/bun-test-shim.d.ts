@@ -54,11 +54,12 @@ declare module 'bun:test' {
     toBeString(): R;
     toMatch(expected: string | RegExp): R;
     toContain(expected: unknown): R;
+    toHaveLength(expected: number): R;
     toHaveProperty(path: string, value?: unknown): R;
+    toMatchObject(expected: object): R;
     not: Matchers<R>;
-    rejects: {
-      toThrow(expected?: string | RegExp | Error): Promise<void>;
-    };
+    rejects: Matchers<Promise<void>>;
+    resolves: Matchers<Promise<void>>;
     toThrow(expected?: string | RegExp | Error): R;
   }
 

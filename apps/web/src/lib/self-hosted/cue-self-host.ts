@@ -30,6 +30,34 @@ const LS_SELF_HOST_FLAG = "cue:selfHost";
 // the gateway token slot from this on boot/resume whenever the slot is missing.
 const LS_ACTOR_TOKEN_KEY = "cue:selfHost:actorToken";
 
+/**
+ * Cross-surface handoff contract for the Cue browser extension.
+ *
+ * To pair with a REMOTE instance, the extension presents the owner's signed-in
+ * `actor_client_v1` session token to the gateway's `POST /v1/pair/session`. The
+ * extension has no identity provider of its own; it reads that token straight
+ * out of the open Cue tab's `localStorage` (it has `<all_urls>` + `scripting`
+ * permission — see `clients/chrome-extension/background/session-token.ts`).
+ *
+ * This array is the SOURCE OF TRUTH for the keys the extension reads, in
+ * preference order: the durable actor-token key first, then the active
+ * gateway-token slot as a fallback for sessions seeded before the durable key
+ * existed. The extension keeps its own copy of these strings (it cannot import
+ * this module across the repo boundary); exporting them here makes the contract
+ * explicit and gives `cue-self-host.test.ts` a hook to guard against a silent
+ * rename that would break pairing. Keep the two in sync.
+ *
+ * The web app already "makes the token available" simply by persisting it under
+ * these keys in self-host mode (`writeSelfHostToken`) and clearing it on
+ * disconnect (`clearSelfHostMode`); no extra write is needed. The token never
+ * leaves the machine except when the extension sends it to this same instance's
+ * own HTTPS origin, on an explicit user Connect.
+ */
+export const EXTENSION_SESSION_TOKEN_LS_KEYS = [
+  LS_ACTOR_TOKEN_KEY,
+  LS_TOKEN_KEY,
+] as const;
+
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d — matches actor_client_v1
 
 /** True when this SPA has been put into self-hosted gateway mode. */

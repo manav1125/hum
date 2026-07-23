@@ -69,6 +69,11 @@ export function App() {
     setMode('self-hosted');
     sendMessage({ type: 'set-mode', mode: 'self-hosted' });
     setScreen({ name: 'main' });
+    // Kick off auto-detect + connect. The worker probes open tabs for the
+    // user's Cue instance and pairs against it. If nothing is found it lands
+    // in an actionable state and the main screen shows the URL field so the
+    // user can enter their instance URL manually.
+    sendMessage({ type: 'connect' });
   }, []);
 
   const handleSignOut = useCallback(() => {

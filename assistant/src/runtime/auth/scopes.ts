@@ -27,6 +27,13 @@ const PROFILE_SCOPES: Record<ScopeProfile, ReadonlySet<Scope>> = {
     "feature_flags.read",
     "feature_flags.write",
   ]),
+  // Minimal profile for the browser extension's host_browser relay loop:
+  // chat.read subscribes to the SSE event stream (GET /v1/events); approval.write
+  // resolves pending host-browser requests (POST /v1/host-browser-result). The
+  // gateway mints this profile only for a guardian-bound principal (see
+  // gateway/src/http/routes/pair-session.ts). Keep in sync with the gateway's
+  // copy in gateway/src/auth/scopes.ts.
+  chrome_extension_v1: new Set<Scope>(["chat.read", "approval.write"]),
   gateway_ingress_v1: new Set<Scope>(["ingress.write", "internal.write"]),
   gateway_service_v1: new Set<Scope>([
     "chat.read",
