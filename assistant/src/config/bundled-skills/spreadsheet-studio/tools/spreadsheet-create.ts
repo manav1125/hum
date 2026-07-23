@@ -82,7 +82,29 @@ function sanitizeFilename(name: string): string {
   return `${clean}.xlsx`;
 }
 
-function parseSheets(raw: unknown): SheetInput[] | string {
+/**
+ * Coerce a value that should be an array/object but may arrive as a JSON
+ * string. Open-weight brains (DeepSeek et al. over OpenRouter) routinely
+ * serialize nested tool arguments into strings — `sheets: "[{...}]"` instead
+ * of `sheets: [{...}]`. Rejecting that outright is what pushed the model to
+ * improvise the workbook via bash. Parse it here instead so a well-formed
+ * request succeeds regardless of how the provider encoded it.
+ */
+function coerceJson(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return raw;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return raw;
+  }
+}
+
+/** Exported for tests: validates + normalizes the `sheets` argument, including
+ * the provider-stringified forms `coerceJson` unwraps. */
+export function parseSheets(rawInput: unknown): SheetInput[] | string {
+  const raw = coerceJson(rawInput);
   if (!Array.isArray(raw) || raw.length === 0) {
     return "Provide a non-empty `sheets` array.";
   }
@@ -91,9 +113,15 @@ function parseSheets(raw: unknown): SheetInput[] | string {
   }
   const sheets: SheetInput[] = [];
   for (let i = 0; i < raw.length; i++) {
-    const s = raw[i] as Record<string, unknown>;
+    const s = coerceJson(raw[i]) as Record<string, unknown>;
     if (!s || typeof s.name !== "string" || !s.name.trim()) {
       return `Sheet ${i} is missing a string \`name\`.`;
+    }
+    // Same provider-stringification defense at the rows level: `rows` may be a
+    // JSON string, and each row inside it may itself be stringified.
+    s.rows = coerceJson(s.rows);
+    if (Array.isArray(s.rows)) {
+      s.rows = (s.rows as unknown[]).map((row) => coerceJson(row));
     }
     if (!Array.isArray(s.rows)) {
       return `Sheet "${s.name}" is missing a \`rows\` array (array of row arrays).`;

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import ExcelJS from "exceljs";
 
 import type { ToolContext } from "../../../../tools/types.js";
-import { buildWorkbook, run } from "./spreadsheet-create.js";
+import { buildWorkbook, parseSheets, run } from "./spreadsheet-create.js";
 
 const ctx = { conversationId: "test", workingDir: "/tmp" } as ToolContext;
 
@@ -104,6 +104,59 @@ describe("spreadsheet_create input validation", () => {
       ctx,
     );
     expect(badRow.isError).toBe(true);
+  });
+});
+
+describe("provider-stringified arguments", () => {
+  // Open-weight brains over OpenRouter routinely serialize nested tool args as
+  // JSON strings. The live failure this guards: `sheets` arrived as a string,
+  // the tool answered "sheets must be an array", and the model fell back to
+  // hand-building the workbook via bash. The tool must parse the string.
+  test("accepts `sheets` passed as a JSON string", () => {
+    const parsed = parseSheets(
+      JSON.stringify([
+        { name: "Budget", rows: [["Item", "Cost"], ["Rent", 1000]] },
+      ]),
+    );
+    expect(Array.isArray(parsed)).toBe(true);
+    expect((parsed as { name: string }[])[0].name).toBe("Budget");
+  });
+
+  test("accepts a sheet's `rows` passed as a JSON string", () => {
+    const parsed = parseSheets([
+      { name: "Budget", rows: JSON.stringify([["Item", "Cost"], ["Rent", 1000]]) },
+    ]);
+    expect(Array.isArray(parsed)).toBe(true);
+    const rows = (parsed as { rows: unknown[][] }[])[0].rows;
+    expect(rows.length).toBe(2);
+    expect(rows[0][0]).toBe("Item");
+  });
+
+  test("the exact live payload — a whole workbook as one JSON string — builds", async () => {
+    // Byte-for-byte the shape that failed in prod: sheets serialized to a
+    // string by the brain. It must parse AND produce a real workbook.
+    const parsed = parseSheets(
+      JSON.stringify([
+        {
+          name: "Weekly Budget",
+          rows: [
+            ["Category", "Amount"],
+            ["Rent", 1500],
+            ["Food", 400],
+            ["Transport", 200],
+            ["Total", "=SUM(B2:B4)"],
+          ],
+        },
+      ]),
+    );
+    expect(Array.isArray(parsed)).toBe(true);
+    const { formulaCells } = await buildWorkbook(parsed as Parameters<typeof buildWorkbook>[0]);
+    expect(formulaCells).toBe(1);
+  });
+
+  test("still rejects genuinely malformed sheets, not silently", () => {
+    expect(typeof parseSheets("not json at all")).toBe("string");
+    expect(typeof parseSheets("[]")).toBe("string"); // empty array
   });
 });
 
