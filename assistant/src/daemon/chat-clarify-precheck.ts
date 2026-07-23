@@ -358,6 +358,7 @@ export function buildClarifyDirective(questions: string[]): string {
       "<clarify_directive>",
       "This request looks under-specified for an action with real consequences. Before doing ANY work on it — no web searches, no browsing, no actions — call the `ask_question` tool to ask the user exactly this ONE question, then stop and wait for their answer:",
       cleaned[0]!,
+      "Do NOT ask it as plain prose. Use the `ask_question` tool so it renders as a click-through card: give it 2–4 concrete options and list the single recommended (default) option FIRST, so the user can answer in one tap. The card adds a free-text slot automatically — do not add a 'something else' option yourself. If the user skips, proceed with that recommended default.",
       "If, after re-reading the message and the context above, the answer is actually already clear, ignore this and proceed.",
       "</clarify_directive>",
     ].join("\n");
@@ -368,7 +369,7 @@ export function buildClarifyDirective(questions: string[]): string {
     "<clarify_directive>",
     "This request looks under-specified for an action with real consequences, and more than one input is genuinely needed. Before doing ANY work on it — no web searches, no browsing, no actions — call the `ask_question` tool ONCE, passing ALL of these questions together in its `questions` array (do not ask them one message at a time), then stop and wait for the answers:",
     numbered,
-    "For each question offer 2–4 concrete options; the card adds a free-text slot automatically. If the user skips one, proceed with a reasonable default for it. If the context above already answers one of these, drop that question rather than asking it.",
+    "Do NOT ask them as plain prose. For each question give 2–4 concrete options and list the single recommended (default) option FIRST, so the whole set renders as a fast click-through card the user can accept in a few taps. The card adds a free-text slot automatically — do not add a 'something else' option yourself. If the user skips one, proceed with its recommended default. If the context above already answers one of these, drop that question rather than asking it.",
     "</clarify_directive>",
   ].join("\n");
 }

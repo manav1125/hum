@@ -114,6 +114,17 @@ describe("buildClarifyDirective / appendClarifyDirective", () => {
     expect(d).toContain("</clarify_directive>");
   });
 
+  test("single question demands the structured click-through card, not prose", () => {
+    const d = buildClarifyDirective(["Which trip — the Bali one or Tokyo?"]);
+    // The card must render identically to the Create template elicit form:
+    // 2–4 options with the recommended default surfaced first, one-tap.
+    expect(d).toContain("2–4 concrete options");
+    expect(d.toLowerCase()).toContain("recommended");
+    expect(d.toLowerCase()).toContain("default");
+    expect(d.toLowerCase()).toContain("first");
+    expect(d.toLowerCase()).toContain("not ask it as plain prose");
+  });
+
   test("several questions route to ONE batched ask_question call", () => {
     const d = buildClarifyDirective([
       "Which trip?",
@@ -127,6 +138,17 @@ describe("buildClarifyDirective / appendClarifyDirective", () => {
     expect(d).toContain("1. Which trip?");
     expect(d).toContain("2. Which dates?");
     expect(d).toContain("3. How many travellers?");
+  });
+
+  test("batched questions each demand options with a default listed first", () => {
+    const d = buildClarifyDirective([
+      "Which trip?",
+      "Which dates?",
+    ]);
+    expect(d).toContain("2–4 concrete options");
+    expect(d.toLowerCase()).toContain("recommended");
+    expect(d.toLowerCase()).toContain("first");
+    expect(d.toLowerCase()).toContain("not ask them as plain prose");
   });
 
   test("empty / whitespace-only list yields no directive", () => {

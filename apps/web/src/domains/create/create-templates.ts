@@ -207,13 +207,74 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Positioning, demo flow, and go-to-market plan.",
         prompt:
           "Build a product launch presentation as a slide-deck app: positioning and value prop, the problem we solve, a demo walkthrough section, pricing/packaging, launch timeline, and the go-to-market plan. Energetic but professional visual direction.",
+        elicit: [
+          {
+            question: "What are you launching?",
+            options: [
+              { label: "A software product or feature", isDefault: true },
+              { label: "A consumer product" },
+              { label: "A service or program" },
+            ],
+            freeTextPlaceholder: "e.g. our new mobile app",
+          },
+          {
+            question: "Who's the primary audience?",
+            options: [
+              { label: "Prospects & customers", isDefault: true },
+              { label: "Press & analysts" },
+              { label: "Internal sales & team" },
+            ],
+          },
+          {
+            question: "When does it launch?",
+            options: [
+              { label: "This quarter", isDefault: true },
+              { label: "Next month" },
+              { label: "Already live" },
+            ],
+          },
+          {
+            question: "Visual direction?",
+            options: [
+              { label: "Energetic & professional", isDefault: true },
+              { label: "Bold & consumer" },
+              { label: "Minimal & premium" },
+            ],
+          },
+        ],
       },
       {
         id: "team-offsite",
         title: "Team offsite agenda",
         description: "Schedule, goals, and breakout sessions.",
         prompt:
-          "Build a team offsite agenda as a slide deck app. Include: offsite goals, a time-blocked agenda for two days, breakout session topics, team-building activities, and a closing/next-steps slide. Warm, inviting visual direction.",
+          "Build a team offsite agenda as a slide deck app. Include: offsite goals, a time-blocked agenda, breakout session topics, team-building activities, and a closing/next-steps slide. Warm, inviting visual direction.",
+        elicit: [
+          {
+            question: "How long is the offsite?",
+            options: [
+              { label: "Two days", isDefault: true },
+              { label: "One day" },
+              { label: "Half a day" },
+            ],
+          },
+          {
+            question: "What's the main focus?",
+            options: [
+              { label: "Strategy & planning", isDefault: true },
+              { label: "Team bonding" },
+              { label: "A mix of both" },
+            ],
+          },
+          {
+            question: "Roughly how many people?",
+            options: [
+              { label: "A team (5–15)", isDefault: true },
+              { label: "A small group (under 5)" },
+              { label: "A whole org (15+)" },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -307,6 +368,33 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Daily streaks with a calendar heatmap.",
         prompt:
           "Build a habit tracker app where I can define a few habits and check them off each day. Show current streaks, a calendar heatmap of completions, and a weekly completion rate. Persist my data. Earthy, motivating visual direction.",
+        elicit: [
+          {
+            question: "Which habits to start with?",
+            options: [
+              { label: "Exercise, reading, water, sleep", isDefault: true },
+              { label: "Deep work, learning, journaling" },
+              { label: "I'll add my own" },
+            ],
+            freeTextPlaceholder: "e.g. meditate, no sugar, stretch",
+          },
+          {
+            question: "Track them how often?",
+            options: [
+              { label: "Daily", isDefault: true },
+              { label: "A few times a week" },
+              { label: "Weekly" },
+            ],
+          },
+          {
+            question: "What should it emphasize?",
+            options: [
+              { label: "Streaks + calendar heatmap", isDefault: true },
+              { label: "Just today's checklist" },
+              { label: "Weekly completion rate" },
+            ],
+          },
+        ],
       },
       {
         id: "roi-calculator",
@@ -392,13 +480,69 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Structured agenda, decisions, and action items.",
         prompt:
           "Create a meeting notes document in the editor with sections for attendees, agenda, discussion notes, decisions made, and action items (with owner and due date). Give me a clean reusable structure I can fill in during the meeting.",
+        elicit: [
+          {
+            question: "What kind of meeting?",
+            description: "Tailors which sections the template leads with.",
+            options: [
+              { label: "Team sync / standup", isDefault: true },
+              { label: "Client or external call" },
+              { label: "Retrospective" },
+              { label: "1:1" },
+            ],
+            freeTextPlaceholder: "e.g. board meeting, sprint planning",
+          },
+          {
+            question: "Include an action-items tracker?",
+            options: [
+              { label: "Yes — owner + due date", isDefault: true },
+              { label: "No — just notes" },
+            ],
+          },
+        ],
       },
       {
         id: "blog-post",
         title: "Blog post",
         description: "A drafted article ready to edit and publish.",
         prompt:
-          "Write a blog post in the document editor. Ask me nothing further if you can infer a sensible topic from context; otherwise pick an engaging tech/product topic. Include a strong hook, 3–4 well-structured sections with subheadings, and a closing call to action. Make it genuinely readable, not filler.",
+          "Write a blog post in the document editor. Include a strong hook, 3–4 well-structured sections with subheadings, and a closing call to action. Make it genuinely readable, not filler.",
+        elicit: [
+          {
+            question: "What's the topic?",
+            description: "Pick the default to let me choose a fitting one.",
+            options: [
+              { label: "Infer a good topic from my context", isDefault: true },
+              { label: "A product or tech topic" },
+              { label: "Thought leadership / opinion" },
+            ],
+            freeTextPlaceholder: "e.g. why we rebuilt our onboarding",
+          },
+          {
+            question: "Who's the audience?",
+            options: [
+              { label: "General readers", isDefault: true },
+              { label: "Technical / practitioners" },
+              { label: "Business / executives" },
+            ],
+          },
+          {
+            question: "What tone?",
+            options: [
+              { label: "Informative & clear", isDefault: true },
+              { label: "Conversational" },
+              { label: "Persuasive / opinionated" },
+            ],
+          },
+          {
+            question: "How long?",
+            options: [
+              { label: "Standard (~1,000 words)", isDefault: true },
+              { label: "Short (~600 words)" },
+              { label: "In-depth (~1,800 words)" },
+            ],
+          },
+        ],
       },
       {
         id: "one-pager",
@@ -406,6 +550,34 @@ export const CREATE_MODES: CreateMode[] = [
         description: "A crisp single-page strategic brief.",
         prompt:
           "Write a strategy one-pager in the document editor: context, the decision or recommendation, supporting rationale, trade-offs considered, and next steps. Keep it tight and skimmable — this should fit on a single page.",
+        elicit: [
+          {
+            question: "What's this one-pager about?",
+            description: "Pick the default to let me infer it from context.",
+            options: [
+              { label: "Infer it from my context", isDefault: true },
+              { label: "A strategic recommendation" },
+              { label: "A project or initiative" },
+            ],
+            freeTextPlaceholder: "e.g. whether to enter the EU market",
+          },
+          {
+            question: "Who's the audience?",
+            options: [
+              { label: "Leadership / exec", isDefault: true },
+              { label: "The team" },
+              { label: "External stakeholders" },
+            ],
+          },
+          {
+            question: "What should it drive?",
+            options: [
+              { label: "A decision", isDefault: true },
+              { label: "Alignment" },
+              { label: "Awareness" },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -576,7 +748,41 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Competitor scan",
         description: "Research rivals and compare positioning.",
         prompt:
-          "Research my main competitors on the web and put together a competitor scan. For each one capture: what they do, target customer, pricing if public, key differentiators, and recent moves. Then give me a short comparison and where there's an opening. Browse their sites where useful. Ask me who the competitors are if it isn't obvious from context.",
+          "Research my main competitors on the web and put together a competitor scan. For each one capture: what they do, target customer, pricing if public, key differentiators, and recent moves. Then give me a short comparison and where there's an opening. Browse their sites where useful.",
+        elicit: [
+          {
+            question: "Who are the competitors?",
+            description: "Pick the default to let me identify them from context.",
+            options: [
+              { label: "Infer them from my context", isDefault: true },
+              { label: "I'll name a few" },
+            ],
+            freeTextPlaceholder: "e.g. Notion, Coda, Airtable",
+          },
+          {
+            question: "What should the scan focus on?",
+            options: [
+              { label: "Positioning, pricing & differentiators", isDefault: true },
+              { label: "Product & features" },
+              { label: "Marketing & messaging" },
+            ],
+          },
+          {
+            question: "How many competitors?",
+            options: [
+              { label: "Top 3–5", isDefault: true },
+              { label: "Just the top 3" },
+              { label: "A broad set (8+)" },
+            ],
+          },
+          {
+            question: "Deliver it as?",
+            options: [
+              { label: "Comparison table + where there's an opening", isDefault: true },
+              { label: "A short narrative brief" },
+            ],
+          },
+        ],
       },
       {
         id: "market-brief",
@@ -799,7 +1005,47 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Find leads",
         description: "Scrape a structured list of prospects by criteria.",
         prompt:
-          "Build me a structured lead list by scraping the web. I'll specify the industry, role/title, location, and how many leads I want — find real prospects matching that profile and return name, title, company, location, and contact info as a clean table.",
+          "Build me a structured lead list by scraping the web. Find real prospects matching the profile below and return name, title, company, location, and contact info as a clean table.",
+        elicit: [
+          {
+            question: "What industry?",
+            options: [
+              { label: "Tech / SaaS", isDefault: true },
+              { label: "Finance" },
+              { label: "Healthcare" },
+              { label: "Retail / e-commerce" },
+            ],
+            freeTextPlaceholder: "e.g. logistics, real estate",
+          },
+          {
+            question: "What role or seniority?",
+            options: [
+              { label: "Heads / VPs / Directors", isDefault: true },
+              { label: "C-level" },
+              { label: "Managers" },
+              { label: "Individual contributors" },
+            ],
+            freeTextPlaceholder: "e.g. Head of Ops",
+          },
+          {
+            question: "Where?",
+            options: [
+              { label: "United States", isDefault: true },
+              { label: "Europe" },
+              { label: "Global" },
+            ],
+            freeTextPlaceholder: "e.g. London, APAC",
+          },
+          {
+            question: "How many leads?",
+            options: [
+              { label: "50", isDefault: true },
+              { label: "25" },
+              { label: "100" },
+              { label: "250" },
+            ],
+          },
+        ],
       },
       {
         id: "scrape-site-contacts",
@@ -813,7 +1059,44 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Build a company list",
         description: "Find companies matching a profile.",
         prompt:
-          "Build me a list of companies matching a profile I'll describe (industry, size, location) by scraping the web. Return company name, website, location, and any contact info found as a structured table.",
+          "Build me a list of companies matching the profile below by scraping the web. Return company name, website, location, and any contact info found as a structured table.",
+        elicit: [
+          {
+            question: "What industry?",
+            options: [
+              { label: "Tech / SaaS", isDefault: true },
+              { label: "Finance" },
+              { label: "Healthcare" },
+              { label: "Manufacturing" },
+            ],
+            freeTextPlaceholder: "e.g. clean energy",
+          },
+          {
+            question: "What size?",
+            options: [
+              { label: "Mid-market (50–500)", isDefault: true },
+              { label: "Startups (under 50)" },
+              { label: "Enterprise (500+)" },
+            ],
+          },
+          {
+            question: "Where?",
+            options: [
+              { label: "United States", isDefault: true },
+              { label: "Europe" },
+              { label: "Global" },
+            ],
+            freeTextPlaceholder: "e.g. DACH region",
+          },
+          {
+            question: "How many companies?",
+            options: [
+              { label: "50", isDefault: true },
+              { label: "25" },
+              { label: "100" },
+            ],
+          },
+        ],
       },
     ],
   },

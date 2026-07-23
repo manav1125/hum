@@ -73,6 +73,12 @@ describe("16-live-capabilities section", () => {
     );
     expect(body).toContain("The user's Mac (shell, files, apps): REACHABLE");
     expect(body).not.toContain("NOT reachable");
+    // When the browser is reachable the snapshot must steer web work to the
+    // browser_* tools and away from computer_use screen-control — the whole
+    // point of surfacing the connected extension.
+    expect(body).toContain("`browser_*` tools");
+    expect(body).toContain("Do NOT use `computer_use_*`");
+    expect(body).toContain("native desktop apps only");
   });
 
   // The capability half must come from the SAME derivation the work-item

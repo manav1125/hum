@@ -104,5 +104,19 @@ describe("renderReachLines", () => {
     ).join("\n");
     expect(text).toContain("REACHABLE via the connected Chrome extension");
     expect(text).not.toContain("throwaway browser");
+    // When the browser is reachable, the model must be told to use the
+    // browser_* tools for web work and NOT computer_use screen-control.
+    expect(text).toContain("`browser_*` tools");
+    expect(text).toContain("Do NOT use `computer_use_*`");
+    expect(text).toContain("native desktop apps only");
+  });
+
+  test("host-bridge route: also steers web work to browser_* over computer_use", () => {
+    const text = renderReachLines(
+      buildReachSnapshot({ registry: registryOf({ hostBrowser: [{}] }) }),
+    ).join("\n");
+    expect(text).toContain("REACHABLE via the desktop bridge");
+    expect(text).toContain("`browser_*` tools");
+    expect(text).toContain("Do NOT use `computer_use_*`");
   });
 });

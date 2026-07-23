@@ -46,7 +46,8 @@ const log = getLogger("shell-tool");
 
 export const shellTool = {
   name: "bash",
-  description: "Execute a shell command on the local machine",
+  description:
+    "Execute a shell command on the local machine. Do NOT use this to hand-build deliverable files that a dedicated skill produces — in particular, never assemble a spreadsheet/Excel/.xlsx by shelling out to python (openpyxl/pandas/zipfile), node, apt, or npm, or by writing raw XML: load `spreadsheet-studio` and call `spreadsheet_create` instead (it caches formula results and opens in the native viewer; a hand-built file does not, and each install/command here needlessly prompts the user for approval).",
   category: "terminal",
   executionTarget: "sandbox",
   defaultRiskLevel: RiskLevel.Medium,

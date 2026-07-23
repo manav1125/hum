@@ -46,4 +46,77 @@ describe("CREATE_MODES elicit catalog", () => {
     const instant = all.filter((t) => !t.elicit || t.elicit.length === 0);
     expect(instant.length).toBeGreaterThan(0);
   });
+
+  const hasElicit = (id: string) => {
+    const t = all.find((x) => x.id === id);
+    if (!t) throw new Error(`no template "${id}"`);
+    return Boolean(t.elicit && t.elicit.length > 0);
+  };
+
+  test("every input-dependent template carries elicit (decks/docs/dashboards/sheets/leads)", () => {
+    // These produce a materially different asset depending on the inputs, so
+    // the client must collect the output-determining choices BEFORE the model
+    // turn — the same bar as the SaaS financial model.
+    const mustElicit = [
+      // Slides
+      "investor-pitch",
+      "qbr",
+      "product-launch",
+      "team-offsite",
+      // Dashboards
+      "kpi-dashboard",
+      "budget-tracker",
+      "habit-tracker",
+      "roi-calculator",
+      // Docs
+      "prd",
+      "meeting-notes",
+      "blog-post",
+      "one-pager",
+      // Sheets
+      "financial-model",
+      "budget-sheet",
+      "sales-tracker",
+      // Leads
+      "find-leads-quick",
+      "company-list",
+      // Research (structured comparison deliverable)
+      "competitor-scan",
+    ];
+    for (const id of mustElicit) {
+      expect(hasElicit(id)).toBe(true);
+    }
+  });
+
+  test("genuinely open-ended / creative templates stay instant (no forced form)", () => {
+    // Free-form subject with no meaningful default, or a raw creative prompt,
+    // or a paste/attach flow — forcing a form here would degrade the surface.
+    const mustStayInstant = [
+      // Research "research anything" (subject is the free-form input)
+      "market-brief",
+      "person-brief",
+      "topic-deep-dive",
+      // Images — creative; style handled by the gallery/reference system
+      "hero-image",
+      "logo-concepts",
+      "social-graphic",
+      "illustration",
+      // Canvas edit recipes (need an attached image)
+      "restyle",
+      "retouch",
+      "replace-object",
+      // Video — creative + analyze-a-file interactive flows
+      "cinematic-clip",
+      "summarize-video",
+      "extract-clip",
+      // Audio — creative generation
+      "background-music",
+      "voiceover",
+      // Leads — needs pasted URLs, no meaningful defaults
+      "scrape-site-contacts",
+    ];
+    for (const id of mustStayInstant) {
+      expect(hasElicit(id)).toBe(false);
+    }
+  });
 });

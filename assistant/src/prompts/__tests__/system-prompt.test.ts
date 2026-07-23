@@ -146,6 +146,19 @@ describe("buildSystemPrompt — hasNoClient pin", () => {
     );
   });
 
+  test("access-preference steers web work to browser_* over computer_use", () => {
+    // The rule the whole change exists to make unambiguous: web browser tasks
+    // use the browser_* tools; computer_use screen-control is for native apps.
+    const prompt = buildSystemPrompt({ hasNoClient: false });
+    expect(prompt).toContain(
+      "Web browser work uses `browser_*`, never `computer_use_*`",
+    );
+    expect(prompt).toContain("Browser automation via the `browser_*` tools");
+    expect(prompt).toContain(
+      "`computer_use_*` (screen control) is for native desktop apps only",
+    );
+  });
+
   test("personaOverride.hasNoClient pins the flag over the conversation-derived option", () => {
     // Fork-retrospective case: the fork is hydrated clientless
     // (hasNoClient: true) but pins the source's live-turn value (false) so

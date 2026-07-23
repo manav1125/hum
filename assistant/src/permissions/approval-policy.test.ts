@@ -587,6 +587,50 @@ describe("no rule — bundled skill tool", () => {
   });
 });
 
+// ── Generation flow: spreadsheet_create approval profile ─────────────────────
+// Regression guard for the "10 approval prompts to make a spreadsheet" bug.
+// `spreadsheet_create` (spreadsheet-studio, bundled) is declared risk "low" and
+// creates a workspace file with no external side effect, so a user-initiated
+// "make me a spreadsheet" must generate it with ZERO approval prompts at the
+// default threshold. The improvised bash/python path that caused the prompt
+// spam is eliminated upstream (see spreadsheet-studio SKILL.md / TOOLS.json and
+// the bash tool description); this pins the profile so it stays low/no-approval.
+describe("generation flow — spreadsheet_create (bundled, low risk)", () => {
+  const spreadsheetCreateContext: Partial<ApprovalContext> = {
+    riskLevel: RiskLevel.Low, // TOOLS.json declares risk: "low"
+    toolName: "spreadsheet_create",
+    toolOrigin: "skill",
+    isSkillBundled: true,
+  };
+
+  test("default threshold → allow (no approval prompt)", () => {
+    const result = evaluate(spreadsheetCreateContext);
+    expect(result.decision).toBe("allow");
+    expect(result.reason).toContain("Bundled skill");
+  });
+
+  test("relaxed 'medium' threshold → still allow", () => {
+    const result = evaluate({
+      ...spreadsheetCreateContext,
+      autoApproveUpTo: "medium",
+    });
+    expect(result.decision).toBe("allow");
+  });
+
+  // Guardrail: we relaxed ONLY the safe in-workspace generation path. A
+  // genuinely consequential bundled tool (High risk — e.g. send/pay/delete/
+  // host-control) must still prompt at the default threshold.
+  test("does NOT weaken consequential tools — High-risk bundled tool still prompts", () => {
+    const result = evaluate({
+      riskLevel: RiskLevel.High,
+      toolName: "message_send",
+      toolOrigin: "skill",
+      isSkillBundled: true,
+    });
+    expect(result.decision).toBe("prompt");
+  });
+});
+
 // ── Risk-based fallback ──────────────────────────────────────────────────────
 
 describe("risk-based fallback (no rule, no special case)", () => {

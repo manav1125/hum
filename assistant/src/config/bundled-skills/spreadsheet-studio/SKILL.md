@@ -47,6 +47,7 @@ Never let styling compromise the formulas rule below — a correct, recalculatin
 
 ## Anti-patterns
 
+- **Never hand-build the xlsx.** Do not write raw XML/OOXML, and do not shell out (bash/host_bash) to python (openpyxl, pandas, zipfile stdlib), node, or `apt`/`npm` package installs to assemble a workbook. `spreadsheet_create` is the ONLY correct path. A hand-built file has no cached formula values, won't open in Cue's native spreadsheet viewer (download-only), and each shell command triggers a separate approval prompt — a broken, noisy experience. If you catch yourself reaching for bash to make a spreadsheet, stop and call `spreadsheet_create`.
 - Don't emit CSV into chat or paste giant markdown tables when a FILE was requested — call the tool.
 - Don't precompute values a formula should compute (the rule above).
 - Don't build an interactive calculator here — that's app-builder.
