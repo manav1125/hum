@@ -142,7 +142,19 @@ export class SseConnection {
       response = await fetch(url, {
         headers,
         signal: ac.signal,
-        credentials: 'include',
+        // Authenticate purely via the `Authorization: Bearer` pair token — the
+        // extension never relies on cookies for the SSE stream. `credentials:
+        // 'include'` would make this a *credentialed* cross-origin request,
+        // which the browser only accepts when the server echoes
+        // `Access-Control-Allow-Credentials: true`. The gateway's extension
+        // CORS headers deliberately omit that (see gateway
+        // `extensionCorsHeaders`), so a credentialed request is blocked by the
+        // browser before it ever reaches the daemon — the SSE stream would
+        // never open and the extension would never register as a host_browser
+        // client. Using 'omit' matches every other extension fetch (pairing,
+        // host-browser callbacks) and lets the token-authenticated stream
+        // succeed against the gateway's non-credentialed CORS policy.
+        credentials: 'omit',
       });
     } catch {
       if (this.closedByCaller || ac.signal.aborted) return;
