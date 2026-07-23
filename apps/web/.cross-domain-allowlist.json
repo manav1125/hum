@@ -20,6 +20,15 @@
   "src/domains/create/create-composer-seed.ts": [
     "chat"
   ],
+  "src/domains/create/create-elicit-form.tsx": [
+    "chat"
+  ],
+  "src/domains/create/create-elicit.test.ts": [
+    "chat"
+  ],
+  "src/domains/create/create-elicit.ts": [
+    "chat"
+  ],
   "src/domains/dashboard/use-dashboard-query.ts": [
     "chat"
   ],

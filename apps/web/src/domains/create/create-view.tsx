@@ -26,10 +26,11 @@ import { useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   CREATE_MODES,
-  buildTemplateKickoff,
   type CreateMode,
   type CreateTemplate,
 } from "@/domains/create/create-templates";
+import { templateNeedsElicitation } from "@/domains/create/create-elicit";
+import { TemplateElicitForm } from "@/domains/create/create-elicit-form";
 import {
   type TemplateDefinition,
   findTemplate,
@@ -305,6 +306,11 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const isMobile = useIsMobile();
   const [activeModeId, setActiveModeId] = useState<string>(CREATE_MODES[0].id);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+  // A quick-start template with `elicit` fields parks here so the client asks
+  // its questions BEFORE any model turn (see create-elicit-form.tsx).
+  const [elicitTemplate, setElicitTemplate] = useState<CreateTemplate | null>(
+    null,
+  );
 
   // Create Studio — gallery overlay + composer selection.
   const { brand } = useActiveBrand();
@@ -327,6 +333,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const switchMode = (id: string) => {
     setActiveModeId(id);
     setActiveTemplateId(null);
+    setElicitTemplate(null);
     setSelection((prev) => (prev && prev.mode === id ? prev : null));
   };
 
@@ -376,6 +383,24 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
     }
     setSelection(sel);
   };
+
+  // Elicitation form takes over the surface when a quick-start template needs
+  // inputs first — the client collects answers, composes them into the prompt,
+  // and only THEN sends (routed through runContent so a gallery selection still
+  // rides along).
+  if (elicitTemplate) {
+    return (
+      <TemplateElicitForm
+        key={elicitTemplate.id}
+        template={elicitTemplate}
+        onCancel={() => setElicitTemplate(null)}
+        onSubmit={(composed) => {
+          setElicitTemplate(null);
+          runContent(composed);
+        }}
+      />
+    );
+  }
 
   // Detail (form) view takes over the whole surface when a template is open.
   if (activeTemplate) {
@@ -608,7 +633,11 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                 template={template}
                 modeId={activeMode.id}
                 skillLabel={activeMode.skillLabel}
-                onSelect={() => runContent(buildTemplateKickoff(template))}
+                onSelect={() =>
+                  templateNeedsElicitation(template)
+                    ? setElicitTemplate(template)
+                    : runContent(template.prompt)
+                }
               />
             ))}
           </div>

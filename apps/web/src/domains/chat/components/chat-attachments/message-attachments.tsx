@@ -4,12 +4,20 @@ import type { DisplayAttachment } from "@/domains/chat/types/types";
 
 import { MessageAttachmentSquare } from "@/domains/chat/components/chat-attachments/message-attachment-square";
 import { useAttachmentPreview } from "@/domains/chat/components/chat-attachments/use-attachment-preview";
+import { isViewableSpreadsheet } from "@/domains/chat/components/chat-attachments/utils";
 
 interface MessageAttachmentsProps {
   attachments: DisplayAttachment[];
   /** Forwarded to {@link AttachmentPreviewModal} so it can lazily fetch
    *  attachment content when `previewUrl` is missing. */
   assistantId?: string | null;
+  /**
+   * Open the native in-Cue spreadsheet viewer for a persisted `.xlsx`
+   * attachment. When provided, clicking a viewable spreadsheet chip opens the
+   * viewer (the durable entry point that survives thread reloads) instead of
+   * the generic preview modal. Omitted → spreadsheets fall back to the modal.
+   */
+  onOpenSpreadsheet?: (attachmentId: string, filename: string) => void;
 }
 
 /**
@@ -23,6 +31,7 @@ interface MessageAttachmentsProps {
 export const MessageAttachments: FC<MessageAttachmentsProps> = ({
   attachments,
   assistantId,
+  onOpenSpreadsheet,
 }) => {
   const { openPreview, previewModal } = useAttachmentPreview(assistantId);
 
@@ -33,16 +42,25 @@ export const MessageAttachments: FC<MessageAttachmentsProps> = ({
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        {attachments.map((att) => (
-          <MessageAttachmentSquare
-            key={att.id}
-            filename={att.filename}
-            mimeType={att.mimeType}
-            sizeBytes={att.sizeBytes}
-            previewUrl={att.previewUrl}
-            onPreview={() => openPreview(att)}
-          />
-        ))}
+        {attachments.map((att) => {
+          const opensInViewer =
+            onOpenSpreadsheet != null &&
+            isViewableSpreadsheet(att.mimeType, att.filename);
+          return (
+            <MessageAttachmentSquare
+              key={att.id}
+              filename={att.filename}
+              mimeType={att.mimeType}
+              sizeBytes={att.sizeBytes}
+              previewUrl={att.previewUrl}
+              onPreview={
+                opensInViewer
+                  ? () => onOpenSpreadsheet(att.id, att.filename)
+                  : () => openPreview(att)
+              }
+            />
+          );
+        })}
       </div>
       {previewModal}
     </>

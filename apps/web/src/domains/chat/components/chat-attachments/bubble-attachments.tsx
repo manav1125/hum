@@ -4,13 +4,19 @@ import type { DisplayAttachment } from "@/domains/chat/types/types";
 
 import { MessageAttachmentSquare } from "@/domains/chat/components/chat-attachments/message-attachment-square";
 import { useAttachmentPreview } from "@/domains/chat/components/chat-attachments/use-attachment-preview";
-import { classifyAttachment } from "@/domains/chat/components/chat-attachments/utils";
+import {
+  classifyAttachment,
+  isViewableSpreadsheet,
+} from "@/domains/chat/components/chat-attachments/utils";
 
 interface BubbleAttachmentsProps {
   attachments: DisplayAttachment[];
   /** Forwarded to {@link AttachmentPreviewModal} so it can lazily fetch
    *  attachment content when `previewUrl` is missing. */
   assistantId?: string | null;
+  /** Open the native spreadsheet viewer for a persisted `.xlsx` attachment.
+   *  See {@link MessageAttachments} for the rationale. */
+  onOpenSpreadsheet?: (attachmentId: string, filename: string) => void;
 }
 
 /**
@@ -26,6 +32,7 @@ interface BubbleAttachmentsProps {
 export const BubbleAttachments: FC<BubbleAttachmentsProps> = ({
   attachments,
   assistantId,
+  onOpenSpreadsheet,
 }) => {
   const { openPreview, previewModal } = useAttachmentPreview(assistantId);
 
@@ -40,6 +47,10 @@ export const BubbleAttachments: FC<BubbleAttachmentsProps> = ({
           const isInlineImage =
             classifyAttachment(att.mimeType, att.filename) === "image" &&
             att.previewUrl != null;
+
+          const opensInViewer =
+            onOpenSpreadsheet != null &&
+            isViewableSpreadsheet(att.mimeType, att.filename);
 
           if (isInlineImage) {
             return (
@@ -70,7 +81,11 @@ export const BubbleAttachments: FC<BubbleAttachmentsProps> = ({
               mimeType={att.mimeType}
               sizeBytes={att.sizeBytes}
               previewUrl={att.previewUrl}
-              onPreview={() => openPreview(att)}
+              onPreview={
+                opensInViewer
+                  ? () => onOpenSpreadsheet(att.id, att.filename)
+                  : () => openPreview(att)
+              }
             />
           );
         })}

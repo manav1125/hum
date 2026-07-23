@@ -61,9 +61,11 @@ import {
   type CanvasImagePick,
   type CanvasTileId,
 } from "./create-sheet-canvas";
+import { templateNeedsElicitation } from "./create-elicit";
+import { TemplateElicitForm } from "./create-elicit-form";
 import { CreateSheetForm } from "./create-sheet-form";
 import { SheetReferencePicker } from "./create-sheet-reference";
-import { CREATE_MODES, buildTemplateKickoff } from "./create-templates";
+import { CREATE_MODES, type CreateTemplate } from "./create-templates";
 import {
   DATA_FORMAT_SPECS,
   DOC_TYPE_SPECS,
@@ -405,6 +407,11 @@ export function CreateSheet({
   const [formTemplate, setFormTemplate] = useState<TemplateDefinition | null>(
     null,
   );
+  // A quick-start template with `elicit` fields parks here so the client asks
+  // its questions BEFORE any model turn (pushed over the sheet, like the form).
+  const [elicitTemplate, setElicitTemplate] = useState<CreateTemplate | null>(
+    null,
+  );
   // Frame 35 — video sub-tab.
   const [videoTab, setVideoTab] = useState<"live" | "animated">("live");
   // Frame 36 — per-generation reference (rides exactly ONE submit).
@@ -471,6 +478,7 @@ export function CreateSheet({
       setSlidesCategory("all");
       setSlidesSearch("");
       setFormTemplate(null);
+      setElicitTemplate(null);
       setVideoTab("live");
       setReference(null);
       setCanvasTile(null);
@@ -530,6 +538,23 @@ export function CreateSheet({
     );
   };
 
+  /** The active mode's design contract (template/style/brand/reference). */
+  const buildIntent = (): CreateIntent => ({
+    mode,
+    ...(mode === "slides" || mode === "docs"
+      ? { templateId: pickId ?? undefined }
+      : {}),
+    ...(mode === "images" || mode === "video"
+      ? { styleId: pickId ?? undefined }
+      : {}),
+    ...(mode === "data" ? { formatId: pickId ?? undefined } : {}),
+    brandKitId: inBrand ? (brand?.id ?? null) : null,
+    // The reference picker is hidden on canvas (its image source owns that
+    // affordance) — never let a reference set in another mode ride a canvas
+    // submit invisibly.
+    ...(mode !== "canvas" && reference ? { reference } : {}),
+  });
+
   const submit = () => {
     const text = prompt.trim();
     // Canvas tiles are self-seeding (desktop parity): a picked tile carries
@@ -540,43 +565,23 @@ export function CreateSheet({
       inputRef.current?.focus();
       return;
     }
-    const intent: CreateIntent = {
-      mode,
-      ...(mode === "slides" || mode === "docs"
-        ? { templateId: pickId ?? undefined }
-        : {}),
-      ...(mode === "images" || mode === "video"
-        ? { styleId: pickId ?? undefined }
-        : {}),
-      ...(mode === "data" ? { formatId: pickId ?? undefined } : {}),
-      brandKitId: inBrand ? (brand?.id ?? null) : null,
-      // The reference picker is hidden on canvas (its image source owns that
-      // affordance) — never let a reference set in another mode ride a
-      // canvas submit invisibly.
-      ...(mode !== "canvas" && reference ? { reference } : {}),
-    };
-    // If the composer still holds an untouched quick-start prompt that carries
-    // elicitation questions, swap in the kickoff (base prompt + elicit
-    // directive) so mobile templates ask-before-generating too. Done here, not
-    // in the visible composer, so the raw directive never shows to the user;
-    // only fires when the text is verbatim the template's prompt (unedited).
-    const matchedQuickStart = quickStarts.find(
-      (t) => t.elicit && t.elicit.length > 0 && t.prompt === text,
-    );
-    const baseText = matchedQuickStart
-      ? buildTemplateKickoff(matchedQuickStart)
-      : text;
-    const content = tileSeed
-      ? text
-        ? `${tileSeed}\n\n${text}`
-        : tileSeed
-      : baseText;
+    const intent = buildIntent();
+    // Quick-start templates that need inputs never reach the composer — tapping
+    // one opens the elicitation form (submitElicited), which composes concrete
+    // answers into the prompt. So here `text` is already exactly what to send.
+    const content = tileSeed ? (text ? `${tileSeed}\n\n${text}` : tileSeed) : text;
     const finalPrompt = applyCreateIntent(content, intent, inBrand ? brand : null);
     seedRun(
       finalPrompt,
       intent,
       mode === "canvas" ? canvasImage?.file : undefined,
     );
+  };
+
+  /** The elicitation form's submit: the already-composed prompt + brand/intent. */
+  const submitElicited = (composed: string) => {
+    const intent = buildIntent();
+    seedRun(applyCreateIntent(composed, intent, inBrand ? brand : null), intent);
   };
 
   /** Frame 33 — the fielded form's submit: desktop-composed prompt + brand. */
@@ -588,6 +593,24 @@ export function CreateSheet({
     };
     seedRun(applyCreateIntent(composed, intent, brand), intent);
   };
+
+  if (elicitTemplate) {
+    // Pushed elicitation form — asks the template's questions BEFORE any model
+    // turn, composes the answers into the prompt, then seeds the run.
+    return (
+      <SheetShell open={open} onClose={onClose} label="Create">
+        <TemplateElicitForm
+          key={elicitTemplate.id}
+          template={elicitTemplate}
+          onCancel={() => setElicitTemplate(null)}
+          onSubmit={(composed) => {
+            setElicitTemplate(null);
+            submitElicited(composed);
+          }}
+        />
+      </SheetShell>
+    );
+  }
 
   if (formTemplate) {
     // Frame 33 — the pushed "Fill & build" fielded form (same SheetShell).
@@ -727,7 +750,13 @@ export function CreateSheet({
                     aria-pressed={selected}
                     onClick={() => {
                       haptic.light();
-                      setPrompt(t.prompt);
+                      // Templates that need inputs open the elicitation form
+                      // BEFORE any model turn; the rest just prefill the box.
+                      if (templateNeedsElicitation(t)) {
+                        setElicitTemplate(t);
+                      } else {
+                        setPrompt(t.prompt);
+                      }
                     }}
                     style={{
                       flexShrink: 0,

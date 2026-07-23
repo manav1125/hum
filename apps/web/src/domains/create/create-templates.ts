@@ -101,58 +101,13 @@ export interface CreateTemplate {
 }
 
 /**
- * Render one elicitation field as directive text: the question, its options
- * with the default flagged, and the free-text hint. The agent copies these
- * verbatim into the `questions[]` payload of a single `ask_question` call.
+ * Elicitation is now CLIENT-SIDE and deterministic: a template with `elicit`
+ * fields renders the batched question card BEFORE any model turn, and the
+ * answers compose into the prompt in `create-elicit.ts` — no model-mediated
+ * `<elicit_first>` directive (which the model could, and did, ignore). This
+ * file only owns the template + question DATA; the compose/route logic lives in
+ * `create-elicit.ts` and `create-elicit-form.tsx`.
  */
-function formatElicitField(field: TemplateElicitField, index: number): string {
-  const opts = field.options
-    .map((o) => (o.isDefault ? `${o.label} (default)` : o.label))
-    .join(" · ");
-  const lines = [`${index + 1}. ${field.question}`];
-  if (field.description) lines.push(`   ${field.description}`);
-  lines.push(`   Options: ${opts}`);
-  return lines.join("\n");
-}
-
-/**
- * Build the `<elicit_first>` directive appended to a template's kickoff
- * message. It routes the agent to the EXISTING batched `ask_question` tool
- * (mirroring how `chat-clarify-precheck` steers to `ask_question` for chat) —
- * no parallel UI. The curated questions and their defaults are authored here,
- * so the card is deterministic and the defaults are real, not model-invented.
- *
- * Exported for tests.
- */
-export function buildElicitDirective(fields: TemplateElicitField[]): string {
-  const numbered = fields.map((f, i) => formatElicitField(f, i)).join("\n");
-  return [
-    "<elicit_first>",
-    "Before generating ANYTHING, ask the user these questions in ONE batched `ask_question` call — pass them all together in the `questions` array. Do not start building until they answer; do not ask them one message at a time.",
-    "These are the real inputs the output depends on. Each option marked (default) is a sensible pre-filled choice, so the user can accept the set in a few clicks.",
-    "",
-    numbered,
-    "",
-    "Rules:",
-    "- Use the questions and options above as the `questions[]` payload. The card adds a free-text slot automatically — do not add a 'something else' option.",
-    "- If the user skips a question, use its (default) option for that input.",
-    "- If the user skips every question or closes the card, proceed with all defaults — do not ask again.",
-    "- Once they answer, generate immediately using their answers. Do not re-ask or tack on follow-up questions.",
-    "- If the conversation already makes an answer obvious, you may pre-select it — never ask something you already know.",
-    "</elicit_first>",
-  ].join("\n");
-}
-
-/**
- * The message a template seeds into a fresh chat thread. For a template with
- * `elicit`, this is the base prompt plus the elicitation directive so the
- * agent asks first and generates second. For every other template it is the
- * base prompt unchanged — those kick off instantly, exactly as before.
- */
-export function buildTemplateKickoff(template: CreateTemplate): string {
-  if (!template.elicit || template.elicit.length === 0) return template.prompt;
-  return `${template.prompt}\n\n${buildElicitDirective(template.elicit)}`;
-}
 
 export interface CreateMode {
   id: string;

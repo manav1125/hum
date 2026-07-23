@@ -345,6 +345,7 @@ export function TranscriptMessageBody({
           key="user-attachments"
           attachments={message.attachments}
           assistantId={assistantId}
+          onOpenSpreadsheet={onOpenSpreadsheet}
         />
       );
       const lastBubble = slots.findLast((slot) => slot.kind === "bubble");
@@ -465,6 +466,7 @@ export function TranscriptMessageBody({
           <MessageAttachments
             attachments={message.attachments ?? []}
             assistantId={assistantId}
+            onOpenSpreadsheet={onOpenSpreadsheet}
           />
         )}
         {message.interrupted && (

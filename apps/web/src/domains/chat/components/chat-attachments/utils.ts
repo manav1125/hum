@@ -123,6 +123,28 @@ export function classifyAttachment(
 }
 
 /**
+ * True when the attachment can be opened in the native in-Cue spreadsheet
+ * viewer (`SpreadsheetViewerContainer`), which parses bytes with ExcelJS'
+ * `xlsx.load`. That reader only understands the OOXML `.xlsx` container, so
+ * legacy binary `.xls` and plain `.csv` are deliberately excluded — those keep
+ * the default preview/download affordance rather than failing inside the
+ * viewer. This is narrower than {@link classifyAttachment}'s `"spreadsheet"`
+ * bucket, which also covers csv/xls for icon purposes.
+ */
+export function isViewableSpreadsheet(
+  mimeType: string,
+  filename: string,
+): boolean {
+  const mime = (mimeType || "").toLowerCase();
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return (
+    ext === "xlsx" ||
+    mime ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+}
+
+/**
  * Decode a base64 data URI into a Uint8Array. Returns null if the URI does
  * not contain a recognizable `;base64,` segment.
  */
