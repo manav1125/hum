@@ -1,0 +1,1 @@
+import{o as e}from"./rolldown-runtime-BM3Ffeng.js";import{W as t}from"./design-library-DlFS81Mf.js";import{f as n}from"./react-vendor-B_AHUFZ_.js";import{i as r}from"./routes-S48CoiOO.js";var i=e(t(),1);function a(){let e=n();return(0,i.useEffect)(()=>{e(r.logs.systemEvents,{replace:!0})},[e]),null}export{a as SystemEventsRedirectPage};

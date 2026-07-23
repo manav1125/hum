@@ -45,6 +45,7 @@ import type {
   OrganizerSessionGetResponse,
 } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
+import { routes } from "@/utils/routes";
 
 import { OrganizerRemotePage } from "@/mobile-v3/organizer/organizer-remote-page";
 
@@ -785,14 +786,28 @@ function DesktopControlWeb() {
       }}
     >
       <div>
-        <div style={{ fontFamily: serif, fontSize: 30, color: C.t1 }}>
-          Desktop control
+        <a
+          href={routes.cueLive}
+          style={{
+            fontFamily: mono,
+            fontSize: 10.5,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: C.t3,
+            textDecoration: "none",
+          }}
+        >
+          ‹ Cue Live
+        </a>
+        <div style={{ fontFamily: serif, fontSize: 30, color: C.t1, marginTop: 4 }}>
+          Live run remote
         </div>
         <div
           style={{ fontSize: 14, color: C.t2, marginTop: 4, lineHeight: 1.5 }}
         >
-          Cue acts on your Mac; this is the remote. Approve the plan, watch the
-          verified-steps run, pick which Mac — the work runs there, not here.
+          The remote half of Cue Live: Cue acts on your Mac, and this watches and
+          steers it. Approve the plan, follow the verified-steps run, pick which
+          Mac — the work runs there, not here.
         </div>
       </div>
 

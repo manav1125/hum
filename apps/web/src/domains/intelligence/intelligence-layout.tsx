@@ -30,8 +30,12 @@ const BASE_INTELLIGENCE_TABS: readonly IntelligenceTab[] = [
   // via "Channels & Agents". The primary-rail "Contacts" item points at the
   // relationship dossier (/assistant/people) instead.
   { label: "Connections", to: routes.contacts.root },
+  // Cue Live is the single front door for "Cue on your Mac's screen" — what it
+  // is, how to turn it on, what it can do. The live-run *remote* (watching /
+  // steering a run from another device) still lives at `routes.desktopControl`
+  // and Cue Live links into it, but it is no longer a confusing second top-level
+  // tab describing the same capability.
   { label: "Cue Live", to: routes.cueLive },
-  { label: "Desktop control", to: routes.desktopControl },
   { label: "Skills", to: routes.skills },
   { label: "Memory", to: routes.memory },
   { label: "Workspace", to: routes.workspace },
