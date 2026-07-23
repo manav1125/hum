@@ -63,7 +63,7 @@ import {
 } from "./create-sheet-canvas";
 import { CreateSheetForm } from "./create-sheet-form";
 import { SheetReferencePicker } from "./create-sheet-reference";
-import { CREATE_MODES } from "./create-templates";
+import { CREATE_MODES, buildTemplateKickoff } from "./create-templates";
 import {
   DATA_FORMAT_SPECS,
   DOC_TYPE_SPECS,
@@ -555,11 +555,22 @@ export function CreateSheet({
       // canvas submit invisibly.
       ...(mode !== "canvas" && reference ? { reference } : {}),
     };
+    // If the composer still holds an untouched quick-start prompt that carries
+    // elicitation questions, swap in the kickoff (base prompt + elicit
+    // directive) so mobile templates ask-before-generating too. Done here, not
+    // in the visible composer, so the raw directive never shows to the user;
+    // only fires when the text is verbatim the template's prompt (unedited).
+    const matchedQuickStart = quickStarts.find(
+      (t) => t.elicit && t.elicit.length > 0 && t.prompt === text,
+    );
+    const baseText = matchedQuickStart
+      ? buildTemplateKickoff(matchedQuickStart)
+      : text;
     const content = tileSeed
       ? text
         ? `${tileSeed}\n\n${text}`
         : tileSeed
-      : text;
+      : baseText;
     const finalPrompt = applyCreateIntent(content, intent, inBrand ? brand : null);
     seedRun(
       finalPrompt,

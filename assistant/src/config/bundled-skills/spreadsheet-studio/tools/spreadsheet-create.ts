@@ -15,6 +15,40 @@ import type {
   ToolContext,
   ToolExecutionResult,
 } from "../../../../tools/types.js";
+import {
+  computeResults,
+  type CellScalar,
+  type ModelCell,
+  type WorkbookModel,
+} from "./formula-eval.js";
+
+function colIndexToLetter(index: number): string {
+  let s = "";
+  let n = index;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/** Unwrap a raw cell (plain value or rich `{value,format,bold}`) to its parts. */
+function unwrapCell(raw: CellValue): {
+  value: PlainCell;
+  format?: string;
+  bold?: boolean;
+} {
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    const rich = raw as RichCell;
+    return {
+      value: rich.value === undefined ? null : (rich.value as PlainCell),
+      format: typeof rich.format === "string" ? rich.format : undefined,
+      bold: typeof rich.bold === "boolean" ? rich.bold : undefined,
+    };
+  }
+  return { value: raw as PlainCell };
+}
 
 const MAX_SHEETS = 20;
 const MAX_ROWS = 10_000;
@@ -95,7 +129,7 @@ function parseSheets(raw: unknown): SheetInput[] | string {
 
 export async function run(
   input: Record<string, unknown>,
-  _context: ToolContext,
+  context: ToolContext,
 ): Promise<ToolExecutionResult> {
   const filenameRaw =
     typeof input.filename === "string" && input.filename.trim()
@@ -121,6 +155,29 @@ export async function run(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       new Uint8Array(buffer),
     );
+
+    // Emit a clickable in-chat preview surface so the workbook opens as a
+    // native, reviewable spreadsheet inside Cue — mirroring how documents emit
+    // a `document_preview`. The surface carries the attachment id; the client
+    // fetches the bytes on open and renders the grid. The download attachment
+    // (linked below via `attachmentIds`) remains as the fallback / export path.
+    if (context.sendToClient && context.conversationId) {
+      context.sendToClient({
+        type: "ui_surface_show",
+        conversationId: context.conversationId,
+        surfaceId: `sheet-${attachment.id}`,
+        surfaceType: "spreadsheet_preview",
+        display: "inline",
+        title: filename,
+        data: {
+          filename,
+          attachmentId: attachment.id,
+          sheets: sheetSummaries,
+          totalFormulaCells: formulaCells,
+          sizeBytes: buffer.byteLength,
+        },
+      });
+    }
 
     return {
       content: JSON.stringify({
@@ -164,32 +221,62 @@ export async function buildWorkbook(parsed: SheetInput[]): Promise<{
       formulaCells: number;
     }> = [];
 
+    // First, build a value model of the whole workbook so we can compute the
+    // cached result of every formula cell before writing the file. ExcelJS
+    // writes `{ formula }` with no cached value, so without this the delivered
+    // file has 0 pre-computed numbers — every derived cell renders blank in a
+    // viewer that has no spreadsheet engine. `computeResults` is fail-closed:
+    // any formula it can't fully resolve is simply absent from the map and
+    // left uncached (Excel recomputes it on open via `fullCalcOnLoad`).
+    const model: WorkbookModel = new Map();
+    for (const sheet of parsed) {
+      const cells = new Map<string, ModelCell>();
+      for (let r = 0; r < sheet.rows.length; r++) {
+        const rowValues = sheet.rows[r];
+        for (let c = 0; c < rowValues.length; c++) {
+          const { value } = unwrapCell(rowValues[c]);
+          const a1 = `${colIndexToLetter(c + 1)}${r + 1}`;
+          if (typeof value === "string" && value.startsWith("=")) {
+            cells.set(a1, { formula: value.slice(1) });
+          } else if (value !== null && value !== undefined) {
+            cells.set(a1, { literal: value as CellScalar });
+          }
+        }
+      }
+      // Sheet names are truncated to 31 chars at parse time; the model and the
+      // worksheet share that same key so cross-sheet refs resolve.
+      model.set(sheet.name, cells);
+    }
+    const computed = computeResults(model);
+
     for (const sheet of parsed) {
       const ws = wb.addWorksheet(sheet.name);
       let sheetFormulas = 0;
+      const sheetResults = computed.get(sheet.name);
 
       for (let r = 0; r < sheet.rows.length; r++) {
         const rowValues = sheet.rows[r];
         const row = ws.getRow(r + 1);
         for (let c = 0; c < rowValues.length; c++) {
-          const raw = rowValues[c];
           const cell = row.getCell(c + 1);
           // Unwrap rich cells ({value, format?, bold?}) to their plain value
           // plus styling; anything else object-shaped is skipped rather than
           // serialized into the sheet.
-          let value: PlainCell = null;
-          let cellFormat: string | undefined;
-          let cellBold: boolean | undefined;
-          if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
-            const rich = raw as RichCell;
-            value = rich.value === undefined ? null : (rich.value as PlainCell);
-            if (typeof rich.format === "string") cellFormat = rich.format;
-            if (typeof rich.bold === "boolean") cellBold = rich.bold;
-          } else {
-            value = raw as PlainCell;
-          }
+          const {
+            value,
+            format: cellFormat,
+            bold: cellBold,
+          } = unwrapCell(rowValues[c]);
           if (typeof value === "string" && value.startsWith("=")) {
-            cell.value = { formula: value.slice(1) };
+            const a1 = `${colIndexToLetter(c + 1)}${r + 1}`;
+            const result = sheetResults?.get(a1);
+            // Store the computed result alongside the formula when we have one,
+            // so the file carries a real cached value; otherwise write the bare
+            // formula and let Excel/Numbers recompute on open.
+            cell.value =
+              result === undefined
+                ? { formula: value.slice(1) }
+                : { formula: value.slice(1), result };
             sheetFormulas++;
           } else if (value !== null && value !== undefined) {
             cell.value = value;

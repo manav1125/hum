@@ -20,6 +20,7 @@ import { routes } from "@/utils/routes";
 import type { AppViewerRemix } from "@/components/app-viewer-container";
 import { MobileAppOverlay } from "@/domains/chat/components/mobile-app-overlay";
 import { MobileDocumentOverlay } from "@/domains/chat/components/mobile-document-overlay";
+import { MobileSpreadsheetOverlay } from "@/domains/chat/components/mobile-spreadsheet-overlay";
 import { MobileSubagentDetailOverlay } from "@/domains/chat/components/mobile-subagent-detail-overlay";
 import { MobileToolDetailOverlay } from "@/domains/chat/components/mobile-tool-detail-overlay";
 import { useMobileOverlayTarget } from "@/domains/chat/hooks/use-mobile-overlay-target";
@@ -35,6 +36,7 @@ export function MobileChatOverlays() {
   const mainView = useViewerStore.use.mainView();
   const openedAppState = useViewerStore.use.openedAppState();
   const openedDocumentState = useViewerStore.use.openedDocumentState();
+  const openedSpreadsheetState = useViewerStore.use.openedSpreadsheetState();
   const isAppMinimized = useViewerStore.use.isAppMinimized();
   const activeSubagentId = useViewerStore.use.activeSubagentId();
   const activeToolDetail = useViewerStore.use.activeToolDetail();
@@ -64,6 +66,10 @@ export function MobileChatOverlays() {
 
   const handleCloseDocument = useCallback(() => {
     useViewerStore.getState().closeDocument();
+  }, []);
+
+  const handleCloseSpreadsheet = useCallback(() => {
+    useViewerStore.getState().closeSpreadsheet();
   }, []);
 
   const handleCloseSubagentDetail = useCallback(() => {
@@ -147,6 +153,13 @@ export function MobileChatOverlays() {
         }
         assistantId={assistantId}
         onClose={handleCloseDocument}
+      />
+      <MobileSpreadsheetOverlay
+        openedSpreadsheetState={
+          mainView === "spreadsheet" ? openedSpreadsheetState : null
+        }
+        assistantId={assistantId}
+        onClose={handleCloseSpreadsheet}
       />
       <MobileSubagentDetailOverlay
         entry={

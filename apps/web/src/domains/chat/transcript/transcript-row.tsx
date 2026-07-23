@@ -55,6 +55,7 @@ export interface TranscriptRowProps {
   ) => void | Promise<void>;
   onOpenApp?: (appId: string) => void;
   onOpenDocument?: (documentSurfaceId: string) => void;
+  onOpenSpreadsheet?: (attachmentId: string, filename: string) => void;
   /** Forwarded to inline app surfaces so they can render live preview iframes. */
   assistantId?: string | null;
   /** Click handler when the user clicks the "open timeline" button on an
@@ -85,6 +86,7 @@ export const TranscriptRow = memo(function TranscriptRow({
   onAllowAndCreateRule,
   onOpenApp,
   onOpenDocument,
+  onOpenSpreadsheet,
   assistantId,
   onSubagentClick,
   onStopSubagent,
@@ -107,6 +109,7 @@ export const TranscriptRow = memo(function TranscriptRow({
           onAllowAndCreateRule={onAllowAndCreateRule}
           onOpenApp={onOpenApp}
           onOpenDocument={onOpenDocument}
+          onOpenSpreadsheet={onOpenSpreadsheet}
           assistantId={assistantId}
           onSubagentClick={onSubagentClick}
           onStopSubagent={onStopSubagent}
@@ -123,6 +126,7 @@ export const TranscriptRow = memo(function TranscriptRow({
           onAction={onSurfaceAction}
           onOpenApp={onOpenApp}
           onOpenDocument={onOpenDocument}
+          onOpenSpreadsheet={onOpenSpreadsheet}
           assistantId={assistantId}
           assistantDisplayName={assistantDisplayName}
         />

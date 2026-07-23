@@ -323,6 +323,14 @@ export function ChatMainPanel({
     [assistantId],
   );
 
+  const handleOpenSpreadsheet = useCallback(
+    (attachmentId: string, filename: string) => {
+      haptic.light();
+      useViewerStore.getState().loadSpreadsheet(attachmentId, filename);
+    },
+    [],
+  );
+
   const onSubagentClick = useCallback((id: string) => {
     useViewerStore.getState().openSubagentDetail(id);
   }, []);
@@ -815,6 +823,7 @@ export function ChatMainPanel({
     onOpenRuleEditor: handleOpenRuleEditorForToolCall,
     onOpenApp: handleOpenApp,
     onOpenDocument: handleOpenDocument,
+    onOpenSpreadsheet: handleOpenSpreadsheet,
     assistantId,
     unknownNudgeToolCallIds,
     onDismissUnknownNudge: handleDismissUnknownNudge,

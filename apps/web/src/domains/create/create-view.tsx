@@ -26,6 +26,7 @@ import { useRef, useState } from "react";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import {
   CREATE_MODES,
+  buildTemplateKickoff,
   type CreateMode,
   type CreateTemplate,
 } from "@/domains/create/create-templates";
@@ -607,7 +608,7 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
                 template={template}
                 modeId={activeMode.id}
                 skillLabel={activeMode.skillLabel}
-                onSelect={() => runContent(template.prompt)}
+                onSelect={() => runContent(buildTemplateKickoff(template))}
               />
             ))}
           </div>

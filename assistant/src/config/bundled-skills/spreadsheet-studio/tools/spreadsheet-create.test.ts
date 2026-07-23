@@ -49,6 +49,45 @@ describe("buildWorkbook", () => {
     expect(model.getColumn("B").numFmt).toBe("$#,##0");
     expect(model.getColumn(1).width).toBe(20);
   });
+
+  test("caches computed results so the file carries real numbers", async () => {
+    const { buffer } = await buildWorkbook([
+      {
+        name: "Assumptions",
+        rows: [
+          ["Driver", "Value"],
+          ["Starting MRR", 10000],
+          ["Growth rate", 0.1],
+        ],
+        header: true,
+      },
+      {
+        name: "Model",
+        rows: [
+          ["Metric", "M1", "M2"],
+          ["MRR", "=Assumptions!B2", "=B2*(1+Assumptions!B3)"],
+          ["Total", "=SUM(B2:C2)", null],
+        ],
+        header: true,
+      },
+    ]);
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const model = wb.getWorksheet("Model")!;
+    // The formula cell now carries BOTH the formula and its cached result, so a
+    // viewer with no spreadsheet engine can show a real number.
+    const mrr = model.getRow(2).getCell(2).value as {
+      formula?: string;
+      result?: number;
+    };
+    expect(mrr.formula).toBe("Assumptions!B2");
+    expect(mrr.result).toBe(10000);
+    const m2 = model.getRow(2).getCell(3).value as { result?: number };
+    expect(m2.result).toBeCloseTo(11000, 6); // 10000 * 1.1
+    const total = model.getRow(3).getCell(2).value as { result?: number };
+    expect(total.result).toBeCloseTo(21000, 6); // 10000 + 11000
+  });
 });
 
 describe("spreadsheet_create input validation", () => {

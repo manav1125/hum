@@ -54,6 +54,7 @@ export interface TranscriptMessageBodyProps {
   ) => void | Promise<void>;
   onOpenApp?: (appId: string) => void;
   onOpenDocument?: (documentSurfaceId: string) => void;
+  onOpenSpreadsheet?: (attachmentId: string, filename: string) => void;
   /** Forwarded to inline app surfaces so they can render live preview iframes. */
   assistantId?: string | null;
   /** Click handler when the user clicks a subagent's open-timeline button on

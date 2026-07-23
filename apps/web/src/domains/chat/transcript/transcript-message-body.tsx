@@ -67,6 +67,7 @@ export function TranscriptMessageBody({
   onAllowAndCreateRule,
   onOpenApp,
   onOpenDocument,
+  onOpenSpreadsheet,
   assistantId,
   onSubagentClick,
   onStopSubagent,
@@ -162,6 +163,7 @@ export function TranscriptMessageBody({
                     onAction={() => {}}
                     onOpenApp={onOpenApp}
                     onOpenDocument={onOpenDocument}
+                    onOpenSpreadsheet={onOpenSpreadsheet}
                     assistantId={assistantId}
                     assistantDisplayName={assistantDisplayName}
                     toolCalls={message.toolCalls}
@@ -217,6 +219,7 @@ export function TranscriptMessageBody({
         onAction={onSurfaceAction}
         onOpenApp={onOpenApp}
         onOpenDocument={onOpenDocument}
+        onOpenSpreadsheet={onOpenSpreadsheet}
         assistantId={assistantId}
         toolCalls={message.toolCalls}
       />

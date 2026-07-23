@@ -28,7 +28,11 @@ import { primeAppHtmlCache } from "@/utils/app-html-cache";
 import { createSelectors } from "@/utils/create-selectors";
 
 /** Views that overlay the main content and track a "back" destination. */
-type OverlayView = "document" | "subagent-detail" | "tool-detail";
+type OverlayView =
+  | "document"
+  | "spreadsheet"
+  | "subagent-detail"
+  | "tool-detail";
 
 /**
  * Resolve the "view before" value for overlay navigation.
@@ -85,10 +89,18 @@ export function isAppNotFoundError(err: unknown): boolean {
 function resolveViewBefore(
   state: ViewerState,
   field:
-    "viewBeforeDocument" | "viewBeforeSubagentDetail" | "viewBeforeToolDetail",
+    | "viewBeforeDocument"
+    | "viewBeforeSpreadsheet"
+    | "viewBeforeSubagentDetail"
+    | "viewBeforeToolDetail",
 ): Exclude<MainView, OverlayView> {
   const mv = state.mainView;
-  if (mv === "document" || mv === "subagent-detail" || mv === "tool-detail") {
+  if (
+    mv === "document" ||
+    mv === "spreadsheet" ||
+    mv === "subagent-detail" ||
+    mv === "tool-detail"
+  ) {
     return state[field];
   }
   return mv as Exclude<MainView, OverlayView>;
@@ -103,6 +115,7 @@ export type MainView =
   | "app"
   | "app-editing"
   | "document"
+  | "spreadsheet"
   | "subagent-detail"
   | "tool-detail";
 
@@ -120,6 +133,11 @@ export interface OpenedDocumentState {
   conversationId: string;
   documentName: string;
   content: string;
+}
+
+export interface OpenedSpreadsheetState {
+  attachmentId: string;
+  filename: string;
 }
 
 export interface ToolDetailPayload {
@@ -153,23 +171,16 @@ export interface ViewerState {
   openedAppState: OpenedAppState | null;
   activeDocumentSurfaceId: string | null;
   openedDocumentState: OpenedDocumentState | null;
+  openedSpreadsheetState: OpenedSpreadsheetState | null;
   isAppMinimized: boolean;
   intelligenceTab: IntelligenceTab;
   assetsRefreshKey: number;
-  viewBeforeDocument: Exclude<
-    MainView,
-    "document" | "subagent-detail" | "tool-detail"
-  >;
+  viewBeforeDocument: Exclude<MainView, OverlayView>;
+  viewBeforeSpreadsheet: Exclude<MainView, OverlayView>;
   activeSubagentId: string | null;
-  viewBeforeSubagentDetail: Exclude<
-    MainView,
-    "document" | "subagent-detail" | "tool-detail"
-  >;
+  viewBeforeSubagentDetail: Exclude<MainView, OverlayView>;
   activeToolDetail: ToolDetailPayload | null;
-  viewBeforeToolDetail: Exclude<
-    MainView,
-    "document" | "subagent-detail" | "tool-detail"
-  >;
+  viewBeforeToolDetail: Exclude<MainView, OverlayView>;
   /**
    * Monotonic counter bumped when a viewer (e.g. the mobile tool-detail
    * overlay, which lives in a separate portal subtree) asks to open the trust
@@ -226,6 +237,10 @@ export interface ViewerActions {
   handleDocumentLoadFailed: () => void;
   closeDocument: () => void;
 
+  // --- Spreadsheet viewer ---
+  loadSpreadsheet: (attachmentId: string, filename: string) => void;
+  closeSpreadsheet: () => void;
+
   // --- Assets ---
   refreshAssets: () => void;
 
@@ -245,10 +260,12 @@ const INITIAL_STATE: ViewerState = {
   openedAppState: null,
   activeDocumentSurfaceId: null,
   openedDocumentState: null,
+  openedSpreadsheetState: null,
   isAppMinimized: false,
   intelligenceTab: "identity",
   assetsRefreshKey: 0,
   viewBeforeDocument: "chat",
+  viewBeforeSpreadsheet: "chat",
   activeSubagentId: null,
   viewBeforeSubagentDetail: "chat",
   activeToolDetail: null,
@@ -505,6 +522,27 @@ const useViewerStoreBase = create<ViewerStore>()((set, get) => ({
       mainView: get().viewBeforeDocument,
       activeDocumentSurfaceId: null,
       openedDocumentState: null,
+    });
+  },
+
+  // --- Spreadsheet viewer ---
+
+  // Unlike documents, the spreadsheet's bytes are fetched (and parsed with
+  // ExcelJS) inside the viewer component itself — the store only records which
+  // attachment to open. The viewer is a heavy, lazily-loaded surface, so we
+  // avoid pulling the parser into this store.
+  loadSpreadsheet: (attachmentId, filename) => {
+    set({
+      mainView: "spreadsheet",
+      openedSpreadsheetState: { attachmentId, filename },
+      viewBeforeSpreadsheet: resolveViewBefore(get(), "viewBeforeSpreadsheet"),
+    });
+  },
+
+  closeSpreadsheet: () => {
+    set({
+      mainView: get().viewBeforeSpreadsheet,
+      openedSpreadsheetState: null,
     });
   },
 

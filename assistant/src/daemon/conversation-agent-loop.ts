@@ -923,10 +923,13 @@ export async function runAgentLoopImpl(
       try {
         const clarify = await assessChatClarify(content);
         if (clarify) {
-          runMessages = appendClarifyDirective(runMessages, clarify.question);
+          runMessages = appendClarifyDirective(runMessages, clarify.questions);
           rlog.info(
-            { confidence: clarify.confidence },
-            "chat clarify: steering agent to ask one question before running",
+            {
+              confidence: clarify.confidence,
+              questionCount: clarify.questions.length,
+            },
+            "chat clarify: steering agent to ask before running",
           );
         }
       } catch (err) {

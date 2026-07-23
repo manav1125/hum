@@ -14,6 +14,7 @@ export type SurfaceType =
   | "dynamic_page"
   | "file_upload"
   | "document_preview"
+  | "spreadsheet_preview"
   | "task_preferences"
   | "work_result";
 
@@ -193,6 +194,21 @@ export interface DocumentPreviewSurfaceData {
   subtitle?: string;
 }
 
+export interface SpreadsheetPreviewSheetSummary {
+  name: string;
+  rows: number;
+  formulaCells: number;
+}
+
+export interface SpreadsheetPreviewSurfaceData {
+  filename: string;
+  /** Attachment id of the stored .xlsx; the client fetches its bytes on open. */
+  attachmentId: string;
+  sheets: SpreadsheetPreviewSheetSummary[];
+  totalFormulaCells: number;
+  sizeBytes?: number;
+}
+
 export type WorkResultStatus =
   | "completed"
   | "partial"
@@ -265,6 +281,7 @@ export type SurfaceData =
   | DynamicPageSurfaceData
   | FileUploadSurfaceData
   | DocumentPreviewSurfaceData
+  | SpreadsheetPreviewSurfaceData
   | WorkResultSurfaceData;
 
 // === Client → Server ===
@@ -356,6 +373,11 @@ export interface UiSurfaceShowDocumentPreview extends UiSurfaceShowBase {
   data: DocumentPreviewSurfaceData;
 }
 
+export interface UiSurfaceShowSpreadsheetPreview extends UiSurfaceShowBase {
+  surfaceType: "spreadsheet_preview";
+  data: SpreadsheetPreviewSurfaceData;
+}
+
 export interface UiSurfaceShowWorkResult extends UiSurfaceShowBase {
   surfaceType: "work_result";
   data: WorkResultSurfaceData;
@@ -373,6 +395,7 @@ export type UiSurfaceShow =
   | UiSurfaceShowDynamicPage
   | UiSurfaceShowFileUpload
   | UiSurfaceShowDocumentPreview
+  | UiSurfaceShowSpreadsheetPreview
   | UiSurfaceShowWorkResult;
 
 export interface UiSurfaceUpdate {

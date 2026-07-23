@@ -16,6 +16,7 @@ import { FileUploadSurface } from "@/domains/chat/components/surfaces/file-uploa
 import { FormSurface } from "@/domains/chat/components/surfaces/form-surface";
 import { ListSurface } from "@/domains/chat/components/surfaces/list-surface";
 import { OAuthConnectSurface } from "@/domains/chat/components/surfaces/oauth-connect-surface";
+import { SpreadsheetPreviewSurface } from "@/domains/chat/components/surfaces/spreadsheet-preview-surface";
 import { SurfaceContainer } from "@/domains/chat/components/surfaces/surface-container";
 import { TableSurface } from "@/domains/chat/components/surfaces/table-surface";
 import { TaskPreferencesSurface } from "@/domains/chat/components/surfaces/task-preferences-surface";
@@ -32,6 +33,7 @@ export interface SurfaceRouterProps {
   assistantDisplayName?: string | null;
   onOpenApp?: (appId: string) => void;
   onOpenDocument?: (documentSurfaceId: string) => void;
+  onOpenSpreadsheet?: (attachmentId: string, filename: string) => void;
   /** Tool calls of the message this surface belongs to. Threaded to
    *  `DynamicPageSurface`, which derives whether the surface's originating
    *  tool call has completed before unlocking the app preview. */
@@ -45,6 +47,7 @@ export function SurfaceRouter({
   assistantDisplayName,
   onOpenApp,
   onOpenDocument,
+  onOpenSpreadsheet,
   toolCalls,
 }: SurfaceRouterProps) {
   if (
@@ -132,6 +135,15 @@ export function SurfaceRouter({
           surface={surface}
           onAction={onAction}
           onOpenDocument={onOpenDocument}
+        />
+      );
+
+    case "spreadsheet_preview":
+      return (
+        <SpreadsheetPreviewSurface
+          surface={surface}
+          onAction={onAction}
+          onOpenSpreadsheet={onOpenSpreadsheet}
         />
       );
 

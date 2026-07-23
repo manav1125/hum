@@ -47,6 +47,37 @@ export type CreateSkill =
   | "replicate" // replicate_run — any image/video generation model
   | "apify"; // apify_run_actor — lead-gen / web-scraping actors
 
+/** One choice inside an elicitation question. */
+export interface TemplateElicitOption {
+  /** Human-readable choice shown as a chip in the in-chat question card. */
+  label: string;
+  /**
+   * Marks the recommended, pre-filled default. Exactly one option per field
+   * SHOULD carry this. It is what makes the card one-click-acceptable: the
+   * default is surfaced to the user (rendered as "(default)") and is what the
+   * agent falls back to if the user skips the question.
+   */
+  isDefault?: boolean;
+}
+
+/**
+ * One elicitation question a template asks BEFORE it generates. These are the
+ * real inputs the output depends on — "without them I don't know how it can
+ * generate" (the user's own words). Each is surfaced through the existing
+ * batched `ask_question` card as a fast click-through, with a visible default
+ * so a user can accept the whole set in a few taps.
+ */
+export interface TemplateElicitField {
+  /** The question shown at the top of the card page. */
+  question: string;
+  /** Optional one-line context under the question. */
+  description?: string;
+  /** 2–4 choices; one SHOULD be marked `isDefault`. */
+  options: TemplateElicitOption[];
+  /** Placeholder for the always-present free-text fallback slot. */
+  freeTextPlaceholder?: string;
+}
+
 export interface CreateTemplate {
   /** Stable id (mode-scoped). */
   id: string;
@@ -59,6 +90,68 @@ export interface CreateTemplate {
    * backing skill's activation hints so the asset is actually produced.
    */
   prompt: string;
+  /**
+   * When present, the template elicits these 2–6 questions in the chat stream
+   * (via one batched `ask_question` call) BEFORE generating, then builds using
+   * the answers. Omit for open-ended/creative templates that already invite
+   * input inline ("ask me…") or where a single free-form prompt is enough —
+   * those stay instant, never blocked behind a form.
+   */
+  elicit?: TemplateElicitField[];
+}
+
+/**
+ * Render one elicitation field as directive text: the question, its options
+ * with the default flagged, and the free-text hint. The agent copies these
+ * verbatim into the `questions[]` payload of a single `ask_question` call.
+ */
+function formatElicitField(field: TemplateElicitField, index: number): string {
+  const opts = field.options
+    .map((o) => (o.isDefault ? `${o.label} (default)` : o.label))
+    .join(" · ");
+  const lines = [`${index + 1}. ${field.question}`];
+  if (field.description) lines.push(`   ${field.description}`);
+  lines.push(`   Options: ${opts}`);
+  return lines.join("\n");
+}
+
+/**
+ * Build the `<elicit_first>` directive appended to a template's kickoff
+ * message. It routes the agent to the EXISTING batched `ask_question` tool
+ * (mirroring how `chat-clarify-precheck` steers to `ask_question` for chat) —
+ * no parallel UI. The curated questions and their defaults are authored here,
+ * so the card is deterministic and the defaults are real, not model-invented.
+ *
+ * Exported for tests.
+ */
+export function buildElicitDirective(fields: TemplateElicitField[]): string {
+  const numbered = fields.map((f, i) => formatElicitField(f, i)).join("\n");
+  return [
+    "<elicit_first>",
+    "Before generating ANYTHING, ask the user these questions in ONE batched `ask_question` call — pass them all together in the `questions` array. Do not start building until they answer; do not ask them one message at a time.",
+    "These are the real inputs the output depends on. Each option marked (default) is a sensible pre-filled choice, so the user can accept the set in a few clicks.",
+    "",
+    numbered,
+    "",
+    "Rules:",
+    "- Use the questions and options above as the `questions[]` payload. The card adds a free-text slot automatically — do not add a 'something else' option.",
+    "- If the user skips a question, use its (default) option for that input.",
+    "- If the user skips every question or closes the card, proceed with all defaults — do not ask again.",
+    "- Once they answer, generate immediately using their answers. Do not re-ask or tack on follow-up questions.",
+    "- If the conversation already makes an answer obvious, you may pre-select it — never ask something you already know.",
+    "</elicit_first>",
+  ].join("\n");
+}
+
+/**
+ * The message a template seeds into a fresh chat thread. For a template with
+ * `elicit`, this is the base prompt plus the elicitation directive so the
+ * agent asks first and generates second. For every other template it is the
+ * base prompt unchanged — those kick off instantly, exactly as before.
+ */
+export function buildTemplateKickoff(template: CreateTemplate): string {
+  if (!template.elicit || template.elicit.length === 0) return template.prompt;
+  return `${template.prompt}\n\n${buildElicitDirective(template.elicit)}`;
 }
 
 export interface CreateMode {
@@ -89,6 +182,36 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Series A deck: problem, market, traction, ask.",
         prompt:
           "Build me an investor pitch deck as a slide-deck app. Include slides for: problem, solution, market size (TAM/SAM/SOM), product, traction, business model, competition, team, financial projections, and the funding ask. Use a confident, modern visual direction with strong typography and one clear idea per slide. Add placeholder content I can edit and make it presentable as-is.",
+        elicit: [
+          {
+            question: "Which round are you raising?",
+            description: "Sets the emphasis — traction vs. vision vs. scale.",
+            options: [
+              { label: "Seed", isDefault: true },
+              { label: "Pre-seed" },
+              { label: "Series A" },
+              { label: "Series B+" },
+            ],
+          },
+          {
+            question: "What sector?",
+            options: [
+              { label: "SaaS / software", isDefault: true },
+              { label: "Consumer" },
+              { label: "Marketplace" },
+              { label: "Hardware / deeptech" },
+            ],
+            freeTextPlaceholder: "e.g. fintech, healthtech, climate",
+          },
+          {
+            question: "Visual direction?",
+            options: [
+              { label: "Modern & confident", isDefault: true },
+              { label: "Minimal & editorial" },
+              { label: "Bold & energetic" },
+            ],
+          },
+        ],
       },
       {
         id: "qbr",
@@ -96,6 +219,32 @@ export const CREATE_MODES: CreateMode[] = [
         description: "KPIs, wins, risks, and next-quarter priorities.",
         prompt:
           "Build a quarterly business review slide deck as an app. Cover: executive summary, key KPIs with trend callouts, wins this quarter, what slipped and why, customer/revenue highlights, risks, and priorities for next quarter. Clean, data-forward design with one headline per slide.",
+        elicit: [
+          {
+            question: "Who's the audience?",
+            options: [
+              { label: "Exec leadership", isDefault: true },
+              { label: "The board" },
+              { label: "The whole company" },
+            ],
+          },
+          {
+            question: "What should it emphasize?",
+            options: [
+              { label: "Growth & revenue", isDefault: true },
+              { label: "Product & delivery" },
+              { label: "Efficiency & costs" },
+            ],
+          },
+          {
+            question: "Which period does this cover?",
+            options: [
+              { label: "Last quarter", isDefault: true },
+              { label: "Last month" },
+              { label: "Full year" },
+            ],
+          },
+        ],
       },
       {
         id: "product-launch",
@@ -127,6 +276,38 @@ export const CREATE_MODES: CreateMode[] = [
         description: "At-a-glance metrics with charts and trends.",
         prompt:
           "Build me a KPI dashboard app. Show top-line metric cards (revenue, active users, growth %, churn) with trend indicators, plus a line chart of the primary metric over time and a bar chart breaking it down by segment. Seed it with realistic placeholder data I can replace, and make the layout precise and navy/finance-grade.",
+        elicit: [
+          {
+            question: "What kind of business is this for?",
+            description: "Shapes which metrics and segments make sense.",
+            options: [
+              { label: "SaaS", isDefault: true },
+              { label: "E-commerce" },
+              { label: "Marketplace" },
+              { label: "Agency / services" },
+            ],
+          },
+          {
+            question: "Which metrics matter most?",
+            options: [
+              {
+                label: "Revenue, active users, growth %, churn",
+                isDefault: true,
+              },
+              { label: "Traffic, conversion, AOV, CAC" },
+              { label: "I'll specify my own" },
+            ],
+            freeTextPlaceholder: "e.g. MRR, NRR, pipeline, NPS",
+          },
+          {
+            question: "Time granularity?",
+            options: [
+              { label: "Monthly", isDefault: true },
+              { label: "Weekly" },
+              { label: "Daily" },
+            ],
+          },
+        ],
       },
       {
         id: "budget-tracker",
@@ -134,6 +315,36 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Income, expenses, and running balance.",
         prompt:
           "Build a personal budget tracker app. Let me add income and expense entries by category, show a running balance, a spending-by-category pie chart, and a monthly total. Persist the entries so they stick between sessions.",
+        elicit: [
+          {
+            question: "Whose budget is this?",
+            options: [
+              { label: "Personal", isDefault: true },
+              { label: "A team or department" },
+              { label: "A specific project" },
+            ],
+          },
+          {
+            question: "Which starter categories?",
+            options: [
+              {
+                label: "Rent, food, transport, subscriptions",
+                isDefault: true,
+              },
+              { label: "Payroll, tools, marketing, ops" },
+              { label: "I'll add my own" },
+            ],
+            freeTextPlaceholder: "e.g. rent, groceries, gym, savings",
+          },
+          {
+            question: "Track over what period?",
+            options: [
+              { label: "Monthly", isDefault: true },
+              { label: "Weekly" },
+              { label: "Yearly" },
+            ],
+          },
+        ],
       },
       {
         id: "habit-tracker",
@@ -148,6 +359,34 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Interactive inputs with computed payback.",
         prompt:
           "Build an interactive ROI calculator app with input sliders/fields for cost, expected gain, and time horizon. Compute ROI %, net benefit, and payback period live as I change inputs, and visualize the breakeven point on a small chart.",
+        elicit: [
+          {
+            question: "What investment are you evaluating?",
+            description: "Sets sensible labels and default input ranges.",
+            options: [
+              { label: "Marketing spend", isDefault: true },
+              { label: "A new hire" },
+              { label: "Software / tooling" },
+              { label: "Equipment / capex" },
+            ],
+            freeTextPlaceholder: "e.g. a trade-show booth",
+          },
+          {
+            question: "Over what time horizon?",
+            options: [
+              { label: "12 months", isDefault: true },
+              { label: "6 months" },
+              { label: "3 years" },
+            ],
+          },
+          {
+            question: "Show a breakeven chart?",
+            options: [
+              { label: "Yes", isDefault: true },
+              { label: "No — keep it simple" },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -165,6 +404,32 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Problem, goals, scope, and success metrics.",
         prompt:
           "Write a product requirements document (PRD) in the document editor. Include: overview & problem statement, goals and non-goals, target users, user stories, functional requirements, success metrics, risks, and an open-questions section. Use clear headings and leave editable placeholders for project-specific detail.",
+        elicit: [
+          {
+            question: "What are you speccing?",
+            options: [
+              { label: "A new feature", isDefault: true },
+              { label: "A whole new product" },
+              { label: "An improvement to something live" },
+            ],
+            freeTextPlaceholder: "e.g. team billing, SSO, mobile app",
+          },
+          {
+            question: "How much detail?",
+            options: [
+              { label: "Standard PRD", isDefault: true },
+              { label: "Lightweight one-pager" },
+              { label: "Detailed spec with edge cases" },
+            ],
+          },
+          {
+            question: "Include a success-metrics section?",
+            options: [
+              { label: "Yes", isDefault: true },
+              { label: "No — skip metrics" },
+            ],
+          },
+        ],
       },
       {
         id: "meeting-notes",
@@ -203,6 +468,63 @@ export const CREATE_MODES: CreateMode[] = [
         description: "3-year model with live formulas.",
         prompt:
           "Build me a SaaS financial model as a real Excel spreadsheet: an Assumptions sheet (starting MRR, growth %, churn %, CAC, headcount costs), a monthly model sheet computing MRR build-up, revenue, costs, and EBITDA entirely with live formulas referencing the assumptions, and an annual summary. Deliver it as an .xlsx I can open and tweak — changing an assumption must recalculate everything.",
+        elicit: [
+          {
+            question: "What stage are you modelling from?",
+            description: "Sets the starting MRR the build-up runs off.",
+            options: [
+              { label: "Pre-seed — ~$5k starting MRR", isDefault: true },
+              { label: "Seed — ~$50k starting MRR" },
+              { label: "Series A — ~$250k starting MRR" },
+              { label: "Growth — ~$1M starting MRR" },
+            ],
+            freeTextPlaceholder: "e.g. $12k starting MRR",
+          },
+          {
+            question: "Expected monthly revenue growth?",
+            options: [
+              { label: "10% / month", isDefault: true },
+              { label: "5% / month — steady" },
+              { label: "20% / month — aggressive" },
+            ],
+            freeTextPlaceholder: "e.g. 8% / month",
+          },
+          {
+            question: "Monthly churn rate?",
+            options: [
+              { label: "2% / month", isDefault: true },
+              { label: "1% / month — best-in-class" },
+              { label: "5% / month — early/high" },
+            ],
+            freeTextPlaceholder: "e.g. 3% / month",
+          },
+          {
+            question: "Average revenue per account (ARPU)?",
+            options: [
+              { label: "$50 / month", isDefault: true },
+              { label: "$20 / month — self-serve" },
+              { label: "$200 / month — mid-market" },
+              { label: "$1,000 / month — enterprise" },
+            ],
+            freeTextPlaceholder: "e.g. $75 / month",
+          },
+          {
+            question: "Headcount plan?",
+            options: [
+              { label: "Lean — hire as revenue allows", isDefault: true },
+              { label: "Aggressive — hire ahead of revenue" },
+              { label: "Flat — keep the current team" },
+            ],
+          },
+          {
+            question: "Time horizon?",
+            options: [
+              { label: "3 years", isDefault: true },
+              { label: "1 year" },
+              { label: "5 years" },
+            ],
+          },
+        ],
       },
       {
         id: "budget-sheet",
@@ -210,6 +532,43 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Categories × months with totals and variance.",
         prompt:
           "Build a budget spreadsheet as a real .xlsx: expense categories down the rows, months across the columns, with live SUM formulas for row and column totals and a variance column against a plan. I'll tell you the categories and rough numbers — everything derivable must be a formula.",
+        elicit: [
+          {
+            question: "What is this budget for?",
+            options: [
+              { label: "Business / department", isDefault: true },
+              { label: "Personal finances" },
+              { label: "A project or event" },
+            ],
+          },
+          {
+            question: "Which starter categories?",
+            options: [
+              {
+                label: "Business (payroll, tools, marketing, ops)",
+                isDefault: true,
+              },
+              { label: "Personal (rent, food, transport, subscriptions)" },
+              { label: "I'll list my own" },
+            ],
+            freeTextPlaceholder: "e.g. payroll, cloud, ads, travel",
+          },
+          {
+            question: "Time columns across the top?",
+            options: [
+              { label: "12 months", isDefault: true },
+              { label: "4 quarters" },
+              { label: "Weeks" },
+            ],
+          },
+          {
+            question: "Include a variance-vs-plan column?",
+            options: [
+              { label: "Yes", isDefault: true },
+              { label: "No — just actuals" },
+            ],
+          },
+        ],
       },
       {
         id: "sales-tracker",
@@ -217,6 +576,35 @@ export const CREATE_MODES: CreateMode[] = [
         description: "Deals, stages, weighted forecast.",
         prompt:
           "Build a sales pipeline spreadsheet as a real .xlsx: deals down the rows with columns for stage, amount, close probability, and a weighted-value formula (amount × probability), plus a summary section computing the total weighted forecast with live formulas.",
+        elicit: [
+          {
+            question: "What are you tracking?",
+            options: [
+              { label: "B2B sales deals", isDefault: true },
+              { label: "Real-estate deals" },
+              { label: "Freelance / client projects" },
+            ],
+          },
+          {
+            question: "Which pipeline stages?",
+            options: [
+              {
+                label: "Lead → Qualified → Proposal → Won",
+                isDefault: true,
+              },
+              { label: "Simple — Open / Won / Lost" },
+              { label: "I'll define my own" },
+            ],
+            freeTextPlaceholder: "e.g. Discovery, Demo, Negotiation, Closed",
+          },
+          {
+            question: "Include a weighted forecast total?",
+            options: [
+              { label: "Yes — amount × probability", isDefault: true },
+              { label: "No — just raw amounts" },
+            ],
+          },
+        ],
       },
     ],
   },

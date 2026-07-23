@@ -114,6 +114,14 @@ export function shouldConsiderClarify(text: string): boolean {
 /** Longest the returned question may be. Matches the work-item cap. */
 const MAX_QUESTION_CHARS = 300;
 
+/**
+ * Most questions a single chat clarify may surface. The multi-question form is
+ * the vehicle only when several independent inputs are EACH genuinely required;
+ * the common case stays ONE question. Capped well under `ask_question`'s own
+ * batch limit (5) to keep chat biased toward fewer asks.
+ */
+const MAX_QUESTIONS = 4;
+
 /** Exported for tests; production callers go through {@link assessChatClarify}. */
 export function buildChatClarifyPrompt(
   userText: string,
@@ -138,11 +146,11 @@ export function buildChatClarifyPrompt(
     "Cue also searches the user's personal memory (people, preferences, past trips, past work, past conversations) during the turn, so missing general background about the user is NOT a reason to ask.",
     "",
     "Reply with ONLY a JSON object, no prose:",
-    '{"verdict": "execute" | "clarify", "understanding": "<one plain sentence naming what you understand the request to be>", "question": "<the ONE question you need answered — required for clarify>", "confidence": <0-1>}',
+    '{"verdict": "execute" | "clarify", "understanding": "<one plain sentence naming what you understand the request to be>", "question": "<the single highest-value question — required for clarify>", "questions": ["<optional: 2-4 questions, the first identical to `question`, ONLY when several independent inputs are EACH required and the user could answer them together>"], "confidence": <0-1>}',
     "",
     "How to choose:",
     "- execute: this is the DEFAULT, and when in doubt you choose it. The message is clear enough to act on, OR any guess is cheap and reversible, OR you can produce a draft/plan the user reacts to. Broad-but-doable requests (\"research options\", \"draft the reply\", \"summarise this\") are execute.",
-    "- clarify: acting would require guessing something only the user can decide AND getting it wrong would waste minutes or take a consequential/irreversible action (booking, buying, paying, sending, scheduling, cancelling). Give exactly ONE question — the single highest-value one, phrased the way you would ask a colleague. Never a list, never a question the message already answers.",
+    "- clarify: acting would require guessing something only the user can decide AND getting it wrong would waste minutes or take a consequential/irreversible action (booking, buying, paying, sending, scheduling, cancelling). Put the single highest-value question in `question`, phrased the way you would ask a colleague. Prefer asking just that one. Only when several independent inputs are EACH genuinely required to act (e.g. a booking needs which trip AND which dates AND how many travellers) may you also fill `questions` with 2-4 of them — never pad it, never include anything the message already answers.",
     "",
     "confidence: how sure you are that a clarifying question is genuinely needed, 0-1. Be honest — a low number is better than an annoying question.",
   ]
@@ -194,9 +202,50 @@ function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | null> {
 }
 
 export interface ChatClarifyResult {
-  /** The ONE clarifying question to ask the user before running. */
-  question: string;
+  /**
+   * The clarifying questions to ask before running. Usually one; 2–4 only when
+   * the model judged that several independent inputs are each required. The
+   * caller routes them to the existing `ask_question` tool — one question
+   * inline, several as a single batched card.
+   */
+  questions: string[];
   confidence: number;
+}
+
+/**
+ * Pull an optional `questions` string array out of the model's JSON reply,
+ * trimmed, length-capped, de-duplicated, and capped at {@link MAX_QUESTIONS}.
+ * Returns null when the field is absent, empty, or unusable — the caller then
+ * falls back to the single parsed `question`. Reuses the same lenient
+ * first-`{`…last-`}` slice as {@link parseAssessmentResponse} so a reply with
+ * surrounding prose still parses.
+ *
+ * Exported for tests.
+ */
+export function extractQuestionsArray(text: string): string[] | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const raw = (parsed as Record<string, unknown>).questions;
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const q of raw) {
+    if (typeof q !== "string") continue;
+    const trimmed = q.trim().slice(0, MAX_QUESTION_CHARS);
+    if (trimmed.length === 0 || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+    if (out.length >= MAX_QUESTIONS) break;
+  }
+  return out.length > 0 ? out : null;
 }
 
 /**
@@ -260,8 +309,17 @@ export async function assessChatClarify(
       return null;
     }
 
+    // Prefer the explicit multi-question array when the model returned a real
+    // one (several independent inputs); otherwise ask just the single
+    // highest-value question the assessment parser already extracted. The
+    // parser guarantees `parsed.question` here (a clarify with none degrades to
+    // execute above), so there is always at least one question to ask.
+    const single = parsed.question.slice(0, MAX_QUESTION_CHARS);
+    const multi = extractQuestionsArray(text);
+    const questions = multi ?? [single];
+
     return {
-      question: parsed.question.slice(0, MAX_QUESTION_CHARS),
+      questions,
       confidence: parsed.confidence,
     };
   } catch (err) {
@@ -278,18 +336,39 @@ export async function assessChatClarify(
 // ---------------------------------------------------------------------------
 
 /**
- * The one-line directive appended to the turn's tail user message when a
- * clarify fires. It does NOT answer for the user or fabricate progress — it
- * routes the agent to the EXISTING `ask_question` tool (which renders the
- * existing answerable question card) and tells it to stop until answered, so
- * no parallel question surface is built.
+ * The directive appended to the turn's tail user message when a clarify fires.
+ * It does NOT answer for the user or fabricate progress — it routes the agent
+ * to the EXISTING `ask_question` tool (which renders the existing answerable
+ * question card) and tells it to stop until answered, so no parallel question
+ * surface is built.
+ *
+ * One question renders as a single inline card; several render as ONE batched
+ * card (the same batched `ask_question` path templates use), never as a
+ * one-message-at-a-time interrogation. An empty list yields "" so the caller's
+ * append becomes a no-op — belt to the assessment parser's suspenders.
  */
-export function buildClarifyDirective(question: string): string {
+export function buildClarifyDirective(questions: string[]): string {
+  const cleaned = questions
+    .map((q) => q.trim())
+    .filter((q) => q.length > 0);
+  if (cleaned.length === 0) return "";
+
+  if (cleaned.length === 1) {
+    return [
+      "<clarify_directive>",
+      "This request looks under-specified for an action with real consequences. Before doing ANY work on it — no web searches, no browsing, no actions — call the `ask_question` tool to ask the user exactly this ONE question, then stop and wait for their answer:",
+      cleaned[0]!,
+      "If, after re-reading the message and the context above, the answer is actually already clear, ignore this and proceed.",
+      "</clarify_directive>",
+    ].join("\n");
+  }
+
+  const numbered = cleaned.map((q, i) => `${i + 1}. ${q}`).join("\n");
   return [
     "<clarify_directive>",
-    "This request looks under-specified for an action with real consequences. Before doing ANY work on it — no web searches, no browsing, no actions — call the `ask_question` tool to ask the user exactly this ONE question, then stop and wait for their answer:",
-    question.trim(),
-    "If, after re-reading the message and the context above, the answer is actually already clear, ignore this and proceed.",
+    "This request looks under-specified for an action with real consequences, and more than one input is genuinely needed. Before doing ANY work on it — no web searches, no browsing, no actions — call the `ask_question` tool ONCE, passing ALL of these questions together in its `questions` array (do not ask them one message at a time), then stop and wait for the answers:",
+    numbered,
+    "For each question offer 2–4 concrete options; the card adds a free-text slot automatically. If the user skips one, proceed with a reasonable default for it. If the context above already answers one of these, drop that question rather than asking it.",
     "</clarify_directive>",
   ].join("\n");
 }
@@ -304,11 +383,14 @@ export function buildClarifyDirective(question: string): string {
  */
 export function appendClarifyDirective(
   messages: Message[],
-  question: string,
+  questions: string[],
 ): Message[] {
   const tail = messages[messages.length - 1];
   if (!tail || tail.role !== "user") return messages;
-  const textBlock = { type: "text" as const, text: buildClarifyDirective(question) };
+  const directive = buildClarifyDirective(questions);
+  // Nothing to steer with (empty/whitespace-only list) → leave history intact.
+  if (directive.length === 0) return messages;
+  const textBlock = { type: "text" as const, text: directive };
   return [
     ...messages.slice(0, -1),
     { ...tail, content: [...tail.content, textBlock] },

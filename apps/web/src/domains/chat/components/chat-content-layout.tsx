@@ -18,6 +18,7 @@ import { AnimatedRightDrawer } from "@/domains/chat/components/animated-right-dr
 import { LazyBoundary } from "@/components/lazy-boundary";
 import { AppViewerContainer } from "@/components/app-viewer-container";
 import { DocumentViewerContainer } from "@/domains/chat/components/document-viewer-container";
+import { SpreadsheetViewerContainer } from "@/domains/chat/components/spreadsheet-viewer-container";
 import {
   ChatMainPanel,
   type ChatMainPanelProps,
@@ -52,6 +53,7 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
   const mainView = useViewerStore.use.mainView();
   const openedAppState = useViewerStore.use.openedAppState();
   const openedDocumentState = useViewerStore.use.openedDocumentState();
+  const openedSpreadsheetState = useViewerStore.use.openedSpreadsheetState();
   const editingConversationId =
     useConversationStore.use.editingConversationId();
   const activeSubagentId = useViewerStore.use.activeSubagentId();
@@ -104,6 +106,10 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
 
   const handleCloseDocument = useCallback(() => {
     useViewerStore.getState().closeDocument();
+  }, []);
+
+  const handleCloseSpreadsheet = useCallback(() => {
+    useViewerStore.getState().closeSpreadsheet();
   }, []);
 
   // -------------------------------------------------------------------------
@@ -196,6 +202,9 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
           break;
         case "document":
           viewer.closeDocument();
+          break;
+        case "spreadsheet":
+          viewer.closeSpreadsheet();
           break;
         default:
           return;
@@ -295,6 +304,32 @@ export function ChatContentLayout(props: ChatMainPanelProps) {
                 `${routes.conversation(openedDocumentState.conversationId)}?prompt=${encodeURIComponent(prompt)}`,
               );
             }}
+          />
+        }
+      />
+    );
+  }
+
+  // Spreadsheet viewer side panel
+  if (
+    mainView === "spreadsheet" &&
+    !isMobile &&
+    openedSpreadsheetState &&
+    assistantId
+  ) {
+    return (
+      <ResizablePanel
+        storageKey="spreadsheetPanelWidth"
+        defaultRightWidth={520}
+        minLeftWidth={300}
+        minRightWidth={460}
+        left={chatContent}
+        right={
+          <SpreadsheetViewerContainer
+            attachmentId={openedSpreadsheetState.attachmentId}
+            filename={openedSpreadsheetState.filename}
+            assistantId={assistantId}
+            onClose={handleCloseSpreadsheet}
           />
         }
       />
