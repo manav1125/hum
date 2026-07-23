@@ -129,6 +129,23 @@ if (!app.isPackaged) {
 }
 const isDev = !app.isPackaged;
 
+// Last-resort backstop: a synchronous write failure deep in a dependency
+// (electron-store on a full disk was the observed case — ENOSPC writing
+// window-state.json crashed the whole main process behind an Electron error
+// dialog) must not take the app down. The specific write sites degrade
+// gracefully; this catches anything that slips past them. Renderer/GPU
+// crashes are handled elsewhere — this is only for the main process.
+process.on("uncaughtException", (err) => {
+  const isDiskFull =
+    err instanceof Error && "code" in err && err.code === "ENOSPC";
+  console.error(
+    `[main] uncaught exception${isDiskFull ? " (disk full — app kept alive)" : ""}`,
+    err,
+  );
+  // Do not rethrow: staying up degraded beats a crash dialog. A genuinely
+  // fatal condition will resurface through its own subsystem.
+});
+
 // Packaged builds all share the same package.json `name` (`@vellumai/macos`),
 // so Electron resolves `app.getPath("userData")` to the same directory for
 // every environment. This causes `requestSingleInstanceLock()` collisions

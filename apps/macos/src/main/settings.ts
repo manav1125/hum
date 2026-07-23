@@ -150,7 +150,15 @@ export const writeSetting = <K extends keyof AppSettings>(
   key: K,
   value: AppSettings[K],
 ): void => {
-  store().set(key, value);
+  try {
+    store().set(key, value);
+  } catch (err) {
+    // electron-store writes synchronously; a full disk throws ENOSPC. A
+    // failed settings write must degrade, not crash the main process —
+    // losing one preference save is survivable, taking down the whole app
+    // is not.
+    console.error(`[settings] failed to persist "${String(key)}"`, err);
+  }
 };
 
 /**

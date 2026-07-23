@@ -64,7 +64,12 @@ export const readOnboardingActive = (): boolean =>
  */
 export const writeOnboardingActive = (active: boolean): void => {
   if (readOnboardingActive() === active) return;
-  store().set("onboardingActive", active);
+  try {
+    store().set("onboardingActive", active);
+  } catch (err) {
+    // A full disk must not crash the app over a flag write. See `persist`.
+    console.error("[window-state] failed to persist onboarding flag", err);
+  }
 };
 
 /**
@@ -163,11 +168,20 @@ export const track = (
     if (win.isDestroyed()) return;
     if (!shouldPersist()) return;
     const bounds = win.getNormalBounds();
-    const existing = store().get("windows", {});
-    store().set("windows", {
-      ...existing,
-      [key]: { ...bounds, isFullScreen: win.isFullScreen() },
-    });
+    try {
+      const existing = store().get("windows", {});
+      store().set("windows", {
+        ...existing,
+        [key]: { ...bounds, isFullScreen: win.isFullScreen() },
+      });
+    } catch (err) {
+      // electron-store writes synchronously; on a full disk this throws
+      // ENOSPC. A lost window-position save is nothing — crashing the whole
+      // main process over it (which is what an uncaught throw here did) is
+      // unacceptable. Swallow it; the geometry restores from the last good
+      // save next launch.
+      console.error("[window-state] failed to persist window geometry", err);
+    }
   };
 
   const schedulePersist = (): void => {
