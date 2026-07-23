@@ -282,12 +282,13 @@ export async function buildWorkbook(parsed: SheetInput[]): Promise<{
       let sheetFormulas = 0;
       const sheetResults = computed.get(sheet.name);
 
-      // Apply column-level number formats FIRST, so per-cell formats set in the
+      // Apply COLUMN-level number formats FIRST, so per-cell formats set in the
       // write loop below win. ExcelJS's Column.numFmt setter overwrites the
       // numFmt of every existing cell in the column — so if this ran after the
       // cell loop, a column "$#,##0" would clobber a per-cell "0.0%" (a percent
       // margin row would render as "$1"). Setting it before the cells exist
       // makes it a column default that per-cell writes override.
+      // Cell-reference keys (e.g. "B4") are applied AFTER the loop below.
       if (sheet.number_formats) {
         for (const [col, fmt] of Object.entries(sheet.number_formats)) {
           if (/^[A-Z]{1,2}$/i.test(col) && typeof fmt === "string") {
@@ -327,6 +328,20 @@ export async function buildWorkbook(parsed: SheetInput[]): Promise<{
           if (cellBold) cell.font = { ...(cell.font ?? {}), bold: true };
         }
         row.commit();
+      }
+
+      // Apply CELL-reference number formats (e.g. "B4": "0.0%") AFTER the write
+      // loop and after the column defaults, so a single cell's format wins over
+      // its column format. The model frequently formats an individual percent
+      // cell this way (a margin row inside a currency column); previously only
+      // column-letter keys were honored, so "B4" was silently dropped and the
+      // cell inherited the column's "$#,##0" — rendering 0.6 as "$1".
+      if (sheet.number_formats) {
+        for (const [ref, fmt] of Object.entries(sheet.number_formats)) {
+          if (/^[A-Z]{1,2}[0-9]+$/i.test(ref) && typeof fmt === "string") {
+            ws.getCell(ref.toUpperCase()).numFmt = fmt;
+          }
+        }
       }
 
       if (sheet.header && sheet.rows.length > 0) {

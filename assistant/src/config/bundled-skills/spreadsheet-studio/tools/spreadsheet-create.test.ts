@@ -133,6 +133,30 @@ describe("per-cell number format survives column format", () => {
     // ...while a plain currency cell in the same column keeps the column format.
     expect(ws.getRow(2).getCell(2).numFmt).toBe("$#,##0");
   });
+
+  test("a CELL-reference number_formats key (B4) is honored over its column", async () => {
+    // The exact live payload: the model formats one percent cell via a cell
+    // key ("B4") inside a currency column ("B"). Previously "B4" was dropped
+    // and B4 inherited "$#,##0" → "$1". It must now render as a percent.
+    const { buffer } = await buildWorkbook([
+      {
+        name: "Sheet1",
+        rows: [
+          ["Item", "Amount"],
+          ["Revenue", 100000],
+          ["Costs", 40000],
+          ["Gross Margin %", "=(B2-B3)/B2"],
+        ],
+        header: true,
+        number_formats: { B: "$#,##0", B4: "0.0%" },
+      },
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws = wb.getWorksheet("Sheet1")!;
+    expect(ws.getCell("B4").numFmt).toBe("0.0%"); // percent, not "$#,##0"
+    expect(ws.getCell("B2").numFmt).toBe("$#,##0"); // revenue still currency
+  });
 });
 
 describe("provider-stringified arguments", () => {
