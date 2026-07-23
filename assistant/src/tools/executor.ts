@@ -487,6 +487,17 @@ export function computePerToolTimeoutMs(
     );
     return (shellTimeoutSec + 5) * 1000;
   }
+  if (name === "replicate_run") {
+    // Replicate video/image jobs poll to completion; a single text-to-video
+    // clip (minimax/video-01) takes ~2–3 min. The tool's own `wait_seconds`
+    // governs its poll budget (clamped ≤600 there), so the outer per-tool
+    // timeout must honor it — otherwise the default (often 120s) silently
+    // kills motion-video generation before it can finish.
+    const waitSec =
+      typeof input.wait_seconds === "number" ? input.wait_seconds : 120;
+    const clamped = Math.max(1, Math.min(600, waitSec));
+    return (clamped + 20) * 1000;
+  }
   if (name === "credential_store" && input.action === "prompt") {
     const { permissionTimeoutSec } = getConfig().timeouts;
     // permissionTimeoutSec is zod-validated as positive & finite, but the

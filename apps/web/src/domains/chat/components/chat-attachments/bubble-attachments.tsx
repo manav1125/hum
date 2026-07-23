@@ -8,6 +8,7 @@ import {
   classifyAttachment,
   isViewableSpreadsheet,
 } from "@/domains/chat/components/chat-attachments/utils";
+import { useViewerStore } from "@/stores/viewer-store";
 
 interface BubbleAttachmentsProps {
   attachments: DisplayAttachment[];
@@ -48,9 +49,18 @@ export const BubbleAttachments: FC<BubbleAttachmentsProps> = ({
             classifyAttachment(att.mimeType, att.filename) === "image" &&
             att.previewUrl != null;
 
-          const opensInViewer =
-            onOpenSpreadsheet != null &&
-            isViewableSpreadsheet(att.mimeType, att.filename);
+          // Route any viewable .xlsx to the native grid viewer, using the
+          // threaded prop when present but falling back to the viewer store
+          // directly so a durable spreadsheet always opens the grid rather
+          // than the download modal. See {@link MessageAttachments}.
+          const opensInViewer = isViewableSpreadsheet(
+            att.mimeType,
+            att.filename,
+          );
+          const openSpreadsheet =
+            onOpenSpreadsheet ??
+            ((id: string, filename: string) =>
+              useViewerStore.getState().loadSpreadsheet(id, filename));
 
           if (isInlineImage) {
             return (
@@ -83,7 +93,7 @@ export const BubbleAttachments: FC<BubbleAttachmentsProps> = ({
               previewUrl={att.previewUrl}
               onPreview={
                 opensInViewer
-                  ? () => onOpenSpreadsheet(att.id, att.filename)
+                  ? () => openSpreadsheet(att.id, att.filename)
                   : () => openPreview(att)
               }
             />

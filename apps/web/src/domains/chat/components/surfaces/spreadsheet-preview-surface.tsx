@@ -4,6 +4,7 @@ import type { KeyboardEvent } from "react";
 import type { Surface } from "@/domains/chat/types/types";
 
 import { SurfaceContainer } from "@/domains/chat/components/surfaces/surface-container";
+import { useViewerStore } from "@/stores/viewer-store";
 
 interface SheetSummary {
   name: string;
@@ -46,10 +47,18 @@ export function SpreadsheetPreviewSurface({
     totalFormulaCells: (surface.data.totalFormulaCells as number) ?? 0,
   };
 
-  const isClickable = onOpenSpreadsheet != null && data.attachmentId !== "";
+  // Clickable whenever we have an attachment to open. Prefer the threaded
+  // prop, but fall back to the viewer store directly so the card opens the
+  // native grid even if the prop chain isn't wired on this render path.
+  const isClickable = data.attachmentId !== "";
 
   const handleClick = () => {
-    if (isClickable) onOpenSpreadsheet(data.attachmentId, data.filename);
+    if (!isClickable) return;
+    if (onOpenSpreadsheet) {
+      onOpenSpreadsheet(data.attachmentId, data.filename);
+    } else {
+      useViewerStore.getState().loadSpreadsheet(data.attachmentId, data.filename);
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {

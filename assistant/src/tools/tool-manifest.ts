@@ -13,6 +13,7 @@ import {
 } from "../credential-execution/feature-gates.js";
 import { getA2AOutboundToolsIfEnabled } from "./a2a/send.js";
 import { askQuestionTool } from "./ask-question/ask-question-tool.js";
+import { browserTools } from "./browser/browser-tools.js";
 import { makeAuthenticatedRequestTool } from "./credential-execution/make-authenticated-request.js";
 import { manageSecureCommandTool } from "./credential-execution/manage-secure-command-tool.js";
 import { runAuthenticatedCommandTool } from "./credential-execution/run-authenticated-command.js";
@@ -100,6 +101,10 @@ export const explicitTools: ToolDefinition[] = [
   credentialStoreTool,
   notifyParentTool,
   askQuestionTool,
+  // First-class browser_* tools (one per canonical browser operation) so the
+  // model actually drives the connected extension instead of falling back to
+  // computer_use_* screen-clicking. See browser/browser-tools.ts.
+  ...browserTools,
   // A2A outbound send — DORMANT unless env CUE_A2A_OUTBOUND=1 is set at
   // process start. When the flag is absent this spread is empty, so the
   // tool is never registered and the model never sees it. The env var is

@@ -5,6 +5,7 @@ import type { DisplayAttachment } from "@/domains/chat/types/types";
 import { MessageAttachmentSquare } from "@/domains/chat/components/chat-attachments/message-attachment-square";
 import { useAttachmentPreview } from "@/domains/chat/components/chat-attachments/use-attachment-preview";
 import { isViewableSpreadsheet } from "@/domains/chat/components/chat-attachments/utils";
+import { useViewerStore } from "@/stores/viewer-store";
 
 interface MessageAttachmentsProps {
   attachments: DisplayAttachment[];
@@ -43,9 +44,19 @@ export const MessageAttachments: FC<MessageAttachmentsProps> = ({
     <>
       <div className="flex flex-wrap gap-2">
         {attachments.map((att) => {
-          const opensInViewer =
-            onOpenSpreadsheet != null &&
-            isViewableSpreadsheet(att.mimeType, att.filename);
+          // Any viewable .xlsx opens the native in-Cue grid viewer. We route
+          // through the `onOpenSpreadsheet` prop when it's threaded down, but
+          // fall back to the viewer store directly so a durable spreadsheet
+          // attachment always opens the grid (not the download modal) even if
+          // the prop chain isn't wired on this render path.
+          const opensInViewer = isViewableSpreadsheet(
+            att.mimeType,
+            att.filename,
+          );
+          const openSpreadsheet =
+            onOpenSpreadsheet ??
+            ((id: string, filename: string) =>
+              useViewerStore.getState().loadSpreadsheet(id, filename));
           return (
             <MessageAttachmentSquare
               key={att.id}
@@ -55,7 +66,7 @@ export const MessageAttachments: FC<MessageAttachmentsProps> = ({
               previewUrl={att.previewUrl}
               onPreview={
                 opensInViewer
-                  ? () => onOpenSpreadsheet(att.id, att.filename)
+                  ? () => openSpreadsheet(att.id, att.filename)
                   : () => openPreview(att)
               }
             />

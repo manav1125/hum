@@ -1,1 +1,0 @@
-import{n as e}from"./auth-store-bKmh6g9N.js";import{t}from"./assistant-feature-flag-store-u8U_25VG.js";function n(e,t){return t||e?.isStaff===!0||e?.email?.toLowerCase().endsWith(`@vellum.ai`)===!0}function r(){return n(e.use.user(),t.use.settingsDeveloperNav()===!0)}export{r as t};
