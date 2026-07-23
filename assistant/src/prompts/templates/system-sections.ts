@@ -148,15 +148,21 @@ function renderConnectedServices(): string | null {
     }
   }
 
-  if (entries.length === 0) return null;
-
   const lines = ["# Connected Services", ""];
-  for (const conn of entries) {
-    const state = conn.accountInfo
-      ? `Connected (${conn.accountInfo})`
-      : "Connected";
-    lines.push(`- **${conn.provider}**: ${state}`);
+  if (entries.length === 0) {
+    lines.push("No integrations are connected yet.");
+  } else {
+    for (const conn of entries) {
+      const state = conn.accountInfo
+        ? `Connected (${conn.accountInfo})`
+        : "Connected";
+      lines.push(`- **${conn.provider}**: ${state}`);
+    }
   }
+  lines.push(
+    "",
+    "When the user asks you to set up, run, or be their assistant for a workflow that depends on services NOT connected above — e.g. \"set up my marketing systems\", \"be my growth/sales assistant\", \"analyze my ads / CRM / email\" — emit a `connector_recommend` ui_show surface listing the relevant connectors (each row Connect if unlinked, or Use if already connected), instead of just describing them in prose. Set `connected: true` on rows that appear above. Use a single `oauth_connect` surface when exactly one specific provider is needed right now.",
+  );
   return lines.join("\n");
 }
 

@@ -724,23 +724,37 @@ export function listAttachments(opts?: {
   const mimeArgs = kinds.map((k) => `${k}/%`);
 
   const excludeClauses = TOOL_CAPTURE_FILENAME_PREFIXES.map(
-    () => "lower(original_filename) NOT LIKE ?",
+    () => "lower(a.original_filename) NOT LIKE ?",
   ).join(" AND ");
   const excludeArgs = TOOL_CAPTURE_FILENAME_PREFIXES.map((p) => `${p}%`);
 
+  // Only surface attachments Cue GENERATED — i.e. linked to an assistant
+  // message (the deliverable side-channel links generated files there). This
+  // excludes things the user PROVIDED (uploaded screenshots/photos) and
+  // pipeline byproducts stored against user turns (Cue Live voice recordings,
+  // `live-voice-user-*.pcm`), which are linked to user-role messages. The
+  // filename denylist above additionally drops assistant-linked tool captures
+  // (computer-use screenshots, skill-execution grabs). The Library is
+  // "everything you and Cue MADE together", not uploads, recordings, or
+  // work-in-progress artifacts.
   return rawAll<AttachmentMetadata>(
     `SELECT
-       id,
-       original_filename AS originalFilename,
-       mime_type AS mimeType,
-       size_bytes AS sizeBytes,
-       kind,
-       created_at AS createdAt,
-       thumbnail_base64 AS thumbnailBase64
-     FROM attachments
-     WHERE (kind IN (${kindPlaceholders}) OR ${mimeClauses})
+       a.id,
+       a.original_filename AS originalFilename,
+       a.mime_type AS mimeType,
+       a.size_bytes AS sizeBytes,
+       a.kind,
+       a.created_at AS createdAt,
+       a.thumbnail_base64 AS thumbnailBase64
+     FROM attachments a
+     WHERE (a.kind IN (${kindPlaceholders}) OR ${mimeClauses})
        AND ${excludeClauses}
-     ORDER BY created_at DESC
+       AND EXISTS (
+         SELECT 1 FROM message_attachments ma
+         JOIN messages m ON m.id = ma.message_id
+         WHERE ma.attachment_id = a.id AND m.role = 'assistant'
+       )
+     ORDER BY a.created_at DESC
      LIMIT ?`,
     ...kinds,
     ...mimeArgs,
