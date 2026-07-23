@@ -2,10 +2,12 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router";
 
 import { PageShell } from "@/components/page-shell";
+import { stageComposerSeed } from "@/domains/create/create-composer-seed";
 import { CreateView } from "@/domains/create/create-view";
 import type { CreateIntent } from "@/domains/create/create-intent";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useCreateProvenanceStore } from "@/stores/create-provenance-store";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useViewerStore } from "@/stores/viewer-store";
 import { routes } from "@/utils/routes";
 
@@ -34,7 +36,7 @@ export function CreatePage() {
   const navigate = useNavigate();
 
   const handleRunPrompt = useCallback(
-    (prompt: string, intent?: CreateIntent | null) => {
+    (prompt: string, intent?: CreateIntent | null, file?: File) => {
       useViewerStore.getState().setMainView("chat");
       const id = newDraftConversationId();
       useConversationStore.getState().setActiveConversationId(id);
@@ -44,6 +46,17 @@ export function CreatePage() {
       // quick-start / form runs that carry no selection.
       if (intent) {
         useCreateProvenanceStore.getState().stampIntent(id, intent);
+      }
+      // Canvas edits carry a SOURCE image. Attachments only ride a message
+      // through the chat composer (the `?prompt=` auto-send path is text-only),
+      // so stage the prompt + file into the composer for the user to send —
+      // exactly the path the mobile Create sheet uses (stageComposerSeed).
+      const assistantId =
+        useResolvedAssistantsStore.getState().activeAssistantId;
+      if (file && assistantId) {
+        stageComposerSeed({ conversationId: id, assistantId, prompt, file });
+        void navigate(routes.conversation(id));
+        return;
       }
       void navigate(
         `${routes.conversation(id)}?prompt=${encodeURIComponent(prompt)}`,

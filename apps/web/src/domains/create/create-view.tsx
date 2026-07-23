@@ -298,8 +298,26 @@ export interface CreateViewProps {
    * second arg so the host can stamp it as the resulting asset's remix
    * provenance (see create-provenance-store). Plain quick-start / form runs
    * omit it.
+   *
+   * Canvas edits (Inpaint / Outpaint / Restyle / Remove BG / Upscale) attach a
+   * SOURCE image: when the user picks one it rides as the optional `file`, which
+   * the host stages into the chat composer (attachments only ride a message
+   * through the composer, never the `?prompt=` auto-send path). Desktop parity
+   * with the mobile Create sheet's CanvasComposer.
    */
-  onRunPrompt: (prompt: string, intent?: CreateIntent | null) => void;
+  onRunPrompt: (
+    prompt: string,
+    intent?: CreateIntent | null,
+    file?: File,
+  ) => void;
+}
+
+/** A picked canvas source image, ready to ride the chat composer as a File. */
+interface CanvasImagePick {
+  file: File;
+  name: string;
+  /** Object URL for the preview card — revoked on clear/replace/unmount. */
+  previewUrl: string;
 }
 
 export function CreateView({ onRunPrompt }: CreateViewProps) {
@@ -318,6 +336,20 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const [selection, setSelection] = useState<GallerySelection | null>(null);
   const [reference, setReference] = useState<CreateReference | null>(null);
   const [prompt, setPrompt] = useState("");
+  // Canvas mode's source image (the picture to edit/restyle/upscale). Rides
+  // exactly one run as a real File attachment, then clears.
+  const [canvasImage, setCanvasImage] = useState<CanvasImagePick | null>(null);
+
+  // Swap the canvas source image, revoking the previous preview URL.
+  const setCanvasImagePick = (pick: CanvasImagePick | null) => {
+    setCanvasImage((prev) => {
+      if (prev && prev.previewUrl !== pick?.previewUrl) {
+        URL.revokeObjectURL(prev.previewUrl);
+      }
+      return pick;
+    });
+  };
+  const clearCanvasImage = () => setCanvasImagePick(null);
 
   const activeMode: CreateMode =
     CREATE_MODES.find((mode) => mode.id === activeModeId) ?? CREATE_MODES[0];
@@ -335,6 +367,8 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
     setActiveTemplateId(null);
     setElicitTemplate(null);
     setSelection((prev) => (prev && prev.mode === id ? prev : null));
+    // The source image is canvas-scoped — leaving canvas drops it.
+    if (id !== "canvas") clearCanvasImage();
   };
 
   // The single funnel EVERY content path routes through — typed prompt, a
@@ -347,6 +381,9 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
   const runContent = (rawText: string) => {
     const text = rawText.trim();
     if (!text) return;
+    // A canvas source image rides this run as a real File attachment.
+    const canvasFile =
+      activeMode.id === "canvas" ? canvasImage?.file : undefined;
     if (selection || reference) {
       const intent = selection
         ? selectionToIntent(selection, brand?.id ?? null, reference)
@@ -355,10 +392,15 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
       // Stamp the intent as the asset's origin provenance (the reference is
       // per-generation, not part of the reusable remix origin, so drop it).
       const provenance: CreateIntent = { ...intent, reference: undefined };
-      onRunPrompt(applyCreateIntent(text, intent, applyBrand), provenance);
+      onRunPrompt(
+        applyCreateIntent(text, intent, applyBrand),
+        provenance,
+        canvasFile,
+      );
     } else {
-      onRunPrompt(text);
+      onRunPrompt(text, null, canvasFile);
     }
+    if (canvasFile) clearCanvasImage();
   };
 
   const submitComposer = () => runContent(prompt);
@@ -371,7 +413,11 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
     onRunPrompt(
       applyCreateIntent(action.promptSeed, intent, sel.inBrand ? brand : null),
       { ...intent, reference: undefined },
+      // The action's promptSeed ("I'll attach an image I want to edit…") only
+      // makes sense with the source image actually attached — stage it.
+      canvasImage?.file,
     );
+    clearCanvasImage();
   };
 
   const handleGalleryConfirm = (sel: GallerySelection) => {
@@ -525,6 +571,10 @@ export function CreateView({ onRunPrompt }: CreateViewProps) {
           isMobile={isMobile}
           prompt={prompt}
           onPrompt={setPrompt}
+          isCanvas={activeMode.id === "canvas"}
+          canvasImage={canvasImage}
+          onCanvasImage={setCanvasImagePick}
+          onClearCanvasImage={clearCanvasImage}
           selection={selection}
           onClearSelection={() => setSelection(null)}
           onToggleBrand={
@@ -657,6 +707,10 @@ function StudioComposer({
   isMobile,
   prompt,
   onPrompt,
+  isCanvas,
+  canvasImage,
+  onCanvasImage,
+  onClearCanvasImage,
   selection,
   onClearSelection,
   onToggleBrand,
@@ -669,6 +723,10 @@ function StudioComposer({
   isMobile: boolean;
   prompt: string;
   onPrompt: (v: string) => void;
+  isCanvas: boolean;
+  canvasImage: CanvasImagePick | null;
+  onCanvasImage: (pick: CanvasImagePick) => void;
+  onClearCanvasImage: () => void;
   selection: GallerySelection | null;
   onClearSelection: () => void;
   onToggleBrand?: () => void;
@@ -762,8 +820,18 @@ function StudioComposer({
         </div>
       ) : null}
 
-      {/* Reference drop — "make it look like this" (per-generation style). */}
-      {reference ? null : (
+      {/* Canvas mode swaps the style-reference drop for a SOURCE-image drop:
+          the picture to edit/restyle/upscale, which rides the run as a real
+          File attachment (desktop parity with the mobile CanvasComposer). Its
+          own image source owns that affordance, so the "make it look like this"
+          reference drop is hidden here — exactly as the mobile sheet does. */}
+      {isCanvas ? (
+        <CanvasSourceDrop
+          image={canvasImage}
+          onImage={onCanvasImage}
+          onClear={onClearCanvasImage}
+        />
+      ) : reference ? null : (
         <ReferenceDrop onReference={onReference} />
       )}
 
@@ -1095,6 +1163,185 @@ function ReferenceDrop({
           }}
         >
           palette · composition · mood — for this one generation only
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Canvas source-image drop — the picture the user wants to edit (inpaint,
+ * outpaint, restyle), upscale, or cut out. Drag-drop, paste, or click to pick;
+ * the picked File rides the run through the chat composer (attachments can't
+ * ride the `?prompt=` auto-send path). Distinct from ReferenceDrop, which
+ * borrows a *look*: this IS the subject image the canvas action operates on.
+ * Desktop parity with the mobile Create sheet's CanvasComposer image source.
+ */
+function CanvasSourceDrop({
+  image,
+  onImage,
+  onClear,
+}: {
+  image: CanvasImagePick | null;
+  onImage: (pick: CanvasImagePick) => void;
+  onClear: () => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+
+  const takeFile = (file: File | null | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    onImage({
+      file,
+      name: file.name || "image",
+      previewUrl: URL.createObjectURL(file),
+    });
+  };
+
+  // Selected source — preview strip with filename + a clear button.
+  if (image) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 11,
+          borderRadius: 12,
+          border: `1px solid ${C.line}`,
+          background: C.sunken,
+          padding: "10px 12px",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 9,
+            flexShrink: 0,
+            background: `center / cover no-repeat url("${image.previewUrl}"), ${C.surface}`,
+          }}
+        />
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span
+            style={{
+              display: "block",
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: C.t1,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {image.name}
+          </span>
+          <span
+            style={{ display: "block", marginTop: 1, fontSize: 11, color: C.t3 }}
+          >
+            Source image — rides your next canvas action
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Remove source image"
+          style={{
+            flexShrink: 0,
+            display: "grid",
+            placeItems: "center",
+            width: 26,
+            height: 26,
+            borderRadius: 999,
+            border: `1px solid ${C.line}`,
+            background: "transparent",
+            color: C.t2,
+            cursor: "pointer",
+          }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        takeFile(e.dataTransfer.files?.[0]);
+      }}
+      onPaste={(e) => {
+        const file = e.clipboardData.files?.[0];
+        if (file) {
+          e.preventDefault();
+          takeFile(file);
+        }
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        borderRadius: 12,
+        border: `1px dashed ${dragOver ? C.blue : C.line}`,
+        background: dragOver
+          ? `color-mix(in srgb, ${C.blue} 8%, transparent)`
+          : C.sunken,
+        padding: "10px 12px",
+        cursor: "pointer",
+        transition: "border-color 120ms, background 120ms",
+      }}
+      onClick={() => fileInput.current?.click()}
+      role="button"
+      tabIndex={0}
+      aria-label="Add the image to edit — drop, paste, or choose a photo"
+    >
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          takeFile(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+      <span
+        aria-hidden
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 9,
+          flexShrink: 0,
+          display: "grid",
+          placeItems: "center",
+          color: C.blueS,
+          background: `color-mix(in srgb, ${C.blue} 12%, transparent)`,
+        }}
+      >
+        <ImagePlus size={17} />
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span
+          style={{
+            display: "block",
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: C.t1,
+          }}
+        >
+          Drop, paste, or choose the image to edit
+        </span>
+        <span
+          style={{ display: "block", marginTop: 1, fontSize: 11, color: C.t3 }}
+        >
+          the picture your canvas action restyles, extends, upscales, or cuts out
         </span>
       </span>
     </div>

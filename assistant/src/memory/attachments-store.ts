@@ -696,6 +696,11 @@ const TOOL_CAPTURE_FILENAME_PREFIXES = [
   "qa-test",
   "host-cu-",
   "browser-screenshot",
+  // Cue Live voice-call audio chunks (both the user's and the assistant's
+  // spoken audio) — recordings of calls, not deliverables. The assistant's
+  // chunks are linked to assistant messages, so the role filter alone keeps
+  // them; this prefix drops both sides.
+  "live-voice-",
 ] as const;
 
 /**

@@ -64,8 +64,12 @@ When a generation request is prefixed with a **`DESIGN CONTRACT`**, **`BRAND`**,
 from the user's gallery selection), treat it as binding constraints, in this order:
 
 1. **DESIGN CONTRACT** — use the given palette hexes, fonts, layout rhythm, and cover
-   treatment. If a `templates/presentations/<id>` path is named and exact reproduction is
-   wanted, load and fill those slides; otherwise generate fresh slides that inherit the look.
+   treatment. If a template `<id>` is named, call **`deck_template_load({ template_id: "<id>" })`**
+   to fetch the real slide skeletons and rebuild those layouts with the user's content;
+   otherwise generate fresh slides that inherit the look. **Do not** `file_read` /
+   `host_file_read` the `templates/presentations/<id>` files directly — they are bundled with
+   the skill but sit outside the workspace sandbox, so those reads fail (especially on cloud).
+   `deck_template_load` runs in-daemon and is the only reliable way to reach them.
 2. **BRAND** — the brand's palette/fonts **override** the template defaults where they
    conflict; place the logo on cover/closing slides; write copy in the brand voice and
    respect its do/don't lists; weave in the boilerplate where natural.

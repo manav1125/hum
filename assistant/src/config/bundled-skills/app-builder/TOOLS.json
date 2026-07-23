@@ -253,6 +253,33 @@
       },
       "executor": "tools/deck-export-pdf.ts",
       "execution_target": "host"
+    },
+    {
+      "name": "deck_template_load",
+      "description": "Load the REAL HTML skeleton of a Create Studio presentation template (e.g. 'hipster', 'startup', 'minimalist') so you can reproduce its exact look. The template files are bundled with the skill but live OUTSIDE the workspace sandbox, so file_read/host_file_read cannot reach them on a cloud deploy — call THIS tool instead. Returns a slide index plus each slide's full 1920x1080 HTML (inline styles, fonts, palette). Use whenever a DESIGN CONTRACT names a template id: fetch the skeleton, then rebuild those layouts with the user's real content (the BRAND block, if present, overrides colors/fonts).",
+      "category": "development",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "description": "The template id from the design contract (matches the folder under templates/presentations/, e.g. 'hipster', 'startup', 'premium_black')."
+          },
+          "slides": {
+            "type": "array",
+            "items": { "type": "number" },
+            "description": "Optional. Specific slide numbers to fetch (e.g. [1, 2, 5]). Omit to get every slide — templates are small (~2-3KB/slide)."
+          },
+          "metadata_only": {
+            "type": "boolean",
+            "description": "When true, return only the slide index (titles/order) without the HTML bodies. Useful to see the deck structure before fetching full slides."
+          }
+        },
+        "required": ["template_id"]
+      },
+      "executor": "tools/deck-template-load.ts",
+      "execution_target": "host"
     }
   ]
 }

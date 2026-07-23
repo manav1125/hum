@@ -29,6 +29,7 @@ import * as appList from "./bundled-skills/app-builder/tools/app-list.js";
 import * as appBuilder_appRefresh from "./bundled-skills/app-builder/tools/app-refresh.js";
 import * as appUpdate from "./bundled-skills/app-builder/tools/app-update.js";
 import * as deckExportPdf from "./bundled-skills/app-builder/tools/deck-export-pdf.js";
+import * as deckTemplateLoad from "./bundled-skills/app-builder/tools/deck-template-load.js";
 // ── app-control ────────────────────────────────────────────────────────────────
 import * as appControlClick from "./bundled-skills/app-control/tools/app-control-click.js";
 import * as appControlCombo from "./bundled-skills/app-control/tools/app-control-combo.js";
@@ -176,6 +177,7 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["app-builder:tools/app-generate-icon.ts", appGenerateIcon],
   ["app-builder:tools/app-list.ts", appList],
   ["app-builder:tools/deck-export-pdf.ts", deckExportPdf],
+  ["app-builder:tools/deck-template-load.ts", deckTemplateLoad],
 
   // app-control
   ["app-control:tools/app-control-start.ts", appControlStart],

@@ -359,6 +359,8 @@ For triage/bulk-action UIs: render a `dynamic_page` with selectable items + acti
 
 Slide decks are a different domain — skip app patterns (contextual headers, search/filter, toasts, form validation, custom routes). Build navigation and layouts with custom HTML/CSS. Templates and principles in `{baseDir}/references/SLIDES.md`. If the request is prefixed with a `DESIGN CONTRACT` / `BRAND` / `STYLE` / `CHARTS` block (from Create Studio), honor it — see `{baseDir}/references/TEMPLATES.md` for the deck catalog and how to apply the contract.
 
+**When the DESIGN CONTRACT names a template id** (e.g. `hipster`, `startup`, `minimalist`), call the **`deck_template_load({ template_id })`** tool to fetch that template's REAL slide HTML, then rebuild those layouts with the user's content. Do NOT try to `file_read` / `host_file_read` the `templates/presentations/…` files — they're bundled with the skill but live outside the workspace sandbox, so those reads fail on a cloud deploy; `deck_template_load` is the only reliable way to get the skeleton. If any `BRAND` block is present, its palette/fonts override the template's where they conflict.
+
 ---
 
 ## SKILL COMPLETE WHEN

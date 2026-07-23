@@ -99,10 +99,12 @@ function templateContract(t: TemplateSpec): string {
     `- Layout rhythm: ${t.layoutRhythm.join(" → ")}.`,
     `- Cover: ${t.coverTreatment}.`,
   ];
-  // Pixel-faithful path: the real HTML skeleton is bundled with the skill.
+  // Pixel-faithful path: the real HTML skeleton is bundled with the skill, but
+  // it lives outside the workspace sandbox — the deck generator must fetch it
+  // with the `deck_template_load` tool (a direct file_read fails on cloud).
   if (t.fidelity !== "contract" && t.sourceHtmlDir) {
     lines.push(
-      `- An exact HTML template is bundled at templates/presentations/${t.sourceHtmlDir} (per references/TEMPLATES.md). For a faithful reproduction, load those slides and fill them with the real content below; otherwise generate fresh slides that inherit the palette/fonts/rhythm above.`,
+      `- An exact HTML skeleton for this template is available. For a faithful reproduction, call the deck_template_load tool with template_id "${t.sourceHtmlDir}" to fetch the real slides, then rebuild them with the real content below; otherwise generate fresh slides that inherit the palette/fonts/rhythm above. Do not try to file_read the template path — it is outside the workspace sandbox.`,
     );
   }
   return lines.join("\n");
