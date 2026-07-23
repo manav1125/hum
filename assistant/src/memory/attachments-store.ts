@@ -663,6 +663,65 @@ export function getFilePathBySourcePath(
  *
  * Returns null if the attachment does not exist or the file is missing.
  */
+/**
+ * Lightweight metadata row for an attachment, without the base64 payload.
+ * Returned by {@link listAttachments} for the Library media listing.
+ */
+export interface AttachmentMetadata {
+  id: string;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: string;
+  createdAt: number;
+  thumbnailBase64: string | null;
+}
+
+/** Attachment kinds surfaced as "media" in the Library by default. */
+const MEDIA_KINDS = ["audio", "video", "image"] as const;
+
+/**
+ * List attachment metadata (no base64 bytes) for the Library.
+ *
+ * Matches on the `kind` column, but also falls back to the MIME family
+ * (`audio/%`, `video/%`, `image/%`) because audio uploads are historically
+ * classified with kind `document` — a pure `kind IN (...)` filter would miss
+ * them. The requested kind names line up with MIME top-level types, so the
+ * fallback mirrors the requested kinds exactly.
+ *
+ * Ordered most-recent-first and capped by `limit` (default 200).
+ */
+export function listAttachments(opts?: {
+  kinds?: string[];
+  limit?: number;
+}): AttachmentMetadata[] {
+  const kinds =
+    opts?.kinds && opts.kinds.length > 0 ? opts.kinds : [...MEDIA_KINDS];
+  const limit = opts?.limit ?? 200;
+
+  const kindPlaceholders = kinds.map(() => "?").join(", ");
+  const mimeClauses = kinds.map(() => "mime_type LIKE ?").join(" OR ");
+  const mimeArgs = kinds.map((k) => `${k}/%`);
+
+  return rawAll<AttachmentMetadata>(
+    `SELECT
+       id,
+       original_filename AS originalFilename,
+       mime_type AS mimeType,
+       size_bytes AS sizeBytes,
+       kind,
+       created_at AS createdAt,
+       thumbnail_base64 AS thumbnailBase64
+     FROM attachments
+     WHERE kind IN (${kindPlaceholders}) OR ${mimeClauses}
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    ...kinds,
+    ...mimeArgs,
+    limit,
+  );
+}
+
 export function getAttachmentContent(attachmentId: string): Buffer | null {
   const row = getAttachmentRow(attachmentId);
   if (!row) return null;

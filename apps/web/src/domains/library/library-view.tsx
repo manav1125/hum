@@ -19,12 +19,15 @@ import {
 } from "react";
 
 import { DeployDialogs } from "@/components/deploy-dialogs";
+import { useAttachmentPreview } from "@/domains/chat/components/chat-attachments/use-attachment-preview";
 import {
   type CoverKind,
   LibraryCoverCard,
 } from "@/domains/library/components/library-cover-card";
 import { DeleteAppDialog } from "@/domains/library/components/delete-app-dialog";
 import { LibraryDocumentCard } from "@/domains/library/components/library-document-card";
+import { LibraryMediaCard } from "@/domains/library/components/library-media-card";
+import type { MediaSummary } from "@/types/media-types";
 import { LibraryEmptyState } from "@/domains/library/components/library-empty-state";
 import { LibraryGridSection } from "@/domains/library/components/library-grid-section";
 import { useLibraryData } from "@/domains/library/use-library-data";
@@ -132,13 +135,32 @@ export function LibraryView({
   const {
     apps,
     documents,
+    media,
     filteredApps,
     filteredDocuments,
+    filteredMedia,
     searchText,
     setSearchText,
     loading,
     error,
   } = useLibraryData(assistantId);
+
+  // Full-screen preview for media attachments. The modal lazily fetches the
+  // file content from the daemon (previewUrl is null here) and plays
+  // audio/video or renders images inline.
+  const { openPreview, previewModal } = useAttachmentPreview(assistantId);
+
+  const handleOpenMedia = useCallback(
+    (item: MediaSummary) =>
+      openPreview({
+        id: item.id,
+        filename: item.original_filename,
+        mimeType: item.mime_type,
+        sizeBytes: item.size_bytes,
+        previewUrl: null,
+      }),
+    [openPreview],
+  );
 
   // --- Filter tabs (All / Decks / Docs / Dashboards / Sites) ---
   const [activeFilter, setActiveFilter] = useState<LibraryFilter>("All");
@@ -252,6 +274,12 @@ export function LibraryView({
     return [];
   }, [filteredDocuments, activeFilter]);
 
+  // Generated audio/video/image assets. Shown under the "All" filter.
+  const tabMedia = useMemo(
+    () => (activeFilter === "All" ? filteredMedia : []),
+    [filteredMedia, activeFilter],
+  );
+
   const byRecent = (
     a: { updatedAt: number; createdAt: number },
     b: { updatedAt: number; createdAt: number },
@@ -298,7 +326,7 @@ export function LibraryView({
   }
 
   // --- Render: empty state ---
-  if (apps.length === 0 && documents.length === 0) {
+  if (apps.length === 0 && documents.length === 0 && media.length === 0) {
     return (
       <LibraryEmptyState
         fileInputRef={fileInputRef}
@@ -312,7 +340,10 @@ export function LibraryView({
   }
 
   // --- Render: main library grid ---
-  const noResults = tabApps.length === 0 && tabDocuments.length === 0;
+  const noResults =
+    tabApps.length === 0 &&
+    tabDocuments.length === 0 &&
+    tabMedia.length === 0;
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
@@ -517,9 +548,27 @@ export function LibraryView({
                 </div>
               </section>
             ) : null}
+            {tabMedia.length > 0 ? (
+              <section>
+                <h2 className="mb-4" style={sectionLabel}>
+                  Media
+                </h2>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%-6rem)/5)),1fr))] gap-6">
+                  {tabMedia.map((item) => (
+                    <LibraryMediaCard
+                      key={item.id}
+                      media={item}
+                      onOpen={handleOpenMedia}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
           </div>
         )}
       </div>
+
+      {previewModal}
 
       <DeployDialogs
         assistantId={assistantId}

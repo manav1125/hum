@@ -2481,6 +2481,62 @@ paths:
               required:
                 - attachmentId
               additionalProperties: false
+    get:
+      operationId: attachments_get
+      summary: List attachments
+      description:
+        List attachment metadata (no content bytes), most-recent-first. Defaults to media kinds (audio, video,
+        image); pass a comma-separated `kinds` query param to override.
+      tags:
+        - attachments
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        original_filename:
+                          type: string
+                        mime_type:
+                          type: string
+                        size_bytes:
+                          type: number
+                        kind:
+                          type: string
+                        created_at:
+                          type: number
+                        thumbnail_base64:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                      required:
+                        - id
+                        - original_filename
+                        - mime_type
+                        - size_bytes
+                        - kind
+                        - created_at
+                        - thumbnail_base64
+                      additionalProperties: false
+                required:
+                  - attachments
+                additionalProperties: false
+      parameters:
+        - name: kinds
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated attachment kinds to include (e.g. audio,video,image). Defaults to media kinds.
     post:
       operationId: attachments_post
       summary: Upload attachment

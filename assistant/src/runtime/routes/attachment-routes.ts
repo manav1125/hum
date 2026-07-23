@@ -16,6 +16,7 @@ import {
   deleteAttachment,
   getAttachmentById,
   getFilePathBySourcePath,
+  listAttachments,
   StoredAttachment,
   uploadAttachment,
   uploadAttachmentFromBytes,
@@ -649,7 +650,67 @@ function handleAttachmentLookup({ body = {} }: RouteHandlerArgs) {
   return { filePath: result };
 }
 
+function handleListAttachmentsRoute({ queryParams = {} }: RouteHandlerArgs) {
+  const kindsParam = queryParams.kinds;
+  const kinds =
+    typeof kindsParam === "string" && kindsParam.trim().length > 0
+      ? kindsParam
+          .split(",")
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0)
+      : undefined;
+
+  const attachments = listAttachments({ kinds }).map((a) => ({
+    id: a.id,
+    original_filename: a.originalFilename,
+    mime_type: a.mimeType,
+    size_bytes: a.sizeBytes,
+    kind: a.kind,
+    created_at: a.createdAt,
+    thumbnail_base64: a.thumbnailBase64,
+  }));
+
+  return { attachments };
+}
+
 export const ROUTES: RouteDefinition[] = [
+  {
+    operationId: "attachments_list",
+    endpoint: "attachments",
+    method: "GET",
+    policy: {
+      requiredScopes: ["attachments.read"],
+      allowedPrincipalTypes: ACTOR_PRINCIPALS,
+    },
+    summary: "List attachments",
+    description:
+      "List attachment metadata (no content bytes), most-recent-first. " +
+      "Defaults to media kinds (audio, video, image); pass a comma-separated " +
+      "`kinds` query param to override.",
+    tags: ["attachments"],
+    queryParams: [
+      {
+        name: "kinds",
+        schema: { type: "string" },
+        description:
+          "Comma-separated attachment kinds to include (e.g. audio,video,image). Defaults to media kinds.",
+      },
+    ],
+    responseBody: z.object({
+      attachments: z.array(
+        z.object({
+          id: z.string(),
+          original_filename: z.string(),
+          mime_type: z.string(),
+          size_bytes: z.number(),
+          kind: z.string(),
+          created_at: z.number(),
+          thumbnail_base64: z.string().nullable(),
+        }),
+      ),
+    }),
+    handler: handleListAttachmentsRoute,
+  },
   {
     operationId: "attachment_content",
     endpoint: "attachments/:id/content",

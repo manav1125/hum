@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import {
   appsGetOptions,
+  attachmentsGetOptions,
   documentsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
@@ -46,7 +47,12 @@ export function useLibraryData(assistantId: string) {
     select: (data) => data.documents,
   });
 
-  const loading = appsLoading || docsLoading;
+  const { data: media = [], isLoading: mediaLoading } = useQuery({
+    ...attachmentsGetOptions({ path: { assistant_id: assistantId } }),
+    select: (data) => data.attachments,
+  });
+
+  const loading = appsLoading || docsLoading || mediaLoading;
   const error =
     appsError && docsError
       ? appsError instanceof Error
@@ -88,13 +94,23 @@ export function useLibraryData(assistantId: string) {
     return documents.filter((d) => d.title.toLowerCase().includes(lower));
   }, [documents, searchText]);
 
+  const filteredMedia = useMemo(() => {
+    if (!searchText.trim()) return media;
+    const lower = searchText.toLowerCase();
+    return media.filter((m) =>
+      m.original_filename.toLowerCase().includes(lower),
+    );
+  }, [media, searchText]);
+
   return {
     apps,
     documents,
+    media,
     filteredApps,
     pinnedApps,
     recentApps,
     filteredDocuments,
+    filteredMedia,
     searchText,
     setSearchText,
     loading,
