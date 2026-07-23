@@ -681,6 +681,24 @@ export interface AttachmentMetadata {
 const MEDIA_KINDS = ["audio", "video", "image"] as const;
 
 /**
+ * Filename prefixes for TOOL-INTERNAL captures the assistant produces while
+ * working — computer-use screenshots, skill-execution captures, vision/QA test
+ * images. These are NOT user deliverables and must never appear in the Library
+ * (which is "everything you and Cue MADE together", not work-in-progress
+ * artifacts). There is no source/purpose column on `attachments`, so we match
+ * by the fixed names these capture sites assign. Extend as new capture sites
+ * are added. Matched case-insensitively as `LIKE '<prefix>%'`.
+ */
+const TOOL_CAPTURE_FILENAME_PREFIXES = [
+  "computer-use-",
+  "skill-execute",
+  "vision-qa",
+  "qa-test",
+  "host-cu-",
+  "browser-screenshot",
+] as const;
+
+/**
  * List attachment metadata (no base64 bytes) for the Library.
  *
  * Matches on the `kind` column, but also falls back to the MIME family
@@ -689,7 +707,9 @@ const MEDIA_KINDS = ["audio", "video", "image"] as const;
  * them. The requested kind names line up with MIME top-level types, so the
  * fallback mirrors the requested kinds exactly.
  *
- * Ordered most-recent-first and capped by `limit` (default 200).
+ * Excludes tool-internal captures (see TOOL_CAPTURE_FILENAME_PREFIXES) so the
+ * Library shows only user-facing deliverables, not work-in-progress
+ * screenshots. Ordered most-recent-first and capped by `limit` (default 200).
  */
 export function listAttachments(opts?: {
   kinds?: string[];
@@ -703,6 +723,11 @@ export function listAttachments(opts?: {
   const mimeClauses = kinds.map(() => "mime_type LIKE ?").join(" OR ");
   const mimeArgs = kinds.map((k) => `${k}/%`);
 
+  const excludeClauses = TOOL_CAPTURE_FILENAME_PREFIXES.map(
+    () => "lower(original_filename) NOT LIKE ?",
+  ).join(" AND ");
+  const excludeArgs = TOOL_CAPTURE_FILENAME_PREFIXES.map((p) => `${p}%`);
+
   return rawAll<AttachmentMetadata>(
     `SELECT
        id,
@@ -713,11 +738,13 @@ export function listAttachments(opts?: {
        created_at AS createdAt,
        thumbnail_base64 AS thumbnailBase64
      FROM attachments
-     WHERE kind IN (${kindPlaceholders}) OR ${mimeClauses}
+     WHERE (kind IN (${kindPlaceholders}) OR ${mimeClauses})
+       AND ${excludeClauses}
      ORDER BY created_at DESC
      LIMIT ?`,
     ...kinds,
     ...mimeArgs,
+    ...excludeArgs,
     limit,
   );
 }

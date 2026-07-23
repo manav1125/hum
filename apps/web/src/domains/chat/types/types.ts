@@ -181,6 +181,7 @@ export interface Surface extends ConversationMessageSurface {
 export const INHERENTLY_INTERACTIVE_SURFACE_TYPES = [
   "choice",
   "oauth_connect",
+  "connector_recommend",
   "form",
   "confirmation",
   "file_upload",

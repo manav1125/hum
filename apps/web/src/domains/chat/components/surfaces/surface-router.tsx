@@ -9,6 +9,7 @@ import { CallSummarySurface } from "@/domains/chat/components/surfaces/call-summ
 import { CardSurface } from "@/domains/chat/components/surfaces/card-surface";
 import { ChoiceSurface } from "@/domains/chat/components/surfaces/choice-surface";
 import { ConfirmationSurface } from "@/domains/chat/components/surfaces/confirmation-surface";
+import { ConnectorRecommendSurface } from "@/domains/chat/components/surfaces/connector-recommend-surface";
 import { CopyBlockSurface } from "@/domains/chat/components/surfaces/copy-block-surface";
 import { DocumentPreviewSurface } from "@/domains/chat/components/surfaces/document-preview-surface";
 import { DynamicPageSurface } from "@/domains/chat/components/surfaces/dynamic-page-surface";
@@ -97,6 +98,15 @@ export function SurfaceRouter({
           onAction={onAction}
           assistantId={assistantId}
           assistantDisplayName={assistantDisplayName}
+        />
+      );
+
+    case "connector_recommend":
+      return (
+        <ConnectorRecommendSurface
+          surface={surface}
+          onAction={onAction}
+          assistantId={assistantId}
         />
       );
 

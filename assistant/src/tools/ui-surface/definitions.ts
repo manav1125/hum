@@ -129,6 +129,7 @@ export const uiShowTool = {
     "- copy_block: { text, label?, language? }. Shows copyable text with a visible copy button; use for prompts, commands, paths, or snippets the user should copy.\n" +
     '- choice: { description?, options: [{ id, title, description?, recommended?, data? }], selectionMode?: "single"|"multiple", commitOnSelect?, submitLabel? }. Single-select choices commit on option click by default. Use for outcome offers and follow-up choices; mark the strongest option with recommended: true.\n' +
     "- oauth_connect: { providerKey, displayName?, description?, logoUrl? }. Shows a managed OAuth connection CTA in chat; use when the current task needs a managed integration account (Google, Linear, GitHub, etc.) instead of asking the user to visit settings or attempting OAuth through shell/tools. The client supplies the CTA label. Do not include OAuth scopes in the surface; managed providers use the platform's configured scopes.\n" +
+    "- connector_recommend: { intro?, connectors: [{ providerKey, displayName?, description?, connected? }] }. A 'connectors that could help' card recommending SEVERAL integrations at once. Use when the user's goal needs data or actions from services they haven't fully connected (e.g. 'set up my marketing systems', 'be my sales assistant', 'analyze my ads') — instead of listing connectors as plain text. Set connected:true for ones already linked (they render a 'Use' button; the rest render 'Connect', running the managed-OAuth flow inline). Prefer this over multiple oauth_connect cards when suggesting a stack; use a single oauth_connect for one specific provider a task needs right now.\n" +
     '- table: { columns: [{ id, label }], rows: [{ id, cells: Record<id, string | { text, icon?, iconColor?: "success"|"warning"|"error"|"muted" }>, selectable?, selected? }], selectionMode?: "none"|"single"|"multiple", caption? }\n' +
     '- form: { description?, fields: [{ id, type: "text"|"textarea"|"select"|"toggle"|"number"|"password", label, placeholder?, required?, defaultValue?, options?: [{ label, value }] }], submitLabel? }. Multi-page: { pages: [{ id, title, description?, fields }], pageLabels?: { next?, back?, submit? }, submitLabel? }\n' +
     '- list: { items: [{ id, title, subtitle?, icon?, selected? }], selectionMode: "single"|"multiple"|"none" }\n' +
@@ -152,6 +153,7 @@ export const uiShowTool = {
           "choice",
           "copy_block",
           "oauth_connect",
+          "connector_recommend",
           "form",
           "list",
           "table",
