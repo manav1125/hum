@@ -1,5 +1,6 @@
 import { FileText } from "lucide-react";
 
+import { LibraryCardPlaceholder } from "@/domains/library/components/library-card-placeholder";
 import type { DocumentSummary } from "@/types/document-types";
 import { cn } from "@/utils/misc";
 import { formatFriendlyDate } from "@/utils/format-date";
@@ -28,10 +29,11 @@ export function LibraryDocumentCard({
           "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
         )}
       >
-        <FileText size={34} className="text-[var(--content-tertiary)]" />
-        <span className="text-body-small-default text-[var(--content-tertiary)]">
-          {formatWordCount(document.wordCount)}
-        </span>
+        <LibraryCardPlaceholder
+          seed={document.surfaceId}
+          icon={FileText}
+          label={formatWordCount(document.wordCount)}
+        />
       </button>
 
       <button

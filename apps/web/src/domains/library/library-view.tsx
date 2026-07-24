@@ -75,6 +75,7 @@ const LIBRARY_FILTERS = [
   "Docs",
   "Dashboards",
   "Sites",
+  "Media",
 ] as const;
 type LibraryFilter = (typeof LIBRARY_FILTERS)[number];
 
@@ -262,7 +263,7 @@ export function LibraryView({
   // --- Tab filtering: narrow the search-filtered lists by the active tab. ---
   const tabApps = useMemo(() => {
     if (activeFilter === "All") return filteredApps;
-    if (activeFilter === "Docs") return [];
+    if (activeFilter === "Docs" || activeFilter === "Media") return [];
     return filteredApps.filter(
       (a) => inferAppType(a.name, a.icon).filter === activeFilter,
     );
@@ -274,9 +275,10 @@ export function LibraryView({
     return [];
   }, [filteredDocuments, activeFilter]);
 
-  // Generated audio/video/image assets. Shown under the "All" filter.
+  // Generated audio/video/image assets. Shown under "All" and the "Media" tab.
   const tabMedia = useMemo(
-    () => (activeFilter === "All" ? filteredMedia : []),
+    () =>
+      activeFilter === "All" || activeFilter === "Media" ? filteredMedia : [],
     [filteredMedia, activeFilter],
   );
 
@@ -437,7 +439,7 @@ export function LibraryView({
 
       {/* Filter tabs — RECENTS · All / Decks / Docs / Dashboards / Sites. */}
       <div className="mb-5 flex shrink-0 items-center gap-2.5 overflow-x-auto">
-        <span style={{ ...sectionLabel, flexShrink: 0 }}>Recents</span>
+        <span style={{ ...sectionLabel, flexShrink: 0 }}>Types</span>
         <div className="flex items-center gap-1.5">
           {LIBRARY_FILTERS.map((f) => {
             const active = f === activeFilter;
@@ -503,6 +505,13 @@ export function LibraryView({
                 title={doc.title}
                 dateLabel={monoDate(doc.updatedAt)}
                 onOpen={() => onOpenDocument?.(doc.surfaceId)}
+              />
+            ))}
+            {tabMedia.map((item) => (
+              <LibraryMediaCard
+                key={item.id}
+                media={item}
+                onOpen={handleOpenMedia}
               />
             ))}
           </div>

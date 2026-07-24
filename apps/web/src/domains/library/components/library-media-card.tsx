@@ -1,5 +1,6 @@
 import { ImageIcon, Music, Video } from "lucide-react";
 
+import { LibraryCardPlaceholder } from "@/domains/library/components/library-card-placeholder";
 import type { MediaSummary } from "@/types/media-types";
 import { cn } from "@/utils/misc";
 import { formatFriendlyDate } from "@/utils/format-date";
@@ -47,7 +48,11 @@ export function LibraryMediaCard({ media, onOpen }: LibraryMediaCardProps) {
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <Icon size={34} className="text-[var(--content-tertiary)]" />
+          <LibraryCardPlaceholder
+            seed={media.id}
+            icon={Icon}
+            label={family.charAt(0).toUpperCase() + family.slice(1)}
+          />
         )}
       </button>
 
