@@ -14,6 +14,7 @@ import { createOrReuseToolGrantRequest } from "../runtime/tool-grant-request-hel
 import { redactSecrets } from "../security/secret-scanner.js";
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
 import { getLogger } from "../util/logger.js";
+import { isOutboundExternalSendTool } from "./outbound-send.js";
 import { getAllTools, getTool, getToolOwner } from "./registry.js";
 import { isSideEffectTool } from "./side-effects.js";
 import { summarizeToolInput } from "./tool-input-summary.js";
@@ -307,6 +308,56 @@ export class ToolApprovalHandler {
         allowed: false,
         result: { content: guardianCheck.reason!, isError: true },
       };
+    }
+
+    // ── Outbound external-send hard checkpoint ─────────────────────────────
+    // Sending a message to a third party (email/DM/post) or placing a call
+    // ALWAYS requires explicit human approval and can NEVER be cleared by
+    // internal/background "guardian" trust. This runs for every actor
+    // (including guardian) and BEFORE both the trust-scoped guardian gate below
+    // and the PermissionChecker — so it is immune to guardian-background
+    // auto-approve, an autonomy `send: auto` policy, and risk thresholds, which
+    // are exactly the holes that let a scheduled run send email with no human
+    // in the loop. Drafting is unaffected (it classifies as "draft", not
+    // "send"), so a background run can still prepare a message and park only at
+    // the send.
+    if (isOutboundExternalSendTool(name, input)) {
+      if (context.isInteractive === false) {
+        // Unattended run (scheduled task / mission / heartbeat / background
+        // wake): park as a needs-you item and deny the send. Never execute.
+        void import("../work-items/work-item-approval-timeouts.js")
+          .then((m) =>
+            m.parkExternalSendForConversation(context.conversationId, name),
+          )
+          .catch(() => {});
+        const durationMs = Date.now() - startTime;
+        const reason =
+          `Parked "${name}": sending a message to someone outside needs your ` +
+          `approval and can't run unattended. I've saved it as a needs-you ` +
+          `item — approve and re-run to send. (Drafting is fine; only the ` +
+          `send waits for you.)`;
+        emitLifecycleEvent({
+          type: "permission_denied",
+          toolName: name,
+          executionTarget,
+          input,
+          workingDir: context.workingDir,
+          conversationId: context.conversationId,
+          requestId: context.requestId,
+          riskLevel,
+          decision: "deny",
+          reason,
+          durationMs,
+        });
+        return { allowed: false, result: { content: reason, isError: true } };
+      }
+      // Attended run: force a fresh, un-auto-approvable confirmation prompt —
+      // even for the guardian/owner. Mutating the by-reference context is
+      // honored downstream by the PermissionChecker, which excludes
+      // `requireFreshApproval` from every auto-approve branch and promotes a
+      // side-effect allow to a prompt. Falls through to the normal gates.
+      context.requireFreshApproval = true;
+      context.forcePromptSideEffects = true;
     }
 
     // Determine whether this invocation requires a scoped grant. Capture

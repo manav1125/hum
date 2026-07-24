@@ -58,6 +58,64 @@ export function approvalTimeoutNote(toolName: string): string {
   return `⏸ Step skipped — approval for "${toolName}" timed out; approve and re-run to complete.`;
 }
 
+/** Mid-run marker stamped when an unattended run parks an external send. */
+export function externalSendParkedNote(toolName: string): string {
+  return `⏸ Waiting on you — sending to a third party ("${toolName}") needs your approval and can't run unattended; approve and re-run to send.`;
+}
+
+/**
+ * Park an outbound external-send tool call reached during a headless work-item
+ * run: the send is denied (never executed) and surfaced as a needs-you item so
+ * the owner can approve and re-run. Mirrors {@link
+ * recordApprovalTimeoutForConversation} — records into the same per-run
+ * registry so the runner's terminal drain lands the item in the Review lane
+ * with a skipped-steps note — but is raised deterministically at the gate
+ * rather than by a prompt timeout, so there is no wait. Best-effort and
+ * non-throwing; returns the matched work item id, or null when the
+ * conversation isn't a live work-item run.
+ */
+export function parkExternalSendForConversation(
+  conversationId: string | undefined,
+  toolName: string,
+): string | null {
+  if (!conversationId) return null;
+  try {
+    const item = findRunningWorkItemByRunConversationId(conversationId);
+    if (!item) return null;
+
+    const records = pendingTimeouts.get(item.id) ?? [];
+    records.push({ toolName, at: Date.now() });
+    pendingTimeouts.set(item.id, records);
+
+    recordWorkItemEvent({
+      workItemId: item.id,
+      kind: "external_send_parked",
+      actor: "system",
+    });
+
+    updateWorkItem(
+      item.id,
+      { lastProgressNote: externalSendParkedNote(toolName) },
+      { actor: "system" },
+    );
+    void import("./work-item-runner.js")
+      .then((m) => m.broadcastWorkItemStatus(item.id))
+      .catch(() => {});
+
+    log.warn(
+      { workItemId: item.id, conversationId, toolName },
+      "external send parked during an unattended work-item run; step not executed",
+    );
+    return item.id;
+  } catch (err) {
+    log.warn(
+      { err: String(err), conversationId, toolName },
+      "failed to park external send on work item (ignored)",
+    );
+    return null;
+  }
+}
+
 /**
  * Terminal note persisted on the item when its run finishes having skipped
  * steps. Replaces the runner's usual note-clearing so the reviewed item keeps

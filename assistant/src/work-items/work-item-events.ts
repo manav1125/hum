@@ -33,6 +33,11 @@ export type WorkItemEventKind =
   // an answer and auto-resolved DENY — the step was silently skipped. Durable
   // marker so review surfaces can flag "finished, but with skipped steps".
   | "approval_timeout"
+  // An outbound external-communication step (send email/DM to a third party)
+  // was reached during this item's UNATTENDED run and parked instead of
+  // sending — external sends always need explicit human approval and can never
+  // run headless. The step did not execute; approve and re-run to send.
+  | "external_send_parked"
   // The owner marked the item done as "completed elsewhere" — the work
   // happened outside Cue. Distinct from "approved" (which signs off on a run
   // Cue performed) so the act/ledger never credits Cue with the outcome.
