@@ -32,9 +32,12 @@ import { dirname, join, relative, sep } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { FRONTMATTER_REGEX } from "../../skills/frontmatter.js";
+import { getLogger } from "../../util/logger.js";
 import { invalidateEdgeIndex } from "./edge-index.js";
 import { invalidatePageIndex } from "./page-index.js";
 import { type ConceptPage, ConceptPageFrontmatterSchema } from "./types.js";
+
+const log = getLogger("memory-v2-page-store");
 
 /** Filename suffix for concept pages. */
 const PAGE_EXTENSION = ".md";
@@ -192,9 +195,24 @@ export function slugFromConceptPath(
 /**
  * Split raw file contents into (frontmatter, body). If no frontmatter block
  * is present the entire input is treated as body and an empty frontmatter
- * block is returned (validated by `ConceptPageFrontmatterSchema` so any
- * unexpected shape — bad types, extra junk — surfaces as a parse error to
- * the caller, not silent dropped data).
+ * block is returned.
+ *
+ * Concept-page frontmatter is authored by the consolidation LLM writing files
+ * directly (`write_file` / `edit_file`), so it is routinely YAML-hostile:
+ * unquoted colons in a `summary:` line ("Nested mappings are not allowed in
+ * compact mappings"), inconsistent indentation ("All mapping items must start
+ * at the same column"), attempted block scalars, or a drifted key the strict
+ * schema doesn't allow. A hard throw here was the single largest memory-job
+ * failure class in prod (the `yaml_parse` category): every downstream reader
+ * of the page throws, most damagingly the `embed_concept_page` job — which
+ * then never indexes the page, so the consolidated memory is effectively lost.
+ *
+ * We therefore never throw on frontmatter. The fast path is a strict parse
+ * (well-formed YAML satisfying the schema — the overwhelmingly common case,
+ * round-tripping every known key exactly). On ANY failure we salvage what we
+ * can, log a warn so the drift stays debuggable, and keep the body intact so
+ * the page still persists and still embeds. Losing one malformed field is
+ * strictly better than losing the whole memory.
  *
  * The schema's defaults guarantee `edges` and `ref_files` are always arrays
  * even on freshly created pages with empty frontmatter.
@@ -212,11 +230,174 @@ function parsePageContent(raw: string): {
   }
   const yamlBlock = match[1];
   const body = raw.slice(match[0].length);
-  const parsed = parseYaml(yamlBlock) ?? {};
-  return {
-    frontmatter: ConceptPageFrontmatterSchema.parse(parsed),
-    body,
-  };
+
+  try {
+    const parsed = parseYaml(yamlBlock) ?? {};
+    return {
+      frontmatter: ConceptPageFrontmatterSchema.parse(parsed),
+      body,
+    };
+  } catch (err) {
+    log.warn(
+      { err },
+      "Concept page frontmatter failed strict parse — salvaging fields leniently so the page still persists",
+    );
+    return { frontmatter: salvageFrontmatter(yamlBlock), body };
+  }
+}
+
+/**
+ * Best-effort recovery of a frontmatter block that failed the strict parse.
+ * Never throws. Handles both failure modes:
+ *   - YAML *syntax* error → the structured parse is unusable, fall back to a
+ *     lenient line-by-line extractor ({@link lenientParseFrontmatter}).
+ *   - YAML valid but *schema* violation (unknown key, bad type) → the parse
+ *     succeeded, so reuse it and let {@link coerceFrontmatter} strip the
+ *     offending pieces.
+ */
+function salvageFrontmatter(yamlBlock: string): ConceptPage["frontmatter"] {
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(yamlBlock) ?? {};
+  } catch {
+    parsed = lenientParseFrontmatter(yamlBlock);
+  }
+  return coerceFrontmatter(parsed);
+}
+
+/** Known scalar (string) frontmatter fields. */
+const SCALAR_FIELDS = [
+  "summary",
+  "title",
+  "slug",
+  "main",
+  "kind",
+  "status",
+  "current",
+] as const;
+
+/** Known string-array frontmatter fields. */
+const STRING_ARRAY_FIELDS = [
+  "edges",
+  "ref_files",
+  "leaves",
+  "links",
+  "tags",
+] as const;
+
+/**
+ * Coerce an arbitrary parsed object into a schema-valid frontmatter, keeping
+ * only recognized keys with defensively coerced values and dropping anything
+ * that would make the strict schema reject the whole page. The constructed
+ * shape is valid by construction, so the final `.parse()` never throws (its
+ * defaults fill any missing `edges` / `ref_files` / `ref_urls`).
+ */
+function coerceFrontmatter(parsed: unknown): ConceptPage["frontmatter"] {
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return ConceptPageFrontmatterSchema.parse({});
+  }
+  const src = parsed as Record<string, unknown>;
+  const sanitized: Record<string, unknown> = {};
+
+  for (const key of SCALAR_FIELDS) {
+    const v = src[key];
+    if (typeof v === "string") {
+      sanitized[key] = v;
+    } else if (typeof v === "number" || typeof v === "boolean") {
+      sanitized[key] = String(v);
+    }
+  }
+
+  for (const key of STRING_ARRAY_FIELDS) {
+    const v = src[key];
+    if (Array.isArray(v)) {
+      sanitized[key] = v.filter((e): e is string => typeof e === "string");
+    }
+  }
+
+  // `ref_urls` carries a `.url()` refinement — keep only entries that actually
+  // parse as URLs so one bad link can't reject the field (and the page).
+  const rawUrls = src.ref_urls;
+  if (Array.isArray(rawUrls)) {
+    sanitized.ref_urls = rawUrls.filter(
+      (e): e is string => typeof e === "string" && isValidUrl(e),
+    );
+  }
+
+  return ConceptPageFrontmatterSchema.parse(sanitized);
+}
+
+function isValidUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Recover frontmatter fields from a YAML block the parser rejected. This is a
+ * deliberately dumb line scanner — not a YAML implementation — that pulls out
+ * the fields the concept-page model cares about (`summary`, `edges`, ...) even
+ * when the block is syntactically invalid YAML.
+ *
+ *   - `key: value`        → scalar. The value is everything after the first
+ *                           `:` , so an unquoted colon inside a `summary:`
+ *                           (the classic breakage) is preserved verbatim
+ *                           instead of being misread as a nested mapping.
+ *   - `key:` (bare)       → opens a block list; subsequent `- item` lines
+ *                           accumulate under it.
+ *   - `- item`            → list entry for the open block key.
+ *
+ * Everything else is ignored. Values are returned as strings / string arrays;
+ * {@link coerceFrontmatter} does the final typing and schema-fitting.
+ */
+function lenientParseFrontmatter(yamlBlock: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  let currentListKey: string | null = null;
+
+  for (const rawLine of yamlBlock.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+$/, "");
+    if (line.trim().length === 0) continue;
+
+    const listItem = line.match(/^\s*-\s+(.*)$/);
+    if (listItem && currentListKey) {
+      const bucket = out[currentListKey];
+      if (Array.isArray(bucket)) bucket.push(stripQuotes(listItem[1].trim()));
+      continue;
+    }
+
+    // Leading whitespace is tolerated: a mis-indented key (the "All mapping
+    // items must start at the same column" breakage) is exactly what we're
+    // here to recover, so indentation carries no meaning in this salvage pass.
+    const kv = line.match(/^\s*([A-Za-z_][\w-]*)\s*:(.*)$/);
+    if (!kv) continue;
+    const key = kv[1];
+    const value = kv[2].trim();
+    if (value.length === 0) {
+      // Bare key — treat following `- ` lines as its block list.
+      out[key] = [];
+      currentListKey = key;
+    } else {
+      out[key] = stripQuotes(value);
+      currentListKey = null;
+    }
+  }
+
+  return out;
+}
+
+/** Strip a single layer of matching surrounding single/double quotes. */
+function stripQuotes(value: string): string {
+  if (value.length >= 2) {
+    const first = value[0];
+    const last = value[value.length - 1];
+    if ((first === '"' || first === "'") && last === first) {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
 }
 
 /**
@@ -237,9 +418,11 @@ export function renderPageContent(page: ConceptPage): string {
 /**
  * Read a single concept page. Returns `null` if the file does not exist.
  *
- * Any other read or parse failure (permission denied, malformed YAML,
- * frontmatter that fails schema validation) throws — unlike "missing", these
- * are programmer / data-corruption errors the caller needs to see.
+ * Malformed or schema-drifted frontmatter never throws: it is salvaged
+ * leniently (see {@link parsePageContent}) and logged, so a single bad page
+ * can't fail its `embed_concept_page` job or no-op a turn's whole injection
+ * block. A genuine I/O failure (permission denied, etc.) still throws — unlike
+ * "missing", those are errors the caller needs to see.
  */
 export async function readPage(
   workspaceDir: string,

@@ -1,6 +1,6 @@
 ---
 name: apify
-description: Run an Apify actor to scrape websites or gather lead/contact data, then return structured results. Use for web scraping, lead generation, crawling a site, or extracting data from a page or search via an Apify actor.
+description: Build lead lists and scrape structured data from the web via Apify actors. THE skill for lead generation, prospecting, finding contacts/emails/companies, and web scraping — prefer it over web_search whenever the user wants a list of leads, prospects, companies, or contact details. Runs an Apify actor (e.g. apify/google-search-scraper, apify/contact-info-scraper) and returns the results as structured JSON.
 compatibility: "Designed for Cue personal assistants"
 metadata:
   emoji: "🕷️"
@@ -8,11 +8,17 @@ metadata:
     display-name: "Apify"
     category: "browsing"
     activation-hints:
+      - "User wants to find leads, prospects, or contacts (lead generation / prospecting / lead list)"
+      - "User wants a list of people or companies matching a profile (role, industry, location)"
+      - "User wants to scrape emails, phone numbers, or contact details from websites"
       - "User wants to scrape a website or extract structured data from pages"
-      - "User wants lead generation / contact data gathered from the web"
       - "User wants to crawl a site or run a specific Apify actor"
       - "User names an Apify actor (e.g. apify/web-scraper, apify/google-search-scraper)"
+    avoid-when:
+      - "The user just wants a quick factual answer or a summary from the open web — use web_search for that, not a lead/scrape actor"
 ---
+
+**Prefer this skill over `web_search` for any lead-gen or contact-scraping ask.** `web_search` returns prose and links, not a structured lead list — building leads, prospect lists, company lists, or contact data must go through an Apify actor so the output is real, structured, and complete.
 
 Use the `apify_run_actor` tool via `skill_execute` to run an Apify actor and collect its dataset items.
 

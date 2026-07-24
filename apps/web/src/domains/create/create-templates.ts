@@ -1005,7 +1005,7 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Find leads",
         description: "Scrape a structured list of prospects by criteria.",
         prompt:
-          "Build me a structured lead list by scraping the web. Find real prospects matching the profile below and return name, title, company, location, and contact info as a clean table.",
+          'Build me a structured lead list. Use the Apify skill for this — load it with skill_load (skill "apify"), then run its apify_run_actor tool with a lead-gen actor (apify/google-search-scraper to find people/companies matching the profile, or apify/contact-info-scraper to enrich their contact details) to scrape real prospects matching the profile below. Do NOT use web_search or answer from general knowledge: lead-gen must go through the Apify actor so the results are real and structured. Return name, title, company, location, and contact info (email or LinkedIn) as a clean table.',
         elicit: [
           {
             question: "What industry?",
@@ -1052,14 +1052,14 @@ export const CREATE_MODES: CreateMode[] = [
         title: "Scrape site contacts",
         description: "Pull emails, phones, and socials from URLs.",
         prompt:
-          "Scrape contact details (emails, phone numbers, social profiles) from a set of website URLs I'll provide. Return the results as a structured table grouped by source URL.",
+          'Scrape contact details (emails, phone numbers, social profiles) from a set of website URLs I\'ll provide. Use the Apify skill: load it with skill_load (skill "apify"), then run its apify_run_actor tool with the apify/contact-info-scraper actor, passing my URLs as startUrls. Do NOT use web_search — run the Apify actor so the extraction is real. Return the results as a structured table grouped by source URL.',
       },
       {
         id: "company-list",
         title: "Build a company list",
         description: "Find companies matching a profile.",
         prompt:
-          "Build me a list of companies matching the profile below by scraping the web. Return company name, website, location, and any contact info found as a structured table.",
+          'Build me a list of companies matching the profile below. Use the Apify skill: load it with skill_load (skill "apify"), then run its apify_run_actor tool with a lead-gen actor (apify/google-search-scraper, or apify/google-maps-scraper for local businesses) to scrape real companies matching the profile. Do NOT use web_search or answer from general knowledge — company/lead lists must come from the Apify actor. Return company name, website, location, and any contact info found as a structured table.',
         elicit: [
           {
             question: "What industry?",

@@ -293,17 +293,88 @@ describe("writePage + readPage round-trip", () => {
     expect(read!.body).toBe(body);
   });
 
-  test("readPage throws on unknown frontmatter keys instead of silently dropping them", async () => {
+  test("readPage salvages a page with an unknown frontmatter key instead of dropping the whole memory", async () => {
+    // Strict-schema drift (an unexpected key) must not fail the read: a throw
+    // here fails the page's embed_concept_page job and the memory is lost.
+    // Recover the known fields + body; the offending key is dropped, not the page.
     const slug = "extra-keys";
     const raw =
-      "---\nedges: []\nref_files: []\nunknown_field: oops\n---\nbody\n";
+      "---\nedges: []\nref_files: []\nunknown_field: oops\nsummary: keep me\n---\nbody\n";
     writeFileSync(
       join(workspaceDir, "memory", "concepts", `${slug}.md`),
       raw,
       "utf-8",
     );
 
-    await expect(readPage(workspaceDir, slug)).rejects.toThrow();
+    const read = await readPage(workspaceDir, slug);
+    expect(read).not.toBeNull();
+    expect(read!.body).toBe("body\n");
+    expect(read!.frontmatter.summary).toBe("keep me");
+    expect(read!.frontmatter.edges).toEqual([]);
+    // The unknown key is stripped, but the page (and its body) survives.
+    expect(
+      (read!.frontmatter as Record<string, unknown>).unknown_field,
+    ).toBeUndefined();
+  });
+
+  test("readPage recovers a summary with an unquoted colon (nested-mapping YAML error)", async () => {
+    // The single largest prod failure ("Nested mappings are not allowed in
+    // compact mappings"): the LLM writes an unquoted colon inside `summary:`.
+    // The strict YAML parse throws; lenient recovery keeps everything after
+    // the first `: ` as the summary text, verbatim.
+    const slug = "colon-summary";
+    const raw =
+      "---\nedges:\n  - people/principal\nref_files: []\nsummary: Kickoff: the Q3 launch plan and its blockers\n---\nBody prose survives.\n";
+    writeFileSync(
+      join(workspaceDir, "memory", "concepts", `${slug}.md`),
+      raw,
+      "utf-8",
+    );
+
+    const read = await readPage(workspaceDir, slug);
+    expect(read).not.toBeNull();
+    expect(read!.body).toBe("Body prose survives.\n");
+    expect(read!.frontmatter.summary).toBe(
+      "Kickoff: the Q3 launch plan and its blockers",
+    );
+    expect(read!.frontmatter.edges).toEqual(["people/principal"]);
+  });
+
+  test("readPage recovers from inconsistent indentation (same-column YAML error)", async () => {
+    // "All mapping items must start at the same column": the LLM mis-indents a
+    // key. The page must still persist with its body and recoverable fields.
+    const slug = "bad-indent";
+    const raw =
+      "---\nedges: []\n  summary: mis-indented but present\nref_files: []\n---\nStill here.\n";
+    writeFileSync(
+      join(workspaceDir, "memory", "concepts", `${slug}.md`),
+      raw,
+      "utf-8",
+    );
+
+    const read = await readPage(workspaceDir, slug);
+    expect(read).not.toBeNull();
+    expect(read!.body).toBe("Still here.\n");
+    // Lenient recovery reads the mis-indented `summary:` as a scalar.
+    expect(read!.frontmatter.summary).toBe("mis-indented but present");
+    expect(read!.frontmatter.edges).toEqual([]);
+    expect(read!.frontmatter.ref_files).toEqual([]);
+  });
+
+  test("readPage drops an invalid ref_urls entry rather than rejecting the page", async () => {
+    const slug = "bad-url";
+    const raw =
+      '---\nedges: []\nref_files: []\nref_urls:\n  - "not a url"\nsummary: kept\n---\nbody\n';
+    writeFileSync(
+      join(workspaceDir, "memory", "concepts", `${slug}.md`),
+      raw,
+      "utf-8",
+    );
+
+    const read = await readPage(workspaceDir, slug);
+    expect(read).not.toBeNull();
+    expect(read!.frontmatter.summary).toBe("kept");
+    expect(read!.frontmatter.ref_urls).toEqual([]);
   });
 
   test("writePage overwrites an existing page", async () => {

@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "apify_run_actor",
-      "description": "Run an Apify actor (web scraping / lead generation), wait for it to finish, and return its dataset items as structured JSON. Pass exactly two arguments: `actor_id` (a string) and `input` (an object). Example call: { \"actor_id\": \"apify/google-search-scraper\", \"input\": { \"queries\": \"dentists in Austin TX\" } }. The actor's parameters MUST go inside the `input` object, NOT at the top level.",
+      "description": "Run an Apify actor to build a lead list or scrape structured data, wait for it to finish, and return its dataset items as structured JSON. This is the tool for lead generation, prospecting, finding people/companies/contacts, and web scraping — use it instead of web_search whenever the user wants a list of leads, prospects, companies, or contact details. Pass exactly two arguments: `actor_id` (a string) and `input` (an object). Example call: { \"actor_id\": \"apify/google-search-scraper\", \"input\": { \"queries\": \"dentists in Austin TX\" } }. The actor's parameters MUST go inside the `input` object, NOT at the top level.",
       "category": "research",
       "risk": "low",
       "input_schema": {

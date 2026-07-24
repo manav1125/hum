@@ -1098,7 +1098,9 @@ export const TEMPLATE_DEFINITIONS: TemplateDefinition[] = [
       return block(
         `Find me a lead list of ${count} ${role} in ${industry} based in ${location}.`,
         "",
-        "Scrape the web for real prospects matching that profile and return the results as a clean table with name, title, company, location, and any contact info (email or LinkedIn) you can find.",
+        'Use the Apify skill to build this list: load it with skill_load (skill "apify"), then run its apify_run_actor tool with a lead-gen actor (apify/google-search-scraper to find matching people/companies, or apify/contact-info-scraper to enrich contact details) to scrape real prospects matching the profile above.',
+        "Do NOT use web_search or answer from general knowledge — lead-gen must run through the Apify actor so the results are real and structured.",
+        "Return the results as a clean table with name, title, company, location, and any contact info (email or LinkedIn) you can find.",
       );
     },
   },
