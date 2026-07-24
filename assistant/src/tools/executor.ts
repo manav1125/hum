@@ -491,12 +491,20 @@ export function computePerToolTimeoutMs(
     // Replicate video/image jobs poll to completion; a single text-to-video
     // clip (minimax/video-01) takes ~2–3 min. The tool's own `wait_seconds`
     // governs its poll budget (clamped ≤600 there), so the outer per-tool
-    // timeout must honor it — otherwise the default (often 120s) silently
-    // kills motion-video generation before it can finish.
+    // timeout must honor it — otherwise the default silently kills motion-video
+    // generation before it can finish. Default floor raised to 300s so a video
+    // call that forgets to set wait_seconds still isn't killed at 120s.
     const waitSec =
-      typeof input.wait_seconds === "number" ? input.wait_seconds : 120;
+      typeof input.wait_seconds === "number" ? input.wait_seconds : 300;
     const clamped = Math.max(1, Math.min(600, waitSec));
     return (clamped + 20) * 1000;
+  }
+  if (name === "video_compose") {
+    // ffmpeg composition downloads N scene clips + narration/music and
+    // re-encodes; on a multi-scene deck this routinely exceeds the default
+    // 120s and reported a false "timed out" to the user while the render was
+    // still running. Give it a generous ceiling.
+    return 600 * 1000;
   }
   if (name === "credential_store" && input.action === "prompt") {
     const { permissionTimeoutSec } = getConfig().timeouts;

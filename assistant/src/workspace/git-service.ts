@@ -3,7 +3,9 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -76,6 +78,24 @@ const WORKSPACE_GITIGNORE_RULES = [
   "*.db-shm",
   "vellum.pid",
   "session-token",
+  // Large binary / derived / secret directories that must NEVER be git-tracked.
+  // The heartbeat auto-commit was hashing ~250 MB embedding-model blobs every
+  // cycle; interrupted writes orphaned `.git/objects/*/tmp_obj_*` files that
+  // grew to 17 GB and filled the prod volume (2026-07-24 P0). These are
+  // derived caches, media blobs, or gateway-owned secrets — never source of
+  // truth for the versioned workspace.
+  "embedding-models/",
+  "conversations/",
+  "media/",
+  "data/attachments/",
+  "data/media/",
+  "browser-profile/",
+  "gateway-security/",
+  "gateway-security-v2/",
+  "compiler-tools/",
+  "package-cache/",
+  "marketplace-cache/",
+  "*.pcm",
 ];
 
 /**
@@ -435,6 +455,7 @@ export class WorkspaceGitService {
                 // These calls are OUTSIDE the rev-parse try/catch so that
                 // normalization errors are not misclassified as "no commits".
                 this.ensureGitignoreRulesLocked();
+                this.reapOrphanedGitObjectsLocked();
                 this.ensureBranchGuardHookLocked();
                 await this.ensureCommitIdentityLocked();
                 await this.ensureBranchGuardConfigLocked();
@@ -723,6 +744,51 @@ export class WorkspaceGitService {
       clean:
         staged.length === 0 && modified.length === 0 && untracked.length === 0,
     };
+  }
+
+  /**
+   * Remove orphaned git temp objects (tmp_obj_ files under .git/objects) left
+   * behind by interrupted loose-object writes (OOM / disk pressure during the
+   * heartbeat auto-commit). Nothing prunes these until an occasional git gc,
+   * so they accumulate — on 2026-07-24 they grew to 17 GB and filled the prod
+   * volume, failing DB/Qdrant writes (a P0). Safe to delete unconditionally at
+   * init: no git process runs before init completes, and these temp files are
+   * never reachable objects. Best-effort; failures are logged, not thrown.
+   * Must be called with the mutex lock held.
+   */
+  private reapOrphanedGitObjectsLocked(): void {
+    try {
+      const objectsDir = join(this.workspaceDir, ".git", "objects");
+      if (!existsSync(objectsDir)) return;
+      let reaped = 0;
+      for (const sub of readdirSync(objectsDir)) {
+        const subDir = join(objectsDir, sub);
+        let entries: string[];
+        try {
+          entries = readdirSync(subDir);
+        } catch {
+          continue;
+        }
+        for (const name of entries) {
+          if (name.startsWith("tmp_obj_")) {
+            try {
+              rmSync(join(subDir, name), { force: true });
+              reaped++;
+            } catch {
+              // ignore individual failures
+            }
+          }
+        }
+      }
+      if (reaped > 0) {
+        log.warn(
+          { reaped },
+          "Reaped orphaned workspace git temp objects at init",
+        );
+      }
+    } catch (err) {
+      log.warn({ err }, "Failed to reap orphaned workspace git temp objects");
+    }
   }
 
   /**
