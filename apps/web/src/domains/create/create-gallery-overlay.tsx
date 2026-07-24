@@ -693,8 +693,6 @@ export function CreateGalleryOverlay({
               search={search}
               selectedId={selectedId}
               fidelityMode={fidelityMode}
-              previewInBrand={inBrand}
-              brandName={brandName ?? null}
               onSelect={setSelectedId}
               onFidelity={setFidelityMode}
             />
@@ -986,8 +984,6 @@ function SlidesGrid({
   search,
   selectedId,
   fidelityMode,
-  previewInBrand,
-  brandName,
   onSelect,
   onFidelity,
 }: {
@@ -996,8 +992,6 @@ function SlidesGrid({
   search: string;
   selectedId: string | null;
   fidelityMode: "exact" | "inspired";
-  previewInBrand: boolean;
-  brandName: string | null;
   onSelect: (id: string) => void;
   onFidelity: (m: "exact" | "inspired") => void;
 }) {
@@ -1022,8 +1016,6 @@ function SlidesGrid({
           isMobile={isMobile}
           selected={t.id === selectedId}
           fidelityMode={fidelityMode}
-          previewInBrand={previewInBrand}
-          brandName={brandName}
           onSelect={() => onSelect(t.id)}
           onFidelity={onFidelity}
         />
@@ -1045,8 +1037,6 @@ function SlideCard({
   isMobile,
   selected,
   fidelityMode,
-  previewInBrand,
-  brandName,
   onSelect,
   onFidelity,
 }: {
@@ -1054,8 +1044,6 @@ function SlideCard({
   isMobile: boolean;
   selected: boolean;
   fidelityMode: "exact" | "inspired";
-  previewInBrand: boolean;
-  brandName: string | null;
   onSelect: () => void;
   onFidelity: (m: "exact" | "inspired") => void;
 }) {
@@ -1117,12 +1105,7 @@ function SlideCard({
             transition: "opacity 160ms ease",
           }}
         />
-        <SlidePreview
-          template={t}
-          brandName={brandName}
-          inBrand={previewInBrand}
-          visible={preview}
-        />
+        <SlidePreview template={t} visible={preview} />
         {/* Corner mono badge (mobile) — always opaque; tone follows the ART
             (template bg luminance), not the fidelity (round-4.1 rule). */}
         {isMobile ? (
@@ -1182,13 +1165,9 @@ function SlideCard({
  */
 function SlidePreview({
   template: t,
-  brandName,
-  inBrand,
   visible,
 }: {
   template: TemplateSpec;
-  brandName: string | null;
-  inBrand: boolean;
   visible: boolean;
 }) {
   const p = t.palette;
@@ -1210,7 +1189,10 @@ function SlidePreview({
         pointerEvents: "none",
       }}
     >
-      {/* "previewing your content" pill, top-left. */}
+      {/* Template-preview pill, top-left. This is a representative slide in the
+          TEMPLATE's own palette + type — the picker previews the template, not
+          the user's brand. (The "In your brand" toggle recolors the *generated*
+          deck, not this preview.) */}
       <span
         style={{
           position: "absolute",
@@ -1229,9 +1211,10 @@ function SlidePreview({
           padding: "3px 6px",
         }}
       >
-        ● Previewing your content
+        ● {t.name} template
       </span>
-      {/* Accent bar + a representative headline in the template's type. */}
+      {/* Accent bar + the template name as an eyebrow + a representative
+          headline, all in the template's own type/colors. */}
       <span
         style={{
           display: "block",
@@ -1242,8 +1225,19 @@ function SlidePreview({
           marginBottom: 8,
         }}
       />
+      <span
+        style={{
+          fontFamily: mono,
+          fontSize: 8,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: p.muted,
+          marginBottom: 3,
+        }}
+      >
+        {t.name}
+      </span>
       <span style={{ fontSize: 15, lineHeight: 1.1 }}>
-        {inBrand && brandName ? `${brandName}: ` : ""}
         Raising our{" "}
         <span style={{ fontStyle: "italic", color: p.primary }}>Series A</span>
       </span>
