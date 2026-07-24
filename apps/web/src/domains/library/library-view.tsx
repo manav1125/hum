@@ -68,13 +68,16 @@ const sectionLabel = {
   color: C.t3,
 };
 
-/** The S3 filter tabs — RECENTS · All / Decks / Docs / Dashboards / Sites. */
+/** The library type filters. "Apps" holds generic tools/apps; "Dashboards" is
+ *  reserved for actual dashboards (metrics/analytics/reports) so the two don't
+ *  get lumped together. */
 const LIBRARY_FILTERS = [
   "All",
+  "Apps",
   "Decks",
-  "Docs",
   "Dashboards",
   "Sites",
+  "Docs",
   "Media",
 ] as const;
 type LibraryFilter = (typeof LIBRARY_FILTERS)[number];
@@ -82,14 +85,15 @@ type LibraryFilter = (typeof LIBRARY_FILTERS)[number];
 /**
  * Coarse artifact type inferred from an app's name/icon — apps carry no
  * explicit type in the daemon response, so we bucket by keyword for the
- * type badge + filter. Everything else falls back to "App".
+ * type badge + filter. Only genuine dashboards go to "Dashboards"; everything
+ * else that isn't a deck/site falls back to the generic "Apps" bucket.
  */
 function inferAppType(
   name: string,
   icon?: string,
 ): {
   label: string;
-  filter: Exclude<LibraryFilter, "All" | "Docs">;
+  filter: Exclude<LibraryFilter, "All" | "Docs" | "Media">;
   /** Cover treatment for the mobile branded-cover card. */
   kind: CoverKind;
 } {
@@ -99,10 +103,10 @@ function inferAppType(
   if (/site|landing|page|web/.test(hay))
     return { label: "Site", filter: "Sites", kind: "Site" };
   if (/video|sizzle|reel|clip/.test(hay))
-    return { label: "Video", filter: "Dashboards", kind: "Video" };
+    return { label: "Video", filter: "Apps", kind: "Video" };
   if (/dashboard|dash|metrics|analytics|report/.test(hay))
     return { label: "Dash", filter: "Dashboards", kind: "Dash" };
-  return { label: "App", filter: "Dashboards", kind: "App" };
+  return { label: "App", filter: "Apps", kind: "App" };
 }
 
 /** Upper-cased mono date, e.g. "4 JUL" — matches the S3 cover-card meta row. */
