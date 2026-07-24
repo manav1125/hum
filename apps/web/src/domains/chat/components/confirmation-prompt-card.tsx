@@ -60,6 +60,20 @@ export function ConfirmationPromptCard({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showSplitMenu]);
 
+  // Host tools (host_bash, host_file_*) carry an `activity` field — a plain-
+  // language, non-technical explanation of what the command does, authored for
+  // exactly this prompt. Promote it to the headline so the user approves a
+  // legible action ("Organize ~/Downloads — move 42 screenshots into Archive…")
+  // rather than the generic "Confirmation required" with a raw command hidden
+  // in the details. Falls back cleanly for tools that don't set it.
+  const activitySummary =
+    typeof confirmation.input?.activity === "string" &&
+    confirmation.input.activity.trim()
+      ? confirmation.input.activity.trim()
+      : undefined;
+  const headline =
+    confirmation.title || activitySummary || "Confirmation required";
+
   const hasDetails =
     !!confirmation.toolName ||
     !!confirmation.description ||
@@ -79,7 +93,7 @@ export function ConfirmationPromptCard({
           <div className="flex items-start gap-2">
             <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-cue)]" />
             <span className="text-body-medium-default text-[var(--content-default)]">
-              {confirmation.title || "Confirmation required"}
+              {headline}
             </span>
             {riskBadge && (
               <span

@@ -76,7 +76,6 @@ const C = {
   violet: "var(--mv1-violet)",
 } as const;
 
-type OrgSession = OrganizerSessionGetResponse["session"];
 type Target = OrganizerSessionGetResponse["targets"][number];
 type LiveSession = CueliveSessionGetResponse;
 type LiveObservation = LiveSession["observations"][number];
@@ -147,124 +146,57 @@ const panel: CSSProperties = {
   padding: 20,
 };
 
-const scopeTag = (kind: "read" | "write"): CSSProperties => ({
-  fontFamily: mono,
-  fontSize: 10,
-  letterSpacing: "0.04em",
-  padding: "2px 7px",
-  borderRadius: 5,
-  color: kind === "write" ? C.amber : C.t2,
-  background:
-    kind === "write"
-      ? "color-mix(in srgb, var(--mv1-amber) 14%, transparent)"
-      : "var(--mv1-sunken)",
-  border: `1px solid ${C.line}`,
-});
+/* ── where-approval-happens card ───────────────────────────────────────── */
 
-/* ── plan / consent card ───────────────────────────────────────────────── */
-
-/** Derive the consent step list from the organizer category plan. */
-function planSteps(session: OrgSession) {
-  const plan = session.plan;
-  if (!plan) return [];
-  const included = plan.categories.filter((c) => c.included);
-  const steps: { n: number; label: string; scope: "read" | "write" }[] = [
-    {
-      n: 1,
-      label: `Scan ${plan.root} — ${plan.scannedCount} items`,
-      scope: "read",
-    },
-  ];
-  included.forEach((c, i) => {
-    steps.push({
-      n: i + 2,
-      label: `Move ${c.count} ${c.label.toLowerCase()} → ${plan.archiveBase}`,
-      scope: "write",
-    });
-  });
-  return steps;
-}
-
-function PlanCard({
-  session,
+/**
+ * This page is a monitor, not a consent surface. Approval for a file-changing
+ * action lives in the conversation that asked for it — when the desktop-
+ * organizer runs its `apply` step on the host, the daemon raises a scoped
+ * confirmation card inline in that thread (Allow · Always allow in the folder ·
+ * Deny). Surfacing a second consent control here would create two gates for one
+ * action, so this card only explains where the real one is and reflects whether
+ * a run is currently waiting on you.
+ */
+function ApprovalLocationCard({
+  live,
   machine,
 }: {
-  session: OrgSession;
+  live: LiveSession | null;
   machine: string | null;
 }) {
-  const plan = session.plan;
+  // A held observation means a step is parked waiting for a decision.
+  const awaiting = live?.observations?.some((o) => o.status === "held") ?? false;
 
-  if (!plan) {
-    return (
-      <div style={panel}>
-        <div style={microLabel}>Cue wants to act on your Mac</div>
-        <div
-          style={{
-            fontFamily: serif,
-            fontSize: 22,
-            color: C.t1,
-            marginTop: 10,
-          }}
-        >
-          Nothing awaiting your approval
-        </div>
-        <div
-          style={{ fontSize: 13.5, color: C.t2, marginTop: 6, lineHeight: 1.5 }}
-        >
-          When a cloud conversation asks Cue to act on {machine ?? "your Mac"} —
-          organize a folder, move files — the plan appears here for you to
-          approve, scope, or deny before anything runs.
-        </div>
-      </div>
-    );
-  }
-
-  const steps = planSteps(session);
   return (
     <div style={panel}>
-      <div style={microLabel}>
-        Cue wants to act on your Mac{machine ? ` · via Cloud → ${machine}` : ""}
+      <div style={microLabel}>Approvals</div>
+      <div
+        style={{
+          fontFamily: serif,
+          fontSize: 22,
+          color: C.t1,
+          marginTop: 10,
+        }}
+      >
+        {awaiting
+          ? "A step is waiting on your approval"
+          : "Approvals happen in the conversation"}
       </div>
       <div
-        style={{ fontFamily: serif, fontSize: 24, color: C.t1, marginTop: 8 }}
+        style={{ fontSize: 13.5, color: C.t2, marginTop: 6, lineHeight: 1.5 }}
       >
-        Organize {plan.root}
+        When Cue is about to change files on {machine ?? "your Mac"}, it asks
+        first — right in the conversation that started the run, as a plan you can
+        approve, scope to that folder, or deny before anything moves. This page
+        follows the run once it&rsquo;s underway; it never moves files on its
+        own.
       </div>
-      <div style={{ fontSize: 13, color: C.t2, marginTop: 4 }}>
-        {steps.length} steps · file operations in {plan.root}
-      </div>
-
-      <ol style={{ listStyle: "none", margin: "16px 0 0", padding: 0 }}>
-        {steps.map((s) => (
-          <li
-            key={s.n}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "9px 0",
-              borderTop: `1px solid ${C.line}`,
-              fontSize: 14,
-              color: C.t1,
-            }}
-          >
-            <span
-              style={{ fontFamily: mono, fontSize: 12, color: C.t3, width: 16 }}
-            >
-              {s.n}
-            </span>
-            <span style={{ flex: 1 }}>{s.label}</span>
-            <span style={scopeTag(s.scope)}>{s.scope}</span>
-          </li>
-        ))}
-      </ol>
-
       <div
         style={{
           ...microLabel,
           borderTop: `1px solid ${C.line}`,
           paddingTop: 12,
-          marginTop: 4,
+          marginTop: 14,
           textTransform: "none",
           letterSpacing: 0,
           fontSize: 12,
@@ -272,54 +204,6 @@ function PlanCard({
         }}
       >
         Move, never delete · everything undoable via manifest
-      </div>
-
-      <div
-        style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}
-      >
-        <button
-          type="button"
-          style={{
-            background: C.blue,
-            color: "#fff",
-            border: "none",
-            borderRadius: 9,
-            padding: "9px 16px",
-            fontSize: 13.5,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Approve &amp; run
-        </button>
-        <button
-          type="button"
-          style={{
-            background: C.sunken,
-            color: C.t1,
-            border: `1px solid ${C.line}`,
-            borderRadius: 9,
-            padding: "9px 16px",
-            fontSize: 13.5,
-            cursor: "pointer",
-          }}
-        >
-          Always allow in {plan.root} ✦
-        </button>
-        <button
-          type="button"
-          style={{
-            background: "none",
-            color: C.t2,
-            border: `1px solid ${C.line}`,
-            borderRadius: 9,
-            padding: "9px 16px",
-            fontSize: 13.5,
-            cursor: "pointer",
-          }}
-        >
-          Deny
-        </button>
       </div>
     </div>
   );
@@ -806,22 +690,20 @@ function DesktopControlWeb() {
           style={{ fontSize: 14, color: C.t2, marginTop: 4, lineHeight: 1.5 }}
         >
           The remote half of Cue Live: Cue acts on your Mac, and this watches and
-          steers it. Approve the plan, follow the verified-steps run, pick which
-          Mac — the work runs there, not here.
+          steers it. Follow the verified-steps run and pick which Mac — the work
+          runs there, not here, and you approve it in the conversation.
         </div>
       </div>
 
-      {session ? (
-        <PlanCard session={session} machine={machine} />
-      ) : (
+      {orgQuery.isLoading && !session ? (
         <div style={panel}>
-          <div style={microLabel}>Cue wants to act on your Mac</div>
+          <div style={microLabel}>Approvals</div>
           <div style={{ fontSize: 13.5, color: C.t2, marginTop: 8 }}>
-            {orgQuery.isLoading
-              ? "Checking your Mac…"
-              : "Couldn't reach your Cue instance."}
+            Checking your Mac…
           </div>
         </div>
+      ) : (
+        <ApprovalLocationCard live={live} machine={machine} />
       )}
 
       <LiveRun

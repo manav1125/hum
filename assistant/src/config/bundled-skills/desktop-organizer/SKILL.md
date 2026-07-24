@@ -44,6 +44,23 @@ the user's machine, not the daemon sandbox). It requires a desktop host — if
 4. **Apply.** Run the script in `apply` mode. It creates the archive, moves each
    item into `archive/<Category>/`, writes `moves.tsv` (the manifest), and
    writes `cue-undo.sh`.
+
+   **The `apply` call is the approval gate — make it legible.** This is a
+   host file-changing command, so Cue raises an approval card in the
+   conversation before it runs. That card shows the `activity` string you pass
+   to `host_bash`, so it MUST read like the plan, not a shell command. Set
+   `activity` to a plain-language, count-specific one-liner, e.g.:
+
+   > `Organize ~/Downloads — move 42 screenshots and 8 installers into ~/Downloads/Cue Archive/2026-07-24 (moves only, never deletes; fully undoable).`
+
+   Fill in the real counts, categories, source, and destination from the plan
+   you computed in step 1. Never pass a bare `activity` like "run a script" or
+   "organize files" — the user is approving a real file operation and the card
+   is the only thing they see. The raw command stays available under "Show
+   details"; the `activity` line is what they read and approve. If the user
+   would rather not be asked every time, they can pick **Always allow in
+   `<that folder>`** on the card (a directory-scoped trust rule) — point them to
+   it once, don't nag.
 5. **Report + offer undo.** Tell the user what moved and where, and that
    `bash "<archive>/cue-undo.sh"` restores everything instantly.
 
