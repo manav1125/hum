@@ -45,6 +45,24 @@ describe("requiresHumanApprovalForAction (high-consequence gate)", () => {
     no("list_email_templates");
   });
 
+  test("catches actions smuggled through a Composio proxy/execute meta-tool", () => {
+    // The EXACT path the rogue email actually took: a generic executor with the
+    // real action as a `tool_slug` input, not the tool name.
+    yes("COMPOSIO_EXECUTE_TOOL", { tool_slug: "GMAIL_SEND_EMAIL" });
+    yes("mcp__composio__COMPOSIO_EXECUTE_TOOL", { tool_name: "GMAIL_SEND_EMAIL" });
+    yes("COMPOSIO_MULTI_EXECUTE_TOOL", {
+      arguments: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }],
+    });
+    yes("COMPOSIO_MULTI_EXECUTE_TOOL", {
+      tool_schemas: { STRIPE_CREATE_CHARGE: {} },
+    });
+    // A proxy pointed at a draft/read action must NOT park.
+    no("COMPOSIO_EXECUTE_TOOL", { tool_slug: "GMAIL_CREATE_EMAIL_DRAFT" });
+    no("COMPOSIO_EXECUTE_TOOL", { tool_slug: "GMAIL_FETCH_EMAILS" });
+    // Bare proxy with no action yet (schema lookup) does not park.
+    no("COMPOSIO_EXECUTE_TOOL", {});
+  });
+
   test("does NOT catch internal infra plumbing (self-maintenance safe)", () => {
     no("bash");
     no("host_bash");

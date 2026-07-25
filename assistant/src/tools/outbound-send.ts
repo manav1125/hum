@@ -82,19 +82,85 @@ const OUTBOUND_SEND_NAME_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
+ * Input keys that carry an *embedded* connector action slug when a generic
+ * proxy tool is used instead of the per-connector tool. Composio's meta tools
+ * (`COMPOSIO_EXECUTE_TOOL`, `COMPOSIO_MULTI_EXECUTE_TOOL`) route the real action
+ * — e.g. `GMAIL_SEND_EMAIL` — through the *input* (`tool_slug` / `tool_name`)
+ * rather than the tool name, so a name-only check sails past a real send. This
+ * is how the rogue-email path actually reached Gmail. We pull the slug out and
+ * classify IT.
+ */
+const ACTION_SLUG_KEYS = [
+  "tool_slug",
+  "tool_name",
+  "action",
+  "action_name",
+  "slug",
+  "app_action",
+] as const;
+
+/**
+ * Extract connector action slugs embedded in a proxy/execute tool's input, so
+ * `COMPOSIO_EXECUTE_TOOL({ tool_slug: "GMAIL_SEND_EMAIL", … })` and the
+ * multi-execute array form both surface their real underlying actions. Only
+ * known action-identifier keys are read (never free-text like an email body),
+ * so it can't false-positive on message content. Shallow by design: it looks at
+ * the top level, the keys of a `tool_schemas` map, and one level into common
+ * batch arrays (`arguments`/`tools`/`actions`/`executions`/`calls`).
+ */
+export function extractProxiedActionSlugs(
+  input: Record<string, unknown>,
+): string[] {
+  const out: string[] = [];
+  const pushFrom = (obj: unknown) => {
+    if (!obj || typeof obj !== "object") return;
+    const rec = obj as Record<string, unknown>;
+    for (const k of ACTION_SLUG_KEYS) {
+      const v = rec[k];
+      if (typeof v === "string" && v.trim()) out.push(v.trim());
+    }
+  };
+  pushFrom(input);
+  // `tool_schemas` is a map keyed by action slug (the multi-execute schema call).
+  const schemas = input.tool_schemas;
+  if (schemas && typeof schemas === "object") {
+    out.push(...Object.keys(schemas as Record<string, unknown>));
+  }
+  // Batch/array forms: one shallow level in.
+  for (const key of ["arguments", "tools", "actions", "executions", "calls"]) {
+    const arr = input[key];
+    if (Array.isArray(arr)) for (const el of arr) pushFrom(el);
+  }
+  return out;
+}
+
+function classIsHighConsequence(name: string, input: Record<string, unknown>) {
+  if (INTERNAL_INFRA_TOOLS.has(name)) return false;
+  const cls = classifyAutonomy(name, input);
+  if (HIGH_CONSEQUENCE_CLASSES.has(cls)) return true;
+  return OUTBOUND_SEND_NAME_PATTERNS.some((re) => re.test(name.toLowerCase()));
+}
+
+/**
  * True when the tool performs a high-consequence action (external send/call,
  * money, publish, delete, purchase) that must never run unattended without a
- * human and needs a fresh approval when run interactively.
+ * human and needs a fresh approval when run interactively. Checks the tool name
+ * AND any connector action slug the tool carries in its input (proxy/execute
+ * meta-tools), so a generic executor can't smuggle a send past the gate.
  */
 export function requiresHumanApprovalForAction(
   name: string,
   input: Record<string, unknown>,
 ): boolean {
-  if (INTERNAL_INFRA_TOOLS.has(name)) return false;
-  const cls = classifyAutonomy(name, input);
-  if (HIGH_CONSEQUENCE_CLASSES.has(cls)) return true;
-  const lower = name.toLowerCase();
-  return OUTBOUND_SEND_NAME_PATTERNS.some((re) => re.test(lower));
+  if (!INTERNAL_INFRA_TOOLS.has(name) && classIsHighConsequence(name, input)) {
+    return true;
+  }
+  // Proxied action slugs (COMPOSIO_EXECUTE_TOOL et al.): classify each embedded
+  // action by name. The empty-input classification is what matters here.
+  for (const slug of extractProxiedActionSlugs(input)) {
+    if (classIsHighConsequence(slug, {})) return true;
+  }
+  return false;
 }
 
 /**
@@ -105,9 +171,12 @@ export function isOutboundExternalSendTool(
   name: string,
   input: Record<string, unknown>,
 ): boolean {
-  if (INTERNAL_INFRA_TOOLS.has(name)) return false;
-  const cls = classifyAutonomy(name, input);
-  if (cls === "send" || cls === "contact") return true;
-  const lower = name.toLowerCase();
-  return OUTBOUND_SEND_NAME_PATTERNS.some((re) => re.test(lower));
+  const isSend = (n: string, i: Record<string, unknown>) => {
+    if (INTERNAL_INFRA_TOOLS.has(n)) return false;
+    const cls = classifyAutonomy(n, i);
+    if (cls === "send" || cls === "contact") return true;
+    return OUTBOUND_SEND_NAME_PATTERNS.some((re) => re.test(n.toLowerCase()));
+  };
+  if (isSend(name, input)) return true;
+  return extractProxiedActionSlugs(input).some((slug) => isSend(slug, {}));
 }
