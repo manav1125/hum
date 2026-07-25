@@ -14,7 +14,7 @@ import { createOrReuseToolGrantRequest } from "../runtime/tool-grant-request-hel
 import { redactSecrets } from "../security/secret-scanner.js";
 import { computeToolApprovalDigest } from "../security/tool-approval-digest.js";
 import { getLogger } from "../util/logger.js";
-import { isOutboundExternalSendTool } from "./outbound-send.js";
+import { requiresHumanApprovalForAction } from "./outbound-send.js";
 import { getAllTools, getTool, getToolOwner } from "./registry.js";
 import { isSideEffectTool } from "./side-effects.js";
 import { summarizeToolInput } from "./tool-input-summary.js";
@@ -310,21 +310,23 @@ export class ToolApprovalHandler {
       };
     }
 
-    // ── Outbound external-send hard checkpoint ─────────────────────────────
-    // Sending a message to a third party (email/DM/post) or placing a call
-    // ALWAYS requires explicit human approval and can NEVER be cleared by
-    // internal/background "guardian" trust. This runs for every actor
-    // (including guardian) and BEFORE both the trust-scoped guardian gate below
-    // and the PermissionChecker — so it is immune to guardian-background
-    // auto-approve, an autonomy `send: auto` policy, and risk thresholds, which
-    // are exactly the holes that let a scheduled run send email with no human
-    // in the loop. Drafting is unaffected (it classifies as "draft", not
-    // "send"), so a background run can still prepare a message and park only at
-    // the send.
-    if (isOutboundExternalSendTool(name, input)) {
+    // ── High-consequence action hard checkpoint ────────────────────────────
+    // Any action that reaches outside or is irreversible — sending a message to
+    // a third party, placing a call, moving money, making a purchase,
+    // publishing/deploying, or deleting a record — ALWAYS requires explicit
+    // human approval and can NEVER be cleared by internal/background "guardian"
+    // trust. This runs for every actor (including guardian) and BEFORE both the
+    // trust-scoped guardian gate below and the PermissionChecker — so it is
+    // immune to guardian-background auto-approve, an autonomy `auto` policy, and
+    // risk thresholds, which are exactly the holes that let a scheduled run send
+    // email with no human in the loop. Drafting, reading, and internal
+    // plumbing are unaffected (they classify as "draft"/"research", or are
+    // excluded as internal-infra), so a background run can still prepare work
+    // and park only at the consequential act.
+    if (requiresHumanApprovalForAction(name, input)) {
       if (context.isInteractive === false) {
         // Unattended run (scheduled task / mission / heartbeat / background
-        // wake): park as a needs-you item and deny the send. Never execute.
+        // wake): park as a needs-you item and deny the action. Never execute.
         void import("../work-items/work-item-approval-timeouts.js")
           .then((m) =>
             m.parkExternalSendForConversation(context.conversationId, name),
@@ -332,10 +334,10 @@ export class ToolApprovalHandler {
           .catch(() => {});
         const durationMs = Date.now() - startTime;
         const reason =
-          `Parked "${name}": sending a message to someone outside needs your ` +
-          `approval and can't run unattended. I've saved it as a needs-you ` +
-          `item — approve and re-run to send. (Drafting is fine; only the ` +
-          `send waits for you.)`;
+          `Parked "${name}": this reaches outside or can't be undone, so it ` +
+          `needs your approval and can't run unattended. I've saved it as a ` +
+          `needs-you item — approve and re-run to do it. (Drafting and reading ` +
+          `are fine; only the action itself waits for you.)`;
         emitLifecycleEvent({
           type: "permission_denied",
           toolName: name,
