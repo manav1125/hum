@@ -141,6 +141,53 @@ function classIsHighConsequence(name: string, input: Record<string, unknown>) {
   return OUTBOUND_SEND_NAME_PATTERNS.some((re) => re.test(name.toLowerCase()));
 }
 
+/** Bare tool name (drop any `mcp__<server>__` / `connector.` namespace). */
+function bareName(name: string): string {
+  return name.split(/__|\./).pop() ?? name;
+}
+
+/**
+ * A `schedule_create`/`schedule_update` that installs a **script-mode** job.
+ * At fire time the scheduler runs the raw `script` through `sh -c` with no agent
+ * loop and no approval gate — so planting one is the consequential act, and it
+ * must face a human. (Without this, an autonomous run could persist
+ * `curl …exfil…` as a cron and fully decouple the send from any approval.)
+ */
+function isScriptModeScheduleInstall(
+  name: string,
+  input: Record<string, unknown>,
+): boolean {
+  const bare = bareName(name);
+  if (bare !== "schedule_create" && bare !== "schedule_update") return false;
+  const script = input.script;
+  return (
+    input.mode === "script" &&
+    typeof script === "string" &&
+    script.trim().length > 0
+  );
+}
+
+/**
+ * Apify actors run arbitrary third-party code under the user's token — many
+ * send email, post to social, or submit forms — and the action lives in a
+ * free-form `actor_id`, invisible to name/slug classification. Fail closed:
+ * treat `apify_run_actor` as high-consequence UNLESS the actor id clearly names
+ * a read-only data-gathering actor (scrape/search/enrich/…), so lead-gen
+ * scraping still runs unattended while a sender/poster parks.
+ */
+const APIFY_READONLY_ACTOR =
+  /scrap|search|fetch|extract|crawl|read|scan|find|list|lookup|enrich|monitor|detail|harvest|collect/i;
+
+function isOpaqueExternalRunner(
+  name: string,
+  input: Record<string, unknown>,
+): boolean {
+  if (bareName(name) !== "apify_run_actor") return false;
+  const actor = String(input.actor_id ?? input.actor ?? "").trim();
+  // Unknown/empty actor → fail closed (gate it).
+  return actor === "" || !APIFY_READONLY_ACTOR.test(actor);
+}
+
 /**
  * True when the tool performs a high-consequence action (external send/call,
  * money, publish, delete, purchase) that must never run unattended without a
@@ -155,6 +202,11 @@ export function requiresHumanApprovalForAction(
   if (!INTERNAL_INFRA_TOOLS.has(name) && classIsHighConsequence(name, input)) {
     return true;
   }
+  // Payload-carried actions the name/slug classifier can't see:
+  //   · script-mode schedules install a detached, un-gated shell command
+  //   · apify actors run opaque third-party code that may send/post/submit
+  if (isScriptModeScheduleInstall(name, input)) return true;
+  if (isOpaqueExternalRunner(name, input)) return true;
   // Proxied action slugs (COMPOSIO_EXECUTE_TOOL et al.): classify each embedded
   // action by name. The empty-input classification is what matters here.
   for (const slug of extractProxiedActionSlugs(input)) {

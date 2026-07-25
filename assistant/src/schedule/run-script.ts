@@ -37,6 +37,19 @@ export async function runScript(
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const cwd = options?.cwd ?? getWorkspaceDir();
 
+  // Observability for the script-schedule egress vector: installing a
+  // script-mode schedule now requires human approval at create time
+  // (`requiresHumanApprovalForAction`), but a job persisted before that guard
+  // could still reach an external host at fire time with no human present.
+  // Flag it loudly so it's visible in prod logs; the tool-layer gate is the
+  // actual closure, so an already-approved schedule is not blocked here.
+  if (/\b(curl|wget|nc|ncat|telnet|sendmail|ssh|scp|sftp)\b|\/dev\/tcp/i.test(command)) {
+    log.warn(
+      { cwd, preview: command.slice(0, 200) },
+      "scheduled script reaches the network at fire time (no human in the loop) — review this schedule",
+    );
+  }
+
   log.info({ command, cwd, timeoutMs }, "Running script");
 
   const proc = Bun.spawn(["sh", "-c", command], {

