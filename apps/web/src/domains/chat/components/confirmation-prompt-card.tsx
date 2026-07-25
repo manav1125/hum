@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Loader2, Shield } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { MakeRuleSheet } from "@/domains/chat/components/make-rule-sheet";
+import { deriveActionSummary } from "@/domains/chat/utils/action-summary";
 import { getRiskBadgeStyle } from "@/domains/chat/utils/risk";
 import type { ConfirmationDecision } from "@/types/event-types";
 import type {
@@ -71,8 +72,24 @@ export function ConfirmationPromptCard({
     confirmation.input.activity.trim()
       ? confirmation.input.activity.trim()
       : undefined;
+  // Connector sends often arrive via a generic proxy (COMPOSIO_*EXECUTE_TOOL)
+  // whose name/riskReason is opaque ("Unknown tool: …"). Derive a legible
+  // headline from the tool input so the user sees "Send an email to cindy@… —
+  // 'Follow-up'" instead. Only used when there's no author-provided title/activity.
+  const derivedSummary = deriveActionSummary(
+    confirmation.toolName,
+    confirmation.input,
+  );
   const headline =
-    confirmation.title || activitySummary || "Confirmation required";
+    confirmation.title ||
+    activitySummary ||
+    derivedSummary ||
+    "Confirmation required";
+  // Suppress the unhelpful "Unknown tool: mcp__…" reason when we've derived a
+  // clear headline — the raw tool name still lives under "Show details".
+  const showRiskReason =
+    !!confirmation.riskReason &&
+    !(derivedSummary && /^unknown tool:/i.test(confirmation.riskReason));
 
   const hasDetails =
     !!confirmation.toolName ||
@@ -105,7 +122,7 @@ export function ConfirmationPromptCard({
               </span>
             )}
           </div>
-          {confirmation.riskReason && (
+          {showRiskReason && (
             <p className="pl-6 text-body-small-default text-[var(--content-tertiary)] dark:text-[var(--content-disabled)]">
               {confirmation.riskReason}
             </p>
