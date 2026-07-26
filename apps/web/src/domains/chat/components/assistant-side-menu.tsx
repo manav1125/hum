@@ -47,6 +47,7 @@ import { isConversationPinned } from "@/domains/chat/utils/group-conversations";
 import { usePinnedAppsStore } from "@/stores/pinned-apps-store";
 import type { Conversation } from "@/types/conversation-types";
 import { canMarkRead, canMarkUnread } from "@/utils/conversation-predicates";
+import { useNeedsYouBadge } from "@/hooks/use-needs-you-badge";
 import {
   ApertureAvatar,
   Button,
@@ -202,6 +203,7 @@ export function AssistantSideMenu({
   // sidebar adds desktop discoverability without threading new callbacks.
   const navigate = useNavigate();
   const location = useLocation();
+  const { count: needsYouCount } = useNeedsYouBadge(assistantId);
   const cueNav = useCallback(
     (to: string) => {
       navigate(to);
@@ -552,10 +554,15 @@ export function AssistantSideMenu({
           Guardrails (the evolved Trust console) = linked from agent surfaces.
           (See docblock.)
         */}
+        {/* The badge is the only global "something is waiting on you" signal:
+            approvals parked mid-run + finished runs nobody has reviewed. Cue
+            works while you're away, so this has to be visible from anywhere —
+            not only from inside HQ. Hidden at zero so it never nags. */}
         <SideMenu.Item
           icon={Target}
           label="HQ"
           showCollapsedTooltip
+          badge={needsYouCount > 0 ? String(needsYouCount) : undefined}
           active={
             location.pathname.includes("/hq") ||
             location.pathname.endsWith("/home") ||

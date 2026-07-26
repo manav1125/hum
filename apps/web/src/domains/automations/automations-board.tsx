@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import { routes } from "@/utils/routes";
+import { C } from "@/lib/hq-theme";
 
 import {
   AUTONOMY_LABEL,
@@ -38,16 +39,22 @@ const serif = "'Instrument Serif', Georgia, serif";
 const mono = "'DM Mono', ui-monospace, monospace";
 const sans = "'DM Sans', -apple-system, system-ui, sans-serif";
 
-const INK = "#181717";
-const BG = "#F4F3EF";
-const MUTED = "#6B6B60";
-const LINE = "#DDDAD2";
-const BLUE = "#3D6EE8";
-const TEAL = "#0E8C8C";
-const VIOLET = "#534AB7";
-const GREEN = "#61C554";
-const AMBER = "#B4770F";
-const RED = "#ED6A5E";
+// Theme-aware serif-HQ palette. These were hardcoded light-mode hex values, so
+// the whole board rendered as a cream panel inside dark chrome; every peer
+// surface reads the same `--mv1-*` vars via `lib/hq-theme`. Names kept so the
+// call sites below are unchanged.
+const INK = C.t1;
+const BG = C.bg;
+const MUTED = C.t2;
+const LINE = C.line;
+const BLUE = C.blue;
+// No teal token in the serif-HQ palette; the strong blue is the nearest
+// in-system accent and stays legible in both themes.
+const TEAL = C.blueS;
+const VIOLET = C.violet;
+const GREEN = C.green;
+const AMBER = C.amber;
+const RED = C.danger;
 
 const AUTONOMY_RANK: Record<Autonomy, number> = {
   notify: 0,
@@ -119,7 +126,7 @@ function WatcherCard({ watcher }: { watcher: Watcher }) {
         border: `1px solid ${LINE}`,
         borderRadius: 12,
         padding: "14px 16px",
-        background: "#FBFAF7",
+        background: C.surface,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -206,7 +213,7 @@ function PlaybookCard({ playbook }: { playbook: Playbook }) {
         border: `1px solid ${LINE}`,
         borderRadius: 12,
         padding: "14px 16px",
-        background: "#FBFAF7",
+        background: C.surface,
         opacity: playbook.enabled ? 1 : 0.6,
       }}
     >
@@ -419,8 +426,8 @@ function NewPlaybookForm({
                 padding: "8px 0",
                 borderRadius: 8,
                 border: `1px solid ${active ? VIOLET : LINE}`,
-                background: active ? "rgba(83,74,183,.1)" : "#fff",
-                color: locked ? "#B5B2A8" : active ? VIOLET : INK,
+                background: active ? "var(--mv1-violet-wash, rgba(83,74,183,.1))" : C.surface,
+                color: locked ? C.t3 : active ? VIOLET : INK,
                 cursor: locked ? "not-allowed" : "pointer",
               }}
             >
@@ -469,7 +476,7 @@ function NewPlaybookForm({
               borderRadius: 8,
               border: `1px solid ${priority === p.value ? BLUE : LINE}`,
               background:
-                priority === p.value ? "rgba(61,110,232,.08)" : "#fff",
+                priority === p.value ? C.blueW : C.surface,
               color: priority === p.value ? BLUE : INK,
               cursor: "pointer",
             }}
@@ -542,7 +549,7 @@ function ToggleSwitch({
           width: 18,
           height: 18,
           borderRadius: "50%",
-          background: "#fff",
+          background: C.surface,
           transition: "left .16s",
         }}
       />
@@ -568,7 +575,7 @@ const formBox: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 9,
-  background: "#fff",
+  background: C.surface,
 };
 
 const input: React.CSSProperties = {
@@ -578,7 +585,7 @@ const input: React.CSSProperties = {
   padding: "9px 11px",
   borderRadius: 9,
   border: `1px solid ${LINE}`,
-  background: "#fff",
+  background: C.surface,
   outline: "none",
 };
 
@@ -693,7 +700,7 @@ export function WebAutomationsBoard() {
             border: `1px solid ${LINE}`,
             borderLeft: `3px solid ${BLUE}`,
             borderRadius: 10,
-            background: "#FBFAF7",
+            background: C.surface,
             fontSize: 13.5,
           }}
         >

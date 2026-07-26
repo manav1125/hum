@@ -27,6 +27,8 @@ import { useLocation, useNavigate } from "react-router";
 
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
+import { useNeedsYouBadge } from "@/hooks/use-needs-you-badge";
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 import { CueRing } from "./cue-ring";
 
@@ -165,7 +167,16 @@ const TABS: V3Tab[] = [
   },
 ];
 
-function TabItem({ tab, pathname }: { tab: V3Tab; pathname: string }) {
+function TabItem({
+  tab,
+  pathname,
+  badgeCount = 0,
+}: {
+  tab: V3Tab;
+  pathname: string;
+  /** Items waiting on the user; renders a count dot. 0 renders nothing. */
+  badgeCount?: number;
+}) {
   const navigate = useNavigate();
   const active = tab.match(pathname);
   return (
@@ -196,7 +207,31 @@ function TabItem({ tab, pathname }: { tab: V3Tab; pathname: string }) {
         transition: "opacity .15s ease",
       }}
     >
-      {tab.icon(active)}
+      <span style={{ position: "relative", display: "inline-flex" }}>
+        {tab.icon(active)}
+        {badgeCount > 0 ? (
+          <span
+            aria-hidden
+            style={{
+              position: "absolute",
+              top: -3,
+              right: -8,
+              minWidth: 15,
+              height: 15,
+              padding: "0 4px",
+              borderRadius: 8,
+              background: "var(--mv3-accent)",
+              color: "#fff",
+              fontSize: 9,
+              fontWeight: 700,
+              lineHeight: "15px",
+              textAlign: "center",
+            }}
+          >
+            {badgeCount > 9 ? "9+" : badgeCount}
+          </span>
+        ) : null}
+      </span>
       <span
         style={{
           fontSize: 9.5,
@@ -217,6 +252,10 @@ export function TabBarV3() {
   // reopening is instant.
   const [createOpen, setCreateOpen] = useState(false);
   const [createMounted, setCreateMounted] = useState(false);
+  // Read the raw store, not useActiveAssistantId(): the tab bar mounts from the
+  // root layout (including pre-assistant screens), where that hook throws.
+  const assistantId = useResolvedAssistantsStore.use.activeAssistantId();
+  const { count: needsYouCount } = useNeedsYouBadge(assistantId ?? null);
 
   if (tabBarHidden(pathname)) return null;
 
@@ -254,7 +293,7 @@ export function TabBarV3() {
           boxShadow: "var(--mv3-glass-shadow)",
         }}
       >
-        <TabItem tab={TABS[0]} pathname={pathname} />
+        <TabItem tab={TABS[0]} pathname={pathname} badgeCount={needsYouCount} />
         <TabItem tab={TABS[1]} pathname={pathname} />
         {/* Raised center + — lifts the Create sheet over the current screen
             (frame 7). The /assistant/create page remains the desktop/fallback

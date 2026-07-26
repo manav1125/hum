@@ -32,7 +32,6 @@ import {
   chooseSidebarOpenAppDestination,
   useOpenAppFromChat,
 } from "@/domains/chat/hooks/use-open-app-from-chat";
-import { useHomeUnreadBadge } from "@/hooks/use-home-unread-badge";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 
 import { useAttentionTracking } from "@/domains/chat/hooks/use-attention-tracking";
@@ -189,7 +188,6 @@ export function ChatLayout() {
 
   // Home page unread indicator — drives the red dot on the Home button in
   // the layout header.
-  const { hasUnreadHome } = useHomeUnreadBadge(assistantId);
 
   // Mirror the unread count + signed-in flag into the Electron Dock
   // (no-op off Electron). Uses the conversation list this layout
@@ -239,10 +237,6 @@ export function ChatLayout() {
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < maxHistoryIndex;
 
-  const handleOpenHome = useCallback(() => {
-    navigate(routes.home);
-  }, [navigate]);
-
   const handleOpenIdentity = useCallback(() => {
     navigate(routes.identity);
   }, [navigate]);
@@ -259,7 +253,6 @@ export function ChatLayout() {
     navigate(1);
   }, [navigate]);
 
-  const isHomeActive = location.pathname === routes.home;
 
   // The rail "Contacts" item opens the relationship-memory dossier (/people) —
   // where Cue learns about + enriches the people you know.
@@ -657,9 +650,6 @@ export function ChatLayout() {
           canGoForward={canGoForward}
           onGoBack={handleGoBack}
           onGoForward={handleGoForward}
-          onOpenHome={handleOpenHome}
-          isHomeActive={isHomeActive}
-          hasUnreadHome={hasUnreadHome}
         />
       )}
 
