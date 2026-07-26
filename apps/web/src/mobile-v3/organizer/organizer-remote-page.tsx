@@ -37,7 +37,6 @@ import {
   cardTitle,
   microLabel,
   mv3Mono,
-  primaryBtn,
   rise,
   secondaryBtn,
 } from "@/mobile-v3/mv3-kit";
@@ -238,28 +237,24 @@ function PlanCard({ session, machine }: { session: Session; machine: string }) {
         Move, never delete · {plan.protectedNote}
       </div>
 
-      <button
-        type="button"
-        disabled={moveCount === 0}
-        style={{
-          ...primaryBtn,
-          width: "100%",
-          marginTop: 12,
-          opacity: moveCount === 0 ? 0.5 : 1,
-        }}
-      >
-        Approve — move {moveCount} items
-      </button>
+      {/* Approval is chat-native: the organizer's file-moving step raises a
+          scoped confirmation in the conversation that asked for it, so there is
+          deliberately no approve control here. Rendering one would either be a
+          second gate for one action or — as it was — a live button with no
+          handler on a trust surface. This states where the real decision is. */}
       <div
         style={{
-          fontSize: 11,
+          fontSize: 12,
           color: "var(--mv3-muted)",
           textAlign: "center",
-          marginTop: 8,
-          lineHeight: 1.4,
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: "1px solid var(--mv3-card-border)",
+          lineHeight: 1.5,
         }}
       >
-        or tap any category to include/exclude · runs on your Mac
+        Cue asks before it moves anything — approve it in the conversation that
+        started the run. Tap any category to include or exclude it.
       </div>
     </GlassCard>
   );
@@ -381,9 +376,9 @@ function DoneCard({ session, machine }: { session: Session; machine: string }) {
         >
           Undo all
         </button>
-        <button type="button" style={{ ...secondaryBtn, flex: 1 }}>
-          See on Mac
-        </button>
+        {/* "See on Mac" needs a host round-trip (reveal the archive in Finder)
+            that this remote has no channel for. Omitted rather than shipped as
+            a button that does nothing. */}
       </div>
       <div
         style={{
