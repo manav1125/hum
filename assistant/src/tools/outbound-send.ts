@@ -189,6 +189,78 @@ function isOpaqueExternalRunner(
 }
 
 /**
+ * Rank 2 — a shell tool (`bash`/`host_bash`) whose command reaches the network.
+ * These are `INTERNAL_INFRA_TOOLS` so routine self-maintenance runs free, but a
+ * command that `curl`s/`ssh`s/`sendmail`s to an external host is an egress /
+ * exfil path invisible to `classifyAutonomy` (which only scans a shell command
+ * for *destructive* verbs). Gate it: park unattended, force approval attended.
+ * (`requireFreshApproval` set downstream also defeats the sandbox-bash
+ * auto-approve in permission-checker.ts.)
+ */
+const NETWORK_EGRESS_SHELL_TOOLS: ReadonlySet<string> = new Set([
+  "bash",
+  "host_bash",
+  "terminal",
+]);
+const NETWORK_EGRESS_CMD =
+  /\b(curl|wget|ncat|telnet|sendmail|ssmtp|mailx|mutt|scp|sftp|rsync|ssh|nc)\b|\/dev\/(tcp|udp)\//i;
+
+function isNetworkEgressShell(
+  name: string,
+  input: Record<string, unknown>,
+): boolean {
+  if (!NETWORK_EGRESS_SHELL_TOOLS.has(bareName(name))) return false;
+  const cmd =
+    typeof input.command === "string"
+      ? input.command
+      : typeof input.script === "string"
+        ? input.script
+        : "";
+  return NETWORK_EGRESS_CMD.test(cmd);
+}
+
+/**
+ * Rank 4 — a browser/computer-use action aimed at a send/submit/pay control.
+ * Unattended browser ops are Medium risk and already denied by the low default
+ * background threshold; this is threshold-independent defense: it fires when a
+ * DOM selector / element label names a submit control (Send, Submit, Post,
+ * Publish, Pay, Checkout, …), so a labeled "Send" click parks unattended and
+ * forces approval attended even if the threshold is raised. COVERAGE LIMIT:
+ * coordinate-based computer-use clicks and opaque element-id clicks carry no
+ * label in the tool input, so they are not caught here — the robust fix is an
+ * execution-layer check on the resolved element's accessible name.
+ */
+const BROWSER_SUBMIT_KEYWORDS =
+  /\b(send|submit|publish|confirm|pay|checkout|place[\s_-]?order|reply[\s_-]?all)\b|\bpost[\s_-]?(message|comment|tweet|reply)\b/i;
+
+function isBrowserSubmitAction(
+  name: string,
+  input: Record<string, unknown>,
+): boolean {
+  const bare = bareName(name);
+  const isActionTool =
+    /^browser_(click|fill|drag|type|press_key)$/.test(bare) ||
+    bare.startsWith("computer_use_") ||
+    bare.startsWith("host_cu");
+  if (!isActionTool) return false;
+  // Only control-identifying fields — never the typed `text`/content, which is
+  // the message body and would false-positive on "…I'll send you…".
+  const parts = [
+    input.selector,
+    input.element,
+    input.element_id,
+    input.label,
+    input.aria_label,
+    input.target,
+    input.name,
+    input.description,
+  ]
+    .filter((v): v is string => typeof v === "string")
+    .join(" ");
+  return BROWSER_SUBMIT_KEYWORDS.test(parts);
+}
+
+/**
  * True when the tool performs a high-consequence action (external send/call,
  * money, publish, delete, purchase) that must never run unattended without a
  * human and needs a fresh approval when run interactively. Checks the tool name
@@ -199,6 +271,10 @@ export function requiresHumanApprovalForAction(
   name: string,
   input: Record<string, unknown>,
 ): boolean {
+  // Rank 2/4 run FIRST so they can flag a tool the name/class check would clear
+  // (bash is in INTERNAL_INFRA_TOOLS; browser actions classify as "other").
+  if (isNetworkEgressShell(name, input)) return true;
+  if (isBrowserSubmitAction(name, input)) return true;
   if (!INTERNAL_INFRA_TOOLS.has(name) && classIsHighConsequence(name, input)) {
     return true;
   }
