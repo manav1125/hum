@@ -453,7 +453,14 @@ const DESCRIBE_CONTROL_BODY = `
   var CONTROL_SEL = 'button,[role="button"],input[type="submit"],input[type="button"],input[type="image"],input[type="reset"],[role="menuitem"]';
   var ctl = null;
   try { ctl = el.closest ? el.closest(CONTROL_SEL) : null; } catch (e) { ctl = null; }
-  var target = ctl || el;
+  // A link is NOT reported as a control (that would gate ordinary navigation),
+  // but it is reported as a link so the guard can apply its own, much stricter
+  // exact-phrase rule — some send controls really are anchors.
+  var lnk = null;
+  if (!ctl) {
+    try { lnk = el.closest ? el.closest('a[href]') : null; } catch (e) { lnk = null; }
+  }
+  var target = ctl || lnk || el;
   var tag = String(el.tagName || '').toLowerCase();
   var attrOf = function (node, n) {
     try { return (node && node.getAttribute && node.getAttribute(n)) || ''; } catch (e) { return ''; }
@@ -497,6 +504,7 @@ const DESCRIBE_CONTROL_BODY = `
     labels: labels.filter(function (v) { return !!v; }),
     text: text,
     isControl: !!ctl,
+    isLink: !ctl && !!lnk,
     isTextEntry: !!isTextEntry,
     isMultiline: !!isMultiline,
     isSearch: !!isSearch,

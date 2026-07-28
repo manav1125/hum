@@ -2532,6 +2532,19 @@ paths:
                           anyOf:
                             - type: string
                             - type: "null"
+                        sourceConversation:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            title:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                          required:
+                            - id
+                            - title
+                          additionalProperties: false
                       required:
                         - id
                         - original_filename

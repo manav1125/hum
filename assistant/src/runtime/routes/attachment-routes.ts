@@ -39,6 +39,10 @@ import {
 } from "./errors.js";
 import type { RouteDefinition, RouteHandlerArgs } from "./types.js";
 import { RouteResponse } from "./types.js";
+import {
+  resolveExistingConversations,
+  sourceConversationSchema,
+} from "./artifact-provenance.js";
 
 /** 150 MB — base64-encoded 100 MB attachment ≈ 134 MB plus JSON wrapper overhead. */
 const MAX_UPLOAD_BODY_BYTES = 150 * 1024 * 1024;
@@ -660,15 +664,28 @@ function handleListAttachmentsRoute({ queryParams = {} }: RouteHandlerArgs) {
           .filter((k) => k.length > 0)
       : undefined;
 
-  const attachments = listAttachments({ kinds }).map((a) => ({
-    id: a.id,
-    original_filename: a.originalFilename,
-    mime_type: a.mimeType,
-    size_bytes: a.sizeBytes,
-    kind: a.kind,
-    created_at: a.createdAt,
-    thumbnail_base64: a.thumbnailBase64,
-  }));
+  const rows = listAttachments({ kinds });
+  // Resolve every originating thread in one query, and attach it ONLY when the
+  // conversation row still exists — a stored id alone is never proof, and a
+  // deleted thread must render no link at all (same rule as documents/apps).
+  const live = resolveExistingConversations(
+    rows.map((a) => a.sourceConversationId).filter((id): id is string => !!id),
+  );
+  const attachments = rows.map((a) => {
+    const source = a.sourceConversationId
+      ? live.get(a.sourceConversationId)
+      : undefined;
+    return {
+      id: a.id,
+      original_filename: a.originalFilename,
+      mime_type: a.mimeType,
+      size_bytes: a.sizeBytes,
+      kind: a.kind,
+      created_at: a.createdAt,
+      thumbnail_base64: a.thumbnailBase64,
+      ...(source ? { sourceConversation: source } : {}),
+    };
+  });
 
   return { attachments };
 }
@@ -706,6 +723,7 @@ export const ROUTES: RouteDefinition[] = [
           kind: z.string(),
           created_at: z.number(),
           thumbnail_base64: z.string().nullable(),
+          sourceConversation: sourceConversationSchema.optional(),
         }),
       ),
     }),

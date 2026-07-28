@@ -65,6 +65,7 @@ export interface ResolvedControl {
   text?: string;
   /** True when the node is an activatable control (button-ish), not a link or a div. */
   isControl?: boolean;
+  isLink?: boolean;
   /** True when the node accepts typed text (input / textarea / contenteditable). */
   isTextEntry?: boolean;
   /** True when the text entry accepts newlines (textarea / contenteditable). */
@@ -95,19 +96,42 @@ function nameCandidates(control: ResolvedControl): string[] {
  * True when the resolved target is a send / submit / pay control.
  *
  * Deliberately narrow:
- *   · only activatable controls (`isControl`) — a link or a plain div is not a
- *     send control even if its text says "Send feedback"
+ *   · activatable controls (`isControl`) match the shared keyword set
+ *   · LINKS (`isLink`) are held to a much stricter, exact-phrase rule: some
+ *     real send controls are anchors, but most "Send …" links are navigation
+ *     ("Send feedback", "Contact support"), so only an unambiguous bare send
+ *     phrase counts and known navigational phrasings are excluded outright
  *   · only short names — see {@link MAX_CONTROL_NAME_LENGTH}
  *   · disabled controls can't act, so they never gate
  */
 export function isSendControl(control: ResolvedControl | null): boolean {
-  if (!control || !control.isControl || control.isDisabled) return false;
+  if (!control || control.isDisabled) return false;
+  if (!control.isControl && !control.isLink) return false;
+  const matches = control.isControl
+    ? (name: string) => BROWSER_SUBMIT_KEYWORDS.test(name)
+    : isUnambiguousSendLinkName;
   for (const candidate of nameCandidates(control)) {
     const trimmed = candidate.trim();
     if (!trimmed || trimmed.length > MAX_CONTROL_NAME_LENGTH) continue;
-    if (BROWSER_SUBMIT_KEYWORDS.test(trimmed)) return true;
+    if (matches(trimmed)) return true;
   }
   return false;
+}
+
+/**
+ * A link name that can only mean "this sends the thing I just composed".
+ * Whole-string match (not substring) plus an explicit navigational denylist, so
+ * "Send feedback" / "Contact us" / "Send us a message" stay ordinary links.
+ */
+const LINK_NAVIGATIONAL =
+  /\b(feedback|support|us\b|report|bug|suggestion|gift|invite|inquiry|enquiry|sales|help|contact)\b/i;
+const LINK_SEND_EXACT =
+  /^(?:send|submit|post|publish|reply(?:\s+all)?|send\s+(?:message|email|mail|reply|now|it)|post\s+(?:message|comment|reply))$/i;
+
+export function isUnambiguousSendLinkName(name: string): boolean {
+  const n = name.trim().replace(/\s+/g, " ");
+  if (!n || LINK_NAVIGATIONAL.test(n)) return false;
+  return LINK_SEND_EXACT.test(n);
 }
 
 /** The human-facing name of a resolved control, for the block message. */

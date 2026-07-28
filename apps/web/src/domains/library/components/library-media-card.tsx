@@ -3,6 +3,10 @@ import { ImageIcon, Music, Video } from "lucide-react";
 import { LibraryCardPlaceholder } from "@/domains/library/components/library-card-placeholder";
 import type { MediaSummary } from "@/types/media-types";
 import { cn } from "@/utils/misc";
+import { MessageSquare } from "lucide-react";
+import { Link } from "react-router";
+
+import { routes } from "@/utils/routes";
 import { formatFriendlyDate } from "@/utils/format-date";
 
 interface LibraryMediaCardProps {
@@ -23,6 +27,7 @@ function mediaFamily(media: MediaSummary): "image" | "video" | "audio" {
 }
 
 export function LibraryMediaCard({ media, onOpen }: LibraryMediaCardProps) {
+  const source = media.sourceConversation;
   const family = mediaFamily(media);
   const thumbnailUrl = media.thumbnail_base64
     ? `data:image/jpeg;base64,${media.thumbnail_base64}`
@@ -56,18 +61,37 @@ export function LibraryMediaCard({ media, onOpen }: LibraryMediaCardProps) {
         )}
       </button>
 
-      <button
-        type="button"
-        onClick={() => onOpen(media)}
-        className="flex cursor-pointer flex-col gap-0.5 px-0.5 text-left outline-none"
-      >
-        <span className="truncate text-body-large-default text-[color:var(--content-emphasised)]">
-          {media.original_filename}
-        </span>
-        <span className="text-body-small-default text-[color:var(--content-tertiary)]">
-          {formatFriendlyDate(new Date(media.created_at))}
-        </span>
-      </button>
+      <div className="flex flex-col gap-0.5 px-0.5">
+        <button
+          type="button"
+          onClick={() => onOpen(media)}
+          className="flex cursor-pointer flex-col gap-0.5 text-left outline-none"
+        >
+          <span className="truncate text-body-large-default text-[color:var(--content-emphasised)]">
+            {media.original_filename}
+          </span>
+          <span className="text-body-small-default text-[color:var(--content-tertiary)]">
+            {formatFriendlyDate(new Date(media.created_at))}
+          </span>
+        </button>
+
+        {/* Rendered only when the daemon confirmed the originating conversation
+            still exists — a stored id alone is never treated as proof. */}
+        {source ? (
+          <Link
+            to={routes.conversation(source.id)}
+            title={`Open the conversation this file came from: ${
+              source.title ?? "Untitled conversation"
+            }`}
+            className="mt-0.5 flex min-w-0 items-center gap-1 text-body-small-default text-[color:var(--content-tertiary)] outline-none hover:text-[color:var(--content-emphasised)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            <MessageSquare size={12} className="shrink-0" />
+            <span className="truncate">
+              From {source.title ?? "Untitled conversation"}
+            </span>
+          </Link>
+        ) : null}
+      </div>
     </div>
   );
 }

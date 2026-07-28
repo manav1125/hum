@@ -675,6 +675,14 @@ export interface AttachmentMetadata {
   kind: string;
   createdAt: number;
   thumbnailBase64: string | null;
+  /**
+   * The conversation whose assistant turn produced this file, when one is
+   * recorded. Media has no conversation column of its own — this is derived
+   * from the same `message_attachments` -> `messages` link the generated-only
+   * filter already relies on. Callers must still confirm the conversation row
+   * exists before showing a link; a stored id alone is not proof.
+   */
+  sourceConversationId: string | null;
 }
 
 /** Attachment kinds surfaced as "media" in the Library by default. */
@@ -750,7 +758,13 @@ export function listAttachments(opts?: {
        a.size_bytes AS sizeBytes,
        a.kind,
        a.created_at AS createdAt,
-       a.thumbnail_base64 AS thumbnailBase64
+       a.thumbnail_base64 AS thumbnailBase64,
+       (SELECT m2.conversation_id
+          FROM message_attachments ma2
+          JOIN messages m2 ON m2.id = ma2.message_id
+         WHERE ma2.attachment_id = a.id AND m2.role = 'assistant'
+         ORDER BY m2.created_at ASC
+         LIMIT 1) AS sourceConversationId
      FROM attachments a
      WHERE (a.kind IN (${kindPlaceholders}) OR ${mimeClauses})
        AND ${excludeClauses}

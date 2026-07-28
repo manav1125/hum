@@ -312,3 +312,36 @@ describe("describeControl", () => {
     expect(describeControl(null)).toBe("the target element");
   });
 });
+
+describe("link send controls (stricter than buttons)", () => {
+  const link = (name: string) =>
+    isSendControl({ isControl: false, isLink: true, text: name } as never);
+  const button = (name: string) =>
+    isSendControl({ isControl: true, text: name } as never);
+
+  test("gates a bare send-phrase link", () => {
+    expect(link("Send")).toBe(true);
+    expect(link("Send message")).toBe(true);
+    expect(link("Reply all")).toBe(true);
+    expect(link("Publish")).toBe(true);
+  });
+
+  test("does NOT gate navigational links that merely contain 'send'", () => {
+    expect(link("Send feedback")).toBe(false);
+    expect(link("Send us a message")).toBe(false);
+    expect(link("Contact support")).toBe(false);
+    expect(link("Send a gift")).toBe(false);
+    expect(link("Report a bug")).toBe(false);
+  });
+
+  test("links are stricter than buttons for the same name", () => {
+    // A button labelled "Send feedback" is still an activatable submit control;
+    // the same words as a link are navigation.
+    expect(button("Send feedback")).toBe(true);
+    expect(link("Send feedback")).toBe(false);
+  });
+
+  test("a plain element that is neither control nor link never gates", () => {
+    expect(isSendControl({ text: "Send" } as never)).toBe(false);
+  });
+});
