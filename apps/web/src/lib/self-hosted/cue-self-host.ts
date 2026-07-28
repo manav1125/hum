@@ -99,12 +99,44 @@ export function isCueSelfHostDeploy(): boolean {
   }
 }
 
-/** True when a gateway token is stored (regardless of the self-host flag). */
+/**
+ * True when a gateway token is stored AND still usable.
+ *
+ * Expiry matters here, not just presence. This answers "should we show the
+ * Connect screen?", and an expired token is not a session — it is the exact
+ * moment the user needs to sign in again. Treating a stale token as valid made
+ * the app skip Connect and fall through to the Vellum-Platform welcome screen,
+ * offering a "Log In" button that runs platform OAuth a single-tenant
+ * self-host instance can't participate in. The result was a dead end with a
+ * generic "Something went wrong", from which the user could not recover
+ * without clearing storage by hand.
+ *
+ * A token whose expiry we cannot read is treated as usable: the gateway is the
+ * real authority, and a malformed-but-accepted credential must not bounce a
+ * signed-in user out to Connect.
+ */
 function hasStoredGatewayToken(): boolean {
   try {
-    return !!localStorage.getItem(LS_TOKEN_KEY);
+    const token = localStorage.getItem(LS_TOKEN_KEY);
+    if (!token) return false;
+    const expMs =
+      readStoredExpiryMs() ?? decodeActorTokenExpMs(token) ?? null;
+    if (expMs !== null && expMs <= Date.now()) return false;
+    return true;
   } catch {
     return false;
+  }
+}
+
+/** The persisted expiry stamp, when present and numeric. */
+function readStoredExpiryMs(): number | null {
+  try {
+    const raw = localStorage.getItem(LS_EXPIRES_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
   }
 }
 
@@ -188,6 +220,49 @@ export function isStoredActorTokenValid(): boolean {
  */
 export function shouldShowCueConnect(): boolean {
   return isCueSelfHostDeploy() && !hasStoredGatewayToken();
+}
+
+/**
+ * The desktop app's own copy of the SPA is served from `app://`, so the
+ * hostname test above can never see that the app is pointed at a self-host
+ * instance. Ask the main process instead: it is the thing that actually holds
+ * the connection.
+ *
+ * Without this the desktop app falls through to the Vellum-Platform welcome
+ * screen and offers a "Log In" button that runs platform OAuth — an auth model
+ * a single-tenant self-host instance does not participate in, so it can only
+ * ever fail. A self-host desktop user must land on the Connect screen, which
+ * signs them in by email.
+ */
+export async function isElectronSelfHostConnected(): Promise<boolean> {
+  try {
+    const connected = await globalThis.window?.vellum?.selfHost?.connected?.();
+    return typeof connected === "string" && connected.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** The instance the desktop app is connected to, for display. */
+export async function connectedSelfHostInstance(): Promise<string | null> {
+  try {
+    const connected = await globalThis.window?.vellum?.selfHost?.connected?.();
+    return typeof connected === "string" && connected.trim() ? connected : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Async form of {@link shouldShowCueConnect} that also covers the desktop app.
+ * Kept separate so the synchronous web path is unchanged.
+ */
+export async function shouldShowCueConnectAsync(): Promise<boolean> {
+  if (shouldShowCueConnect()) return true;
+  // Never override an existing session, and never hijack local-daemon mode:
+  // this only fires when the main process reports a real self-host connection.
+  if (hasStoredGatewayToken()) return false;
+  return isElectronSelfHostConnected();
 }
 
 /**

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test, afterEach } from "bun:test";
 
 import {
   clearSelfHostMode,
@@ -192,5 +192,45 @@ describe("isCueSelfHostDeploy — instance-host safety net", () => {
     expect(isCueSelfHostDeploy()).toBe(false);
     setHost("justcue.ai");
     expect(isCueSelfHostDeploy()).toBe(false);
+  });
+});
+
+describe("expired token must not skip the Connect screen", () => {
+  const TOKEN_KEY = "vellum:gw:token";
+  const EXP_KEY = "vellum:gw:expiresAt";
+  const FLAG = "cue:selfHost";
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem(FLAG, "1");
+    // Self-host detection is host-based; put us on a real instance host so
+    // these assertions exercise the token-expiry branch, not the host branch.
+    window.location.href = "https://manav.justcue.app/assistant/";
+  });
+  afterEach(() => localStorage.clear());
+
+  test("an EXPIRED token shows Connect (the dead-end bug)", () => {
+    // Regression: presence-only checks treated a stale token as a session, so
+    // the app skipped Connect and fell into platform OAuth that a self-host
+    // instance can't do — a dead end the user couldn't escape.
+    localStorage.setItem(TOKEN_KEY, "stale.token.value");
+    localStorage.setItem(EXP_KEY, String(Date.now() - 60_000));
+    expect(shouldShowCueConnect()).toBe(true);
+  });
+
+  test("a LIVE token does not show Connect", () => {
+    localStorage.setItem(TOKEN_KEY, "live.token.value");
+    localStorage.setItem(EXP_KEY, String(Date.now() + 3_600_000));
+    expect(shouldShowCueConnect()).toBe(false);
+  });
+
+  test("a token with an unreadable expiry is trusted (gateway decides)", () => {
+    // Must not bounce a signed-in user out to Connect on a parse failure.
+    localStorage.setItem(TOKEN_KEY, "opaque-token-without-jwt-shape");
+    expect(shouldShowCueConnect()).toBe(false);
+  });
+
+  test("no token at all shows Connect", () => {
+    expect(shouldShowCueConnect()).toBe(true);
   });
 });

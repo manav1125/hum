@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@vellumai/design-library/components/button";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import { seedCueToken } from "@/lib/self-hosted/cue-self-host";
+import { connectedSelfHostInstance } from "./cue-self-host";
 
 /**
  * Cue self-host Connect screen.
@@ -35,6 +36,24 @@ export function CueConnectScreen() {
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  // In the desktop app the main process holds the instance connection. Naming
+  // it turns an abstract "sign in to Cue" into "sign in to YOUR Cue", and
+  // proves the app already found the right instance.
+  const [instance, setInstance] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void connectedSelfHostInstance().then((url) => {
+      if (cancelled || !url) return;
+      try {
+        setInstance(new URL(url).hostname);
+      } catch {
+        setInstance(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleConnect() {
     setError(null);
@@ -81,8 +100,13 @@ export function CueConnectScreen() {
           </h1>
           <p className="text-body-medium-default text-[var(--content-secondary)]">
             This is your Cue. Sign in with your email and we&apos;ll send you a
-            secure link to this device — no password.
+            secure link — no password.
           </p>
+          {instance ? (
+            <p className="text-body-small-default text-[var(--content-tertiary)]">
+              Connected to {instance}
+            </p>
+          ) : null}
         </div>
 
         <Button

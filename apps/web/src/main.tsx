@@ -15,7 +15,7 @@ import { isLocalMode, loadLockfile } from "@/lib/local-mode";
 import { CueConnectScreen } from "@/lib/self-hosted/cue-connect-screen";
 import {
   bootstrapCueSelfHost,
-  shouldShowCueConnect,
+  shouldShowCueConnectAsync,
 } from "@/lib/self-hosted/cue-self-host";
 import { markHqNativeIfFresh } from "@/pages/hq/hq-native-marker";
 import { initSentry } from "@/lib/sentry/sentry-init";
@@ -53,7 +53,7 @@ async function boot() {
   // Vellum-Platform login / local-vs-cloud onboarding that doesn't apply to a
   // single-tenant self-host). Once a token is pasted + seeded, the screen
   // reloads into the normal authenticated boot below.
-  if (shouldShowCueConnect()) {
+  if (await shouldShowCueConnectAsync()) {
     createRoot(rootEl).render(
       <StrictMode>
         <AppProviders>
