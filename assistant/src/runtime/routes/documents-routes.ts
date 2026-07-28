@@ -16,6 +16,11 @@ import { renderMarkdownToPDF } from "../../documents/pdf-render.js";
 import { rawAll } from "../../memory/raw-query.js";
 import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
+import {
+  resolveExistingConversations,
+  type SourceConversation,
+  sourceConversationSchema,
+} from "./artifact-provenance.js";
 import { BadRequestError, InternalError, NotFoundError } from "./errors.js";
 import type { RouteDefinition } from "./types.js";
 import { RouteResponse } from "./types.js";
@@ -38,6 +43,7 @@ function listAllDocuments(): Array<{
   wordCount: number;
   createdAt: number;
   updatedAt: number;
+  sourceConversation?: SourceConversation;
 }> {
   try {
     const results = rawAll<DocumentListRow>(/*sql*/ `
@@ -46,15 +52,26 @@ function listAllDocuments(): Array<{
       ORDER BY updated_at DESC
       `);
 
+    // Resolve the originating thread for each document in one extra query.
+    // Only threads that still exist come back, so the Library can offer a
+    // "back to the conversation" link that is guaranteed to resolve.
+    const sources = resolveExistingConversations(
+      results.map((row) => row.conversation_id),
+    );
+
     log.info({ count: results.length }, "Listed documents");
-    return results.map((row) => ({
-      surfaceId: row.surface_id,
-      conversationId: row.conversation_id,
-      title: row.title,
-      wordCount: row.word_count,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    return results.map((row) => {
+      const sourceConversation = sources.get(row.conversation_id);
+      return {
+        surfaceId: row.surface_id,
+        conversationId: row.conversation_id,
+        title: row.title,
+        wordCount: row.word_count,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        ...(sourceConversation ? { sourceConversation } : {}),
+      };
+    });
   } catch (error) {
     log.error({ err: error }, "List error");
     return [];
@@ -93,6 +110,11 @@ export const ROUTES: RouteDefinition[] = [
           wordCount: z.number(),
           createdAt: z.number(),
           updatedAt: z.number(),
+          sourceConversation: sourceConversationSchema
+            .optional()
+            .describe(
+              "The conversation this document was created in. Present only when that conversation still exists.",
+            ),
         }),
       ),
     }),

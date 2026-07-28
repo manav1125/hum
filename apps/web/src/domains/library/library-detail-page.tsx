@@ -1,6 +1,6 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { toast } from "@vellumai/design-library";
 
@@ -17,6 +17,11 @@ interface LoadedApp {
   dirName?: string;
   name: string;
   html: string;
+  /**
+   * The thread this app was first built in — present only when the daemon
+   * confirmed that conversation still exists. See {@link AppProvenanceBar}.
+   */
+  sourceConversation?: { id: string; title: string | null };
 }
 
 /**
@@ -43,6 +48,40 @@ export function describeOpenFailure(err: unknown): string {
     }
   }
   return "Failed to open app";
+}
+
+/**
+ * "From this conversation" — the way back from an artifact to the thread that
+ * made it.
+ *
+ * Opening an app from the Library used to be a dead end: the viewer said what
+ * the app is but never why it exists, and there was no route back to the
+ * thread to ask a follow-up. The daemon has always recorded the originating
+ * conversation on the app record; this strip is that record made visible.
+ *
+ * Honesty rule: it renders only when `apps/:id/open` returned
+ * `sourceConversation`, which the daemon includes only after confirming the
+ * originating thread still exists. A deleted thread yields no strip rather
+ * than a link into nothing.
+ */
+function AppProvenanceBar({
+  source,
+}: {
+  source: { id: string; title: string | null };
+}) {
+  const label = source.title ?? "Untitled conversation";
+  return (
+    <div className="flex shrink-0 items-center px-4 py-1.5">
+      <Link
+        to={routes.conversation(source.id)}
+        title={`Open the conversation this app came from: ${label}`}
+        className="flex min-w-0 items-center gap-1.5 rounded outline-none text-body-small-default text-[color:var(--content-tertiary)] hover:text-[color:var(--content-emphasised)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      >
+        <MessageSquare size={13} className="shrink-0" />
+        <span className="truncate">From {label}</span>
+      </Link>
+    </div>
+  );
 }
 
 export function LibraryDetailPage() {
@@ -79,6 +118,7 @@ export function LibraryDetailPage() {
           dirName: result.dirName,
           name: result.name,
           html: result.html,
+          sourceConversation: result.sourceConversation,
         });
       })
       .catch((err) => {
@@ -165,17 +205,24 @@ export function LibraryDetailPage() {
         paddingTop: "var(--safe-area-inset-top, env(safe-area-inset-top, 0px))",
       }}
     >
-      <AppViewerContainer
-        appId={app.appId}
-        appName={app.name}
-        html={app.html}
-        assistantId={assistantId}
-        onClose={handleClose}
-        onEdit={handleEdit}
-        onShare={handleShare}
-        isSharing={isSharing}
-        enableFullscreen
-      />
+      {/* The viewer sizes itself with `h-full`, so it needs its own bounded
+          flex box before a sibling strip can sit under it without overflow. */}
+      <div className="min-h-0 flex-1">
+        <AppViewerContainer
+          appId={app.appId}
+          appName={app.name}
+          html={app.html}
+          assistantId={assistantId}
+          onClose={handleClose}
+          onEdit={handleEdit}
+          onShare={handleShare}
+          isSharing={isSharing}
+          enableFullscreen
+        />
+      </div>
+      {app.sourceConversation ? (
+        <AppProvenanceBar source={app.sourceConversation} />
+      ) : null}
     </div>
   );
 }

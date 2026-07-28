@@ -59,9 +59,14 @@ import {
   type SlashCommand,
   filteredCommands,
   selectedInputText,
+  stripBackgroundCommand,
 } from "@/domains/chat/components/chat-composer/slash-command-catalog";
 import { SlashCommandPopup } from "@/domains/chat/components/chat-composer/slash-command-popup";
 import { useTextPopup } from "@/domains/chat/components/chat-composer/use-text-popup";
+import { BackgroundRunNotice } from "@/domains/chat/components/chat-composer/background-run-notice";
+import { SendModeMenu } from "@/domains/chat/components/chat-composer/send-mode-menu";
+import { useBackgroundRun } from "@/domains/chat/components/chat-composer/use-background-run";
+import { isMacOSBrowser } from "@/runtime/platform-detection";
 
 /**
  * Controlled composer used at the bottom of the chat (main variant) and inside
@@ -264,12 +269,110 @@ export function ChatComposer({
   const isNative = useIsNativePlatform();
   const isElectronHost = isElectron();
 
-  // Stable ref so handleSlashCommandSelect's autoSend path always calls the
-  // latest onSubmit even after flushSync triggers a synchronous re-render.
+  // ---- Background runs ---------------------------------------------------
+  // "Just go do this, I'll read it later" is the product's differentiator, and
+  // until now it was only reachable from Home feed cards. Two entry points
+  // land here: the send-button split menu, and the `/background` (`/later`)
+  // slash command, which is stripped client-side and never sent as chat text.
+  const backgroundRun = useBackgroundRun(assistantId);
+  const backgroundRunState = backgroundRun.state;
+  const dispatchBackgroundRun = backgroundRun.dispatch;
+  const rejectBackgroundRun = backgroundRun.reject;
+
+  /** Null when a hand-off is possible; otherwise the human-readable blocker. */
+  const backgroundDisabledReason = useMemo(() => {
+    if (!assistantId) return "no assistant is connected";
+    // A work item carries text only — silently dropping the user's files would
+    // be worse than refusing the hand-off.
+    if (chatAttachments.length > 0) return "attachments can't come along";
+    if (backgroundRunState.kind === "dispatching")
+      return "one is already being handed off";
+    return null;
+  }, [assistantId, chatAttachments.length, backgroundRunState.kind]);
+
+  const runInBackground = useCallback(
+    (text: string) => {
+      const task = text.trim();
+      if (task.length === 0) {
+        rejectBackgroundRun("Say what you want done after /background.");
+        return;
+      }
+      // Clear optimistically (the message is leaving this thread), and put it
+      // back verbatim if nothing was actually created.
+      setInput("");
+      void dispatchBackgroundRun(task).then((created) => {
+        if (!created) setInput(text);
+      });
+    },
+    [dispatchBackgroundRun, rejectBackgroundRun, setInput],
+  );
+
+  /**
+   * Submit interceptor. A message that opens with `/background` or `/later` is
+   * dispatched as an autonomous run instead of a foreground turn; everything
+   * else falls through to the parent's `onSubmit` untouched.
+   */
+  const handleSubmit = useCallback(
+    (event: FormEvent) => {
+      const commandTask = stripBackgroundCommand(input);
+      if (commandTask === null) {
+        onSubmit(event);
+        return;
+      }
+      event.preventDefault();
+      if (backgroundDisabledReason) {
+        rejectBackgroundRun(
+          `Can't run this in the background — ${backgroundDisabledReason}.`,
+        );
+        return;
+      }
+      runInBackground(commandTask);
+    },
+    [
+      input,
+      onSubmit,
+      backgroundDisabledReason,
+      rejectBackgroundRun,
+      runInBackground,
+    ],
+  );
+
+  /** Modifier that hands the current message off without opening the menu. */
+  const backgroundShortcutHint = useMemo(
+    () => (isMacOSBrowser() ? "⌘⇧↵" : "Ctrl+⇧+↵"),
+    [],
+  );
+
+  // Stable ref so the autoSend paths always call the latest RAW onSubmit even
+  // after flushSync triggers a synchronous re-render. Deliberately the parent's
+  // handler, not `handleSubmit`: both callers below have already resolved
+  // whether this is a background hand-off, so re-running the interceptor on
+  // text they just rewrote would be wrong.
   const onSubmitRef = useRef(onSubmit);
   useLayoutEffect(() => {
     onSubmitRef.current = onSubmit;
   });
+
+  /**
+   * "Send now" from the split menu. On an ordinary draft this is just submit.
+   * On a `/background …` draft it means "send the TASK as a normal turn" — so
+   * the command prefix is stripped first, rather than shipping the literal
+   * `/background` text to a daemon that has no such command.
+   */
+  const sendNow = useCallback(() => {
+    const commandTask = stripBackgroundCommand(input);
+    const submitEvent = () => new Event("submit") as unknown as FormEvent;
+    if (commandTask === null) {
+      onSubmitRef.current(submitEvent());
+      return;
+    }
+    if (commandTask.length === 0) {
+      rejectBackgroundRun("Say what you want done after /background.");
+      return;
+    }
+    flushSync(() => setInput(commandTask));
+    onSubmitRef.current(submitEvent());
+  }, [input, setInput, rejectBackgroundRun]);
 
   // Cursor position at the time of the last text change, used to derive the
   // emoji popup's trigger text. Updated in onChange and programmatic setInput
@@ -354,10 +457,14 @@ export function ChatComposer({
   return (
     <>
       {noticesAboveFormSlot}
+      <BackgroundRunNotice
+        state={backgroundRunState}
+        onDismiss={backgroundRun.dismiss}
+      />
       <Popover.Root open={emoji.show || slash.show}>
         <Popover.Anchor asChild>
           <form
-            onSubmit={onSubmit}
+            onSubmit={handleSubmit}
             className={`overflow-hidden bg-[var(--surface-lift)] shadow-[0px_2px_2px_rgba(0,0,0,0.05)] ${
               hasBillingBanner ? "rounded-b-[10px]" : "rounded-[10px]"
             }`}
@@ -478,6 +585,28 @@ export function ChatComposer({
                     }
                   }
 
+                  // Cmd/Ctrl + Shift + Enter — hand the current message off to
+                  // a background run without opening the send-options menu.
+                  // Always intercepted when there is text, so the modifier can
+                  // never quietly fall through to an ordinary foreground send.
+                  if (
+                    e.key === "Enter" &&
+                    e.shiftKey &&
+                    (e.metaKey || e.ctrlKey) &&
+                    !e.nativeEvent.isComposing &&
+                    input.trim()
+                  ) {
+                    e.preventDefault();
+                    if (backgroundDisabledReason) {
+                      rejectBackgroundRun(
+                        `Can't run this in the background — ${backgroundDisabledReason}.`,
+                      );
+                      return;
+                    }
+                    runInBackground(stripBackgroundCommand(input) ?? input);
+                    return;
+                  }
+
                   if (
                     e.key === "ArrowUp" &&
                     !input.trim() &&
@@ -550,7 +679,7 @@ export function ChatComposer({
                   }
                   e.preventDefault();
                   if (decision === "submit") {
-                    onSubmit(e as unknown as FormEvent);
+                    handleSubmit(e as unknown as FormEvent);
                   }
                 }}
                 placeholder={ghostSuffix ? "" : placeholder}
@@ -695,6 +824,25 @@ export function ChatComposer({
                       <EnterVoiceModeButton
                         onClick={onEnterVoiceMode}
                         disabled={typingDisabled || isVoiceActive}
+                      />
+                    )}
+                    {/* Split half of the send button — "run this in the
+                    background" lives here rather than as another naked icon in
+                    an already-crowded row. Appears only once there is text to
+                    hand off, so the resting composer is unchanged. */}
+                    {!isVoiceActive && (
+                      <SendModeMenu
+                        visible={
+                          !!assistantId && !sendDisabled && !!input.trim()
+                        }
+                        disabledReason={backgroundDisabledReason}
+                        shortcutHint={backgroundShortcutHint}
+                        onSendNow={sendNow}
+                        onRunInBackground={() =>
+                          runInBackground(
+                            stripBackgroundCommand(input) ?? input,
+                          )
+                        }
                       />
                     )}
                     {/* macOS parity: the send button is hidden during recording

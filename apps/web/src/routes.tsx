@@ -887,13 +887,18 @@ export const routeTree = [
                             ),
                         },
                       },
+                      // Review + watch-live are device-branched (see
+                      // domains/review/review-routes): the phone keeps its
+                      // frame 16/17/55 surfaces, desktop gets the serif-HQ
+                      // review queue and run timeline instead of a 390px
+                      // aurora page inside desktop chrome.
                       {
                         // Watch live — running work-item step stream (frame 17).
                         path: "work/:workItemId/live",
                         lazy: {
                           Component: () =>
-                            import("@/mobile-v3/watch/watch-live-page").then(
-                              (m) => m.WatchLivePage,
+                            import("@/domains/review/review-routes").then(
+                              (m) => m.WatchLiveRoute,
                             ),
                         },
                       },
@@ -902,8 +907,8 @@ export const routeTree = [
                         path: "review-queue",
                         lazy: {
                           Component: () =>
-                            import("@/mobile-v3/review/review-queue-page").then(
-                              (m) => m.ReviewQueuePage,
+                            import("@/domains/review/review-routes").then(
+                              (m) => m.ReviewQueueRoute,
                             ),
                         },
                       },
@@ -912,8 +917,8 @@ export const routeTree = [
                         path: "review-queue/list",
                         lazy: {
                           Component: () =>
-                            import("@/mobile-v3/review/review-index-page").then(
-                              (m) => m.ReviewIndexPage,
+                            import("@/domains/review/review-routes").then(
+                              (m) => m.ReviewIndexRoute,
                             ),
                         },
                       },

@@ -18,6 +18,8 @@ mock.module("@/generated/daemon/sdk.gen", () => ({
 mock.module("react-router", () => ({
   useParams: () => ({ appId: "app-1" }),
   useNavigate: () => () => {},
+  Link: ({ to, children }: { to: string; children?: unknown }) =>
+    createElement("a", { href: to }, children as never),
 }));
 
 mock.module("@vellumai/design-library", () => ({
@@ -81,6 +83,54 @@ describe("describeOpenFailure", () => {
 
   test("falls back when the thrown value carries nothing readable", () => {
     expect(describeOpenFailure({})).toBe("Failed to open app");
+  });
+});
+
+describe("LibraryDetailPage provenance", () => {
+  // The Library was a one-way door: an app opened here had no route back to
+  // the thread that built it. The daemon only returns `sourceConversation`
+  // once it has confirmed that thread still exists, so the link is either
+  // real or absent — never a guess.
+  test("links back to the conversation the app was built in", async () => {
+    openImpl = async () => ({
+      data: {
+        appId: "app-1",
+        name: "App",
+        html: "<p>hi</p>",
+        sourceConversation: { id: "conv-9", title: "Q3 planning" },
+      },
+    });
+
+    render(createElement(LibraryDetailPage));
+
+    const link = await screen.findByText("From Q3 planning");
+    expect(link.closest("a")?.getAttribute("href")).toContain("conv-9");
+  });
+
+  test("names an untitled thread rather than showing a blank link", async () => {
+    openImpl = async () => ({
+      data: {
+        appId: "app-1",
+        name: "App",
+        html: "<p>hi</p>",
+        sourceConversation: { id: "conv-9", title: null },
+      },
+    });
+
+    render(createElement(LibraryDetailPage));
+
+    expect(await screen.findByText("From Untitled conversation")).toBeDefined();
+  });
+
+  test("shows no provenance when the daemon could not resolve the thread", async () => {
+    openImpl = async () => ({
+      data: { appId: "app-1", name: "App", html: "<p>hi</p>" },
+    });
+
+    render(createElement(LibraryDetailPage));
+
+    await screen.findByText("viewer");
+    expect(screen.queryByText(/^From /)).toBeNull();
   });
 });
 

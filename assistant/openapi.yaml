@@ -1803,6 +1803,20 @@ paths:
                     type: string
                   html:
                     type: string
+                  sourceConversation:
+                    description: The conversation this app was first created in. Present only when that conversation still exists.
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                    required:
+                      - id
+                      - title
+                    additionalProperties: false
                 required:
                   - appId
                   - dirName
@@ -16303,6 +16317,20 @@ paths:
                           type: number
                         updatedAt:
                           type: number
+                        sourceConversation:
+                          description: The conversation this document was created in. Present only when that conversation still exists.
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            title:
+                              anyOf:
+                                - type: string
+                                - type: "null"
+                          required:
+                            - id
+                            - title
+                          additionalProperties: false
                       required:
                         - surfaceId
                         - conversationId

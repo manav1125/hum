@@ -303,12 +303,21 @@ function NeedsYouCardRow({
   );
 }
 
+/**
+ * The Review lane's card. "Review → done" opens the review surface seeded at
+ * this item — the deliverable plus approve / redo / archive — rather than the
+ * raw transcript. The transcript is still one click away, but only when the
+ * item actually carries a run conversation to open.
+ */
 function ReviewCard({
   item,
-  onOpen,
+  onReview,
+  onOpenConversation,
 }: {
   item: HqWorkItem;
-  onOpen: () => void;
+  onReview: () => void;
+  /** null when this item has no run conversation — then no link is drawn. */
+  onOpenConversation: (() => void) | null;
 }) {
   const accent = C.violet ?? "#7F77DD";
   return (
@@ -319,23 +328,41 @@ function ReviewCard({
         Cue finished this — it waits for your yes.
       </div>
       <AgentLine assignee={item.assignee} />
-      <button
-        type="button"
-        onClick={onOpen}
-        style={{
-          fontSize: 11.5,
-          fontWeight: 600,
-          background: accent,
-          color: "#fff",
-          border: "none",
-          borderRadius: 8,
-          padding: "6px 12px",
-          cursor: "pointer",
-          marginTop: 9,
-        }}
-      >
-        Review &rarr; done
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
+        <button
+          type="button"
+          onClick={onReview}
+          style={{
+            fontSize: 11.5,
+            fontWeight: 600,
+            background: accent,
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "6px 12px",
+            cursor: "pointer",
+          }}
+        >
+          Review &rarr; done
+        </button>
+        {onOpenConversation ? (
+          <button
+            type="button"
+            onClick={onOpenConversation}
+            style={{
+              fontSize: 11.5,
+              background: "transparent",
+              color: C.t2,
+              border: "none",
+              padding: "6px 2px",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Open the run
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -399,6 +426,16 @@ export function HqWorkLoopBoard({
     } else {
       navigate(routes.allWork);
     }
+  };
+
+  /**
+   * "Review → done" opens the review surface seeded at this item — the queue
+   * with its deliverable, approve/redo/archive, not the raw transcript. The
+   * route is device-branched (domains/review/review-routes), so the phone
+   * still gets its pager and desktop gets the serif-HQ queue.
+   */
+  const openReview = (item: HqWorkItem) => {
+    navigate(`${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`);
   };
 
   return (
@@ -493,7 +530,12 @@ export function HqWorkLoopBoard({
               <ReviewCard
                 key={item.id}
                 item={item}
-                onOpen={() => openItem(item)}
+                onReview={() => openReview(item)}
+                onOpenConversation={
+                  item.lastRunConversationId
+                    ? () => openItem(item)
+                    : null
+                }
               />
             ))}
           </Lane>

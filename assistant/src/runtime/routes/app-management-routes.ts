@@ -51,6 +51,10 @@ import { getLogger } from "../../util/logger.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
 import { publishAppsChanged } from "../sync/resource-sync-events.js";
 import {
+  resolveSourceConversation,
+  sourceConversationSchema,
+} from "./artifact-provenance.js";
+import {
   BadRequestError,
   NotFoundError,
   PayloadTooLargeError,
@@ -647,7 +651,21 @@ async function handleOpenApp({ pathParams }: RouteHandlerArgs) {
   }
   const html = resolveEffectiveAppHtml(app);
   const { dirName } = resolveAppDir(app.id);
-  return { appId: app.id, dirName, name: app.name, html };
+
+  // Provenance: `conversationIds[0]` is the thread the app was first produced
+  // in (the list is append-only, oldest first). Later entries are threads that
+  // merely opened or refreshed it, so they are NOT the origin and are never
+  // substituted in. Resolves to undefined when that thread has been deleted —
+  // the viewer then shows no link rather than one that lands nowhere.
+  const sourceConversation = resolveSourceConversation(app.conversationIds?.[0]);
+
+  return {
+    appId: app.id,
+    dirName,
+    name: app.name,
+    html,
+    ...(sourceConversation ? { sourceConversation } : {}),
+  };
 }
 
 function handleDeleteApp({ pathParams, headers }: RouteHandlerArgs) {
@@ -986,6 +1004,11 @@ export const ROUTES: RouteDefinition[] = [
       dirName: z.string(),
       name: z.string(),
       html: z.string(),
+      sourceConversation: sourceConversationSchema
+        .optional()
+        .describe(
+          "The conversation this app was first created in. Present only when that conversation still exists.",
+        ),
     }),
   },
   {
