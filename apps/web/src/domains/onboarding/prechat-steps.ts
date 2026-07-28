@@ -2,10 +2,19 @@
  * Declarative step model for the pre-chat onboarding flow.
  *
  * The flow is expressed as an ordered list of steps, each with the funnel
- * event it emits when the user advances past it. Which steps appear is a pure
- * function of the runtime's capabilities — local mode, feature-flag variant,
- * connected tools, and platform all "fall out" of the predicates here rather
- * than being special-cased across navigation handlers.
+ * event it emits when the user advances past it.
+ *
+ * ONE WEB FUNNEL. This used to fan out across four simultaneous variants
+ * (`control` / `paredDown` A-B arms, plus a mobile-v3 arm that appended two
+ * more steps on phone viewports). The pared-down funnel won and is now the
+ * only web path: **name → google**, identical on every viewport. The Google
+ * step is still capability-gated because connecting Google needs a live
+ * platform session; when that is absent the funnel is just `name`.
+ *
+ * The native iOS (Capacitor) flow stays separate — not as an experiment arm,
+ * but because that shell collects consent *after* pre-chat rather than before
+ * (see `use-prechat-consent-gate` and the native signup return path in
+ * `runtime/native-auth.ts`), so it has a genuinely different route order.
  *
  * Navigation operates on step **ids**, never numeric indices: `nextStep` and
  * `prevStep` resolve to the adjacent *enabled* step. Because back always lands
@@ -18,17 +27,7 @@ import {
 } from "@/domains/onboarding/funnel-events";
 import type { PlatformSessionStatus } from "@/stores/session-status";
 
-export type PreChatStepId =
-  | "name"
-  | "taskTone"
-  | "tools"
-  | "priorAssistants"
-  | "google"
-  | "iosApp"
-  | "autonomy"
-  | "finish"
-  | "nativeName"
-  | "nativeVibe";
+export type PreChatStepId = "name" | "google" | "nativeName" | "nativeVibe";
 
 export interface PreChatStep {
   id: PreChatStepId;
@@ -40,29 +39,18 @@ export interface PreChatStep {
 }
 
 /**
- * Capabilities that decide which web steps are reachable. Each maps to an
- * existing self-gate in the flow: feature-flag variant, the platform-backed
- * prior-assistants import, the Google OAuth step, whether a Google tool was
- * picked, and the iOS app nudge.
+ * The single capability that decides which web steps are reachable: whether
+ * the Google OAuth step can run at all (it talks to the platform with platform
+ * auth, so it needs a live platform session — see `isPlatformFunnelAvailable`).
  */
 export interface WebStepCapabilities {
-  paredDown: boolean;
-  canOfferPriorAssistants: boolean;
   canOfferGoogleStep: boolean;
-  hasGoogleTool: boolean;
-  showIOSAppStep: boolean;
-  /**
-   * Mobile-v3 funnel (docs/design/mobile-v3 frames 26–28): adds the autonomy
-   * pick + finish steps on mobile viewports only. Optional so existing
-   * callers/tests are unchanged; absent = desktop funnel, byte-identical.
-   */
-  mobileV3?: boolean;
 }
 
 /**
- * Whether the platform-backed onboarding funnel is reachable. The
- * prior-assistants import and the Google connect step both talk to the platform
- * with platform auth, so they require a *live* platform session.
+ * Whether the platform-backed onboarding funnel is reachable. The Google
+ * connect step talks to the platform with platform auth, so it requires a
+ * *live* platform session.
  *
  * The local gateway path marks the session authenticated before its
  * `getSession()` probe settles, so `platformSession` sits at `"unknown"` until
@@ -87,12 +75,8 @@ export function isPlatformFunnelAvailable(args: {
   return args.platformSession === "unknown" && args.hasCachedPlatformAssistant;
 }
 
-/**
- * Resolve the ordered, enabled web steps. The pared-down funnel variant is the
- * same flow with most steps gated off, not a separate code path.
- */
+/** Resolve the ordered, enabled web steps: name, then Google when offerable. */
 export function resolveWebSteps(caps: WebStepCapabilities): PreChatStep[] {
-  const { paredDown } = caps;
   const candidates: Array<PreChatStep & { enabled: boolean }> = [
     {
       id: "name",
@@ -100,47 +84,11 @@ export function resolveWebSteps(caps: WebStepCapabilities): PreChatStep[] {
       enabled: true,
     },
     {
-      id: "taskTone",
-      funnelStep: ONBOARDING_FUNNEL_STEPS.controlWorkType,
-      enabled: !paredDown,
-    },
-    {
-      id: "tools",
-      funnelStep: ONBOARDING_FUNNEL_STEPS.controlTools,
-      enabled: !paredDown,
-    },
-    {
-      id: "priorAssistants",
-      funnelStep: ONBOARDING_FUNNEL_STEPS.controlPriorAssistants,
-      enabled: !paredDown && caps.canOfferPriorAssistants,
-    },
-    {
       id: "google",
-      funnelStep: paredDown
-        ? ONBOARDING_FUNNEL_STEPS.gmailConnect
-        : ONBOARDING_FUNNEL_STEPS.controlGmailConnect,
-      // The pared-down funnel has no tool-selection screen, so it offers
-      // Google whenever the step is available; the control funnel only offers
-      // it when the user actually picked a Google tool.
-      enabled: caps.canOfferGoogleStep && (paredDown || caps.hasGoogleTool),
-    },
-    {
-      id: "iosApp",
-      funnelStep: ONBOARDING_FUNNEL_STEPS.controlGetApp,
-      enabled: !paredDown && caps.showIOSAppStep,
-    },
-    // Mobile-v3 additions (frames 27/28). Not instrumented into the web
-    // funnel's event taxonomy (no existing events exist for them), mirroring
-    // the native steps' `funnelStep: null` treatment.
-    {
-      id: "autonomy",
-      funnelStep: null,
-      enabled: caps.mobileV3 === true,
-    },
-    {
-      id: "finish",
-      funnelStep: null,
-      enabled: caps.mobileV3 === true,
+      funnelStep: ONBOARDING_FUNNEL_STEPS.gmailConnect,
+      // There is no tool-selection screen any more, so Google is offered
+      // whenever the platform-backed step is reachable at all.
+      enabled: caps.canOfferGoogleStep,
     },
   ];
   return candidates

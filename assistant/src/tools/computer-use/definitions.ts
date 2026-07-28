@@ -13,6 +13,7 @@ import type {
   ToolDefinition,
   ToolExecutionResult,
 } from "../types.js";
+import { runGuardedComputerUseTool } from "./ax-send-guard.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,19 +24,26 @@ import type {
  * `proxyToolResolver`. Returns a structured error when no resolver is
  * configured (e.g. no client connected) so callers see a normal tool
  * failure rather than an unhandled throw.
+ *
+ * Dispatch is wrapped by the send-control checkpoint (`ax-send-guard.ts`) so a
+ * click or ⌘/Ctrl+Enter that resolves to a Send/Submit/Pay control faces a
+ * human instead of reaching the client.
  */
 function proxyExecute(toolName: string) {
   return async (
     input: Record<string, unknown>,
     context: ToolContext,
   ): Promise<ToolExecutionResult> => {
-    if (!context.proxyToolResolver) {
+    const resolver = context.proxyToolResolver;
+    if (!resolver) {
       return {
         content: `No proxy resolver configured for proxy tool "${toolName}". This tool requires an external resolver (e.g. a connected macOS client for computer-use tools).`,
         isError: true,
       };
     }
-    return context.proxyToolResolver(toolName, input);
+    return runGuardedComputerUseTool(toolName, input, context, () =>
+      resolver(toolName, input),
+    );
   };
 }
 
@@ -76,6 +84,11 @@ export const computerUseClickTool = {
         type: "string",
         description:
           "Explanation of what you see and why you are clicking here",
+      },
+      label: {
+        type: "string",
+        description:
+          'Visible name of the control you are clicking (e.g. "Send", "Submit", "Pay"). Set this when an attempt was blocked because the target resolved to a send/submit control — it is what makes the action legible to the human-approval gate, which then asks the user to confirm.',
       },
       target_client_id: {
         type: "string",
@@ -146,6 +159,11 @@ export const computerUseKeyTool = {
       reasoning: {
         type: "string",
         description: "Explanation of why you are pressing this key",
+      },
+      label: {
+        type: "string",
+        description:
+          'Visible name of the action this key commits (e.g. "Send"). Set this when an attempt was blocked because the keypress resolved to a send — it is what makes the action legible to the human-approval gate, which then asks the user to confirm.',
       },
       target_client_id: {
         type: "string",

@@ -29,6 +29,7 @@ import { Eyebrow, NavRow, YouScreen } from "@/mobile-v3/you/you-kit";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 import {
+  groupSidebarItems,
   SETTINGS_SIDEBAR,
   type PanelId,
   type SidebarItem,
@@ -41,29 +42,11 @@ import { Mv3SettingsScreen } from "@/domains/settings/mobile/mobile-settings-kit
 // The grouped index screen.
 // ---------------------------------------------------------------------------
 
-/** Index grouping + per-row hue (You-cluster icon-tile grammar). */
-const INDEX_GROUPS: ReadonlyArray<{
-  eyebrow: string;
-  ids: PanelId[];
-}> = [
-  {
-    eyebrow: "Preferences",
-    ids: ["assistant-status", "notifications", "sounds", "voice"],
-  },
-  {
-    eyebrow: "Intelligence",
-    ids: ["model", "schedules", "privacy"],
-  },
-  {
-    eyebrow: "Workspace",
-    ids: ["integrations", "brand", "budget", "billing", "archive", "devices"],
-  },
-  {
-    eyebrow: "System",
-    ids: ["keyboard-shortcuts", "assistant-debug", "advanced", "developer"],
-  },
-];
-
+/**
+ * Grouping comes from the shared `SETTINGS_SECTIONS` model so the phone index
+ * and the desktop rail can't drift apart; only the per-row hue (You-cluster
+ * icon-tile grammar) and the friendlier phone labels are mobile-specific.
+ */
 const ROW_HUES: Partial<Record<PanelId, string>> = {
   "assistant-status": "var(--mv3-violet, #A79FF0)",
   notifications: "var(--mv3-amber)",
@@ -99,23 +82,19 @@ export function Mv3SettingsIndex({
   showLogout: boolean;
 }) {
   const navigate = useNavigate();
-  const byId = new Map(items.map((item) => [item.id, item]));
 
   // Mobile-only pruning (UAT P2, honest index): "Advanced" is an effectively
   // empty page on a phone (its cards are platform/desktop concerns), and
   // "Debug" resolves the assistant from the platform lockfile list — on a
   // self-host gateway session that list is empty and the page dead-ends at
-  // "No assistant found". Both stay reachable on desktop.
+  // "No assistant found". Both stay reachable on desktop. (`items` has already
+  // dropped all three developer panels unless developer mode is unlocked.)
   const hiddenOnMobile = new Set<PanelId>(["advanced"]);
   if (isSelfHostMode()) hiddenOnMobile.add("assistant-debug");
 
-  const groups = INDEX_GROUPS.map((group) => ({
-    ...group,
-    rows: group.ids
-      .filter((id) => !hiddenOnMobile.has(id))
-      .map((id) => byId.get(id))
-      .filter((item): item is SidebarItem => item !== undefined),
-  })).filter((group) => group.rows.length > 0);
+  const groups = groupSidebarItems(
+    items.filter((item) => !hiddenOnMobile.has(item.id)),
+  );
 
   let cardIndex = 0;
 
@@ -131,12 +110,12 @@ export function Mv3SettingsIndex({
       {groups.map((group) => {
         const delay = 0.1 + Math.min(cardIndex++, 3) * 0.13;
         return (
-          <div key={group.eyebrow} style={rise(delay)}>
+          <div key={group.id} style={rise(delay)}>
             <div style={{ padding: "4px 4px 8px" }}>
-              <Eyebrow>{group.eyebrow}</Eyebrow>
+              <Eyebrow>{group.title}</Eyebrow>
             </div>
             <GlassCard padding={0} radius={20} style={{ overflow: "hidden" }}>
-              {group.rows.map((item, i) => {
+              {group.items.map((item, i) => {
                 const hue = ROW_HUES[item.id] ?? "var(--mv3-muted)";
                 const Icon = item.icon;
                 return (
@@ -145,7 +124,7 @@ export function Mv3SettingsIndex({
                     icon={<Icon size={15} strokeWidth={1.9} color={hue} />}
                     iconBg={`color-mix(in srgb, ${hue} 14%, transparent)`}
                     label={ROW_LABELS[item.id] ?? item.label}
-                    isLast={i === group.rows.length - 1}
+                    isLast={i === group.items.length - 1}
                     onPress={() => navigate(item.href)}
                   />
                 );

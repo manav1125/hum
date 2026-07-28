@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { getConfig } from "../config/loader.js";
 import { bridgeCesApproval } from "../credential-execution/approval-bridge.js";
 import { isCesShellLockdownEnabled } from "../credential-execution/feature-gates.js";
+import type { LedgerOutcome } from "../ledger/consequential-action.js";
+import { recordConsequentialToolAction } from "../ledger/record-tool-action.js";
 import { PermissionPrompter } from "../permissions/prompter.js";
 import { RiskLevel } from "../permissions/types.js";
 import { isUntrustedTrustClass } from "../runtime/actor-trust-resolver.js";
@@ -14,6 +16,7 @@ import { pathExists, safeStatSync } from "../util/fs.js";
 import { getLogger } from "../util/logger.js";
 import { resolveExecutionTarget } from "./execution-target.js";
 import { executeWithTimeout, safeTimeoutMs } from "./execution-timeout.js";
+import { requiresHumanApprovalForAction } from "./outbound-send.js";
 import { PermissionChecker } from "./permission-checker.js";
 import { getTool } from "./registry.js";
 import { extractAndSanitize } from "./sensitive-output-placeholders.js";
@@ -95,6 +98,34 @@ export class ToolExecutor {
       startedAtMs: startTime,
     });
 
+    /**
+     * Autonomy ledger — observation only. Records the consequential subset of
+     * tool calls (the classes the approval gate hard-checkpoints, plus host
+     * file mutations) so the owner can answer "what did Cue actually DO on my
+     * behalf while I wasn't watching?". Non-consequential calls are dropped
+     * inside the recorder; every failure is swallowed there. This must never
+     * change the tool path, so nothing here is awaited or branched on.
+     */
+    const ledger = (
+      outcome: LedgerOutcome,
+      extra?: {
+        reason?: string;
+        provenance?: Parameters<
+          typeof recordConsequentialToolAction
+        >[0]["provenance"];
+      },
+    ): void => {
+      recordConsequentialToolAction({
+        toolName: name,
+        input,
+        context,
+        outcome,
+        durationMs: Date.now() - startTime,
+        reason: extra?.reason,
+        provenance: extra?.provenance,
+      });
+    };
+
     // Run pre-execution approval gates (abort, guardian policy,
     // allowed-tool-set, task-run preflight, tool registry lookup).
     const gateResult = await this.approvalHandler.checkPreExecutionGates(
@@ -108,6 +139,19 @@ export class ToolExecutor {
     );
 
     if (!gateResult.allowed) {
+      // Mirror the gate's own park test (unattended + high-consequence) so the
+      // ledger says "parked, waiting for you" rather than a flat "blocked".
+      // Read-only use of the gate predicate — it is not re-evaluated for the
+      // decision, which the gate already made.
+      const parked =
+        context.isInteractive === false &&
+        requiresHumanApprovalForAction(name, input);
+      // A cancelled turn is not a refusal — recording it as "blocked" would
+      // misattribute the owner's own abort to a guardrail.
+      const cancelled = gateResult.result.content === "Cancelled";
+      ledger(cancelled ? "failed" : parked ? "parked" : "denied", {
+        reason: gateResult.result.content,
+      });
       return gateResult.result;
     }
 
@@ -166,6 +210,7 @@ export class ToolExecutor {
         permRiskThreshold = permResult.riskThreshold;
 
         if (!permResult.allowed) {
+          ledger("denied", { reason: permResult.content });
           return {
             content: permResult.content,
             isError: true,
@@ -229,6 +274,7 @@ export class ToolExecutor {
           isExpected: true,
           errorCategory: "tool_failure",
         });
+        ledger("failed", { reason: msg });
         return { content: msg, isError: true };
       }
       if (execResult.cesApprovalRequired && cesClient) {
@@ -286,6 +332,7 @@ export class ToolExecutor {
             reason: denialReason,
             durationMs,
           });
+          ledger("denied", { reason: denialReason });
           return { content: denialReason, isError: true };
         } else {
           // bridgeResult.outcome === "error"
@@ -307,6 +354,7 @@ export class ToolExecutor {
             isExpected: true,
             errorCategory: "tool_failure",
           });
+          ledger("failed", { reason: errorMsg });
           return { content: errorMsg, isError: true };
         }
       }
@@ -352,6 +400,20 @@ export class ToolExecutor {
         durationMs,
         result: safeResult,
         resultBytes: rawResultBytes,
+      });
+
+      // The consequential act actually happened here (or the tool reported its
+      // own failure via the typed `isError` flag — never inferred from the
+      // result text). Approval provenance comes from the executor's own state.
+      ledger(execResult.isError ? "failed" : "executed", {
+        reason: execResult.isError ? execResult.content : undefined,
+        provenance: {
+          grantConsumed: gateResult.grantConsumed,
+          approvedViaPrompt: context.approvedViaPrompt,
+          matchedTrustRuleId: permMatchedTrustRuleId,
+          approvalMode: permApprovalMode,
+          approvalReason: permApprovalReason,
+        },
       });
 
       // Merge risk metadata from the classifier assessment cache onto the
@@ -432,6 +494,10 @@ export class ToolExecutor {
         errorCategory,
         errorName: err instanceof Error ? err.name : undefined,
         errorStack: err instanceof Error ? err.stack : undefined,
+      });
+
+      ledger(err instanceof PermissionDeniedError ? "denied" : "failed", {
+        reason: msg,
       });
 
       if (isExpected) {

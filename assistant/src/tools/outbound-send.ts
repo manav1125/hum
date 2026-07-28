@@ -225,12 +225,16 @@ function isNetworkEgressShell(
  * background threshold; this is threshold-independent defense: it fires when a
  * DOM selector / element label names a submit control (Send, Submit, Post,
  * Publish, Pay, Checkout, …), so a labeled "Send" click parks unattended and
- * forces approval attended even if the threshold is raised. COVERAGE LIMIT:
- * coordinate-based computer-use clicks and opaque element-id clicks carry no
- * label in the tool input, so they are not caught here — the robust fix is an
- * execution-layer check on the resolved element's accessible name.
+ * forces approval attended even if the threshold is raised.
+ *
+ * COVERAGE LIMIT: coordinate-based computer-use clicks, opaque element-id
+ * clicks, and keyboard sends carry no label in the tool input, so they are not
+ * caught here. Those are handled one layer down, where the target element is
+ * actually resolved, by `assistant/src/tools/browser/send-control-guard.ts` —
+ * which reuses {@link BROWSER_SUBMIT_KEYWORDS} (exported for exactly that
+ * reason) so there is one keyword set, not two that can drift apart.
  */
-const BROWSER_SUBMIT_KEYWORDS =
+export const BROWSER_SUBMIT_KEYWORDS =
   /\b(send|submit|publish|confirm|pay|checkout|place[\s_-]?order|reply[\s_-]?all)\b|\bpost[\s_-]?(message|comment|tweet|reply)\b/i;
 
 function isBrowserSubmitAction(

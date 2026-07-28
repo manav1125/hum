@@ -23402,6 +23402,278 @@ paths:
           required: true
           schema:
             type: string
+  /v1/ledger/autonomy:
+    get:
+      operationId: ledger_autonomy_get
+      summary: The autonomy ledger — consequential actions Cue took
+      description:
+        Append-only record of every consequential action Cue attempted on the owner's behalf (external
+        send/call/money/publish/delete/purchase, network-egress shells, browser submit controls, script-mode schedules,
+        opaque external runners, host file mutations), whatever the outcome. Each row carries a plain-English sentence,
+        the target reached, whether a human was present, and how it was authorised. The summary's headline numbers are
+        executedUnattended and executedWithoutApproval.
+      tags:
+        - guardrails
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        at:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: Epoch ms the action settled
+                        toolName:
+                          type: string
+                          description: The tool as invoked, namespace included
+                        actionClass:
+                          type: string
+                          enum:
+                            - send
+                            - contact
+                            - money
+                            - publish
+                            - delete
+                            - purchase
+                            - host_file
+                            - network_egress
+                            - browser_submit
+                            - schedule_script
+                            - external_runner
+                            - other
+                        summary:
+                          type: string
+                          description: "One plain-English sentence: what Cue did, to what, and whether anyone was watching"
+                        target:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Recipient / URL / host / path reached; null = none in the input
+                        outcome:
+                          type: string
+                          enum:
+                            - executed
+                            - parked
+                            - denied
+                            - failed
+                        attended:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                          description: 0/1 — a human was present (interactive client attached)
+                        approvedVia:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - inline_card
+                                - trust_rule
+                                - scoped_grant
+                                - auto
+                            - type: "null"
+                          description:
+                            How an EXECUTED action was authorised. 'auto' = nobody was asked. Null on parked/denied/failed rows —
+                            nothing was authorised.
+                        approvalDetail:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        conversationId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        workItemId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Work item whose run this was, when the action ran inside one
+                        agent:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        requestId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        durationMs:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                        reason:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: Denial or failure reason, redacted; null when it ran cleanly
+                      required:
+                        - id
+                        - at
+                        - toolName
+                        - actionClass
+                        - summary
+                        - target
+                        - outcome
+                        - attended
+                        - approvedVia
+                        - approvalDetail
+                        - conversationId
+                        - workItemId
+                        - agent
+                        - requestId
+                        - durationMs
+                        - reason
+                      additionalProperties: false
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      executed:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      parked:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      denied:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      failed:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      executedUnattended:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: Consequential actions that ran with NO human present
+                      executedWithoutApproval:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                        description: Executed actions nobody explicitly approved (approvedVia 'auto' or null)
+                      byClass:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            actionClass:
+                              type: string
+                              enum:
+                                - send
+                                - contact
+                                - money
+                                - publish
+                                - delete
+                                - purchase
+                                - host_file
+                                - network_egress
+                                - browser_submit
+                                - schedule_script
+                                - external_runner
+                                - other
+                            count:
+                              type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                          required:
+                            - actionClass
+                            - count
+                          additionalProperties: false
+                    required:
+                      - total
+                      - executed
+                      - parked
+                      - denied
+                      - failed
+                      - executedUnattended
+                      - executedWithoutApproval
+                      - byClass
+                    additionalProperties: false
+                  window:
+                    type: object
+                    properties:
+                      days:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      from:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - days
+                      - from
+                    additionalProperties: false
+                required:
+                  - entries
+                  - summary
+                  - window
+                additionalProperties: false
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Trailing window in days for the summary (default 30)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max rows returned, newest first (default 50, max 500)
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - executed
+              - parked
+              - denied
+              - failed
+          description: Filter to one outcome
+        - name: actionClass
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - send
+              - contact
+              - money
+              - publish
+              - delete
+              - purchase
+              - host_file
+              - network_egress
+              - browser_submit
+              - schedule_script
+              - external_runner
+              - other
+          description: Filter to one consequence class
+        - name: unattendedOnly
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "'true' restricts to actions that happened with no human present"
   /v1/llm-request-logs/{id}/context:
     get:
       operationId: llmrequestlogs_by_id_context_get

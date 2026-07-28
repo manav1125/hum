@@ -43,6 +43,10 @@
             "type": "string",
             "description": "Explanation of what you see and why you are clicking here"
           },
+          "label": {
+            "type": "string",
+            "description": "Visible name of the control you are clicking (e.g. \"Send\", \"Submit\", \"Pay\"). Set this when an attempt was blocked because the target resolved to a send/submit control — it is what makes the action legible to the human-approval gate, which then asks the user to confirm."
+          },
           "target_client_id": {
             "type": "string",
             "description": "ID of the specific client to target. Required when multiple clients support host_cu; omit when only one is connected. Obtain IDs from `assistant clients list --capability host_cu`."
@@ -94,6 +98,10 @@
           "reasoning": {
             "type": "string",
             "description": "Explanation of why you are pressing this key"
+          },
+          "label": {
+            "type": "string",
+            "description": "Visible name of the action this key commits (e.g. \"Send\"). Set this when an attempt was blocked because the keypress resolved to a send — it is what makes the action legible to the human-approval gate, which then asks the user to confirm."
           },
           "target_client_id": {
             "type": "string",

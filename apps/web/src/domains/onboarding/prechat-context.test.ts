@@ -13,17 +13,12 @@ function baseInput(
   overrides: Partial<BuildPreChatContextInput> = {},
 ): BuildPreChatContextInput {
   return {
-    mode: "control",
+    mode: "paredDown",
     recipe: null,
-    selectedTools: new Set(),
-    selectedTasks: new Set(),
-    selectedPriorAssistants: new Set(),
     tone: "balanced",
     userName: "Alice",
     assistantName: "Vela",
     selfIntroGreetingEnabled: false,
-    googleConnected: false,
-    googleScopes: [],
     ...overrides,
   };
 }
@@ -58,59 +53,35 @@ describe("buildPreChatContext — activation rail", () => {
   });
 });
 
-describe("buildPreChatContext — control", () => {
-  test("carries tools, sorted tasks, names, and tone", () => {
-    const context = buildPreChatContext(
-      baseInput({
-        selectedTools: new Set(["gmail", "other:custom"]),
-        selectedTasks: new Set(["b", "a"]),
-      }),
-    );
-    expect(context.tasks).toEqual(["a", "b"]);
+describe("buildPreChatContext — the web funnel", () => {
+  test("carries names and tone", () => {
+    const context = buildPreChatContext(baseInput());
     expect(context.tone).toBe("balanced");
     expect(context.userName).toBe("Alice");
     expect(context.assistantName).toBe("Vela");
     expect(context.googleConnected).toBe(false);
   });
 
-  test("records prior assistants when selected", () => {
-    const context = buildPreChatContext(
-      baseInput({ selectedPriorAssistants: new Set(["asst-1"]) }),
-    );
-    expect(context.priorAssistants).toEqual(["asst-1"]);
-  });
-
-  test("uses scopes from the connecting action over stored state", () => {
+  test("tasks come from the marketing recipe, not a picker screen", () => {
     const context = buildPreChatContext(
       baseInput({
-        googleConnected: false,
-        googleScopes: ["stale"],
-        connectedScopes: ["gmail.readonly"],
+        recipe: {
+          tasks: ["inbox", "calendar"],
+        } as BuildPreChatContextInput["recipe"],
       }),
     );
-    expect(context.googleConnected).toBe(true);
-    expect(context.googleScopes).toEqual(["gmail.readonly"]);
+    expect(context.tasks).toEqual(["inbox", "calendar"]);
   });
 
-  test("falls back to previously stored Google connection", () => {
-    const context = buildPreChatContext(
-      baseInput({ googleConnected: true, googleScopes: ["gmail.send"] }),
-    );
-    expect(context.googleConnected).toBe(true);
-    expect(context.googleScopes).toEqual(["gmail.send"]);
-  });
-});
-
-describe("buildPreChatContext — pared-down", () => {
   test("implies the Google tool bundle only when connected this action", () => {
     const connected = buildPreChatContext(
-      baseInput({ mode: "paredDown", connectedScopes: ["gmail.readonly"] }),
+      baseInput({ connectedScopes: ["gmail.readonly"] }),
     );
     expect(connected.tools).toEqual([...PARED_DOWN_GOOGLE_TOOL_IDS]);
     expect(connected.googleConnected).toBe(true);
     expect(connected.googleScopes).toEqual(["gmail.readonly"]);
 
-    const skipped = buildPreChatContext(baseInput({ mode: "paredDown" }));
+    const skipped = buildPreChatContext(baseInput());
     expect(skipped.tools).toEqual([]);
     expect(skipped.googleConnected).toBe(false);
     expect(skipped.googleScopes).toBeUndefined();
@@ -122,16 +93,16 @@ describe("buildPreChatContext — native", () => {
     const context = buildPreChatContext(
       baseInput({
         mode: "native",
-        // Selections from other flows must not leak into the native payload.
-        selectedTools: new Set(["gmail"]),
-        selectedTasks: new Set(["a"]),
-        selectedPriorAssistants: new Set(["asst-1"]),
         selfIntroGreetingEnabled: true,
+        // A Google connect can't happen on the native path; nothing from the
+        // web funnel may leak into the native payload.
+        connectedScopes: ["gmail.readonly"],
       }),
     );
     expect(context.tools).toEqual([]);
     expect(context.tasks).toEqual([]);
     expect(context.googleConnected).toBe(false);
+    expect(context.googleScopes).toBeUndefined();
     expect(context.priorAssistants).toBeUndefined();
     expect(context.userName).toBe("Alice");
     expect(context.initialMessage).toBe(

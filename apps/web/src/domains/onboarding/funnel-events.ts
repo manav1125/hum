@@ -13,14 +13,11 @@ export const ONBOARDING_FUNNEL_VARIANTS = {
 export type OnboardingFunnelVariant =
   (typeof ONBOARDING_FUNNEL_VARIANTS)[keyof typeof ONBOARDING_FUNNEL_VARIANTS];
 
-export function onboardingFunnelVariantFromExperiment(
-  experimentArm: string,
-): OnboardingFunnelVariant {
-  return experimentArm === "variant-a"
-    ? ONBOARDING_FUNNEL_VARIANTS.paredDown
-    : ONBOARDING_FUNNEL_VARIANTS.control;
-}
-
+/**
+ * Funnel step taxonomy. The `control*` entries describe events emitted by the
+ * retired control arm — kept so historical telemetry stays interpretable; the
+ * live funnel only emits `privacyTos`, `nameVibe`, and `gmailConnect`.
+ */
 export const ONBOARDING_FUNNEL_STEPS = {
   privacyTos: { stepName: "privacy_tos", stepIndex: 0 },
   nameVibe: { stepName: "name_vibe", stepIndex: 1 },

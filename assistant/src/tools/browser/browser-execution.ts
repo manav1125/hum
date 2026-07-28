@@ -52,6 +52,8 @@ import {
 } from "./cdp-client/accessibility-snapshot.js";
 import {
   captureScreenshotJpeg,
+  describeControlAtNode,
+  describeFocusedControl,
   dispatchClickAt,
   dispatchHoverAt,
   dispatchInsertText,
@@ -82,6 +84,15 @@ import type {
 } from "./cdp-client/types.js";
 import { clearPinnedTab, setPinnedTab } from "./pinned-tabs.js";
 import { checkBrowserRuntime } from "./runtime-check.js";
+import {
+  classifyKeySend,
+  describeControl,
+  gateResolvedSendControl,
+  isSendControl,
+  parseKeyChord,
+  type ResolvedControl,
+  type SendGateDecision,
+} from "./send-control-guard.js";
 
 const log = getLogger("headless-browser");
 
@@ -612,6 +623,136 @@ function resolveElement(
   };
 }
 
+// ── Send-control guard (execution layer) ─────────────────────────────
+
+/**
+ * Coerce the page-side describe payload into a {@link ResolvedControl}.
+ * Everything arrives untyped from `Runtime.evaluate`, so each field is
+ * validated rather than cast.
+ */
+function toResolvedControl(
+  raw: Record<string, unknown> | null,
+): ResolvedControl | null {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    tag: typeof raw.tag === "string" ? raw.tag : undefined,
+    labels: Array.isArray(raw.labels)
+      ? raw.labels.filter((v): v is string => typeof v === "string")
+      : [],
+    text: typeof raw.text === "string" ? raw.text : undefined,
+    isControl: raw.isControl === true,
+    isTextEntry: raw.isTextEntry === true,
+    isMultiline: raw.isMultiline === true,
+    isSearch: raw.isSearch === true,
+    isDisabled: raw.isDisabled === true,
+  };
+}
+
+/** Best-effort page hostname; undefined when the page has no usable URL. */
+async function currentHost(
+  cdp: CdpClient,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  try {
+    const url = await getCurrentUrl(cdp, signal);
+    if (!url || url === "about:blank") return undefined;
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+const ALLOW: SendGateDecision = { blocked: false };
+
+/**
+ * Run the high-consequence checkpoint against a click whose target has just
+ * been resolved to a real DOM node. This is what catches the clicks the
+ * pre-execution gate structurally cannot see — an `element_id` from a snapshot
+ * carries no label, so only the resolved element's accessible name reveals
+ * that "e14" is the Send button.
+ *
+ * Fails OPEN on any CDP error: an unresolvable description means "unknown",
+ * and blocking on unknown would break ordinary clicking on every page whose
+ * describe call happens to throw.
+ */
+async function guardClickTarget(
+  cdp: CdpClient,
+  backendNodeId: number,
+  params: {
+    toolName: string;
+    input: Record<string, unknown>;
+    context: ToolContext;
+    targetDescription: string;
+  },
+): Promise<SendGateDecision> {
+  let control: ResolvedControl | null = null;
+  try {
+    control = toResolvedControl(
+      await describeControlAtNode(cdp, backendNodeId, params.context.signal),
+    );
+  } catch {
+    return ALLOW;
+  }
+  if (!isSendControl(control)) return ALLOW;
+  return gateResolvedSendControl({
+    toolName: params.toolName,
+    input: params.input,
+    context: params.context,
+    controlLabel: describeControl(control),
+    targetDescription: params.targetDescription,
+    kind: "click",
+  });
+}
+
+/**
+ * Run the high-consequence checkpoint against a key that is about to be
+ * dispatched. Only Enter-family chords can send, so anything else short-circuits
+ * before we spend a CDP round-trip; the focus lookup then decides whether this
+ * particular Enter is a send (see `classifyKeySend`).
+ *
+ * When `backendNodeId` is provided the key is being sent to that element (the
+ * caller focuses it first), so it is described directly; otherwise the current
+ * `document.activeElement` is described.
+ */
+async function guardKeyPress(
+  cdp: CdpClient,
+  key: string,
+  params: {
+    toolName: string;
+    input: Record<string, unknown>;
+    context: ToolContext;
+    targetDescription: string;
+    backendNodeId?: number;
+  },
+): Promise<SendGateDecision> {
+  if (!parseKeyChord(key).enter) return ALLOW;
+  let control: ResolvedControl | null = null;
+  let host: string | undefined;
+  try {
+    control = toResolvedControl(
+      params.backendNodeId !== undefined
+        ? await describeControlAtNode(
+            cdp,
+            params.backendNodeId,
+            params.context.signal,
+          )
+        : await describeFocusedControl(cdp, params.context.signal),
+    );
+    host = await currentHost(cdp, params.context.signal);
+  } catch {
+    return ALLOW;
+  }
+  if (classifyKeySend(key, control, host) !== "send") return ALLOW;
+  return gateResolvedSendControl({
+    toolName: params.toolName,
+    input: params.input,
+    context: params.context,
+    controlLabel: key,
+    targetDescription: params.targetDescription,
+    kind: "key",
+  });
+}
+
 /**
  * What to tell the model when navigation lands on a login / 2FA / OAuth wall.
  *
@@ -632,7 +773,7 @@ export function loginGuidanceLines(kind: CdpClientKind): string[] {
     return [
       "",
       "This login wall is in a browser the user has never signed into — a throwaway profile inside Cue's container, not their browser. Signing in here would not give them anything, and you have no way to reach the session they actually have.",
-      "Stop and tell them: this needs their own browser, and you cannot reach it. Offer the routes that work — they sign in themselves, or they store an API token via `credential_store` with `action: \"prompt\"` and you use the service's API instead.",
+      'Stop and tell them: this needs their own browser, and you cannot reach it. Offer the routes that work — they sign in themselves, or they store an API token via `credential_store` with `action: "prompt"` and you use the service\'s API instead.',
       "Do NOT ask them for a password, a token, or a 2FA code in chat, and do NOT offer to sign in on their behalf.",
     ];
   }
@@ -1499,13 +1640,24 @@ export async function executeBrowserClick(
         context.signal,
       );
     }
-    await scrollIntoViewIfNeeded(cdp, backendNodeId, context.signal);
-    const point = await getCenterPoint(cdp, backendNodeId, context.signal);
-    await dispatchClickAt(cdp, point, context.signal);
     const desc =
       resolved!.kind === "backend"
         ? `eid=${resolved!.eid}`
         : resolved!.selector;
+
+    // High-consequence checkpoint on the RESOLVED element, not the input:
+    // `element_id: "e14"` says nothing, but the node behind it may be Send.
+    const gate = await guardClickTarget(cdp, backendNodeId, {
+      toolName: "browser_click",
+      input,
+      context,
+      targetDescription: desc,
+    });
+    if (gate.blocked) return gate.result!;
+
+    await scrollIntoViewIfNeeded(cdp, backendNodeId, context.signal);
+    const point = await getCenterPoint(cdp, backendNodeId, context.signal);
+    await dispatchClickAt(cdp, point, context.signal);
     return { content: `Clicked element: ${desc}`, isError: false };
   } catch (err) {
     const diagnosticMessage = formatCdpSendDiagnostics(
@@ -1622,6 +1774,23 @@ export async function executeBrowserType(
     }
 
     if (pressEnter) {
+      // The text is already in the field (that part is a draft, and drafting is
+      // always allowed) — only the Enter that would commit it is gated.
+      const gate = await guardKeyPress(cdp, "Enter", {
+        toolName: "browser_type",
+        input,
+        context,
+        targetDescription,
+        backendNodeId,
+      });
+      if (gate.blocked) {
+        return {
+          content:
+            `Typed into element: ${targetDescription}, but did NOT press Enter.\n\n` +
+            gate.result!.content,
+          isError: true,
+        };
+      }
       await dispatchKeyPress(cdp, "Enter", context.signal);
     }
 
@@ -1692,6 +1861,14 @@ export async function executeBrowserPressKey(
         );
       }
       await focusElement(cdp, backendNodeId, context.signal);
+      const gate = await guardKeyPress(cdp, key, {
+        toolName: "browser_press_key",
+        input,
+        context,
+        targetDescription: targetDescription!,
+        backendNodeId,
+      });
+      if (gate.blocked) return gate.result!;
       await dispatchKeyPress(cdp, key, context.signal);
       return {
         content: `Pressed "${key}" on element: ${targetDescription}`,
@@ -1700,6 +1877,13 @@ export async function executeBrowserPressKey(
     }
 
     // No target -> press key on the currently focused element
+    const gate = await guardKeyPress(cdp, key, {
+      toolName: "browser_press_key",
+      input,
+      context,
+      targetDescription: "the focused element",
+    });
+    if (gate.blocked) return gate.result!;
     await dispatchKeyPress(cdp, key, context.signal);
     return { content: `Pressed "${key}"`, isError: false };
   } catch (err) {
@@ -2243,6 +2427,21 @@ export async function executeBrowserFillCredential(
     }
 
     if (pressEnter) {
+      const gate = await guardKeyPress(cdp, "Enter", {
+        toolName: "browser_fill_credential",
+        input,
+        context,
+        targetDescription,
+        backendNodeId,
+      });
+      if (gate.blocked) {
+        return {
+          content:
+            `Filled ${field} for ${service}, but did NOT press Enter.\n\n` +
+            gate.result!.content,
+          isError: true,
+        };
+      }
       await dispatchKeyPress(cdp, "Enter", context.signal);
     }
 

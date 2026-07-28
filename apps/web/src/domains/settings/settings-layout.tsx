@@ -13,9 +13,14 @@ import { useHasPlatformSession } from "@/stores/auth-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { routes } from "@/utils/routes";
-import { SETTINGS_SIDEBAR } from "@/utils/settings-navigation";
+import {
+  DEVELOPER_PANEL_IDS,
+  groupSidebarItems,
+  SETTINGS_SIDEBAR,
+} from "@/utils/settings-navigation";
+import { SettingsSidebar } from "@/domains/settings/components/settings-sidebar";
 import { SidebarShell } from "@/components/sidebar-shell";
-import { SidebarTree, type SidebarItem } from "@/components/sidebar-tree";
+import { type SidebarItem } from "@/components/sidebar-tree";
 
 /**
  * React Router layout route for `/assistant/settings/*`.
@@ -66,19 +71,32 @@ export function SettingsLayout() {
         if (item.id === "keyboard-shortcuts" && !isElectron()) {
           return false;
         }
-        if (item.id === "developer") {
+        // Debug / Advanced / Developer are engineering surfaces, not user
+        // settings. They stay off every nav until developer mode is unlocked
+        // (7 taps on the version value in General), which flips the
+        // `settings-developer-nav` assistant flag. Their routes stay mounted,
+        // so they remain URL-reachable for the owner either way.
+        if (DEVELOPER_PANEL_IDS.has(item.id) && !settingsDeveloperNav) {
           return false;
         }
         return true;
       }),
-    [platformNotifications, platformGate, billingGate, managed],
+    [
+      platformNotifications,
+      platformGate,
+      billingGate,
+      managed,
+      settingsDeveloperNav,
+    ],
+  );
+
+  const sections = useMemo(
+    () => groupSidebarItems(filteredItems),
+    [filteredItems],
   );
 
   const bottomItems = useMemo<SidebarItem[]>(() => {
     const items: SidebarItem[] = [];
-    if (settingsDeveloperNav) {
-      items.push(...SETTINGS_SIDEBAR.filter((item) => item.id === "developer"));
-    }
     // Log Out is pinned to the very bottom of the nav as an action item.
     if (showLogout) {
       items.push({
@@ -89,7 +107,7 @@ export function SettingsLayout() {
       });
     }
     return items;
-  }, [settingsDeveloperNav, showLogout, navigate]);
+  }, [showLogout, navigate]);
 
   const pageTitle = useMemo(() => {
     if (pathname === routes.settings.root) return "Settings";
@@ -115,8 +133,8 @@ export function SettingsLayout() {
     <SidebarShell
       backHref={routes.assistant}
       sidebar={
-        <SidebarTree
-          items={filteredItems}
+        <SettingsSidebar
+          sections={sections}
           bottomItems={bottomItems}
           indexPath={routes.settings.root}
         />

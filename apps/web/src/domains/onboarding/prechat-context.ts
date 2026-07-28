@@ -3,8 +3,8 @@
  * during the flow. Pure input→output: no React, no storage, no navigation —
  * the component owns those side effects and calls this to produce the payload.
  *
- * Three modes share one builder so the context shape can't drift between the
- * web control funnel, the pared-down funnel variant, and the native iOS flow.
+ * Two modes share one builder so the context shape can't drift between the
+ * (single) web funnel and the native iOS flow.
  */
 import type { OnboardingRecipe } from "@/domains/onboarding/recipe-client.js";
 import {
@@ -12,7 +12,6 @@ import {
   DEFAULT_PRECHAT_INITIAL_MESSAGE,
   type PreChatOnboardingContext,
 } from "@/domains/onboarding/prechat";
-import { stripOtherPrefix } from "@/domains/onboarding/prechat-tools";
 
 /**
  * Tools implied by connecting Google in the pared-down funnel, which has no
@@ -28,14 +27,11 @@ export const ACTIVATION_FLOW_COHORT = "experiment-activation-flow-2026-06-03";
 export const ACTIVATION_RAIL_BOOTSTRAP_TEMPLATE =
   "BOOTSTRAP-ACTIVATION-RAIL.md";
 
-export type PreChatMode = "control" | "paredDown" | "native";
+export type PreChatMode = "paredDown" | "native";
 
 export interface BuildPreChatContextInput {
   mode: PreChatMode;
   recipe: OnboardingRecipe | null;
-  selectedTools: Set<string>;
-  selectedTasks: Set<string>;
-  selectedPriorAssistants: Set<string>;
   /** Already resolved: `selectedGroupId ?? recipe?.tone ?? DEFAULT_GROUP_ID`. */
   tone: string;
   userName: string;
@@ -43,9 +39,6 @@ export interface BuildPreChatContextInput {
   selfIntroGreetingEnabled: boolean;
   /** Selects the activation rail bootstrap template for experiment users. */
   activationFlowEnabled?: boolean;
-  /** Persisted Google connection state from a step the user already passed. */
-  googleConnected: boolean;
-  googleScopes: string[];
   /**
    * Scopes granted by the connect action that triggered this finish. Present
    * only when the user connected Google on the way out; `undefined` otherwise.
@@ -84,18 +77,12 @@ export function buildPreChatContext(
       tone: input.tone,
       googleConnected: false,
     };
-  } else if (mode === "paredDown") {
+  } else {
     context = {
       tools: connectedWithCurrentAction ? [...PARED_DOWN_GOOGLE_TOOL_IDS] : [],
       tasks: recipe?.tasks ?? [],
       tone: input.tone,
       googleConnected: connectedWithCurrentAction,
-    };
-  } else {
-    context = {
-      tools: stripOtherPrefix([...input.selectedTools]),
-      tasks: [...input.selectedTasks].sort(),
-      tone: input.tone,
     };
   }
 
@@ -115,26 +102,8 @@ export function buildPreChatContext(
   const trimmedAssistant = input.assistantName.trim();
   if (trimmedAssistant) context.assistantName = trimmedAssistant;
 
-  if (mode === "paredDown") {
-    if (connectedWithCurrentAction) {
-      context.googleScopes = input.connectedScopes;
-    }
-  } else if (mode === "control") {
-    if (connectedWithCurrentAction) {
-      context.googleConnected = true;
-      context.googleScopes = input.connectedScopes;
-    } else if (input.googleConnected) {
-      context.googleConnected = true;
-      context.googleScopes = input.googleScopes;
-    } else {
-      context.googleConnected = false;
-    }
-  }
-
-  if (mode === "control" && input.selectedPriorAssistants.size > 0) {
-    context.priorAssistants = stripOtherPrefix([
-      ...input.selectedPriorAssistants,
-    ]);
+  if (mode === "paredDown" && connectedWithCurrentAction) {
+    context.googleScopes = input.connectedScopes;
   }
 
   context.initialMessage = resolveInitialMessage(

@@ -308,6 +308,7 @@ export { migrateConversationProcessingFlags } from "./310-conversation-processin
 export { migrateAutomations } from "./313-automations.js";
 export { migrateWorkItemAssessment } from "./314-work-item-assessment.js";
 export { migrateWorkItemOriginConversation } from "./315-work-item-origin-conversation.js";
+export { migrateAutonomyLedger } from "./316-autonomy-ledger.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

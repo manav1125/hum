@@ -33,8 +33,8 @@ mock.module("@/domains/onboarding/funnel-events", () => ({
   emitOnboardingFunnelStepCompleted: emitFunnelStepCompletedMock,
   getOnboardingFunnelSessionId: () => "session-1",
   ONBOARDING_FUNNEL_STEPS: { privacyTos: "privacy_tos" },
-  onboardingFunnelVariantFromExperiment: () => "control",
-  resolveOnboardingFunnelVariant: () => "control",
+  ONBOARDING_FUNNEL_VARIANTS: { control: "control", paredDown: "pared_down" },
+  resolveOnboardingFunnelVariant: (preferred: string) => preferred,
 }));
 
 mock.module("@/runtime/is-electron", () => ({ isElectron: () => true }));
@@ -44,9 +44,6 @@ mock.module("@/runtime/native-auth", () => ({
 mock.module("@/stores/auth-store", () => ({
   useAuthStore: { use: { user: () => ({ id: "user-1" }) } },
   useHasPlatformSession: () => false,
-}));
-mock.module("@/stores/client-feature-flag-store", () => ({
-  useClientFeatureFlagStore: { use: { stringFlags: () => ({}) } },
 }));
 
 // Light passthroughs for layout/design-library so the screen renders in happy-dom.

@@ -70,7 +70,6 @@ type TestOnboardingRecipe = {
   skipPrechat: boolean;
 };
 
-let preChatOnboardingExperiment = "variant-a";
 let activationFlowExperiment = "control";
 let selfIntroGreeting = true;
 let isIOSWeb = false;
@@ -248,7 +247,6 @@ mock.module("@/stores/client-feature-flag-store", () => ({
   useClientFeatureFlagStore: {
     use: {
       stringFlags: () => ({
-        preChatOnboardingExperiment20260606: preChatOnboardingExperiment,
         experimentActivationFlow20260603: activationFlowExperiment,
       }),
       selfIntroGreeting: () => selfIntroGreeting,
@@ -354,45 +352,6 @@ mock.module("@/domains/onboarding/screens/name-exchange-screen", () => ({
   ),
 }));
 
-mock.module("@/domains/onboarding/screens/task-tone-selection-screen", () => ({
-  TaskToneSelectionScreen: ({ onContinue }: { onContinue: () => void }) => (
-    <button type="button" data-testid="task-continue" onClick={onContinue}>
-      tasks
-    </button>
-  ),
-}));
-
-mock.module("@/domains/onboarding/screens/tool-selection-screen", () => ({
-  ToolSelectionScreen: ({ onContinue }: { onContinue: () => void }) => (
-    <button type="button" data-testid="tools-continue" onClick={onContinue}>
-      tools
-    </button>
-  ),
-}));
-
-mock.module(
-  "@/domains/onboarding/screens/prior-assistant-selection-screen",
-  () => ({
-    PriorAssistantSelectionScreen: ({
-      onContinue,
-    }: {
-      onContinue: () => void;
-    }) => (
-      <button type="button" data-testid="prior-continue" onClick={onContinue}>
-        prior assistants
-      </button>
-    ),
-  }),
-);
-
-mock.module("@/domains/onboarding/screens/get-ios-app-screen", () => ({
-  GetIOSAppScreen: ({ onComplete }: { onComplete: () => void }) => (
-    <button type="button" data-testid="ios-app-continue" onClick={onComplete}>
-      iOS app
-    </button>
-  ),
-}));
-
 const { HatchingScreen } =
   await import("@/domains/onboarding/pages/hatching-screen");
 const { PreChatFlow } =
@@ -403,7 +362,6 @@ beforeEach(() => {
   checkAssistantImpl = async () => {};
   fetchTraitsImpl = async () => null;
   getAssistantImpl = async () => assistantResult("active");
-  preChatOnboardingExperiment = "variant-a";
   activationFlowExperiment = "control";
   selfIntroGreeting = true;
   isIOSWeb = false;
@@ -533,30 +491,26 @@ describe("onboarding lifecycle sync", () => {
     });
   });
 
-  test("pre-chat keeps the existing full funnel when the v3 flag is off", async () => {
-    preChatOnboardingExperiment = "control";
-
-    render(<PreChatFlow />);
-
-    fireEvent.click(await screen.findByTestId("name-continue"));
-
-    expect(await screen.findByTestId("task-continue")).toBeTruthy();
-    expect(screen.queryByText("Connect Google")).toBeNull();
-  });
-
-  test("pre-chat control flow skips the macOS app step on macOS web", async () => {
-    preChatOnboardingExperiment = "control";
+  test("one funnel: name → google, with no app-nudge or picker steps", async () => {
+    // The retired `control` arm inserted work-type / tools / prior-assistants
+    // / get-the-app screens here. There is one funnel now, so an iOS- or
+    // macOS-web visitor who has not installed the app still goes straight from
+    // the name step to Google and out to chat.
+    isIOSWeb = true;
+    iosAppDownloaded = false;
     isMacOSWeb = true;
     macOsAppDownloaded = false;
 
     render(<PreChatFlow />);
 
     fireEvent.click(await screen.findByTestId("name-continue"));
-    fireEvent.click(await screen.findByTestId("task-continue"));
-    fireEvent.click(await screen.findByTestId("tools-continue"));
-    fireEvent.click(await screen.findByTestId("prior-continue"));
 
+    expect(await screen.findByText("Gmail")).toBeTruthy();
     expect(screen.queryByTestId("macos-app-continue")).toBeNull();
+    expect(screen.queryByTestId("ios-app-continue")).toBeNull();
+
+    fireEvent.click(screen.getByText("Skip for now"));
+
     await waitFor(() => expect(checkAssistantMock).toHaveBeenCalled());
     await waitFor(() =>
       expect(navigateMock).toHaveBeenCalledWith(
@@ -637,18 +591,18 @@ describe("onboarding lifecycle sync", () => {
     expect(fetchOnboardingRecipeMock).not.toHaveBeenCalled();
   });
 
-  test("local mode without a platform session gates the prior-assistants step", async () => {
-    preChatOnboardingExperiment = "control";
+  test("local mode without a platform session gates the google step", async () => {
+    // Connecting Google needs platform auth, so with no live session the
+    // funnel collapses to the name step and finishes straight out to chat
+    // rather than showing a step that could not complete.
     isLocalModeValue = true;
     platformSessionValue = "absent";
 
     render(<PreChatFlow />);
 
     fireEvent.click(await screen.findByTestId("name-continue"));
-    fireEvent.click(await screen.findByTestId("task-continue"));
-    fireEvent.click(await screen.findByTestId("tools-continue"));
 
-    expect(screen.queryByTestId("prior-continue")).toBeNull();
+    expect(screen.queryByText("Gmail")).toBeNull();
     await waitFor(() => expect(checkAssistantMock).toHaveBeenCalled());
     await waitFor(() =>
       expect(navigateMock).toHaveBeenCalledWith(
@@ -658,18 +612,15 @@ describe("onboarding lifecycle sync", () => {
     );
   });
 
-  test("local mode with a platform session shows the prior-assistants step", async () => {
-    preChatOnboardingExperiment = "control";
+  test("local mode with a platform session shows the google step", async () => {
     isLocalModeValue = true;
     platformSessionValue = "present";
 
     render(<PreChatFlow />);
 
     fireEvent.click(await screen.findByTestId("name-continue"));
-    fireEvent.click(await screen.findByTestId("task-continue"));
-    fireEvent.click(await screen.findByTestId("tools-continue"));
 
-    expect(await screen.findByTestId("prior-continue")).toBeTruthy();
+    expect(await screen.findByText("Gmail")).toBeTruthy();
     expect(checkAssistantMock).not.toHaveBeenCalled();
   });
 

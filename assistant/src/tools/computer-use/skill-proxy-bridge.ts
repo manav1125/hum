@@ -6,12 +6,18 @@
  */
 
 import type { ToolContext, ToolExecutionResult } from "../types.js";
+import { runGuardedComputerUseTool } from "./ax-send-guard.js";
 
 /**
  * Forward a computer-use proxy tool call through the context's proxyToolResolver.
  *
  * Returns a clear error result if the resolver is missing (e.g. when the tool
  * is invoked outside a session with a connected client).
+ *
+ * The dispatch is wrapped by the send-control checkpoint: a click or ⌘/Ctrl+Enter
+ * that the cached accessibility snapshot resolves to a Send/Submit/Pay control
+ * is parked (unattended) or routed back through the approval gate (attended)
+ * instead of being forwarded to the client. See `ax-send-guard.ts`.
  */
 export function forwardComputerUseProxyTool(
   toolName: string,
@@ -24,5 +30,8 @@ export function forwardComputerUseProxyTool(
       isError: true,
     });
   }
-  return context.proxyToolResolver(toolName, input);
+  const resolver = context.proxyToolResolver;
+  return runGuardedComputerUseTool(toolName, input, context, () =>
+    resolver(toolName, input),
+  );
 }

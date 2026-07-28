@@ -4,7 +4,11 @@
  * The Settings page uses route-based navigation (e.g. /settings/general).
  * This module defines:
  *  - The canonical set of panel IDs.
- *  - A flat sidebar item list matching the macOS desktop app layout.
+ *  - The flat sidebar item list (the source of truth for label/href/icon).
+ *  - `SETTINGS_SECTIONS`: the grouping every settings surface renders, so the
+ *    desktop rail and the mobile index can't drift apart.
+ *  - `DEVELOPER_PANEL_IDS`: the panels that stay hidden until developer mode
+ *    is unlocked (see `settings-developer-nav` in the feature-flag registry).
  */
 
 import type { LucideIcon } from "lucide-react";
@@ -176,6 +180,104 @@ export const SETTINGS_SIDEBAR: SidebarItem[] = [
     icon: Code,
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
+
+/**
+ * Panels that are developer surfaces, not user settings. They are hidden from
+ * every settings nav unless the `settings-developer-nav` assistant flag is on
+ * (unlocked by tapping the version value 7× on the General panel — see
+ * `dev-mode-version-unlock.tsx`). The routes themselves stay mounted, so a
+ * developer with the flag off can still reach them by URL.
+ */
+export const DEVELOPER_PANEL_IDS: ReadonlySet<PanelId> = new Set<PanelId>([
+  "assistant-debug",
+  "advanced",
+  "developer",
+]);
+
+export interface SettingsSectionModel {
+  /** Stable key for React lists. */
+  id: string;
+  /** Group heading shown above the rows. */
+  title: string;
+  /** Panels in this group, in display order. */
+  items: readonly PanelId[];
+}
+
+/**
+ * The one grouping of the settings panels. Ordered; every `PanelId` appears
+ * exactly once (enforced at compile time by `_everyPanelIsSectioned` below, so
+ * a newly added panel can never silently drop out of the nav).
+ */
+export const SETTINGS_SECTIONS = [
+  {
+    id: "preferences",
+    title: "Preferences",
+    items: [
+      "assistant-status",
+      "notifications",
+      "sounds",
+      "voice",
+      "keyboard-shortcuts",
+    ],
+  },
+  {
+    id: "intelligence",
+    title: "Intelligence",
+    items: ["model", "schedules", "privacy"],
+  },
+  {
+    id: "workspace",
+    title: "Workspace",
+    items: ["integrations", "brand", "archive", "devices"],
+  },
+  {
+    id: "account",
+    title: "Account",
+    items: ["budget", "billing"],
+  },
+  {
+    id: "developer",
+    title: "Developer",
+    items: ["assistant-debug", "advanced", "developer"],
+  },
+] as const satisfies readonly SettingsSectionModel[];
+
+type SectionedPanelId = (typeof SETTINGS_SECTIONS)[number]["items"][number];
+
+/**
+ * Compile-time exhaustiveness: if a `PanelId` is missing from every section
+ * above, `Exclude<...>` is non-never and this assignment fails to typecheck.
+ */
+const _everyPanelIsSectioned: Exclude<PanelId, SectionedPanelId> extends never
+  ? true
+  : never = true;
+void _everyPanelIsSectioned;
+
+export interface SettingsSection {
+  id: string;
+  title: string;
+  items: SidebarItem[];
+}
+
+/**
+ * Project an already-filtered flat item list onto `SETTINGS_SECTIONS`.
+ * Sections whose every item was filtered out are dropped, so callers never
+ * render an empty heading.
+ */
+export function groupSidebarItems(items: SidebarItem[]): SettingsSection[] {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  return SETTINGS_SECTIONS.map((section) => ({
+    id: section.id,
+    title: section.title,
+    items: section.items
+      .map((id) => byId.get(id))
+      .filter((item): item is SidebarItem => item !== undefined),
+  })).filter((section) => section.items.length > 0);
+}
 
 const SETTINGS_TAB_ID_ALIASES: Record<string, PanelId> = {
   developer: "assistant-debug",

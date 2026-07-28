@@ -54,6 +54,7 @@ import type { GuardrailsGetResponse } from "@/generated/daemon/types.gen";
 import { useIsMobile } from "@/hooks/use-is-mobile";
 import { Mv3LedgerPage } from "@/mobile-v3/you/ledger-page";
 import { Mv3RulesPage } from "@/mobile-v3/you/rules-page";
+import { AutonomyLedgerBand } from "@/domains/guardrails/autonomy-ledger-panel";
 import {
   Mv3AgentScopesScreen,
   Mv3GuardrailsBar,
@@ -391,6 +392,23 @@ function GuardrailsBody({
           ledger={ledger}
           agents={agents}
           fresh={isFresh}
+        />
+      </Band>
+      {/*
+        The consequence ledger, beside the value ledger above: every action
+        that reached outside or couldn't be undone, whether anyone was in the
+        room, and who approved it. Its own read — an empty or failed fetch
+        never affects the rest of the page.
+      */}
+      <Band
+        label="WHAT CUE DID"
+        sub="Every action that reached outside or can’t be undone"
+        isMobile={isMobile}
+      >
+        <AutonomyLedgerBand
+          assistantId={assistantId}
+          days={days}
+          isMobile={isMobile}
         />
       </Band>
       <UsageBand

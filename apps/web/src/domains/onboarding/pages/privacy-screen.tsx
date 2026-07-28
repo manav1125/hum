@@ -8,7 +8,7 @@ import {
   emitOnboardingFunnelStepCompleted,
   getOnboardingFunnelSessionId,
   ONBOARDING_FUNNEL_STEPS,
-  onboardingFunnelVariantFromExperiment,
+  ONBOARDING_FUNNEL_VARIANTS,
   resolveOnboardingFunnelVariant,
 } from "@/domains/onboarding/funnel-events";
 import {
@@ -20,7 +20,6 @@ import {
 import { isElectron } from "@/runtime/is-electron";
 import { useIsNativePlatform } from "@/runtime/native-auth";
 import { useAuthStore, useHasPlatformSession } from "@/stores/auth-store";
-import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
 import { saveConsent } from "@/utils/onboarding-cleanup";
 import { legalUrl, routes } from "@/utils/routes";
 import { Button } from "@vellumai/design-library/components/button";
@@ -69,11 +68,6 @@ export function PrivacyScreen() {
   const userId = useAuthStore.use.user()?.id ?? null;
   const electron = isElectron();
   const isNative = useIsNativePlatform();
-  const preChatExperimentArm =
-    useClientFeatureFlagStore.use.stringFlags()
-      .preChatOnboardingExperiment20260606 ?? "control";
-  const preferredFunnelVariant =
-    onboardingFunnelVariantFromExperiment(preChatExperimentArm);
   const [shareAnalytics, setShareAnalyticsReal] = useShareAnalytics();
   const [shareDiagnostics, setShareDiagnosticsReal] = useShareDiagnostics();
   const [tosAccepted, setTosAcceptedReal] = useTosAccepted();
@@ -112,7 +106,10 @@ export function PrivacyScreen() {
       hasPlatformSession,
     });
     if (!isNative) {
-      const variant = resolveOnboardingFunnelVariant(preferredFunnelVariant);
+      // One funnel: the pared-down arm is the only web path now.
+      const variant = resolveOnboardingFunnelVariant(
+        ONBOARDING_FUNNEL_VARIANTS.paredDown,
+      );
       emitOnboardingFunnelStepCompleted(ONBOARDING_FUNNEL_STEPS.privacyTos, {
         userId,
         variant,
@@ -130,7 +127,6 @@ export function PrivacyScreen() {
     isNative,
     isPreview,
     navigate,
-    preferredFunnelVariant,
     searchParams,
     shareAnalytics,
     shareDiagnostics,

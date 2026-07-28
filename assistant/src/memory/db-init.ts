@@ -54,6 +54,7 @@ import {
   migrateAgentToolScopes,
   migrateAssistantContactMetadata,
   migrateAutomations,
+  migrateAutonomyLedger,
   migrateBackfillAudioAttachmentMimeTypes,
   migrateBackfillContactInteractionStats,
   migrateBackfillGuardianPrincipalId,
@@ -564,6 +565,7 @@ export function initializeDb(): void {
     migrateAutomations,
     migrateWorkItemAssessment,
     migrateWorkItemOriginConversation,
+    migrateAutonomyLedger,
   ];
 
   // Run each migration step, catching and logging individual failures so one

@@ -84,6 +84,11 @@ function buildBrowserTool(
     description:
       "Brief non-technical explanation of what this does, shown to the user in any permission prompt.",
   };
+  properties.label = {
+    type: "string",
+    description:
+      'Visible name of the control you are acting on (e.g. "Send", "Submit", "Pay"). Set this when an attempt was blocked because the target resolved to a send/submit control — it is what makes the action legible to the human-approval gate, which then asks the user to confirm.',
+  };
 
   return {
     name: `browser_${meta.operation}`,

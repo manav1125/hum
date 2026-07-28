@@ -7,6 +7,9 @@
  * Mobile restyle of the funnel's existing "name" step: same `userName` state
  * and advance/skip callbacks as NameExchangeScreen; the assistant keeps its
  * sampled default name (the step stays skippable, nothing new is required).
+ *
+ * The step counter is passed in from the flow rather than hardcoded — the
+ * funnel is capability-gated, so a literal "Step 1 of 4" would over-promise.
  */
 import { useState } from "react";
 
@@ -25,10 +28,16 @@ export function Mv3WelcomeStep({
   userName,
   onUserNameChange,
   onContinue,
+  stepLabel,
+  totalSteps,
 }: {
   userName: string;
   onUserNameChange: (value: string) => void;
   onContinue: () => void;
+  /** e.g. "Step 1 of 2" — derived from the resolved funnel. */
+  stepLabel: string;
+  /** Drives the honest "N quick steps" subtitle. */
+  totalSteps: number;
 }) {
   const [scope, setScope] = useState<OnboardingScope>(
     () => readOnboardingScope() ?? "founder-personal",
@@ -36,7 +45,7 @@ export function Mv3WelcomeStep({
 
   return (
     <Mv3OnboardingShell
-      step="Step 1 of 4"
+      step={stepLabel}
       cta="Continue"
       onCta={() => {
         writeOnboardingScope(scope);
@@ -83,7 +92,8 @@ export function Mv3WelcomeStep({
           animation: "mv3Rise .8s ease .3s both",
         }}
       >
-        Four quick steps. It learns from here —<br />
+        {totalSteps > 1 ? `${totalSteps} quick steps.` : "One quick step."} It
+        learns from here —<br />
         every answer makes it more yours.
       </div>
 

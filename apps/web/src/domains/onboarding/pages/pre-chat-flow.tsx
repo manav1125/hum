@@ -1,32 +1,34 @@
+/**
+ * The pre-chat onboarding flow — ONE funnel.
+ *
+ * Web (desktop, mobile web, Electron, iOS web): `name → google`, resolved by
+ * `resolveWebSteps`. The old `control` A/B arm (work type → tools → prior
+ * assistants → get-the-app) and the mobile-only autonomy/finish arm are gone;
+ * the pared-down funnel is the only web path, so there is exactly one step list
+ * to reason about. Mobile keeps a phone-styled *rendering* of the name step —
+ * same state, same advance — but no extra steps.
+ *
+ * Native (Capacitor iOS shell) keeps its own two screens because that shell
+ * collects consent AFTER pre-chat (`use-prechat-consent-gate` exempts native,
+ * `runtime/native-auth.ts` returns signups straight here), so its route order
+ * genuinely differs; it is a platform path, not an experiment arm.
+ */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
-import { useIsIOSWeb } from "@/runtime/platform-detection";
 import { useIsMobile } from "@/hooks/use-is-mobile";
-import { readIOSAppDownloaded } from "@/hooks/use-ios-app-nudge";
-import { companyprofilePut } from "@/generated/daemon/sdk.gen";
-import type { PendingWorkspaceMode } from "@/domains/onboarding/mv3-onboarding-prefs";
-import { clearPendingWorkspaceMode } from "@/domains/onboarding/mv3-onboarding-prefs";
 import { fetchOnboardingRecipe } from "@/domains/onboarding/recipe-client.js";
 import {
   emitOnboardingFunnelStepCompleted,
-  onboardingFunnelVariantFromExperiment,
   ONBOARDING_FUNNEL_STEPS,
   ONBOARDING_FUNNEL_VARIANTS,
-  readOnboardingFunnelVariant,
   resolveOnboardingFunnelVariant,
 } from "@/domains/onboarding/funnel-events";
-import { GetIOSAppScreen } from "@/domains/onboarding/screens/get-ios-app-screen.js";
 import { GoogleConnectScreen } from "@/domains/onboarding/screens/google-connect-screen.js";
-import { Mv3AutonomyStep } from "@/domains/onboarding/screens/mv3/mv3-autonomy-step";
-import { Mv3FinishStep } from "@/domains/onboarding/screens/mv3/mv3-finish-step";
 import { Mv3WelcomeStep } from "@/domains/onboarding/screens/mv3/mv3-welcome-step";
 import { NameExchangeScreen } from "@/domains/onboarding/screens/name-exchange-screen.js";
 import { NameStepScreen } from "@/domains/onboarding/screens/name-step-screen.js";
-import { PriorAssistantSelectionScreen } from "@/domains/onboarding/screens/prior-assistant-selection-screen.js";
-import { TaskToneSelectionScreen } from "@/domains/onboarding/screens/task-tone-selection-screen.js";
-import { ToolSelectionScreen } from "@/domains/onboarding/screens/tool-selection-screen.js";
 import { VibeStepScreen } from "@/domains/onboarding/screens/vibe-step-screen.js";
 import { assistantsActiveRetrieveOptions } from "@/generated/api/@tanstack/react-query.gen.js";
 import { usePrefilledInput } from "@/hooks/use-prefilled-input.js";
@@ -47,7 +49,6 @@ import {
   DEFAULT_GROUP_ID,
   sampleSuggestionNames,
 } from "@/domains/onboarding/prechat-names";
-import { GOOGLE_TOOL_IDS } from "@/domains/onboarding/prechat-tools";
 import { usePreChatConsentGate } from "@/domains/onboarding/use-prechat-consent-gate";
 import { usePreChatStepState } from "@/domains/onboarding/use-prechat-step-state";
 import {
@@ -91,23 +92,12 @@ export function PreChatFlow() {
   const isMobile = useIsMobile();
   const activeAssistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const localMode = isLocalMode();
-  const isIOSWeb = useIsIOSWeb();
-  const showIOSAppStep = isIOSWeb && !readIOSAppDownloaded();
-  const preChatExperimentArm =
-    useClientFeatureFlagStore.use.stringFlags()
-      .preChatOnboardingExperiment20260606 ?? "control";
   const activationFlowArm =
     useClientFeatureFlagStore.use.stringFlags()
       .experimentActivationFlow20260603 ?? "control";
   const activationFlowEnabled = activationFlowArm === "variant-a";
   const selfIntroGreetingEnabled =
     useClientFeatureFlagStore.use.selfIntroGreeting();
-  const preferredFunnelVariant =
-    onboardingFunnelVariantFromExperiment(preChatExperimentArm);
-  const webFunnelVariant =
-    readOnboardingFunnelVariant() ?? preferredFunnelVariant;
-  const paredDownPrechat =
-    webFunnelVariant === ONBOARDING_FUNNEL_VARIANTS.paredDown;
   const localPlatformAssistantId = localMode
     ? readLocalPlatformAssistantId()
     : null;
@@ -118,15 +108,6 @@ export function PreChatFlow() {
 
   const platformSession = useAuthStore.use.platformSession();
   const hasPlatformSession = hasLivePlatformSession(platformSession);
-  const [selectedTools, setSelectedTools] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [selectedPriorAssistants, setSelectedPriorAssistants] = useState<
-    Set<string>
-  >(() => new Set());
   const { value: userName, onChange: handleUserNameChange } = usePrefilledInput(
     localMode && !hasPlatformSession ? "" : firstName || lastName,
   );
@@ -135,13 +116,6 @@ export function PreChatFlow() {
     sampleSuggestionNames(),
   );
   const [assistantName, setAssistantName] = useState<string>("");
-  const [googleConnected, setGoogleConnected] = useState(false);
-  const [googleScopes, setGoogleScopes] = useState<string[]>([]);
-  // Mobile-v3 Step 3 pick (frame 27) — shown on the finish receipts and
-  // applied to the workspace-mode setting (see Mv3AutonomyStep).
-  const [pickedMode, setPickedMode] = useState<PendingWorkspaceMode | null>(
-    null,
-  );
 
   const { data: activeAssistant } = useQuery({
     ...assistantsActiveRetrieveOptions(),
@@ -159,13 +133,11 @@ export function PreChatFlow() {
   const recipe = fetchedRecipe ?? null;
   const googleAssistantId =
     activeAssistant?.id ?? activeAssistantId ?? localPlatformAssistantId;
-  const platformFunnelAvailable = isPlatformFunnelAvailable({
+  const canOfferGoogleStep = isPlatformFunnelAvailable({
     localMode,
     platformSession,
     hasCachedPlatformAssistant: localPlatformAssistantId !== null,
   });
-  const canOfferGoogleStep = platformFunnelAvailable;
-  const canOfferPriorAssistants = platformFunnelAvailable;
 
   const navigateToChatAfterLifecycleRefresh = async () => {
     await lifecycleService.checkAssistant();
@@ -174,57 +146,38 @@ export function PreChatFlow() {
 
   function emitWebFunnelStep(
     step: (typeof ONBOARDING_FUNNEL_STEPS)[keyof typeof ONBOARDING_FUNNEL_STEPS],
-    variant = webFunnelVariant,
   ): void {
     if (isPreview) {
       return;
     }
     emitOnboardingFunnelStepCompleted(step, {
       userId,
-      variant: resolveOnboardingFunnelVariant(variant),
+      variant: resolveOnboardingFunnelVariant(
+        ONBOARDING_FUNNEL_VARIANTS.paredDown,
+      ),
     });
   }
-
-  const hasGoogleTool = [...selectedTools].some((id) =>
-    GOOGLE_TOOL_IDS.has(id),
-  );
 
   const steps: PreChatStep[] = isNative
     ? resolveNativeSteps()
     : resolveWebSteps({
-        paredDown: paredDownPrechat,
-        canOfferPriorAssistants,
         canOfferGoogleStep: isPreview ? false : canOfferGoogleStep,
-        hasGoogleTool,
-        showIOSAppStep,
-        // The v3 mobile funnel (frames 26–28) adds the autonomy + finish
-        // steps on mobile web viewports only; desktop is unchanged.
-        mobileV3: isMobile,
       });
 
-  function completeFlow(args?: {
-    connectedScopes?: string[];
-    selectedPriorAssistants?: Set<string>;
-  }): void {
+  function completeFlow(args?: { connectedScopes?: string[] }): void {
     if (isPreview) {
       navigate(-1);
       return;
     }
 
     const context = buildPreChatContext({
-      mode: isNative ? "native" : paredDownPrechat ? "paredDown" : "control",
+      mode: isNative ? "native" : "paredDown",
       recipe: isNative ? null : recipe,
-      selectedTools,
-      selectedTasks,
-      selectedPriorAssistants:
-        args?.selectedPriorAssistants ?? selectedPriorAssistants,
       tone: selectedGroupId ?? recipe?.tone ?? DEFAULT_GROUP_ID,
       userName,
       assistantName,
       selfIntroGreetingEnabled,
       activationFlowEnabled: isNative ? undefined : activationFlowEnabled,
-      googleConnected,
-      googleScopes,
       connectedScopes: args?.connectedScopes,
     });
 
@@ -236,9 +189,9 @@ export function PreChatFlow() {
       clearPersistedStep();
       void navigate(routes.onboarding.privacy);
     } else if (isMobile) {
-      // Mobile v3 (frame 28): "See today →" lands on Today. The pending
-      // pre-chat context stays parked in sessionStorage and is consumed by
-      // the first chat send, exactly as the desktop path's would be.
+      // Mobile (v3): "Continue" lands on Today. The pending pre-chat context
+      // stays parked in sessionStorage and is consumed by the first chat send,
+      // exactly as the desktop path's would be.
       void lifecycleService.checkAssistant().then(() => {
         void navigate(routes.hq, { replace: true });
       });
@@ -250,10 +203,7 @@ export function PreChatFlow() {
 
   const advance = (
     from: PreChatStep,
-    finishArgs?: {
-      connectedScopes?: string[];
-      selectedPriorAssistants?: Set<string>;
-    },
+    finishArgs?: { connectedScopes?: string[] },
   ): void => {
     if (from.funnelStep) emitWebFunnelStep(from.funnelStep);
     const next = nextStep(steps, from.id);
@@ -309,15 +259,18 @@ export function PreChatFlow() {
   }
 
   if (activeStep.id === "name") {
-    // Mobile v3 restyle (frame 26): same step, same `userName` state, same
+    // Mobile restyle (v3 frame 26): same step, same `userName` state, same
     // advance; the assistant keeps its sampled default name (the step stays
-    // skippable — Continue with an empty field is the old Skip).
+    // skippable — Continue with an empty field is the old Skip). The step
+    // counter is derived from the real funnel so it can never over-promise.
     if (isMobile && !isNative) {
       return (
         <Mv3WelcomeStep
           userName={userName}
           onUserNameChange={handleUserNameChange}
           onContinue={() => advance(activeStep)}
+          stepLabel={`Step 1 of ${steps.length}`}
+          totalSteps={steps.length}
         />
       );
     }
@@ -336,48 +289,6 @@ export function PreChatFlow() {
     );
   }
 
-  if (activeStep.id === "taskTone") {
-    return (
-      <TaskToneSelectionScreen
-        selectedTasks={selectedTasks}
-        onChange={setSelectedTasks}
-        onBack={() => goBack(activeStep)}
-        onContinue={() => advance(activeStep)}
-        onSkip={() => advance(activeStep)}
-      />
-    );
-  }
-
-  if (activeStep.id === "tools") {
-    return (
-      <ToolSelectionScreen
-        selectedTools={selectedTools}
-        onChange={setSelectedTools}
-        onBack={() => goBack(activeStep)}
-        onContinue={() => advance(activeStep)}
-        onSkip={() => advance(activeStep)}
-      />
-    );
-  }
-
-  if (activeStep.id === "priorAssistants") {
-    return (
-      <PriorAssistantSelectionScreen
-        selectedAssistants={selectedPriorAssistants}
-        onChange={setSelectedPriorAssistants}
-        onBack={() => goBack(activeStep)}
-        onContinue={() => advance(activeStep)}
-        onSkip={() => {
-          const emptyPriorAssistants = new Set<string>();
-          setSelectedPriorAssistants(emptyPriorAssistants);
-          advance(activeStep, {
-            selectedPriorAssistants: emptyPriorAssistants,
-          });
-        }}
-      />
-    );
-  }
-
   if (activeStep.id === "google") {
     if (!googleAssistantId) {
       return null;
@@ -386,55 +297,9 @@ export function PreChatFlow() {
       <GoogleConnectScreen
         assistantId={googleAssistantId}
         assistantName={assistantName}
-        onConnect={(scopes) => {
-          setGoogleConnected(true);
-          setGoogleScopes(scopes);
-          advance(activeStep, { connectedScopes: scopes });
-        }}
+        onConnect={(scopes) => advance(activeStep, { connectedScopes: scopes })}
         onSkip={() => advance(activeStep)}
         onBack={() => goBack(activeStep)}
-      />
-    );
-  }
-
-  if (activeStep.id === "iosApp") {
-    return <GetIOSAppScreen onComplete={() => advance(activeStep)} />;
-  }
-
-  // Mobile v3 Step 3 (frame 27) — the autonomy pick. The pick is parked as a
-  // pending workspace-mode (applied by root-layout once an assistant is
-  // active); when an assistant is ALREADY active, apply it live right away.
-  if (activeStep.id === "autonomy") {
-    return (
-      <Mv3AutonomyStep
-        onContinue={(mode) => {
-          setPickedMode(mode);
-          if (activeAssistantId) {
-            void companyprofilePut({
-              path: { assistant_id: activeAssistantId },
-              body: { workspaceMode: mode },
-            })
-              .then(({ response }) => {
-                if (response?.ok) clearPendingWorkspaceMode();
-              })
-              .catch(() => {
-                /* daemon not reachable yet — the pending value covers it */
-              });
-          }
-          advance(activeStep);
-        }}
-        onSkip={() => advance(activeStep)}
-      />
-    );
-  }
-
-  // Mobile v3 Step 4 (frame 28) — the finish with real receipts.
-  if (activeStep.id === "finish") {
-    return (
-      <Mv3FinishStep
-        googleConnected={googleConnected}
-        mode={pickedMode}
-        onFinish={() => advance(activeStep)}
       />
     );
   }

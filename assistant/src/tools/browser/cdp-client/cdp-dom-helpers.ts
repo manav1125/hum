@@ -433,6 +433,141 @@ export async function evaluateExpression<T = unknown>(
   return res.result.value;
 }
 
+// ── Control description (send-guard support) ──────────────────────────
+
+/**
+ * Page-side body that turns a DOM node held in `el` into a
+ * {@link ResolvedControl}-shaped object. Shared verbatim by
+ * {@link describeControlAtNode} (which binds `el` to a resolved
+ * `backendNodeId`) and {@link describeFocusedControl} (which binds it to the
+ * deepest `activeElement`) so both report the same fields for the same node.
+ *
+ * `isControl` is true only for genuinely activatable controls — a button,
+ * `[role=button]`, or a submit/button/image/reset input. Links and plain divs
+ * are excluded on purpose: the send guard downstream keyword-matches this
+ * output, and widening the selector to `a[href]`/`[onclick]` is how a guard
+ * starts blocking ordinary navigation.
+ */
+const DESCRIBE_CONTROL_BODY = `
+  if (!el || el.nodeType !== 1) return null;
+  var CONTROL_SEL = 'button,[role="button"],input[type="submit"],input[type="button"],input[type="image"],input[type="reset"],[role="menuitem"]';
+  var ctl = null;
+  try { ctl = el.closest ? el.closest(CONTROL_SEL) : null; } catch (e) { ctl = null; }
+  var target = ctl || el;
+  var tag = String(el.tagName || '').toLowerCase();
+  var attrOf = function (node, n) {
+    try { return (node && node.getAttribute && node.getAttribute(n)) || ''; } catch (e) { return ''; }
+  };
+  var typeAttr = String(attrOf(el, 'type') || (tag === 'input' ? 'text' : '')).toLowerCase();
+  var roleAttr = String(attrOf(el, 'role')).toLowerCase();
+  var NON_TEXT_INPUT = ['button','submit','reset','image','checkbox','radio','file','range','color','hidden'];
+  var isTextEntry =
+    tag === 'textarea' ||
+    (tag === 'input' && NON_TEXT_INPUT.indexOf(typeAttr) === -1) ||
+    el.isContentEditable === true ||
+    roleAttr === 'textbox' || roleAttr === 'searchbox' || roleAttr === 'combobox';
+  var isMultiline = tag === 'textarea' || el.isContentEditable === true;
+  var placeholder = attrOf(el, 'placeholder');
+  var labels = [
+    attrOf(target, 'aria-label'),
+    attrOf(target, 'title'),
+    attrOf(target, 'alt'),
+    attrOf(target, 'name'),
+    attrOf(target, 'data-testid'),
+    attrOf(target, 'data-qa')
+  ];
+  // A submit/button input carries its label in \`value\`; a text input carries
+  // the user's typed content there, which must never be keyword-matched.
+  var targetTag = String(target.tagName || '').toLowerCase();
+  var targetType = String(attrOf(target, 'type')).toLowerCase();
+  if (targetTag === 'input' && ['submit','button','reset','image'].indexOf(targetType) !== -1) {
+    labels.push(attrOf(target, 'value'));
+  }
+  var isSearch = typeAttr === 'search' || roleAttr === 'searchbox';
+  if (!isSearch) {
+    isSearch = /\\bsearch\\b/i.test(labels.join(' ') + ' ' + placeholder);
+  }
+  var text = '';
+  try { text = String(target.innerText || target.textContent || '').replace(/\\s+/g, ' ').trim(); } catch (e) { text = ''; }
+  if (text.length > 200) text = '';
+  var isDisabled = false;
+  try { isDisabled = target.disabled === true || attrOf(target, 'aria-disabled') === 'true'; } catch (e) {}
+  return {
+    tag: targetTag || tag,
+    labels: labels.filter(function (v) { return !!v; }),
+    text: text,
+    isControl: !!ctl,
+    isTextEntry: !!isTextEntry,
+    isMultiline: !!isMultiline,
+    isSearch: !!isSearch,
+    isDisabled: !!isDisabled
+  };
+`;
+
+/**
+ * Describe the element behind `backendNodeId` (accessible name, visible text,
+ * whether it is an activatable control / text entry). Returns `null` when the
+ * node cannot be described — callers must treat `null` as "unknown", never as
+ * "safe to keyword-match".
+ */
+export async function describeControlAtNode(
+  cdp: CdpClient,
+  backendNodeId: number,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown> | null> {
+  const { object } = await cdp.send<{ object: { objectId?: string } }>(
+    "DOM.resolveNode",
+    { backendNodeId },
+    signal,
+  );
+  if (!object?.objectId) return null;
+  const res = await cdp.send<{
+    result: { value?: Record<string, unknown> | null };
+  }>(
+    "Runtime.callFunctionOn",
+    {
+      objectId: object.objectId,
+      functionDeclaration: `function() {
+        var el = this && this.nodeType === 1 ? this : (this && this.parentElement) || null;
+        ${DESCRIBE_CONTROL_BODY}
+      }`,
+      arguments: [],
+      returnByValue: true,
+    },
+    signal,
+  );
+  return res.result?.value ?? null;
+}
+
+/**
+ * Describe whatever currently holds focus, piercing open shadow roots and
+ * same-origin iframes (a Gmail compose body lives in one). Returns `null` when
+ * focus is unreachable — e.g. inside a cross-origin frame.
+ */
+export async function describeFocusedControl(
+  cdp: CdpClient,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown> | null> {
+  const expression = `(function () {
+    var el = document.activeElement;
+    for (var i = 0; el && i < 10; i++) {
+      if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
+      var t = String(el.tagName || '').toLowerCase();
+      if (t === 'iframe' || t === 'frame') {
+        var inner = null;
+        try { inner = el.contentDocument && el.contentDocument.activeElement; } catch (e) { inner = null; }
+        if (inner && inner !== el) { el = inner; continue; }
+      }
+      break;
+    }
+    ${DESCRIBE_CONTROL_BODY}
+  })()`;
+  const res = await cdp.send<{
+    result: { value?: Record<string, unknown> | null };
+  }>("Runtime.evaluate", { expression, returnByValue: true }, signal);
+  return res.result?.value ?? null;
+}
+
 // ── Screenshot ────────────────────────────────────────────────────────
 
 /**
