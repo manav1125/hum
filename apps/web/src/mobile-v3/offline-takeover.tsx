@@ -87,9 +87,14 @@ export function OfflineTakeover() {
   // sustained drop only takes over after a cheap REST probe ALSO fails —
   // an unreachable/waking daemon fails both.
   const [probeFailed, setProbeFailed] = useState(false);
+  // A 429 is NOT a cold start — it's an auth rate-limit lockout. Telling the
+  // user "Cue is waking up. Your data is safe." makes them wait for a boot
+  // that will never come. Keep the status so the copy can be truthful.
+  const [lockedOut, setLockedOut] = useState(false);
   useEffect(() => {
     if (!sseDown || !assistantId) {
       setProbeFailed(false);
+      setLockedOut(false);
       return;
     }
     let cancelled = false;
@@ -100,10 +105,15 @@ export function OfflineTakeover() {
         throwOnError: false,
       })
       .then(({ response }) => {
-        if (!cancelled) setProbeFailed(!response?.ok);
+        if (cancelled) return;
+        setProbeFailed(!response?.ok);
+        setLockedOut(response?.status === 429);
       })
       .catch(() => {
-        if (!cancelled) setProbeFailed(true);
+        if (!cancelled) {
+          setProbeFailed(true);
+          setLockedOut(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -196,7 +206,11 @@ export function OfflineTakeover() {
             marginTop: 26,
           }}
         >
-          {waking ? "Cue is waking up" : "You're offline"}
+          {lockedOut
+            ? "Too many attempts"
+            : waking
+              ? "Cue is waking up"
+              : "You're offline"}
         </div>
         <div
           style={{
@@ -207,7 +221,14 @@ export function OfflineTakeover() {
             lineHeight: 1.55,
           }}
         >
-          {waking ? (
+          {lockedOut ? (
+            <>
+              Too many sign-in attempts, so Cue paused them for a bit. Your data
+              is safe and nothing is wrong with your assistant.
+              <br />
+              Wait a few minutes, then try again.
+            </>
+          ) : waking ? (
             <>
               Cue may be waking up. Your data is safe.
               <br />

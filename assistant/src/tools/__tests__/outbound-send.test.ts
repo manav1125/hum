@@ -102,6 +102,36 @@ describe("requiresHumanApprovalForAction (high-consequence gate)", () => {
     no("browser_type", { text: "I'll send you the deck tomorrow", element_id: "e14" });
   });
 
+  test("catches AppleScript sends (no click involved at all)", () => {
+    yes("computer_use_run_applescript", {
+      script:
+        'tell application "Mail"\n  set m to make new outgoing message with properties {subject:"hi"}\n  send m\nend tell',
+    });
+    yes("host_cu_run_applescript", {
+      script: 'tell application "Messages" to send "hi" to buddy "cindy"',
+    });
+    yes("computer_use_run_applescript", {
+      script: 'tell application "Microsoft Outlook"\n send theMessage\nend tell',
+    });
+    // Explicit construction alone is enough.
+    yes("computer_use_run_applescript", {
+      script: "make new outgoing message with properties {subject:\"x\"}",
+    });
+    // Non-messaging AppleScript stays free — this tool's whole value is
+    // driving the Mac without moving the cursor.
+    no("computer_use_run_applescript", {
+      script: 'tell application "Finder" to get name of every window',
+    });
+    no("computer_use_run_applescript", {
+      script: 'tell application "System Events" to get name of every process',
+    });
+    // "send" inside an unrelated string must not trip it without a mail app.
+    no("computer_use_run_applescript", {
+      script: 'tell application "Notes" to make new note with properties {body:"remember to send the deck"}',
+    });
+    no("computer_use_run_applescript", { script: "" });
+  });
+
   test("does NOT catch internal infra plumbing (self-maintenance safe)", () => {
     no("bash", { command: "ls" });
     no("host_bash", { command: "df -h /workspace" });

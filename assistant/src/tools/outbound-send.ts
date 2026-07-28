@@ -220,6 +220,39 @@ function isNetworkEgressShell(
 }
 
 /**
+ * An AppleScript that sends a message. `computer_use_run_applescript` hands the
+ * host a script that can drive Mail/Messages/Outlook directly —
+ * `tell application "Mail" … send` posts an email with **no click at all**, so
+ * neither the name/selector check nor the execution-layer element resolver can
+ * see it. The host helper's own blocklist (`do shell script`, keychain, sudo, …)
+ * deliberately does not cover sending, and the tool is declared low-risk, so
+ * without this an autonomous run could email anyone unattended.
+ *
+ * Precision: a send verb alone is not enough (scripts legitimately use "send" in
+ * strings and unrelated verbs). We require a messaging context — a tell/using
+ * block for a mail or chat app, an outgoing-message construction, or an explicit
+ * send-to-recipient form.
+ */
+const APPLESCRIPT_MESSAGING_APP =
+  /\b(?:tell\s+application|using\s+terms\s+from\s+application)\s+"(?:mail|messages|microsoft\s+outlook|outlook|spark|airmail|thunderbird|imessage)"/i;
+const APPLESCRIPT_SEND_VERB = /(^|[^a-z])send\b/i;
+const APPLESCRIPT_EXPLICIT_SEND =
+  /\bmake\s+new\s+outgoing\s+message\b|\bsend\b[^\n]{0,80}\b(?:to\s+buddy|to\s+participant|to\s+chat|to\s+recipient)\b/i;
+
+function isAppleScriptSend(
+  name: string,
+  input: Record<string, unknown>,
+): boolean {
+  if (!/run_applescript$/.test(bareName(name))) return false;
+  const script = typeof input.script === "string" ? input.script : "";
+  if (!script) return false;
+  if (APPLESCRIPT_EXPLICIT_SEND.test(script)) return true;
+  return (
+    APPLESCRIPT_MESSAGING_APP.test(script) && APPLESCRIPT_SEND_VERB.test(script)
+  );
+}
+
+/**
  * Rank 4 — a browser/computer-use action aimed at a send/submit/pay control.
  * Unattended browser ops are Medium risk and already denied by the low default
  * background threshold; this is threshold-independent defense: it fires when a
@@ -279,6 +312,7 @@ export function requiresHumanApprovalForAction(
   // (bash is in INTERNAL_INFRA_TOOLS; browser actions classify as "other").
   if (isNetworkEgressShell(name, input)) return true;
   if (isBrowserSubmitAction(name, input)) return true;
+  if (isAppleScriptSend(name, input)) return true;
   if (!INTERNAL_INFRA_TOOLS.has(name) && classIsHighConsequence(name, input)) {
     return true;
   }

@@ -571,16 +571,27 @@ export const ROUTES: RouteDefinition[] = [
         .string()
         .optional()
         .describe("Per-task context the agent reads before a run"),
+      originConversationId: z
+        .string()
+        .optional()
+        .describe(
+          "The conversation this was started from. Set it when the caller is a " +
+            "thread (e.g. the composer's 'run in the background'), so the item " +
+            "shows up in that thread's spawned-work strip and its provenance " +
+            "survives. Omit for surfaces with no originating conversation.",
+        ),
     }),
     responseBody: z.object({ item: workItemSchema }),
     handler: ({ body }) => {
-      const { title, notes, projectId, dueAt, context } = (body ?? {}) as {
-        title?: string;
-        notes?: string;
-        projectId?: string;
-        dueAt?: number;
-        context?: string;
-      };
+      const { title, notes, projectId, dueAt, context, originConversationId } =
+        (body ?? {}) as {
+          title?: string;
+          notes?: string;
+          projectId?: string;
+          dueAt?: number;
+          context?: string;
+          originConversationId?: string;
+        };
       if (typeof title !== "string" || !title.trim()) {
         throw new BadRequestError("title is required");
       }
@@ -603,6 +614,12 @@ export const ROUTES: RouteDefinition[] = [
         projectId,
         dueAt,
         context,
+        // Carry the originating thread when the caller supplied one, so a run
+        // started from a conversation appears in that thread's spawned-work
+        // strip instead of vanishing into the queue with a null origin.
+        ...(originConversationId?.trim()
+          ? { originConversationId: originConversationId.trim() }
+          : {}),
         sourceContext: JSON.stringify({
           origin: "manual",
           snippet,

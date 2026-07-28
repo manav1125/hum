@@ -41344,6 +41344,12 @@ paths:
                 context:
                   description: Per-task context the agent reads before a run
                   type: string
+                originConversationId:
+                  description:
+                    The conversation this was started from. Set it when the caller is a thread (e.g. the composer's 'run in the
+                    background'), so the item shows up in that thread's spawned-work strip and its provenance survives.
+                    Omit for surfaces with no originating conversation.
+                  type: string
               required:
                 - title
               additionalProperties: false

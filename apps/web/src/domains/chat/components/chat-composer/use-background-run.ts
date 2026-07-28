@@ -95,6 +95,13 @@ export interface BackgroundRunController {
 
 export function useBackgroundRun(
   assistantId: string | null,
+  /**
+   * The thread this run is being started from. Passed to the daemon as
+   * `originConversationId` so the item lands in that conversation's
+   * spawned-work strip (durable provenance) rather than in the queue with a
+   * null origin. Optional — surfaces with no originating thread omit it.
+   */
+  conversationId?: string | null,
 ): BackgroundRunController {
   const [state, setState] = useState<BackgroundRunState>({ kind: "idle" });
   // Monotonic token so a slow dispatch can never overwrite a newer one's state.
@@ -117,7 +124,11 @@ export function useBackgroundRun(
           // `notes` becomes the task template — the instruction the run
           // receives. Omitted when the title already IS the whole message so
           // the daemon doesn't store the same string twice.
-          body: { title, ...(body === title ? {} : { notes: body }) },
+          body: {
+            title,
+            ...(body === title ? {} : { notes: body }),
+            ...(conversationId ? { originConversationId: conversationId } : {}),
+          },
           throwOnError: true,
         });
         workItemId = data.item.id;
@@ -147,7 +158,7 @@ export function useBackgroundRun(
       }
       return true;
     },
-    [assistantId],
+    [assistantId, conversationId],
   );
 
   const reject = useCallback((message: string) => {

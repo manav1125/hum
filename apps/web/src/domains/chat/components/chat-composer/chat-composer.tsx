@@ -203,9 +203,12 @@ export function ChatComposer({
   onStopGenerating,
   canStopGenerating,
   assistantId,
-  // `conversationId` stays in the props (ChatBody reads it to bind the in-chat
-  // voice overlay to the active thread) but the composer body no longer consumes
-  // it — entering voice mode is delegated to the overlay via `onEnterVoiceMode`.
+  // ChatBody reads `conversationId` to bind the in-chat voice overlay to the
+  // active thread; entering voice mode itself is delegated to the overlay via
+  // `onEnterVoiceMode`. The composer consumes it only to stamp a background
+  // run's originating thread, so the item lands in that thread's spawned-work
+  // strip rather than the queue with a null origin.
+  conversationId,
   onEnterVoiceMode,
   thresholdPickerSlot,
   contextWindowIndicatorSlot,
@@ -274,7 +277,7 @@ export function ChatComposer({
   // until now it was only reachable from Home feed cards. Two entry points
   // land here: the send-button split menu, and the `/background` (`/later`)
   // slash command, which is stripped client-side and never sent as chat text.
-  const backgroundRun = useBackgroundRun(assistantId);
+  const backgroundRun = useBackgroundRun(assistantId, conversationId);
   const backgroundRunState = backgroundRun.state;
   const dispatchBackgroundRun = backgroundRun.dispatch;
   const rejectBackgroundRun = backgroundRun.reject;
