@@ -13,6 +13,7 @@ import { WindowDragRegion } from "@/components/window-drag-region";
 import { isChunkLoadError } from "@/lib/chunk-errors";
 import { isLocalMode, loadLockfile } from "@/lib/local-mode";
 import { CueConnectScreen } from "@/lib/self-hosted/cue-connect-screen";
+import { DesktopHandoffBanner } from "@/lib/self-hosted/desktop-handoff-banner";
 import {
   bootstrapCueSelfHost,
   shouldShowCueConnectAsync,
@@ -78,6 +79,10 @@ async function boot() {
     <StrictMode>
       <AppProviders>
         <WindowDragRegion />
+        {/* Magic-link sign-ins land in the browser even when the user started
+            in the desktop app; this offers the trip back. Renders nothing
+            inside Electron or on an ordinary page load. */}
+        <DesktopHandoffBanner />
         <RouterProvider
           router={router}
           onError={(error) => {

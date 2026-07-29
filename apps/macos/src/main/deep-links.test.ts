@@ -63,6 +63,10 @@ mock.module("electron", () => ({
 // call without standing up the full lifecycle module (which
 // transitively imports electron-store).
 const ensureMainWindowVisibleMock = mock(async () => undefined);
+mock.module("./self-host-connect", () => ({
+  connectToInstance: mock((_u: string) => _u),
+}));
+
 mock.module("./main-window", () => ({
   ensureVisible: ensureMainWindowVisibleMock,
 }));
@@ -73,6 +77,7 @@ const {
   handleDeepLink,
   installDeepLinks,
   parseVellumUrl,
+  parseConnectDeepLink,
   resolveAcceptedSchemes,
   resolveRegisteredSchemes,
 } = await import("./deep-links");
@@ -572,5 +577,33 @@ describe("resolveAcceptedSchemes", () => {
     expect(accepted).toContain("vellum-assistant:");
     expect(accepted).toContain("vellum-assistant-local:");
     expect(accepted).toHaveLength(3);
+  });
+});
+
+
+/**
+ * `vellum://connect?url=…` carries a sign-in token straight to a window load,
+ * so its accept/reject boundary is a security surface.
+ */
+describe("parseConnectDeepLink", () => {
+  const link = (u: string) => `vellum://connect?url=${encodeURIComponent(u)}`;
+
+  test("accepts the real sign-in link shape", () => {
+    const target = "https://manav.justcue.app/assistant/?cueToken=a.b.c";
+    expect(parseConnectDeepLink(link(target))).toBe(target);
+  });
+
+  test("rejects non-https targets", () => {
+    expect(parseConnectDeepLink(link("http://evil.example/?cueToken=t"))).toBeNull();
+    expect(parseConnectDeepLink(link("file:///etc/passwd"))).toBeNull();
+    expect(parseConnectDeepLink(link("javascript:alert(1)"))).toBeNull();
+  });
+
+  test("rejects other hosts and malformed input", () => {
+    expect(parseConnectDeepLink("vellum://send?message=hi")).toBeNull();
+    expect(parseConnectDeepLink("vellum://connect")).toBeNull();
+    expect(parseConnectDeepLink("https://justcue.ai/auth")).toBeNull();
+    expect(parseConnectDeepLink("not a url")).toBeNull();
+    expect(parseConnectDeepLink("")).toBeNull();
   });
 });

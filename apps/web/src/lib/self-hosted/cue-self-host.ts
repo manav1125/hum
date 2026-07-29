@@ -388,6 +388,16 @@ export function clearSelfHostMode(): void {
  * (a no-op when no `cueToken` is present). Must run before the assistant
  * lifecycle first reads the gateway token.
  */
+/**
+ * True when this page load consumed a `?cueToken=` magic link. The param is
+ * stripped from the URL immediately after seeding, so anything rendering later
+ * (the desktop-handoff offer) can't detect it from `location` — it reads this.
+ */
+let seededFromMagicLink = false;
+export function didSeedFromMagicLink(): boolean {
+  return seededFromMagicLink;
+}
+
 export function bootstrapCueSelfHost(): void {
   let params: URLSearchParams;
   try {
@@ -408,6 +418,7 @@ export function bootstrapCueSelfHost(): void {
 
   // `accessTokenExpiresAt` is epoch-ms; an explicit `cueExp` wins, otherwise
   // `writeSelfHostToken` derives the expiry from the token's own `exp` claim.
+  seededFromMagicLink = true;
   const expMsRaw = Number(params.get("cueExp"));
   const explicitExpMs =
     Number.isFinite(expMsRaw) && expMsRaw > 0 ? expMsRaw : 0;

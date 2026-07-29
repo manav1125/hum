@@ -6,6 +6,7 @@ import { resolveEnvironmentName } from "@vellumai/local-mode";
 
 import { handle, on } from "./ipc";
 import { ensureVisible as ensureMainWindowVisible } from "./main-window";
+import { connectToInstance } from "./self-host-connect";
 
 /**
  * Inbound deep links — `vellum://` and `vellum-assistant://` URL
@@ -97,6 +98,30 @@ const ACCEPTED_SCHEMES = resolveAcceptedSchemes(currentEnv);
  *   - Malformed URL (unparseable, percent-encoding throws) →
  *     `kind: "unknown"`.
  */
+/**
+ * Extract the instance link from `vellum://connect?url=…`, or null when this
+ * isn't a connect link. Only `https:` targets are accepted — a deep link is an
+ * untrusted input, and this one is handed straight to a window load.
+ */
+export const parseConnectDeepLink = (input: string): string | null => {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (!ACCEPTED_SCHEMES.includes(url.protocol)) return null;
+  if (url.host !== "connect") return null;
+  const target = url.searchParams.get("url");
+  if (!target) return null;
+  try {
+    const parsed = new URL(target);
+    return parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 export const parseVellumUrl = (input: string): DeepLink => {
   let url: URL;
   try {
@@ -188,6 +213,19 @@ const broadcast = (link: DeepLink): void => {
  * on an already-visible main window.
  */
 export const handleDeepLink = (input: string): void => {
+  // `vellum://connect?url=<instance link with ?cueToken=>` — the sign-in email
+  // handing this device its instance. Handled entirely in main and NEVER
+  // broadcast: the URL carries an actor token, and the renderer has no reason
+  // to see it (same rule as the auth callback). `connectToInstance` persists
+  // the instance and loads it, so the SPA boots there and seeds the session
+  // from `?cueToken=` exactly as it does for a pasted link.
+  const connectUrl = parseConnectDeepLink(input);
+  if (connectUrl) {
+    const resolved = connectToInstance(connectUrl);
+    if (resolved && app.isReady()) void ensureMainWindowVisible();
+    return;
+  }
+
   const link = parseVellumUrl(input);
 
   if (subscribers.size === 0) pending.push(link);
