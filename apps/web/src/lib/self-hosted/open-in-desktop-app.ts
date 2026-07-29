@@ -21,8 +21,15 @@ import { isElectron } from "@/runtime/is-electron";
 
 import { didSeedFromMagicLink, getStoredActorToken } from "./cue-self-host";
 
-/** Production registers both `vellum:` and `vellum-assistant:`. */
-const DESKTOP_SCHEME = "vellum";
+/**
+ * Schemes to try, in order. A production Cue build registers `vellum:` and
+ * `vellum-assistant:`; a locally-built app registers only its env-suffixed
+ * scheme. The browser cannot see which build is installed, so the handoff
+ * offers the production scheme first and falls back to the local one — an
+ * unregistered scheme simply does nothing, so a wrong guess is harmless.
+ */
+const DESKTOP_SCHEMES = ["vellum", "vellum-assistant-local"] as const;
+const DESKTOP_SCHEME = DESKTOP_SCHEMES[0];
 
 /**
  * The deep link that hands `href` (an instance URL carrying `?cueToken=`) to
@@ -61,6 +68,23 @@ export function openInDesktopApp(): void {
   if (!link) return;
   try {
     window.location.assign(link);
+    // A locally-built app registers only its env-suffixed scheme, so retry
+    // with that one shortly after. If the first attempt worked the app is
+    // already focused and this is a no-op; if it did not, nothing happened at
+    // all and this is the second chance.
+    const token = getStoredActorToken();
+    if (token) {
+      const alt = `${DESKTOP_SCHEMES[1]}://connect?url=${encodeURIComponent(
+        `${window.location.origin}/assistant/?cueToken=${encodeURIComponent(token)}`,
+      )}`;
+      window.setTimeout(() => {
+        try {
+          window.location.assign(alt);
+        } catch {
+          /* no handler for the fallback scheme either */
+        }
+      }, 1200);
+    }
   } catch {
     // Custom-scheme navigation is blocked or no handler is registered —
     // nothing to recover, the user stays signed in on the web.
