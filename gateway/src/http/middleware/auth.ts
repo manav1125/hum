@@ -358,7 +358,18 @@ export function createAuthMiddleware(
     token: string,
     claims: TokenClaims,
   ): Response | null {
-    if (!isActorTokenRevoked(token, claims)) return null;
+    if (!isActorTokenRevoked(token, claims)) {
+      // A request that authenticated is proof this client is legitimate, so
+      // forgive its earlier failures. Without this, the limiter counts
+      // failures only — 10 in 60s blocks the IP and NOTHING resets it, so a
+      // burst of transient 401s (parallel requests racing a token refresh, a
+      // reconnect after the daemon restarts) locks a correctly-signed-in user
+      // out of their own instance for the rest of the window, and every reload
+      // re-arms it. This is the shared gate every validated token passes
+      // through, so clearing here covers all auth paths.
+      authRateLimiter.clearIp(getClientIp());
+      return null;
+    }
     authRateLimiter.recordFailure(getClientIp());
     log.warn(
       { path: new URL(req.url).pathname },
