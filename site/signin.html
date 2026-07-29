@@ -95,9 +95,17 @@ class Component extends DCLogic {
 
   async onSubmit(e){
     e.preventDefault();
+    // One click must send exactly ONE email. Without this guard a second
+    // submit (a re-attached handler after re-render, a double-tap, Enter plus
+    // the button) fires a second POST and the user receives two links —
+    // confusing, and each mint invalidates the previous one.
+    if (this._sending) return;
     const input = document.querySelector("#signin-form input[name=email]");
     const email = input ? input.value.trim() : "";
     if (!email || email.indexOf("@") === -1) { if (input) input.focus(); return; }
+    this._sending = true;
+    const btn = document.querySelector("#signin-form button[type=submit]");
+    if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
     let view = "sent";
     try {
       const res = await CueCommerce.signin(email);
@@ -105,6 +113,7 @@ class Component extends DCLogic {
       if (status === "invite_required") view = "invite";
       else if (status === "invited_no_account") view = "invited";
     } catch (_) { /* neutral sent state */ }
+    this._sending = false;
     this.setState({ view, email });
   }
 
