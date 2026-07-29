@@ -128,13 +128,24 @@ function hasStoredGatewayToken(): boolean {
   }
 }
 
-/** The persisted expiry stamp, when present and numeric. */
+/**
+ * The persisted expiry stamp, normalised to epoch-MILLISECONDS.
+ *
+ * `writeSelfHostToken` stores this key in SECONDS (`Math.floor(expMs / 1000)`)
+ * despite the `expiresAt` name. Reading it as milliseconds makes every stamp
+ * look decades in the past, which marks even a freshly-issued token expired and
+ * bounces the user back to the sign-in screen in a loop. Anything below the
+ * year-2001 boundary in ms cannot be a real ms timestamp, so it is seconds.
+ */
+const MS_EPOCH_FLOOR = 1_000_000_000_000; // 2001-09-09 in ms
+
 function readStoredExpiryMs(): number | null {
   try {
     const raw = localStorage.getItem(LS_EXPIRES_KEY);
     if (!raw) return null;
     const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n < MS_EPOCH_FLOOR ? n * 1000 : n;
   } catch {
     return null;
   }

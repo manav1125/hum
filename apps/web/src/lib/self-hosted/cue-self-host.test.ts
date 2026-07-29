@@ -209,18 +209,39 @@ describe("expired token must not skip the Connect screen", () => {
   });
   afterEach(() => localStorage.clear());
 
+  test("a token seeded by the REAL writer is NOT treated as expired", () => {
+    // The loop bug: writeSelfHostToken stores `expiresAt` in SECONDS, but the
+    // reader treated it as MILLISECONDS, so every freshly-issued token looked
+    // decades expired and the user bounced straight back to the sign-in screen.
+    // Hand-written ms fixtures hid this — only the real seeding path catches it.
+    const future = Math.floor(Date.now() / 1000) + 3600; // seconds, like a JWT
+    const jwt = [
+      btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })),
+      btoa(JSON.stringify({ exp: future })),
+      "sig",
+    ].join(".");
+    expect(seedCueToken(jwt)).toBe(true);
+    expect(shouldShowCueConnect()).toBe(false);
+  });
+
+  test("seconds-vs-ms: a seconds stamp in the future is not expired", () => {
+    localStorage.setItem(TOKEN_KEY, "some.token.value");
+    localStorage.setItem(EXP_KEY, String(Math.floor(Date.now() / 1000) + 3600));
+    expect(shouldShowCueConnect()).toBe(false);
+  });
+
   test("an EXPIRED token shows Connect (the dead-end bug)", () => {
     // Regression: presence-only checks treated a stale token as a session, so
     // the app skipped Connect and fell into platform OAuth that a self-host
     // instance can't do — a dead end the user couldn't escape.
     localStorage.setItem(TOKEN_KEY, "stale.token.value");
-    localStorage.setItem(EXP_KEY, String(Date.now() - 60_000));
+    localStorage.setItem(EXP_KEY, String(Math.floor(Date.now() / 1000) - 3600));
     expect(shouldShowCueConnect()).toBe(true);
   });
 
   test("a LIVE token does not show Connect", () => {
     localStorage.setItem(TOKEN_KEY, "live.token.value");
-    localStorage.setItem(EXP_KEY, String(Date.now() + 3_600_000));
+    localStorage.setItem(EXP_KEY, String(Math.floor(Date.now() / 1000) + 3600));
     expect(shouldShowCueConnect()).toBe(false);
   });
 
