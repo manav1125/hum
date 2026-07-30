@@ -42,6 +42,44 @@ export interface NextMoveAction {
 /** Which store the move was sourced from — drives the eyebrow accent. */
 export type NextMoveKind = "approval" | "work_item" | "feed" | null;
 
+/**
+ * The request body an action needs, or null when it takes none.
+ *
+ * Approval actions are the reason this exists. The daemon attaches
+ * `endpoint: "/v1/confirm"` to approve/decline, but `POST /v1/confirm` requires
+ * `{ requestId, decision }` — so firing the endpoint with no body 400s every
+ * time (`requestId is required`). Both HQ surfaces did exactly that, and neither
+ * had an error branch, so the button looked like it worked and silently did
+ * nothing while real work stayed blocked.
+ *
+ * The requestId is carried in `move.itemId` as `int:<requestId>` (see
+ * `gatherApprovalCandidates` in assistant/src/runtime/next-move.ts), so the
+ * prefix has to come off. The wire vocabulary is allow/deny, not
+ * approve/decline.
+ *
+ * Shared by the desktop hero card and its mobile twin so the two cannot drift
+ * apart again.
+ */
+export function buildActionBody(
+  action: NextMoveAction,
+  move: Pick<NextMove, "itemId">,
+): { body: Record<string, unknown> } | null {
+  if (action.kind !== "approve" && action.kind !== "decline") return null;
+  const requestId = move.itemId?.startsWith(APPROVAL_ITEM_ID_PREFIX)
+    ? move.itemId.slice(APPROVAL_ITEM_ID_PREFIX.length)
+    : null;
+  if (!requestId) return null;
+  return {
+    body: {
+      requestId,
+      decision: action.kind === "approve" ? "allow" : "deny",
+    },
+  };
+}
+
+/** Prefix the daemon puts on an approval's `itemId`. Must match next-move.ts. */
+const APPROVAL_ITEM_ID_PREFIX = "int:";
+
 export interface NextMove {
   hasMove: boolean;
   itemId: string | null;

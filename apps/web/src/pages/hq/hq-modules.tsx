@@ -35,6 +35,7 @@ import { client } from "@/generated/daemon/client.gen";
 import { useSSEConnectedStore } from "@/stores/sse-connected-store";
 import { relativeTime } from "@/domains/activity/theme";
 import {
+  buildActionBody,
   nextMoveQueryKey,
   useNextMove,
   type NextMove,
@@ -71,7 +72,11 @@ export function NextMoveCard({
     mutationFn: async (action: NextMoveAction) => {
       if (action.kind === "open_thread" || !action.endpoint) return;
       const method = action.method ?? "POST";
-      const opts = { url: action.endpoint, throwOnError: true } as const;
+      const opts = {
+        url: action.endpoint,
+        throwOnError: true,
+        ...(buildActionBody(action, move) ?? {}),
+      } as const;
       if (method === "GET") await client.get(opts);
       else if (method === "PATCH") await client.patch(opts);
       else if (method === "DELETE") await client.delete(opts);
@@ -88,11 +93,15 @@ export function NextMoveCard({
   const primary = move.actions.find(
     (a) => a.kind === "approve" || a.kind === "run",
   );
-  const openThread =
-    move.actions.find((a) => a.kind === "open_thread") ??
-    (move.sourceConversationId
-      ? ({ id: "open", label: "Open", kind: "open_thread" } as NextMoveAction)
-      : null);
+  // Gated on the conversation id, not on the action's presence: `dispatch`
+  // can only navigate when there IS one, so offering the button without it
+  // rendered a live control wired to nothing (a review item with no run
+  // conversation did exactly that). Follow spawned-work-slot's rule — don't
+  // offer an affordance for something that isn't there.
+  const openThread = move.sourceConversationId
+    ? (move.actions.find((a) => a.kind === "open_thread") ??
+      ({ id: "open", label: "Open", kind: "open_thread" } as NextMoveAction))
+    : null;
 
   const dispatch = (action: NextMoveAction) => {
     if (action.kind === "open_thread") {
@@ -191,6 +200,21 @@ export function NextMoveCard({
           </button>
         ) : null}
       </div>
+      {act.isError ? (
+        // Previously there was no error branch at all, so a 400 from /v1/confirm
+        // read as success: the button re-enabled, the card stayed, and the user
+        // had no way to know their approval never landed.
+        <div
+          role="alert"
+          style={{
+            marginTop: 9,
+            fontSize: 11.5,
+            color: C.danger,
+          }}
+        >
+          That didn’t go through. Try again, or open the thread to decide there.
+        </div>
+      ) : null}
     </div>
   );
 }

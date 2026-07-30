@@ -40,6 +40,7 @@ import {
 import { client } from "@/generated/daemon/client.gen";
 import { relativeTime } from "@/domains/activity/theme";
 import {
+  buildActionBody,
   nextMoveQueryKey,
   type NextMove,
   type NextMoveAction,
@@ -131,12 +132,21 @@ function NextMoveV3({
     mutationFn: async (action: NextMoveAction) => {
       if (action.kind === "open_thread" || !action.endpoint) return;
       const method = action.method ?? "POST";
-      const opts = { url: action.endpoint, throwOnError: true } as const;
+      const opts = {
+        url: action.endpoint,
+        throwOnError: true,
+        // Approvals need `{ requestId, decision }` or /v1/confirm 400s. Shared
+        // with the desktop hero card so the twins can't drift.
+        ...(buildActionBody(action, move) ?? {}),
+      } as const;
       if (method === "GET") await client.get(opts);
       else if (method === "PATCH") await client.patch(opts);
       else if (method === "DELETE") await client.delete(opts);
       else await client.post(opts);
     },
+    // Without this a failed approval was indistinguishable from a successful
+    // one on mobile — same silent card, no signal at all.
+    onError: () => haptic.error(),
     onSuccess: () => {
       haptic.success();
       void queryClient.invalidateQueries({
@@ -228,8 +238,7 @@ function NeedsOkV3({
       void queryClient.invalidateQueries({ queryKey: key });
     },
   });
-  const title =
-    interaction.toolName ?? interaction.kind ?? "Approval required";
+  const title = interaction.toolName ?? interaction.kind ?? "Approval required";
   return (
     <GlassCard tint="amber" style={rise(delay)}>
       <div style={{ ...microLabel, color: "var(--mv3-amber)" }}>
@@ -301,7 +310,10 @@ function ReviewV3({
     navigate(`${routes.reviewQueue}?item=${encodeURIComponent(item.id)}`);
   };
   return (
-    <GlassCard tint="violet" style={{ ...rise(delay), ...dismissLeave(leaving) }}>
+    <GlassCard
+      tint="violet"
+      style={{ ...rise(delay), ...dismissLeave(leaving) }}
+    >
       <div
         style={{
           ...microLabel,
@@ -330,7 +342,8 @@ function ReviewV3({
           style={{
             ...primaryBtn,
             background: "var(--mv3-violet-fill)",
-            boxShadow: "0 12px 26px -10px color-mix(in srgb, #7F77DD 50%, transparent)",
+            boxShadow:
+              "0 12px 26px -10px color-mix(in srgb, #7F77DD 50%, transparent)",
           }}
         >
           Review
