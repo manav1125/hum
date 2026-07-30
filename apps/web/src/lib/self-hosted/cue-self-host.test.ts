@@ -11,6 +11,7 @@ import {
   rehydrateGatewayTokenFromActor,
   seedCueToken,
   shouldShowCueConnect,
+  shouldShowCueConnectAsync,
 } from "@/lib/self-hosted/cue-self-host";
 
 const LS_TOKEN_KEY = "vellum:gw:token";
@@ -90,7 +91,9 @@ describe("EXTENSION_SESSION_TOKEN_LS_KEYS (browser-extension handoff contract)",
     seedCueToken(token);
     // The key the extension reads first must carry the actor_client_v1 token
     // that POST /v1/pair/session requires.
-    expect(localStorage.getItem(EXTENSION_SESSION_TOKEN_LS_KEYS[0])).toBe(token);
+    expect(localStorage.getItem(EXTENSION_SESSION_TOKEN_LS_KEYS[0])).toBe(
+      token,
+    );
   });
 
   test("disconnect clears every handoff key so the extension cannot read a stale token", () => {
@@ -253,5 +256,111 @@ describe("expired token must not skip the Connect screen", () => {
 
   test("no token at all shows Connect", () => {
     expect(shouldShowCueConnect()).toBe(true);
+  });
+});
+
+// B3: "Log Out" left the account fully accessible to the next person on a
+// shared laptop. `clearSelfHostMode()` existed but had ZERO call sites, and the
+// two cleanups logout DID run (`clearGatewayToken`, `clearUserScopedStorage`)
+// only reach `vellum:gw:*` and `vellum:`-prefixed keys — never the durable
+// `cue:selfHost:actorToken`. So the next boot re-derived a gateway token from it
+// and signed straight back in with no credentials.
+describe("logging out is not undone by the next boot (B3)", () => {
+  test("after clearSelfHostMode, a reload cannot re-derive a session", () => {
+    const token = makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 });
+    expect(seedCueToken(token)).toBe(true);
+    expect(isSelfHostMode()).toBe(true);
+
+    clearSelfHostMode();
+
+    // The durable credential — the one the old logout missed — must be gone.
+    expect(getStoredActorToken()).toBeNull();
+    expect(localStorage.getItem(LS_ACTOR_TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(LS_SELF_HOST_FLAG)).toBeNull();
+    expect(isSelfHostMode()).toBe(false);
+
+    // This is the exact call the next page load makes. Before the fix it
+    // re-stamped a working gateway token from the surviving actor token.
+    expect(rehydrateGatewayTokenFromActor()).toBe(false);
+    expect(localStorage.getItem(LS_TOKEN_KEY)).toBeNull();
+  });
+
+  test("a cleared install lands on Connect, not an authenticated shell", () => {
+    seedCueToken(makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 }));
+    clearSelfHostMode();
+    // No stored gateway token and no self-host flag ⇒ the boot gate must offer
+    // Connect so the user can paste a fresh magic link.
+    expect(shouldShowCueConnect()).toBe(true);
+  });
+});
+
+// B4: a fresh desktop install, opened before the user clicked their email link,
+// dead-ended on the Vellum welcome screen — "Log In" ran OAuth against an
+// account they don't have, and the hosting chooser had Cue Cloud disabled. In
+// the packaged app the origin is app://vellum.ai and VITE_CUE_SELF_HOST is
+// deliberately absent (setting it would kill the local-daemon path), so every
+// signal shouldShowCueConnectAsync consulted was false.
+describe("fresh desktop install reaches Connect (B4)", () => {
+  const originalVellum = (globalThis.window as { vellum?: unknown }).vellum;
+
+  beforeEach(() => {
+    // Earlier tests in this file point `window.location` at
+    // manav.justcue.app and never restore it, which would make
+    // `isCueSelfHostDeploy()` true and short-circuit every assertion below.
+    // The packaged desktop app is precisely the case where the hostname test
+    // CANNOT identify a self-host deploy (origin is app://vellum.ai), so pin a
+    // neutral host to model it.
+    window.location.href = "http://localhost/";
+  });
+
+  afterEach(() => {
+    (globalThis.window as { vellum?: unknown }).vellum = originalVellum;
+    localStorage.removeItem("vellum:local:lockfile");
+  });
+
+  /** Stand in for the Cue desktop preload's bridge. */
+  const installBridge = (connected: string | null) => {
+    (globalThis.window as { vellum?: unknown }).vellum = {
+      selfHost: {
+        connected: async () => connected,
+        connect: async () => connected,
+      },
+    };
+  };
+
+  test("offers Connect on a packaged app with the bridge, no token, no local daemons", async () => {
+    installBridge(null);
+    expect(await shouldShowCueConnectAsync()).toBe(true);
+  });
+
+  test("does NOT hijack a local-daemon install", async () => {
+    installBridge(null);
+    localStorage.setItem(
+      "vellum:local:lockfile",
+      JSON.stringify({
+        assistants: [{ id: "local-1", resources: { gatewayPort: 7821 } }],
+      }),
+    );
+    expect(await shouldShowCueConnectAsync()).toBe(false);
+  });
+
+  test("a platform-only lockfile entry does not count as a local daemon", async () => {
+    installBridge(null);
+    localStorage.setItem(
+      "vellum:local:lockfile",
+      JSON.stringify({ assistants: [{ id: "p1", cloud: "vellum" }] }),
+    );
+    expect(await shouldShowCueConnectAsync()).toBe(true);
+  });
+
+  test("plain web build (no bridge) is unaffected", async () => {
+    (globalThis.window as { vellum?: unknown }).vellum = undefined;
+    expect(await shouldShowCueConnectAsync()).toBe(false);
+  });
+
+  test("an existing session is never overridden", async () => {
+    installBridge(null);
+    seedCueToken(makeToken({ exp: nowSec() + 30 * 24 * 60 * 60 }));
+    expect(await shouldShowCueConnectAsync()).toBe(false);
   });
 });

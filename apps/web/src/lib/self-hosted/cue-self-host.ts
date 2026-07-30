@@ -119,8 +119,7 @@ function hasStoredGatewayToken(): boolean {
   try {
     const token = localStorage.getItem(LS_TOKEN_KEY);
     if (!token) return false;
-    const expMs =
-      readStoredExpiryMs() ?? decodeActorTokenExpMs(token) ?? null;
+    const expMs = readStoredExpiryMs() ?? decodeActorTokenExpMs(token) ?? null;
     if (expMs !== null && expMs <= Date.now()) return false;
     return true;
   } catch {
@@ -273,7 +272,67 @@ export async function shouldShowCueConnectAsync(): Promise<boolean> {
   // Never override an existing session, and never hijack local-daemon mode:
   // this only fires when the main process reports a real self-host connection.
   if (hasStoredGatewayToken()) return false;
-  return isElectronSelfHostConnected();
+  if (await isElectronSelfHostConnected()) return true;
+
+  // A FRESH desktop install, opened before the user has clicked their email
+  // link. Every signal above is false here: the packaged origin is
+  // `app://vellum.ai` and the bundle deliberately omits VITE_CUE_SELF_HOST
+  // (setting it would kill the local-daemon path), so `isCueSelfHostDeploy()`
+  // is false; there is no stored token; and nothing is connected yet. That left
+  // the user on the Vellum welcome screen choosing between a "Log In" that runs
+  // OAuth against an account they don't have and a hosting chooser whose Cue
+  // Cloud option is disabled — a genuine dead end on first run.
+  //
+  // The `selfHost` bridge's presence is what makes this safe: only the Cue
+  // desktop preload exposes it. An install that has local daemons is a
+  // local-mode user and must keep the lockfile flow, so this is gated on there
+  // being no local assistants either.
+  return hasSelfHostBridge() && !hasLocalDaemonAssistants();
+}
+
+/**
+ * True when the Cue desktop preload exposed its self-host bridge. Doubles as
+ * the Electron check — the web build has no `window.vellum` at all — which is
+ * why this module needs no import from the runtime layer.
+ */
+function hasSelfHostBridge(): boolean {
+  try {
+    return globalThis.window?.vellum?.selfHost != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the lockfile lists at least one LOCAL daemon assistant, i.e. this is
+ * a local-mode install whose own flow must not be hijacked by the Connect
+ * screen.
+ *
+ * Reads the lockfile's localStorage mirror directly and mirrors
+ * `isLocalAssistant` rather than importing `@/lib/local-mode`: that module
+ * imports FROM this one, so a normal import would close a cycle in a
+ * boot-critical path. Same deliberate duplication as the storage keys above —
+ * keep the predicate in sync with `local-mode.ts`.
+ */
+function hasLocalDaemonAssistants(): boolean {
+  try {
+    const raw = localStorage.getItem("vellum:local:lockfile");
+    if (!raw) return false;
+    const parsed: unknown = JSON.parse(raw);
+    const assistants = (parsed as { assistants?: unknown })?.assistants;
+    if (!Array.isArray(assistants)) return false;
+    return assistants.some((a) => {
+      const entry = a as {
+        cloud?: unknown;
+        resources?: { gatewayPort?: unknown };
+      };
+      return entry?.cloud !== "vellum" && entry?.resources?.gatewayPort != null;
+    });
+  } catch {
+    // Unreadable/corrupt lockfile: treat as "no local daemons" so a fresh
+    // install still gets a way in rather than dead-ending again.
+    return false;
+  }
 }
 
 /**
