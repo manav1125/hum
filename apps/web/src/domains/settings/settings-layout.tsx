@@ -8,6 +8,7 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { isLocalMode } from "@/lib/local-mode";
+import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { isElectron } from "@/runtime/is-electron";
 import { useHasPlatformSession } from "@/stores/auth-store";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
@@ -38,9 +39,14 @@ export function SettingsLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  // Hide logout in pure local mode unless a platform session exists.
+  // Hide logout in pure local mode unless there's a session to end. A local
+  // daemon has no credential to sign out of, so the control would be a no-op —
+  // but a self-host instance very much does (the durable `actor_client_v1`
+  // token), and it was being hidden because a self-host build leaves
+  // VITE_PLATFORM_MODE unset and so reads as "local". That left a shared laptop
+  // with no way to end the session at all.
   const hasPlatformSession = useHasPlatformSession();
-  const showLogout = !isLocalMode() || hasPlatformSession;
+  const showLogout = !isLocalMode() || hasPlatformSession || isSelfHostMode();
   const managed = useManagedMode();
 
   const filteredItems = useMemo(

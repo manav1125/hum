@@ -39,7 +39,9 @@ import {
   clearGatewayToken,
   getLocalTokenUrl,
 } from "@/lib/auth/gateway-session";
+import { hardNavigate } from "@/lib/auth/hard-navigate";
 import {
+  clearSelfHostMode,
   isSelfHostMode,
   isStoredActorTokenValid,
   rehydrateGatewayTokenFromActor,
@@ -758,6 +760,24 @@ const useAuthStoreBase = create<AuthStore>()((set, get) => ({
       clearGatewayToken();
       clearOrganization();
       clearUserScopedStorage();
+      // `clearGatewayToken` + `clearUserScopedStorage` only reach the
+      // short-lived `vellum:gw:*` slots and `vellum:`-prefixed keys. In
+      // self-host mode the DURABLE credential is `cue:selfHost:actorToken`,
+      // which neither touches — so the next boot's
+      // `rehydrateGatewayTokenFromActor()` re-stamped a fresh gateway token and
+      // signed the user straight back in with no credentials. On a shared
+      // laptop, "Log Out" left the account fully accessible to the next person.
+      if (isSelfHostMode()) {
+        clearSelfHostMode();
+        set(sessionEnded());
+        broadcastAuthChange();
+        // A full document load is required, not a router navigation: the
+        // self-host boot gate (`bootstrapCueSelfHost` → `shouldShowCueConnect`)
+        // only runs at boot, so an in-app transition would re-render the
+        // authenticated shell against a now-empty credential store.
+        hardNavigate("/");
+        return;
+      }
       set(sessionEnded());
       broadcastAuthChange();
       return;

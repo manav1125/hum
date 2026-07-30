@@ -127,10 +127,17 @@ let mockIsSelfHost = false;
 let mockActorTokenValid = false;
 let mockRehydrateResult = false;
 const rehydrateGatewayTokenFromActorMock = mock(() => mockRehydrateResult);
+const clearSelfHostModeMock = mock(() => {});
 mock.module("@/lib/self-hosted/cue-self-host", () => ({
   isSelfHostMode: () => mockIsSelfHost,
   isStoredActorTokenValid: () => mockActorTokenValid,
   rehydrateGatewayTokenFromActor: rehydrateGatewayTokenFromActorMock,
+  clearSelfHostMode: clearSelfHostModeMock,
+}));
+
+const hardNavigateMock = mock((_url: string) => {});
+mock.module("@/lib/auth/hard-navigate", () => ({
+  hardNavigate: hardNavigateMock,
 }));
 
 mock.module("@/lib/local-mode", () => ({
@@ -301,6 +308,8 @@ beforeEach(() => {
   mockRehydrateResult = false;
   ensureGatewayTokenMock.mockClear();
   rehydrateGatewayTokenFromActorMock.mockClear();
+  clearSelfHostModeMock.mockClear();
+  hardNavigateMock.mockClear();
   resetAuthStore();
 });
 
@@ -487,6 +496,36 @@ describe("session cleanup on logout", () => {
     await useAuthStore.getState().logout();
 
     expect(clearUserScopedStorageMock).toHaveBeenCalled();
+  });
+
+  // B3: the shared-laptop bug. Log Out → Welcome screen → reload signed you
+  // straight back in with no credentials, because the durable
+  // `cue:selfHost:actorToken` outlived logout and the next boot re-derived a
+  // gateway token from it. `clearSelfHostMode()` was the fix and had zero call
+  // sites; this asserts logout is now one of them.
+  describe("self-host logout (B3)", () => {
+    test("clears the durable self-host credential and hard-navigates to boot", async () => {
+      mockIsGatewayAuth = true;
+      mockIsSelfHost = true;
+
+      await useAuthStore.getState().logout();
+
+      expect(clearSelfHostModeMock).toHaveBeenCalled();
+      // A router navigation would re-render the authenticated shell against an
+      // emptied credential store — only a full document load re-runs the
+      // self-host boot gate that decides to show Connect.
+      expect(hardNavigateMock).toHaveBeenCalledWith("/");
+    });
+
+    test("does not touch self-host storage when not in self-host mode", async () => {
+      mockIsGatewayAuth = true;
+      mockIsSelfHost = false;
+
+      await useAuthStore.getState().logout();
+
+      expect(clearSelfHostModeMock).not.toHaveBeenCalled();
+      expect(hardNavigateMock).not.toHaveBeenCalled();
+    });
   });
 
   test("logout clears assistant lifecycle synchronously, before leaving authenticated", async () => {

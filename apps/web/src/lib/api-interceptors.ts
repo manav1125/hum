@@ -39,10 +39,15 @@ import {
   isPlatformDisabled,
   remintGatewayTokenOnce,
 } from "@/lib/local-mode";
+import { hardNavigate } from "@/lib/auth/hard-navigate";
 import {
   getSelfHostedActorToken,
   getSelfHostedIngressUrl,
 } from "@/lib/self-hosted/connection";
+import {
+  clearSelfHostMode,
+  isSelfHostMode,
+} from "@/lib/self-hosted/cue-self-host";
 import { PLATFORM_FEATURES_DISABLED_ABORT_REASON } from "@/lib/platform-features-abort";
 import { getClientRegistrationHeaders } from "@/lib/telemetry/client-identity";
 import { getDeviceId } from "@/runtime/device-id";
@@ -308,7 +313,20 @@ export async function daemonUnreachableInterceptor(
   retried.headers.set("Authorization", `Bearer ${token}`);
   retried.headers.set(GATEWAY_RETRY_HEADER, "1");
   try {
-    return await fetch(retried);
+    const retriedResponse = await fetch(retried);
+    // A freshly re-minted token that STILL 401s is not a stale-signature race —
+    // the durable actor token behind it has been revoked or the instance's
+    // signing key rotated. In self-host mode nothing else can recover from
+    // that: the boot path would keep re-deriving a gateway token from the dead
+    // actor token, so the install is bricked on a permanent "Failed to load"
+    // with no way back to the Connect screen. Clearing sends the user somewhere
+    // they can act (paste a fresh magic link) instead of leaving 50-100 people
+    // to be recovered by hand.
+    if (retriedResponse.status === 401 && isSelfHostMode()) {
+      clearSelfHostMode();
+      hardNavigate("/");
+    }
+    return retriedResponse;
   } catch {
     return response;
   }
