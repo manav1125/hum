@@ -27,9 +27,15 @@ export function DesktopHandoffBanner() {
   if (!offer || dismissed) return null;
 
   return (
+    // Stays `fixed` — this mounts outside RootLayout, and switching it to flow
+    // would push an h-screen layout past the viewport. It's safe as an overlay
+    // now that `shouldOfferDesktopHandoff` can't fire on native or touch-only
+    // devices, so it only ever renders in a desktop browser where top-0 is
+    // unobstructed. The safe-area pad is belt-and-braces for any notched
+    // device that somehow reaches it.
     <div
       role="status"
-      className="fixed inset-x-0 top-0 z-[60] flex flex-wrap items-center justify-center gap-3 border-b border-[var(--border-base)] bg-[var(--surface-lift)] px-4 py-2.5"
+      className="fixed inset-x-0 top-0 z-[60] flex flex-wrap items-center justify-center gap-3 border-b border-[var(--border-base)] bg-[var(--surface-lift)] px-4 py-2.5 pt-[max(0.625rem,var(--safe-area-inset-top,env(safe-area-inset-top,0px)))]"
     >
       <span className="text-body-small-default text-[color:var(--content-default)]">
         You&rsquo;re signed in. Continue in the Cue app?

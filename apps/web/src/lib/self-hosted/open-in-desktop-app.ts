@@ -18,6 +18,7 @@
  * working, signed-in Cue.
  */
 import { isElectron } from "@/runtime/is-electron";
+import { isNativePlatform } from "@/runtime/native-auth";
 
 import { didSeedFromMagicLink, getStoredActorToken } from "./cue-self-host";
 
@@ -54,12 +55,34 @@ export function buildHandoffLinkFromStoredToken(): string | null {
 }
 
 /**
- * True when this page is a freshly-seeded sign-in sitting in a browser — i.e.
- * exactly the moment a desktop user would want to be back in the app.
+ * True when this page is a freshly-seeded sign-in sitting in a DESKTOP browser
+ * — i.e. exactly the moment a desktop user would want to be back in the app.
+ *
+ * Excluding Electron alone was not enough. The iOS app loads
+ * `<instance>/assistant/?cueToken=…` inside its WebView
+ * (apps/ios/App/App/CueNativePlugin.swift), which sets `seededFromMagicLink` —
+ * so the native app offered to "Continue in the Cue app" while already being
+ * the Cue app, and the `vellum://` it fired was a no-op. Mobile web has the same
+ * problem for a different reason: there is no desktop app to hand off to.
  */
 export function shouldOfferDesktopHandoff(): boolean {
   if (isElectron()) return false; // already in the app
+  if (isNativePlatform()) return false; // already in the native app
+  if (isTouchOnlyDevice()) return false; // no desktop app to hand off to
   return didSeedFromMagicLink() && !!getStoredActorToken();
+}
+
+/**
+ * A phone/tablet, judged by the absence of a fine pointer rather than by user
+ * agent. Used to suppress desktop-only affordances on mobile web, where the
+ * custom-scheme navigation can't resolve to anything.
+ */
+function isTouchOnlyDevice(): boolean {
+  try {
+    return window.matchMedia("(pointer: coarse)").matches;
+  } catch {
+    return false;
+  }
 }
 
 /** Fire the handoff for the current URL. */
@@ -72,7 +95,11 @@ export function openInDesktopApp(): void {
     // with that one shortly after. If the first attempt worked the app is
     // already focused and this is a no-op; if it did not, nothing happened at
     // all and this is the second chance.
-    const token = getStoredActorToken();
+    //
+    // Skipped on touch-only devices: there is no desktop app there, so the
+    // delayed second navigation can only produce a second failed scheme jump
+    // (and on iOS Safari, a second "cannot open page" interruption).
+    const token = isTouchOnlyDevice() ? null : getStoredActorToken();
     if (token) {
       const alt = `${DESKTOP_SCHEMES[1]}://connect?url=${encodeURIComponent(
         `${window.location.origin}/assistant/?cueToken=${encodeURIComponent(token)}`,
