@@ -34,6 +34,7 @@ import {
   setSseReconnectHandler,
 } from "@/lib/streaming/sse-reconnect-control";
 import {
+  isStreamAuthRejection,
   subscribeEvents,
   type EventStream,
 } from "@/lib/streaming/stream-transport";
@@ -198,6 +199,17 @@ export const sseService: SseService = {
             level: "warning",
             message: err.message,
           });
+          // Auth rejection is the one give-up we must NOT retry. Reopening
+          // cannot mint a valid credential, and every attempt records another
+          // auth failure against this IP in the gateway's limiter (10 in 60s
+          // blocks it) — so an expired token here would slowly lock the user
+          // out of their own instance. Recovery belongs to the token-refresh /
+          // re-authentication path, which reopens the stream itself once it
+          // holds a fresh credential.
+          if (isStreamAuthRejection(err)) {
+            cancelRecovery();
+            return;
+          }
           // The transport only calls back here once it has exhausted its
           // own retries, so this is a give-up, not a single drop. Own the
           // recovery rather than relying on a chat-scoped consumer to

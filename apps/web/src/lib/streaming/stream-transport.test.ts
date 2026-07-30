@@ -990,3 +990,92 @@ describe("subscribeEvents reconnect cursor (resumable stream)", () => {
     expect(urls[1]).not.toContain("lastSeenSeq");
   });
 });
+
+// ---------------------------------------------------------------------------
+// B2: auth rejection is terminal, not a transient drop.
+//
+// The gateway blocks an IP after 10 auth failures in 60s. This loop used to
+// treat a 401 exactly like a network drop and retry it on backoff, so an
+// expired or rotated token had the client hammering the gateway until it
+// locked itself out of its own instance — and every reload re-armed it.
+// ---------------------------------------------------------------------------
+describe("subscribeEvents auth rejection", () => {
+  let originalFetch: typeof fetch;
+  let originalDocument: unknown;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    originalDocument = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = {
+      cookie: "csrftoken=test",
+    };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (originalDocument === undefined) {
+      delete (globalThis as { document?: unknown }).document;
+    } else {
+      (globalThis as { document?: unknown }).document = originalDocument;
+    }
+  });
+
+  for (const status of [401, 403]) {
+    test(`stops after a single attempt on ${status} instead of reconnecting`, async () => {
+      let fetchCallCount = 0;
+      globalThis.fetch = mock(async () => {
+        fetchCallCount++;
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as unknown as typeof fetch;
+
+      const onError = mock(() => {});
+      const stream = subscribeEvents("asst-1", () => {}, onError, {
+        idleTimeoutMs: 5_000,
+        // Short backoff so a reconnect, if the bug regressed, would land
+        // inside the wait below and be counted.
+        reconnectBaseDelayMs: 10,
+      });
+
+      try {
+        await new Promise((r) => setTimeout(r, 200));
+        // The whole point: exactly one request, not a retry storm feeding
+        // the gateway's per-IP auth-failure limiter.
+        expect(fetchCallCount).toBe(1);
+        // The consumer is still told, so it can fall back to polling or
+        // route the user to re-authenticate.
+        expect(onError).toHaveBeenCalled();
+      } finally {
+        stream.cancel();
+      }
+    });
+  }
+
+  test("a 500 still reconnects — only auth statuses are terminal", async () => {
+    // Guards the other direction: this must not become "never retry anything".
+    let fetchCallCount = 0;
+    globalThis.fetch = mock(async () => {
+      fetchCallCount++;
+      return new Response("boom", { status: 500 });
+    }) as unknown as typeof fetch;
+
+    const stream = subscribeEvents(
+      "asst-1",
+      () => {},
+      mock(() => {}),
+      {
+        idleTimeoutMs: 5_000,
+        reconnectBaseDelayMs: 10,
+      },
+    );
+
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      expect(fetchCallCount).toBeGreaterThan(1);
+    } finally {
+      stream.cancel();
+    }
+  });
+});

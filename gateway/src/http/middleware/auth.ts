@@ -553,6 +553,17 @@ export const UPSTREAM_RESPONSE_MARKER_HEADER = "x-vellum-upstream-response";
  * say nothing about the CLIENT's credentials (the gateway already validated
  * the client's edge token before proxying). The marker is stripped before
  * the response is returned.
+ *
+ * That same marker is also positive proof the client DID authenticate — the
+ * proxy sets it only after validating the edge JWT — so its presence clears the
+ * IP's recorded failures. This is the counterpart to the clear in
+ * `rejectIfActorTokenRevoked`, which only covers `auth: "edge"` control-plane
+ * routes. **All app and SSE traffic** goes through the runtime-proxy catch-all
+ * under `auth: "track-failures"`, i.e. through this wrapper, which previously
+ * only ever counted UP. With 10 failures in 60s blocking the IP and nothing
+ * resetting it, a burst of transient 401s (parallel requests racing a token
+ * refresh, a reconnect after a daemon restart) locked a correctly-signed-in user
+ * out of their own instance — and every reload re-armed it.
  */
 export function wrapWithAuthFailureTracking(
   handler: (req: Request) => Promise<Response> | Response,
@@ -564,7 +575,10 @@ export function wrapWithAuthFailureTracking(
     const res = await handler(req);
 
     if (res.headers.has(UPSTREAM_RESPONSE_MARKER_HEADER)) {
-      // Relayed from the upstream daemon — not a client auth failure.
+      // Relayed from the upstream daemon — not a client auth failure, and
+      // proof the client cleared gateway auth, so forgive earlier failures.
+      // Covers both transports: the HTTP runtime proxy and the IPC one.
+      authRateLimiter.clearIp(getClientIp());
       // Strip the internal marker so it never leaks to the client. Rebuild
       // the response rather than mutating headers in place: responses that
       // originate from fetch() have immutable header guards.

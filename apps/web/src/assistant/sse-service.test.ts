@@ -37,8 +37,20 @@ const subscribeEventsMock = mock(
     return { cancel: cancelMock };
   },
 );
+/** Mirrors the real StreamAuthRejectedError's identity contract. */
+class StreamAuthRejectedError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`Stream rejected by auth (HTTP ${status})`);
+    this.name = "StreamAuthRejectedError";
+    this.status = status;
+  }
+}
 mock.module("@/lib/streaming/stream-transport", () => ({
   subscribeEvents: subscribeEventsMock,
+  StreamAuthRejectedError,
+  isStreamAuthRejection: (err: unknown) =>
+    err instanceof StreamAuthRejectedError,
 }));
 
 const checkAssistantMock = mock(async () => {});
@@ -546,6 +558,36 @@ describe("sseService.attach — recovery after the transport gives up", () => {
     await new Promise((resolve) => setTimeout(resolve, 60));
 
     expect(subscribeEventsMock).toHaveBeenCalledTimes(3);
+  }, 5_000);
+
+  // B2: the one give-up that must NOT reopen. This outer loop "never stops
+  // retrying" by design, so making the transport stop on 401 was not enough on
+  // its own — the loop here would keep re-opening and each attempt records
+  // another auth failure in the gateway's per-IP limiter (10 in 60s blocks it),
+  // locking the user out of their own instance.
+  test("does NOT reopen after an auth rejection", async () => {
+    sseService.attach("asst-1", { recoveryDelaysMs: [20] });
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(1);
+
+    activeOnError!(new StreamAuthRejectedError(401));
+
+    // Wait well past the recovery delay — a reopen would have landed by now.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(subscribeEventsMock).toHaveBeenCalledTimes(1);
+  }, 5_000);
+
+  test("an auth rejection cancels an already-scheduled recovery", async () => {
+    // A network drop arms recovery; a 401 arriving before it fires must
+    // disarm it rather than let one more 401 through.
+    sseService.attach("asst-1", { recoveryDelaysMs: [60] });
+    activeOnError!(new Error("Stream connection failed"));
+    activeOnError!(new StreamAuthRejectedError(401));
+    subscribeEventsMock.mockClear();
+
+    await new Promise((resolve) => setTimeout(resolve, 140));
+
+    expect(subscribeEventsMock).not.toHaveBeenCalled();
   }, 5_000);
 
   test("detach cancels a pending recovery reopen", async () => {

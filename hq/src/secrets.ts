@@ -171,6 +171,21 @@ export function buildInstanceEnv(
     GATEWAY_PORT: "10000",
     GATEWAY_INTERNAL_URL: "http://127.0.0.1:10000",
     GATEWAY_SECURITY_DIR: "/workspace/gateway-security",
+    // Instances sit behind the Fly proxy, which terminates TLS and forwards.
+    // Without this the gateway keys its auth-failure limiter on the PROXY's
+    // address, so every client of an instance shares one bucket and one
+    // device's failed attempts lock out all of that user's devices.
+    //
+    // Safe here specifically because the proxy hop is not loopback: the
+    // gateway's observed TCP peer on Fly is 172.16.x.x, so `isLoopbackPeer`
+    // returns false before it ever consults X-Forwarded-For, and the
+    // loopback-gated auth fallbacks stay unreachable. Do NOT copy this to a
+    // topology where the proxy connects over 127.0.0.1 (e.g. a same-host nginx
+    // edge) without re-checking that: there, a client-supplied
+    // `X-Forwarded-For: 127.0.0.1` could pass a loopback gate. The strictly
+    // loopback-only mint endpoints (/v1/guardian/init, /v1/pair) do not rely on
+    // this flag — they use the unspoofable edge marker.
+    GATEWAY_TRUST_PROXY: "true",
     ASSISTANT_HOST: "127.0.0.1",
     DEFAULT_ASSISTANT_ID: "cue-local",
     VELLUM_ASSISTANT_NAME: DEFAULT_ASSISTANT_NAME,

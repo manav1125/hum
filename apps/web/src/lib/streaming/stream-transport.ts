@@ -122,6 +122,35 @@ export interface EventStreamOptions {
 const STREAM_RECONNECT_BASE_DELAY_MS = 2000;
 const STREAM_MAX_RECONNECT_ATTEMPTS = 5;
 const STREAM_MAX_RECONNECT_DELAY_MS = 30_000;
+/**
+ * Statuses on which reconnecting is pointless AND harmful. No amount of
+ * retrying turns a rejected credential into a valid one, and each attempt adds
+ * another auth failure to the gateway's per-IP limiter — the mechanism that
+ * locks a user out of their own instance.
+ */
+const TERMINAL_STREAM_AUTH_STATUSES = new Set([401, 403]);
+
+/**
+ * Error reported through `onError` when the stream was rejected for auth.
+ *
+ * Callers that own an outer reopen loop MUST check this and stop, rather than
+ * scheduling another attempt — see `isStreamAuthRejection`. Without it, this
+ * transport's own "stop retrying" only shortens each burst while the outer loop
+ * keeps re-opening, and the gateway still sees an endless drip of 401s.
+ */
+export class StreamAuthRejectedError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`Stream rejected by auth (HTTP ${status})`);
+    this.name = "StreamAuthRejectedError";
+    this.status = status;
+  }
+}
+
+/** True when a stream error means "credentials were rejected", not "network". */
+export function isStreamAuthRejection(err: unknown): boolean {
+  return err instanceof StreamAuthRejectedError;
+}
 // Idle watchdog: if no SSE traffic (events OR heartbeat comments) is
 // received within this window, treat the stream as silently stalled
 // and force-reconnect. The daemon emits a heartbeat comment every 7 s
@@ -184,6 +213,14 @@ export function subscribeEvents(
 
   let cancelled = false;
   let reconnectCount = 0;
+  // Set when the stream endpoint answers 401/403. Auth rejection is TERMINAL,
+  // not a transient drop: retrying cannot mint a valid token, and every retry
+  // records another auth failure against the client IP in the gateway's
+  // limiter (10 in 60s blocks the IP). Reconnecting forever on 401 is how a
+  // single expired token escalated into a full lockout of the user's own
+  // instance. Mirrors the terminal-status handling in use-doctor-sse.ts.
+  let authRejected = false;
+  let authRejectedStatus: number | null = null;
   // Each connect() attempt owns its own AbortController so the
   // idle-watchdog can interrupt a single attempt without poisoning
   // subsequent reconnects (sharing one controller across attempts
@@ -204,8 +241,22 @@ export function subscribeEvents(
     activeAbortController?.abort();
   };
 
+  /**
+   * Classify the error we report on give-up. When the endpoint rejected our
+   * credentials, say so in the type so an outer reopen loop can stop instead of
+   * treating it as one more transient drop.
+   */
+  const giveUpError = (err: Error): Error =>
+    authRejectedStatus !== null
+      ? new StreamAuthRejectedError(authRejectedStatus)
+      : err;
+
   const reconnect = async (): Promise<boolean> => {
-    if (cancelled || reconnectCount >= STREAM_MAX_RECONNECT_ATTEMPTS) {
+    if (
+      cancelled ||
+      authRejected ||
+      reconnectCount >= STREAM_MAX_RECONNECT_ATTEMPTS
+    ) {
       return false;
     }
     reconnectCount++;
@@ -252,6 +303,17 @@ export function subscribeEvents(
           // watchdog, debug registry, reconnect cursor, and the
           // onReconnect reconciliation callback.
           sseMaxRetryAttempts: 0,
+          // The SDK surfaces a non-OK status as a generic stream error, which
+          // is indistinguishable from a network drop — so latch the status
+          // here, where the real Response is visible, and let reconnect() stop.
+          fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const response = await globalThis.fetch(input, init);
+            if (TERMINAL_STREAM_AUTH_STATUSES.has(response.status)) {
+              authRejected = true;
+              authRejectedStatus = response.status;
+            }
+            return response;
+          }) as typeof globalThis.fetch,
           onSseError: (error) => {
             streamError = toError(error, "Stream disconnected");
           },
@@ -369,19 +431,19 @@ export function subscribeEvents(
       if (streamError) {
         const reconnected = await reconnect();
         if (!reconnected) {
-          onError(streamError);
+          onError(giveUpError(streamError));
         }
         return;
       }
       const reconnected = await reconnect();
       if (!reconnected) {
-        onError(new Error("Stream ended unexpectedly"));
+        onError(giveUpError(new Error("Stream ended unexpectedly")));
       }
     } catch (err) {
       if (cancelled) return;
       const reconnected = await reconnect();
       if (!reconnected) {
-        onError(toError(err, "Stream connection failed"));
+        onError(giveUpError(toError(err, "Stream connection failed")));
       }
     } finally {
       // Report the connection's end reason to the debug registry, which

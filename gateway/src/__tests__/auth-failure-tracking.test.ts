@@ -139,4 +139,69 @@ describe("wrapWithAuthFailureTracking", () => {
     expect(res.status).toBe(200);
     expect(calls).toEqual([]);
   });
+
+  // B2: the lockout regression. The previous fix put clearIp() only in
+  // rejectIfActorTokenRevoked, which is reached by `auth: "edge"` routes — but
+  // ALL app and SSE traffic goes through the runtime-proxy catch-all under
+  // `auth: "track-failures"`, i.e. this wrapper, which only ever counted up.
+  // These tests exercise THIS wrapper, the one on the app's real request path.
+  describe("recovery from a lockout (B2)", () => {
+    test("a proxied success clears the IP's recorded failures", async () => {
+      const { limiter } = makeLimiterSpy();
+      const wrapped = wrapWithAuthFailureTracking(
+        () =>
+          new Response("ok", {
+            status: 200,
+            headers: { [UPSTREAM_RESPONSE_MARKER_HEADER]: "1" },
+          }),
+        limiter,
+        () => CLIENT_IP,
+      );
+
+      // Arm the limiter the way a burst of gateway-authored 401s would.
+      for (let i = 0; i < 12; i++) limiter.recordFailure(CLIENT_IP);
+      expect(limiter.isBlocked(CLIENT_IP)).toBe(true);
+
+      await wrapped(new Request("http://localhost/v1/x"));
+
+      // The whole point: the user signs in and the app loads again.
+      expect(limiter.isBlocked(CLIENT_IP)).toBe(false);
+    });
+
+    test("only the authenticating client's own IP is forgiven", async () => {
+      const OTHER_IP = "198.51.100.9";
+      const { limiter } = makeLimiterSpy();
+      const wrapped = wrapWithAuthFailureTracking(
+        () =>
+          new Response("ok", {
+            status: 200,
+            headers: { [UPSTREAM_RESPONSE_MARKER_HEADER]: "1" },
+          }),
+        limiter,
+        () => CLIENT_IP,
+      );
+
+      for (let i = 0; i < 12; i++) limiter.recordFailure(OTHER_IP);
+      await wrapped(new Request("http://localhost/v1/x"));
+
+      // A success from one IP must not clear a genuine attacker's bucket.
+      expect(limiter.isBlocked(OTHER_IP)).toBe(true);
+    });
+
+    test("a gateway-authored 401 (no marker) still counts toward the block", async () => {
+      // Guards the other direction: the clear must not defang the limiter.
+      const { limiter } = makeLimiterSpy();
+      const wrapped = wrapWithAuthFailureTracking(
+        () => Response.json({ error: "Unauthorized" }, { status: 401 }),
+        limiter,
+        () => CLIENT_IP,
+      );
+
+      for (let i = 0; i < 10; i++) {
+        await wrapped(new Request("http://localhost/v1/x"));
+      }
+
+      expect(limiter.isBlocked(CLIENT_IP)).toBe(true);
+    });
+  });
 });

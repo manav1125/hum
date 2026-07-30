@@ -93,10 +93,24 @@ describe("shouldRetryDaemonError", () => {
     );
   });
 
-  test("retries 401 auth race", () => {
+  // B2: 401 is EXPECTED (so it stays out of Sentry) but must NOT be retried.
+  // The gateway blocks an IP after 10 auth failures in 60s, so retrying turned
+  // one lost auth race into four gateway 401s — and several queries racing at
+  // once manufactured a lockout of the user's own instance. Recovery comes from
+  // the token-refresh path issuing a new credential, not from re-sending the
+  // rejected one.
+  test("does NOT retry 401 — retrying it manufactures a rate-limit lockout", () => {
     expect(
       shouldRetryDaemonError(
         0,
+        new ApiError(401, "Authentication credentials were not provided."),
+      ),
+    ).toBe(false);
+  });
+
+  test("401 is still classified as expected, so it stays out of Sentry", () => {
+    expect(
+      isExpectedDaemonTransientError(
         new ApiError(401, "Authentication credentials were not provided."),
       ),
     ).toBe(true);

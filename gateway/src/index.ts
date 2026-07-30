@@ -997,6 +997,11 @@ async function main() {
           );
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
+        // A validly-signed token here proves the client is legitimate, so
+        // forgive its earlier failures. This route is reached precisely WHEN a
+        // client is recovering from 401s, so leaving the counter armed made the
+        // recovery path itself contribute to the lockout it was recovering from.
+        authRateLimiter.clearIp(getClientIp());
         return channelVerificationSessionProxy.handleGuardianRefresh(req);
       },
     },
