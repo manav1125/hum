@@ -15,6 +15,7 @@ import {
   type OAuthCompletePayload,
 } from "@/lib/auth/oauth-popup";
 import { openUrl, openUrlFinishedListener } from "@/runtime/browser";
+import { isElectron } from "@/runtime/is-electron";
 import { useIsNativePlatform } from "@/runtime/native-auth";
 import type { OAuthCompleteDeepLinkPayload } from "@/runtime/native-deep-link";
 import { extractErrorMessage } from "@/utils/api-errors";
@@ -314,14 +315,21 @@ export function useOAuthConnect({
       return;
     }
 
-    const popup = window.open("", "_blank", "width=500,height=600");
+    // See the note in domains/chat/api/managed-oauth.ts: a browser only honours
+    // window.open() inside the user gesture, so the web path must claim a blank
+    // popup up front. Electron denies `about:blank` in its window-open handler,
+    // so there we open once the real https URL has arrived instead.
+    const deferPopupUntilUrl = isElectron();
+    if (!deferPopupUntilUrl) {
+      const popup = window.open("", "_blank", "width=500,height=600");
 
-    if (popup === null) {
-      toast.error("Popup blocked. Please enable popups and try again.");
-      return;
+      if (popup === null) {
+        toast.error("Popup blocked. Please enable popups and try again.");
+        return;
+      }
+
+      popupRef.current = popup;
     }
-
-    popupRef.current = popup;
     setOAuthInProgress(true);
     const cachedConnections =
       queryClient.getQueryData<OAuthConnection[]>(connectionsQueryKey) ??
@@ -395,7 +403,22 @@ export function useOAuthConnect({
       },
       {
         onSuccess(data) {
-          if (popupRef.current && !popupRef.current.closed) {
+          if (deferPopupUntilUrl) {
+            // Electron: open straight onto the https URL its handler allows.
+            const popup = window.open(
+              data.connect_url,
+              "_blank",
+              "width=500,height=600",
+            );
+            if (popup === null) {
+              clearPendingRequest();
+              toast.error(
+                `Could not open the ${displayName} authorization window.`,
+              );
+              return;
+            }
+            popupRef.current = popup;
+          } else if (popupRef.current && !popupRef.current.closed) {
             popupRef.current.location.href = data.connect_url;
           } else if (pendingRequestRef.current) {
             closePopupWindow();

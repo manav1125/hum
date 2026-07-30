@@ -13,6 +13,7 @@ import {
   type OAuthCompletePayload,
 } from "@/lib/auth/oauth-popup";
 import { openUrl, openUrlFinishedListener } from "@/runtime/browser";
+import { isElectron } from "@/runtime/is-electron";
 import { isNativePlatform } from "@/runtime/native-auth";
 import {
   OAUTH_COMPLETE_DEEP_LINK_EVENT,
@@ -301,7 +302,21 @@ export async function connectManagedOAuthProvider({
         handleOAuthDeepLink,
       );
 
-      if (!native) {
+      // A real browser only honours `window.open()` from inside the
+      // user-gesture call stack, so on the web we must claim the popup BEFORE
+      // awaiting the connect URL — that is why a blank window is opened here
+      // and redirected once the URL arrives.
+      //
+      // Electron is the exact opposite. It has no popup blocker, but its
+      // `setWindowOpenHandler` (apps/macos/src/main/index.ts) denies any URL
+      // that is not http(s), and a blank popup reaches it as `about:blank`.
+      // The pre-open is therefore rejected outright, `window.open` returns
+      // null, and the user is told to "enable popups" — advice that cannot
+      // work, because no popup blocker was involved. That made every
+      // integration unconnectable from the desktop app. There we defer the
+      // open until the real https URL is in hand.
+      const deferPopupUntilUrl = isElectron();
+      if (!native && !deferPopupUntilUrl) {
         popup = window.open("", "_blank", "width=500,height=600");
         if (popup === null) {
           finish({
@@ -310,6 +325,9 @@ export async function connectManagedOAuthProvider({
           });
           return;
         }
+      } else if (!native) {
+        // Electron: nothing to open yet — the window is created below, once
+        // `startManagedOAuth` has returned an https URL the handler accepts.
       } else {
         nativeFinishUnsub = openUrlFinishedListener(() => {
           void handlePopupClosed();
@@ -329,7 +347,18 @@ export async function connectManagedOAuthProvider({
           return;
         }
 
-        if (popup && !popup.closed) {
+        if (deferPopupUntilUrl) {
+          // Electron: open directly on the https URL so the window-open
+          // handler sees a protocol it allows.
+          popup = window.open(connectUrl, "_blank", "width=500,height=600");
+          if (popup === null) {
+            finish({
+              status: "error",
+              message: `Could not open the ${providerLabel} authorization window.`,
+            });
+            return;
+          }
+        } else if (popup && !popup.closed) {
           popup.location.href = connectUrl;
         } else {
           finish({
