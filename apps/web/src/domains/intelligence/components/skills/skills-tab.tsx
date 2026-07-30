@@ -26,7 +26,7 @@ import {
 import { type Options } from "@/generated/daemon/sdk.gen";
 import type { SkillsGetData } from "@/generated/daemon/types.gen";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3SkillsPage } from "@/mobile-v3/you/skills-page";
 import { getLocalBool, setLocalBool } from "@/utils/local-settings";
 import { haptic } from "@/utils/haptics";
@@ -89,7 +89,7 @@ export function SkillsTab({ assistantId, initialSkillId }: SkillsTabProps) {
   // segments, the consent sheet, installed-skill manage). Branch in a thin
   // wrapper so the desktop body's hooks never change count across a
   // breakpoint flip. Desktop keeps the editorial grid untouched.
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) {
     return (
       <Mv3SkillsPage

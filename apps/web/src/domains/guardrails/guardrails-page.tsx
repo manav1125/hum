@@ -51,7 +51,7 @@ import {
   missionsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { GuardrailsGetResponse } from "@/generated/daemon/types.gen";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3LedgerPage } from "@/mobile-v3/you/ledger-page";
 import { Mv3RulesPage } from "@/mobile-v3/you/rules-page";
 import { AutonomyLedgerBand } from "@/domains/guardrails/autonomy-ledger-panel";
@@ -216,7 +216,7 @@ export function GuardrailsPage() {
   // routes; branch in a thin wrapper so the desktop body's hooks never
   // change count across a breakpoint flip. Desktop keeps the three-band
   // Guardrails console untouched.
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const [searchParams] = useSearchParams();
   if (isMobile) {
     const view = searchParams.get("view");

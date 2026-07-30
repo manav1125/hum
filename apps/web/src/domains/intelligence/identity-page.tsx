@@ -1,6 +1,6 @@
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { IdentityTab } from "@/domains/intelligence/components/identity-tab";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3IdentityPage } from "@/mobile-v3/you/identity-page";
 
 interface IdentityPageProps {
@@ -9,7 +9,7 @@ interface IdentityPageProps {
 
 export function IdentityPage({ onOpenThread }: IdentityPageProps) {
   const assistantId = useActiveAssistantId();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
 
   // Mobile (round-4 frame 53): the v3 You-cluster Identity leaf. Desktop
   // keeps the existing IdentityTab untouched.

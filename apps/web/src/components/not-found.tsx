@@ -9,13 +9,13 @@
  */
 import { Link } from "react-router";
 
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { AuroraBackdrop } from "@/mobile-v3/aurora-backdrop";
 import { primaryBtn } from "@/mobile-v3/mv3-kit";
 import { routes } from "@/utils/routes";
 
 export function NotFound() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
 
   if (isMobile) {
     return (

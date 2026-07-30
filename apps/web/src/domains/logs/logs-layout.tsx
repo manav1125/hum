@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Outlet, useLocation } from "react-router";
 
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { routes } from "@/utils/routes";
 import { LOGS_SIDEBAR } from "@/domains/logs/navigation";
@@ -12,7 +12,7 @@ export function LogsLayout() {
   const systemEventsGate = usePlatformGate({ platformHostedOnly: true });
   const emailsGate = usePlatformGate();
   const { pathname } = useLocation();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
 
   const filteredItems = useMemo(
     () =>

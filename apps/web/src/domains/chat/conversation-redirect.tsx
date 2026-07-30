@@ -6,11 +6,11 @@
 import { Navigate, useSearchParams } from "react-router";
 
 import { ChatPage } from "@/domains/chat/chat-page";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 
 export function ConversationRedirect() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const [searchParams] = useSearchParams();
   // Both params are checked intentionally: `conversationKey` predates the
   // `conversationId` cutover. Ancient saved/shared URLs only have `conversationKey`.

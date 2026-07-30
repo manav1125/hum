@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 
 import { hideVendorUi, useManagedMode } from "@/assistant/use-managed-mode";
 import { MobileSettingsLayout } from "@/domains/settings/mobile/mobile-settings";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { usePlatformGate } from "@/hooks/use-platform-gate";
 import { handleLogout } from "@/lib/auth/handle-logout";
 import { isLocalMode } from "@/lib/local-mode";
@@ -38,7 +38,7 @@ export function SettingsLayout() {
   const billingGate = usePlatformGate();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   // Hide logout in pure local mode unless there's a session to end. A local
   // daemon has no credential to sign out of, so the control would be a no-op —
   // but a self-host instance very much does (the durable `actor_client_v1`

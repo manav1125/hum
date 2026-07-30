@@ -30,6 +30,7 @@ mock.module("react-router", () => ({
 
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => false,
+  useMobileLayout: () => false,
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 

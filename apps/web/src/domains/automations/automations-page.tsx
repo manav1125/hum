@@ -4,12 +4,12 @@
  * serif-HQ board (web W3). Same daemon data + the same server-enforced
  * autonomy cap under both.
  */
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3AutomationsPage } from "@/mobile-v3/you/automations-page";
 
 import { WebAutomationsBoard } from "./automations-board";
 
 export function AutomationsPage() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   return isMobile ? <Mv3AutomationsPage /> : <WebAutomationsBoard />;
 }

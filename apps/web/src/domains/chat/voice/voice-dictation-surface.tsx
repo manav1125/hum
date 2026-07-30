@@ -42,7 +42,7 @@ import { ArrowUp, Keyboard, Settings, Square, X } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import {
   postVoiceIntake,
   type VoiceIntakeResponse,
@@ -594,7 +594,7 @@ export interface VoiceDictationSurfaceProps {
 export function VoiceDictationSurface({ onExit }: VoiceDictationSurfaceProps) {
   const assistantId = useActiveAssistantId();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const voiceInputRef = useRef<VoiceInputButtonHandle | null>(null);
   const [voiceErrorCode, setVoiceErrorCode] = useState<string | null>(null);
   const [transcript, setTranscript] = useState("");

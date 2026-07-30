@@ -8,7 +8,7 @@ import { MEMORY_TYPES, type MemoryType } from "@vellumai/design-library";
 import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialog";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useViewerStore } from "@/stores/viewer-store";
@@ -75,7 +75,7 @@ export function MemoriesPage() {
   // wrapper so the desktop body's hooks never change count across a
   // breakpoint flip. Desktop keeps the center-column + provenance-rail
   // layout untouched.
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) {
     return <Mv3MemoryPage />;
   }

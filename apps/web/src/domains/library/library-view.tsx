@@ -19,7 +19,7 @@ import {
 } from "react";
 
 import { DeployDialogs } from "@/components/deploy-dialogs";
-import { useAttachmentPreview } from "@/domains/chat/components/chat-attachments/use-attachment-preview";
+import { useAttachmentPreview } from "@/hooks/use-attachment-preview";
 import {
   type CoverKind,
   LibraryCoverCard,
@@ -31,7 +31,7 @@ import type { MediaSummary } from "@/types/media-types";
 import { LibraryEmptyState } from "@/domains/library/components/library-empty-state";
 import { LibraryGridSection } from "@/domains/library/components/library-grid-section";
 import { useLibraryData } from "@/domains/library/use-library-data";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { formatFriendlyDate } from "@/utils/format-date";
 import { appsGetQueryKey } from "@/generated/daemon/@tanstack/react-query.gen";
 import { appsByIdDeletePost } from "@/generated/daemon/sdk.gen";
@@ -135,7 +135,7 @@ export function LibraryView({
   const togglePin = usePinnedAppsStore.use.togglePin();
   const pinnedAppIds = usePinnedAppsStore.use.pinnedAppIds();
   const isDeploying = useDeployStore.use.isDeploying();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
 
   const {
     apps,

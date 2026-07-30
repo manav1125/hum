@@ -31,6 +31,7 @@ import { createElement, type ReactNode } from "react";
 const isMobileRef = { value: false };
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => isMobileRef.value,
+  useMobileLayout: () => isMobileRef.value,
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 

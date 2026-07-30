@@ -22,6 +22,7 @@ const setTopBarCenterMock = mock((_node: unknown) => {});
 
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => isMobileRef.value,
+  useMobileLayout: () => isMobileRef.value,
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 
@@ -78,14 +79,16 @@ describe("IntelligenceLayout", () => {
     );
 
     // The in-body h1 still renders the title but is hidden on mobile.
+    // Hidden by the JS gate (`hidden`), not `max-md:hidden` — see the
+    // narrow-desktop test below for why the CSS width test had to go.
     const heading = container.querySelector("h1");
     expect(heading?.textContent).toContain("About Ada");
-    expect(heading?.className).toContain("max-md:hidden");
+    expect(heading?.className).toContain("hidden");
 
     // The desktop tab strip is hidden on mobile (UAT P2: it used to leak
     // above Cue Live/Identity/Workspace at phone widths).
     const nav = container.querySelector("nav");
-    expect(nav?.className).toContain("max-md:hidden");
+    expect(nav?.className).toContain("hidden");
 
     // The v3 back row carries navigation + the section title.
     expect(getByLabelText("Back to You")).toBeTruthy();
@@ -97,6 +100,22 @@ describe("IntelligenceLayout", () => {
 
     // The shared top-bar center stays cleared.
     expect(setTopBarCenterMock).toHaveBeenLastCalledWith(null);
+  });
+
+  test("a narrow desktop window keeps the section nav (B6)", () => {
+    // `useMobileLayout()` is false in a sub-767px Electron window, so the
+    // `‹ You` back row stands down. The nav used to be hidden independently
+    // by `max-md:hidden` — a raw width test — which left that window with NO
+    // section navigation at all: strip gone, back row never rendered. Both
+    // are now driven by the same gate, so exactly one of them always shows.
+    isMobileRef.value = false;
+    const { container, queryByLabelText } = renderLayout("/assistant/cue-live");
+
+    const nav = container.querySelector("nav");
+    expect(nav).toBeTruthy();
+    expect(nav?.className).not.toContain("hidden");
+    expect(container.querySelector("h1")?.className).not.toContain("hidden");
+    expect(queryByLabelText("Back to You")).toBeNull();
   });
 
   test("on mobile, Identity and Contacts render full-bleed — no interim strip", () => {

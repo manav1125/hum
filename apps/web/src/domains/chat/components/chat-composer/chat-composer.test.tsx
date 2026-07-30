@@ -29,6 +29,8 @@ import {
 let mockIsMobile = false;
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => mockIsMobile,
+  // Mirrors the real hook: a narrow ELECTRON window is not a phone.
+  useMobileLayout: () => mockIsMobile && !mockIsElectron,
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 

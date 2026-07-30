@@ -44,7 +44,7 @@ import type {
   CueliveSessionGetResponse,
   OrganizerSessionGetResponse,
 } from "@/generated/daemon/types.gen";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 
 import { OrganizerRemotePage } from "@/mobile-v3/organizer/organizer-remote-page";
@@ -724,7 +724,7 @@ function DesktopControlWeb() {
 }
 
 export function DesktopControlPage() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) return <OrganizerRemotePage />;
   return <DesktopControlWeb />;
 }

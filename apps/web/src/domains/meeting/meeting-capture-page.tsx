@@ -8,7 +8,7 @@ import {
   sttTranscribePost,
 } from "@/generated/daemon/sdk.gen";
 import type { MeetingsRecapPostResponses } from "@/generated/daemon/types.gen";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { AuroraBackdrop, CueRing, mv3Mono, rise } from "@/mobile-v3";
 import { sectionMicro } from "@/mobile-v3/work-kit";
 import { haptic } from "@/utils/haptics";
@@ -1698,7 +1698,7 @@ function V3RecapScreen({
 
 export function MeetingCapturePage() {
   const [recap, setRecap] = useState<RecapJson | null>(null);
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
 
   // ---- Mobile: the v3 native capture surface (spec frame 25) --------------
   if (isMobile) {

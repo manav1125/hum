@@ -17,7 +17,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { relativeTime } from "@/domains/activity/theme";
 import { useActivitySync } from "@/hooks/use-activity-sync";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3MissionDetail } from "@/mobile-v3/mission/mission-detail-page";
 import { ProjectCard } from "@/pages/projects/projects-page";
 import { useProjects } from "@/pages/projects/use-projects";
@@ -60,7 +60,7 @@ export function MissionDetailPage() {
   const assistantId = useActiveAssistantId();
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   useActivitySync(assistantId, true);
 
   const { mission, isLoading, isError } = useMission(assistantId, id);

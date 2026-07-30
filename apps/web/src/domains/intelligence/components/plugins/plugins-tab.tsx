@@ -39,7 +39,7 @@ import type {
   PluginsSearchGetResponse,
 } from "@/generated/daemon/types.gen";
 import { usePluginDrift } from "@/domains/intelligence/use-plugin-drift";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import {
   curationBadge,
   type CurationFilter,
@@ -84,7 +84,7 @@ function matches(query: string, ...fields: (string | null | undefined)[]) {
 }
 
 export function PluginsTab({ assistantId }: PluginsTabProps) {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) {
     return <Mv3PluginsPage assistantId={assistantId} />;
   }

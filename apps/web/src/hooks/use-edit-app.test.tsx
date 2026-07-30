@@ -10,6 +10,7 @@ import { MemoryRouter, useLocation } from "react-router";
 const mobileRef = { current: false };
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => mobileRef.current,
+  useMobileLayout: () => mobileRef.current,
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 

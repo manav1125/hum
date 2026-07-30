@@ -22,7 +22,7 @@
  * untouched.
  */
 
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { AgentsPage } from "@/domains/intelligence/agents-page";
 import { ChannelsPage } from "@/domains/intelligence/channels-page";
 import { Mv3YouPage } from "@/mobile-v3/you/you-page";
@@ -37,7 +37,7 @@ const sectionLabelStyle = {
 };
 
 export function ChannelsAgentsPage() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
 
   // MOBILE "You" tab — the mobile-v3 trust-HQ screen (spec frame 9). Desktop
   // path below is left exactly as it was.

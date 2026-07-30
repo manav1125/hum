@@ -16,7 +16,7 @@
  *     the v3 screen shell so the push flow + back chevron still hold.
  *
  * Desktop keeps `SidebarShell` byte-identical — `SettingsLayout` branches on
- * `useIsMobile()` before any desktop markup renders. mv3 foundation is
+ * `useMobileLayout()` before any desktop markup renders. mv3 foundation is
  * consumed read-only from `@/mobile-v3`.
  */
 import { Outlet, useLocation, useNavigate } from "react-router";

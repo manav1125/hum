@@ -17,6 +17,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 let mockIsMobile = false;
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => mockIsMobile,
+  useMobileLayout: () => mockIsMobile,
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 

@@ -5,7 +5,7 @@ import { LazyBoundary } from "@/components/lazy-boundary";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import { useEventBusInit } from "@/hooks/use-event-bus-init";
 import { useGlobalDeepLinkConsumer } from "@/hooks/use-global-deep-link-consumer";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { isSelfHostMode } from "@/lib/self-hosted/cue-self-host";
 import { TabBarV3 } from "@/mobile-v3";
 import { LiveActivityBridge } from "@/mobile-v3/live-activity-bridge";
@@ -144,7 +144,7 @@ function overflowVisible(pathname: string): boolean {
 
 export function RootLayout() {
   useAppTheme();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const visibleViewport = useVisibleViewport();
 
   const navigate = useNavigate();

@@ -3,7 +3,7 @@
  * 14/26/27/28): aurora over the mv3 background, a mono "STEP N OF 4" eyebrow
  * with optional Skip, the step's content, and one full-width CTA pinned above
  * the home indicator. Mobile-only call sites (pre-chat-flow gates on
- * `useIsMobile`); desktop onboarding keeps its existing screens untouched.
+ * `useMobileLayout`); desktop onboarding keeps its existing screens untouched.
  */
 import { haptic } from "@/utils/haptics";
 

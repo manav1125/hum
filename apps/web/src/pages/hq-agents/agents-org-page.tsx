@@ -25,7 +25,7 @@ import { ConfirmDialog } from "@vellumai/design-library/components/confirm-dialo
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { C, mono, serif } from "@/domains/activity/theme";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { Mv3AgentsPage } from "@/mobile-v3/you/agents-page";
 import { HqStyle, LiveBars, MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
@@ -493,7 +493,7 @@ export function AgentsOrgPage() {
   // MOBILE — the mobile-v3 Agents manage screen (spec frame 32). Branch in a
   // thin wrapper so the desktop body's hooks never change count across a
   // breakpoint flip. Desktop keeps the org grid untouched.
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) {
     return <Mv3AgentsPage />;
   }

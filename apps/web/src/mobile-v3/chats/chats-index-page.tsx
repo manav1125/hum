@@ -24,7 +24,7 @@ import {
   navigateToNewConversation,
 } from "@/domains/chat/utils/conversation-navigation";
 import { useConversationListQuery } from "@/hooks/conversation-queries";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { loadMoreConversations } from "@/utils/conversation-list-fetchers";
 import { useConversationStore } from "@/stores/conversation-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
@@ -34,7 +34,7 @@ import { Mv3ChatsIndex } from "./mv3-chats-index";
 
 export function ChatsIndexPage() {
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const queryClient = useQueryClient();
 
   const assistantId = useResolvedAssistantsStore.use.activeAssistantId();

@@ -2,7 +2,7 @@
  * TabBarV3 — the mv3 floating glass tab bar (spec frames 1 dark / 12 light):
  * five slots `Today · Projects · + · Voice · You` with the raised accent
  * center +. Replaces the flat mv1 bar ON MOBILE ONLY (root-layout renders it
- * behind `useIsMobile()`); desktop navigation is untouched.
+ * behind `useMobileLayout()`); desktop navigation is untouched.
  *
  * Spec values: pill bg rgba(22,26,36,.82)/rgba(255,255,255,.85), hairline
  * border, radius 28, padding 9px 8px, blur(24px), shadow 0 18px 40px -18px;

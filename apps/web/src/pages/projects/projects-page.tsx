@@ -16,7 +16,7 @@ import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { C, mono, relativeTime, serif } from "@/domains/activity/theme";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { HqStyle, MicroLabel } from "@/pages/hq/hq-kit";
 import { routes } from "@/utils/routes";
 
@@ -379,7 +379,7 @@ export function ProjectCard({
  * (Mv3Projects); desktop keeps this serif deck byte-identical below.
  */
 export function ProjectsPage() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   return isMobile ? <Mv3Projects /> : <ProjectsPageDesktop />;
 }
 

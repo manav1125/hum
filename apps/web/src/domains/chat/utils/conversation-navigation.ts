@@ -1,6 +1,7 @@
 import type { NavigateFunction } from "react-router";
 
 import { MOBILE_MEDIA_QUERY } from "@/hooks/use-is-mobile";
+import { isElectron } from "@/runtime/is-electron";
 import { haptic } from "@/utils/haptics";
 import { routes } from "@/utils/routes";
 
@@ -56,12 +57,21 @@ export function navigateToNewConversation(
  * on the Chats index; desktop lands on Today (HQ). `replace` so Back does
  * not return to the just-archived transcript.
  *
+ * The width test carries the same `!isElectron()` platform guard as
+ * {@link useMobileLayout} — `routes.conversations` mounts the phone-only mv3
+ * Chats index, so this is a PHONE decision, not a viewport one. Being a plain
+ * imperative function it can't call the hook, so the guard is inlined; it must
+ * stay in step with `chat-layout.tsx`, whose `handlePostArchiveNavigate` is the
+ * desktop caller. Without it a 720px pop-out rendered the desktop shell but
+ * archiving still threw the user onto the phone Chats index.
+ *
  * Pure imperative function — safe to pass where a
  * `switchConversation(key)` / `startNewConversation(opts)` callback is
  * expected (extra args are ignored).
  */
 export function navigateAfterArchive(navigate: NavigateFunction): void {
-  const isMobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+  const isMobile =
+    window.matchMedia(MOBILE_MEDIA_QUERY).matches && !isElectron();
   void navigate(isMobile ? routes.conversations : routes.hq, {
     replace: true,
   });

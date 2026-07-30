@@ -5,7 +5,7 @@ import { Typography, cn } from "@vellumai/design-library";
 
 import { useChatLayoutSlotsStore } from "@/components/layout/chat-layout-slots-store";
 import { PageShell } from "@/components/page-shell";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { useAssistantFeatureFlagStore } from "@/stores/assistant-feature-flag-store";
 import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
 import { routes } from "@/utils/routes";
@@ -67,7 +67,7 @@ export function IntelligenceLayout() {
   const hasHydrated = useAssistantFeatureFlagStore.use.hasHydrated();
   const externalPlugins = useAssistantFeatureFlagStore.use.externalPlugins();
   const { pathname } = useLocation();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const setTopBarCenter = useChatLayoutSlotsStore.use.setTopBarCenter();
 
   // Tabs whose mobile rendering is a full-bleed designed surface that paints
@@ -133,7 +133,15 @@ export function IntelligenceLayout() {
     // the outlet wrapper below own their gutters so full-bleed tabs can fill
     // the viewport width instead of floating inside a padded panel.
     <PageShell className="max-md:px-0 max-md:py-0">
-      <h1 className="mb-4 shrink-0 text-title-large text-[var(--content-default)] max-md:hidden">
+      {/* Hidden via the JS gate, not `max-md:hidden`: the phone branch below
+          is now platform-guarded, so a CSS-only width test would hide the
+          title in a narrow Electron window that never gets the `‹ You` row. */}
+      <h1
+        className={cn(
+          "mb-4 shrink-0 text-title-large text-[var(--content-default)]",
+          isMobile && "hidden",
+        )}
+      >
         About {assistantName || "Assistant"}
       </h1>
 
@@ -172,7 +180,12 @@ export function IntelligenceLayout() {
       <nav
         className={cn(
           "mb-4 flex shrink-0 items-center overflow-x-auto border-b border-[var(--border-base)] max-md:mb-0 max-md:px-2",
-          "max-md:hidden",
+          // Was `max-md:hidden` — an independent 767px test. Now that the
+          // `‹ You` replacement row above is platform-guarded, a CSS-only
+          // hide would leave a narrow Electron window with NO section
+          // navigation: nav gone, back row never rendered. Drive both from
+          // the same JS gate so exactly one of them always shows.
+          isMobile && "hidden",
         )}
         style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
         aria-label="About assistant sections"

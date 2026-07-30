@@ -10,7 +10,7 @@ import {
   MobileSidebarTrigger,
 } from "@/components/mobile-sidebar-drawer";
 import { SharedMobileHeader } from "@/mobile-v3/shared-header";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { routes } from "@/utils/routes";
 import { AssistantChannelsDetail } from "@/domains/contacts/components/assistant-channels-detail";
 import { ContactDetailView } from "@/domains/contacts/components/contact-detail-view";
@@ -124,7 +124,7 @@ export function ContactsPage({
   const setFlag = useAssistantFeatureFlagStore.use.setFlag();
   const identityName = useAssistantIdentityStore.use.name();
   const queryClient = useQueryClient();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const navigate = useNavigate();
   const [selection, setSelection] = useState<ContactSelection>({
     kind: "assistant",

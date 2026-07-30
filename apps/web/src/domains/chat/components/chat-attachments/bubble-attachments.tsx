@@ -3,7 +3,7 @@ import type { FC } from "react";
 import type { DisplayAttachment } from "@/domains/chat/types/types";
 
 import { MessageAttachmentSquare } from "@/domains/chat/components/chat-attachments/message-attachment-square";
-import { useAttachmentPreview } from "@/domains/chat/components/chat-attachments/use-attachment-preview";
+import { useAttachmentPreview } from "@/hooks/use-attachment-preview";
 import {
   classifyAttachment,
   isViewableSpreadsheet,

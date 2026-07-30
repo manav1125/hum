@@ -19,7 +19,7 @@ import {
   type CapabilityPower,
   type PowerState,
 } from "@/domains/discovery/use-capability-powers";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { C, mono, serif } from "@/lib/hq-theme";
 import { Mv3ExplorePage } from "@/mobile-v3/you/explore-page";
 import { HqStyle } from "@/pages/hq/hq-kit";
@@ -216,7 +216,7 @@ function HqExplorePage() {
 }
 
 export function ExplorePage() {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) return <Mv3ExplorePage />;
   return <HqExplorePage />;
 }

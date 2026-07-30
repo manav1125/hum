@@ -11,7 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { Button, Typography } from "@vellumai/design-library";
 
 import { CommandPaletteItem } from "@/components/command-palette/command-palette-item";
@@ -63,10 +63,11 @@ export interface CommandPaletteProps {
 
 /**
  * macOS Spotlight-style command palette overlay on desktop, swapping to a
- * full-area inline overlay on mobile (`max-width: 767px`). Dismissable by
- * Escape or backdrop click. Keyboard-shortcut hints (per-item and the ⌘K
- * badge) are suppressed on mobile since there is no physical keyboard to
- * invoke them.
+ * full-area inline overlay on a phone. Dismissable by Escape or backdrop
+ * click. Keyboard-shortcut hints (per-item and the ⌘K badge) are suppressed
+ * on the phone branch since there is no physical keyboard to invoke them —
+ * which is exactly why the gate is `useMobileLayout()` and not a raw width
+ * test: every narrow Electron window still has a real keyboard.
  *
  * Accepts items/sections as props — no data fetching is performed internally.
  */
@@ -82,7 +83,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
   onKeyDown,
   surface = "overlay",
 }) => {
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const overlayRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -123,7 +124,12 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
   // Flatten all items to compute the global index for each item.
   let flatIndex = 0;
   const isWindowSurface = surface === "window";
-  const useMobileLayout = isMobile && !isWindowSurface;
+  // `isWindowSurface` was a hand-rolled platform guard for ONE Electron
+  // surface: the standalone 584px Spotlight panel (`command-palette-window.ts`)
+  // trips the 767px breakpoint. `useMobileLayout()` now covers every Electron
+  // window — including the 720px chat pop-out and Cmd+ zoom, which this clause
+  // never caught — so the check remains only for the browser-hosted window page.
+  const isPhoneLayout = isMobile && !isWindowSurface;
 
   const searchInputRow = (
     <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-base)] px-4 py-3">
@@ -154,7 +160,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
         aria-label="Search"
       />
       {query ? (
-        useMobileLayout ? (
+        isPhoneLayout ? (
           <button
             type="button"
             className="shrink-0 text-body-medium-lighter text-[var(--content-tertiary)]"
@@ -182,7 +188,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
             tintColor="var(--content-tertiary)"
           />
         )
-      ) : useMobileLayout ? null : (
+      ) : isPhoneLayout ? null : (
         <kbd
           className={
             isWindowSurface
@@ -193,7 +199,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
           ⌘K
         </kbd>
       )}
-      {useMobileLayout ? (
+      {isPhoneLayout ? (
         <Button
           variant="ghost"
           size="compact"
@@ -211,7 +217,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
     <div
       ref={listRef}
       className={
-        useMobileLayout
+        isPhoneLayout
           ? "flex-1 overflow-y-auto overscroll-contain p-2"
           : "max-h-[360px] overflow-y-auto overscroll-contain p-2"
       }
@@ -248,7 +254,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
                   icon={item.icon}
                   title={item.title}
                   subtitle={item.subtitle}
-                  shortcutHint={useMobileLayout ? undefined : item.shortcutHint}
+                  shortcutHint={isPhoneLayout ? undefined : item.shortcutHint}
                   isSelected={currentIndex === selectedIndex}
                   onClick={() => onItemSelect?.(item, currentIndex)}
                   surface={surface}
@@ -261,7 +267,7 @@ export const CommandPalette: FC<CommandPaletteProps> = ({
     </div>
   );
 
-  if (useMobileLayout) {
+  if (isPhoneLayout) {
     return (
       <div
         className="absolute inset-0 z-30 flex flex-col bg-[var(--surface-lift)]"

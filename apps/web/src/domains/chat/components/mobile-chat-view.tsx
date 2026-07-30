@@ -3,7 +3,7 @@
  * frames 8 dark / 13b light).
  *
  * This is the MOBILE presentation branch for chat (rendered by `ChatMainPanel`
- * when `useIsMobile()` is true). The desktop chat path (ChatBody + ChatComposer)
+ * when `useMobileLayout()` is true). The desktop chat path (ChatBody + ChatComposer)
  * is left entirely unchanged.
  *
  * It is a pure restyle/restructure: it REUSES the live message-stream wiring —

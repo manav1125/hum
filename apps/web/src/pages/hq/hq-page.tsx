@@ -40,7 +40,7 @@ import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { getBudgetConfig } from "@/lib/budget-api";
 import { haptic } from "@/utils/haptics";
 import { relativeTime } from "@/domains/activity/theme";
@@ -1577,7 +1577,7 @@ function HqHeaderActions({
 
 export function HqPage() {
   const assistantId = useActiveAssistantId();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   // SSE keeps every lane current; polls below are 60s safety-nets.
   useActivitySync(assistantId, true);
 

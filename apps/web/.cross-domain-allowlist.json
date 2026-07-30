@@ -1,7 +1,4 @@
 {
-  "src/domains/agents-at-work/agents-at-work-page.tsx": [
-    "activity"
-  ],
   "src/domains/chat/active-chat-view.tsx": [
     "onboarding"
   ],
@@ -28,24 +25,6 @@
   ],
   "src/domains/create/create-elicit.ts": [
     "chat"
-  ],
-  "src/domains/dashboard/use-dashboard-query.ts": [
-    "chat"
-  ],
-  "src/domains/dashboard/widgets/assistant-state-widget.tsx": [
-    "home"
-  ],
-  "src/domains/dashboard/widgets/connector-query-widget.tsx": [
-    "chat"
-  ],
-  "src/domains/dashboard/widgets/next-moves-widget.tsx": [
-    "home"
-  ],
-  "src/domains/dashboard/widgets/recent-memory-widget.tsx": [
-    "intelligence"
-  ],
-  "src/domains/next-moves/next-moves-page.tsx": [
-    "home"
   ],
   "src/domains/people/people-page.tsx": [
     "chat",

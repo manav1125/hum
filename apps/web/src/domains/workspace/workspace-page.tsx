@@ -1,7 +1,7 @@
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { Mv3FilesPage } from "@/domains/workspace/mobile/mv3-files-page";
 import { WorkspaceBrowser } from "@/domains/workspace/components/workspace-browser";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 
 /**
  * Workspace — a faithful translation of surfaces/Workspace.dc.html onto the
@@ -20,7 +20,7 @@ import { useIsMobile } from "@/hooks/use-is-mobile";
  */
 export function WorkspacePage() {
   const assistantId = useActiveAssistantId();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) {
     return <Mv3FilesPage assistantId={assistantId} />;
   }

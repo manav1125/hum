@@ -45,7 +45,7 @@ import { SurfaceRouter } from "@/domains/chat/components/surfaces/surface-router
 import type { Surface } from "@/domains/chat/types/types";
 import { CueRing } from "@/mobile-v3/cue-ring";
 import { microLabel, rise } from "@/mobile-v3/mv3-kit";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { haptic } from "@/utils/haptics";
 import { useLiveVoice } from "@/domains/chat/voice/live-voice/use-live-voice";
 import {
@@ -175,7 +175,7 @@ export function VoiceModeSurface({
   const assistantId = useActiveAssistantId();
   const voiceMode = useAssistantFeatureFlagStore.use.voiceMode();
   const isOrgReady = useIsOrgReady();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const {
     state,
     partialTranscript,

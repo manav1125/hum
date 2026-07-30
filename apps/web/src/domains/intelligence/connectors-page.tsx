@@ -12,7 +12,7 @@ import {
   connectorappsGetQueryKey,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import type { ConnectorappsGetResponses } from "@/generated/daemon/types.gen";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { healthStatus, relativeAge } from "@/lib/connector-health";
 import { Mv3ConnectionsPage } from "@/mobile-v3/you/connections-page";
 import { TelegramSetupSheet } from "@/domains/intelligence/telegram-setup-sheet";
@@ -365,7 +365,7 @@ export function ConnectorsPage() {
   // MOBILE — the mobile-v3 Connections screen (spec frame 11). Branch in a
   // thin wrapper so the desktop body's hooks never change count across a
   // breakpoint flip. Desktop keeps the progress-hero layout untouched.
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   if (isMobile) {
     return <ConnectorsPageMobile />;
   }

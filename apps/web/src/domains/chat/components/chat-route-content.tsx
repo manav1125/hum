@@ -108,7 +108,7 @@ import { handleSurfaceAction } from "@/domains/chat/surface-actions";
 import { useRuleEditorStore } from "@/domains/chat/rule-editor-store";
 import { useOpenAppFromChat } from "@/domains/chat/hooks/use-open-app-from-chat";
 import { useVoiceInput } from "@/domains/chat/hooks/use-voice-input";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { MobileChatView } from "@/domains/chat/components/mobile-chat-view";
 import { useAssistantAvatar } from "@/hooks/use-assistant-avatar";
 import { useAssistantIdentityStore } from "@/stores/assistant-identity-store";
@@ -193,7 +193,7 @@ export function ChatMainPanel({
 }: ChatMainPanelProps) {
   const location = useLocation();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  const isMobile = useMobileLayout();
   const statusBannerVisible = !location.search.includes("popout=1");
 
   // -------------------------------------------------------------------------
