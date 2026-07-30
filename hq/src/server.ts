@@ -63,11 +63,27 @@ import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { isSlackOAuthConfigured, slackSigningSecret } from "./channels/slack/config.js";
-import { handleSlackRequest, type SlackRouterDeps } from "./channels/slack/router.js";
+import {
+  isSlackOAuthConfigured,
+  slackSigningSecret,
+} from "./channels/slack/config.js";
+import {
+  handleSlackRequest,
+  type SlackRouterDeps,
+} from "./channels/slack/router.js";
 import { mintInstallState } from "./channels/slack/verify.js";
-import { adjustCredits, applyTopup, syncKeyLimitsToBalance } from "./credits.js";
-import type { CreditEntry, Customer, CustomerPlan, HqDb, Instance } from "./db.js";
+import {
+  adjustCredits,
+  applyTopup,
+  syncKeyLimitsToBalance,
+} from "./credits.js";
+import type {
+  CreditEntry,
+  Customer,
+  CustomerPlan,
+  HqDb,
+  Instance,
+} from "./db.js";
 import { InvalidTransitionError } from "./db.js";
 import {
   emailReadiness,
@@ -212,7 +228,9 @@ function parsePlan(raw: unknown, fallback: CustomerPlan): CustomerPlan {
 
 /** Normalize a top-up pack from the website ({pack} body) to a TopupId. */
 function parseTopupPack(raw: unknown): TopupId | null {
-  const s = String(raw ?? "").trim().toLowerCase();
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
   if (s === "topup_1000" || s === "1000" || s === "small") return "topup_1000";
   if (s === "topup_5000" || s === "5000" || s === "large") return "topup_5000";
   return null;
@@ -311,7 +329,10 @@ export function createHandler(
                 {
                   appIDs: [appId],
                   components: [
-                    { "/": "/auth*", comment: "sign-in magic link opens the app" },
+                    {
+                      "/": "/auth*",
+                      comment: "sign-in magic link opens the app",
+                    },
                     { "/": "/m/*", comment: "short sign-in links" },
                   ],
                 },
@@ -414,7 +435,10 @@ export function createHandler(
       if (method === "GET" || method === "HEAD") {
         const shareMatch = path.match(/^\/skills\/([^/]+)$/);
         if (shareMatch) {
-          return handleSkillSharePage(decodeURIComponent(shareMatch[1]), method);
+          return handleSkillSharePage(
+            decodeURIComponent(shareMatch[1]),
+            method,
+          );
         }
       }
 
@@ -446,7 +470,8 @@ export function createHandler(
         if (method === "POST" && path === "/admin/catalog/ensure") {
           const result = await ensureCatalog(fetchImpl);
           if (!result.ok) {
-            const status = result.reason === "stripe_not_configured" ? 503 : 502;
+            const status =
+              result.reason === "stripe_not_configured" ? 503 : 502;
             return json({ error: result.reason }, status);
           }
           db.recordEvent("stripe_catalog_ensured", null, {
@@ -550,8 +575,7 @@ export function createHandler(
       customerId: customer.id,
       percentOff: Number(body.percentOff ?? 0),
       maxUses: Number(body.maxUses ?? 1),
-      expiresAt:
-        expiresDays > 0 ? Date.now() + expiresDays * 86_400_000 : null,
+      expiresAt: expiresDays > 0 ? Date.now() + expiresDays * 86_400_000 : null,
     });
     if (customer.status === "waitlist") {
       db.transitionCustomer(customer.id, "invited");
@@ -647,9 +671,11 @@ export function createHandler(
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       const status =
-        reason === "invite_unknown" ? 404
-        : reason === "invite_expired" || reason === "invite_exhausted" ? 410
-        : 500;
+        reason === "invite_unknown"
+          ? 404
+          : reason === "invite_expired" || reason === "invite_exhausted"
+            ? 410
+            : 500;
       return json({ error: reason }, status);
     }
 
@@ -743,13 +769,19 @@ export function createHandler(
    * Manual credit mutation: a top-up ({credits} or {topupId}, idempotent
    * per optional {ref}) or a signed adjustment ({kind:"adjustment", delta}).
    */
-  async function handleTopup(customer: Customer, req: Request): Promise<Response> {
+  async function handleTopup(
+    customer: Customer,
+    req: Request,
+  ): Promise<Response> {
     const body = await readJsonBody(req);
 
     if (body.kind === "adjustment") {
       const delta = Number(body.delta ?? body.credits);
       if (!Number.isInteger(delta) || delta === 0) {
-        return json({ error: "adjustment needs a non-zero integer delta" }, 400);
+        return json(
+          { error: "adjustment needs a non-zero integer delta" },
+          400,
+        );
       }
       const entry = adjustCredits(db, {
         customerId: customer.id,
@@ -767,7 +799,10 @@ export function createHandler(
       ? TOPUPS[body.topupId].credits
       : Number(body.credits);
     if (!Number.isInteger(credits) || credits <= 0) {
-      return json({ error: "topup needs positive integer credits or a topupId" }, 400);
+      return json(
+        { error: "topup needs positive integer credits or a topupId" },
+        400,
+      );
     }
     const ref =
       typeof body.ref === "string" && body.ref.trim()
@@ -939,7 +974,10 @@ export function createHandler(
     const probe = url.searchParams.get("probe") !== "0";
     const email = await emailReadiness({ probe, fetchImpl });
     const lastSweep = db.findLatestEventByKindData("fleet_sweep_completed", "");
-    const lastBackupOk = db.findLatestEventByKindData("db_backup_completed", "");
+    const lastBackupOk = db.findLatestEventByKindData(
+      "db_backup_completed",
+      "",
+    );
     const lastBackupFail = db.findLatestEventByKindData("db_backup_failed", "");
     const sharedKeyPresent = !!process.env.OPENROUTER_SHARED_KEY;
     return json({
@@ -948,8 +986,7 @@ export function createHandler(
       now: Date.now(),
       driver: {
         id: driver.id,
-        configured:
-          (driver as { configured?: boolean }).configured ?? true,
+        configured: (driver as { configured?: boolean }).configured ?? true,
       },
       email,
       llm: {
@@ -970,19 +1007,17 @@ export function createHandler(
       },
       invites: { allowlisted: db.listInviteEmails().length },
       fleetSweep: {
-        disabled:
-          ["1", "true"].includes(
-            process.env.HQ_FLEET_SWEEP_DISABLED?.trim().toLowerCase() ?? "",
-          ),
+        disabled: ["1", "true"].includes(
+          process.env.HQ_FLEET_SWEEP_DISABLED?.trim().toLowerCase() ?? "",
+        ),
         opsAlertEmailConfigured: !!process.env.HQ_OPS_ALERT_EMAIL?.trim(),
         lastCompletedAt: lastSweep?.ts ?? null,
         lastResult: lastSweep ? JSON.parse(lastSweep.dataJson) : null,
       },
       backups: {
-        disabled:
-          ["1", "true"].includes(
-            process.env.HQ_DB_BACKUP_DISABLED?.trim().toLowerCase() ?? "",
-          ),
+        disabled: ["1", "true"].includes(
+          process.env.HQ_DB_BACKUP_DISABLED?.trim().toLowerCase() ?? "",
+        ),
         lastCompletedAt: lastBackupOk?.ts ?? null,
         lastFailedAt: lastBackupFail?.ts ?? null,
       },
@@ -1121,6 +1156,26 @@ export function createHandler(
         customer.id,
         result.ok ? { sent: result.sent } : { reason: result.reason },
       );
+      // Report what actually happened. This used to return
+      // `{ok:true,status:"sent"}` unconditionally — the failure was recorded in
+      // the audit trail and then contradicted in the response, so a Resend
+      // outage read as "Check your inbox" to every user at once and the only
+      // evidence was in a table nobody watches during a launch.
+      if (!result.ok) {
+        return json(
+          {
+            ok: false,
+            status: "send_failed",
+            error: "Could not send the email",
+          },
+          502,
+        );
+      }
+      if (!result.sent) {
+        // Log-only mode (no RESEND_API_KEY). Nothing reached the user, so
+        // saying "check your inbox" would be the same lie in a different hat.
+        return json({ ok: true, status: "email_not_configured" });
+      }
       return json({ ok: true, status: "sent" });
     }
     if (isEmailAllowlisted(email)) {
@@ -1183,7 +1238,10 @@ export function createHandler(
       native
         ? json({ ok: false, error }, 400)
         : redirectTo(`/signin?error=${error}`);
-    if (!raw) return native ? json({ ok: false, error: "missing_token" }, 400) : redirectTo("/signin");
+    if (!raw)
+      return native
+        ? json({ ok: false, error: "missing_token" }, 400)
+        : redirectTo("/signin");
     const consumed = db.consumeSigninToken(hashSigninToken(raw));
     if (!consumed) return fail("link_expired");
     const customer = db.getCustomer(consumed.customerId);
@@ -1273,10 +1331,13 @@ export function createHandler(
   function handleSkillSharePage(slug: string, method: string): Response {
     const skill = getShareSkill(slug);
     if (!skill) {
-      return new Response(method === "HEAD" ? null : renderShareNotFoundPage(), {
-        status: 404,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
+      return new Response(
+        method === "HEAD" ? null : renderShareNotFoundPage(),
+        {
+          status: 404,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        },
+      );
     }
     const html = renderSkillSharePage(skill, publicSiteBase());
     return new Response(method === "HEAD" ? null : html, {
@@ -1301,7 +1362,10 @@ export function createHandler(
       // Link-driven: the account header's "Open Cue" button. Mint a fresh
       // instance magic link; quiet fallback when there's nothing to open.
       if (!customer) {
-        return new Response(null, { status: 302, headers: { Location: "/signin" } });
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/signin" },
+        });
       }
       const magic = await mintMagicLinkForCustomer({ db, fetchImpl }, customer);
       return new Response(null, {
@@ -1315,7 +1379,10 @@ export function createHandler(
     if (path === "/account/portal" && method === "GET") {
       // Link-driven route: redirect rather than JSON on every outcome.
       if (!customer) {
-        return new Response(null, { status: 302, headers: { Location: "/signin" } });
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "/signin" },
+        });
       }
       const sub = db.getSubscription(customer.id);
       if (!sub?.stripeCustomerId) {
@@ -1402,7 +1469,8 @@ export function createHandler(
       const start = today.getTime() - i * dayMs;
       const credits = ledger
         .filter(
-          (e) => e.kind === "usage_sync" && e.ts >= start && e.ts < start + dayMs,
+          (e) =>
+            e.kind === "usage_sync" && e.ts >= start && e.ts < start + dayMs,
         )
         .reduce((sum, e) => sum + Math.max(0, -e.delta), 0);
       days.push({ date: new Date(start).toISOString().slice(0, 10), credits });
@@ -1518,14 +1586,23 @@ export function createHandler(
 
     if (action === "suspend") {
       await driver.suspend(instance.externalId);
-      return json({ ok: true, instance: redact(db.transitionInstance(instanceId, "suspended")) });
+      return json({
+        ok: true,
+        instance: redact(db.transitionInstance(instanceId, "suspended")),
+      });
     }
     if (action === "resume") {
       await driver.resume(instance.externalId);
-      return json({ ok: true, instance: redact(db.transitionInstance(instanceId, "live")) });
+      return json({
+        ok: true,
+        instance: redact(db.transitionInstance(instanceId, "live")),
+      });
     }
     await driver.destroy(instance.externalId);
-    return json({ ok: true, instance: redact(db.transitionInstance(instanceId, "deleted")) });
+    return json({
+      ok: true,
+      instance: redact(db.transitionInstance(instanceId, "deleted")),
+    });
   }
 }
 

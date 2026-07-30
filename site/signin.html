@@ -79,6 +79,16 @@
       </div>
     </sc-if>
 
+    <!-- COULD NOT SEND / LINK EXPIRED -->
+    <sc-if value="{{ isError }}" hint-placeholder-val="{{ false }}">
+      <div id="state-error" style="text-align:center;animation:cueLineIn .5s ease both">
+        <div style="width:66px;height:66px;border-radius:50%;background:rgba(232,105,93,.14);border:1px solid rgba(232,105,93,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 22px;font-size:26px;color:#E8695D">!</div>
+        <h1 style="font-size:clamp(24px,5vw,30px);line-height:1.1;letter-spacing:-.02em;font-weight:600;color:#fff;margin:0">{{ errorTitle }}</h1>
+        <p style="font-size:14.5px;color:#AEB7C7;margin:14px auto 0;line-height:1.65;max-width:320px">{{ errorBody }}</p>
+        <button onClick="{{ reset }}" style="margin-top:22px;background:#3D6EE8;color:#fff;border:none;border-radius:11px;padding:14px 26px;font-size:14.5px;font-weight:600;font-family:inherit;cursor:pointer;box-shadow:0 14px 30px -12px rgba(61,110,232,.7)">Try again</button>
+      </div>
+    </sc-if>
+
     <div style="text-align:center;font-size:12.5px;color:#7E8BA3;margin-top:20px">New to Cue? <a href="pricing.html" style="color:#9DB4E6;text-decoration:none">See plans</a></div>
   </div>
 </div>
@@ -88,10 +98,16 @@
 // Wired to Cue HQ via commerce.js: POST /signin. The private-alpha invite
 // gate answers status: sent | invited_no_account | invite_required, and the
 // page shows honest copy per state (invite-only alpha — existence-leak
-// paranoia is deliberately traded for honesty here). Network failures fall
-// back to the neutral "sent" state.
+// paranoia is deliberately traded for honesty here).
+//
+// A failure must NOT read as "Check your inbox." `CueCommerce.apiCall`
+// resolves for EVERY HTTP status (it returns {status, ok, body} and never
+// rejects), so the old `try/catch` around it could not see a 502/503 and the
+// page cheerfully told the user to go look in an inbox that would stay empty.
+// A Resend outage would have done that to every user at once, on launch day.
 class Component extends DCLogic {
-  state = { view: "default", email: "" }; // default | sent | invite | invited
+  // default | sent | invite | invited | error
+  state = { view: "default", email: "", errorKind: null };
 
   async onSubmit(e){
     e.preventDefault();
@@ -107,26 +123,74 @@ class Component extends DCLogic {
     const btn = document.querySelector("#signin-form button[type=submit]");
     if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
     let view = "sent";
+    let errorKind = null;
     try {
       const res = await CueCommerce.signin(email);
       const status = res && res.body && res.body.status;
       if (status === "invite_required") view = "invite";
       else if (status === "invited_no_account") view = "invited";
-    } catch (_) { /* neutral sent state */ }
+      else if (!res || !res.ok || status === "send_failed") {
+        // Explicit: apiCall resolves on 4xx/5xx too, so `ok` is the only
+        // signal that the request actually succeeded.
+        view = "error"; errorKind = "send_failed";
+      } else if (status === "email_not_configured") {
+        view = "error"; errorKind = "not_configured";
+      }
+    } catch (_) {
+      // A genuine network/transport failure — also not an inbox to check.
+      view = "error"; errorKind = "send_failed";
+    }
     this._sending = false;
-    this.setState({ view, email });
+    if (btn) { btn.disabled = false; btn.textContent = "Email me a sign-in link"; }
+    this.setState({ view, email, errorKind });
+  }
+
+  // A consumed or expired link redirects here as /signin?error=link_expired
+  // (hq/src/server.ts). Nothing read that param, so the user landed on a
+  // pristine form with no explanation of why they were bounced — and corporate
+  // link scanners burn one-time tokens by fetching them, so this WILL happen.
+  componentDidMount() {
+    let err = null;
+    try {
+      err = new URLSearchParams(window.location.search).get("error");
+    } catch (_) { /* no URL access */ }
+    if (err) this.setState({ view: "error", errorKind: err });
+  }
+
+  errorCopy() {
+    switch (this.state.errorKind) {
+      case "link_expired":
+        return {
+          title: "That link has expired.",
+          body: "Sign-in links last 15 minutes and can only be used once — and some corporate mail scanners open them before you do. Send yourself a fresh one.",
+        };
+      case "not_configured":
+        return {
+          title: "Email isn't set up yet.",
+          body: "This Cue instance has no email provider configured, so no link could be sent. Tell us at hello@justcue.ai and we'll sort it out.",
+        };
+      default:
+        return {
+          title: "We couldn't send that link.",
+          body: "The email didn't go out — this is on our side, not yours. Try again in a moment, or reach us at hello@justcue.ai.",
+        };
+    }
   }
 
   renderVals() {
     const v = this.state.view;
+    const err = this.errorCopy();
     return {
       isDefault: v === "default",
       isSent: v === "sent",
       isInvite: v === "invite",
       isInvited: v === "invited",
+      isError: v === "error",
+      errorTitle: err.title,
+      errorBody: err.body,
       email: this.state.email,
       onSubmit: (e) => this.onSubmit(e),
-      reset: () => this.setState({ view: "default", email: "" }),
+      reset: () => this.setState({ view: "default", email: "", errorKind: null }),
     };
   }
 }

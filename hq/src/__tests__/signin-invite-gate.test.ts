@@ -42,8 +42,9 @@ afterEach(() => {
   }
 });
 
-function outboundMock() {
-  const resendCalls: { path: string; body: Record<string, unknown> | null }[] = [];
+function outboundMock(opts: { resendStatus?: number } = {}) {
+  const resendCalls: { path: string; body: Record<string, unknown> | null }[] =
+    [];
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("api.resend.com")) {
@@ -56,6 +57,12 @@ function outboundMock() {
           data: [{ name: "justcue.ai", status: "verified" }],
         });
       }
+      // Simulate a provider outage when asked (B8).
+      if (opts.resendStatus && opts.resendStatus >= 400) {
+        return new Response("service unavailable", {
+          status: opts.resendStatus,
+        });
+      }
       return Response.json({ id: "email_1" });
     }
     return new Response("not found", { status: 404 });
@@ -63,16 +70,20 @@ function outboundMock() {
   return { fetchImpl, resendCalls };
 }
 
-function setup() {
+function setup(opts: { resendStatus?: number } = {}) {
   const db = new HqDb(":memory:");
-  const { fetchImpl, resendCalls } = outboundMock();
+  const { fetchImpl, resendCalls } = outboundMock(opts);
   const handle = createHandler({
     db,
     driver: new MockDriver(),
     adminToken: ADMIN,
     fetchImpl,
   });
-  const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+  const post = (
+    path: string,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ) =>
     handle(
       new Request(`http://hq.local${path}`, {
         method: "POST",
@@ -89,11 +100,20 @@ describe("signin invite gate (P0-7)", () => {
     const { db, post } = setup();
     const res = await post("/signin", { email: "stranger@example.com" });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; status: string; message: string };
+    const body = (await res.json()) as {
+      ok: boolean;
+      status: string;
+      message: string;
+    };
     expect(body.ok).toBe(true);
     expect(body.status).toBe("invite_required");
     expect(body.message).toContain("private alpha");
-    expect(db.findLatestEventByKindData("signin_unknown_email", "stranger@example.com")).not.toBeNull();
+    expect(
+      db.findLatestEventByKindData(
+        "signin_unknown_email",
+        "stranger@example.com",
+      ),
+    ).not.toBeNull();
     // No signin token was minted for a stranger.
     expect(db.findLatestEventByKindData("signin_email_sent", "")).toBeNull();
   });
@@ -105,12 +125,16 @@ describe("signin invite gate (P0-7)", () => {
     const body = (await res.json()) as { status: string };
     expect(body.status).toBe("invited_no_account");
     expect(
-      db.findLatestEventByKindData("signin_invited_no_account", "invited@example.com"),
+      db.findLatestEventByKindData(
+        "signin_invited_no_account",
+        "invited@example.com",
+      ),
     ).not.toBeNull();
   });
 
   test("allowlisted email via HQ_ALPHA_ALLOWLIST CSV is recognized too", async () => {
-    process.env.HQ_ALPHA_ALLOWLIST = "a@example.com, CSV@Example.com ,b@example.com";
+    process.env.HQ_ALPHA_ALLOWLIST =
+      "a@example.com, CSV@Example.com ,b@example.com";
     const { post } = setup();
     const res = await post("/signin", { email: "csv@example.com" });
     expect(((await res.json()) as { status: string }).status).toBe(
@@ -122,8 +146,15 @@ describe("signin invite gate (P0-7)", () => {
     const { db, post } = setup(); // RESEND_API_KEY cleared by beforeEach
     const c = db.createCustomer({ email: "maya@example.com", name: "Maya" });
     const res = await post("/signin", { email: "maya@example.com" });
-    expect(((await res.json()) as { status: string }).status).toBe("sent");
-    expect(db.findLatestEvent("signin_email_skipped_no_key", c.id)).not.toBeNull();
+    // B8: log-only mode means NOTHING reached the user, so the response must
+    // not say "sent" — this previously returned "sent" and the page told the
+    // user to check an inbox that would stay empty.
+    expect(((await res.json()) as { status: string }).status).toBe(
+      "email_not_configured",
+    );
+    expect(
+      db.findLatestEvent("signin_email_skipped_no_key", c.id),
+    ).not.toBeNull();
     expect(db.findLatestEvent("signin_email_sent", c.id)).toBeNull();
   });
 
@@ -136,6 +167,27 @@ describe("signin invite gate (P0-7)", () => {
     expect(db.findLatestEvent("signin_email_skipped_no_key", c.id)).toBeNull();
     expect(resendCalls.filter((c2) => c2.path === "/emails").length).toBe(1);
   });
+
+  // B8: the response used to be a hardcoded {ok:true,status:"sent"} regardless
+  // of what sendEmail returned. The failure was written to the audit trail and
+  // then contradicted in the response — so a Resend outage read as "Check your
+  // inbox" to every user at once, with the only evidence in a table nobody
+  // watches during a launch.
+  test("a Resend outage is reported as a failure, not as 'sent'", async () => {
+    process.env.RESEND_API_KEY = "re_test";
+    const { db, post } = setup({ resendStatus: 503 });
+    const c = db.createCustomer({ email: "maya@example.com", name: "Maya" });
+
+    const res = await post("/signin", { email: "maya@example.com" });
+
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { ok: boolean; status: string };
+    expect(body.ok).toBe(false);
+    expect(body.status).toBe("send_failed");
+    // The audit trail and the response must now agree.
+    expect(db.findLatestEvent("signin_email_failed", c.id)).not.toBeNull();
+    expect(db.findLatestEvent("signin_email_sent", c.id)).toBeNull();
+  });
 });
 
 describe("/admin/invites/emails", () => {
@@ -143,17 +195,25 @@ describe("/admin/invites/emails", () => {
     const { db, handle, post, adminHeaders } = setup();
 
     // Unauthorized is rejected.
-    const anon = await post("/admin/invites/emails", { emails: ["a@example.com"] });
+    const anon = await post("/admin/invites/emails", {
+      emails: ["a@example.com"],
+    });
     expect(anon.status).toBe(401);
 
     const add = await post(
       "/admin/invites/emails",
-      { emails: ["A@example.com", "b@example.com", "not-an-email"], note: "wave 1" },
+      {
+        emails: ["A@example.com", "b@example.com", "not-an-email"],
+        note: "wave 1",
+      },
       adminHeaders,
     );
     expect(add.status).toBe(200);
     const added = (await add.json()) as { added: { email: string }[] };
-    expect(added.added.map((e) => e.email).sort()).toEqual(["a@example.com", "b@example.com"]);
+    expect(added.added.map((e) => e.email).sort()).toEqual([
+      "a@example.com",
+      "b@example.com",
+    ]);
 
     const list = await handle(
       new Request("http://hq.local/admin/invites/emails", {
