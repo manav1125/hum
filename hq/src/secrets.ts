@@ -74,12 +74,61 @@ export const TOOL_API_PASSTHROUGH_ENV_VARS = [
   "CUE_SERPER_API_KEY",
 ] as const;
 
+/**
+ * Brain-selection env HQ forwards to every instance when set in its own
+ * environment. None of these are secrets — they are model ids and OpenRouter
+ * routing preferences, and all are allowlisted in the assistant's
+ * `safe-env.ts`.
+ *
+ * Why this list exists: an instance's LLM routing lived entirely in
+ * machine-level env on the one hand-tuned production machine, so a
+ * newly provisioned instance inherited none of it and fell back to the
+ * hardcoded defaults in `assistant/src/config/llm-resolver.ts`. Forwarding
+ * these from HQ makes the fleet's brain steerable from one place — change HQ's
+ * env and every subsequently provisioned instance follows, with no image
+ * rebuild.
+ *
+ * Unset here ⇒ the instance uses the resolver's own defaults
+ * (`DEFAULT_OPENROUTER_MODEL` / `DEFAULT_OPENROUTER_FLASH_MODEL`), which are
+ * the pair production runs. Deliberately NOT set to a value here: leaving
+ * `CUE_OPENROUTER_PROVIDER_ORDER` / `..._ALLOW_FALLBACKS` unset lets OpenRouter
+ * pick and fall back freely, which is the more robust default for a fleet
+ * nobody is watching. `..._REQUIRE_PARAMS` must never be "true" — it caused a
+ * total inference outage once (open-weight models cap max_tokens near 16k).
+ */
+export const BRAIN_PASSTHROUGH_ENV_VARS = [
+  "CUE_OPENROUTER_MODEL",
+  "CUE_OPENROUTER_FLASH_MODEL",
+  "CUE_OPENROUTER_BASE_URL",
+  "CUE_OPENROUTER_PROVIDER_ORDER",
+  "CUE_OPENROUTER_PROVIDER_ALLOW_FALLBACKS",
+  "CUE_OPENROUTER_PROVIDER_REQUIRE_PARAMS",
+  // Advisor escalation tier (the "consult a stronger model before a
+  // high-stakes action" path). Defaults live in assistant/src/agent/advisor.ts.
+  "CUE_ADVISOR_MODEL",
+  "CUE_ADVISOR_FALLBACK_MODEL",
+] as const;
+
 /** Collect the tool-API passthrough env pairs present in `source`. */
 export function toolApiPassthroughEnv(
   source: Record<string, string | undefined> = process.env,
 ): Record<string, string> {
+  return collectPassthrough(TOOL_API_PASSTHROUGH_ENV_VARS, source);
+}
+
+/** Collect the brain-selection passthrough env pairs present in `source`. */
+export function brainPassthroughEnv(
+  source: Record<string, string | undefined> = process.env,
+): Record<string, string> {
+  return collectPassthrough(BRAIN_PASSTHROUGH_ENV_VARS, source);
+}
+
+function collectPassthrough(
+  keys: readonly string[],
+  source: Record<string, string | undefined>,
+): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const key of TOOL_API_PASSTHROUGH_ENV_VARS) {
+  for (const key of keys) {
     const value = source[key]?.trim();
     if (value) env[key] = value;
   }
@@ -91,8 +140,9 @@ export function toolApiPassthroughEnv(
  * the repo-root render.yaml). Provider/channel secrets (OPENROUTER_API_KEY,
  * REPLICATE_API_TOKEN, …) come from `providerEnv` — HQ never hardcodes them.
  * Bundled tool-API keys (CUE_TAVILY_API_KEY, CUE_FIRECRAWL_API_KEY,
- * CUE_SERPER_API_KEY) pass through from HQ's own env when set; `providerEnv`
- * can still override them per-instance.
+ * CUE_SERPER_API_KEY) and brain selection (CUE_OPENROUTER_MODEL and friends,
+ * see BRAIN_PASSTHROUGH_ENV_VARS) pass through from HQ's own env when set;
+ * `providerEnv` can still override them per-instance.
  */
 export function buildInstanceEnv(
   secrets: InstanceSecrets,
@@ -124,9 +174,11 @@ export function buildInstanceEnv(
     ASSISTANT_HOST: "127.0.0.1",
     DEFAULT_ASSISTANT_ID: "cue-local",
     VELLUM_ASSISTANT_NAME: DEFAULT_ASSISTANT_NAME,
-    // Bundled tool-API platform keys (optional; only included when set in
-    // HQ's env). providerEnv below can still override per-instance.
+    // Bundled tool-API platform keys + brain selection (optional; only
+    // included when set in HQ's env). providerEnv below can still override
+    // per-instance.
     ...toolApiPassthroughEnv(),
+    ...brainPassthroughEnv(),
     ...providerEnv,
   };
 }
@@ -253,9 +305,7 @@ export async function guardianInit(
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `guardian/init → ${res.status}: ${text.slice(0, 300)}`,
-    );
+    throw new Error(`guardian/init → ${res.status}: ${text.slice(0, 300)}`);
   }
   const body = (await res.json()) as {
     guardianPrincipalId?: string;
@@ -282,6 +332,9 @@ export async function guardianInit(
  * There is no `#selfHostToken=` fragment path — the query param IS the
  * supported magic-link mechanism.
  */
-export function buildMagicLink(instanceUrl: string, actorToken: string): string {
+export function buildMagicLink(
+  instanceUrl: string,
+  actorToken: string,
+): string {
   return `${instanceUrl.replace(/\/$/, "")}/assistant/?cueToken=${encodeURIComponent(actorToken)}`;
 }

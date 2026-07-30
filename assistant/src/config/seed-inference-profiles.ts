@@ -10,6 +10,10 @@ import { resolveModelIntent } from "../providers/model-intents.js";
 import type { ModelIntent } from "../providers/types.js";
 import { credentialKey } from "../security/credential-key.js";
 import { getLogger } from "../util/logger.js";
+import {
+  selfHostOpenRouterFlashModel,
+  selfHostOpenRouterModel,
+} from "./llm-resolver.js";
 import { loadRawConfig, saveRawConfig } from "./loader.js";
 import {
   DEFAULT_CONTEXT_WINDOW_MAX_INPUT_TOKENS,
@@ -263,11 +267,10 @@ export function seedInferenceProfiles(
     // Self-host on OpenRouter: when `OPENROUTER_API_KEY` is set the platform
     // "...-managed" proxy is unavailable, so route the managed profiles through
     // the user's OpenRouter key (seeded into the store by the entrypoint, via
-    // the canonical `openrouter` connection) using Claude models — strong
-    // tool-calling AND vision-capable (generated images are fed back into the
-    // turn, so a non-vision model here breaks every image flow). Uses the same
-    // env overrides as the resolver's self-host force (`llm-resolver.ts`) so
-    // the seeded profiles and the per-call override can never disagree. Leaves
+    // the canonical `openrouter` connection). Reads the same two helpers as the
+    // resolver's self-host force (`llm-resolver.ts`) so the seeded profiles and
+    // the per-call override can never disagree — including the fallback model
+    // ids, which used to be duplicated string literals in both files. Leaves
     // the open-weight economy profile alone. Local/platform installs (no env
     // var) are unaffected.
     if (process.env.OPENROUTER_API_KEY && name !== "balanced-economy") {
@@ -275,9 +278,8 @@ export function seedInferenceProfiles(
       next.provider_connection = "openrouter";
       next.model =
         name === "cost-optimized"
-          ? (process.env.CUE_OPENROUTER_FLASH_MODEL ??
-            "anthropic/claude-haiku-4.5")
-          : (process.env.CUE_OPENROUTER_MODEL ?? "anthropic/claude-sonnet-4.5");
+          ? selfHostOpenRouterFlashModel()
+          : selfHostOpenRouterModel();
     }
     if (
       isByokMode &&

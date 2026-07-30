@@ -93,17 +93,80 @@ export interface ResolveCallSiteOpts {
 }
 
 /**
- * Self-host-on-OpenRouter override. When `OPENROUTER_API_KEY` is set (the
- * single-tenant Render deploy), force every resolved call site onto
- * OpenRouter regardless of the workspace's active/default profile — a fresh
- * self-host hatch points those at Anthropic-direct (BYO key), which has no
- * platform proxy and, here, an exhausted credit balance. The model defaults to
- * Claude via OpenRouter (fast + reliable tool use), overridable per-env via
- * `CUE_OPENROUTER_MODEL` / `CUE_OPENROUTER_FLASH_MODEL`. The canonical
- * `openrouter` connection is seeded at boot and the key lives in the secure
- * store. Read once at module load so the resolver stays effectively pure.
+ * Self-host-on-OpenRouter override. When `OPENROUTER_API_KEY` is set (an
+ * HQ-provisioned instance), force every resolved call site onto OpenRouter
+ * regardless of the workspace's active/default profile — a fresh self-host
+ * hatch points those at Anthropic-direct (BYO key), which has no platform proxy
+ * and, here, an exhausted credit balance. Model ids come from
+ * `CUE_OPENROUTER_MODEL` / `CUE_OPENROUTER_FLASH_MODEL`, else the default pair
+ * below. The canonical `openrouter` connection is seeded at boot and the key
+ * lives in the secure store.
+ *
+ * Read per call, like every other env read in this resolver
+ * (`CUE_ANTHROPIC_CALLSITES`, `CUE_OPENROUTER_MODEL`, …). It was previously a
+ * module-load constant, which made the force's behaviour depend on whether some
+ * other module had already imported this file — invisible in production, but it
+ * silently disabled the force in any test that did not happen to import first.
  */
-const FORCE_OPENROUTER_DEEPSEEK = !!process.env.OPENROUTER_API_KEY;
+function forceOpenRouterSelfHost(): boolean {
+  return !!process.env.OPENROUTER_API_KEY;
+}
+
+/**
+ * The OpenRouter model pair every self-host install falls back to when the
+ * operator has not set `CUE_OPENROUTER_MODEL` / `CUE_OPENROUTER_FLASH_MODEL`.
+ *
+ * These defaults are load-bearing, not cosmetic: HQ provisions instances with
+ * an `OPENROUTER_API_KEY` and nothing else, so a freshly provisioned instance
+ * serves **every** turn on whatever these constants say. They previously named
+ * `anthropic/claude-sonnet-4.5` / `haiku-4.5`, which the platform OpenRouter
+ * account is ToS-blocked from — verified again on 2026-07-30, both models still
+ * return HTTP 403 "prohibited due to a violation of provider Terms Of Service"
+ * — so the first message a new user sent could never succeed. Child keys minted
+ * by `provisionLlmKey` inherit the parent account's block, so per-customer keys
+ * fail the same way.
+ *
+ * The pair below is what the production instance actually runs and what that
+ * same key answers 200 for. Keep both `seedInferenceProfiles` and the resolver
+ * force reading these constants so a seeded profile and a per-call override can
+ * never disagree.
+ */
+export const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-pro";
+export const DEFAULT_OPENROUTER_FLASH_MODEL = "deepseek/deepseek-v4-flash";
+
+/**
+ * Model family of the seeded managed pair. A resolved model matching this is
+ * re-pinned to the current env values by the self-host force below, so
+ * `CUE_OPENROUTER_MODEL` stays authoritative over what seeding wrote to disk.
+ */
+const SEEDED_MANAGED_MODEL_PREFIX = /^deepseek\//i;
+
+/**
+ * Model families the platform OpenRouter account is ToS-blocked from. A profile
+ * naming one of these resolves with `provider === "openrouter"` and so would
+ * otherwise sail straight past the force below and serve a hard 403 on every
+ * turn.
+ *
+ * This is not hypothetical: instances provisioned before the default pair was
+ * corrected had `{provider: "openrouter", model: "anthropic/claude-sonnet-4.5"}`
+ * written into their managed profiles by `seedInferenceProfiles`, and seeding
+ * preserves existing profile rows — so fixing the default alone would leave
+ * every already-provisioned instance broken. Re-pinning at call time is what
+ * actually repairs them.
+ */
+const BLOCKED_ON_PLATFORM_KEY = /^(anthropic|openai)\//i;
+
+/** Operator-overridable strong model for the self-host OpenRouter force. */
+export function selfHostOpenRouterModel(): string {
+  return process.env.CUE_OPENROUTER_MODEL ?? DEFAULT_OPENROUTER_MODEL;
+}
+
+/** Operator-overridable fast model for the self-host OpenRouter force. */
+export function selfHostOpenRouterFlashModel(): string {
+  return (
+    process.env.CUE_OPENROUTER_FLASH_MODEL ?? DEFAULT_OPENROUTER_FLASH_MODEL
+  );
+}
 
 export function resolveCallSiteConfig(
   callSite: LLMCallSite,
@@ -213,33 +276,40 @@ export function resolveCallSiteConfig(
       return resolved;
     }
   }
-  // Self-host OpenRouter override (see FORCE_OPENROUTER_DEEPSEEK): force every
+  // Self-host OpenRouter override (see forceOpenRouterSelfHost): force every
   // resolved call site onto OpenRouter regardless of the profile layers.
   // mainAgent runs a strong tool-calling model; other call sites run a faster
-  // one. Defaults to Claude via OpenRouter (fast + reliable tool use);
-  // overridable per-env via CUE_OPENROUTER_MODEL / CUE_OPENROUTER_FLASH_MODEL.
+  // one. Model ids come from the operator env, defaulting to the pair in
+  // DEFAULT_OPENROUTER_MODEL / DEFAULT_OPENROUTER_FLASH_MODEL.
   //
   // The override also fires when the profile is ALREADY on OpenRouter but its
-  // model is a stale seeded `deepseek/*` string: earlier seeds wrote DeepSeek
-  // models into the managed profiles, and because those rows satisfied
-  // `provider === "openrouter"` they slipped past this force and served real
-  // turns on DeepSeek — which has no vision endpoint, so every
-  // generated-image round-trip failed with "no endpoints found that support
-  // image input". Matching the stale model family here retires those rows at
-  // call time; models a user deliberately picked via the conversation model
-  // picker are untouched unless they are that same stale family.
-  const staleSeededModel = /^deepseek\//i.test(String(resolved.model ?? ""));
+  // model is one of the seeded managed pair: those rows satisfy
+  // `provider === "openrouter"` and would otherwise slip past this force, so an
+  // operator who re-points the fleet with CUE_OPENROUTER_MODEL would keep
+  // serving turns on whatever model was written to the config at seed time.
+  // Re-pinning here makes the env the single source of truth for the managed
+  // pair at call time. A model the user deliberately picked via the
+  // conversation model picker is untouched unless it is that same pair.
+  //
+  // The managed pair is text-only, which is safe: vision-tier routing
+  // (`agent/vision-tier.ts`, enabled by default) re-pins an image-bearing round
+  // to a vision-capable model when the resolved one is known text-only in the
+  // model catalog.
+  const resolvedModel = String(resolved.model ?? "");
+  const seededManagedModel = SEEDED_MANAGED_MODEL_PREFIX.test(resolvedModel);
+  // A model this key cannot serve is worth overriding even when the user chose
+  // it deliberately: the alternative is a 403 on every turn.
+  const blockedModel = BLOCKED_ON_PLATFORM_KEY.test(resolvedModel);
   if (
-    FORCE_OPENROUTER_DEEPSEEK &&
-    (resolved.provider !== "openrouter" || staleSeededModel)
+    forceOpenRouterSelfHost() &&
+    (resolved.provider !== "openrouter" || seededManagedModel || blockedModel)
   ) {
     resolved.provider = "openrouter";
     resolved.provider_connection = "openrouter";
     resolved.model =
       callSite === "mainAgent"
-        ? (process.env.CUE_OPENROUTER_MODEL ?? "anthropic/claude-sonnet-4.5")
-        : (process.env.CUE_OPENROUTER_FLASH_MODEL ??
-          "anthropic/claude-haiku-4.5");
+        ? selfHostOpenRouterModel()
+        : selfHostOpenRouterFlashModel();
   }
   return resolved;
 }

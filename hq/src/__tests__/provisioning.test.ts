@@ -23,6 +23,14 @@ const ENV_KEYS = [
   "CUE_TAVILY_API_KEY",
   "CUE_FIRECRAWL_API_KEY",
   "CUE_SERPER_API_KEY",
+  "CUE_OPENROUTER_MODEL",
+  "CUE_OPENROUTER_FLASH_MODEL",
+  "CUE_OPENROUTER_BASE_URL",
+  "CUE_OPENROUTER_PROVIDER_ORDER",
+  "CUE_OPENROUTER_PROVIDER_ALLOW_FALLBACKS",
+  "CUE_OPENROUTER_PROVIDER_REQUIRE_PARAMS",
+  "CUE_ADVISOR_MODEL",
+  "CUE_ADVISOR_FALLBACK_MODEL",
 ];
 beforeEach(() => {
   for (const k of ENV_KEYS) {
@@ -119,6 +127,32 @@ describe("secrets + token minting", () => {
     expect(overridden.CUE_TAVILY_API_KEY).toBe("tvly-byo");
   });
 
+  // B1: instances used to inherit no brain selection at all, so every one fell
+  // back to the resolver's hardcoded default — which named a model family the
+  // platform OpenRouter key is ToS-blocked from (403 on the first message).
+  // Forwarding these makes the fleet's brain steerable from HQ's env alone.
+  test("brain-selection env passes through from HQ env only when set", () => {
+    const secrets = generateInstanceSecrets();
+
+    const bare = buildInstanceEnv(secrets);
+    expect(bare.CUE_OPENROUTER_MODEL).toBeUndefined();
+    expect(bare.CUE_OPENROUTER_FLASH_MODEL).toBeUndefined();
+
+    process.env.CUE_OPENROUTER_MODEL = "deepseek/deepseek-v4-pro";
+    process.env.CUE_OPENROUTER_FLASH_MODEL = "deepseek/deepseek-v4-flash";
+    process.env.CUE_ADVISOR_MODEL = "moonshotai/kimi-k3";
+    const env = buildInstanceEnv(secrets);
+    expect(env.CUE_OPENROUTER_MODEL).toBe("deepseek/deepseek-v4-pro");
+    expect(env.CUE_OPENROUTER_FLASH_MODEL).toBe("deepseek/deepseek-v4-flash");
+    expect(env.CUE_ADVISOR_MODEL).toBe("moonshotai/kimi-k3");
+
+    // providerEnv still wins per-instance.
+    const overridden = buildInstanceEnv(secrets, {
+      CUE_OPENROUTER_MODEL: "moonshotai/kimi-k3",
+    });
+    expect(overridden.CUE_OPENROUTER_MODEL).toBe("moonshotai/kimi-k3");
+  });
+
   test("minted actor token round-trips and carries daemon-compatible claims", () => {
     const secrets = generateInstanceSecrets();
     const token = mintActorToken({
@@ -150,7 +184,9 @@ describe("secrets + token minting", () => {
 
   test("magic link uses the SPA's ?cueToken= bootstrap param", () => {
     const link = buildMagicLink("https://cue-x.onrender.com/", "tok.en.x");
-    expect(link).toBe("https://cue-x.onrender.com/assistant/?cueToken=tok.en.x");
+    expect(link).toBe(
+      "https://cue-x.onrender.com/assistant/?cueToken=tok.en.x",
+    );
   });
 });
 
@@ -360,7 +396,10 @@ describe("provisioning flow (mock driver)", () => {
     });
     const c = db.createCustomer({ email: "hc@x.io", name: "HC" });
     // Force every probe to fail.
-    driver.healthByUrl.set("http://cue-hc-" + c.id.slice(0, 8) + ".mock.local", false);
+    driver.healthByUrl.set(
+      "http://cue-hc-" + c.id.slice(0, 8) + ".mock.local",
+      false,
+    );
     // The service name embeds a slug — just fail all mock urls:
     driver.health = async () => false;
 
