@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { OnboardingLayout } from "@/domains/onboarding/components/onboarding-layout";
 import { Mv3OnboardingShell } from "@/domains/onboarding/screens/mv3/mv3-onboarding-shell";
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import {
   assistantsOauthConnectionsListOptions,
   useAssistantsOauthStartCreateMutation,
@@ -63,7 +63,8 @@ export function GoogleConnectScreen({
   const electron = isElectron();
   const queryClient = useQueryClient();
   const isNative = useIsNativePlatform();
-  const isMobile = useIsMobile();
+  // Platform-guarded: see useMobileLayout — Electron opens narrow windows.
+  const isMobile = useMobileLayout();
 
   const popupRef = useRef<Window | null>(null);
   const pendingRequestRef = useRef<{ requestId: string } | null>(null);

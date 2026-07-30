@@ -17,7 +17,7 @@ import {
 import { useAssistantLifecycleStore } from "@/assistant/lifecycle-store";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import { useAssistantIdentityInit } from "@/hooks/use-assistant-identity-init";
-import { MOBILE_MEDIA_QUERY, useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import {
   getLocalBool,
   getLocalNumber,
@@ -253,7 +253,6 @@ export function ChatLayout() {
     navigate(1);
   }, [navigate]);
 
-
   // The rail "Contacts" item opens the relationship-memory dossier (/people) —
   // where Cue learns about + enriches the people you know.
   const isContactsActive = location.pathname === routes.people;
@@ -288,7 +287,12 @@ export function ChatLayout() {
     setLocalNumber(SIDEBAR_WIDTH_STORAGE_KEY, Math.round(width));
   }, []);
 
-  const isMobile = useIsMobile();
+  // Platform-guarded (see useMobileLayout): desktop chat pop-outs are 720px
+  // wide, which is under the 767px breakpoint, so a pure width test made every
+  // pop-out render the phone UI — and the `isMobile ? … : isPopout ?` chain
+  // below tests mobile FIRST, so the pop-out branch was unreachable on desktop.
+  // Two presses of Cmd+ did the same thing to the main window.
+  const isMobile = useMobileLayout();
   const [drawerOpen, setDrawerOpen] = useState<boolean>(false);
 
   useEffect(() => {
@@ -299,12 +303,15 @@ export function ChatLayout() {
 
   const toggleSidebar = useCallback(() => {
     haptic.light();
-    if (window.matchMedia(MOBILE_MEDIA_QUERY).matches) {
+    // Must agree with `drawerVisible`, which is gated on the platform-guarded
+    // `isMobile`. A raw width test here would open a drawer that never renders
+    // on a narrow desktop window, making the toggle a dead control.
+    if (isMobile) {
       setDrawerOpen((value) => !value);
     } else {
       setCollapsed((value) => !value);
     }
-  }, []);
+  }, [isMobile]);
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 

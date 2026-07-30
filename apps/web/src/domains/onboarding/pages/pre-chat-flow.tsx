@@ -17,7 +17,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
-import { useIsMobile } from "@/hooks/use-is-mobile";
+import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { fetchOnboardingRecipe } from "@/domains/onboarding/recipe-client.js";
 import {
   emitOnboardingFunnelStepCompleted,
@@ -89,7 +89,8 @@ export function PreChatFlow() {
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
   const isNative = useIsNativePlatform();
-  const isMobile = useIsMobile();
+  // Platform-guarded: a 440px Electron onboarding window is NOT a phone.
+  const isMobile = useMobileLayout();
   const activeAssistantId = useResolvedAssistantsStore.use.activeAssistantId();
   const localMode = isLocalMode();
   const activationFlowArm =
