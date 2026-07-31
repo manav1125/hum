@@ -681,6 +681,7 @@ function PulseLayout({
   missionsByProjectId,
   userName,
   dayLabel,
+  moveIsExtraToNeedsYou,
   onNewMission,
   onSuggest,
 }: {
@@ -693,10 +694,20 @@ function PulseLayout({
   missionsByProjectId: Map<string, Mission>;
   userName: string | null;
   dayLabel: string;
+  /**
+   * Whether the next-move card represents work that is NOT already one of the
+   * `needsYou` rows, and so genuinely adds one to the glance count.
+   */
+  moveIsExtraToNeedsYou: boolean;
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
-  const glanceCount = needsYou.length + (move.hasMove ? 1 : 0);
+  // `needsYou` has already had the next-move item filtered out when the move
+  // WAS one of the review rows, so adding 1 unconditionally double-counted a
+  // move that is neither a review row nor an approval — a queued work item.
+  // That is what made this headline read 6 while the sidebar badge, reading the
+  // same two queries, read 5.
+  const glanceCount = needsYou.length + (moveIsExtraToNeedsYou ? 1 : 0);
   const firstRun = useHqFirstRun();
   const isMobile = useIsMobile();
   return (
@@ -1788,6 +1799,11 @@ export function HqPage() {
             assistantId={assistantId}
             move={move}
             needsYou={reviewItems}
+            moveIsExtraToNeedsYou={
+              move.hasMove &&
+              (review.items.length !== reviewItems.length ||
+                move.kind === "approval")
+            }
             cameIn={cameIn}
             running={running.items}
             done={doneToday}
