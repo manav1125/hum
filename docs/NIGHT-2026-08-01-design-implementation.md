@@ -149,3 +149,45 @@ on the daemon side). Assistant-side watcher tests 19/19.
 
 Use `bun scripts/run-tests.ts` in `apps/web` — plain `bun test` there yields ~1163 bogus
 failures from `mock.module` pollution.
+
+---
+
+## Late addition — the watchers actually work now
+
+After deploying step 3, both provisioned watchers failed every poll. Gmail
+returned an entire HTML 404 page for `/profile`; Calendar returned no syncToken.
+
+**The cause was not a Composio architecture problem.** `buildProxyArgs` computed
+`(req.baseUrl ?? "") + req.path`. The Gmail client passes only a path, because a
+native OAuth connection carries its host from the provider seed and fills the
+rest in. The proxy path had no such default, so the endpoint was the bare string
+`/profile` — which Composio resolved against Google's web root. The request
+authenticated perfectly and asked the wrong server for a page that does not
+exist, which is why it read as a broken connector and was not one.
+
+Fixed by supplying a per-toolkit host when the caller omits one, mirroring the
+native seed. Explicit `baseUrl` still wins; with neither present the behaviour is
+unchanged, so nothing that works today can start guessing a host.
+
+**Verified on production:**
+
+```
+gmail           | err=NONE | watermark=100384294 | poll=5min
+google-calendar | err=NONE | watermark=NOT SET   | poll=15min
+```
+
+That watermark is a real Gmail `historyId` from the live inbox — Gmail is
+genuinely polling the API.
+
+Two caveats, both real:
+
+- **Calendar stopped erroring but has not captured a watermark.** Its failure was
+  separate (it always passed a correct `baseUrl`). If the watermark stays unset it
+  will never detect changes. Watch it.
+- **`watcher_events` is 0, and that is correct.** The first poll captures the
+  current historyId as the watermark — "start from now" — so only mail arriving
+  after 17:15 UTC creates events. HQ fills as new mail lands, not retroactively.
+
+Both watchers had been disabled by the circuit breaker under the previous image
+after five consecutive failures. That safety behaviour worked exactly as
+designed; I re-enabled them by hand to test the fix.
