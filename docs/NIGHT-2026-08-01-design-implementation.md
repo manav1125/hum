@@ -131,9 +131,11 @@ Steps 6–10 each need schema the spec itself lists in §22. They are days, not 
   nothing" requires the daemon to distinguish a no-op from a success (§24: *a no-op is not
   a success*). Today both are recorded as `completed`, which is why this was invisible for
   a month.
-- **HQ still needs its own A1 swap** on five call sites the contrast agent could not touch:
-  `hq-page.tsx:1505`, `assessment-kit.tsx:447`, `drift-nudge.tsx:113`, `hq-kit.tsx:27`, and
-  `use-missions.ts:302–336` (that one wants splitting into a colour + text pair).
+- **HQ's A1 swap is done** — `hq-page.tsx`, `assessment-kit.tsx` and `drift-nudge.tsx` now
+  use `C.amberText`. `RING_META` was flagged but deliberately left bright: its label renders
+  on the rings hero, a dark card in both themes, where the bright values already measure
+  5.1–8.4:1. Swapping it would have darkened text against a dark ground. `use-missions.ts`
+  timeline colours still want splitting into a colour + text pair — that one is outstanding.
 - **Life lens is not built.** Needs `domain: work | life` on the work item (§22).
 - **Watchers are not yet verified against production.** Deployed, but confirming that rows
   appear and the engine polls needs a live check after the deploy settles.
