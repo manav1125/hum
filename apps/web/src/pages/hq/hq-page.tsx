@@ -1502,7 +1502,10 @@ function CameInReassignStrip({
                 <div
                   style={{
                     fontSize: 11.5,
-                    color: C.amber,
+                    // amberText, not amber: 11.5px with no glyph beside it, so
+                    // colour is the only carrier and the bright stop reads at
+                    // 3.6:1 on white. See design addendum A1.
+                    color: C.amberText,
                     lineHeight: 1.45,
                     marginTop: 5,
                     marginLeft: 28,

@@ -110,7 +110,9 @@ export function DriftNudge({
           fontSize: 9.5,
           letterSpacing: "0.12em",
           textTransform: "uppercase",
-          color: C.amber,
+          // 9.5px uppercase mono eyebrow — the smallest text in HQ, so the
+          // bright amber is well under 4.5:1 here (A1).
+          color: C.amberText,
           display: "flex",
           alignItems: "center",
           gap: 6,

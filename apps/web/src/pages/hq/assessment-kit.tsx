@@ -443,8 +443,9 @@ function ClarifyBody({
               Saved with the task. Cue re-reads it before the next run.
             </span>
           </div>
+          {/* 11px error copy with no glyph beside it — the text leg, per A1. */}
           {failed ? (
-            <div style={{ fontSize: 11, color: C.amber, marginTop: 6 }}>
+            <div style={{ fontSize: 11, color: C.amberText, marginTop: 6 }}>
               That did not save. Try again.
             </div>
           ) : null}
