@@ -110,10 +110,17 @@ function persist(): void {
  * Call only after a SUCCESSFUL full fetch of the active set — never from an
  * error fallback, or a transient failure would wrongly wipe known-good state.
  * Best-effort; never throws.
+ *
+ * This is also the daemon's only observation point for "a connector became
+ * connected": Composio owns the OAuth callback, so no in-daemon success
+ * handler exists and every path that learns about a connection lands here.
+ * Watcher auto-provisioning therefore hangs off this function rather than off
+ * the connect route — see `watcher/auto-provision.ts`.
  */
 export function recordActiveComposioToolkits(slugs: Iterable<string>): void {
+  let active: string[];
   try {
-    const active = [
+    active = [
       ...new Set(
         [...slugs].filter(
           (s): s is string => typeof s === "string" && s.length > 0,
@@ -124,7 +131,22 @@ export function recordActiveComposioToolkits(slugs: Iterable<string>): void {
     persist();
   } catch (err) {
     log.warn({ err }, "recordActiveComposioToolkits failed");
+    return;
   }
+
+  // Stand up default watchers for newly connected watchable connectors. Kept
+  // strictly downstream of the snapshot write so a provisioning failure can
+  // never cost us the status update the rest of the daemon reads.
+  //
+  // Imported lazily and on purpose. This module is read on the capability /
+  // system-prompt hot path by callers that have no business pulling in the
+  // watcher store (and its DB schema) just to ask which toolkits are live.
+  // Fire-and-forget: provisioning is never something a status write waits on.
+  void import("../watcher/auto-provision.js")
+    .then((m) => m.autoProvisionWatchersForToolkits(active))
+    .catch((err: unknown) => {
+      log.warn({ err }, "watcher auto-provision from connection status failed");
+    });
 }
 
 /**

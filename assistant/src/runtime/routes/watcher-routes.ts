@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import {
   checkCredentialForProvider,
-  hasCredentialConnection,
+  hasPollableCredential,
   isProviderAgentReachable,
 } from "../../credential-health/credential-health-service.js";
 import { unbindPlaybooksFromWatcher } from "../../playbooks/playbook-store.js";
@@ -137,16 +137,21 @@ async function resolveWatcherHealth(
     // rendered "Token expired — reconnect to resume" for an account that was
     // never connected in the first place.
     //
-    // `hasCredentialConnection` is NATIVE-only on purpose: this watcher polls
-    // the provider's REST API directly and needs a native OAuth token, which
-    // an MCP/Composio connection does not provide. So a missing native token
-    // still means this poller can't run. BUT the account may be reachable by
-    // the agent through an enabled MCP server — in which case it is simply
-    // FALSE to tell the user the account "isn't connected". Distinguish the
-    // two: only report `not_connected` when NEITHER path covers the provider;
-    // when MCP covers it but native is absent, report `unknown` (we can't
-    // confirm the native poller, but we won't claim nothing is connected).
-    if (!hasCredentialConnection(watcher.credentialService)) {
+    // `hasPollableCredential` asks the question this dot actually answers:
+    // can THIS poller authenticate — native OAuth token, or an ACTIVE Composio
+    // connection (which `resolveOAuthConnection` routes through the request
+    // proxy)? It must match the engine's pre-poll gate exactly, or the UI
+    // contradicts the behaviour: a Composio-connected Gmail watcher polls
+    // happily while the dot reports "not connected".
+    //
+    // A generic MCP server still doesn't count — it gives the agent a tool,
+    // not something a REST poller can authenticate with. But the account may
+    // be reachable that way, and it is simply FALSE to tell the user it "isn't
+    // connected". So only report `not_connected` when NEITHER path covers the
+    // provider; when MCP covers it but no pollable credential exists, report
+    // `unknown` (we can't confirm the poller, but we won't claim nothing is
+    // connected).
+    if (!hasPollableCredential(watcher.credentialService)) {
       return isProviderAgentReachable(watcher.credentialService)
         ? "unknown"
         : "not_connected";

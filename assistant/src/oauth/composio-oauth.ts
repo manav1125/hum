@@ -57,6 +57,18 @@ const PROVIDER_TOOLKITS: Record<string, string[]> = {
   hubspot: ["hubspot"],
 };
 
+/**
+ * The Composio toolkit slugs that could satisfy a native provider key, or an
+ * empty array when the provider has no Composio route at all.
+ *
+ * Exported so callers that need to answer "can this provider authenticate?"
+ * without making a network call (the watcher pre-poll gate) can consult the
+ * cached ACTIVE-toolkit snapshot for the right slugs.
+ */
+export function composioToolkitsForProvider(provider: string): string[] {
+  return PROVIDER_TOOLKITS[provider.trim().toLowerCase()] ?? [];
+}
+
 interface ComposioCreds {
   apiKey: string;
   userId: string;

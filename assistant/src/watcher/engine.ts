@@ -89,19 +89,26 @@ export async function runWatchersOnce(
     // Prevents wasting API calls and burning through circuit breaker
     // attempts on credentials that need manual reauthorization.
     try {
-      const { checkCredentialForProvider, hasCredentialConnection } =
+      const { checkCredentialForProvider, hasPollableCredential } =
         await import("../credential-health/credential-health-service.js");
 
-      // No NATIVE account connected — there is nothing to poll with. This gate
-      // is deliberately native-only: the poll below authenticates with a native
-      // OAuth token (`resolveOAuthConnection`), and MCP/Composio reachability
-      // does NOT provide one. Skipping an MCP-only-but-native-absent watcher is
-      // correct — the poll would fail. Calling the provider anyway returns a
-      // generic error page (a Gmail watcher on an instance with no Google
-      // account stored an entire HTML 404 as its last error), which tells the
-      // user nothing and burns the circuit breaker on a condition only they can
-      // resolve.
-      if (!hasCredentialConnection(watcher.credentialService)) {
+      // Nothing to poll with — no native OAuth token AND no ACTIVE Composio
+      // connection. Calling the provider anyway returns a generic error page
+      // (a Gmail watcher on an instance with no Google account stored an
+      // entire HTML 404 as its last error), which tells the user nothing and
+      // burns the circuit breaker on a condition only they can resolve.
+      //
+      // The Composio half of that question is load-bearing, not a nicety:
+      // `resolveOAuthConnection` is Composio-first, so an install whose tools
+      // were connected through the Connectors page polls fine with zero rows
+      // in `oauth_connections`. Gating on the native table alone made every
+      // such watcher skip every poll forever.
+      //
+      // This is also the disconnect path for auto-provisioned watchers: a
+      // toolkit that leaves the ACTIVE set lands here, and `skipWatcherPoll`
+      // backs off WITHOUT incrementing consecutive_errors, so a disconnect
+      // parks the watcher instead of tripping the breaker and disabling it.
+      if (!hasPollableCredential(watcher.credentialService)) {
         skipWatcherPoll(
           watcher.id,
           `${watcher.credentialService} is not connected`,
