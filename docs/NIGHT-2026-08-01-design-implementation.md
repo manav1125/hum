@@ -183,9 +183,24 @@ genuinely polling the API.
 
 Two caveats, both real:
 
-- **Calendar stopped erroring but has not captured a watermark.** Its failure was
-  separate (it always passed a correct `baseUrl`). If the watermark stays unset it
-  will never detect changes. Watch it.
+- **Calendar is still broken, and I first reported it as fixed.** A snapshot taken
+  between poll attempts showed `err=NONE`, and I said both watchers were healthy. They
+  were not — `consecutive_errors` was climbing. The correction, with evidence:
+
+  `getInitialWatermark` paginates with `{ timeMin: now, maxResults: 250, singleEvents:
+  true }` until a page carries `nextSyncToken`, which Google emits only on the **last**
+  page. But `singleEvents: true` expands recurring events into individual instances, so
+  with `timeMin: now` and no upper bound a single daily recurrence yields effectively
+  unbounded future instances. Measured against the live API through the proxy:
+  `timeMin=now, maxResults=2500` still returned 2500 items **with more pages**; without
+  `timeMin`, still paginating after 8 pages × 2500 = 20,000+ events. The loop can never
+  reach a last page, so the token never arrives and the watermark is never set.
+
+  This is **not** the Gmail bug — Calendar always passed a correct `baseUrl`. It needs a
+  strategy decision (drop `singleEvents` for the bootstrap only, bound the window and
+  abandon sync tokens, or accept a narrow window), and I deliberately did not redesign a
+  live sync path at 01:30 on inference. Left enabled so the circuit breaker bounds the
+  wasted proxy calls, which is its designed job.
 - **`watcher_events` is 0, and that is correct.** The first poll captures the
   current historyId as the watermark — "start from now" — so only mail arriving
   after 17:15 UTC creates events. HQ fills as new mail lands, not retroactively.
