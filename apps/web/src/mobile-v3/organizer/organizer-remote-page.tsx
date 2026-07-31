@@ -38,7 +38,6 @@ import {
   microLabel,
   mv3Mono,
   rise,
-  secondaryBtn,
 } from "@/mobile-v3/mv3-kit";
 import { routes } from "@/utils/routes";
 
@@ -193,10 +192,11 @@ function PlanCard({ session, machine }: { session: Session; machine: string }) {
     () => new Set(plan.categories.filter((c) => !c.included).map((c) => c.key)),
   );
 
-  const includedCategories = plan.categories.filter(
-    (c) => !excluded.has(c.key),
-  );
-  const moveCount = includedCategories.reduce((n, c) => n + c.count, 0);
+  // NOTE: `excluded` currently drives nothing but the row's own checked state —
+  // it is never sent to the daemon, so the "Tap any category to include or
+  // exclude it" invitation below does not change what the Mac actually moves.
+  // Left as-is rather than silently changed; it needs either a real endpoint or
+  // honest copy, and that is a product call.
 
   return (
     <GlassCard radius={22} style={{ ...rise(0.1) }}>
@@ -359,27 +359,14 @@ function DoneCard({ session, machine }: { session: Session; machine: string }) {
       <div style={cardBody}>
         into {d.archivePath} · on your Mac · nothing deleted
       </div>
-      <div style={{ display: "flex", gap: 9, marginTop: 13 }}>
-        <button
-          type="button"
-          disabled={!d.undoAvailable}
-          title={
-            d.undoAvailable
-              ? "Undo runs the archive's cue-undo.sh on your Mac"
-              : "No undo script was recorded for this run"
-          }
-          style={{
-            ...secondaryBtn,
-            flex: 1,
-            opacity: d.undoAvailable ? 1 : 0.5,
-          }}
-        >
-          Undo all
-        </button>
-        {/* "See on Mac" needs a host round-trip (reveal the archive in Finder)
-            that this remote has no channel for. Omitted rather than shipped as
-            a button that does nothing. */}
-      </div>
+      {/* Neither "Undo all" nor "See on Mac" is offered here. Both need a host
+          round-trip — running the archive's cue-undo.sh, revealing it in Finder
+          — that this remote has no channel for. "See on Mac" was already
+          omitted for exactly that reason; "Undo all" was not, and shipped as an
+          enabled button with no onClick and a tooltip promising "Undo runs the
+          archive's cue-undo.sh on your Mac". It did nothing at all. The line
+          below already tells the user where undo actually lives, which is the
+          honest version of the same affordance. */}
       <div
         style={{
           fontSize: 10.5,

@@ -529,14 +529,18 @@ function AgentsOrgPageDesktop() {
 
   const headerLine = useMemo(() => {
     const agents = `${charters.length} AGENT${charters.length === 1 ? "" : "S"} REPORTING`;
-    const roles = "1 OPEN ROLE";
+    // There is deliberately no "N OPEN ROLES" term here. It used to read a
+    // hardcoded "1 OPEN ROLE" — the only invented number in the app, sitting
+    // between two values that go to real trouble to stay honest (the spend
+    // below reports MEASURING… and UNAVAILABLE rather than guess). Nothing in
+    // the product models an open role, so there is no figure to show.
     const spend =
       weekSpend.usd == null
         ? weekSpend.isError
           ? "SPEND UNAVAILABLE"
           : "MEASURING SPEND…"
         : `${fmtUsd(weekSpend.usd)} SPENT THIS WEEK`;
-    return `${agents} · ${roles} · ${spend}`;
+    return `${agents} · ${spend}`;
   }, [charters.length, weekSpend.usd, weekSpend.isError]);
 
   return (
