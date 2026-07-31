@@ -15,6 +15,8 @@ import { create } from "zustand";
 
 import { lifecycleService } from "@/assistant/lifecycle-service";
 import { setSelectedAssistant } from "@/assistant/selection";
+import { publish } from "@/lib/event-bus";
+import { getSSEConnectedSnapshot } from "@/stores/sse-connected-store";
 import { createSelectors } from "@/utils/create-selectors";
 import {
   isAuthenticated,
@@ -668,6 +670,29 @@ const useAuthStoreBase = create<AuthStore>()((set, get) => ({
   },
 
   refreshSession: async () => {
+    /**
+     * Hand the SSE stream back its recovery once we hold a fresh credential.
+     *
+     * `sse-service.ts` treats a 401/403 as terminal and calls `cancelRecovery()`
+     * — deliberately, because blind reopens each record another auth failure
+     * against the gateway's IP limiter (10 in 60s blocks it), which would lock a
+     * user out of their own instance. Its comment says recovery "belongs to the
+     * token-refresh / re-authentication path, which reopens the stream itself".
+     * That path is HERE, and it was never wired: nothing published a reopen, so
+     * a single transient 401 at startup left SSE dead for the whole session.
+     * The surface kept working off its 60s REST polls, so the only symptom was
+     * a header stuck on "reconnecting…" and live updates silently never
+     * arriving.
+     *
+     * Guarded on the stream actually being down: `reachability.retry-requested`
+     * tears down and reopens, and refreshSession runs on every app resume, so
+     * publishing unconditionally would bounce a healthy stream.
+     */
+    const resumeStreamIfDropped = () => {
+      if (!getSSEConnectedSnapshot()) {
+        publish("reachability.retry-requested", {});
+      }
+    };
     // Self-host (Cue) gateway auth: the durable credential is the pasted
     // ~30-day actor token, not a mintable local gateway token. There is no
     // `/auth/token` mint to refresh from here (no local assistant → no
@@ -680,6 +705,7 @@ const useAuthStoreBase = create<AuthStore>()((set, get) => ({
     if (isSelfHostMode()) {
       if (rehydrateGatewayTokenFromActor() || isStoredActorTokenValid()) {
         set({ sessionStatus: "authenticated" });
+        resumeStreamIfDropped();
         probePlatformSessionIfReachable(set);
         return true;
       }
@@ -695,6 +721,7 @@ const useAuthStoreBase = create<AuthStore>()((set, get) => ({
         set(sessionEnded());
         return false;
       }
+      resumeStreamIfDropped();
       probePlatformSessionIfReachable(set, { clearOnFailure: true });
       return true;
     }

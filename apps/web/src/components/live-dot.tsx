@@ -22,7 +22,11 @@ export function LiveDot({ label = true }: { label?: boolean }) {
       data-slot="live-dot"
       role="status"
       aria-live="polite"
-      aria-label={isConnected ? "Live — real-time updates on" : "Reconnecting"}
+      aria-label={
+        isConnected
+          ? "Live — real-time updates on"
+          : "Polling — updating every 60 seconds"
+      }
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -49,7 +53,16 @@ export function LiveDot({ label = true }: { label?: boolean }) {
           animation: isConnected ? "cueLivePulse 2s ease-out infinite" : "none",
         }}
       />
-      {label ? (isConnected ? "live" : "reconnecting…") : null}
+      {/*
+        "polling", not "reconnecting…". The grey state does not imply a retry is
+        in flight: when the stream is rejected on auth, `sse-service.ts` calls
+        `cancelRecovery()` and stops, so the old label asserted an attempt at the
+        exact moment none was happening — it read as "broken, hang on" and stayed
+        that way for the whole session. What IS always true in the grey state is
+        the 60s safety-net poll, which is what this component's own docstring
+        describes. Say that instead.
+      */}
+      {label ? (isConnected ? "live" : "polling") : null}
       <style
         dangerouslySetInnerHTML={{
           __html:
