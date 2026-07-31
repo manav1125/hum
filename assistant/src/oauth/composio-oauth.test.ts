@@ -80,3 +80,47 @@ describe("buildProxyArgs", () => {
     );
   });
 });
+
+describe("buildProxyArgs — base URL fallback", () => {
+  it("a caller that omits baseUrl gets the toolkit's host, not a bare path", () => {
+    // The Gmail client asks for "/profile" and nothing else, because a native
+    // connection supplies the host from its provider seed. Without the
+    // fallback this produced the endpoint "/profile", which Composio resolved
+    // against Google's web root — the live failure was an HTML 404 page.
+    const { endpoint } = buildProxyArgs(
+      { method: "GET", path: "/profile" },
+      "https://gmail.googleapis.com/gmail/v1/users/me",
+    );
+    expect(endpoint).toBe(
+      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+    );
+  });
+
+  it("an explicit baseUrl still wins over the fallback", () => {
+    const { endpoint } = buildProxyArgs(
+      {
+        method: "GET",
+        path: "/calendars/primary/events",
+        baseUrl: "https://www.googleapis.com/calendar/v3",
+      },
+      "https://gmail.googleapis.com/gmail/v1/users/me",
+    );
+    expect(endpoint).toBe(
+      "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+    );
+  });
+
+  it("query encoding is unchanged by the fallback", () => {
+    const { endpoint } = buildProxyArgs(
+      { method: "GET", path: "/messages", query: { q: "is:unread in:inbox" } },
+      "https://gmail.googleapis.com/gmail/v1/users/me",
+    );
+    // Spaces must be %20, never "+" — the proxy re-encodes "+" to "%2B".
+    expect(endpoint).toContain("q=is%3Aunread%20in%3Ainbox");
+  });
+
+  it("no baseUrl and no fallback still degrades to the old behaviour", () => {
+    const { endpoint } = buildProxyArgs({ method: "GET", path: "/x" });
+    expect(endpoint).toBe("/x");
+  });
+});

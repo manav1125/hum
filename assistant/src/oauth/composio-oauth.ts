@@ -210,11 +210,20 @@ const activeToolkits = async (creds: ComposioCreds): Promise<Set<string>> => {
  *
  * Exported (and pure) so the encoding contract can be unit-tested.
  */
-export function buildProxyArgs(req: OAuthConnectionRequest): {
+export function buildProxyArgs(
+  req: OAuthConnectionRequest,
+  fallbackBaseUrl?: string,
+): {
   endpoint: string;
   params: Array<{ name: string; value: string; type: "header" | "query" }>;
 } {
-  const base = (req.baseUrl ?? "").replace(/\/$/, "");
+  // A native connection carries its host from the provider seed, so callers
+  // built against it pass only a path — the Gmail client asks for "/profile"
+  // and nothing else. On the proxy path there is no such default, so an absent
+  // baseUrl produced the bare endpoint "/profile", which Composio resolved
+  // against Google's web root and returned an HTML 404 for. The fallback
+  // restores the host those callers assume.
+  const base = (req.baseUrl ?? fallbackBaseUrl ?? "").replace(/\/$/, "");
   const queryPairs: string[] = [];
   for (const [k, v] of Object.entries(req.query ?? {})) {
     for (const item of Array.isArray(v) ? v : [v]) {
@@ -228,6 +237,18 @@ export function buildProxyArgs(req: OAuthConnectionRequest): {
     .map(([name, value]) => ({ name, value, type: "header" as const }));
   return { endpoint, params };
 }
+
+/**
+ * Upstream API host per toolkit, used only when the caller did not supply one.
+ *
+ * These mirror the `baseUrl` on the matching native provider seed, so a client
+ * written against a native connection behaves identically through the proxy.
+ * Keep them in sync with `oauth/seed-providers.ts`.
+ */
+const TOOLKIT_BASE_URLS: Record<string, string> = {
+  gmail: "https://gmail.googleapis.com/gmail/v1/users/me",
+  googlecalendar: "https://www.googleapis.com/calendar/v3",
+};
 
 /** Pick the toolkit for a Google request by host (Gmail vs Calendar vs People). */
 const pickGoogleToolkit = (req: OAuthConnectionRequest): string => {
@@ -264,7 +285,10 @@ class ComposioOAuthConnection implements OAuthConnection {
         `Composio has no active "${toolkit}" connection for this user. Connect it in Cue → Connectors.`,
       );
     }
-    const { endpoint, params } = buildProxyArgs(req);
+    const { endpoint, params } = buildProxyArgs(
+      req,
+      TOOLKIT_BASE_URLS[toolkit],
+    );
     let resp: ComposioProxyResponse;
     try {
       resp = await proxyRequest(this.creds, connId, {
