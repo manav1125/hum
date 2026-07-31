@@ -348,7 +348,7 @@ function NeedsYouCard({
             ...microLabel,
             fontSize: 9.5,
             letterSpacing: "0.08em",
-            color: "var(--mv3-amber)",
+            color: "var(--mv3-amber-text)",
           }}
         >
           Ready · needs you
@@ -763,7 +763,7 @@ function Mv3ProjectMenuSheet({
 
       {patch.isError || del.isError ? (
         <div
-          style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 10 }}
+          style={{ fontSize: 11.5, color: "var(--mv3-amber-text)", marginTop: 10 }}
         >
           Couldn’t save that — try again in a moment.
         </div>
@@ -1146,7 +1146,7 @@ export function Mv3ProjectDetail() {
                         style={{
                           display: "block",
                           fontSize: 11,
-                          color: "var(--mv3-amber)",
+                          color: "var(--mv3-amber-text)",
                           marginTop: 1,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -1372,7 +1372,7 @@ export function Mv3ProjectDetail() {
                   </button>
                 </div>
                 {quickAdd.isError ? (
-                  <div style={{ fontSize: 11.5, color: "var(--mv3-amber)" }}>
+                  <div style={{ fontSize: 11.5, color: "var(--mv3-amber-text)" }}>
                     Couldn’t add that task — try again.
                   </div>
                 ) : null}

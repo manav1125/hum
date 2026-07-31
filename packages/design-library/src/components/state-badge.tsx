@@ -75,6 +75,13 @@ export function StateBadge({
           />
         ) : null}
       </span>
+      {/*
+        The label paints with `accentVar`, not `textVar`, even though it is
+        10–11px. That is the one escape addendum A1 carves out: the glyph
+        square sits immediately beside the label and carries the same fact, so
+        colour is never the sole carrier of the state here. Copy this pattern
+        only where a glyph really is adjacent — a coloured dot does not count.
+      */}
       {showLabel ? (
         <span
           className="text-body-small-emphasised uppercase tracking-wide"

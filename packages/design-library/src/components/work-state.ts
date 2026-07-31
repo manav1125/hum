@@ -35,6 +35,18 @@ export interface WorkStateMeta {
   glyph: string;
   /** CSS var for the accent (badge/glyph/border). */
   accentVar: string;
+  /**
+   * CSS var for the accent's TEXT leg — the darker stop small copy reads at
+   * (design addendum A1). `accentVar` is tuned for fills, glyph marks, rules
+   * and display type at 16px and up; below 16px it lands under 4.5:1 on the
+   * light canvas, so label copy takes this instead. In dark it resolves to the
+   * same value as `accentVar`, so the choice only bites in light.
+   *
+   * The escape: a state's `glyph` renders next to its label almost everywhere,
+   * and where the glyph carries the same fact the accent may still paint the
+   * label. Use `textVar` when colour alone carries the meaning.
+   */
+  textVar: string;
   /** CSS var for the desaturated background wash. */
   weakVar: string;
 }
@@ -46,6 +58,7 @@ export const WORK_STATE_META: Record<WorkLoopState, WorkStateMeta> = {
     phrase: "Cue picked up",
     glyph: "↴",
     accentVar: "var(--state-capture)",
+    textVar: "var(--state-capture-text)",
     weakVar: "var(--state-capture-weak)",
   },
   running: {
@@ -54,6 +67,7 @@ export const WORK_STATE_META: Record<WorkLoopState, WorkStateMeta> = {
     phrase: "Running · auto",
     glyph: "▮",
     accentVar: "var(--state-running)",
+    textVar: "var(--state-running-text)",
     weakVar: "var(--state-running-weak)",
   },
   needsyou: {
@@ -62,6 +76,7 @@ export const WORK_STATE_META: Record<WorkLoopState, WorkStateMeta> = {
     phrase: "Needs you to finish",
     glyph: "‖",
     accentVar: "var(--state-needsyou)",
+    textVar: "var(--state-needsyou-text)",
     weakVar: "var(--state-needsyou-weak)",
   },
   review: {
@@ -70,6 +85,7 @@ export const WORK_STATE_META: Record<WorkLoopState, WorkStateMeta> = {
     phrase: "Ready for review",
     glyph: "◱",
     accentVar: "var(--state-review)",
+    textVar: "var(--state-review-text)",
     weakVar: "var(--state-review-weak)",
   },
   done: {
@@ -78,6 +94,7 @@ export const WORK_STATE_META: Record<WorkLoopState, WorkStateMeta> = {
     phrase: "Done",
     glyph: "✓",
     accentVar: "var(--state-done)",
+    textVar: "var(--state-done-text)",
     weakVar: "var(--state-done-weak)",
   },
   failure: {
@@ -86,6 +103,7 @@ export const WORK_STATE_META: Record<WorkLoopState, WorkStateMeta> = {
     phrase: "Couldn't finish",
     glyph: "✕",
     accentVar: "var(--state-failure)",
+    textVar: "var(--state-failure-text)",
     weakVar: "var(--state-failure-weak)",
   },
 };

@@ -949,7 +949,7 @@ export function MobileChatView({
                   style={{
                     fontFamily: "var(--mv3-mono)",
                     fontSize: 13,
-                    color: "var(--mv3-accent)",
+                    color: "var(--mv3-accent-text)",
                     flexShrink: 0,
                   }}
                 >

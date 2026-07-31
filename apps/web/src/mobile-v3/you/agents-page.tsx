@@ -66,7 +66,7 @@ function statusLine(
   work: AgentWork | null,
 ): { text: string; color: string } {
   if (charter.paused)
-    return { text: "paused", color: "var(--mv3-amber)" };
+    return { text: "paused", color: "var(--mv3-amber-text)" };
   if (work?.running) {
     return {
       text: work.currentLine

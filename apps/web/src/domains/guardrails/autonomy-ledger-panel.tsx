@@ -41,6 +41,7 @@ const C = {
   t3: "var(--mv1-t3)",
   green: "var(--mv1-green)",
   amber: "var(--mv1-amber)",
+  amberText: "var(--mv1-amber-text)",
   danger: "var(--mv1-danger)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
@@ -63,7 +64,7 @@ const CLASS_GLYPH: Record<string, string> = {
 
 const OUTCOME_STYLE: Record<string, { label: string; color: string }> = {
   executed: { label: "DONE", color: C.green },
-  parked: { label: "PARKED", color: C.amber },
+  parked: { label: "PARKED", color: C.amberText },
   denied: { label: "BLOCKED", color: C.danger },
   failed: { label: "FAILED", color: C.t3 },
 };

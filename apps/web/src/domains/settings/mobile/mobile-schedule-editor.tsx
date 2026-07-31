@@ -347,7 +347,7 @@ export function Mv3ScheduleEditorSheet({
             style={{ fontSize: 12, color: "var(--mv3-muted)", marginTop: 3 }}
           >
             Runs on the{" "}
-            <span style={{ color: "var(--mv3-teal)" }}>
+            <span style={{ color: "var(--mv3-teal-text)" }}>
               {schedule.inferenceProfile}
             </span>{" "}
             model profile

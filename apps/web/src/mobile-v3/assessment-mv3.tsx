@@ -474,7 +474,7 @@ function AnswerField({
         </span>
       </div>
       {failed ? (
-        <div style={{ fontSize: 11, color: "var(--mv3-amber)", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--mv3-amber-text)", marginTop: 6 }}>
           That did not save. Try again.
         </div>
       ) : null}

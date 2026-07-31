@@ -334,7 +334,7 @@ function PreviewHero({
         background: `linear-gradient(180deg, ${C.surface}, color-mix(in srgb, ${primary} 8%, ${C.surface}))`,
       }}
     >
-      <span style={{ ...heroTag, color: C.blue, display: "flex", alignItems: "center", gap: 5 }}>
+      <span style={{ ...heroTag, color: C.blueText, display: "flex", alignItems: "center", gap: 5 }}>
         <span
           style={{
             width: 5,

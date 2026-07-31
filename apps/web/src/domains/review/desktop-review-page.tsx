@@ -176,7 +176,7 @@ const reviewMarkdown: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      style={{ color: C.blue, textDecoration: "underline" }}
+      style={{ color: C.blueText, textDecoration: "underline" }}
     >
       {children}
     </a>
@@ -786,7 +786,7 @@ export function DesktopReviewPage() {
                 onClick={() => setConfirmBatch(true)}
                 style={{
                   ...chipBtn,
-                  color: C.violet,
+                  color: C.violetText,
                   borderColor:
                     "color-mix(in srgb, var(--mv1-violet) 35%, transparent)",
                   padding: "7px 14px",
@@ -843,7 +843,7 @@ export function DesktopReviewPage() {
           style={{
             marginTop: 12,
             fontSize: 12.5,
-            color: C.amber,
+            color: C.amberText,
           }}
         >
           {actionError}

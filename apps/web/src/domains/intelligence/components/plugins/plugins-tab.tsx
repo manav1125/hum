@@ -63,6 +63,7 @@ const CATALOG_STALE_MS = 5 * 60 * 1000;
 const C = {
   ink: "var(--mv1-ink)",
   blue: "var(--mv1-blue)",
+  blueText: "var(--mv1-blue-text)",
   bg: "var(--mv1-canvas)",
   card: "var(--mv1-card)",
   line: "var(--mv1-line)",
@@ -497,7 +498,7 @@ function SubmitPluginCard() {
           gap: 6,
           marginTop: 11,
           fontSize: 12.5,
-          color: C.blue,
+          color: C.blueText,
           textDecoration: "none",
           fontWeight: 500,
         }}
@@ -739,7 +740,7 @@ function InstalledCard({
                   fontSize: 9.5,
                   letterSpacing: ".05em",
                   textTransform: "uppercase",
-                  color: "var(--mv1-violet)",
+                  color: "var(--mv1-violet-text)",
                   background:
                     "color-mix(in srgb, var(--mv1-violet) 14%, transparent)",
                   borderRadius: 5,

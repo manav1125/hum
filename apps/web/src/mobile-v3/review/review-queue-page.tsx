@@ -503,7 +503,7 @@ export function ReviewQueuePage() {
               ◱ Ready for review
               {item.updatedAt ? ` · ${relativeTime(item.updatedAt)}` : ""}
               {staleLabel(item) ? (
-                <span style={{ color: "var(--mv3-amber)" }}>
+                <span style={{ color: "var(--mv3-amber-text)" }}>
                   {" "}
                   · {staleLabel(item)}
                 </span>

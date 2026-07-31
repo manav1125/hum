@@ -171,7 +171,7 @@ export function Mv3ProjectBrief({
           Cue reads this before working any task in this project.
         </div>
         {patch.isError ? (
-          <div style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 8 }}>
+          <div style={{ fontSize: 11.5, color: "var(--mv3-amber-text)", marginTop: 8 }}>
             Couldn’t save the brief — try again.
           </div>
         ) : null}

@@ -60,6 +60,7 @@ import { ConfirmDialog, toast } from "@vellumai/design-library";
 const C = {
   ink: "var(--mv1-ink)",
   blue: "var(--mv1-blue)",
+  blueText: "var(--mv1-blue-text)",
   bg: "var(--mv1-canvas)",
   card: "var(--mv1-card)",
   line: "var(--mv1-line)",
@@ -734,7 +735,7 @@ function AppPreviewPanel({ plugin }: { plugin: PluginsByNameGetResponse }) {
             gap: 6,
             marginTop: 10,
             fontSize: 12.5,
-            color: C.blue,
+            color: C.blueText,
             textDecoration: "none",
             fontWeight: 500,
           }}
@@ -782,7 +783,7 @@ function ProvenancePanel({
                 href={repoHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: C.blue, textDecoration: "none" }}
+                style={{ color: C.blueText, textDecoration: "none" }}
               >
                 {repo} ↗
               </a>

@@ -245,7 +245,7 @@ const SWEEP_TONE: Record<
   },
   error: {
     glyph: "✕",
-    color: "var(--mv3-fail-text)",
+    color: "var(--mv3-fail)",
     textColor: "var(--mv3-text)",
   },
 };
@@ -383,7 +383,7 @@ export function Mv3MissionDetail({ missionId }: { missionId: string }) {
         ? "var(--mv3-green)"
         : status.tone === "blocked"
           ? "var(--mv3-fail-text)"
-          : "var(--mv3-amber)";
+          : "var(--mv3-amber-text)";
   const paused = mission.status === "paused";
   const charter = (mission.brief ?? mission.outcome).trim();
 

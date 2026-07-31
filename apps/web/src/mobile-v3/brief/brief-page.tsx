@@ -346,7 +346,7 @@ function AskBeat({
 
   return (
     <>
-      <div style={{ ...microLabel, fontSize: 11, letterSpacing: "0.16em", color: "var(--mv3-amber)", ...rise(0) }}>
+      <div style={{ ...microLabel, fontSize: 11, letterSpacing: "0.16em", color: "var(--mv3-amber-text)", ...rise(0) }}>
         One thing needs you
       </div>
       <div style={{ ...headline, fontSize: 34, letterSpacing: "-0.9px", ...rise(0.15) }}>

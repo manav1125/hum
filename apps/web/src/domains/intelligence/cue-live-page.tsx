@@ -690,7 +690,7 @@ function TakeControlCard({
             marginTop: 10,
             fontSize: 12,
             lineHeight: 1.5,
-            color: C.amber,
+            color: C.amberText,
             background: `color-mix(in srgb, var(--mv1-amber) 12%, transparent)`,
             borderRadius: 8,
             padding: "8px 10px",

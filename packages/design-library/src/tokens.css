@@ -389,6 +389,39 @@
   --state-failure: #c4372b;
   --state-failure-weak: #fbecea;
 
+  /* Text legs — light (design addendum A1, the small-text contrast fix).
+   *
+   * The accents above are tuned for FILLS: badge grounds, glyph marks, rules,
+   * progress strokes, ring arcs, and display type at 16px and up. At small
+   * sizes on the light canvas several of them land between 3.4:1 and 4.1:1 —
+   * under the 4.5:1 floor. Design's answer was a token swap rather than a
+   * minimum type size, because a 16px floor would inflate every microlabel and
+   * destroy the deck's density. So each role gains a darker stop of the SAME
+   * hue for text below 16px. No new hues; these are darker steps of colours
+   * already in the ramp.
+   *
+   * The one escape: a bright accent may still carry small text when an
+   * adjacent glyph carries the same fact (the "‖" mark beside "Needs you").
+   * Where colour is the ONLY carrier of meaning, use the text leg.
+   *
+   * Dark and velvet redefine these to the dark accents verbatim — on the dark
+   * canvases the bright values already clear the floor, so the text leg and
+   * the fill leg are deliberately the same value there. */
+  --accent-cue-text: #2b53c4;
+  --accent-cue-violet-text: #453c9e;
+  --state-capture-text: #2b53c4;
+  --state-running-text: #2b53c4;
+  --state-needsyou-text: #8a5a08;
+  --state-review-text: #453c9e;
+  --state-done-text: #277e41; /* already 4.6:1 — unchanged, named for symmetry */
+  --state-failure-text: #a63a2f;
+
+  /* Life / time teal — the hue the calls, schedule, and "when" surfaces use.
+   * It had no token of its own (every surface pasted the literal), so it gets
+   * one here alongside its text leg. */
+  --accent-life: #0e8c8c;
+  --accent-life-text: #0a6a6a;
+
   --agent-ops: #0f9488;
   --agent-growth: #6d5ae0;
   --agent-inbox: #3d6ee8;
@@ -524,6 +557,22 @@
   --state-failure: #e5675a;
   --state-failure-weak: rgba(229, 103, 90, 0.16);
 
+  /* Text legs — dark. Same values as the accents above on purpose: against the
+   * dark canvases the bright accents already measure 5.1–8.4:1, so the text
+   * leg exists only so call sites can name the role once and stay correct in
+   * both themes. Do not darken these; darkening is a light-canvas fix. */
+  --accent-cue-text: #3d6ee8;
+  --accent-cue-violet-text: #7f77dd;
+  --state-capture-text: #5b87f0;
+  --state-running-text: #5b87f0;
+  --state-needsyou-text: #d9a036;
+  --state-review-text: #9b93e8;
+  --state-done-text: #3fa05e;
+  --state-failure-text: #e5675a;
+
+  --accent-life: #4fc7c7;
+  --accent-life-text: #4fc7c7;
+
   --agent-ops: #2cb8aa;
   --agent-growth: #9184f0;
   --agent-inbox: #5b87f0;
@@ -649,6 +698,20 @@
   --state-done-weak: rgba(63, 160, 94, 0.16);
   --state-failure: #e5675a;
   --state-failure-weak: rgba(229, 103, 90, 0.16);
+
+  /* Text legs — velvet. Identical to dark: velvet is a dark base, so the
+   * bright accents already clear the contrast floor at small sizes. */
+  --accent-cue-text: #3d6ee8;
+  --accent-cue-violet-text: #7f77dd;
+  --state-capture-text: #5b87f0;
+  --state-running-text: #5b87f0;
+  --state-needsyou-text: #d9a036;
+  --state-review-text: #9b93e8;
+  --state-done-text: #3fa05e;
+  --state-failure-text: #e5675a;
+
+  --accent-life: #4fc7c7;
+  --accent-life-text: #4fc7c7;
 
   --agent-ops: #2cb8aa;
   --agent-growth: #9184f0;

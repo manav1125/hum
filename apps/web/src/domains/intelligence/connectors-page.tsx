@@ -79,6 +79,9 @@ const C = {
   amberWash: "rgba(201, 138, 27, 0.14)",
   violet: "var(--mv1-violet)",
   violetS: "var(--mv1-violet-strong)",
+  blueText: "var(--mv1-blue-text)",
+  amberText: "var(--mv1-amber-text)",
+  violetText: "var(--mv1-violet-text)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
@@ -188,7 +191,7 @@ function ConnectorRow({
             <span style={{ color: C.green }}> · working ✓ {workingAge}</span>
           ) : null}
           {status === "attention" && connector.health?.lastError ? (
-            <span style={{ color: C.amber }}>
+            <span style={{ color: C.amberText }}>
               {" "}
               · {connector.health.lastError}
             </span>
@@ -554,7 +557,7 @@ function ConnectorsPageDesktop() {
             style={{
               border: "none",
               background: "transparent",
-              color: C.blue,
+              color: C.blueText,
               cursor: "pointer",
               fontSize: 13,
               padding: 0,
@@ -856,7 +859,7 @@ function ConnectorsPageDesktop() {
           <div style={sectionLabel}>
             Connected · {connectedTotal}
             {attentionTotal > 0 ? (
-              <span style={{ color: C.amber }}>
+              <span style={{ color: C.amberText }}>
                 {" "}
                 · {attentionTotal} need{attentionTotal === 1 ? "s" : ""}{" "}
                 attention
@@ -994,7 +997,7 @@ function ConnectorsPageDesktop() {
             fontFamily: mono,
             fontSize: 10,
             background: C.sunken,
-            color: C.violetS,
+            color: C.violetText,
             padding: "2px 7px",
             borderRadius: 5,
           }}

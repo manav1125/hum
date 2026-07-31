@@ -597,7 +597,7 @@ export function Mv3ConnectionsPage() {
                     gap: 6,
                     fontSize: 11.5,
                     fontWeight: 600,
-                    color: "var(--mv3-amber)",
+                    color: "var(--mv3-amber-text)",
                   }}
                 >
                   <LiveDot tone="amber" /> needs attention

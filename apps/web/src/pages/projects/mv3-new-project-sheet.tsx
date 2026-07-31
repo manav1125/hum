@@ -305,7 +305,7 @@ export function Mv3NewProjectSheet({
       ) : null}
 
       {create.isError ? (
-        <div style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 10 }}>
+        <div style={{ fontSize: 11.5, color: "var(--mv3-amber-text)", marginTop: 10 }}>
           Couldn’t create the project — try again in a moment.
         </div>
       ) : null}

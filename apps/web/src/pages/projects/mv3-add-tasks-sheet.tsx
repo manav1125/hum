@@ -1018,7 +1018,7 @@ export function Mv3AddTasksSheet({
                         alignItems: "center",
                         justifyContent: "center",
                         fontSize: 9,
-                        color: "var(--mv3-fail-text)",
+                        color: "var(--mv3-fail)",
                       }}
                     >
                       ✕

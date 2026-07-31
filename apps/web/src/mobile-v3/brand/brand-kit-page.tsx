@@ -664,7 +664,7 @@ export function BrandKitPage() {
               ) : null}
               {(voice.dontList ?? []).length > 0 ? (
                 <div style={{ marginTop: 12 }}>
-                  <div style={{ ...microLabel, color: "var(--mv3-amber)" }}>
+                  <div style={{ ...microLabel, color: "var(--mv3-amber-text)" }}>
                     Don't
                   </div>
                   {(voice.dontList ?? []).map((d) => (

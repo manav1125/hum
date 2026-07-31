@@ -108,6 +108,22 @@ body {
   /* HQ-filing failure red (D4): #C24E42 on cream. */
   --mv1-red: #c24e42;
   --mv1-red-wash: #fcf2f0;
+  /* Life / time teal — the calls / schedule / "when" hue. Every surface used
+   * to paste the literal; it is a token now so its text leg has a home. */
+  --mv1-teal: #0e8c8c;
+
+  /* Text legs — light (design addendum A1). The accents above stay as-is for
+   * fills, strokes, glyph marks, ring arcs and display type >= 16px; text
+   * below 16px reads one darker stop of the same hue so it clears 4.5:1 on the
+   * light canvas. A bright accent may still carry small text when an adjacent
+   * glyph carries the same fact (the "‖" beside "Needs you"); when colour is
+   * the only carrier, use these. Dark keeps the bright values (see below). */
+  --mv1-blue-text: #2b53c4;
+  --mv1-violet-text: #453c9e;
+  --mv1-amber-text: #8a5a08;
+  --mv1-teal-text: #0a6a6a;
+  --mv1-green-text: #277e41;
+  --mv1-red-text: #a63a2f;
 }
 
 [data-theme="dark"],
@@ -144,6 +160,17 @@ body {
   /* HQ-filing failure red, dark leg (re-toned, not inverted). */
   --mv1-red: #e5675b;
   --mv1-red-wash: rgba(229, 103, 91, 0.12);
+  --mv1-teal: #4fc7c7;
+
+  /* Text legs — dark. Deliberately identical to the accents above: on the ink
+   * canvases the bright values already clear the contrast floor at small
+   * sizes, so switching a call site to a text leg must be a no-op in dark. */
+  --mv1-blue-text: #3d6ee8;
+  --mv1-violet-text: #9b94ec;
+  --mv1-amber-text: #d9a84e;
+  --mv1-teal-text: #4fc7c7;
+  --mv1-green-text: #3fb871;
+  --mv1-red-text: #e5675b;
 }
 
 /* Electron prechat onboarding typography — mirror the lighter DM Sans (Swift

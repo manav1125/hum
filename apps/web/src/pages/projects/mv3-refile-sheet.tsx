@@ -236,7 +236,7 @@ export function Mv3RefileSheet({
           <div
             style={{
               fontSize: 11.5,
-              color: "var(--mv3-amber)",
+              color: "var(--mv3-amber-text)",
               textAlign: "center",
               marginTop: 6,
             }}

@@ -217,7 +217,7 @@ export function CreateSheetForm({
         ))}
 
         {showErrors && missing.size > 0 ? (
-          <div style={{ fontSize: 12, color: "var(--mv3-amber)" }}>
+          <div style={{ fontSize: 12, color: "var(--mv3-amber-text)" }}>
             Fill the required fields to continue.
           </div>
         ) : null}

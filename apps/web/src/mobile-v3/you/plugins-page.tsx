@@ -525,7 +525,7 @@ export function Mv3PluginsPage({ assistantId }: { assistantId: string }) {
                 style={{
                   display: "block",
                   fontSize: 11,
-                  color: "var(--mv3-amber)",
+                  color: "var(--mv3-amber-text)",
                   marginTop: 1,
                 }}
               >

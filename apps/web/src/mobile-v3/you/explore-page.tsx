@@ -52,7 +52,7 @@ function stateStyle(state: PowerState): {
       };
     case "needs-you":
       return {
-        color: "var(--mv3-amber)",
+        color: "var(--mv3-amber-text)",
         background: "color-mix(in srgb, var(--mv3-amber) 15%, transparent)",
         border:
           "1px solid color-mix(in srgb, var(--mv3-amber) 34%, transparent)",
@@ -142,7 +142,7 @@ function PowerRow({ power }: { power: CapabilityPower }) {
             style={{
               display: "block",
               fontSize: 12,
-              color: "var(--mv3-amber)",
+              color: "var(--mv3-amber-text)",
               marginTop: 3,
             }}
           >

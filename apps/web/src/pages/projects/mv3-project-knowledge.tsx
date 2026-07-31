@@ -47,9 +47,9 @@ function badgeOf(item: ProjectKnowledgeItem): { glyph: string; color: string } {
   )
     return { glyph: "XLS", color: "var(--mv3-green)" };
   if (mime.includes("word") || /\.(docx?|pages|md|txt|rtf)$/.test(name))
-    return { glyph: "DOC", color: "var(--mv3-violet)" };
+    return { glyph: "DOC", color: "var(--mv3-violet-text)" };
   if (mime.startsWith("image/"))
-    return { glyph: "IMG", color: "var(--mv3-teal)" };
+    return { glyph: "IMG", color: "var(--mv3-teal-text)" };
   return { glyph: "FILE", color: "var(--mv3-muted)" };
 }
 
@@ -391,7 +391,7 @@ export function Mv3ProjectKnowledge({
           </button>
         </div>
         {error ? (
-          <div style={{ fontSize: 11.5, color: "var(--mv3-amber)", marginTop: 8 }}>
+          <div style={{ fontSize: 11.5, color: "var(--mv3-amber-text)", marginTop: 8 }}>
             {error}
           </div>
         ) : null}
@@ -460,7 +460,7 @@ export function Mv3ProjectKnowledge({
               style={{
                 ...secondaryBtn,
                 marginTop: openItem.kind === "link" ? 8 : 12,
-                color: "var(--mv3-amber)",
+                color: "var(--mv3-amber-text)",
                 opacity: removeKnowledge.isPending ? 0.6 : 1,
               }}
             >

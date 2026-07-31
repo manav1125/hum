@@ -16,6 +16,7 @@ import { formatFriendlyDate } from "@/utils/format-date";
 const C = {
   ink: "#1A2230",
   blue: "#3D6EE8",
+  blueText: "#2B53C4",
   sunken: "#EEF1F6",
   line: "#E5E9F0",
   line2: "#D7DDE7",
@@ -412,7 +413,7 @@ export function SkillDetail({
                         fontSize: 13,
                         border: "none",
                         background: "transparent",
-                        color: isActive ? C.blue : isDirectory ? C.t2 : C.t1,
+                        color: isActive ? C.blueText : isDirectory ? C.t2 : C.t1,
                         fontWeight: isActive ? 600 : 400,
                         fontFamily: "inherit",
                         textAlign: "left",

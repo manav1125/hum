@@ -363,7 +363,7 @@ export function Mv3FilesPage({ assistantId }: { assistantId: string }) {
               marginTop: 8,
               fontSize: 12.5,
               fontWeight: 600,
-              color: "var(--mv3-accent)",
+              color: "var(--mv3-accent-text)",
               background: "none",
               border: "none",
               padding: 0,

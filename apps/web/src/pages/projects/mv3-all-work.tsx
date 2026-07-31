@@ -193,7 +193,7 @@ function WorkRow({
               ) : null}
               {/* Frame 48: DUE rides the metadata line, amber, lowercase. */}
               {due ? (
-                <span style={{ color: "var(--mv3-amber)" }}>
+                <span style={{ color: "var(--mv3-amber-text)" }}>
                   {due.toLowerCase()}
                 </span>
               ) : null}

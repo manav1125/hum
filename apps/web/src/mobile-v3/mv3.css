@@ -34,6 +34,22 @@
   --mv3-green: #277e41;
   --mv3-teal: #0e8c8c; /* third orbit-chip hue in the frames */
 
+  /* Text legs — light (design addendum A1). The state colours above are the
+   * FILL legs: chip grounds, glyph marks, card borders, ring arcs, and display
+   * type at 16px and up. Below 16px they measure 3.4–4.1:1 on this canvas, so
+   * text takes a darker stop of the same hue instead — the density of the deck
+   * survives, the contrast floor is met. `--mv3-micro` was the first instance
+   * of this pattern (accent microlabels); these complete the set.
+   *
+   * A bright fill leg may still carry small text where an adjacent glyph
+   * carries the same fact — the "‖" in a needs-you chip, the "✓" on done. If
+   * colour is the only carrier of the meaning, use the text leg. */
+  --mv3-accent-text: #2b53c4;
+  --mv3-amber-text: #8a5a08;
+  --mv3-violet-text: #453c9e;
+  --mv3-green-text: #277e41; /* already 4.6:1 — unchanged, named for symmetry */
+  --mv3-teal-text: #0a6a6a;
+
   /* Glass cards (frame 12 card stack). */
   --mv3-card: rgba(255, 255, 255, 0.85);
   --mv3-card-border: rgba(0, 0, 0, 0.06);
@@ -80,10 +96,13 @@
   --mv3-grabber: rgba(0, 0, 0, 0.18);
 
   /* Failure-red row grammar (gap frame 46; light leg mirrors D4's
-   * #C24E42-on-cream desktop treatment). */
+   * #C24E42-on-cream desktop treatment). `--mv3-fail` is the fill leg (glyph
+   * marks, rules, >=16px display); `--mv3-fail-text` is the darker stop small
+   * copy reads at — addendum A1 moved it off the fill value. */
   --mv3-fail-card-bg: #fcf2f0;
   --mv3-fail-card-border: rgba(194, 78, 66, 0.35);
-  --mv3-fail-text: #c24e42;
+  --mv3-fail: #c24e42;
+  --mv3-fail-text: #a63a2f;
 
   /* Token/mono input wells (gap frame 51): light = #F2F3F7 inset on the white
    * card with a hairline border — never a dark well. */
@@ -106,6 +125,15 @@
   --mv3-violet-fill: #7f77dd;
   --mv3-green: #6fd69a;
   --mv3-teal: #4fc7c7;
+
+  /* Text legs — dark. Identical to the fill legs on purpose: on #0A0C12 the
+   * bright values already measure 5.1–8.4:1, so a call site that moves to a
+   * text leg must render exactly as before here. Addendum A1 is light-only. */
+  --mv3-accent-text: #3d6ee8;
+  --mv3-amber-text: #e0a64b;
+  --mv3-violet-text: #a79ff0;
+  --mv3-green-text: #6fd69a;
+  --mv3-teal-text: #4fc7c7;
 
   --mv3-card: rgba(28, 32, 44, 0.72);
   --mv3-card-border: rgba(255, 255, 255, 0.1);
@@ -150,6 +178,7 @@
   /* Failure-red rows, dark leg (frame 46 spec values). */
   --mv3-fail-card-bg: rgba(44, 26, 28, 0.6);
   --mv3-fail-card-border: rgba(229, 103, 91, 0.4);
+  --mv3-fail: #e5675b;
   --mv3-fail-text: #e7a9ad;
 
   /* Token wells stay the designed dark inset (frame 39 — dark unchanged). */

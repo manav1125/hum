@@ -46,8 +46,8 @@ export const MEMORY_KIND_SCOPE = "cue-memory-kinds";
 const MEMORY_KIND_CSS = `
 .cue-memory-kinds {
   --memk-semantic-dot: #3d6ee8; --memk-semantic-text: #2b53c4; --memk-semantic-wash: #dbe4fb;
-  --memk-prospective-dot: #7f77dd; --memk-prospective-text: #534ab7; --memk-prospective-wash: #eeedfb;
-  --memk-procedural-dot: #0e8c8c; --memk-procedural-text: #0e8c8c; --memk-procedural-wash: #e0f0ef;
+  --memk-prospective-dot: #7f77dd; --memk-prospective-text: #453c9e; --memk-prospective-wash: #eeedfb;
+  --memk-procedural-dot: #0e8c8c; --memk-procedural-text: #0a6a6a; --memk-procedural-wash: #e0f0ef;
   --memk-episodic-dot: #c98a1b; --memk-episodic-text: #9a6a14; --memk-episodic-wash: #fbf0da;
   --memk-emotional-dot: #e24b4a; --memk-emotional-text: #e24b4a; --memk-emotional-wash: #fbe3e3;
   --memk-behavioral-dot: #5a57c4; --memk-behavioral-text: #5a57c4; --memk-behavioral-wash: #e7e7f7;

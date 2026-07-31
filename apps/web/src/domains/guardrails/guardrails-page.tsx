@@ -97,6 +97,9 @@ const C = {
   green: "var(--mv1-green)",
   greenW: "var(--mv1-green-wash)",
   amber: "var(--mv1-amber)",
+  blueText: "var(--mv1-blue-text)",
+  violetText: "var(--mv1-violet-text)",
+  amberText: "var(--mv1-amber-text)",
   danger: "var(--mv1-danger)",
   teal: "var(--gr-teal)",
 } as const;
@@ -818,7 +821,7 @@ function CheckpointRow({
               fontFamily: mono,
               fontSize: 9,
               letterSpacing: "0.08em",
-              color: C.violet,
+              color: C.violetText,
             }}
           >
             {scope.label}
@@ -851,7 +854,7 @@ function CheckpointRow({
             fontFamily: mono,
             fontSize: 8.5,
             letterSpacing: "0.06em",
-            color: C.amber,
+            color: C.amberText,
             background: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
             borderRadius: 4,
             padding: "3px 7px",
@@ -1373,13 +1376,13 @@ function AgentCard({
       : overAdvisory
         ? {
             text: "OVER CAP",
-            color: C.amber,
+            color: C.amberText,
             bg: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
           }
         : nearCap
           ? {
               text: "NEAR CAP",
-              color: C.amber,
+              color: C.amberText,
               bg: `color-mix(in srgb, ${C.amber} 12%, transparent)`,
             }
           : { text: "ACTIVE", color: C.green, bg: C.greenW };
@@ -1575,7 +1578,7 @@ function AgentCard({
         // Over the cap, but the cap is advisory — runs did NOT stop. Offer to
         // enforce it (arm the hard-stop) or raise it.
         <>
-          <div style={{ fontSize: 10.5, color: C.amber, marginTop: 6 }}>
+          <div style={{ fontSize: 10.5, color: C.amberText, marginTop: 6 }}>
             Over the weekly cap — advisory only, so runs kept going.
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
@@ -2231,7 +2234,7 @@ function LedgerBand({
           }}
         >
           and {moreHeld} more waiting in HQ&rsquo;s{" "}
-          <span style={{ color: C.amber }}>Needs you</span>
+          <span style={{ color: C.amberText }}>Needs you</span>
         </div>
       )}
 
@@ -2306,7 +2309,7 @@ function LedgerBand({
                     : ""}
                 </div>
                 {note && act.reversed !== 1 && (
-                  <div style={{ fontSize: 10.5, color: C.amber, marginTop: 3 }}>
+                  <div style={{ fontSize: 10.5, color: C.amberText, marginTop: 3 }}>
                     {note}
                   </div>
                 )}
@@ -2426,7 +2429,7 @@ function HeldRow({
         </div>
         <div style={{ fontSize: 11, color: C.t3, marginTop: 2 }}>
           {sub}
-          <span style={{ color: C.amber }}>Needs you</span>
+          <span style={{ color: C.amberText }}>Needs you</span>
         </div>
       </div>
       <button

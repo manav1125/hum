@@ -351,7 +351,7 @@ export function ReviewIndexPage() {
                 style={{
                   display: "inline-block",
                   fontSize: 12,
-                  color: "var(--mv3-violet)",
+                  color: "var(--mv3-violet-text)",
                   background:
                     "color-mix(in srgb, var(--mv3-violet) 12%, transparent)",
                   border:
