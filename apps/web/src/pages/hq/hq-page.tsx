@@ -679,6 +679,17 @@ const SUGGESTED_MISSIONS: Array<{
 ];
 
 /** The pulse — HQ with zero missions. Never a blank canvas. */
+/**
+ * First line of a provider error, capped. Watcher failures can be an entire
+ * HTML 404 page — Gmail returns one — and pasting that into a card tells the
+ * user nothing while destroying the layout.
+ */
+function firstLine(raw: string, max = 120): string {
+  const line = (raw.split("\n")[0] ?? "").trim();
+  if (line.length === 0) return "no detail reported";
+  return line.length > max ? `${line.slice(0, max)}…` : line;
+}
+
 function PulseLayout({
   assistantId,
   move,
@@ -692,6 +703,7 @@ function PulseLayout({
   moveIsExtraToNeedsYou,
   heartbeatRuns,
   watchingCount,
+  failingWatchers,
   onNewMission,
   onSuggest,
 }: {
@@ -711,8 +723,10 @@ function PulseLayout({
   moveIsExtraToNeedsYou: boolean;
   /** Lifetime heartbeat runs — real evidence Cue has been working. */
   heartbeatRuns: number | null;
-  /** Sources currently observed. 0 until watchers are provisioned. */
+  /** Sources currently observed AND healthy. Existing != working. */
   watchingCount: number;
+  /** Provisioned watchers that are erroring — named, never hidden. */
+  failingWatchers: { id: string; name: string; lastError: string }[];
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
@@ -790,7 +804,39 @@ function PulseLayout({
         Shown only while nothing is watching; it disappears the moment the
         first source is live.
       */}
-      {watchingCount === 0 ? (
+      {/*
+        The BROKEN state (§14, third treatment): amber and NAMED. A watcher that
+        was provisioned but cannot poll is worse than no watcher, because the
+        user believes observation is on. Naming the source and quoting the
+        actual error is the difference between "something went wrong" — which is
+        not a state — and a fact they can act on.
+      */}
+      {failingWatchers.length > 0 ? (
+        <EmptyState
+          kind="broken"
+          title={`${failingWatchers.length === 1 ? failingWatchers[0]!.name : `${failingWatchers.length} sources`} can't be reached`}
+          body={
+            failingWatchers.length === 1
+              ? `Cue set up watching but the last check failed: ${firstLine(failingWatchers[0]!.lastError)}`
+              : `Cue set up watching but the last checks failed. First error: ${firstLine(failingWatchers[0]!.lastError)}`
+          }
+          action={
+            <Link
+              to={routes.automations}
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: C.amberText,
+                textDecoration: "none",
+              }}
+            >
+              See what Cue watches ›
+            </Link>
+          }
+        />
+      ) : null}
+
+      {watchingCount === 0 && failingWatchers.length === 0 ? (
         <EmptyState
           kind="not_set_up"
           title="Cue can see your inbox — but it isn't watching it"
@@ -1746,11 +1792,20 @@ export function HqPage() {
   const queued = useHqWorkItems(assistantId, "pending");
   const done = useHqWorkItems(assistantId, "done");
   const { schedules } = useHqSchedules(assistantId);
-  // Drives the "not set up" state and the pulse strip. Read from the real
-  // watcher list rather than assumed: the moment auto-provisioning lands, this
-  // flips on its own and the blue "Cue can see your inbox" card retires itself.
+  // Drives the "not set up" / "broken" states and the pulse strip. Read from
+  // the real watcher list rather than assumed: the moment auto-provisioning
+  // lands, this flips on its own and the blue "Cue can see your inbox" card
+  // retires itself.
   const watchersQuery = useWatchers();
   const watchers = watchersQuery.data ?? [];
+  // A watcher that EXISTS is not a watcher that WORKS. Counting rows would let
+  // two provisioned-but-failing watchers retire the "not watching" card and
+  // silently imply Cue is observing the inbox — the precise dishonesty the
+  // design forbids ("never promise something the system can't do"). So a
+  // watcher counts as watching only while it is enabled and not currently
+  // erroring; the ones that are erroring get named in the broken state instead.
+  const liveWatchers = watchers.filter((w) => w.enabled && !w.lastError);
+  const failingWatchers = watchers.filter((w) => w.enabled && w.lastError);
   const stateQuery = useHomeStateQuery(assistantId);
   const { profile } = useCompanyProfile(assistantId);
   const { move, isLoading: moveLoading } = useNextMove(assistantId);
@@ -1956,7 +2011,12 @@ export function HqPage() {
               (review.items.length !== reviewItems.length ||
                 move.kind === "approval")
             }
-            watchingCount={watchers.length}
+            watchingCount={liveWatchers.length}
+            failingWatchers={failingWatchers.map((w) => ({
+              id: w.id,
+              name: w.name,
+              lastError: w.lastError ?? "",
+            }))}
             heartbeatRuns={null}
             cameIn={cameIn}
             running={running.items}
