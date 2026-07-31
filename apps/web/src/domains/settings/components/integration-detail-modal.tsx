@@ -238,8 +238,16 @@ export function IntegrationDetailModal({
         </div>
 
         <div className="flex justify-end border-t border-[var(--border-base)] px-5 py-3 dark:border-[var(--border-base)]">
+          {/*
+            Labelled "Done", not "Confirm". This button only closes the modal —
+            every action inside (saving BYO credentials, connecting,
+            disconnecting) is committed by its own control in the tab body. A
+            bottom-right button reading "Confirm" is the conventional shape of a
+            primary submit, so anyone who typed credentials and pressed it would
+            reasonably believe they had saved them, and lose the input on close.
+          */}
           <Button variant="outlined" size="compact" onClick={onClose}>
-            Confirm
+            Done
           </Button>
         </div>
       </div>

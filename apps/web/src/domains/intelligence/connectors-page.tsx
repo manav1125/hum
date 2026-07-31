@@ -1007,7 +1007,9 @@ function ConnectorsPageDesktop() {
         className="cue-pressable"
         onClick={() => {
           haptic.light();
-          navigate(routes.assistant);
+          // See empty-orbit.tsx: routes.assistant bounces back to Today on
+          // mobile, so this button promised chat and delivered nothing.
+          navigate(routes.conversations);
         }}
         title="Opens chat — ask Cue to add an MCP server"
         style={{

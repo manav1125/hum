@@ -116,7 +116,12 @@ export function EmptyOrbit() {
           className="cue-pressable"
           onClick={() => {
             haptic.medium();
-            navigate(routes.assistant);
+            // NOT routes.assistant: on mobile that renders ConversationRedirect,
+            // which with no target conversation navigates straight back to
+            // routes.home — i.e. this tab. Today's primary call to action did
+            // nothing at all. routes.conversations is the path mobile already
+            // uses to reach chat (see mobile-v3/overflow-menu.tsx).
+            navigate(routes.conversations);
           }}
           style={{
             width: "100%",
