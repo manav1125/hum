@@ -110,6 +110,14 @@ import {
   serif,
   sourceBadge,
 } from "./hq-kit";
+import {
+  CensusBar,
+  DeliveredBlock,
+  EmptyState,
+  NEEDS_YOU_CAP,
+  PulseStrip,
+} from "./hq-deck";
+import { useWatchers } from "@/mobile-v3/you/use-automations-data";
 import { NewMissionModal } from "./new-mission-modal";
 import {
   missionByProject,
@@ -682,6 +690,8 @@ function PulseLayout({
   userName,
   dayLabel,
   moveIsExtraToNeedsYou,
+  heartbeatRuns,
+  watchingCount,
   onNewMission,
   onSuggest,
 }: {
@@ -699,6 +709,10 @@ function PulseLayout({
    * `needsYou` rows, and so genuinely adds one to the glance count.
    */
   moveIsExtraToNeedsYou: boolean;
+  /** Lifetime heartbeat runs — real evidence Cue has been working. */
+  heartbeatRuns: number | null;
+  /** Sources currently observed. 0 until watchers are provisioned. */
+  watchingCount: number;
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
@@ -708,6 +722,11 @@ function PulseLayout({
   // That is what made this headline read 6 while the sidebar badge, reading the
   // same two queries, read 5.
   const glanceCount = needsYou.length + (moveIsExtraToNeedsYou ? 1 : 0);
+  const deliveredCount = done.length;
+  // Everything Cue currently holds. Only lanes we actually queried — a lane we
+  // cannot answer must be absent, never rendered as 0 (see "never a fake
+  // number"): a zero reads as "none", which would be a claim, not a gap.
+  const trackedCount = needsYou.length + running.length + cameIn.length;
   const firstRun = useHqFirstRun();
   const isMobile = useIsMobile();
   return (
@@ -730,9 +749,22 @@ function PulseLayout({
       >
         {userName ? `Good ${dayPart()}, ${userName}.` : `Good ${dayPart()}.`}
         <br />
-        {glanceCount > 0
-          ? `A calm one — ${glanceCount === 1 ? "one thing" : `${glanceCount} things`} I'd glance at.`
-          : "A calm one — nothing needs you right now."}
+        {/*
+          The greeting states DELIVERY, not obligation. It used to read "N
+          things I'd glance at", which opens the product on the user's debts —
+          the same move every competitor's dashboard makes, and the reason HQ
+          read as another inbox. Cue's differentiator is that it has already
+          done work; the headline is where that gets claimed.
+
+          Falls back to what is queryable rather than inventing warmth: with
+          nothing delivered today it reports what Cue is tracking and where
+          that came from, which is true on day one and on day one hundred.
+        */}
+        {deliveredCount > 0
+          ? `Cue finished ${deliveredCount === 1 ? "one thing" : `${deliveredCount} things`} for you today.`
+          : trackedCount > 0
+            ? `Cue is tracking ${trackedCount} ${trackedCount === 1 ? "thing" : "things"} for you.`
+            : "Cue is ready when you are."}
       </div>
 
       <div style={{ marginTop: 22, maxWidth: 640 }} data-coach="hq-capture">
@@ -745,6 +777,44 @@ function PulseLayout({
       {/* First-run — three cards that teach the loop, once. Shown on the pulse
           path too: a zero-mission account is exactly who needs the explainer. */}
       {firstRun.show ? <HqFirstRun onDismiss={firstRun.dismiss} /> : null}
+
+      {/*
+        The NOT-SET-UP state, and the most important sentence on this screen.
+
+        Cue has connectors attached — it can read the inbox on request — but
+        nothing observes them, so nothing ever arrives unasked. That gap is the
+        difference between the product people think they bought and the one
+        they have, and until watchers land it has to be stated outright rather
+        than hidden behind a calm-looking deck.
+
+        Shown only while nothing is watching; it disappears the moment the
+        first source is live.
+      */}
+      {watchingCount === 0 ? (
+        <EmptyState
+          kind="not_set_up"
+          title="Cue can see your inbox — but it isn't watching it"
+          body="Right now Cue works when you ask. Turn on watching and things start arriving on their own — and your missions fill themselves in."
+          action={
+            <Link
+              to={routes.connectors}
+              className="cue-pressable"
+              style={{
+                display: "inline-block",
+                fontSize: 12.5,
+                fontWeight: 600,
+                background: C.blue,
+                color: "#fff",
+                borderRadius: 9,
+                padding: "9px 15px",
+                textDecoration: "none",
+              }}
+            >
+              Start watching
+            </Link>
+          }
+        />
+      ) : null}
 
       {/* auto-fit + minmax(0,…) so the pair collapses to one column on narrow
           viewports AND the tracks can shrink below their content's min-content
@@ -761,11 +831,46 @@ function PulseLayout({
         }}
       >
         <div style={{ minWidth: 0 }}>
+          {/*
+            4 · DELIVERED — above needs-you, always. Value before cost is the
+            invariant that survives every version of this deck.
+          */}
+          <DeliveredBlock items={done} />
+
+          {/* 5 · NEEDS YOU — capped. The deck never grows: at 6 open or 600,
+              this renders NEEDS_YOU_CAP rows and the census below moves
+              instead. "3 of 6" is the honest framing; a scrolling wall is not. */}
           {glanceCount > 0 ? (
             <>
-              <MicroLabel color={C.danger}>
-                Needs you · {glanceCount}
-              </MicroLabel>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 10,
+                  marginTop: done.length > 0 ? 30 : 0,
+                }}
+              >
+                <MicroLabel color={C.danger}>
+                  Needs you ·{" "}
+                  {glanceCount > NEEDS_YOU_CAP
+                    ? `${NEEDS_YOU_CAP} of ${glanceCount}`
+                    : glanceCount}
+                </MicroLabel>
+                {glanceCount > NEEDS_YOU_CAP ? (
+                  <Link
+                    to={routes.reviewQueue}
+                    style={{
+                      marginLeft: "auto",
+                      fontSize: 11.5,
+                      color: C.t3,
+                      textDecoration: "none",
+                      fontFamily: mono,
+                    }}
+                  >
+                    Triage the rest ›
+                  </Link>
+                ) : null}
+              </div>
               <div
                 style={{
                   display: "flex",
@@ -776,21 +881,31 @@ function PulseLayout({
               >
                 {/* ◆ YOUR NEXT MOVE — always the first card in the lane. */}
                 <NextMoveCard assistantId={assistantId} move={move} />
-                {needsYou.slice(0, 4).map((item) => (
-                  <NeedsYouCard
-                    key={item.id}
-                    item={item}
-                    mission={
-                      item.projectId
-                        ? (missionsByProjectId.get(item.projectId) ?? null)
-                        : null
-                    }
-                  />
-                ))}
+                {needsYou
+                  .slice(0, Math.max(0, NEEDS_YOU_CAP - (move.hasMove ? 1 : 0)))
+                  .map((item) => (
+                    <NeedsYouCard
+                      key={item.id}
+                      item={item}
+                      mission={
+                        item.projectId
+                          ? (missionsByProjectId.get(item.projectId) ?? null)
+                          : null
+                      }
+                    />
+                  ))}
               </div>
             </>
           ) : null}
 
+          {/*
+            "Waiting", not "Came in". These are `queued` items — work that will
+            run itself (§3: ○ hollow ring). "Came in" means an ARRIVAL, something
+            that reached Cue on its own, and that is a different lane with a
+            different glyph (↴). Labelling queued work as arrivals told the user
+            things were flowing in when nothing was watching. The real arrivals
+            module is below, and it currently says so.
+          */}
           {cameIn.length > 0 ? (
             <>
               <MicroLabel
@@ -798,7 +913,7 @@ function PulseLayout({
                   margin: glanceCount > 0 ? "24px 0 12px" : "0 0 12px",
                 }}
               >
-                Came in · {cameIn.length}
+                Waiting · {cameIn.length}
               </MicroLabel>
               <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                 {[...cameIn]
@@ -849,6 +964,35 @@ function PulseLayout({
               </div>
             </>
           ) : null}
+
+          {/*
+            7 · CAME IN — arrivals. Interim state per addendum A2 until watchers
+            land. It refuses to imply quiet: "nothing arrived" on its own reads
+            as a calm inbox, when the truth is that nothing is switched on.
+          */}
+          <MicroLabel style={{ margin: "26px 0 0" }}>Came in</MicroLabel>
+          <EmptyState
+            kind="nothing_yet"
+            title="Nothing has arrived"
+            body="Because nothing is watching — not because it's quiet. Connect a source and things start arriving on their own."
+          />
+
+          {/* 6 · CENSUS — the honest count and the door to the ledger. */}
+          <CensusBar
+            segments={[
+              { label: "need you", value: needsYou.length },
+              { label: "Cue is doing", value: running.length },
+              { label: "waiting", value: cameIn.length },
+              { label: "done today", value: done.length },
+            ]}
+          />
+
+          {/* 8 · PULSE — what Cue watches on your behalf. */}
+          <PulseStrip
+            sourceCount={0}
+            checkCount={heartbeatRuns}
+            lastCheckLabel={null}
+          />
         </div>
 
         <div style={{ minWidth: 0 }}>
@@ -1599,6 +1743,11 @@ export function HqPage() {
   const queued = useHqWorkItems(assistantId, "pending");
   const done = useHqWorkItems(assistantId, "done");
   const { schedules } = useHqSchedules(assistantId);
+  // Drives the "not set up" state and the pulse strip. Read from the real
+  // watcher list rather than assumed: the moment auto-provisioning lands, this
+  // flips on its own and the blue "Cue can see your inbox" card retires itself.
+  const watchersQuery = useWatchers();
+  const watchers = watchersQuery.data ?? [];
   const stateQuery = useHomeStateQuery(assistantId);
   const { profile } = useCompanyProfile(assistantId);
   const { move, isLoading: moveLoading } = useNextMove(assistantId);
@@ -1804,6 +1953,8 @@ export function HqPage() {
               (review.items.length !== reviewItems.length ||
                 move.kind === "approval")
             }
+            watchingCount={watchers.length}
+            heartbeatRuns={null}
             cameIn={cameIn}
             running={running.items}
             done={doneToday}
