@@ -80,6 +80,33 @@ let activeLogFileConfig: LogFileConfig | null = null;
 function resolveLogDir(config: LogFileConfig): string | undefined {
   if (!config.dir) return undefined;
 
+  // Inside a container, a configured directory that sits outside the canonical
+  // logs dir is a host path that leaked into the workspace config — typically
+  // because the config file was authored on a laptop and later restored onto a
+  // server. Redirect BEFORE attempting to create it.
+  //
+  // The mkdir-failure fallback below is not enough on its own: the daemon runs
+  // as root, so `mkdir -p /Users/<someone>/…` inside the container SUCCEEDS.
+  // resolveLogDir then happily returned the host path and the daemon logged
+  // there quite happily — on the container's ephemeral layer, not the mounted
+  // volume. Production wrote 2.3 MB of logs to
+  // /Users/manavgupta/.local/share/... while /workspace/data/logs sat frozen at
+  // the last restart, so every restart silently destroyed the logs and anyone
+  // debugging looked at a stale file.
+  if (getIsContainerized()) {
+    const canonical = getLogsDir();
+    if (config.dir !== canonical) {
+      console.warn(
+        `[logger] Ignoring host-specific logFile.dir "${config.dir}" in ` +
+          `container; logging to "${canonical}" instead.`,
+      );
+      if (!existsSync(canonical)) {
+        mkdirSync(canonical, { recursive: true });
+      }
+      return canonical;
+    }
+  }
+
   if (!existsSync(config.dir)) {
     try {
       mkdirSync(config.dir, { recursive: true });
