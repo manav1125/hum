@@ -40,6 +40,7 @@ import {
   type VideoStyleKind,
 } from "@/domains/create/studio-specs";
 import { publicAsset } from "@/utils/public-asset";
+import { isPointerCoarse } from "@/utils/pointer";
 
 // -- Shared tokens (mirror create-view.tsx) ---------------------------------
 const C = {
@@ -358,8 +359,13 @@ export interface CreateGalleryOverlayProps {
   /** Whether an active Brand Kit exists (enables the "In your brand" toggle). */
   hasBrand: boolean;
   /**
-   * The active brand's display name — labels the in-gallery live preview
-   * ("previewing your content"). Optional; falls back to a neutral sample.
+   * The active brand's display name.
+   *
+   * NOT CURRENTLY RENDERED. The intent was to personalize the brand toggle
+   * and preview the way `create-view` does (`In {brandName} ✓`), but the
+   * gallery still hard-codes "In your brand" and "previewing your content".
+   * `create-view` passes a real value, so wiring it up is a copy change, not
+   * a plumbing one. Kept on the interface so those call sites stay valid.
    */
   brandName?: string | null;
   /** Initial brand-toggle state. */
@@ -375,7 +381,6 @@ export interface CreateGalleryOverlayProps {
 export function CreateGalleryOverlay({
   mode,
   hasBrand,
-  brandName,
   initialInBrand = true,
   onConfirm,
   onTakeAiDirection,
@@ -1050,6 +1055,14 @@ function SlideCard({
   const [preview, setPreview] = useState(false);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Which preview gesture this device can actually perform — a POINTER
+  // question, unlike the `isMobile` layout branches below. Hover-preview was
+  // gated on width, so a narrow desktop window lost hover (its only way to
+  // preview) and got long-press handlers no mouse can fire: the template
+  // preview simply stopped working. Captured once so the handler set can't
+  // swap mid-press and strand `pressTimer`.
+  const coarsePointer = useState(() => isPointerCoarse())[0];
+
   const clearPress = () => {
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
@@ -1071,11 +1084,11 @@ function SlideCard({
     <button
       type="button"
       onClick={onSelect}
-      onMouseEnter={isMobile ? undefined : () => setPreview(true)}
-      onMouseLeave={isMobile ? undefined : () => setPreview(false)}
-      onTouchStart={isMobile ? onTouchStart : undefined}
-      onTouchEnd={isMobile ? onTouchEnd : undefined}
-      onTouchCancel={isMobile ? onTouchEnd : undefined}
+      onMouseEnter={coarsePointer ? undefined : () => setPreview(true)}
+      onMouseLeave={coarsePointer ? undefined : () => setPreview(false)}
+      onTouchStart={coarsePointer ? onTouchStart : undefined}
+      onTouchEnd={coarsePointer ? onTouchEnd : undefined}
+      onTouchCancel={coarsePointer ? onTouchEnd : undefined}
       style={cardFrame(selected)}
     >
       {/* MOBILE (round-4 frame 59): selection reads as the blue border +

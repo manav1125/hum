@@ -20,6 +20,15 @@ mock.module("@/hooks/use-is-mobile", () => ({
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 
+// The theme control branches on POINTER, not width — a mouse-driven narrow
+// window is not at risk of the mis-tap this guards against. Mocked separately
+// from `isMobileRef` so the two can be varied independently.
+const coarsePointerRef = { value: false };
+
+mock.module("@/utils/pointer", () => ({
+  isPointerCoarse: () => coarsePointerRef.value,
+}));
+
 const authRef = {
   isAuthenticated: true,
   user: {
@@ -126,6 +135,7 @@ const contentProps = {
 
 beforeEach(() => {
   isMobileRef.value = false;
+  coarsePointerRef.value = false;
   authRef.isAuthenticated = true;
   authRef.user = {
     id: "u1",
@@ -164,8 +174,8 @@ describe("PreferencesMenu", () => {
 });
 
 describe("PreferencesMenuContent", () => {
-  test("desktop keeps the inline theme segment", () => {
-    isMobileRef.value = false;
+  test("a mouse keeps the inline theme segment", () => {
+    coarsePointerRef.value = false;
     const html = renderToStaticMarkup(
       createElement(PreferencesMenuContent, contentProps),
     );
@@ -173,15 +183,28 @@ describe("PreferencesMenuContent", () => {
     expect(html).not.toContain("Appearance");
   });
 
-  test("mobile replaces the theme segment with an Appearance link row", () => {
+  test("touch replaces the theme segment with an Appearance link row", () => {
     // Regression guard: the embedded System/Light/Dark segment persisted a
-    // theme change on a single mis-tap inside the transient sheet. Mobile
+    // theme change on a single mis-tap inside the transient sheet. Touch
     // must render a navigation row instead of the segment.
-    isMobileRef.value = true;
+    coarsePointerRef.value = true;
     const html = renderToStaticMarkup(
       createElement(PreferencesMenuContent, contentProps),
     );
     expect(html).toContain("Appearance");
     expect(html).not.toContain("theme-toggle");
+  });
+
+  test("a narrow MOUSE window keeps the segment", () => {
+    // The gate used to be `useIsMobile()`, so any sub-767px window — including
+    // a 720px Electron pop-out driven by a trackpad — lost the inline theme
+    // control for a mis-tap risk it never had. Width must not decide this.
+    isMobileRef.value = true;
+    coarsePointerRef.value = false;
+    const html = renderToStaticMarkup(
+      createElement(PreferencesMenuContent, contentProps),
+    );
+    expect(html).toContain("theme-toggle");
+    expect(html).not.toContain("Appearance");
   });
 });

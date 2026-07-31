@@ -34,6 +34,7 @@ import { isElectron } from "@/runtime/is-electron";
 import { useAuthStore, useIsAuthenticated } from "@/stores/auth-store";
 import { openUrl } from "@/runtime/browser";
 import { adminUrl, routes } from "@/utils/routes";
+import { isPointerCoarse } from "@/utils/pointer";
 
 import { CreditsCard } from "./credits-card";
 
@@ -153,7 +154,10 @@ export function PreferencesMenuContent({
   onEarnCredits,
 }: PreferencesMenuContentProps) {
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
+  // A POINTER question, not a width or platform one — see the branch below.
+  // Captured once (like `question-prompt-card`) so the menu can't swap its
+  // theme control mid-interaction.
+  const coarsePointer = useState(() => isPointerCoarse())[0];
   const user = useAuthStore.use.user();
   const platformGate = usePlatformGate();
   const billingPlatformGate = usePlatformGate({ platformHostedOnly: true });
@@ -169,12 +173,18 @@ export function PreferencesMenuContent({
 
   return (
     <>
-      {isMobile ? (
+      {coarsePointer ? (
         // On touch, the inline System/Light/Dark segment is a footgun: a
         // single mis-tap (or stray arrow key) commits AND persists a theme
         // change from inside a transient sheet — the likely cause of "the
-        // app spontaneously went light". Mobile gets a quiet link into the
-        // Appearance settings leaf instead; desktop keeps the segment.
+        // app spontaneously went light". Touch gets a quiet link into the
+        // Appearance settings leaf instead; a mouse keeps the segment.
+        //
+        // Gated on POINTER, not width: the mis-tap risk comes from a fat
+        // finger, not a narrow window. A width test took the segment away
+        // from every narrow desktop window, which is mouse-driven and was
+        // never at risk; a platform test would have kept the footgun on
+        // mobile web.
         <PanelItem
           icon={SunMoon}
           label="Appearance"
