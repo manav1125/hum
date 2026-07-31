@@ -34,15 +34,22 @@ import {
 import { Mv3AllWork } from "./mv3-all-work";
 import { NewProjectModal } from "./new-project-modal";
 import { usePatchWorkItem, useProjects } from "./use-projects";
+import { describeWorkState } from "@/pages/hq/work-vocabulary";
 
 type Grouping = "status" | "project" | "due";
 
 const STATUS_ORDER = ["awaiting_review", "running", "queued", "done", "failed"];
+// Grouping headers read from the shared vocabulary so All work and HQ speak
+// with one voice. They used to disagree — HQ said "needs you", this page said
+// "Review"; HQ said "Cue is doing", this said "In motion" — which made the two
+// surfaces look like two products with overlapping data. `failed` has no
+// canonical entry (it is not one of the eight states a user acts on), so it
+// keeps a local label.
 const STATUS_LABEL: Record<string, string> = {
-  awaiting_review: "Review",
-  running: "In motion",
-  queued: "Queued",
-  done: "Done",
+  awaiting_review: describeWorkState("awaiting_review").label,
+  running: describeWorkState("running").label,
+  queued: describeWorkState("queued").label,
+  done: describeWorkState("done").label,
   failed: "Failed",
 };
 
@@ -313,7 +320,10 @@ function AllWorkPageDesktop() {
                           ? (projectTitle.get(item.projectId) ?? null)
                           : null
                       }
-                      statusLabel={item.status.replace("_", " ")}
+                      // NOT `item.status.replace("_", " ")` — that shipped the
+                      // database value to the user, which is how "AWAITING
+                      // REVIEW" and "QUEUED" ended up on screen.
+                      statusLabel={describeWorkState(item.status).label}
                       statusTone={
                         item.status === "done"
                           ? "green"
