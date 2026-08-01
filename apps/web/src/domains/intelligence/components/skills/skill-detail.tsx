@@ -24,6 +24,8 @@ const C = {
   t2: "#5A6672",
   t3: "#9AA6B2",
   danger: "#DA491A",
+  /** Text leg for small copy where colour is the only carrier (A1). */
+  dangerText: "#B83C12",
   dangerBorder: "#F0B9AC",
 } as const;
 const MONO = "'DM Mono', ui-monospace, monospace";
@@ -577,7 +579,7 @@ function StatusControl({
             fontSize: 12.5,
             border: `1px solid ${C.dangerBorder}`,
             background: "#fff",
-            color: C.danger,
+            color: C.dangerText,
             borderRadius: 9,
             padding: "7px 14px",
             cursor: isRemoving ? "default" : "pointer",

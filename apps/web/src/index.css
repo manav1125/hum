@@ -103,7 +103,11 @@ body {
   --mv1-violet-strong: #534ab7;
   --mv1-green: #277e41;
   --mv1-green-wash: #e2f0e7;
-  --mv1-amber: #c98a1b;
+  /* The design system's needs-you bright. This was #C98A1B, which is not a
+   * value the system specifies — the app had drifted to a lighter amber, and at
+   * 2.9:1 it failed even as a large-text fill. #B4770F is the specified stop
+   * (3.8:1); small text still takes --mv1-amber-text below. */
+  --mv1-amber: #b4770f;
   --mv1-danger: #da491a;
   /* HQ-filing failure red (D4): #C24E42 on cream. */
   --mv1-red: #c24e42;
@@ -124,6 +128,11 @@ body {
   --mv1-teal-text: #0a6a6a;
   --mv1-green-text: #277e41;
   --mv1-red-text: #a63a2f;
+  /* Danger had no row in the addendum's table, but the method it uses is not
+   * ambiguous: every leg there is a darker stop of the same hue. #DA491A reads
+   * 4.2:1 — just under — so this is one stop down at 5.7:1, in the same band as
+   * the sanctioned legs rather than a new hue. */
+  --mv1-danger-text: #b83c12;
 }
 
 [data-theme="dark"],
@@ -171,6 +180,7 @@ body {
   --mv1-teal-text: #4fc7c7;
   --mv1-green-text: #3fb871;
   --mv1-red-text: #e5675b;
+  --mv1-danger-text: #e5634b;
 }
 
 /* Electron prechat onboarding typography — mirror the lighter DM Sans (Swift

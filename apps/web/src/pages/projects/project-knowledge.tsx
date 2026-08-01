@@ -338,7 +338,7 @@ export function ProjectKnowledge({
       ) : null}
 
       {error ? (
-        <div style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>
+        <div style={{ fontSize: 12, color: C.dangerText, marginBottom: 8 }}>
           {error}
         </div>
       ) : null}

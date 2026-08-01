@@ -24,6 +24,8 @@ export const C = {
   amber: "var(--mv1-amber)",
   teal: "var(--mv1-teal)",
   danger: "var(--mv1-danger)",
+  /** Text leg for danger — small copy where colour is the only carrier (A1). */
+  dangerText: "var(--mv1-danger-text)",
   red: "var(--mv1-red)",
 
   /* Text legs (design addendum A1). Everything above is a FILL leg — badge

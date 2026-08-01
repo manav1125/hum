@@ -204,3 +204,31 @@ describe("addendum A1 — the shared serif-HQ C palette", () => {
     expect(C[text]).toBe(`var(${cssVar})`);
   });
 });
+
+describe("A1 follow-ups — the two tokens design left to engineering", () => {
+  const light = block(indexCss, ":root {\n  --mv1-ink");
+  const dark = block(indexCss, '[data-theme="dark"],\n[data-theme="velvet"] {');
+
+  test("amber is the design system's needs-you bright, not the app's drifted one", () => {
+    // The app carried #C98A1B, which the system does not specify and which
+    // reads 2.9:1 — failing even as a large-text fill. #B4770F is the stop the
+    // system actually specifies.
+    expect(decl(light, "mv1-amber")).toBe("#b4770f");
+  });
+
+  test("danger gained a text leg derived the same way as every other", () => {
+    // Danger had no row in the addendum. Rather than invent a hue, this is one
+    // darker stop of the same hue, landing in the same band as the sanctioned
+    // legs rather than below them.
+    expect(decl(light, "mv1-danger-text")).toBe("#b83c12");
+  });
+
+  test("the danger FILL is unchanged — A1 only ever moves text", () => {
+    expect(decl(light, "mv1-danger")).toBe("#da491a");
+  });
+
+  test("dark's danger text leg equals its fill, so the swap is a no-op there", () => {
+    // The guard against someone "helpfully" darkening dark.
+    expect(decl(dark, "mv1-danger-text")).toBe(decl(dark, "mv1-danger"));
+  });
+});

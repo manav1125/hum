@@ -541,7 +541,7 @@ function InstallConsentModal({
         ) : null}
 
         {error ? (
-          <div style={{ fontSize: 12, color: C.danger, marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: C.dangerText, marginTop: 12 }}>
             {error}
           </div>
         ) : null}
@@ -751,7 +751,7 @@ function ExploreTab({
       </div>
 
       {installError && !plan ? (
-        <div style={{ fontSize: 12, color: C.danger, marginTop: 12 }}>
+        <div style={{ fontSize: 12, color: C.dangerText, marginTop: 12 }}>
           {installError}
         </div>
       ) : null}

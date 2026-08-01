@@ -239,7 +239,7 @@ export function TrustGrantSheet({
           style={{
             padding: "8px 18px 0",
             fontSize: 11.5,
-            color: C.danger,
+            color: C.dangerText,
           }}
         >
           {error}

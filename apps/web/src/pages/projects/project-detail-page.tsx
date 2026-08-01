@@ -419,7 +419,7 @@ function ProjectDetailPageDesktop() {
                     marginTop: 6,
                     fontFamily: mono,
                     fontSize: 11.5,
-                    color: C.danger,
+                    color: C.dangerText,
                   }}
                 >
                   Couldn’t add the task — nothing was saved. Try again.

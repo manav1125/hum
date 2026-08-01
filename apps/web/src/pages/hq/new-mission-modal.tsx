@@ -354,7 +354,7 @@ export function NewMissionModal({
         ) : null}
 
         {create.isError ? (
-          <div style={{ marginTop: 12, fontSize: 12.5, color: C.danger }}>
+          <div style={{ marginTop: 12, fontSize: 12.5, color: C.dangerText }}>
             Couldn&rsquo;t create the mission — try again in a moment.
           </div>
         ) : null}

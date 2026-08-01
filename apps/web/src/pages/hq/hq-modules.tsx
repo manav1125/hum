@@ -209,7 +209,7 @@ export function NextMoveCard({
           style={{
             marginTop: 9,
             fontSize: 11.5,
-            color: C.danger,
+            color: C.dangerText,
           }}
         >
           That didn’t go through. Try again, or open the thread to decide there.
@@ -821,7 +821,7 @@ export function CameInErrorStrip({ onRetry }: { onRetry: () => void }) {
         onClick={onRetry}
         style={{
           fontSize: 12,
-          color: C.danger,
+          color: C.dangerText,
           fontWeight: 600,
           background: "none",
           border: "none",

@@ -741,7 +741,7 @@ const listText: CSSProperties = {
 const errorBanner: CSSProperties = {
   fontFamily: mono,
   fontSize: 12,
-  color: C.danger,
+  color: C.dangerText,
   background: `color-mix(in srgb, ${C.danger} 10%, transparent)`,
   border: `1px solid color-mix(in srgb, ${C.danger} 35%, transparent)`,
   borderRadius: 10,

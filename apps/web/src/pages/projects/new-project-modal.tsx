@@ -244,7 +244,7 @@ export function NewProjectModal({
         </div>
 
         {create.isError ? (
-          <div style={{ marginTop: 12, fontSize: 12.5, color: C.danger }}>
+          <div style={{ marginTop: 12, fontSize: 12.5, color: C.dangerText }}>
             Couldn’t create the project — try again in a moment.
           </div>
         ) : null}

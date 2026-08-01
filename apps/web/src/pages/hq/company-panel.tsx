@@ -325,7 +325,7 @@ function CompanyEditor({
       </div>
 
       {put.isError ? (
-        <div style={{ marginTop: 12, fontSize: 12.5, color: C.danger }}>
+        <div style={{ marginTop: 12, fontSize: 12.5, color: C.dangerText }}>
           Couldn&rsquo;t save — try again in a moment.
         </div>
       ) : null}

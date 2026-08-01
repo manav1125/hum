@@ -42,6 +42,8 @@ const C = {
   t3: "var(--mv1-t3)",
   green: "var(--mv1-green)",
   danger: "var(--mv1-danger)",
+  /** Text leg for small copy where colour is the only carrier (A1). */
+  dangerText: "var(--mv1-danger-text)",
 } as const;
 
 export function MakeRuleSheet({
@@ -282,7 +284,7 @@ export function MakeRuleSheet({
         </button>
       </div>
       {createMutation.isError && (
-        <div style={{ fontSize: 12, color: C.danger, marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: C.dangerText, marginTop: 8 }}>
           Couldn&rsquo;t save the checkpoint — try again.
         </div>
       )}

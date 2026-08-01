@@ -101,6 +101,8 @@ const C = {
   violetText: "var(--mv1-violet-text)",
   amberText: "var(--mv1-amber-text)",
   danger: "var(--mv1-danger)",
+  /** Text leg for small copy where colour is the only carrier (A1). */
+  dangerText: "var(--mv1-danger-text)",
   teal: "var(--gr-teal)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
@@ -1273,7 +1275,7 @@ function CheckpointComposer({
             </button>
           </div>
           {createMutation.isError && (
-            <div style={{ fontSize: 12, color: C.danger, marginTop: 7 }}>
+            <div style={{ fontSize: 12, color: C.dangerText, marginTop: 7 }}>
               Couldn&rsquo;t save the checkpoint — try again.
             </div>
           )}

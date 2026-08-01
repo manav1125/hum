@@ -73,6 +73,8 @@ const C = {
   greenW: "var(--mv1-green-wash)",
   amber: "var(--mv1-amber)",
   danger: "var(--mv1-danger)",
+  /** Text leg for small copy where colour is the only carrier (A1). */
+  dangerText: "var(--mv1-danger-text)",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 const serif = "'Instrument Serif', Georgia, serif";
@@ -602,7 +604,7 @@ function DossierPane({
       </div>
 
       {messageError ? (
-        <div style={{ fontSize: 12, color: C.danger, marginTop: 10 }}>
+        <div style={{ fontSize: 12, color: C.dangerText, marginTop: 10 }}>
           {messageError}
         </div>
       ) : null}
@@ -915,7 +917,7 @@ function MemorySection({
             </button>
           </div>
           {error ? (
-            <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>
+            <div style={{ fontSize: 11, color: C.dangerText, marginTop: 6 }}>
               {error}
             </div>
           ) : null}

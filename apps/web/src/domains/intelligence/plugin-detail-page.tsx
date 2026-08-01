@@ -73,6 +73,8 @@ const C = {
   green: "var(--mv1-success, #2E9E6B)",
   amber: "var(--mv1-warning, #C8811E)",
   danger: "var(--mv1-danger, #C0473C)",
+  /** Text leg for small copy where colour is the only carrier (A1). */
+  dangerText: "var(--mv1-danger-text)",
 } as const;
 const SERIF = "'Instrument Serif', Georgia, serif";
 const MONO = "'DM Mono', ui-monospace, monospace";
@@ -277,7 +279,7 @@ export function PluginDetailPage() {
               role="alert"
               style={{
                 fontSize: 13,
-                color: C.danger,
+                color: C.dangerText,
                 background:
                   "color-mix(in srgb, var(--mv1-danger) 8%, transparent)",
                 borderRadius: 10,

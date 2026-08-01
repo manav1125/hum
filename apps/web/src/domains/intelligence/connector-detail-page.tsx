@@ -48,6 +48,8 @@ const C = {
   green: "#277E41",
   amber: "#C98A1B",
   danger: "#DA491A",
+  /** Text leg for small copy where colour is the only carrier (A1). */
+  dangerText: "#B83C12",
 } as const;
 const mono = "'DM Mono', ui-monospace, monospace";
 
@@ -158,7 +160,7 @@ function ToolRow({
               fontFamily: mono,
               fontSize: 10,
               background: "#FCEBEB",
-              color: C.danger,
+              color: C.dangerText,
               padding: "1px 6px",
               borderRadius: 5,
               marginLeft: 8,
