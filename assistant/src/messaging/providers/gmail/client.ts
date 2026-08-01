@@ -549,15 +549,36 @@ export async function batchGetMessages(
         results[baseIndex + index] = msg;
       }
 
-      // Retry failed sub-requests individually
+      // Retry failed sub-requests individually.
+      //
+      // `allSettled`, not `all`: a message can be deleted between the moment
+      // Gmail reports it and the moment we fetch it, and Gmail answers a gone
+      // message with 404 "Requested entity was not found". Under `all` that one
+      // rejection failed the whole batch, which failed the whole watcher poll —
+      // and five of those disable the watcher permanently. Deleting mail is the
+      // single most ordinary thing a person does to an inbox, so this made the
+      // Gmail watcher self-destruct in normal use.
+      //
+      // A 404 is a fact about that message, not a failure of the batch: the
+      // slot is left empty and dropped by the filter below, which this function
+      // already does for sub-requests the batch API could not return. Every
+      // other error still throws — a 429 or a 5xx is a real failure and must
+      // not be silently swallowed as "message missing".
       if (failedIds.length > 0) {
-        const retried = await Promise.all(
+        const retried = await Promise.allSettled(
           failedIds.map(({ id }) =>
             getMessage(connection, id, format, metadataHeaders, fields, signal),
           ),
         );
         for (let r = 0; r < failedIds.length; r++) {
-          results[baseIndex + failedIds[r].index] = retried[r];
+          const outcome = retried[r];
+          if (outcome.status === "fulfilled") {
+            results[baseIndex + failedIds[r].index] = outcome.value;
+            continue;
+          }
+          const err: unknown = outcome.reason;
+          if (err instanceof GmailApiError && err.status === 404) continue;
+          throw err;
         }
       }
     }
