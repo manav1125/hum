@@ -28,8 +28,15 @@ mock.module("@/lib/auth/gateway-session", () => ({
   isGatewayAuthEnabled: () => true,
 }));
 
+// Spread the real module and override only the seams this test drives. Listing
+// exports exhaustively is what broke this file: `local-mode` later grew a call
+// to `isCueSelfHostDeploy`, the hand-written mock did not have it, and the
+// import failed at load — the whole suite erroring before a single test ran.
+const selfHost = await import("@/lib/self-hosted/cue-self-host");
 mock.module("@/lib/self-hosted/cue-self-host", () => ({
+  ...selfHost,
   isSelfHostMode: () => false,
+  isCueSelfHostDeploy: () => false,
   isStoredActorTokenValid: () => false,
   rehydrateGatewayTokenFromActor: () => false,
 }));

@@ -27,8 +27,13 @@ mock.module("@/lib/auth/gateway-session", () => ({
   isGatewayAuthEnabled: () => true,
 }));
 
+// Spread the real module, override only the seams. An exhaustive hand-written
+// list silently rots the moment the module under test imports one more export.
+const selfHostActual = await import("@/lib/self-hosted/cue-self-host");
 mock.module("@/lib/self-hosted/cue-self-host", () => ({
+  ...selfHostActual,
   isSelfHostMode: () => mockIsSelfHost,
+  isCueSelfHostDeploy: () => false,
   isStoredActorTokenValid: () => mockActorValid,
   rehydrateGatewayTokenFromActor: rehydrateMock,
 }));
