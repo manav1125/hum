@@ -243,6 +243,7 @@ import {
   migrateWorkItemAssessment,
   migrateWorkItemAutoRunEligibility,
   migrateWorkItemHygiene,
+  migrateWorkItemLifeLensAndWaiting,
   migrateWorkItemLiveness,
   migrateWorkItemOriginConversation,
   migrateWorkItemPmColumns,
@@ -566,6 +567,7 @@ export function initializeDb(): void {
     migrateWorkItemAssessment,
     migrateWorkItemOriginConversation,
     migrateAutonomyLedger,
+    migrateWorkItemLifeLensAndWaiting,
   ];
 
   // Run each migration step, catching and logging individual failures so one

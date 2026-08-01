@@ -41,13 +41,18 @@ import {
   createWorkItem,
   deleteWorkItem,
   getWorkItem,
+  isWorkItemDomain,
+  isWorkItemHorizon,
   listWorkItems,
   listWorkItemsByOriginConversation,
   updateWorkItem,
   type WorkItem,
+  type WorkItemDomain,
+  type WorkItemHorizon,
   type WorkItemStatus,
 } from "../../work-items/work-item-store.js";
 import { triageAndMaybeAutoRunWorkItem } from "../../work-items/work-item-triage.js";
+import { deriveWaitingState } from "../../work-items/work-item-waiting.js";
 import { buildAssistantEvent } from "../assistant-event.js";
 import { assistantEventHub } from "../assistant-event-hub.js";
 import { ACTOR_PRINCIPALS } from "../auth/route-policy.js";
@@ -210,6 +215,51 @@ export const workItemSchema = z.object({
     .int()
     .nullable()
     .describe("Epoch ms the stored verdict was produced."),
+  // --- Life lens (317) ----------------------------------------------------
+  domain: z
+    .enum(["work", "life"])
+    .describe(
+      'Which lens the item lives in. "work" groups by mission (why); "life" ' +
+        "groups by horizon (when) — same rows, same engine, different " +
+        "organising axis. Also the privacy boundary: hiding personal work for " +
+        'a screen-share is this one predicate. Every item defaults to "work".',
+    ),
+  horizon: z
+    .enum(["this_week", "soon", "someday"])
+    .nullable()
+    .describe(
+      "When a life item wants attention. Always null on work items, which " +
+        "group by mission instead.",
+    ),
+  // --- Waiting on a person (317) ------------------------------------------
+  waitingOn: z
+    .string()
+    .nullable()
+    .describe(
+      "contacts.id of the person this item is blocked on. Distinct from " +
+        "assignee, which says who OWNS the item — an item you own can still " +
+        "be waiting on somebody else's reply. null = not waiting on anybody.",
+    ),
+  lastChasedAt: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "Epoch ms of the last nudge sent about this item. null = never chased, " +
+        'which reads differently from "chased a while ago".',
+    ),
+  waitingState: z
+    .enum(["on_time", "already_chased", "going_cold"])
+    .nullable()
+    .describe(
+      "Read-time derivation over waitingOn + lastChasedAt, computed here so " +
+        "every surface draws the same line: " +
+        '"on_time" = waiting, nothing has gone quiet — forget it, Cue will ' +
+        'chase; "already_chased" = a nudge went out recently, so the next ' +
+        'move is to escalate rather than nudge again; "going_cold" = the ' +
+        "silence has outlasted the chase window (5 days). null = the item is " +
+        "not waiting on a person, or it is already finished.",
+    ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -224,6 +274,7 @@ function annotateWorkItem(item: WorkItem) {
     ...item,
     completedElsewhere: item.completedElsewhere === 1,
     ranProvenance: deriveRanProvenance(item),
+    waitingState: deriveWaitingState(item),
   };
 }
 
@@ -233,9 +284,13 @@ function annotateWorkItem(item: WorkItem) {
  * Shared with the projects routes so every surface returns one DTO shape.
  */
 export function annotateWorkItems(items: WorkItem[]) {
+  // One clock for the whole page, so two rows chased a millisecond apart can
+  // never land on opposite sides of the going-cold boundary in one response.
+  const now = Date.now();
   return withRanProvenance(items).map((item) => ({
     ...item,
     completedElsewhere: item.completedElsewhere === 1,
+    waitingState: deriveWaitingState(item, now),
   }));
 }
 
@@ -285,7 +340,6 @@ export interface WorkItemOutputResult {
     highlights: string[];
   };
 }
-
 
 /**
  * Config-repo (WS5) review items have no run conversation — their "output"
@@ -503,6 +557,15 @@ export const ROUTES: RouteDefinition[] = [
           "Filter to the items a single conversation spawned (work_items.origin_conversation_id). Lets a thread show the work it started.",
         schema: { type: "string" },
       },
+      {
+        name: "domain",
+        description:
+          'Filter to one lens: "work" (grouped by mission) or "life" ' +
+          "(grouped by horizon). Omit for both — a client that does not know " +
+          "about lenses sees every item, exactly as before. This is also the " +
+          'privacy switch: "hide Life" for a screen-share is ?domain=work.',
+        schema: { type: "string", enum: ["work", "life"] },
+      },
     ],
     responseBody: z.object({
       items: z.array(workItemSchema),
@@ -523,6 +586,17 @@ export const ROUTES: RouteDefinition[] = [
       const projectId = queryParams?.projectId ?? undefined;
       const originConversationId =
         queryParams?.originConversationId ?? undefined;
+      // The lens switch. An unknown value is rejected rather than ignored:
+      // silently widening `?domain=persona1` to "everything" would show
+      // personal work on a shared screen, which is the one failure this
+      // boundary exists to prevent.
+      const domainParam = queryParams?.domain ?? undefined;
+      if (domainParam !== undefined && !isWorkItemDomain(domainParam)) {
+        throw new BadRequestError(
+          `domain must be "work" or "life" (got "${domainParam}")`,
+        );
+      }
+      const domain: WorkItemDomain | undefined = domainParam;
       // The origin filter is a dedicated indexed lookup rather than another
       // `listWorkItems` predicate: it is read per conversation render, and it
       // deliberately drops archived items (see the store) so a thread never
@@ -532,10 +606,13 @@ export const ROUTES: RouteDefinition[] = [
         : listWorkItems({
             ...(resolvedStatus ? { status: resolvedStatus } : {}),
             ...(projectId ? { projectId } : {}),
+            ...(domain ? { domain } : {}),
           });
       if (originConversationId) {
-        if (resolvedStatus) items = items.filter((i) => i.status === resolvedStatus);
+        if (resolvedStatus)
+          items = items.filter((i) => i.status === resolvedStatus);
         if (projectId) items = items.filter((i) => i.projectId === projectId);
+        if (domain) items = items.filter((i) => i.domain === domain);
       }
       return { items: annotateWorkItems(items) };
     },
@@ -580,20 +657,65 @@ export const ROUTES: RouteDefinition[] = [
             "shows up in that thread's spawned-work strip and its provenance " +
             "survives. Omit for surfaces with no originating conversation.",
         ),
+      domain: z
+        .enum(["work", "life"])
+        .optional()
+        .describe(
+          'Which lens to file the item in. Defaults to "work" when omitted, ' +
+            "so a caller that knows nothing about lenses behaves as before.",
+        ),
+      horizon: z
+        .enum(["this_week", "soon", "someday"])
+        .optional()
+        .describe(
+          'When a life item wants attention. Ignored unless domain is "life" ' +
+            "— work items group by mission.",
+        ),
+      waitingOn: z
+        .string()
+        .optional()
+        .describe("contacts.id of the person this item is blocked on"),
+      lastChasedAt: z
+        .number()
+        .int()
+        .optional()
+        .describe("Epoch ms of the last nudge sent about this item"),
     }),
     responseBody: z.object({ item: workItemSchema }),
     handler: ({ body }) => {
-      const { title, notes, projectId, dueAt, context, originConversationId } =
-        (body ?? {}) as {
-          title?: string;
-          notes?: string;
-          projectId?: string;
-          dueAt?: number;
-          context?: string;
-          originConversationId?: string;
-        };
+      const {
+        title,
+        notes,
+        projectId,
+        dueAt,
+        context,
+        originConversationId,
+        domain,
+        horizon,
+        waitingOn,
+        lastChasedAt,
+      } = (body ?? {}) as {
+        title?: string;
+        notes?: string;
+        projectId?: string;
+        dueAt?: number;
+        context?: string;
+        originConversationId?: string;
+        domain?: unknown;
+        horizon?: unknown;
+        waitingOn?: string;
+        lastChasedAt?: number;
+      };
       if (typeof title !== "string" || !title.trim()) {
         throw new BadRequestError("title is required");
+      }
+      if (domain !== undefined && !isWorkItemDomain(domain)) {
+        throw new BadRequestError('domain must be "work" or "life"');
+      }
+      if (horizon !== undefined && !isWorkItemHorizon(horizon)) {
+        throw new BadRequestError(
+          'horizon must be "this_week", "soon" or "someday"',
+        );
       }
       const trimmedTitle = title.trim();
 
@@ -620,6 +742,13 @@ export const ROUTES: RouteDefinition[] = [
         ...(originConversationId?.trim()
           ? { originConversationId: originConversationId.trim() }
           : {}),
+        // The lens and the waiting target, when the caller named them. Left
+        // off entirely otherwise, so the store's "work, no horizon, not
+        // waiting" default is what an unaware caller gets.
+        ...(domain ? { domain } : {}),
+        ...(horizon ? { horizon } : {}),
+        ...(waitingOn?.trim() ? { waitingOn: waitingOn.trim() } : {}),
+        ...(typeof lastChasedAt === "number" ? { lastChasedAt } : {}),
         sourceContext: JSON.stringify({
           origin: "manual",
           snippet,
@@ -749,6 +878,42 @@ export const ROUTES: RouteDefinition[] = [
         .string()
         .nullable()
         .describe("Per-task context the agent reads before a run"),
+      // Optional, unlike the fields above them. This is a PATCH: the handler
+      // has always applied only the keys present in the body, and a caller
+      // that has never heard of lenses must keep compiling and keep behaving
+      // exactly as it did. (The older fields are declared required here, so
+      // the generated client forces every caller to pass all ten to change
+      // one — a pre-existing wart, not something to spread further.)
+      domain: z
+        .enum(["work", "life"])
+        .optional()
+        .describe(
+          'Move the item between lenses. Moving to "work" also clears ' +
+            "horizon (work groups by mission, so a horizon would be dead " +
+            "data) unless a horizon is set in the same request.",
+        ),
+      horizon: z
+        .enum(["this_week", "soon", "someday"])
+        .nullable()
+        .optional()
+        .describe("null clears the horizon; only meaningful for life items"),
+      waitingOn: z
+        .string()
+        .nullable()
+        .optional()
+        .describe(
+          "contacts.id of the person this item is blocked on; null clears it " +
+            "(the reply landed, or it was never really a wait)",
+        ),
+      lastChasedAt: z
+        .number()
+        .int()
+        .nullable()
+        .optional()
+        .describe(
+          "Epoch ms of the last nudge; set it when a chase goes out, null " +
+            "resets the item to never-chased",
+        ),
     }),
     handler: ({ pathParams, body }) => {
       const id = pathParams!.id;
@@ -777,6 +942,24 @@ export const ROUTES: RouteDefinition[] = [
         assignee?: string;
         context?: string | null;
       };
+      const { domain, horizon, waitingOn, lastChasedAt } = (body ?? {}) as {
+        domain?: unknown;
+        horizon?: unknown;
+        waitingOn?: string | null;
+        lastChasedAt?: number | null;
+      };
+      if (domain !== undefined && !isWorkItemDomain(domain)) {
+        throw new BadRequestError('domain must be "work" or "life"');
+      }
+      if (
+        horizon !== undefined &&
+        horizon !== null &&
+        !isWorkItemHorizon(horizon)
+      ) {
+        throw new BadRequestError(
+          'horizon must be "this_week", "soon" or "someday" (or null)',
+        );
+      }
 
       if (
         status !== undefined &&
@@ -805,6 +988,15 @@ export const ROUTES: RouteDefinition[] = [
       if (labels !== undefined) updates.labels = JSON.stringify(labels);
       if (assignee !== undefined) updates.assignee = assignee;
       if (context !== undefined) updates.context = context;
+      // The lens move. `updateWorkItem` drops a stale horizon when the item
+      // lands back in "work", so the invariant holds wherever the move came
+      // from — this route, a tool, or the agent.
+      if (domain !== undefined) updates.domain = domain as WorkItemDomain;
+      if (horizon !== undefined) {
+        updates.horizon = horizon as WorkItemHorizon | null;
+      }
+      if (waitingOn !== undefined) updates.waitingOn = waitingOn;
+      if (lastChasedAt !== undefined) updates.lastChasedAt = lastChasedAt;
 
       const item = updateWorkItem(
         id,

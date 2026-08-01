@@ -513,3 +513,282 @@ describe("PATCH work-items/:id", () => {
     expect(after.autoFileConfidence).toBeNull();
   });
 });
+
+describe("life lens + waiting fields on the work-item API", () => {
+  const listRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items" && r.method === "GET",
+  )!;
+  const createRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items" && r.method === "POST",
+  )!;
+  const getRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items/:id" && r.method === "GET",
+  )!;
+  const patchRoute = ROUTES.find(
+    (r) => r.endpoint === "work-items/:id" && r.method === "PATCH",
+  )!;
+
+  interface LensDto {
+    id: string;
+    domain: string;
+    horizon: string | null;
+    waitingOn: string | null;
+    lastChasedAt: number | null;
+    waitingState: string | null;
+  }
+
+  function list(queryParams: Record<string, string>): LensDto[] {
+    return (
+      listRoute.handler({ queryParams, headers: {} }) as { items: LensDto[] }
+    ).items;
+  }
+
+  test("an unaware client creates exactly what it did before: a work item", () => {
+    // The whole additive contract in one assertion. A caller that has never
+    // heard of lenses must not be able to put anything into Life by accident,
+    // because Life is what "hide for the screen-share" hides.
+    const created = createRoute.handler({
+      headers: {},
+      body: { title: "Ship the release notes" },
+    }) as { item: LensDto };
+
+    expect(created.item.domain).toBe("work");
+    expect(created.item.horizon).toBeNull();
+    expect(created.item.waitingOn).toBeNull();
+    expect(created.item.lastChasedAt).toBeNull();
+    expect(created.item.waitingState).toBeNull();
+  });
+
+  test("create → read round-trips all four fields", () => {
+    const created = (
+      createRoute.handler({
+        headers: {},
+        body: {
+          title: "Renew the passport",
+          domain: "life",
+          horizon: "someday",
+          waitingOn: "contact-passport-office",
+          lastChasedAt: 1_785_000_000_000,
+        },
+      }) as { item: LensDto }
+    ).item;
+
+    expect(created.domain).toBe("life");
+    expect(created.horizon).toBe("someday");
+    expect(created.waitingOn).toBe("contact-passport-office");
+    expect(created.lastChasedAt).toBe(1_785_000_000_000);
+
+    // …and the same four survive a separate read, not just the create echo.
+    const fetched = (
+      getRoute.handler({
+        pathParams: { id: created.id },
+        headers: {},
+      }) as { item: LensDto }
+    ).item;
+    expect(fetched.domain).toBe("life");
+    expect(fetched.horizon).toBe("someday");
+    expect(fetched.waitingOn).toBe("contact-passport-office");
+    expect(fetched.lastChasedAt).toBe(1_785_000_000_000);
+  });
+
+  test("PATCH moves an item into Life and sets its horizon", () => {
+    const task = createTask({ title: "Book the dentist", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Book the dentist" });
+    expect(wi.domain).toBe("work");
+
+    const patched = (
+      patchRoute.handler({
+        pathParams: { id: wi.id },
+        headers: {},
+        body: { domain: "life", horizon: "this_week" },
+      }) as { item: LensDto }
+    ).item;
+
+    expect(patched.domain).toBe("life");
+    expect(patched.horizon).toBe("this_week");
+    expect(getWorkItem(wi.id)!.horizon).toBe("this_week");
+  });
+
+  test("moving back to Work drops the horizon instead of leaving dead data", () => {
+    // Work groups by mission; a lingering "someday" would be a value no
+    // reader on the work side has any use for, and one the life grouping
+    // would pick up again the moment the item moved back.
+    const task = createTask({ title: "Fix the boiler", template: "Do it" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Fix the boiler",
+      domain: "life",
+      horizon: "soon",
+    });
+    expect(wi.horizon).toBe("soon");
+
+    patchRoute.handler({
+      pathParams: { id: wi.id },
+      headers: {},
+      body: { domain: "work" },
+    });
+
+    const after = getWorkItem(wi.id)!;
+    expect(after.domain).toBe("work");
+    expect(after.horizon).toBeNull();
+  });
+
+  test("PATCH sets and clears the waiting fields", () => {
+    const task = createTask({ title: "Acme contract", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Acme contract" });
+
+    const chasedAt = Date.now() - 6 * 24 * 60 * 60 * 1000;
+    const waiting = (
+      patchRoute.handler({
+        pathParams: { id: wi.id },
+        headers: {},
+        body: { waitingOn: "contact-rachel", lastChasedAt: chasedAt },
+      }) as { item: LensDto }
+    ).item;
+    expect(waiting.waitingOn).toBe("contact-rachel");
+    expect(waiting.lastChasedAt).toBe(chasedAt);
+    // Derived server-side so every surface draws the same line: chased, and
+    // the silence has outlasted the five-day window.
+    expect(waiting.waitingState).toBe("going_cold");
+
+    const cleared = (
+      patchRoute.handler({
+        pathParams: { id: wi.id },
+        headers: {},
+        body: { waitingOn: null, lastChasedAt: null },
+      }) as { item: LensDto }
+    ).item;
+    expect(cleared.waitingOn).toBeNull();
+    expect(cleared.lastChasedAt).toBeNull();
+    expect(cleared.waitingState).toBeNull();
+  });
+
+  test("the list DTO carries the derived waiting state", () => {
+    const task = createTask({ title: "Legal review", template: "Do it" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Legal review",
+      waitingOn: "contact-sam",
+    });
+
+    const served = list({}).find((i) => i.id === wi.id)!;
+    expect(served.waitingOn).toBe("contact-sam");
+    expect(served.waitingState).toBe("on_time");
+  });
+
+  test("?domain filters the list, and omitting it returns both lenses", () => {
+    const workTask = createTask({ title: "Board deck", template: "Do it" });
+    const workItem = createWorkItem({
+      taskId: workTask.id,
+      title: "Board deck",
+    });
+    const lifeTask = createTask({ title: "Renew passport", template: "Do it" });
+    const lifeItem = createWorkItem({
+      taskId: lifeTask.id,
+      title: "Renew passport",
+      domain: "life",
+      horizon: "soon",
+    });
+
+    const ids = (items: LensDto[]) => items.map((i) => i.id);
+
+    // The privacy switch: ?domain=work must not leak a single life row.
+    const workOnly = list({ domain: "work" });
+    expect(ids(workOnly)).toContain(workItem.id);
+    expect(ids(workOnly)).not.toContain(lifeItem.id);
+    expect(workOnly.every((i) => i.domain === "work")).toBe(true);
+
+    const lifeOnly = list({ domain: "life" });
+    expect(ids(lifeOnly)).toEqual([lifeItem.id]);
+
+    // No filter = the old behaviour, unchanged.
+    const both = ids(list({}));
+    expect(both).toContain(workItem.id);
+    expect(both).toContain(lifeItem.id);
+  });
+
+  test("?domain composes with ?status instead of replacing it", () => {
+    // Drizzle's `.where()` assigns rather than appends, so stacking filters
+    // used to keep only the last one — with the lens on top of a status that
+    // would have served done life items into a queued work list.
+    const t1 = createTask({ title: "Queued work", template: "Do it" });
+    const queuedWork = createWorkItem({ taskId: t1.id, title: "Queued work" });
+    const t2 = createTask({ title: "Queued life", template: "Do it" });
+    const queuedLife = createWorkItem({
+      taskId: t2.id,
+      title: "Queued life",
+      domain: "life",
+    });
+    const t3 = createTask({ title: "Done life", template: "Do it" });
+    const doneLife = createWorkItem({
+      taskId: t3.id,
+      title: "Done life",
+      domain: "life",
+    });
+    updateWorkItem(doneLife.id, { status: "done" });
+
+    const queuedLifeOnly = list({ status: "queued", domain: "life" });
+    expect(queuedLifeOnly.map((i) => i.id)).toEqual([queuedLife.id]);
+    expect(queuedLifeOnly.map((i) => i.id)).not.toContain(queuedWork.id);
+    expect(queuedLifeOnly.map((i) => i.id)).not.toContain(doneLife.id);
+  });
+
+  test("an unknown domain is rejected rather than quietly widened", () => {
+    // Failing open here would render a mistyped lens as "show everything",
+    // i.e. personal work on a shared screen.
+    expect(() =>
+      listRoute.handler({ queryParams: { domain: "personal" }, headers: {} }),
+    ).toThrow(/domain/);
+    expect(() =>
+      createRoute.handler({
+        headers: {},
+        body: { title: "x", domain: "misc" },
+      }),
+    ).toThrow(/domain/);
+  });
+
+  test("a PATCH that names only pre-existing fields leaves the lens alone", () => {
+    // The wire contract the 21 existing callers depend on: none of the four
+    // new keys is required on the request body, and omitting them is not the
+    // same as clearing them.
+    const task = createTask({ title: "Legacy patch", template: "Do it" });
+    const wi = createWorkItem({
+      taskId: task.id,
+      title: "Legacy patch",
+      domain: "life",
+      horizon: "soon",
+      waitingOn: "contact-rachel",
+    });
+
+    const patched = (
+      patchRoute.handler({
+        pathParams: { id: wi.id },
+        headers: {},
+        body: { title: "Legacy patch, renamed", priorityTier: 0 },
+      }) as { item: LensDto }
+    ).item;
+
+    expect(patched.domain).toBe("life");
+    expect(patched.horizon).toBe("soon");
+    expect(patched.waitingOn).toBe("contact-rachel");
+  });
+
+  test("an unknown horizon is rejected on both write paths", () => {
+    const task = createTask({ title: "Horizon check", template: "Do it" });
+    const wi = createWorkItem({ taskId: task.id, title: "Horizon check" });
+
+    expect(() =>
+      createRoute.handler({
+        headers: {},
+        body: { title: "y", domain: "life", horizon: "eventually" },
+      }),
+    ).toThrow(/horizon/);
+    expect(() =>
+      patchRoute.handler({
+        pathParams: { id: wi.id },
+        headers: {},
+        body: { horizon: "eventually" },
+      }),
+    ).toThrow(/horizon/);
+  });
+});

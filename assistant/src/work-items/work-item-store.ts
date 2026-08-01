@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { reconcileFeedForWorkItemStatus } from "../home/feed-writer.js";
 import { getDb } from "../memory/db-connection.js";
@@ -16,6 +16,39 @@ export type WorkItemStatus =
   | "cancelled"
   | "done"
   | "archived";
+
+/**
+ * Which lens an item belongs to (317). Work groups by why (its mission); life
+ * groups by when (its {@link WorkItemHorizon}). Same rows, same engine — the
+ * domain is an organising axis, not a separate level. It doubles as the
+ * privacy boundary: hiding personal work for a screen-share, or exporting work
+ * only, is this one predicate.
+ */
+export type WorkItemDomain = "work" | "life";
+
+/** When a life item wants attention. Null (and meaningless) on work items. */
+export type WorkItemHorizon = "this_week" | "soon" | "someday";
+
+export const WORK_ITEM_DOMAINS: readonly WorkItemDomain[] = ["work", "life"];
+export const WORK_ITEM_HORIZONS: readonly WorkItemHorizon[] = [
+  "this_week",
+  "soon",
+  "someday",
+];
+
+export function isWorkItemDomain(value: unknown): value is WorkItemDomain {
+  return (
+    typeof value === "string" &&
+    (WORK_ITEM_DOMAINS as readonly string[]).includes(value)
+  );
+}
+
+export function isWorkItemHorizon(value: unknown): value is WorkItemHorizon {
+  return (
+    typeof value === "string" &&
+    (WORK_ITEM_HORIZONS as readonly string[]).includes(value)
+  );
+}
 
 export interface WorkItem {
   id: string;
@@ -125,6 +158,30 @@ export interface WorkItem {
   assessmentInputHash: string | null;
   /** Epoch ms the stored verdict was produced. */
   assessmentAt: number | null;
+  /**
+   * The lens this item lives in (317). Defaults to "work"; every item that
+   * existed before 317 is "work", because the Life boundary is a privacy
+   * boundary and nothing may drift across it on its own.
+   */
+  domain: WorkItemDomain;
+  /**
+   * When a life item wants attention. Null on work items, which group by
+   * mission instead.
+   */
+  horizon: WorkItemHorizon | null;
+  /**
+   * The person this item is blocked on (317) — a contacts.id, by convention
+   * rather than by foreign key (same as {@link projectId}). Distinct from
+   * {@link assignee}, which says who OWNS the item: an item you own can still
+   * be waiting on somebody else's reply. Null = not waiting on anybody.
+   */
+  waitingOn: string | null;
+  /**
+   * Epoch ms of the last nudge sent about this item. Null = never chased —
+   * a genuinely different state from "chased a while ago", which is why it is
+   * nullable rather than seeded at creation.
+   */
+  lastChasedAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -156,6 +213,14 @@ export function createWorkItem(opts: {
   sourceContext?: string;
   /** 'parked' = user parked this task; it must never auto-run (see WorkItem). */
   autoRunEligibility?: "parked";
+  /** Which lens the item belongs to; defaults to "work" (see {@link WorkItem}). */
+  domain?: WorkItemDomain;
+  /** When a life item wants attention; ignored for work items. */
+  horizon?: WorkItemHorizon;
+  /** contacts.id of the person this item is blocked on. */
+  waitingOn?: string;
+  /** Epoch ms of the last nudge sent about this item. */
+  lastChasedAt?: number;
   /** Audit-trail attribution for the created event (default "system"). */
   actor?: string;
 }): WorkItem {
@@ -204,6 +269,13 @@ export function createWorkItem(opts: {
     assessmentConfidence: null,
     assessmentInputHash: null,
     assessmentAt: null,
+    domain: opts.domain ?? "work",
+    // A work item has no horizon — it groups by mission. Dropping a stray
+    // horizon here keeps "horizon is null unless domain is life" true for
+    // every reader instead of leaving dead data the grouping has to ignore.
+    horizon: opts.domain === "life" ? (opts.horizon ?? null) : null,
+    waitingOn: opts.waitingOn ?? null,
+    lastChasedAt: opts.lastChasedAt ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -249,16 +321,26 @@ export function getWorkItem(id: string): WorkItem | undefined {
 export function listWorkItems(opts?: {
   status?: WorkItemStatus;
   projectId?: string;
+  /**
+   * Restrict to one lens. Omitted = both, which is what every pre-317 caller
+   * gets: a client that knows nothing about domains still sees every item.
+   */
+  domain?: WorkItemDomain;
 }): WorkItem[] {
   const db = getDb();
+  // Collect the predicates and AND them in one `where`. Drizzle's `.where()`
+  // ASSIGNS the condition rather than appending, so chaining a call per filter
+  // silently keeps only the last one — with status + projectId that returned
+  // the whole project regardless of status, and adding the domain lens on top
+  // would have thrown the other two away.
+  const conditions = [
+    ...(opts?.status ? [eq(workItems.status, opts.status)] : []),
+    ...(opts?.projectId ? [eq(workItems.projectId, opts.projectId)] : []),
+    ...(opts?.domain ? [eq(workItems.domain, opts.domain)] : []),
+  ];
   let query = db.select().from(workItems);
-  if (opts?.status) {
-    query = query.where(eq(workItems.status, opts.status)) as typeof query;
-  }
-  if (opts?.projectId) {
-    query = query.where(
-      eq(workItems.projectId, opts.projectId),
-    ) as typeof query;
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as typeof query;
   }
   // Overdue live items float above everything, then the normal tier/rank order.
   const overdueFirst = sql`CASE WHEN ${workItems.dueAt} IS NOT NULL AND ${workItems.dueAt} < ${Date.now()} AND ${workItems.status} IN ('queued','running','awaiting_review') THEN 0 ELSE 1 END`;
@@ -309,6 +391,10 @@ export function updateWorkItem(
       | "assessmentConfidence"
       | "assessmentInputHash"
       | "assessmentAt"
+      | "domain"
+      | "horizon"
+      | "waitingOn"
+      | "lastChasedAt"
     >
   >,
   opts?: { actor?: string },
@@ -336,6 +422,14 @@ export function updateWorkItem(
     existing.autoFileConfidence != null
   ) {
     applied.autoFileConfidence = null;
+  }
+  // A horizon answers "when does this want attention", which only the life
+  // lens asks — work groups by mission. Moving an item to the work lens
+  // therefore drops its horizon, so the invariant "horizon is null unless
+  // domain is life" holds for every reader and no stale someday-ness follows
+  // an item back into a mission. An explicit horizon in the same call wins.
+  if (applied.domain === "work" && applied.horizon === undefined) {
+    applied.horizon = null;
   }
   // Any mutation counts as activity — bump last_activity_at so next-move
   // ranking treats the item as fresh and stops de-prioritizing it as stale.

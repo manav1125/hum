@@ -107,6 +107,19 @@ export const workItems = sqliteTable("work_items", {
   assessmentConfidence: real("assessment_confidence"),
   assessmentInputHash: text("assessment_input_hash"),
   assessmentAt: integer("assessment_at"),
+  // 317-work-item-life-lens-and-waiting. domain: 'work' | 'life' — the same
+  // rows on the same engine, organised on different axes (work groups by
+  // mission, life groups by horizon). Also the privacy boundary: "hide Life"
+  // is one predicate. Every pre-317 row is 'work'. horizon: 'this_week' |
+  // 'soon' | 'someday', meaningful only for life items.
+  domain: text("domain").notNull().default("work"),
+  horizon: text("horizon"),
+  // 317. waitingOn: reference-by-convention to contacts.id (store-enforced,
+  // like project_id) — the person this item is blocked on, distinct from
+  // `assignee` (who owns it). lastChasedAt: epoch ms of the last nudge; null
+  // = never chased, which reads differently from "chased a while ago".
+  waitingOn: text("waiting_on"),
+  lastChasedAt: integer("last_chased_at"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

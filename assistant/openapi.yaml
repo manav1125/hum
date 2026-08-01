@@ -5538,6 +5538,243 @@ paths:
               required:
                 - data
               additionalProperties: false
+  /v1/calendar/day:
+    get:
+      operationId: calendar_day_get
+      summary: Get today's calendar picture for the day rail
+      description:
+        "One local day of the primary Google Calendar, reduced to what the day rail draws: timed commitments with
+        their placement on the hour strip, all-day entries kept separate (they never occupy the working window), a
+        now-marker, total unbooked minutes inside the working window, every free gap, and the largest contiguous free
+        block. Read-only. `connection.state` distinguishes a genuinely quiet day (`connected`, empty commitments, real
+        numbers) from having no calendar at all (`not_connected`) or a calendar that could not be read right now
+        (`unavailable`) — in both of the latter, every derived number is null rather than zero, so an empty rail can
+        never be mistaken for a free day."
+      tags:
+        - activity
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date:
+                    type: string
+                  timeZone:
+                    type: string
+                  connection:
+                    type: object
+                    properties:
+                      state:
+                        type: string
+                        enum:
+                          - connected
+                          - not_connected
+                          - unavailable
+                      detail:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                    required:
+                      - state
+                      - detail
+                    additionalProperties: false
+                  window:
+                    type: object
+                    properties:
+                      start:
+                        type: string
+                      end:
+                        type: string
+                      startMinuteOfDay:
+                        type: number
+                      endMinuteOfDay:
+                        type: number
+                      minutes:
+                        type: number
+                    required:
+                      - start
+                      - end
+                      - startMinuteOfDay
+                      - endMinuteOfDay
+                      - minutes
+                    additionalProperties: false
+                  now:
+                    type: object
+                    properties:
+                      iso:
+                        type: string
+                      minuteOfDay:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                      isToday:
+                        type: boolean
+                    required:
+                      - iso
+                      - minuteOfDay
+                      - isToday
+                    additionalProperties: false
+                  commitments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        start:
+                          type: string
+                        end:
+                          type: string
+                        startMinuteOfDay:
+                          type: number
+                        endMinuteOfDay:
+                          type: number
+                        minutes:
+                          type: number
+                        isOrganizer:
+                          anyOf:
+                            - type: boolean
+                            - type: "null"
+                        responseStatus:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - needsAction
+                                - declined
+                                - tentative
+                                - accepted
+                            - type: "null"
+                        busy:
+                          type: boolean
+                      required:
+                        - id
+                        - title
+                        - start
+                        - end
+                        - startMinuteOfDay
+                        - endMinuteOfDay
+                        - minutes
+                        - isOrganizer
+                        - responseStatus
+                        - busy
+                      additionalProperties: false
+                  allDayCommitments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        title:
+                          type: string
+                        isOrganizer:
+                          anyOf:
+                            - type: boolean
+                            - type: "null"
+                      required:
+                        - id
+                        - title
+                        - isOrganizer
+                      additionalProperties: false
+                  bookedMinutes:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                  unbookedMinutes:
+                    anyOf:
+                      - type: number
+                      - type: "null"
+                  freeBlocks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        start:
+                          type: string
+                        end:
+                          type: string
+                        startMinuteOfDay:
+                          type: number
+                        endMinuteOfDay:
+                          type: number
+                        minutes:
+                          type: number
+                      required:
+                        - start
+                        - end
+                        - startMinuteOfDay
+                        - endMinuteOfDay
+                        - minutes
+                      additionalProperties: false
+                  largestFreeBlock:
+                    anyOf:
+                      - type: object
+                        properties:
+                          start:
+                            type: string
+                          end:
+                            type: string
+                          startMinuteOfDay:
+                            type: number
+                          endMinuteOfDay:
+                            type: number
+                          minutes:
+                            type: number
+                        required:
+                          - start
+                          - end
+                          - startMinuteOfDay
+                          - endMinuteOfDay
+                          - minutes
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - date
+                  - timeZone
+                  - connection
+                  - window
+                  - now
+                  - commitments
+                  - allDayCommitments
+                  - bookedMinutes
+                  - unbookedMinutes
+                  - freeBlocks
+                  - largestFreeBlock
+                additionalProperties: false
+        "400":
+          description: Invalid date, timezone, or working window (windowEnd not later than windowStart).
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Local calendar date to read, YYYY-MM-DD. Defaults to today in `tz`.
+        - name: tz
+          in: query
+          required: false
+          schema:
+            type: string
+          description:
+            IANA timezone the day and all local times are expressed in. Defaults to ui.userTimezone, then
+            ui.detectedTimezone, then the daemon host's zone.
+        - name: windowStart
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Start of the working window as a 24-hour clock time (default "09:00").
+        - name: windowEnd
+          in: query
+          required: false
+          schema:
+            type: string
+          description: End of the working window as a 24-hour clock time (default "18:00"). Must be later than windowStart.
   /v1/calls/{callSessionId}:
     get:
       operationId: calls_by_callSessionId_get
@@ -41657,14 +41894,15 @@ paths:
                     - type: "null"
                   description: Per-task context the agent reads before a run
                 domain:
+                  description:
+                    Move the item between lenses. Moving to "work" also clears horizon (work groups by mission, so a horizon
+                    would be dead data) unless a horizon is set in the same request.
                   type: string
                   enum:
                     - work
                     - life
-                  description:
-                    Move the item between lenses. Moving to "work" also clears horizon (work groups by mission, so a horizon
-                    would be dead data) unless a horizon is set in the same request.
                 horizon:
+                  description: null clears the horizon; only meaningful for life items
                   anyOf:
                     - type: string
                       enum:
@@ -41672,21 +41910,20 @@ paths:
                         - soon
                         - someday
                     - type: "null"
-                  description: null clears the horizon; only meaningful for life items
                 waitingOn:
-                  anyOf:
-                    - type: string
-                    - type: "null"
                   description:
                     contacts.id of the person this item is blocked on; null clears it (the reply landed, or it was never really
                     a wait)
+                  anyOf:
+                    - type: string
+                    - type: "null"
                 lastChasedAt:
+                  description: Epoch ms of the last nudge; set it when a chase goes out, null resets the item to never-chased
                   anyOf:
                     - type: integer
                       minimum: -9007199254740991
                       maximum: 9007199254740991
                     - type: "null"
-                  description: Epoch ms of the last nudge; set it when a chase goes out, null resets the item to never-chased
               required:
                 - title
                 - notes
@@ -41698,10 +41935,6 @@ paths:
                 - labels
                 - assignee
                 - context
-                - domain
-                - horizon
-                - waitingOn
-                - lastChasedAt
               additionalProperties: false
   /v1/work-items/{id}/approve-permissions:
     post:
