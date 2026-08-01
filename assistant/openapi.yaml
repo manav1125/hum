@@ -2473,6 +2473,934 @@ paths:
                 required:
                   - message
                 additionalProperties: false
+  /v1/arrivals:
+    get:
+      operationId: arrivals_get
+      summary: List arrivals with their reasons
+      description:
+        'Newest-first arrivals. `?disposition=filed` is the "Where it went ›" list: everything Cue kept out of your
+        lane, each with the reason in your words. Nothing is ever deleted, so this is a complete record.'
+      tags:
+        - arrivals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  arrivals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        channel:
+                          type: string
+                          description: Where it arrived, e.g. 'watcher:gmail'
+                        externalId:
+                          type: string
+                          description: The provider's own id for the item
+                        watcherId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        eventId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: The originating watcher_events.id
+                        title:
+                          type: string
+                        senderAddress:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            "Lowercased sender address. The learning key: repeated reversals for the same sender are the strongest
+                            correction signal."
+                        senderName:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        snippet:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        sourceContext:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description: JSON provenance blob, mirrored onto the work item when kept
+                        disposition:
+                          type: string
+                          enum:
+                            - surfaced
+                            - filed
+                          description:
+                            "'surfaced' = Cue decided you need to see it, and a work item exists. 'filed' = recorded, browsable and
+                            reversible, but not in the Came-in lane."
+                        reason:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            Why, in your words — "newsletter from Stripe", "automated build notification", "you're a direct recipient
+                            and it's from a person". Set for both dispositions. Never a score or a bare category code.
+                        decidedBy:
+                          type: string
+                          enum:
+                            - rule
+                            - model
+                            - floor
+                            - playbook
+                            - fallback
+                            - user
+                          description:
+                            "What made the call: 'rule' = a deterministic header rule; 'model' = the flash judge; 'floor' = the safety
+                            floor overrode a file decision; 'playbook' = one of your playbooks claimed it; 'fallback' =
+                            the judge errored, timed out or was off, so it was kept (fail-open); 'user' = you reversed
+                            it."
+                        ruleId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            "Which rule fired: 'list_mail' | 'precedence_bulk' | 'auto_submitted' for filings, 'known_contact' |
+                            'thread_participant' | 'named_work' | 'direct_human' for safety-floor keeps."
+                        confidence:
+                          anyOf:
+                            - type: number
+                            - type: "null"
+                          description: The judge's 0-1 confidence; null unless decidedBy is 'model'
+                        workItemId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        reversedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description:
+                            Epoch ms you said this mattered. The original reason/ruleId/decidedBy are preserved, so a reversed row
+                            still shows what Cue originally thought.
+                        reversedBy:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                        createdAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                        updatedAt:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - id
+                        - channel
+                        - externalId
+                        - watcherId
+                        - eventId
+                        - title
+                        - senderAddress
+                        - senderName
+                        - snippet
+                        - sourceContext
+                        - disposition
+                        - reason
+                        - decidedBy
+                        - ruleId
+                        - confidence
+                        - workItemId
+                        - reversedAt
+                        - reversedBy
+                        - createdAt
+                        - updatedAt
+                      additionalProperties: false
+                required:
+                  - arrivals
+                additionalProperties: false
+      parameters:
+        - name: disposition
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - surfaced
+              - filed
+          description: Filter to one disposition. Omit for both. 'filed' backs "Where it went ›".
+        - name: windowHours
+          in: query
+          required: false
+          schema:
+            type: number
+          description: "Only arrivals from the trailing N hours (default: all)"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max rows to return (default 50, cap 200)
+  /v1/arrivals/{id}:
+    get:
+      operationId: arrivals_by_id_get
+      summary: Get one arrival
+      description: The row behind a work item's `arrivalId` — what arrived, what Cue decided, and why.
+      tags:
+        - arrivals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  arrival:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      channel:
+                        type: string
+                        description: Where it arrived, e.g. 'watcher:gmail'
+                      externalId:
+                        type: string
+                        description: The provider's own id for the item
+                      watcherId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      eventId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The originating watcher_events.id
+                      title:
+                        type: string
+                      senderAddress:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          "Lowercased sender address. The learning key: repeated reversals for the same sender are the strongest
+                          correction signal."
+                      senderName:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      snippet:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sourceContext:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON provenance blob, mirrored onto the work item when kept
+                      disposition:
+                        type: string
+                        enum:
+                          - surfaced
+                          - filed
+                        description:
+                          "'surfaced' = Cue decided you need to see it, and a work item exists. 'filed' = recorded, browsable and
+                          reversible, but not in the Came-in lane."
+                      reason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Why, in your words — "newsletter from Stripe", "automated build notification", "you're a direct recipient
+                          and it's from a person". Set for both dispositions. Never a score or a bare category code.
+                      decidedBy:
+                        type: string
+                        enum:
+                          - rule
+                          - model
+                          - floor
+                          - playbook
+                          - fallback
+                          - user
+                        description:
+                          "What made the call: 'rule' = a deterministic header rule; 'model' = the flash judge; 'floor' = the safety
+                          floor overrode a file decision; 'playbook' = one of your playbooks claimed it; 'fallback' =
+                          the judge errored, timed out or was off, so it was kept (fail-open); 'user' = you reversed
+                          it."
+                      ruleId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          "Which rule fired: 'list_mail' | 'precedence_bulk' | 'auto_submitted' for filings, 'known_contact' |
+                          'thread_participant' | 'named_work' | 'direct_human' for safety-floor keeps."
+                      confidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: The judge's 0-1 confidence; null unless decidedBy is 'model'
+                      workItemId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      reversedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          Epoch ms you said this mattered. The original reason/ruleId/decidedBy are preserved, so a reversed row
+                          still shows what Cue originally thought.
+                      reversedBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - channel
+                      - externalId
+                      - watcherId
+                      - eventId
+                      - title
+                      - senderAddress
+                      - senderName
+                      - snippet
+                      - sourceContext
+                      - disposition
+                      - reason
+                      - decidedBy
+                      - ruleId
+                      - confidence
+                      - workItemId
+                      - reversedAt
+                      - reversedBy
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - arrival
+                additionalProperties: false
+        "404":
+          description: No such arrival
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/arrivals/{id}/reverse:
+    post:
+      operationId: arrivals_by_id_reverse_post
+      summary: Say a filed arrival mattered
+      description:
+        "Reverse a filing: the arrival becomes a normal parked work item in the Came-in lane, exactly as if Cue had
+        surfaced it. The original decision is preserved on the row (reason, ruleId, decidedBy) and the reversal is
+        stamped alongside it — that record is the correction signal, so it is never overwritten. Already-surfaced
+        arrivals return 409 rather than minting a duplicate work item."
+      tags:
+        - arrivals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  arrival:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      channel:
+                        type: string
+                        description: Where it arrived, e.g. 'watcher:gmail'
+                      externalId:
+                        type: string
+                        description: The provider's own id for the item
+                      watcherId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      eventId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The originating watcher_events.id
+                      title:
+                        type: string
+                      senderAddress:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          "Lowercased sender address. The learning key: repeated reversals for the same sender are the strongest
+                          correction signal."
+                      senderName:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      snippet:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sourceContext:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON provenance blob, mirrored onto the work item when kept
+                      disposition:
+                        type: string
+                        enum:
+                          - surfaced
+                          - filed
+                        description:
+                          "'surfaced' = Cue decided you need to see it, and a work item exists. 'filed' = recorded, browsable and
+                          reversible, but not in the Came-in lane."
+                      reason:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Why, in your words — "newsletter from Stripe", "automated build notification", "you're a direct recipient
+                          and it's from a person". Set for both dispositions. Never a score or a bare category code.
+                      decidedBy:
+                        type: string
+                        enum:
+                          - rule
+                          - model
+                          - floor
+                          - playbook
+                          - fallback
+                          - user
+                        description:
+                          "What made the call: 'rule' = a deterministic header rule; 'model' = the flash judge; 'floor' = the safety
+                          floor overrode a file decision; 'playbook' = one of your playbooks claimed it; 'fallback' =
+                          the judge errored, timed out or was off, so it was kept (fail-open); 'user' = you reversed
+                          it."
+                      ruleId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          "Which rule fired: 'list_mail' | 'precedence_bulk' | 'auto_submitted' for filings, 'known_contact' |
+                          'thread_participant' | 'named_work' | 'direct_human' for safety-floor keeps."
+                      confidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: The judge's 0-1 confidence; null unless decidedBy is 'model'
+                      workItemId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      reversedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          Epoch ms you said this mattered. The original reason/ruleId/decidedBy are preserved, so a reversed row
+                          still shows what Cue originally thought.
+                      reversedBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - channel
+                      - externalId
+                      - watcherId
+                      - eventId
+                      - title
+                      - senderAddress
+                      - senderName
+                      - snippet
+                      - sourceContext
+                      - disposition
+                      - reason
+                      - decidedBy
+                      - ruleId
+                      - confidence
+                      - workItemId
+                      - reversedAt
+                      - reversedBy
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                  workItem:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      taskId:
+                        type: string
+                      title:
+                        type: string
+                      notes:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      status:
+                        type: string
+                      priorityTier:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      sortIndex:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                      projectId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      dueAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Due deadline, epoch ms
+                      labels:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON array string of labels
+                      assignee:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: '"cue" | "you" | contact name; null reads as "cue"'
+                      context:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Per-task context the user adds; read by the agent before a run
+                      sourceContext:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: JSON snapshot of where the task came from (triage-stamped)
+                      lastActivityAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms of last activity; drives stale-item ranking
+                      lastRunId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastRunConversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastRunStatus:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      lastProgressNote:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: Live activity line ("Searching the web…") stamped by the runner while status is "running"; null otherwise
+                      sourceType:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      sourceId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      originConversationId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          The conversation this item was created FROM — distinct from lastRunConversationId (where the run happened)
+                          and from sourceType/sourceId (which channel it arrived on). Lets the originating thread show
+                          what it spawned.
+                      approvalStatus:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                      autoRunEligibility:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          null = eligible for policy-gated auto-run; "parked" = user parked this task, so it only starts on an
+                          explicit run
+                      ranProvenance:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - auto
+                              - you_approved
+                              - manual
+                          - type: "null"
+                        description:
+                          'Read-time run-provenance trust signal for Done cards: "auto" = Cue ran it autonomously with no owner-gated
+                          approval; "you_approved" = the owner approved a guardian gate during the run or pre-approved
+                          its tool permissions; "manual" = the owner completed it themselves (Cue never ran it, or the
+                          item carries the completedElsewhere marker); null = not applicable (not yet run / not a manual
+                          completion).'
+                      completedElsewhere:
+                        type: boolean
+                        description:
+                          True when the owner marked this task done as "completed elsewhere" — the work happened outside Cue, so no
+                          run output is claimed. Terminal exactly like done; never say "Cue finished this" for it.
+                      autoFiledBy:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          '"cue" = the background auto-filer assigned projectId (show the auto-filed chip); "user_unfiled" = the user
+                          deliberately unfiled the item (the auto-filer will not re-file it); null = user-filed or never
+                          filed.'
+                      autoFileConfidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description:
+                          The auto-filer's 0-1 confidence. With autoFiledBy = "cue" it is the provenance of a filing; on an UNFILED
+                          item (projectId and autoFiledBy both null) it is the below-confidence stamp — the sweep scored
+                          the item but was not sure (clients render the amber "?" triage card).
+                      assessmentVerdict:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - execute
+                              - clarify
+                              - not_ai_task
+                              - blocked
+                          - type: "null"
+                        description:
+                          '"execute" = Cue understands it and has what it needs (see assessmentPlan); "clarify" = under-specified,
+                          surface assessmentQuestion and let the answer land as task context; "not_ai_task" = a human
+                          action — do NOT offer a Run affordance as the primary action; "blocked" = assessmentMissing
+                          names the one thing Cue lacks (offer the fix, e.g. link the connector or attach the file).
+                          null = not assessed.'
+                      assessmentUnderstanding:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          One plain sentence naming what Cue understood the task to be — show this so the user can catch a misread
+                          before the work happens.
+                      assessmentPlan:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          1-2 lines, plain words, of what Cue will actually do. Set with verdict "execute"; shown as/just before the
+                          run starts.
+                      assessmentQuestion:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          Exactly ONE question. Set with verdict "clarify"; the item is parked until answered (answering it as task
+                          context re-opens assessment).
+                      assessmentMissing:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description: The one specific missing thing — a connector, a file, an access. Set with verdict "blocked".
+                      assessmentConfidence:
+                        anyOf:
+                          - type: number
+                          - type: "null"
+                        description: The assessor's 0-1 confidence in its verdict.
+                      assessmentAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description: Epoch ms the stored verdict was produced.
+                      domain:
+                        type: string
+                        enum:
+                          - work
+                          - life
+                        description:
+                          'Which lens the item lives in. "work" groups by mission (why); "life" groups by horizon (when) — same rows,
+                          same engine, different organising axis. Also the privacy boundary: hiding personal work for a
+                          screen-share is this one predicate. Every item defaults to "work".'
+                      horizon:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - this_week
+                              - soon
+                              - someday
+                          - type: "null"
+                        description: When a life item wants attention. Always null on work items, which group by mission instead.
+                      waitingOn:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          contacts.id of the person this item is blocked on. Distinct from assignee, which says who OWNS the item —
+                          an item you own can still be waiting on somebody else's reply. null = not waiting on anybody.
+                      lastChasedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          Epoch ms of the last nudge sent about this item. null = never chased, which reads differently from "chased
+                          a while ago".
+                      waitingState:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - on_time
+                              - already_chased
+                              - going_cold
+                          - type: "null"
+                        description:
+                          'Read-time derivation over waitingOn + lastChasedAt, computed here so every surface draws the same line:
+                          "on_time" = waiting, nothing has gone quiet — forget it, Cue will chase; "already_chased" = a
+                          nudge went out recently, so the next move is to escalate rather than nudge again; "going_cold"
+                          = the silence has outlasted the chase window (5 days). null = the item is not waiting on a
+                          person, or it is already finished.'
+                      arrivalId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          The arrivals.id this item was surfaced from — set only for watcher hits that went through the relevance
+                          gate, i.e. things Cue looked at and decided you need to see. Fetch GET arrivals/:id for the
+                          reason. null on everything captured any other way (quick-add, chat, voice, mission cycles) and
+                          on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which mean
+                          'assigned to a project' — a different axis entirely.
+                      createdAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                      updatedAt:
+                        type: integer
+                        minimum: -9007199254740991
+                        maximum: 9007199254740991
+                    required:
+                      - id
+                      - taskId
+                      - title
+                      - notes
+                      - status
+                      - priorityTier
+                      - sortIndex
+                      - projectId
+                      - dueAt
+                      - labels
+                      - assignee
+                      - context
+                      - sourceContext
+                      - lastActivityAt
+                      - lastRunId
+                      - lastRunConversationId
+                      - lastRunStatus
+                      - lastProgressNote
+                      - sourceType
+                      - sourceId
+                      - originConversationId
+                      - approvalStatus
+                      - autoRunEligibility
+                      - ranProvenance
+                      - completedElsewhere
+                      - autoFiledBy
+                      - autoFileConfidence
+                      - assessmentVerdict
+                      - assessmentUnderstanding
+                      - assessmentPlan
+                      - assessmentQuestion
+                      - assessmentMissing
+                      - assessmentConfidence
+                      - assessmentAt
+                      - domain
+                      - horizon
+                      - waitingOn
+                      - lastChasedAt
+                      - waitingState
+                      - arrivalId
+                      - createdAt
+                      - updatedAt
+                    additionalProperties: false
+                required:
+                  - arrival
+                  - workItem
+                additionalProperties: false
+        "404":
+          description: No such arrival
+        "409":
+          description: The arrival was already surfaced
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+  /v1/arrivals/corrections:
+    get:
+      operationId: arrivals_corrections_get
+      summary: Senders you keep correcting
+      description:
+        Senders whose filings you have reversed, most-corrected first. A repeated correction for the same sender is
+        the strongest signal there is that Cue has the wrong idea about them. Nothing consumes this to change behaviour
+        yet — the data is being collected so a learning loop does not have to start from zero.
+      tags:
+        - arrivals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  senders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        senderAddress:
+                          type: string
+                        corrections:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - senderAddress
+                        - corrections
+                      additionalProperties: false
+                required:
+                  - senders
+                additionalProperties: false
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Max senders to return (default 20, cap 200)
+  /v1/arrivals/summary:
+    get:
+      operationId: arrivals_summary_get
+      summary: Arrived / filed / kept census
+      description:
+        "How much came in over a trailing window and what Cue did with it. `kept` is the honest number: it counts
+        arrivals Cue looked at and decided you need to see. It is NOT derived from autoFileConfidence — that field means
+        'assigned to a project' and reading relevance out of it overstates what the filter actually did."
+      tags:
+        - arrivals
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  since:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Inclusive lower bound of the window, epoch ms
+                  until:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: When the summary was computed, epoch ms
+                  windowHours:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  arrived:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Everything that arrived in the window. Always filed + kept.
+                  filed:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Recorded and findable, but kept out of your lane
+                  kept:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description:
+                      Cue looked at it and decided you need to see it. A count of surfaced arrivals — NOT inferred from
+                      autoFileConfidence or any other filing signal.
+                  reversed:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                    description: Filed at arrival, then reversed by you. A subset of kept.
+                  topFiledReasons:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reason:
+                          type: string
+                        count:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - reason
+                        - count
+                      additionalProperties: false
+                    description: Most common filing reasons in the window, biggest first
+                required:
+                  - since
+                  - until
+                  - windowHours
+                  - arrived
+                  - filed
+                  - kept
+                  - reversed
+                  - topFiledReasons
+                additionalProperties: false
+      parameters:
+        - name: windowHours
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Trailing window in hours (default 24)
   /v1/attachments:
     delete:
       operationId: attachments_delete
@@ -33292,6 +34220,16 @@ paths:
                             a nudge went out recently, so the next move is to escalate rather than nudge again;
                             "going_cold" = the silence has outlasted the chase window (5 days). null = the item is not
                             waiting on a person, or it is already finished.'
+                        arrivalId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            The arrivals.id this item was surfaced from — set only for watcher hits that went through the relevance
+                            gate, i.e. things Cue looked at and decided you need to see. Fetch GET arrivals/:id for the
+                            reason. null on everything captured any other way (quick-add, chat, voice, mission cycles)
+                            and on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which
+                            mean 'assigned to a project' — a different axis entirely.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -33340,6 +34278,7 @@ paths:
                         - waitingOn
                         - lastChasedAt
                         - waitingState
+                        - arrivalId
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -41333,6 +42272,16 @@ paths:
                             a nudge went out recently, so the next move is to escalate rather than nudge again;
                             "going_cold" = the silence has outlasted the chase window (5 days). null = the item is not
                             waiting on a person, or it is already finished.'
+                        arrivalId:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            The arrivals.id this item was surfaced from — set only for watcher hits that went through the relevance
+                            gate, i.e. things Cue looked at and decided you need to see. Fetch GET arrivals/:id for the
+                            reason. null on everything captured any other way (quick-add, chat, voice, mission cycles)
+                            and on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which
+                            mean 'assigned to a project' — a different axis entirely.
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -41381,6 +42330,7 @@ paths:
                         - waitingOn
                         - lastChasedAt
                         - waitingState
+                        - arrivalId
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -41688,6 +42638,16 @@ paths:
                           nudge went out recently, so the next move is to escalate rather than nudge again; "going_cold"
                           = the silence has outlasted the chase window (5 days). null = the item is not waiting on a
                           person, or it is already finished.'
+                      arrivalId:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          The arrivals.id this item was surfaced from — set only for watcher hits that went through the relevance
+                          gate, i.e. things Cue looked at and decided you need to see. Fetch GET arrivals/:id for the
+                          reason. null on everything captured any other way (quick-add, chat, voice, mission cycles) and
+                          on every item that predates the gate. This is NOT autoFiledBy/autoFileConfidence, which mean
+                          'assigned to a project' — a different axis entirely.
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -41736,6 +42696,7 @@ paths:
                       - waitingOn
                       - lastChasedAt
                       - waitingState
+                      - arrivalId
                       - createdAt
                       - updatedAt
                     additionalProperties: false
