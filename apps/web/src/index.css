@@ -133,6 +133,9 @@ body {
    * 4.2:1 — just under — so this is one stop down at 5.7:1, in the same band as
    * the sanctioned legs rather than a new hue. */
   --mv1-danger-text: #b83c12;
+  /* Life lens ground (§2). Life is a lens, not a level: it gets a warm card
+   * ground and the ⌂ glyph, and deliberately NO new accent colour. */
+  --mv1-life-ground: #faf7f2;
 }
 
 [data-theme="dark"],
@@ -181,6 +184,7 @@ body {
   --mv1-green-text: #3fb871;
   --mv1-red-text: #e5675b;
   --mv1-danger-text: #e5634b;
+  --mv1-life-ground: #26221e;
 }
 
 /* Electron prechat onboarding typography — mirror the lighter DM Sans (Swift

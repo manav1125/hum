@@ -38,7 +38,10 @@ import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { Mv3Today } from "@/mobile-v3";
 import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
-import { usageTotalsGetOptions } from "@/generated/daemon/@tanstack/react-query.gen";
+import {
+  actsSummaryGetOptions,
+  usageTotalsGetOptions,
+} from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
 import { useIsMobile, useMobileLayout } from "@/hooks/use-is-mobile";
 import { getBudgetConfig } from "@/lib/budget-api";
@@ -110,6 +113,21 @@ import {
   serif,
   sourceBadge,
 } from "./hq-kit";
+import type { RingStatus } from "./hq-kit";
+import {
+  AgentsNow,
+  type AgentNow,
+  DayRail,
+  type DayPicture,
+  type Horizon,
+  LensSwitch,
+  type Lens,
+  LifeHorizons,
+  TrustChip,
+  type Unavailable,
+  WaitingOnPeople,
+  type WaitingItem,
+} from "./hq-k1-modules";
 import {
   ArrivalsDigest,
   type ArrivalsSummary,
@@ -703,6 +721,16 @@ function PulseLayout({
   missionsByProjectId,
   userName,
   dayLabel,
+  trust,
+  day,
+  dayUnavailable,
+  lifeGroups,
+  lifeUnavailable,
+  agentsNow,
+  agentsUnavailable,
+  waiting,
+  waitingUnavailable,
+  missionRings,
   moveIsExtraToNeedsYou,
   heartbeatRuns,
   watchingCount,
@@ -733,6 +761,22 @@ function PulseLayout({
   failingWatchers: { id: string; name: string; lastError: string }[];
   /** What arrived on its own, and what Cue did with it. */
   arrivals: ArrivalsSummary;
+  /** Autonomy tier + spend, shown beside the greeting (§23 step 7). */
+  trust: { mode: string; spentCents: number | null; capCents: number | null };
+  /** Today's calendar picture, or why there isn't one. */
+  day: DayPicture | null;
+  dayUnavailable?: Unavailable;
+  /** Life items grouped by horizon, or why there aren't any. */
+  lifeGroups: { horizon: Horizon; titles: string[] }[];
+  lifeUnavailable?: Unavailable;
+  /** The staff, with receipts. */
+  agentsNow: AgentNow[];
+  agentsUnavailable?: Unavailable;
+  /** Waiting on people, four states (§7). */
+  waiting: WaitingItem[];
+  waitingUnavailable?: Unavailable;
+  /** Mission rings, already ordered live-first. */
+  missionRings: { id: string; title: string; status: RingStatus; open: number }[];
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
@@ -750,6 +794,18 @@ function PulseLayout({
   const firstRun = useHqFirstRun();
   const isMobile = useIsMobile();
   const deckNavigate = useNavigate();
+  // The lens is view state, not a route: §2 calls Life a lens, not a level, and
+  // a separate page would put the privacy boundary in the wrong place.
+  const [lens, setLens] = useState<Lens>("all");
+  // Stamped once per mount, like `dayLabel`. Reading the clock during render is
+  // impure — the now-marker would move on every unrelated re-render.
+  const [nowMs] = useState(() => Date.now());
+  const lifeCount = lifeGroups.reduce((n, g) => n + g.titles.length, 0);
+  const lensCounts = {
+    all: trackedCount + lifeCount,
+    work: trackedCount,
+    life: lifeCount,
+  };
   return (
     <div data-slot="hq-stream">
       <MicroLabel
@@ -788,11 +844,101 @@ function PulseLayout({
             : "Cue is ready when you are."}
       </div>
 
-      <div style={{ marginTop: 22, maxWidth: 640 }} data-coach="hq-capture">
+      {/* 0 · trust chip + lens, beside the greeting. Trust lives where the
+          work is, not in Settings (§23 step 7). */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          flexWrap: "wrap",
+          marginTop: 14,
+        }}
+      >
+        <TrustChip
+          mode={trust.mode}
+          spentCents={trust.spentCents}
+          capCents={trust.capCents}
+        />
+        <LensSwitch
+          lens={lens}
+          counts={lensCounts}
+          onChange={setLens}
+        />
+      </div>
+
+      {/* 1 · CAPTURE BAR — fixed furniture. It has been dropped twice; the
+          handoff makes it an invariant. Never remove it. */}
+      <div style={{ marginTop: 18, maxWidth: 640 }} data-coach="hq-capture">
         <CaptureBar
-          placeholder="Ask Cue anything, or give it a mission…"
+          placeholder={'Tell Cue what you need — or "take the Halo pricing" to hand it straight over'}
           autoFilesChip={false}
         />
+      </div>
+
+      {/* 2 · DAY RAIL */}
+      <DayRail day={day} nowMs={nowMs} unavailable={dayUnavailable} />
+
+      {/* 3 · MISSIONS beside LIFE — work by why, life by when (§2). */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+          gap: 26,
+          marginTop: 26,
+        }}
+      >
+        {lens !== "life" ? (
+          <section style={{ minWidth: 0 }}>
+            <MicroLabel>◎ Work · by mission</MicroLabel>
+            {missionRings.length === 0 ? (
+              <div style={{ fontSize: 12, color: C.t3, marginTop: 9 }}>
+                No missions yet — Cue still catches what comes in.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                {missionRings.slice(0, 4).map((m) => (
+                  <Link
+                    key={m.id}
+                    to={routes.hqMission(m.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      textDecoration: "none",
+                    }}
+                  >
+                    <StatusRing status={m.status} size={22} />
+                    <span style={{ fontSize: 13, color: C.t1, minWidth: 0 }}>
+                      {m.title}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: "auto",
+                        fontFamily: mono,
+                        fontSize: 11,
+                        color: C.t3,
+                      }}
+                    >
+                      {RING_META[m.status].label}
+                      {m.open > 0 ? ` · ${m.open} open` : ""}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+        {lens !== "work" ? (
+          <LifeHorizons groups={lifeGroups} unavailable={lifeUnavailable} />
+        ) : null}
       </div>
 
       {/* First-run — three cards that teach the loop, once. Shown on the pulse
@@ -951,6 +1097,16 @@ function PulseLayout({
             </>
           ) : null}
 
+          {/* 6 · CENSUS — the honest count and the door to the ledger. */}
+          <CensusBar
+            segments={[
+              { label: "need you", value: needsYou.length },
+              { label: "Cue is doing", value: running.length },
+              { label: "waiting", value: cameIn.length },
+              { label: "done today", value: done.length },
+            ]}
+          />
+
           {/*
             7 · CAME IN — ONE row, whatever the volume (§9).
 
@@ -978,15 +1134,9 @@ function PulseLayout({
             />
           )}
 
-          {/* 6 · CENSUS — the honest count and the door to the ledger. */}
-          <CensusBar
-            segments={[
-              { label: "need you", value: needsYou.length },
-              { label: "Cue is doing", value: running.length },
-              { label: "waiting", value: cameIn.length },
-              { label: "done today", value: done.length },
-            ]}
-          />
+          {/* 7 · AGENTS + WAITING — the staff, and the people. */}
+          <AgentsNow agents={agentsNow} unavailable={agentsUnavailable} />
+          <WaitingOnPeople items={waiting} unavailable={waitingUnavailable} />
 
           {/* 8 · PULSE — what Cue watches on your behalf. */}
           <PulseStrip
@@ -1817,6 +1967,39 @@ export function HqPage() {
   // NOT guessed (the auto-filer stamps a confidence while leaving the item
   // unfiled — that shape is the "Cue was unsure" signal). Anything in neither
   // bucket is still in flight and is not counted as handled.
+  // Mission rings for the deck, live first then abandoned (which ring blocked
+  // rather than vanishing — a goal that drifted is still information).
+  const missionRings = useMemo(
+    () =>
+      missions.map((m) => ({
+        id: m.id,
+        title: m.title,
+        status: ringStatusFor(m),
+        open: m.rollup.counts.open,
+      })),
+    [missions],
+  );
+
+  // The staff, with receipts. "128 acts · 0 reversed" is the line that makes
+  // autonomy credible, and both halves are queryable today.
+  const actsSummary = useQuery({
+    ...actsSummaryGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const agentsNow: AgentNow[] = useMemo(
+    () =>
+      (actsSummary.data?.byAgent ?? []).map((a) => ({
+        name: a.agent,
+        emoji: null,
+        tier: null,
+        activity: null,
+        acts: a.acts,
+        reversed: a.reversed,
+      })),
+    [actsSummary.data],
+  );
+
   const arrivals: ArrivalsSummary = useMemo(() => {
     const inbound = cameIn.filter((i) => i.sourceType?.startsWith("watcher"));
     return {
@@ -1990,6 +2173,45 @@ export function HqPage() {
                 move.kind === "approval")
             }
             arrivals={arrivals}
+            trust={{
+              mode:
+                workspaceMode.charAt(0).toUpperCase() + workspaceMode.slice(1),
+              // Both sources report dollars, not cents — convert once here so
+              // TrustChip only ever deals in one unit.
+              spentCents:
+                usage.data?.totalEstimatedCostUsd != null
+                  ? Math.round(usage.data.totalEstimatedCostUsd * 100)
+                  : null,
+              capCents:
+                budget.data?.monthlyCapUsd != null
+                  ? Math.round(budget.data.monthlyCapUsd * 100)
+                  : null,
+            }}
+            missionRings={missionRings}
+            // Every module below renders regardless; where the data does not
+            // exist yet it states WHY rather than going quiet. A silent module
+            // is indistinguishable from a calm one.
+            day={null}
+            dayUnavailable={{
+              reason: "Cue can't see your calendar yet.",
+              fixHref: routes.connectors,
+              fixLabel: "Connect it",
+            }}
+            lifeGroups={[]}
+            lifeUnavailable={{
+              reason:
+                "Nothing is marked as life yet — personal items get their own lens, grouped by when rather than why.",
+            }}
+            agentsNow={agentsNow}
+            agentsUnavailable={
+              agentsNow.length === 0
+                ? { reason: "No agents have run yet." }
+                : undefined
+            }
+            waiting={[]}
+            waitingUnavailable={{
+              reason: "Cue isn't tracking who owes you anything yet.",
+            }}
             watchingCount={liveWatchers.length}
             failingWatchers={failingWatchers.map((w) => ({
               id: w.id,
