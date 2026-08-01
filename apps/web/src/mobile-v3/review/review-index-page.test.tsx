@@ -173,7 +173,9 @@ describe("ReviewIndexPage", () => {
     fireEvent.click(screen.getByText("Archive 1"));
 
     expect(await screen.findByText("Archived 1 stale review")).toBeTruthy();
-    expect(screen.getByText("Undo")).toBeTruthy();
+    // The pill carries its own countdown ("Undo · 5s") — the window is part of
+    // the offer, so match the verb rather than pinning the whole label.
+    expect(screen.getByRole("button", { name: /Undo/ })).toBeTruthy();
     // The stale row left the list; the fresh row stays.
     expect(screen.queryByText("Old thing")).toBeNull();
     expect(screen.getByText("Fresh thing")).toBeTruthy();
