@@ -33006,6 +33006,55 @@ paths:
                               maximum: 9007199254740991
                             - type: "null"
                           description: Epoch ms the stored verdict was produced.
+                        domain:
+                          type: string
+                          enum:
+                            - work
+                            - life
+                          description:
+                            'Which lens the item lives in. "work" groups by mission (why); "life" groups by horizon (when) — same rows,
+                            same engine, different organising axis. Also the privacy boundary: hiding personal work for
+                            a screen-share is this one predicate. Every item defaults to "work".'
+                        horizon:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - this_week
+                                - soon
+                                - someday
+                            - type: "null"
+                          description: When a life item wants attention. Always null on work items, which group by mission instead.
+                        waitingOn:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            contacts.id of the person this item is blocked on. Distinct from assignee, which says who OWNS the item —
+                            an item you own can still be waiting on somebody else's reply. null = not waiting on
+                            anybody.
+                        lastChasedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description:
+                            Epoch ms of the last nudge sent about this item. null = never chased, which reads differently from "chased
+                            a while ago".
+                        waitingState:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - on_time
+                                - already_chased
+                                - going_cold
+                            - type: "null"
+                          description:
+                            'Read-time derivation over waitingOn + lastChasedAt, computed here so every surface draws the same line:
+                            "on_time" = waiting, nothing has gone quiet — forget it, Cue will chase; "already_chased" =
+                            a nudge went out recently, so the next move is to escalate rather than nudge again;
+                            "going_cold" = the silence has outlasted the chase window (5 days). null = the item is not
+                            waiting on a person, or it is already finished.'
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -33049,6 +33098,11 @@ paths:
                         - assessmentMissing
                         - assessmentConfidence
                         - assessmentAt
+                        - domain
+                        - horizon
+                        - waitingOn
+                        - lastChasedAt
+                        - waitingState
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -40993,6 +41047,55 @@ paths:
                               maximum: 9007199254740991
                             - type: "null"
                           description: Epoch ms the stored verdict was produced.
+                        domain:
+                          type: string
+                          enum:
+                            - work
+                            - life
+                          description:
+                            'Which lens the item lives in. "work" groups by mission (why); "life" groups by horizon (when) — same rows,
+                            same engine, different organising axis. Also the privacy boundary: hiding personal work for
+                            a screen-share is this one predicate. Every item defaults to "work".'
+                        horizon:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - this_week
+                                - soon
+                                - someday
+                            - type: "null"
+                          description: When a life item wants attention. Always null on work items, which group by mission instead.
+                        waitingOn:
+                          anyOf:
+                            - type: string
+                            - type: "null"
+                          description:
+                            contacts.id of the person this item is blocked on. Distinct from assignee, which says who OWNS the item —
+                            an item you own can still be waiting on somebody else's reply. null = not waiting on
+                            anybody.
+                        lastChasedAt:
+                          anyOf:
+                            - type: integer
+                              minimum: -9007199254740991
+                              maximum: 9007199254740991
+                            - type: "null"
+                          description:
+                            Epoch ms of the last nudge sent about this item. null = never chased, which reads differently from "chased
+                            a while ago".
+                        waitingState:
+                          anyOf:
+                            - type: string
+                              enum:
+                                - on_time
+                                - already_chased
+                                - going_cold
+                            - type: "null"
+                          description:
+                            'Read-time derivation over waitingOn + lastChasedAt, computed here so every surface draws the same line:
+                            "on_time" = waiting, nothing has gone quiet — forget it, Cue will chase; "already_chased" =
+                            a nudge went out recently, so the next move is to escalate rather than nudge again;
+                            "going_cold" = the silence has outlasted the chase window (5 days). null = the item is not
+                            waiting on a person, or it is already finished.'
                         createdAt:
                           type: integer
                           minimum: -9007199254740991
@@ -41036,6 +41139,11 @@ paths:
                         - assessmentMissing
                         - assessmentConfidence
                         - assessmentAt
+                        - domain
+                        - horizon
+                        - waitingOn
+                        - lastChasedAt
+                        - waitingState
                         - createdAt
                         - updatedAt
                       additionalProperties: false
@@ -41071,6 +41179,18 @@ paths:
           description:
             Filter to the items a single conversation spawned (work_items.origin_conversation_id). Lets a thread show
             the work it started.
+        - name: domain
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - work
+              - life
+          description:
+            'Filter to one lens: "work" (grouped by mission) or "life" (grouped by horizon). Omit for both — a client
+            that does not know about lenses sees every item, exactly as before. This is also the privacy switch: "hide
+            Life" for a screen-share is ?domain=work.'
     post:
       operationId: workitems_post
       summary: Create a work item
@@ -41283,6 +41403,54 @@ paths:
                             maximum: 9007199254740991
                           - type: "null"
                         description: Epoch ms the stored verdict was produced.
+                      domain:
+                        type: string
+                        enum:
+                          - work
+                          - life
+                        description:
+                          'Which lens the item lives in. "work" groups by mission (why); "life" groups by horizon (when) — same rows,
+                          same engine, different organising axis. Also the privacy boundary: hiding personal work for a
+                          screen-share is this one predicate. Every item defaults to "work".'
+                      horizon:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - this_week
+                              - soon
+                              - someday
+                          - type: "null"
+                        description: When a life item wants attention. Always null on work items, which group by mission instead.
+                      waitingOn:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                        description:
+                          contacts.id of the person this item is blocked on. Distinct from assignee, which says who OWNS the item —
+                          an item you own can still be waiting on somebody else's reply. null = not waiting on anybody.
+                      lastChasedAt:
+                        anyOf:
+                          - type: integer
+                            minimum: -9007199254740991
+                            maximum: 9007199254740991
+                          - type: "null"
+                        description:
+                          Epoch ms of the last nudge sent about this item. null = never chased, which reads differently from "chased
+                          a while ago".
+                      waitingState:
+                        anyOf:
+                          - type: string
+                            enum:
+                              - on_time
+                              - already_chased
+                              - going_cold
+                          - type: "null"
+                        description:
+                          'Read-time derivation over waitingOn + lastChasedAt, computed here so every surface draws the same line:
+                          "on_time" = waiting, nothing has gone quiet — forget it, Cue will chase; "already_chased" = a
+                          nudge went out recently, so the next move is to escalate rather than nudge again; "going_cold"
+                          = the silence has outlasted the chase window (5 days). null = the item is not waiting on a
+                          person, or it is already finished.'
                       createdAt:
                         type: integer
                         minimum: -9007199254740991
@@ -41326,6 +41494,11 @@ paths:
                       - assessmentMissing
                       - assessmentConfidence
                       - assessmentAt
+                      - domain
+                      - horizon
+                      - waitingOn
+                      - lastChasedAt
+                      - waitingState
                       - createdAt
                       - updatedAt
                     additionalProperties: false
@@ -41363,6 +41536,29 @@ paths:
                     background'), so the item shows up in that thread's spawned-work strip and its provenance survives.
                     Omit for surfaces with no originating conversation.
                   type: string
+                domain:
+                  description:
+                    Which lens to file the item in. Defaults to "work" when omitted, so a caller that knows nothing about
+                    lenses behaves as before.
+                  type: string
+                  enum:
+                    - work
+                    - life
+                horizon:
+                  description: When a life item wants attention. Ignored unless domain is "life" — work items group by mission.
+                  type: string
+                  enum:
+                    - this_week
+                    - soon
+                    - someday
+                waitingOn:
+                  description: contacts.id of the person this item is blocked on
+                  type: string
+                lastChasedAt:
+                  description: Epoch ms of the last nudge sent about this item
+                  type: integer
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
               required:
                 - title
               additionalProperties: false
@@ -41460,6 +41656,37 @@ paths:
                     - type: string
                     - type: "null"
                   description: Per-task context the agent reads before a run
+                domain:
+                  type: string
+                  enum:
+                    - work
+                    - life
+                  description:
+                    Move the item between lenses. Moving to "work" also clears horizon (work groups by mission, so a horizon
+                    would be dead data) unless a horizon is set in the same request.
+                horizon:
+                  anyOf:
+                    - type: string
+                      enum:
+                        - this_week
+                        - soon
+                        - someday
+                    - type: "null"
+                  description: null clears the horizon; only meaningful for life items
+                waitingOn:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                  description:
+                    contacts.id of the person this item is blocked on; null clears it (the reply landed, or it was never really
+                    a wait)
+                lastChasedAt:
+                  anyOf:
+                    - type: integer
+                      minimum: -9007199254740991
+                      maximum: 9007199254740991
+                    - type: "null"
+                  description: Epoch ms of the last nudge; set it when a chase goes out, null resets the item to never-chased
               required:
                 - title
                 - notes
@@ -41471,6 +41698,10 @@ paths:
                 - labels
                 - assignee
                 - context
+                - domain
+                - horizon
+                - waitingOn
+                - lastChasedAt
               additionalProperties: false
   /v1/work-items/{id}/approve-permissions:
     post:

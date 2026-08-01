@@ -31,6 +31,7 @@ import { ROUTES as BROWSER_ROUTES } from "./browser-routes.js";
 import { ROUTES as BROWSER_TABS_ROUTES } from "./browser-tabs-routes.js";
 import { ROUTES as BTW_ROUTES } from "./btw-routes.js";
 import { ROUTES as CACHE_ROUTES } from "./cache-routes.js";
+import { ROUTES as CALENDAR_DAY_ROUTES } from "./calendar-day-routes.js";
 import { ROUTES as CALL_ROUTES } from "./call-routes.js";
 import { ROUTES as CHANNEL_AVAILABILITY_ROUTES } from "./channel-availability-routes.js";
 import { ROUTES as CHANNEL_READINESS_ROUTES } from "./channel-readiness-routes.js";
@@ -186,6 +187,7 @@ export const ROUTES: RouteDefinition[] = [
   ...BACKUP_ROUTES,
   ...BOOKMARK_ROUTES,
   ...CACHE_ROUTES,
+  ...CALENDAR_DAY_ROUTES,
   ...CALL_ROUTES,
   ...CHATGPT_SUBSCRIPTION_AUTH_ROUTES,
   ...CHANNEL_ROUTES,
