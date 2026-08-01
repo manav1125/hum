@@ -26,7 +26,13 @@
  * conversation; nothing claims a state the payload can't back, and the
  * deliverable panel says plainly when the run left no written result.
  */
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import { StateBadge } from "@vellumai/design-library";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Components } from "react-markdown";
@@ -42,6 +48,8 @@ import {
   workitemsByIdRunPostMutation,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
+import { pushUndo } from "@/pages/hq/work-undo";
+import { WorkVerbBar, useWorkVerbKeys } from "@/pages/hq/work-verbs";
 import { C, mono, serif } from "@/lib/hq-theme";
 import {
   hasFreshBorder,
@@ -554,7 +562,17 @@ export function DesktopReviewPage() {
     setSearchParams(next, { replace: true });
   }, [paramId, queue, selected, searchParams, setSearchParams]);
 
-  const [undo, setUndo] = useState<UndoState | null>(null);
+  const [undo, setUndoBanner] = useState<UndoState | null>(null);
+  /**
+   * Record a reversal in both places it has to live: the inline banner (which
+   * is what the user sees right now) and the session stack (which is what ⌘Z
+   * reaches after they have walked to another surface). §4 promises undo for
+   * the whole session, and a banner that dies with the page is not that.
+   */
+  const setUndo = useCallback((entry: UndoState | null) => {
+    setUndoBanner(entry);
+    if (entry) pushUndo({ label: entry.label, undo: async () => entry.undo() });
+  }, []);
   const [confirmBatch, setConfirmBatch] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -679,6 +697,37 @@ export function DesktopReviewPage() {
       },
     );
   };
+
+  /**
+   * The verbs this page can honestly perform on the selected item.
+   *
+   * `later`, `file` and `hand_off` are deliberately absent rather than stubbed:
+   * the bar renders only what it is given, so an unimplemented verb is simply
+   * not offered here instead of appearing and doing nothing. `undo` is not
+   * listed because it is session-wide and bound separately — it must work after
+   * the row has left the screen.
+   */
+  const verbHandlers = useMemo(
+    () =>
+      selected && !busy
+        ? {
+            approve: () => doApprove(selected),
+            archive: () => doArchive(selected),
+            open: selected.lastRunConversationId
+              ? () =>
+                  navigate(
+                    routes.conversation(selected.lastRunConversationId!),
+                  )
+              : undefined,
+          }
+        : {},
+    // doApprove/doArchive are recreated every render by design (they close over
+    // mutation state); the selected item and busy flag are what actually change
+    // the handler set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected, busy, navigate],
+  );
+  useWorkVerbKeys(verbHandlers, { enabled: !confirmBatch });
 
   const archiveStale = async () => {
     if (stale.length === 0 || batchBusy) return;
@@ -982,18 +1031,20 @@ export function DesktopReviewPage() {
                   borderTop: `1px solid ${C.line}`,
                 }}
               >
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => doApprove(selected)}
-                  style={{
-                    ...primaryBtn,
-                    background: C.green,
-                    opacity: busy ? 0.6 : 1,
-                  }}
-                >
-                  {approve.isPending ? "Approving…" : "Approve → done"}
-                </button>
+                {/* The canonical verb set (§4) — same labels, same keys, same
+                    order as every other work surface. Only the verbs this page
+                    can actually perform are passed; an inert button teaches the
+                    wrong shortcut. */}
+                <WorkVerbBar
+                  handlers={verbHandlers}
+                  busy={
+                    approve.isPending
+                      ? "approve"
+                      : patch.isPending
+                        ? "archive"
+                        : null
+                  }
+                />
                 <button
                   type="button"
                   disabled={busy}
@@ -1001,32 +1052,6 @@ export function DesktopReviewPage() {
                   style={{ ...quietBtn, opacity: busy ? 0.6 : 1 }}
                 >
                   {rerun.isPending ? "Redoing…" : "Redo"}
-                </button>
-                {selected.lastRunConversationId ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate(
-                        routes.conversation(selected.lastRunConversationId!),
-                      )
-                    }
-                    style={quietBtn}
-                  >
-                    Open the conversation
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => doArchive(selected)}
-                  style={{
-                    ...quietBtn,
-                    marginLeft: "auto",
-                    color: C.t2,
-                    opacity: busy ? 0.6 : 1,
-                  }}
-                >
-                  Archive
                 </button>
               </div>
 

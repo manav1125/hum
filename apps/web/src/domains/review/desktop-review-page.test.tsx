@@ -92,6 +92,20 @@ mock.module("@/generated/daemon/@tanstack/react-query.gen", () => ({
 
 import { DesktopReviewPage } from "./desktop-review-page";
 
+/**
+ * Find a verb button by its id rather than its label.
+ *
+ * The labels now come from the canonical §4 verb table, so asserting on the
+ * words here would re-pin copy this page no longer owns — and would break every
+ * time the vocabulary is corrected in one place, which is the whole point of
+ * having one place.
+ */
+function verb(id: string): HTMLElement {
+  const el = document.querySelector(`[data-verb='${id}']`);
+  if (!el) throw new Error(`no verb button '${id}' on screen`);
+  return el as HTMLElement;
+}
+
 function renderPage(search = "") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -158,7 +172,7 @@ describe("DesktopReviewPage", () => {
     ITEMS = [item({ id: "wi-1", title: "Acme one-pager v2" })];
     renderPage();
 
-    fireEvent.click(screen.getByText("Approve → done"));
+    fireEvent.click(verb("approve"));
     await screen.findByText("Ready for review");
     expect(CALLS.some((c) => c.kind === "complete" && c.vars.path?.id === "wi-1")).toBe(
       true,
@@ -185,7 +199,7 @@ describe("DesktopReviewPage", () => {
     ITEMS = [item({ id: "wi-1", title: "Acme one-pager v2" })];
     renderPage();
 
-    fireEvent.click(screen.getByText("Archive"));
+    fireEvent.click(verb("archive"));
     expect(await screen.findByText(/Archived “Acme one-pager v2”/)).toBeTruthy();
     expect(screen.getByText("Undo")).toBeTruthy();
 
@@ -196,8 +210,9 @@ describe("DesktopReviewPage", () => {
   test("the conversation link only exists when there is a conversation", async () => {
     ITEMS = [item({ id: "wi-1" })];
     renderPage();
-    await screen.findByText("Approve → done");
-    expect(screen.queryByText("Open the conversation")).toBeNull();
+    await screen.findByText(/no written summary/);
+    // "Open" is a verb the page only offers when there is somewhere to open.
+    expect(document.querySelector("[data-verb='open']")).toBeNull();
     expect(
       screen.getByText(/no written summary, and it has no conversation/),
     ).toBeTruthy();
@@ -205,7 +220,10 @@ describe("DesktopReviewPage", () => {
     cleanup();
     ITEMS = [item({ id: "wi-2", lastRunConversationId: "conv-9" })];
     renderPage();
-    expect(await screen.findByText("Open the conversation")).toBeTruthy();
+    // Approve is always offered for a selected item, so it is the signal that
+    // the verb bar has rendered and `open`'s absence would be meaningful.
+    await screen.findByText("Approve");
+    expect(document.querySelector("[data-verb='open']")).toBeTruthy();
   });
 
   test("?item= deep link selects that row", async () => {
