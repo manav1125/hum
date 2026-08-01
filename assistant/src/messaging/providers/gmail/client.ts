@@ -433,6 +433,37 @@ const INTER_WAVE_DELAY_MS = 500;
  * Processes messages in waves of INDIVIDUAL_CONCURRENCY with a brief inter-wave
  * delay to avoid triggering upstream rate limits on high-volume paths.
  */
+/**
+ * Fetch messages concurrently, dropping any that no longer exist.
+ *
+ * A message can be deleted between the moment Gmail reports it and the moment
+ * we fetch it, and Gmail answers a gone message with 404 "Requested entity was
+ * not found". Under `Promise.all` that single rejection fails the whole wave,
+ * which fails the caller's poll — and for the watcher, five failed polls
+ * disable it permanently. Deleting mail is the most ordinary thing anyone does
+ * to an inbox, so every path that fans out over message ids has to tolerate it.
+ *
+ * A 404 is a fact about one message, not a failure of the batch, so its slot is
+ * dropped. Every other status still throws: swallowing a 429 or a 5xx as
+ * "missing" would turn a throttled poll into a silent no-op and lose real mail.
+ */
+async function settleMessages(
+  jobs: Promise<GmailMessage>[],
+): Promise<GmailMessage[]> {
+  const outcomes = await Promise.allSettled(jobs);
+  const kept: GmailMessage[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.status === "fulfilled") {
+      kept.push(outcome.value);
+      continue;
+    }
+    const err: unknown = outcome.reason;
+    if (err instanceof GmailApiError && err.status === 404) continue;
+    throw err;
+  }
+  return kept;
+}
+
 async function fetchMessagesIndividually(
   connection: OAuthConnection,
   messageIds: string[],
@@ -449,7 +480,7 @@ async function fetchMessagesIndividually(
       await signalAwareSleep(INTER_WAVE_DELAY_MS, signal);
     }
     const wave = messageIds.slice(i, i + INDIVIDUAL_CONCURRENCY);
-    const waveResults = await Promise.all(
+    const waveResults = await settleMessages(
       wave.map((id) =>
         getMessage(connection, id, format, metadataHeaders, fields, signal),
       ),
@@ -477,10 +508,12 @@ export async function batchGetMessages(
 ): Promise<GmailMessage[]> {
   if (messageIds.length === 0) return [];
 
-  // Single message -- just use getMessage directly
+  // Single message -- just use getMessage directly. Still routed through
+  // settleMessages: a lone id is the most likely one to have been deleted,
+  // since history often reports exactly one new message.
   if (messageIds.length === 1) {
-    return [
-      await getMessage(
+    return settleMessages([
+      getMessage(
         connection,
         messageIds[0],
         format,
@@ -488,7 +521,7 @@ export async function batchGetMessages(
         fields,
         signal,
       ),
-    ];
+    ]);
   }
 
   // Try batch API first; fall back to individual fetches if withToken is unavailable
@@ -549,36 +582,15 @@ export async function batchGetMessages(
         results[baseIndex + index] = msg;
       }
 
-      // Retry failed sub-requests individually.
-      //
-      // `allSettled`, not `all`: a message can be deleted between the moment
-      // Gmail reports it and the moment we fetch it, and Gmail answers a gone
-      // message with 404 "Requested entity was not found". Under `all` that one
-      // rejection failed the whole batch, which failed the whole watcher poll —
-      // and five of those disable the watcher permanently. Deleting mail is the
-      // single most ordinary thing a person does to an inbox, so this made the
-      // Gmail watcher self-destruct in normal use.
-      //
-      // A 404 is a fact about that message, not a failure of the batch: the
-      // slot is left empty and dropped by the filter below, which this function
-      // already does for sub-requests the batch API could not return. Every
-      // other error still throws — a 429 or a 5xx is a real failure and must
-      // not be silently swallowed as "message missing".
+      // Retry failed sub-requests individually, tolerating deletions.
       if (failedIds.length > 0) {
-        const retried = await Promise.allSettled(
+        const retried = await settleMessages(
           failedIds.map(({ id }) =>
             getMessage(connection, id, format, metadataHeaders, fields, signal),
           ),
         );
-        for (let r = 0; r < failedIds.length; r++) {
-          const outcome = retried[r];
-          if (outcome.status === "fulfilled") {
-            results[baseIndex + failedIds[r].index] = outcome.value;
-            continue;
-          }
-          const err: unknown = outcome.reason;
-          if (err instanceof GmailApiError && err.status === 404) continue;
-          throw err;
+        for (let r = 0; r < retried.length; r++) {
+          results[baseIndex + failedIds[r].index] = retried[r];
         }
       }
     }
