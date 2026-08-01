@@ -17,6 +17,7 @@ import { cleanup, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import {
+  ArrivalsDigest,
   CensusBar,
   DeliveredBlock,
   EmptyState,
@@ -191,5 +192,66 @@ describe("EmptyState — three kinds, three treatments", () => {
       return g;
     });
     expect(new Set(glyphs).size).toBe(3);
+  });
+});
+
+describe("ArrivalsDigest — 40 arrivals must not become 40 cards", () => {
+  test("says what Cue DID with the pile, not what the pile contains", () => {
+    const { container } = wrap(
+      <ArrivalsDigest summary={{ total: 119, filed: 46, kept: 14 }} />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("119 arrived");
+    expect(text).toContain("filed 46");
+    expect(text).toContain("kept 14");
+  });
+
+  test("only the uncertain count is framed as needing the user", () => {
+    // The whole point: 119 arrived but 14 need a decision. Presenting all 119
+    // as things to look at is an inbox with extra steps.
+    const { container } = wrap(
+      <ArrivalsDigest summary={{ total: 119, filed: 46, kept: 14 }} />,
+    );
+    expect(container.textContent).toContain("14 need a decision");
+  });
+
+  test("nothing uncertain reads as nothing needing you", () => {
+    const { container } = wrap(
+      <ArrivalsDigest summary={{ total: 27, filed: 27, kept: 0 }} />,
+    );
+    const text = container.textContent ?? "";
+    expect(text).toContain("nothing needs you");
+    expect(text).not.toContain("kept");
+  });
+
+  test("always promises nothing was lost", () => {
+    // Filing is only trustworthy if the user knows the alternative was not
+    // deletion. Both branches carry it.
+    for (const s of [
+      { total: 119, filed: 46, kept: 14 },
+      { total: 27, filed: 27, kept: 0 },
+    ]) {
+      const { container } = wrap(<ArrivalsDigest summary={s} />);
+      expect(container.textContent).toContain("nothing lost");
+      cleanup();
+    }
+  });
+
+  test("renders nothing when nothing arrived", () => {
+    const { container } = wrap(
+      <ArrivalsDigest summary={{ total: 0, filed: 0, kept: 0 }} />,
+    );
+    expect(
+      container.querySelector("[data-slot='hq-arrivals-digest']"),
+    ).toBeNull();
+  });
+
+  test("one row regardless of volume", () => {
+    const { container } = wrap(
+      <ArrivalsDigest summary={{ total: 4000, filed: 3990, kept: 10 }} />,
+    );
+    expect(
+      container.querySelectorAll("[data-slot='hq-arrivals-digest']"),
+    ).toHaveLength(1);
   });
 });

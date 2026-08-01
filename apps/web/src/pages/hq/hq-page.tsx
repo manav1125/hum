@@ -111,6 +111,8 @@ import {
   sourceBadge,
 } from "./hq-kit";
 import {
+  ArrivalsDigest,
+  type ArrivalsSummary,
   CensusBar,
   DeliveredBlock,
   EmptyState,
@@ -705,6 +707,7 @@ function PulseLayout({
   heartbeatRuns,
   watchingCount,
   failingWatchers,
+  arrivals,
   onNewMission,
   onSuggest,
 }: {
@@ -728,6 +731,8 @@ function PulseLayout({
   watchingCount: number;
   /** Provisioned watchers that are erroring — named, never hidden. */
   failingWatchers: { id: string; name: string; lastError: string }[];
+  /** What arrived on its own, and what Cue did with it. */
+  arrivals: ArrivalsSummary;
   onNewMission: () => void;
   onSuggest: (title: string) => void;
 }) {
@@ -744,6 +749,7 @@ function PulseLayout({
   const trackedCount = needsYou.length + running.length + cameIn.length;
   const firstRun = useHqFirstRun();
   const isMobile = useIsMobile();
+  const deckNavigate = useNavigate();
   return (
     <div data-slot="hq-stream">
       <MicroLabel
@@ -946,83 +952,31 @@ function PulseLayout({
           ) : null}
 
           {/*
-            "Waiting", not "Came in". These are `queued` items — work that will
-            run itself (§3: ○ hollow ring). "Came in" means an ARRIVAL, something
-            that reached Cue on its own, and that is a different lane with a
-            different glyph (↴). Labelling queued work as arrivals told the user
-            things were flowing in when nothing was watching. The real arrivals
-            module is below, and it currently says so.
-          */}
-          {cameIn.length > 0 ? (
-            <>
-              <MicroLabel
-                style={{
-                  margin: glanceCount > 0 ? "24px 0 12px" : "0 0 12px",
-                }}
-              >
-                Waiting · {cameIn.length}
-              </MicroLabel>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                {[...cameIn]
-                  .sort((a, b) => b.createdAt - a.createdAt)
-                  .slice(0, 4)
-                  .map((item) => {
-                    const badge = sourceBadge(item.sourceType);
-                    return (
-                      <div
-                        key={item.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          fontSize: 12.5,
-                          color: C.t2,
-                        }}
-                      >
-                        <span
-                          aria-hidden
-                          style={{
-                            width: 18,
-                            height: 18,
-                            borderRadius: 5,
-                            background: badge.tint,
-                            color: "#fff",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 9,
-                            flexShrink: 0,
-                          }}
-                        >
-                          {badge.glyph}
-                        </span>
-                        <span
-                          style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {item.title}
-                        </span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </>
-          ) : null}
+            7 · CAME IN — ONE row, whatever the volume (§9).
 
-          {/*
-            7 · CAME IN — arrivals. Interim state per addendum A2 until watchers
-            land. It refuses to imply quiet: "nothing arrived" on its own reads
-            as a calm inbox, when the truth is that nothing is switched on.
+            This used to render arrivals as a list. That is the failure mode the
+            whole product exists to avoid: handing the user the entire pile and
+            calling it surfacing. 119 emails arrived here and became 119 rows,
+            which is an inbox with extra steps.
+
+            The digest says what Cue DID with the pile. The only number that
+            asks for attention is the one Cue scored and genuinely could not
+            place — everything else is filed, with provenance, and nothing is
+            lost.
           */}
           <MicroLabel style={{ margin: "26px 0 0" }}>Came in</MicroLabel>
-          <EmptyState
-            kind="nothing_yet"
-            title="Nothing has arrived"
-            body="Because nothing is watching — not because it's quiet. Connect a source and things start arriving on their own."
-          />
+          {arrivals.total > 0 ? (
+            <ArrivalsDigest
+              summary={arrivals}
+              onExpand={() => deckNavigate(routes.allWork)}
+            />
+          ) : (
+            <EmptyState
+              kind="nothing_yet"
+              title="Nothing has arrived"
+              body="Because nothing is watching — not because it's quiet. Connect a source and things start arriving on their own."
+            />
+          )}
 
           {/* 6 · CENSUS — the honest count and the door to the ledger. */}
           <CensusBar
@@ -1858,6 +1812,21 @@ export function HqPage() {
 
   const byProject = useMemo(() => missionByProject(missions), [missions]);
   const cameIn = queued.items;
+  // What arrived on its own, split by what Cue managed to do with it. `filed`
+  // has a named destination and provenance; `kept` was scored and deliberately
+  // NOT guessed (the auto-filer stamps a confidence while leaving the item
+  // unfiled — that shape is the "Cue was unsure" signal). Anything in neither
+  // bucket is still in flight and is not counted as handled.
+  const arrivals: ArrivalsSummary = useMemo(() => {
+    const inbound = cameIn.filter((i) => i.sourceType?.startsWith("watcher"));
+    return {
+      total: inbound.length,
+      filed: inbound.filter((i) => i.autoFiledBy != null).length,
+      kept: inbound.filter(
+        (i) => i.autoFiledBy == null && i.autoFileConfidence != null,
+      ).length,
+    };
+  }, [cameIn]);
   const workspaceMode = profile?.workspaceMode ?? "assist";
 
   // The deck's live surfaces (pulse ring, headline, mission list, drift
@@ -2020,6 +1989,7 @@ export function HqPage() {
               (review.items.length !== reviewItems.length ||
                 move.kind === "approval")
             }
+            arrivals={arrivals}
             watchingCount={liveWatchers.length}
             failingWatchers={failingWatchers.map((w) => ({
               id: w.id,

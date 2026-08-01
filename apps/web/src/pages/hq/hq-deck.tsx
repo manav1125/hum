@@ -302,3 +302,97 @@ export function EmptyState({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Arrivals digest (§9)
+// ---------------------------------------------------------------------------
+
+export interface ArrivalsSummary {
+  /** Everything that arrived on its own. */
+  total: number;
+  /** Auto-filed onto a mission or project, with provenance. */
+  filed: number;
+  /** Scored but below confidence — Cue refused to guess. These need a human. */
+  kept: number;
+}
+
+/**
+ * "Came in" as ONE row, whatever the volume.
+ *
+ * The rule this exists to enforce (§9): *40 Monday arrivals must not become 40
+ * cards.* Rendering arrivals as a list is what turns a chief of staff back into
+ * an inbox — it hands the user the entire pile and calls it surfacing. The
+ * digest says what Cue DID with the pile, and the only number that asks for
+ * attention is the one Cue was genuinely unsure about.
+ *
+ * `filed` and `kept` are the honest split: filed means Cue chose a home and can
+ * name it; kept means it scored the item and declined to guess. Anything not in
+ * either bucket is still in flight and is deliberately not implied to be
+ * handled — which is why the two numbers are shown rather than a single
+ * "processed" count.
+ */
+export function ArrivalsDigest({
+  summary,
+  onExpand,
+}: {
+  summary: ArrivalsSummary;
+  onExpand?: () => void;
+}) {
+  if (summary.total === 0) return null;
+  const { total, filed, kept } = summary;
+  return (
+    <div
+      data-slot="hq-arrivals-digest"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        marginTop: 12,
+        padding: "13px 15px",
+        border: `1px solid ${C.line}`,
+        borderRadius: 13,
+        background: C.surface,
+      }}
+    >
+      <span aria-hidden style={{ color: C.blue, fontSize: 14 }}>
+        ↴
+      </span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13.5, color: C.ink }}>
+          {total} arrived — Cue filed {filed}
+          {kept > 0 ? `, kept ${kept} for you` : ""}
+        </div>
+        <div
+          style={{
+            fontSize: 11.5,
+            color: C.t3,
+            marginTop: 3,
+            fontFamily: mono,
+          }}
+        >
+          {kept > 0
+            ? `${kept} ${kept === 1 ? "needs" : "need"} a decision · nothing lost`
+            : "nothing needs you · nothing lost"}
+        </div>
+      </div>
+      {onExpand ? (
+        <button
+          type="button"
+          onClick={onExpand}
+          style={{
+            border: "none",
+            background: "none",
+            padding: 0,
+            fontSize: 11.5,
+            fontFamily: mono,
+            color: C.t3,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Where it went ›
+        </button>
+      ) : null}
+    </div>
+  );
+}
