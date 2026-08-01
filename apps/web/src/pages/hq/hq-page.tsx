@@ -129,6 +129,11 @@ import {
   type WaitingItem,
 } from "./hq-k1-modules";
 import {
+  useDayPicture,
+  useLifeHorizons,
+  useWaitingOnPeople,
+} from "./use-hq-k1-data";
+import {
   ArrivalsDigest,
   type ArrivalsSummary,
   CensusBar,
@@ -1905,6 +1910,15 @@ export function HqPage() {
   const queued = useHqWorkItems(assistantId, "pending");
   const done = useHqWorkItems(assistantId, "done");
   const { schedules } = useHqSchedules(assistantId);
+  // Stamped once per mount: "waiting 6 days" must not tick over mid-session
+  // because something unrelated re-rendered. Reading the clock during render is
+  // impure for exactly that reason.
+  const [nowMs] = useState(() => Date.now());
+  // The three modules that shipped stating a reason. Each hook returns EITHER
+  // data or a sentence — never an empty array standing in for "couldn't ask".
+  const dayPicture = useDayPicture(assistantId);
+  const life = useLifeHorizons(assistantId);
+  const waitingOn = useWaitingOnPeople(assistantId, nowMs);
   // Drives the "not set up" / "broken" states and the pulse strip. Read from
   // the real watcher list rather than assumed: the moment auto-provisioning
   // lands, this flips on its own and the blue "Cue can see your inbox" card
@@ -2191,27 +2205,31 @@ export function HqPage() {
             // Every module below renders regardless; where the data does not
             // exist yet it states WHY rather than going quiet. A silent module
             // is indistinguishable from a calm one.
-            day={null}
-            dayUnavailable={{
-              reason: "Cue can't see your calendar yet.",
-              fixHref: routes.connectors,
-              fixLabel: "Connect it",
-            }}
-            lifeGroups={[]}
-            lifeUnavailable={{
-              reason:
-                "Nothing is marked as life yet — personal items get their own lens, grouped by when rather than why.",
-            }}
+            day={dayPicture.day}
+            dayUnavailable={dayPicture.unavailable}
+            lifeGroups={life.groups}
+            lifeUnavailable={
+              life.unavailable ??
+              (life.groups.length === 0
+                ? {
+                    reason:
+                      "Nothing is marked as life yet — personal items get their own lens, grouped by when rather than why.",
+                  }
+                : undefined)
+            }
             agentsNow={agentsNow}
             agentsUnavailable={
               agentsNow.length === 0
                 ? { reason: "No agents have run yet." }
                 : undefined
             }
-            waiting={[]}
-            waitingUnavailable={{
-              reason: "Cue isn't tracking who owes you anything yet.",
-            }}
+            waiting={waitingOn.items}
+            waitingUnavailable={
+              waitingOn.unavailable ??
+              (waitingOn.items.length === 0
+                ? { reason: "Cue isn't tracking who owes you anything yet." }
+                : undefined)
+            }
             watchingCount={liveWatchers.length}
             failingWatchers={failingWatchers.map((w) => ({
               id: w.id,
