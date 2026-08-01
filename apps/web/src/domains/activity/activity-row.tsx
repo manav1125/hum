@@ -141,6 +141,7 @@ export function ActivityRow({
   title,
   subtitle,
   provenance,
+  provenanceNode,
   meta,
   statusLabel,
   statusTone = "neutral",
@@ -154,6 +155,13 @@ export function ActivityRow({
   subtitle?: string | null;
   /** Honest trigger label, e.g. "Gmail event", "schedule", "manual". */
   provenance?: string | null;
+  /**
+   * Provenance as a NODE, rendered instead of the plain chip — the
+   * `<ProvenanceTrace/>` pill, which opens the full "why is this here" panel.
+   * Takes precedence over `provenance` so a row never carries two competing
+   * accounts of where the item came from.
+   */
+  provenanceNode?: ReactNode;
   /** Small right-of-provenance note, e.g. "next in 2h", "12m ago". */
   meta?: string | null;
   statusLabel?: string;
@@ -239,7 +247,7 @@ export function ActivityRow({
             {subtitle}
           </div>
         ) : null}
-        {provenance || meta ? (
+        {provenanceNode || provenance || meta ? (
           <div
             style={{
               display: "flex",
@@ -252,7 +260,8 @@ export function ActivityRow({
               rowGap: 2,
             }}
           >
-            {provenance ? <ProvenanceChip label={provenance} /> : null}
+            {provenanceNode ??
+              (provenance ? <ProvenanceChip label={provenance} /> : null)}
             {meta ? (
               <span style={{ fontSize: 11, color: C.t3, fontFamily: mono }}>
                 {meta}

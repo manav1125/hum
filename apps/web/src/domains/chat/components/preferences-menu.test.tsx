@@ -1,14 +1,19 @@
 /**
  * Tests for `PreferencesMenu`.
  *
- * Uses `renderToStaticMarkup` (SSR) so only the trigger and top-level
- * structure are exercisable — Radix Popover/BottomSheet content is not
- * rendered when `open={false}`. Interactive content tests (menu items,
- * admin visibility, credits row) would require a DOM environment with
- * React Testing Library.
+ * `PreferencesMenu` itself is exercised with `renderToStaticMarkup` (SSR):
+ * Radix Popover/BottomSheet content is not rendered when `open={false}`, so
+ * only the trigger and top-level structure are visible from there.
+ *
+ * `PreferencesMenuContent` is a plain component, so where a test needs a real
+ * interaction — clicking a row and asserting where it navigates — it mounts
+ * the content directly with `@testing-library/react` (happy-dom, see
+ * `test-setup.ts`) instead. Item ORDER still can't be asserted through the
+ * closed popover; membership and behaviour can.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -88,8 +93,12 @@ mock.module("@/generated/api/@tanstack/react-query.gen", () => ({
   }),
 }));
 
+const navigations: string[] = [];
+
 mock.module("react-router", () => ({
-  useNavigate: () => () => {},
+  useNavigate: () => (to: string) => {
+    navigations.push(to);
+  },
 }));
 
 // PreferencesMenuContent (rendered directly below) reaches through the
@@ -146,7 +155,10 @@ beforeEach(() => {
     lastName: "",
   };
   billingRef.data = undefined;
+  navigations.length = 0;
 });
+
+afterEach(cleanup);
 
 describe("PreferencesMenu", () => {
   test("renders nothing when not logged in", () => {
@@ -193,6 +205,28 @@ describe("PreferencesMenuContent", () => {
     );
     expect(html).toContain("Appearance");
     expect(html).not.toContain("theme-toggle");
+  });
+
+  /**
+   * Reachability of the act ledger.
+   *
+   * Guardrails (checkpoints · agent scopes · the ledger) had no entry in any
+   * PERSISTENT desktop navigation: not the assistant rail, not the settings
+   * sidebar, not the command palette — only contextual cards on surfaces you
+   * had to already be on. The ledger is exactly what a user goes looking for
+   * when they suspect Cue did something they did not sanction, and at that
+   * moment they are not standing on an agent card. This menu is the rail's
+   * persistent footer, so the entry has to survive here.
+   */
+  test("Guardrails — and so the act ledger — is reachable from the menu", () => {
+    render(createElement(PreferencesMenuContent, contentProps));
+    fireEvent.click(screen.getByText("Guardrails"));
+    expect(navigations).toContain("/assistant/guardrails");
+  });
+
+  test("exactly ONE Guardrails entry — a second is duplicate nav", () => {
+    render(createElement(PreferencesMenuContent, contentProps));
+    expect(screen.getAllByText("Guardrails")).toHaveLength(1);
   });
 
   test("a narrow MOUSE window keeps the segment", () => {

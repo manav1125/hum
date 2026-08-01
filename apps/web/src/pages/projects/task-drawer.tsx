@@ -37,11 +37,13 @@ import {
   readAssessment,
   type AssessmentFix,
 } from "@/pages/hq/assessment-kit";
+import { ProvenanceTrace } from "@/pages/hq/provenance-trace";
 import {
   ReassignMenu,
   ReassignTeachToast,
   type ReassignTarget,
 } from "@/pages/hq/reassign-menu";
+import { describeOrigin, describeProvenance } from "@/pages/hq/work-provenance";
 import { routes } from "@/utils/routes";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -204,6 +206,11 @@ export function TaskDrawer({
       { onSuccess: onClose },
     );
 
+  // The item's project in WORDS — what the ✨ provenance line names as the
+  // destination Cue chose. Null when the item is unfiled or the project has
+  // not loaded; the line then says less rather than showing an id.
+  const filedTo = projects.find((p) => p.id === item.projectId)?.title ?? null;
+
   const filedToRef = useRef<HTMLDivElement>(null);
   const scrollToFiledTo = () =>
     filedToRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -256,6 +263,15 @@ export function TaskDrawer({
   }, [item.id, item.status, held]);
 
   const source = parseSource(item.sourceContext);
+  // The origin in the user's words. Prefer the record's own `sourceType`; fall
+  // back to the token the triage snapshot stamped, run through the SAME
+  // vocabulary so neither can reach the user raw. Null when neither names a
+  // source — the Source section then says nothing about origin at all.
+  const originSentence =
+    describeOrigin(item) ??
+    (source.origin ? describeOrigin({ sourceType: source.origin }) : null);
+  // Nothing known → the header carries no provenance pill and no row for one.
+  const hasProvenance = describeProvenance(item).lines.length > 0;
   const cycleTime = events.data?.cycleTimeMs ?? null;
   const trail = events.data?.events ?? [];
   const running = item.status === "running";
@@ -393,6 +409,22 @@ export function TaskDrawer({
           titleSize={15.5}
           chip={statusChip(item.status)}
           live={running}
+          // The full account of how this item got here and what Cue decided
+          // about it — one click from the drawer header. Gated at the call
+          // site: an element that renders null is still truthy, so the card
+          // would otherwise reserve a row for a pill that never appears.
+          provenance={
+            !hasProvenance ? null : (
+              <ProvenanceTrace
+                item={item}
+                projectTitle={filedTo}
+                onOpenConversation={(cid) => {
+                  onClose();
+                  navigate(routes.conversation(cid));
+                }}
+              />
+            )
+          }
         />
 
         {/* Meta row: due + assignee + last activity */}
@@ -531,7 +563,9 @@ export function TaskDrawer({
             <DrawerAction
               glyph="✓"
               glyphColor={C.green}
-              label={doneElsewhere.isPending ? "Marking done…" : "Done elsewhere"}
+              label={
+                doneElsewhere.isPending ? "Marking done…" : "Done elsewhere"
+              }
               caption="complete, not Cue's work"
               kbd="D"
               disabled={doneElsewhere.isPending}
@@ -572,48 +606,48 @@ export function TaskDrawer({
             move is confirmed as a lesson (ReassignTeachToast). The F action
             above scrolls here. */}
         <div ref={filedToRef}>
-        <Section label="Filed to">
-          {taught ? (
-            <div style={{ marginBottom: 10 }}>
-              <ReassignTeachToast
-                destinationTitle={taught.to}
-                onDismiss={() => setTaught(null)}
+          <Section label="Filed to">
+            {taught ? (
+              <div style={{ marginBottom: 10 }}>
+                <ReassignTeachToast
+                  destinationTitle={taught.to}
+                  onDismiss={() => setTaught(null)}
+                />
+              </div>
+            ) : null}
+            {reassignTargets.length <= 1 ? (
+              <div
+                style={{
+                  padding: "9px 12px",
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 11,
+                  background: C.sunken,
+                  fontSize: 11,
+                  color: C.t3,
+                }}
+              >
+                No other projects to move to.
+              </div>
+            ) : (
+              <ReassignMenu
+                targets={reassignTargets}
+                currentId={currentProjectId}
+                busy={patch.isPending}
+                label="Filed to"
+                onPick={moveTo}
               />
-            </div>
-          ) : null}
-          {reassignTargets.length <= 1 ? (
+            )}
             <div
               style={{
-                padding: "9px 12px",
-                border: `1px solid ${C.line}`,
-                borderRadius: 11,
-                background: C.sunken,
-                fontSize: 11,
+                fontSize: 10.5,
                 color: C.t3,
+                marginTop: 8,
+                lineHeight: 1.5,
               }}
             >
-              No other projects to move to.
+              Moving teaches Cue — same rule as re-filing inbound on HQ.
             </div>
-          ) : (
-            <ReassignMenu
-              targets={reassignTargets}
-              currentId={currentProjectId}
-              busy={patch.isPending}
-              label="Filed to"
-              onPick={moveTo}
-            />
-          )}
-          <div
-            style={{
-              fontSize: 10.5,
-              color: C.t3,
-              marginTop: 8,
-              lineHeight: 1.5,
-            }}
-          >
-            Moving teaches Cue — same rule as re-filing inbound on HQ.
-          </div>
-        </Section>
+          </Section>
         </div>
 
         {/* Per-task context */}
@@ -679,19 +713,27 @@ export function TaskDrawer({
           </div>
         </Section>
 
-        {/* Source */}
-        {source.origin || source.snippet ? (
+        {/* Source. The origin is stated in WORDS — this section used to render
+            `from {item.sourceType}` and `from {source.origin}`, i.e. the raw
+            stored token ("gmail_watcher"), which is exactly the schema leak
+            work-vocabulary/work-provenance exist to prevent. When neither the
+            record nor the snapshot names a source, the section is absent
+            rather than guessing one. */}
+        {originSentence || source.snippet ? (
           <Section label="Source">
-            {source.origin ? (
+            {originSentence ? (
               <div
                 style={{
-                  fontFamily: mono,
-                  fontSize: 11.5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12.5,
                   color: C.t2,
                   marginBottom: 6,
                 }}
               >
-                from {source.origin}
+                <span aria-hidden>{originSentence.glyph}</span>
+                {originSentence.text}
               </div>
             ) : null}
             {source.snippet ? (
@@ -711,12 +753,6 @@ export function TaskDrawer({
                 {source.snippet}
               </div>
             ) : null}
-          </Section>
-        ) : item.sourceType ? (
-          <Section label="Source">
-            <div style={{ fontFamily: mono, fontSize: 11.5, color: C.t2 }}>
-              from {item.sourceType}
-            </div>
           </Section>
         ) : null}
 

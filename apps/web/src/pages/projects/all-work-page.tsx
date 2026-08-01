@@ -6,6 +6,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 
 import { useActiveAssistantId } from "@/assistant/use-active-assistant-id";
 import { ActivityRow } from "@/domains/activity/activity-row";
@@ -21,8 +22,11 @@ import { useMobileLayout } from "@/hooks/use-is-mobile";
 import { dismissLeave } from "@/mobile-v3/undo-toast";
 import { fullPatchBody, isAutoFiled } from "@/mobile-v3/work-kit";
 import { AssessmentSignal, holdReason } from "@/pages/hq/assessment-kit";
+import { ProvenanceTrace } from "@/pages/hq/provenance-trace";
+import { describeProvenance } from "@/pages/hq/work-provenance";
 import { useHqWorkItems, type HqWorkItem } from "@/pages/hq/use-missions";
 import { useAddTasksStore } from "@/stores/add-tasks-store";
+import { routes } from "@/utils/routes";
 
 import {
   AutoFiledPill,
@@ -75,6 +79,7 @@ export function AllWorkPage() {
 
 function AllWorkPageDesktop() {
   const assistantId = useActiveAssistantId();
+  const navigate = useNavigate();
   useActivitySync(assistantId, true);
   const [grouping, setGrouping] = useState<Grouping>("status");
   // Stable reference time for due-bucketing (purity rule: no Date.now() in render).
@@ -231,34 +236,34 @@ function AllWorkPageDesktop() {
                 ⌘⇧A
               </span>
             </button>
-          <div
-            role="radiogroup"
-            aria-label="Group by"
-            data-coach="work-view"
-            style={{ display: "inline-flex", gap: 4 }}
-          >
-            {(["status", "project", "due"] as const).map((g) => (
-              <button
-                key={g}
-                type="button"
-                role="radio"
-                aria-checked={grouping === g}
-                onClick={() => setGrouping(g)}
-                style={{
-                  fontFamily: mono,
-                  fontSize: 11,
-                  padding: "4px 10px",
-                  borderRadius: 7,
-                  border: `1px solid ${grouping === g ? C.ink : C.line2}`,
-                  background: grouping === g ? C.ink : "transparent",
-                  color: grouping === g ? C.bg : C.t3,
-                  cursor: "pointer",
-                }}
-              >
-                {g}
-              </button>
-            ))}
-          </div>
+            <div
+              role="radiogroup"
+              aria-label="Group by"
+              data-coach="work-view"
+              style={{ display: "inline-flex", gap: 4 }}
+            >
+              {(["status", "project", "due"] as const).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  role="radio"
+                  aria-checked={grouping === g}
+                  onClick={() => setGrouping(g)}
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 11,
+                    padding: "4px 10px",
+                    borderRadius: 7,
+                    border: `1px solid ${grouping === g ? C.ink : C.line2}`,
+                    background: grouping === g ? C.ink : "transparent",
+                    color: grouping === g ? C.bg : C.t3,
+                    cursor: "pointer",
+                  }}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -291,6 +296,10 @@ function AllWorkPageDesktop() {
                 const full = fullById.get(item.id) ?? null;
                 const autoFiled =
                   full != null && item.projectId != null && isAutoFiled(full);
+                // Does this record actually know anything about where it came
+                // from? Nothing known → no pill, no empty line, no guess.
+                const hasProvenance =
+                  full != null && describeProvenance(full).lines.length > 0;
                 const refiling = refileId === item.id;
                 return (
                   <div
@@ -313,6 +322,30 @@ function AllWorkPageDesktop() {
                       // A held task explains itself in the assessor's own
                       // words; every other row keeps its usual second line.
                       subtitle={holdReason(full)}
+                      // Why is this here, and what did Cue do to it — one
+                      // click, in words. The emptiness test runs at the call
+                      // site rather than being left to the component: an
+                      // element that renders null is still truthy, so passing
+                      // one unconditionally would suppress the legacy chip
+                      // AND leave an empty line behind. An item with nothing
+                      // to say falls through to `provenance` below, and if
+                      // that is null too the row shows neither — which is the
+                      // point.
+                      provenanceNode={
+                        hasProvenance ? (
+                          <ProvenanceTrace
+                            item={full}
+                            projectTitle={
+                              item.projectId
+                                ? (plainTitle.get(item.projectId) ?? null)
+                                : null
+                            }
+                            onOpenConversation={(cid) =>
+                              navigate(routes.conversation(cid))
+                            }
+                          />
+                        ) : null
+                      }
                       provenance={item.provenance}
                       meta={
                         // The ✨ pill already names the destination.

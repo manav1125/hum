@@ -205,6 +205,7 @@ export function ItemCard({
   tag,
   chip,
   chipNode,
+  provenance,
   action,
   note,
   live = false,
@@ -228,6 +229,12 @@ export function ItemCard({
    * assessment parked because it needs a person.
    */
   chipNode?: ReactNode;
+  /**
+   * Slot ③b — the `<ProvenanceTrace/>` pill ("why is this here"), beside the
+   * mission tag. Collapses when the item has no provenance to state, which is
+   * the common case for anything the user typed in without a source.
+   */
+  provenance?: ReactNode;
   /** Slot ⑤ — ONE primary action; collapses when absent. */
   action?: ReactNode;
   /** Progress/evidence line under the title row (live notes, "Ops wrote it"). */
@@ -324,7 +331,20 @@ export function ItemCard({
           </span>
         ) : null}
       </div>
-      {tag ? <div style={{ marginTop: 7 }}>{tag}</div> : null}
+      {tag || provenance ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 6,
+            marginTop: 7,
+          }}
+        >
+          {tag}
+          {provenance}
+        </div>
+      ) : null}
       {note ? (
         <div
           style={{

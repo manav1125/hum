@@ -25,6 +25,8 @@ import {
   holdsForYou,
 } from "@/pages/hq/assessment-kit";
 import { HqStyle } from "@/pages/hq/hq-kit";
+import { ProvenanceTrace } from "@/pages/hq/provenance-trace";
+import { describeProvenance } from "@/pages/hq/work-provenance";
 import type { HqWorkItem } from "@/pages/hq/use-missions";
 import { routes } from "@/utils/routes";
 
@@ -61,12 +63,16 @@ const LIVE_STATUSES = new Set([
 function BoardRow({
   item,
   now,
+  projectTitle,
   leaving = false,
   onOpen,
   onDismiss,
 }: {
   item: BoardItem;
   now: number;
+  /** The board's own project, in words — the filing destination the ✨ line
+   *  names. Never an id. */
+  projectTitle?: string | null;
   /** Mid-collapse (the 150ms dismiss leave). */
   leaving?: boolean;
   onOpen: () => void;
@@ -100,6 +106,9 @@ function BoardRow({
   // Progress/evidence line: the runner's live note while running; the reason
   // it is holding when the assessment parked it; the non-default assignee
   // otherwise.
+  // Nothing known about where this came from → no pill and no row for one.
+  const hasProvenance = describeProvenance(item).lines.length > 0;
+
   const note = running
     ? {
         text: item.lastProgressNote ?? "Cue is working on this…",
@@ -123,6 +132,16 @@ function BoardRow({
         title={item.title}
         chip={done ? null : chip}
         chipNode={hold ? <AssessmentSignal item={item} /> : null}
+        // "Why is this here, and what did Cue do to it" — including whether
+        // Cue filed it onto THIS board itself, and how sure it was. The
+        // emptiness test is here, not inside the card: an element that renders
+        // null is still truthy, so an unconditional pill would leave the
+        // card's provenance row occupying space for nothing.
+        provenance={
+          hasProvenance ? (
+            <ProvenanceTrace item={item} projectTitle={projectTitle} />
+          ) : null
+        }
         note={done ? null : note}
         live={running}
         emphasis={
@@ -551,6 +570,7 @@ function ProjectDetailPageDesktop() {
                         key={it.id}
                         item={it}
                         now={now}
+                        projectTitle={project?.title ?? null}
                         leaving={leavingId === it.id}
                         onOpen={() => setOpenTaskId(it.id)}
                         onDismiss={() =>

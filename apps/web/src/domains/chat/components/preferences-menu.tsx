@@ -8,6 +8,7 @@ import {
   MessageSquareText,
   Settings as SettingsIcon,
   Shield,
+  ShieldCheck,
   SlidersHorizontal,
   SunMoon,
 } from "lucide-react";
@@ -222,6 +223,35 @@ export function PreferencesMenuContent({
           }}
         />
       ) : null}
+
+      {/*
+        Guardrails — checkpoints, agent scopes and the ACT LEDGER.
+        Until now it had no entry in ANY persistent desktop navigation: the
+        rail is deliberately surface-only (see assistant-side-menu's docblock),
+        the Settings sidebar never listed it (it is not a /settings route), and
+        the command palette does not carry it. It was reachable on desktop only
+        from contextual cards — the automations board, "make it a rule", an
+        agent's Adjust-scope — i.e. only if you already had a reason to be
+        there. That fails the trust principle exactly where it matters most:
+        the ledger is the surface a user goes looking for when they suspect Cue
+        did something they did not sanction, and at that moment they are not on
+        an agent card.
+
+        It lands here rather than as an eighth rail row because this menu is
+        the desktop counterpart of mobile's You screen, which already carries
+        Guardrails + the ledger — one entry, in the matching place, instead of
+        a second landing row of the kind this rail has had to clean up before.
+        The desktop Guardrails page renders the ledger inline, so this single
+        entry reaches it.
+      */}
+      <PanelItem
+        icon={ShieldCheck}
+        label="Guardrails"
+        onSelect={() => {
+          onClose();
+          navigate(routes.guardrails);
+        }}
+      />
 
       <PanelItem
         icon={ChartColumn}
