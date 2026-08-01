@@ -245,6 +245,52 @@ class SyncTokenExpiredError extends Error {
   }
 }
 
+/**
+ * Page size and hard page cap for the one-time full sync that establishes a
+ * sync token. Measured against a real account: 20 pages at 2500, ~103s. The cap
+ * is well above that so a genuinely enormous calendar still completes, and it
+ * exists only so a pagination bug cannot spin forever — the watcher job's own
+ * timeout is 15 minutes, which this fits inside comfortably.
+ */
+const BOOTSTRAP_PAGE_SIZE = 2500;
+const BOOTSTRAP_MAX_PAGES = 60;
+
+/**
+ * Walk a full event list to its last page and return the `nextSyncToken`.
+ *
+ * The query shape here is load-bearing and counter-intuitive. Google suppresses
+ * `nextSyncToken` entirely when a request carries `timeMin` (or `timeMax`, `q`,
+ * `updatedMin`, `orderBy`) — a filtered view cannot seed an incremental sync, so
+ * no token is issued. The previous implementation passed `timeMin: now` to keep
+ * the sync narrow, which meant the token could never arrive: it paginated until
+ * it ran out and then threw "Calendar API did not return a syncToken" on every
+ * poll, forever. Verified on the live API — with `timeMin` the token never
+ * appears; without it, page 20 carries one.
+ *
+ * `singleEvents` is left off for the same reason of scale: expanding recurring
+ * events into individual instances made the walk effectively unbounded, since a
+ * single daily recurrence generates future instances without end. Expansion is
+ * a reading concern, not a sync concern.
+ */
+async function fullSyncToken(
+  connection: Awaited<ReturnType<typeof resolveOAuthConnection>>,
+): Promise<string> {
+  let pageToken: string | undefined;
+  for (let page = 0; page < BOOTSTRAP_MAX_PAGES; page++) {
+    const result = await listEvents(connection, "primary", {
+      maxResults: BOOTSTRAP_PAGE_SIZE,
+      singleEvents: false,
+      pageToken,
+    });
+    if (result.nextSyncToken) return result.nextSyncToken;
+    if (!result.nextPageToken) break;
+    pageToken = result.nextPageToken;
+  }
+  throw new Error(
+    `Calendar API did not return a syncToken within ${BOOTSTRAP_MAX_PAGES} pages`,
+  );
+}
+
 export const googleCalendarProvider: WatcherProvider = {
   id: "google-calendar",
   displayName: "Google Calendar",
@@ -252,29 +298,7 @@ export const googleCalendarProvider: WatcherProvider = {
 
   async getInitialWatermark(credentialService: string): Promise<string> {
     const connection = await resolveOAuthConnection(credentialService);
-
-    // Do a full sync with a narrow window to get the initial syncToken.
-    // The API may paginate even for small result sets, so follow nextPageToken
-    // until we reach the final page that carries the nextSyncToken.
-    const now = new Date().toISOString();
-    let pageToken: string | undefined;
-    let syncToken: string | undefined;
-
-    do {
-      const result = await listEvents(connection, "primary", {
-        timeMin: now,
-        maxResults: 250,
-        singleEvents: true,
-        pageToken,
-      });
-      syncToken = result.nextSyncToken;
-      pageToken = result.nextPageToken;
-    } while (pageToken && !syncToken);
-
-    if (!syncToken) {
-      throw new Error("Calendar API did not return a syncToken");
-    }
-    return syncToken;
+    return fullSyncToken(connection);
   },
 
   async fetchNew(
@@ -286,23 +310,10 @@ export const googleCalendarProvider: WatcherProvider = {
     const connection = await resolveOAuthConnection(credentialService);
 
     if (!watermark) {
-      // No watermark — paginate through to get the initial syncToken, return no items
-      const now = new Date().toISOString();
-      let pageToken: string | undefined;
-      let syncToken: string | undefined;
-
-      do {
-        const result = await listEvents(connection, "primary", {
-          timeMin: now,
-          maxResults: 250,
-          singleEvents: true,
-          pageToken,
-        });
-        syncToken = result.nextSyncToken;
-        pageToken = result.nextPageToken;
-      } while (pageToken && !syncToken);
-
-      return { items: [], watermark: syncToken ?? "" };
+      // No watermark yet — establish one and report nothing this round. The
+      // token marks "from here", so the first poll after it deliberately
+      // returns no items rather than back-filling the calendar's history.
+      return { items: [], watermark: await fullSyncToken(connection) };
     }
 
     try {
