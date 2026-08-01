@@ -40,6 +40,7 @@ import { LiveDot } from "@/components/live-dot";
 import { useHomeStateQuery } from "@/domains/home/hooks/use-home-state-query";
 import {
   actsSummaryGetOptions,
+  arrivalsSummaryGetOptions,
   usageTotalsGetOptions,
 } from "@/generated/daemon/@tanstack/react-query.gen";
 import { useActivitySync } from "@/hooks/use-activity-sync";
@@ -2014,16 +2015,30 @@ export function HqPage() {
     [actsSummary.data],
   );
 
-  const arrivals: ArrivalsSummary = useMemo(() => {
-    const inbound = cameIn.filter((i) => i.sourceType?.startsWith("watcher"));
-    return {
-      total: inbound.length,
-      filed: inbound.filter((i) => i.autoFiledBy != null).length,
-      kept: inbound.filter(
-        (i) => i.autoFiledBy == null && i.autoFileConfidence != null,
-      ).length,
-    };
-  }, [cameIn]);
+  /**
+   * The arrivals census, read from the daemon rather than inferred.
+   *
+   * The first version of this computed `filed` from `autoFiledBy`, which in
+   * this codebase means "assigned to a project" — those items are still sitting
+   * in the owner's lane. So the digest claimed Cue had *handled* things it had
+   * merely categorised, which is precisely the overstatement the digest exists
+   * to avoid. `filed` now means recorded and out of your way, and `kept` means
+   * Cue looked and decided you need to see it. Both are counted by the gate
+   * that made the decision.
+   */
+  const arrivalsQuery = useQuery({
+    ...arrivalsSummaryGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const arrivals: ArrivalsSummary = useMemo(
+    () => ({
+      total: arrivalsQuery.data?.arrived ?? 0,
+      filed: arrivalsQuery.data?.filed ?? 0,
+      kept: arrivalsQuery.data?.kept ?? 0,
+    }),
+    [arrivalsQuery.data],
+  );
   const workspaceMode = profile?.workspaceMode ?? "assist";
 
   // The deck's live surfaces (pulse ring, headline, mission list, drift
