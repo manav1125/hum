@@ -208,3 +208,109 @@ Two caveats, both real:
 Both watchers had been disabled by the circuit breaker under the previous image
 after five consecutive failures. That safety behaviour worked exactly as
 designed; I re-enabled them by hand to test the fix.
+
+---
+
+# Second night — 2026-08-02
+
+The instruction after reviewing the first night's work was blunt and fair: *"the
+point of the designs was to have them all implemented not half done."* Two
+things had gone wrong, and they are worth naming precisely because they are
+different failures.
+
+## What "half done" actually meant
+
+**HQ was a retrofit, not a build.** I had added four modules to the existing
+deck and reported the step complete. K1 specifies nine rows in a fixed reading
+order, and six of its modules had no implementation at all — the trust chip,
+the lens switch, the day rail, Life by horizon, agents-now, and waiting-on-
+people. A layout that contains some of the specified modules is not the
+specified layout, and calling it done was the error.
+
+The deck now follows K1's order exactly, marked in the source so it cannot
+drift back:
+
+```
+0 trust chip · 1 capture bar · 2 day rail · 3 missions BESIDE Life
+4 delivered · 5 needs you · 6 census · 7 came in / agents / waiting · 8 pulse
+```
+
+**Vocabulary was decided and then not adopted.** `work-vocabulary.ts` defined
+all eight verbs with their keys, hints and reversibility — and had zero
+importers. The review page had two hand-rolled buttons and no keyboard at all.
+Deciding a vocabulary and not adopting it is worse than not deciding one,
+because it reads as done in every review of the file.
+
+## The rule the K1 modules are built to
+
+Every module renders, always. Where the data does not exist yet it states a
+*specific reason* — "Cue can't see your calendar yet" — never silence and never
+a zero.
+
+This is enforced in the type rather than left to the caller: the modules take an
+`Unavailable` carrying a required sentence, so a caller cannot make a module
+vanish without saying why. A blank module is indistinguishable from a calm day,
+and a calm day is a claim we are usually not entitled to make.
+
+The calendar route was built the same way on the daemon side: when a calendar is
+not connected, `bookedMinutes` and `unbookedMinutes` come back **null, never
+zero**, so no client can render "9h unbooked" off an absent calendar without
+first handling the null. The honesty is structural, not a convention.
+
+## The thing that was actually wrong
+
+The sharpest note was this: *"it's now pulling 101 things from email and
+assuming they are all relevant — the whole point of your chief of staff is to
+filter the crap."*
+
+That was correct, and worse than it looked. Tracing the full path from "Gmail
+watcher polls" to "work item exists" found **no relevance filter of any kind**:
+
+- the only test applied to an arriving message is `labelIds.includes("INBOX")`
+- `watcher-intake.ts` then creates a work item unconditionally — no predicate,
+  no score check, no `continue`
+- every scoring mechanism that exists (triage urgency, auto-file confidence,
+  pre-run assessment) runs *after* the row is committed, and only ranks, files
+  or gates execution. None of them can stop an arrival from becoming something
+  the user must look at.
+
+So Cue was forwarding the pile and calling it surfacing.
+
+Two separate fixes follow, and it is worth keeping them apart:
+
+- **Presentation** — 40 Monday arrivals must not become 40 cards. The arrivals
+  digest is now one row that says what Cue *did* with the pile, and the only
+  number framed as needing attention is the one Cue was genuinely unsure about.
+- **Substance** — Cue must actually decide. That work is in progress: a
+  relevance gate at the arrival→work-item boundary, deterministic header rules
+  before any model call, a safety floor that can never file away mail from a
+  known contact or a thread the user is in, and reversal recorded as a training
+  signal. Fails open: a model outage surfaces the item rather than swallowing it.
+
+**A correction to my own work.** The arrivals digest I shipped was dishonest. It
+read `filed` from `autoFiledBy`, which in this codebase means "assigned to a
+project" — those items are still sitting in the user's lane. The digest was
+therefore claiming Cue had handled things it had merely categorised. `filed` has
+to mean *handled and out of your way*, and that distinction did not exist in the
+schema until the relevance work introduced it.
+
+## Undo, and why it is session-wide
+
+§4 promises undo "for the whole session", and that promise is what makes the
+other seven verbs safe to press. A user who suspects Archive might be permanent
+will read every row before acting — which is precisely the inbox behaviour the
+deck exists to end.
+
+So the stack is module-level and survives navigation: archive on the review
+pager, walk to HQ, press ⌘Z, and it works. It is deliberately **not** persisted
+across reloads, because an entry closes over a live mutation function and a
+restored stack would offer buttons that resolve to nothing. A reload is a
+legible boundary; a silently dead button is not.
+
+## One bug found on the way
+
+`listWorkItems` chained a `.where()` per filter. Drizzle's `.where()` *assigns*
+rather than appends, so only the last one survived — filtering by status and
+project together had been silently returning the whole project regardless of
+status. Found while adding the Life lens, which would have been thrown away by
+the same bug.
