@@ -120,6 +120,14 @@ export const workItems = sqliteTable("work_items", {
   // = never chased, which reads differently from "chased a while ago".
   waitingOn: text("waiting_on"),
   lastChasedAt: integer("last_chased_at"),
+  // 318-arrivals. The `arrivals` row this item was surfaced from — set only
+  // for items that came through the arrival relevance gate (watcher hits), so
+  // a card can honestly say "Cue looked at this and kept it, because …" and
+  // link to the filed siblings. Null on every item created any other way
+  // (quick-add, chat, mission cycle) and on every pre-318 row. Deliberately
+  // NOT auto_filed_by/auto_file_confidence: those mean "assigned to a
+  // project", a different axis entirely.
+  arrivalId: text("arrival_id"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

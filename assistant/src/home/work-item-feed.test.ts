@@ -65,6 +65,7 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
     horizon: null,
     waitingOn: null,
     lastChasedAt: null,
+    arrivalId: null,
     createdAt: Date.parse("2026-06-20T09:00:00Z"),
     updatedAt: Date.parse("2026-06-20T09:00:00Z"),
     ...overrides,

@@ -34,10 +34,36 @@ const AutoProvisionConfigSchema = z
   })
   .describe("Auto-provisioning of watchers when a connector is connected");
 
+/**
+ * The relevance gate at the arrival → work-item boundary
+ * (`arrivals/arrival-gate.ts`): the thing that decides whether a watcher hit
+ * becomes something the owner must look at, or is filed away — recorded,
+ * browsable and reversible, but out of the Came-in lane.
+ */
+const RelevanceGateConfigSchema = z
+  .object({
+    enabled: z
+      .boolean({ error: "watchers.relevanceGate.enabled must be a boolean" })
+      .default(true)
+      .describe(
+        "Whether arrivals are filtered at all. Off = the pre-gate behaviour: every watcher hit becomes a work item in the Came-in lane. Arrivals are still recorded either way, so turning this off never loses the record of what came in — it only stops anything being filed.",
+      ),
+    useModel: z
+      .boolean({ error: "watchers.relevanceGate.useModel must be a boolean" })
+      .default(true)
+      .describe(
+        "Whether the ambiguous middle (mail with no bulk headers and no safety-floor hit) is sent to a flash-tier judge. Off = deterministic header rules only; everything the rules do not catch is surfaced. The safety floor applies in both modes.",
+      ),
+  })
+  .describe("Relevance filtering of watcher arrivals before they become work");
+
 export const WatchersConfigSchema = z
   .object({
     autoProvision: AutoProvisionConfigSchema.default(
       AutoProvisionConfigSchema.parse({}),
+    ),
+    relevanceGate: RelevanceGateConfigSchema.default(
+      RelevanceGateConfigSchema.parse({}),
     ),
   })
   .describe("Watcher (standing poller) configuration");

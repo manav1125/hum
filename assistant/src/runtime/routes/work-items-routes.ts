@@ -260,6 +260,19 @@ export const workItemSchema = z.object({
         "silence has outlasted the chase window (5 days). null = the item is " +
         "not waiting on a person, or it is already finished.",
     ),
+  // --- Arrival provenance (318) -------------------------------------------
+  arrivalId: z
+    .string()
+    .nullable()
+    .describe(
+      "The arrivals.id this item was surfaced from — set only for watcher " +
+        "hits that went through the relevance gate, i.e. things Cue looked at " +
+        "and decided you need to see. Fetch GET arrivals/:id for the reason. " +
+        "null on everything captured any other way (quick-add, chat, voice, " +
+        "mission cycles) and on every item that predates the gate. This is " +
+        "NOT autoFiledBy/autoFileConfidence, which mean 'assigned to a " +
+        "project' — a different axis entirely.",
+    ),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });

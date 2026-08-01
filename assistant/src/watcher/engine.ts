@@ -237,9 +237,10 @@ export async function runWatchersOnce(
     if (pendingEvents.length === 0) continue;
 
     // ── Came-in intake (WS-F) ─────────────────────────────────────
-    // 'came_in' watchers file each new event into the Came-in lane (via
-    // playbooks, or as a parked work item). 'agent' watchers keep the legacy
-    // background-LLM path below.
+    // 'came_in' watchers put each new event through the relevance gate: a
+    // playbook claims it, it surfaces as a parked work item, or it is filed
+    // away (recorded and reversible, but out of the lane). 'agent' watchers
+    // keep the legacy background-LLM path below.
     if (watcher.intakeMode === "came_in") {
       const dispositions = await fileWatcherEventsToCameIn(
         watcher,
@@ -249,6 +250,14 @@ export async function runWatchersOnce(
         const disposition = dispositions.get(event.id);
         if (disposition === "error") {
           updateEventDisposition(event.id, "error", "Came-in filing failed");
+        } else if (disposition === "filed") {
+          // 'ignore' is the raw-event disposition for "did not become work".
+          // The reason the owner reads lives on the `arrivals` row, not here.
+          updateEventDisposition(
+            event.id,
+            "ignore",
+            "Filed away by the relevance gate",
+          );
         } else {
           updateEventDisposition(
             event.id,

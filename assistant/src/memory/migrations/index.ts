@@ -310,6 +310,7 @@ export { migrateWorkItemAssessment } from "./314-work-item-assessment.js";
 export { migrateWorkItemOriginConversation } from "./315-work-item-origin-conversation.js";
 export { migrateAutonomyLedger } from "./316-autonomy-ledger.js";
 export { migrateWorkItemLifeLensAndWaiting } from "./317-work-item-life-lens-and-waiting.js";
+export { migrateArrivals } from "./318-arrivals.js";
 export {
   MIGRATION_REGISTRY,
   type MigrationRegistryEntry,

@@ -29,6 +29,26 @@ mock.module("../../missions/mission-store.js", () => ({
     workspaceMode: dial,
     updatedAt: null,
   }),
+  // The relevance gate's safety floor reads active missions by name. This
+  // file mocks the whole module, so a new import from it must be stubbed here
+  // or the intake import fails at load time.
+  listMissions: () => [],
+}));
+
+// The arrivals ledger is a leaf store like the others: every hit is recorded
+// here so the intake hand-off can be asserted without a database.
+const recordedArrivals: Array<Record<string, unknown>> = [];
+mock.module("../../arrivals/arrival-store.js", () => ({
+  recordArrival: (input: Record<string, unknown>) => {
+    recordedArrivals.push(input);
+    return {
+      ...input,
+      id: `arr-${recordedArrivals.length}`,
+      sourceContext: input.sourceContext ?? null,
+      workItemId: null,
+    };
+  },
+  attachWorkItemToArrival: () => {},
 }));
 
 mock.module("../playbook-store.js", () => ({
@@ -63,6 +83,14 @@ const { evaluatePlaybooksForEvent, selectPlaybookForEvent } =
 const { fileWatcherEventsToCameIn, watcherChannel } =
   await import("../../watcher/watcher-intake.js");
 
+/**
+ * An empty safety floor. The floor's real inputs (contacts, missions,
+ * projects) are exercised against a real database in
+ * watcher/__tests__/watcher-intake-relevance.test.ts; here they are injected
+ * empty so this file stays about the playbook → intake hand-off.
+ */
+const NO_FLOOR = { lookupContact: () => null, namedWork: [] };
+
 function pb(overrides: Partial<PlaybookRecord>): PlaybookRecord {
   return {
     id: "p1",
@@ -88,6 +116,7 @@ beforeEach(() => {
   firedIds.length = 0;
   createWorkItemCalls.length = 0;
   triageCalls.length = 0;
+  recordedArrivals.length = 0;
 });
 
 describe("selectPlaybookForEvent (trigger→action matching)", () => {
@@ -220,7 +249,9 @@ describe("watcher intake → Came-in", () => {
 
   test("no playbook match → parked Came-in work item", async () => {
     matchable = []; // nothing matches → falls through to came-in
-    const d = await fileWatcherEventsToCameIn(makeWatcher(), [makeEvent("a")]);
+    const d = await fileWatcherEventsToCameIn(makeWatcher(), [makeEvent("a")], {
+      floorContext: NO_FLOOR,
+    });
     expect(d.get("a")).toBe("came_in");
     expect(createWorkItemCalls).toHaveLength(1);
     expect(createWorkItemCalls[0]?.autoRunEligibility).toBe("parked");
@@ -232,8 +263,14 @@ describe("watcher intake → Came-in", () => {
   test("matching playbook handles the event (no bare Came-in item)", async () => {
     // A '*'-trigger playbook fires for every event via the real runtime.
     matchable = [pb({ triggerText: "*", autonomyLevel: "draft" })];
-    const d = await fileWatcherEventsToCameIn(makeWatcher(), [makeEvent("b")]);
+    const d = await fileWatcherEventsToCameIn(makeWatcher(), [makeEvent("b")], {
+      floorContext: NO_FLOOR,
+    });
     expect(d.get("b")).toBe("playbook");
+    // Even a playbook-claimed hit is recorded, so the arrived/filed/kept
+    // census stays a census rather than an estimate.
+    expect(recordedArrivals).toHaveLength(1);
+    expect(recordedArrivals[0]?.decidedBy).toBe("playbook");
     // Exactly one work item — created by the playbook, not a second came-in one.
     expect(createWorkItemCalls).toHaveLength(1);
     expect(firedIds).toEqual(["p1"]);
@@ -241,12 +278,14 @@ describe("watcher intake → Came-in", () => {
 
   test("each deduped event processed exactly once", async () => {
     matchable = [];
-    const d = await fileWatcherEventsToCameIn(makeWatcher(), [
-      makeEvent("a"),
-      makeEvent("b"),
-      makeEvent("c"),
-    ]);
+    const d = await fileWatcherEventsToCameIn(
+      makeWatcher(),
+      [makeEvent("a"), makeEvent("b"), makeEvent("c")],
+      { floorContext: NO_FLOOR },
+    );
     expect(createWorkItemCalls).toHaveLength(3);
     expect([...d.values()]).toEqual(["came_in", "came_in", "came_in"]);
+    // Nothing a watcher saw is dropped: one arrival row per event.
+    expect(recordedArrivals).toHaveLength(3);
   });
 });

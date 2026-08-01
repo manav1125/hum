@@ -182,6 +182,19 @@ export interface WorkItem {
    * nullable rather than seeded at creation.
    */
   lastChasedAt: number | null;
+  /**
+   * The `arrivals` row this item was surfaced from (318). Set only for items
+   * that came through the arrival relevance gate — a watcher hit that Cue
+   * looked at and decided the owner needs to see. Null on everything captured
+   * any other way (quick-add, chat, voice, mission cycles) and on every
+   * pre-318 row.
+   *
+   * Deliberately NOT {@link autoFiledBy} / {@link autoFileConfidence}: those
+   * answer "which project does this belong to", a different axis. Reading
+   * relevance out of a filing confidence is what made the digest's
+   * "kept for you" count dishonest.
+   */
+  arrivalId: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -221,6 +234,8 @@ export function createWorkItem(opts: {
   waitingOn?: string;
   /** Epoch ms of the last nudge sent about this item. */
   lastChasedAt?: number;
+  /** The `arrivals` row this item was surfaced from (see {@link WorkItem}). */
+  arrivalId?: string;
   /** Audit-trail attribution for the created event (default "system"). */
   actor?: string;
 }): WorkItem {
@@ -276,6 +291,7 @@ export function createWorkItem(opts: {
     horizon: opts.domain === "life" ? (opts.horizon ?? null) : null,
     waitingOn: opts.waitingOn ?? null,
     lastChasedAt: opts.lastChasedAt ?? null,
+    arrivalId: opts.arrivalId ?? null,
     createdAt: now,
     updatedAt: now,
   };

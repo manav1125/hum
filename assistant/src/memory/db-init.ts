@@ -52,6 +52,7 @@ import {
   migrateAddSourceTypeColumns,
   migrateAgentActsCostModelTitle,
   migrateAgentToolScopes,
+  migrateArrivals,
   migrateAssistantContactMetadata,
   migrateAutomations,
   migrateAutonomyLedger,
@@ -568,6 +569,7 @@ export function initializeDb(): void {
     migrateWorkItemOriginConversation,
     migrateAutonomyLedger,
     migrateWorkItemLifeLensAndWaiting,
+    migrateArrivals,
   ];
 
   // Run each migration step, catching and logging individual failures so one
