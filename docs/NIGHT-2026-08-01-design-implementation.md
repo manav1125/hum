@@ -314,3 +314,46 @@ rather than appends, so only the last one survived — filtering by status and
 project together had been silently returning the whole project regardless of
 status. Found while adding the Life lens, which would have been thrown away by
 the same bug.
+
+## Shipped and verified on production
+
+Image `deployment-01KYZB3C6E11QMYMX8YSHKEDKD` (981 MB), machine `48eed1ef1411e8`.
+Rollback target if needed: `deployment-01KYZ4BCVCR4P9ZCACY51P4SPD`.
+
+**The bundle served is the bundle built.** `index-Col30-At.js` at
+`manav.justcue.app/assistant/` matches `apps/web/dist/assets/` exactly. Chunk
+names are content hashes, so a match is proof rather than inference.
+
+**The gate is working on real Gmail.** This was the single biggest unverified
+surface — the gate had never seen a real inbox, only synthetic payloads. The
+first real arrival after deploy:
+
+```
+filed | rule | list_mail | "newsletter from Reframe Team"
+work_item_minted: NONE
+```
+
+A newsletter, filed by the deterministic `List-Unsubscribe` rule with no model
+call, with a reason in the owner's words — and crucially **no work item was
+minted**. Before tonight that email would have become something to look at.
+
+Schema confirmed live: the `arrivals` table exists and `work_items` carries all
+five new columns (`domain`, `horizon`, `waiting_on`, `last_chased_at`,
+`arrival_id`).
+
+Both watchers healthy: `gmail consec=0`, `google-calendar consec=0`. Calendar is
+genuinely fixed — it had been failing every poll and could never establish a
+sync token.
+
+### A verification error worth recording
+
+I first reported that migration 318 had not applied, on the strength of a query
+returning zero. It had applied. The real database is
+`/workspace/data/db/assistant.db`; `/workspace/assistant.db` did not exist, and
+my own first `sqlite3` call **created it as an empty file** and then dutifully
+answered questions about it.
+
+The lesson is the same one as the test baseline: a tool that answers confidently
+is not a tool that answers about the right thing. Check the size of what you are
+reading before you believe what it says — a 0-byte database will tell you
+anything you want to hear.
