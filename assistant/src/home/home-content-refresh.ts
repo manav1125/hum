@@ -36,6 +36,18 @@ let inFlight: Promise<void> | null = null;
 const REVALIDATE_COOLDOWN_MS = 30 * 60_000;
 let lastRevalidateStartedAt = 0;
 
+/**
+ * Clear the process-wide cooldown. Tests only.
+ *
+ * The floor above is deliberately module-level state with no injected clock, so
+ * a test that wants to observe a second revalidation has no other way to get
+ * past it. Exposing this beats the alternative the tests previously relied on,
+ * which was the cooldown not existing yet.
+ */
+export function resetRevalidateCooldownForTests(): void {
+  lastRevalidateStartedAt = 0;
+}
+
 async function revalidateAll(): Promise<void> {
   const [greetingRefreshed, promptsRefreshed] = await Promise.all([
     refreshPersonalizedGreeting(),

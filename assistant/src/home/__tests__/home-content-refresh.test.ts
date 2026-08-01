@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 // ─── Mocks ─────────────────────────────────────────────────────────────
 
@@ -23,8 +23,15 @@ mock.module("../suggested-prompts.js", () => ({
   },
 }));
 
+// Spread the real module and override only the seam. An exhaustive factory rots
+// the moment the module under test imports one more export — which is exactly
+// what happened here: `broadcastMessage` was added, this mock did not have it,
+// and the import threw at load so the whole file errored before a single test
+// ran. A suite that never executes still reads as "one known failure".
+const eventHubActual = await import("../../runtime/assistant-event-hub.js");
 const publishSpy = mock<(event: unknown) => Promise<void>>(async () => {});
 mock.module("../../runtime/assistant-event-hub.js", () => ({
+  ...eventHubActual,
   assistantEventHub: { publish: publishSpy },
 }));
 
@@ -39,8 +46,14 @@ mock.module("../../util/logger.js", () => ({
     }),
 }));
 
-const { revalidateHomeContentInBackground } =
+const { revalidateHomeContentInBackground, resetRevalidateCooldownForTests } =
   await import("../home-content-refresh.js");
+
+// The cooldown is process-wide module state, so without this the first test to
+// run consumes it and every later test silently observes zero refreshes.
+beforeEach(() => {
+  resetRevalidateCooldownForTests();
+});
 
 async function settle(): Promise<void> {
   // Let the fire-and-forget revalidation chain run to completion.
@@ -99,7 +112,26 @@ describe("revalidateHomeContentInBackground", () => {
     expect(promptsCalls).toBe(1);
   });
 
-  test("a completed run allows a later revalidation", async () => {
+  test("a completed run allows a later revalidation once the cooldown lapses", async () => {
+    greetingCalls = 0;
+    greetingRefreshed = false;
+    promptsRefreshed = false;
+
+    revalidateHomeContentInBackground();
+    await settle();
+    // What a 30-minute wait does in production.
+    resetRevalidateCooldownForTests();
+    revalidateHomeContentInBackground();
+    await settle();
+
+    expect(greetingCalls).toBe(2);
+  });
+
+  test("the cooldown floor blocks a second revalidation within the window", async () => {
+    // The behaviour the floor exists for: a broken persistent cache always
+    // reads "stale", so without this every home-feed fetch would trigger a
+    // fresh LLM generation — hundreds a day instead of a handful. Nothing
+    // covered it, because this file had not run since the floor landed.
     greetingCalls = 0;
     greetingRefreshed = false;
     promptsRefreshed = false;
@@ -109,6 +141,6 @@ describe("revalidateHomeContentInBackground", () => {
     revalidateHomeContentInBackground();
     await settle();
 
-    expect(greetingCalls).toBe(2);
+    expect(greetingCalls).toBe(1);
   });
 });
