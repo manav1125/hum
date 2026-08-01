@@ -31,6 +31,7 @@
 
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import { getConfig } from "../config/loader.js";
+import { RelevanceGateConfigSchema } from "../config/schemas/watchers.js";
 import { findContactByAddress } from "../contacts/contact-store.js";
 import { listMissions } from "../missions/mission-store.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
@@ -491,7 +492,15 @@ export async function decideArrivals(
   const decisions = new Map<string, ArrivalDecision>();
   if (signals.length === 0) return decisions;
 
-  const gateConfig = getConfig().watchers.relevanceGate;
+  // Read through the schema rather than off the object. A config that predates
+  // this feature has no `relevanceGate` key at all, and reading `.enabled` off
+  // undefined would throw — which the caller catches and turns into "surface
+  // everything". That is the safe direction, but it would be reported as a gate
+  // failure rather than as the ordinary defaults, which is a confusing thing to
+  // find in a log. Parsing gives the same answer for the honest reason.
+  const gateConfig = RelevanceGateConfigSchema.parse(
+    getConfig().watchers?.relevanceGate ?? {},
+  );
   if (!gateConfig.enabled) {
     // The rollback position: record everything, filter nothing. Identical
     // owner-visible behaviour to the pre-gate daemon.

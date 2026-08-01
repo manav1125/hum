@@ -12,6 +12,8 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { WatchersConfigSchema } from "../../config/schemas/watchers.js";
+
 // ── Fixtures ──────────────────────────────────────────────────────────
 
 interface CreatedWatcher {
@@ -75,10 +77,22 @@ mock.module("../provider-registry.js", () => ({
     registeredProviders.has(id) ? { id } : undefined,
 }));
 
+// `mock.module` is process-global, so this factory is what EVERY later test
+// file in the same run sees. Returning a hand-built `watchers` object with only
+// `autoProvision` on it is therefore not a local shortcut — it silently
+// rewrites config for unrelated suites. It did exactly that: the arrival
+// relevance gate reads `watchers.relevanceGate`, found it missing, and its
+// integration tests passed against a *disabled* gate without saying so.
+//
+// Build the rest from the real schema defaults so this mock narrows exactly one
+// key and nothing else.
+const watchersDefaults = WatchersConfigSchema.parse({});
 mock.module("../../config/loader.js", () => ({
   getConfig: () => {
     if (configThrows) throw new Error("no config");
-    return { watchers: { autoProvision: autoProvisionConfig } };
+    return {
+      watchers: { ...watchersDefaults, autoProvision: autoProvisionConfig },
+    };
   },
 }));
 

@@ -40,7 +40,7 @@ const AutoProvisionConfigSchema = z
  * becomes something the owner must look at, or is filed away — recorded,
  * browsable and reversible, but out of the Came-in lane.
  */
-const RelevanceGateConfigSchema = z
+export const RelevanceGateConfigSchema = z
   .object({
     enabled: z
       .boolean({ error: "watchers.relevanceGate.enabled must be a boolean" })
