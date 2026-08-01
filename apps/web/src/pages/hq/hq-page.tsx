@@ -126,6 +126,7 @@ import {
   useHqSchedules,
   useHqWorkItems,
   useMissionEvents,
+  useAbandonedMissions,
   useMissions,
   usePatchMission,
   useRunCycle,
@@ -1785,7 +1786,15 @@ export function HqPage() {
   // SSE keeps every lane current; polls below are 60s safety-nets.
   useActivitySync(assistantId, true);
 
-  const { missions, isLoading } = useMissions(assistantId);
+  const { missions: liveMissions, isLoading } = useMissions(assistantId);
+  // Abandoned missions still get a ring, in the blocked tone. A goal that
+  // drifted is information; omitting it made a real deck look like an empty
+  // product. Appended after live ones so they never outrank active work.
+  const { missions: abandonedMissions } = useAbandonedMissions(assistantId);
+  const missions = useMemo(
+    () => [...liveMissions, ...abandonedMissions],
+    [liveMissions, abandonedMissions],
+  );
   const { projects } = useProjects(assistantId);
   const review = useHqWorkItems(assistantId, "awaiting_review");
   const running = useHqWorkItems(assistantId, "running");

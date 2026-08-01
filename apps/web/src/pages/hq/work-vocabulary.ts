@@ -21,29 +21,22 @@
  */
 
 /**
- * ⚠ UNRESOLVED — this module and `@vellumai/design-library`'s `work-state.ts`
- * both name work states, and on one label they disagree.
+ * Relationship to `work-state.ts` in the design library.
  *
  * `work-state.ts` implements deliverable 07 (autonomy-states): it resolves a
- * status to a loop state and owns the accent/text/wash tokens per state. This
- * module implements deliverable 01 §3, the work-surfaces vocabulary.
+ * stored status to a loop state and owns the accent/text/wash tokens. This
+ * module implements deliverable 01 §3, the work-surfaces vocabulary — the words
+ * themselves.
  *
- * They agree on `done`, and on the glyphs. They disagree here:
+ * They disagreed on one label, and it was the important one: `awaiting_review`
+ * was "Review" in 07 and "Needs you" in §3, which is the label on the deck's
+ * primary lane and the sidebar badge. **Ruled 2026-08-01 in favour of §3** —
+ * `resolveWorkLoopState` now maps `awaiting_review` to the `needsyou` state, so
+ * both modules say "Needs you" and the split is closed.
  *
- *   status             07 work-state      01 §3 (this file)
- *   awaiting_review    "Review"           "Needs you"
- *   running            "Running"          "Cue is doing"
- *   queued/pending     "Picked up"        "Waiting" (and "parked" is distinct)
- *
- * `awaiting_review` is the one that matters — it is the label on the deck's
- * primary lane and on the sidebar badge. The handoff README gives canonical
- * precedence over the packs for HQ and mobile Today, but says nothing about 07,
- * so this is a design ruling, not an engineering one.
- *
- * Until that ruling: this file owns the LABELS for the work surfaces (HQ, All
- * work), `work-state.ts` owns the TOKENS everywhere, and neither duplicates the
- * other's job. When the ruling lands, one of these should delegate to the other
- * so a third vocabulary can never appear.
+ * Division of labour from here: this file owns the LABELS for the work
+ * surfaces, `work-state.ts` owns the TOKENS everywhere. Neither duplicates the
+ * other's job, and a third vocabulary should never appear.
  */
 
 /** Stored states this app renders. Mirrors the daemon's work-item status. */

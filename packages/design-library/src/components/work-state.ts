@@ -123,8 +123,16 @@ export interface WorkStateInput {
 /**
  * Resolve a work item to its product loop state. Order matters: failure and
  * needs-you win over the raw status because they are the states a person must
- * act on. `awaiting_review` maps to review; running to running; everything
- * still queued reads as freshly picked up.
+ * act on.
+ *
+ * `awaiting_review` resolves to **needsyou**, not review. Two design
+ * deliverables disagreed on this — 07 (autonomy-states) called it "Review",
+ * work-surfaces §3 called it "Needs you" — and it is the label on the deck's
+ * primary lane and the sidebar badge. Ruled 2026-08-01 in favour of §3.
+ *
+ * Mapped rather than relabelled: renaming `review` to "Needs you" would leave
+ * two states rendering identically. `review` (◱ violet) stays reserved for §3's
+ * distinct "Ready for review", which no stored status produces yet.
  */
 export function resolveWorkLoopState(input: WorkStateInput): WorkLoopState {
   const status = (input.status ?? "").toString();
@@ -133,7 +141,7 @@ export function resolveWorkLoopState(input: WorkStateInput): WorkLoopState {
   if (input.approvalStatus === "pending" || status === "needs_approval") {
     return "needsyou";
   }
-  if (status === "awaiting_review") return "review";
+  if (status === "awaiting_review") return "needsyou";
   if (status === "running") return "running";
   if (status === "done") return "done";
   // pending / queued / anything not yet started

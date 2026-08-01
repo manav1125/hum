@@ -54,6 +54,11 @@ const SAFETY_NET_MS = 60_000;
 export function ringStatusFor(m: Mission): RingStatus {
   const budgetStopped =
     m.budgetCents != null && m.budgetCents > 0 && m.spentCents >= m.budgetCents;
+  // Abandoned reads as blocked, not as absent. A mission that drifted and was
+  // given up on is still the truest thing the deck can say about that goal —
+  // hiding it made HQ look like a product with nothing in it, which is how a
+  // single abandoned mission left the rings dark entirely.
+  if (m.status === "abandoned") return "blocked";
   if (m.status === "paused" || budgetStopped) return "blocked";
   if (m.rollup.counts.awaiting_review > 0) return "needs_you";
   return "on_track";
@@ -62,6 +67,31 @@ export function ringStatusFor(m: Mission): RingStatus {
 export function useMissions(assistantId: string) {
   const query = useQuery({
     ...missionsGetOptions({ path: { assistant_id: assistantId } }),
+    refetchInterval: SAFETY_NET_MS,
+    staleTime: 15_000,
+  });
+  return {
+    missions: query.data?.missions ?? [],
+    isLoading: query.isLoading,
+    isError: query.isError,
+  };
+}
+
+/**
+ * Abandoned missions, which the default list excludes server-side.
+ *
+ * The deck renders these alongside live ones in the `blocked` ring tone. They
+ * are deliberately a separate query rather than a change to `useMissions`: most
+ * consumers (pickers, filing targets, the mission map) want only live missions,
+ * and quietly widening the shared hook would have put abandoned goals into all
+ * of them.
+ */
+export function useAbandonedMissions(assistantId: string) {
+  const query = useQuery({
+    ...missionsGetOptions({
+      path: { assistant_id: assistantId },
+      query: { status: "abandoned" },
+    }),
     refetchInterval: SAFETY_NET_MS,
     staleTime: 15_000,
   });
