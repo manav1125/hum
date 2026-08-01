@@ -17,6 +17,7 @@ mock.module(
 import type { DisplayAttachment } from "@/domains/chat/types/types";
 
 import { MessageAttachments } from "@/domains/chat/components/chat-attachments/message-attachments";
+import { useViewerStore } from "@/stores/viewer-store";
 
 afterAll(() => {
   mock.restore();
@@ -28,8 +29,7 @@ afterEach(() => {
 const xlsx: DisplayAttachment = {
   id: "xlsx-1",
   filename: "SaaS Financial Model.xlsx",
-  mimeType:
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   sizeBytes: 48_128,
   previewUrl: null,
 };
@@ -107,9 +107,9 @@ describe("MessageAttachments — spreadsheet viewer wiring", () => {
     fireEvent.click(getByRole("button", { name: "export.csv" }));
 
     expect(onOpenSpreadsheet).not.toHaveBeenCalled();
-    expect(getByTestId("preview-modal").getAttribute("data-attachment-id")).toBe(
-      "csv-1",
-    );
+    expect(
+      getByTestId("preview-modal").getAttribute("data-attachment-id"),
+    ).toBe("csv-1");
   });
 
   test("a non-spreadsheet chip still opens the preview modal", () => {
@@ -124,20 +124,36 @@ describe("MessageAttachments — spreadsheet viewer wiring", () => {
     fireEvent.click(getByRole("button", { name: "report.pdf" }));
 
     expect(onOpenSpreadsheet).not.toHaveBeenCalled();
-    expect(getByTestId("preview-modal").getAttribute("data-attachment-id")).toBe(
-      "pdf-1",
-    );
+    expect(
+      getByTestId("preview-modal").getAttribute("data-attachment-id"),
+    ).toBe("pdf-1");
   });
 
-  test("without onOpenSpreadsheet, an .xlsx falls back to the preview modal (no crash)", () => {
-    const { getByRole, getByTestId } = render(
-      <MessageAttachments attachments={[xlsx]} />,
-    );
+  test("without onOpenSpreadsheet, an .xlsx still opens the viewer via the store", () => {
+    // This used to fall back to the preview modal, and on the live render
+    // path the prop was never threaded — so clicking a spreadsheet opened a
+    // Download modal instead of the grid. The chip now reaches the viewer
+    // store directly; the prop is only a fast path.
+    const loadSpreadsheet = mock(() => {});
+    const original = useViewerStore.getState().loadSpreadsheet;
+    useViewerStore.setState({ loadSpreadsheet });
 
-    fireEvent.click(getByRole("button", { name: "SaaS Financial Model.xlsx" }));
+    try {
+      const { getByRole, queryByTestId } = render(
+        <MessageAttachments attachments={[xlsx]} />,
+      );
 
-    expect(getByTestId("preview-modal").getAttribute("data-attachment-id")).toBe(
-      "xlsx-1",
-    );
+      fireEvent.click(
+        getByRole("button", { name: "SaaS Financial Model.xlsx" }),
+      );
+
+      expect(loadSpreadsheet).toHaveBeenCalledWith(
+        "xlsx-1",
+        "SaaS Financial Model.xlsx",
+      );
+      expect(queryByTestId("preview-modal")).toBeNull();
+    } finally {
+      useViewerStore.setState({ loadSpreadsheet: original });
+    }
   });
 });

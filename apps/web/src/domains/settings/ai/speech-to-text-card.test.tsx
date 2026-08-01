@@ -14,16 +14,51 @@
  * `provider-create-form.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+} from "@testing-library/react";
+
+import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 
 let nativeDictationSupported = false;
 mock.module("@/runtime/native-dictation-partials", () => ({
   isNativeDictationSupported: () => nativeDictationSupported,
 }));
 
+// The card fetches the daemon's STT provider catalog behind this gate. Holding
+// it closed keeps the catalog query disabled, so the card renders from its
+// local `STT_PROVIDERS` — which is what these assertions are about — and no
+// request is attempted against a daemon that isn't running.
+mock.module("@/hooks/use-is-org-ready", () => ({
+  useIsOrgReady: () => false,
+}));
+
 const { SpeechToTextCard } =
   await import("@/domains/settings/ai/speech-to-text-card");
 const { LS_STT_PROVIDER } = await import("@/domains/settings/ai/ai-types");
+
+/**
+ * The card is a gated-route child: it reads the active assistant id and uses
+ * it to fetch the daemon's STT provider catalog. Both are real product
+ * requirements, so the harness supplies them — an id in the selection store
+ * and a query client. The catalog request never resolves here, so the card
+ * falls back to its local `STT_PROVIDERS` catalog, which is what these
+ * assertions are about.
+ */
+function render(): ReturnType<typeof rtlRender> {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return rtlRender(
+    <QueryClientProvider client={client}>
+      <SpeechToTextCard />
+    </QueryClientProvider>,
+  );
+}
 
 function openProviderDropdown(): void {
   const trigger = document.querySelector<HTMLButtonElement>(
@@ -56,15 +91,17 @@ describe("SpeechToTextCard — macOS Native Dictation option", () => {
   beforeEach(() => {
     localStorage.clear();
     nativeDictationSupported = false;
+    useResolvedAssistantsStore.setState({ activeAssistantId: "asst-1" });
   });
 
   afterEach(() => {
     cleanup();
     localStorage.clear();
+    useResolvedAssistantsStore.setState({ activeAssistantId: null });
   });
 
   test("native option is absent when the helper recognizer is unavailable", () => {
-    render(<SpeechToTextCard />);
+    render();
 
     openProviderDropdown();
     expect(visibleOptions()).not.toContain("macOS Native Dictation");
@@ -72,7 +109,7 @@ describe("SpeechToTextCard — macOS Native Dictation option", () => {
 
   test("selecting the native option hides the API key field and shows the Dictation warning", () => {
     nativeDictationSupported = true;
-    render(<SpeechToTextCard />);
+    render();
 
     openProviderDropdown();
     expect(visibleOptions()).toContain("macOS Native Dictation");
@@ -90,7 +127,7 @@ describe("SpeechToTextCard — macOS Native Dictation option", () => {
 
   test("a stored native choice falls back to the default provider off Electron", () => {
     localStorage.setItem(LS_STT_PROVIDER, "macos-native");
-    render(<SpeechToTextCard />);
+    render();
 
     const trigger = document.querySelector<HTMLButtonElement>(
       'button[role="combobox"][aria-label="STT provider"]',
@@ -108,7 +145,7 @@ describe("SpeechToTextCard — macOS Native Dictation option", () => {
     // normalizeSttProviderId() still maps it at transcribe time, so merely
     // opening Settings must not rewrite it.
     localStorage.setItem(LS_STT_PROVIDER, "whisper");
-    render(<SpeechToTextCard />);
+    render();
 
     expect(localStorage.getItem(LS_STT_PROVIDER)).toBe("whisper");
   });

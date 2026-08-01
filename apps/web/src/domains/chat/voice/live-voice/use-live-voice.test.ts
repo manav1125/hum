@@ -52,6 +52,7 @@ class FakeClient {
     assistantId: string;
     conversationId?: string;
     fullDuplex?: boolean;
+    engine?: "cascade" | "gemini-live";
   } | null = null;
   sentAudio: ArrayBuffer[] = [];
   pttReleaseCount = 0;
@@ -81,6 +82,7 @@ class FakeClient {
     assistantId: string;
     conversationId?: string;
     fullDuplex?: boolean;
+    engine?: "cascade" | "gemini-live";
   }): Promise<void> {
     this.connectArgs = args;
   }
@@ -199,6 +201,39 @@ function pcmChunk(ms: number): ArrayBuffer {
   return new Int16Array(samples).buffer;
 }
 
+/**
+ * The controller's BARGE_IN_MIN_SPEECH_MS (kept in sync with the source).
+ * A single loud reading no longer interrupts: the level must stay above the
+ * threshold for this long, so the assistant's own voice leaking back through
+ * the speakers as a transient echo spike can't cut it off.
+ */
+const BARGE_IN_MIN_SPEECH_MS_PROBE = 220;
+
+/**
+ * Drive a real barge-in: sustained speech over the amplitude threshold.
+ *
+ * The controller measures the sustain window against the wall clock, so the
+ * clock is advanced between readings rather than the test sleeping. Emits
+ * `readings` amplitude values, each one sustain-window apart.
+ */
+function pushSustainedAmplitude(
+  capture: FakeCapture,
+  amplitude: number,
+  readings = 2,
+): void {
+  const realNow = Date.now;
+  let clock = realNow();
+  Date.now = () => clock;
+  try {
+    for (let i = 0; i < readings; i++) {
+      capture.pushAmplitude(amplitude);
+      clock += BARGE_IN_MIN_SPEECH_MS_PROBE + 1;
+    }
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 function renderController(overrides: { fullDuplex?: boolean } = {}) {
   const client = new FakeClient();
   const player = new FakePlayer();
@@ -274,6 +309,9 @@ describe("full turn", () => {
       assistantId: "assistant-1",
       conversationId: "conv-1",
       fullDuplex: false,
+      // The speech-native engine is opt-in; the cascaded pipeline (which keeps
+      // tools + memory) is what a default session asks for.
+      engine: "cascade",
     });
 
     await act(async () => {
@@ -358,7 +396,7 @@ describe("full turn", () => {
 // ---------------------------------------------------------------------------
 
 describe("barge-in", () => {
-  test("amplitude over threshold while speaking stops playback, interrupts, and ends the session", async () => {
+  test("sustained amplitude over threshold while speaking stops playback, interrupts, and ends the session", async () => {
     const h = renderController();
     await startListening(h);
 
@@ -376,7 +414,7 @@ describe("barge-in", () => {
     expect(h.player.isPlaying).toBe(true);
 
     act(() => {
-      h.getCapture().pushAmplitude(0.2); // over BARGE_IN_AMPLITUDE_THRESHOLD
+      pushSustainedAmplitude(h.getCapture(), 0.2); // over the threshold
     });
 
     // Playback is stopped and a single interrupt is sent; the (now terminal)
@@ -386,6 +424,34 @@ describe("barge-in", () => {
     expect(h.view.result.current.state).toBe("idle");
     expect(h.client.closed).toBe(true);
     expect(h.getCapture().shutdownCount).toBe(1);
+  });
+
+  test("a single transient spike does not interrupt — echo must not cut the assistant off", async () => {
+    // The assistant's own voice leaks back through the speakers as short
+    // spikes. Only speech sustained past the guard window may barge in;
+    // without this the assistant interrupts itself mid-sentence.
+    const h = renderController();
+    await startListening(h);
+
+    act(() => {
+      h.client.emit("thinking", { type: "thinking", seq: 2, turnId: "t1" });
+      h.client.emit("ttsAudio", {
+        type: "tts_audio",
+        seq: 3,
+        mimeType: "audio/pcm",
+        sampleRate: 24000,
+        dataBase64: "AAAA",
+      });
+    });
+    expect(h.view.result.current.state).toBe("speaking");
+
+    act(() => {
+      h.getCapture().pushAmplitude(0.2); // one loud reading, not sustained
+    });
+
+    expect(h.client.interruptCount).toBe(0);
+    expect(h.player.isPlaying).toBe(true);
+    expect(h.view.result.current.state).toBe("speaking");
   });
 
   test("interrupt is sent at most once per response", async () => {
@@ -401,8 +467,9 @@ describe("barge-in", () => {
         sampleRate: 24000,
         dataBase64: "AAAA",
       });
-      h.getCapture().pushAmplitude(0.2);
-      h.getCapture().pushAmplitude(0.25);
+      // Keep talking well past the first interrupt — the user holding the
+      // floor must not fire a second interrupt for the same response.
+      pushSustainedAmplitude(h.getCapture(), 0.25, 4);
     });
 
     expect(h.client.interruptCount).toBe(1);
@@ -437,9 +504,9 @@ describe("barge-in", () => {
     expect(h.view.result.current.state).toBe("speaking");
 
     // The mic never stopped, so amplitude still flows while the assistant
-    // speaks: a loud reading interrupts (barge-in), which ends the session.
+    // speaks: sustained speech interrupts (barge-in), which ends the session.
     act(() => {
-      capture.pushAmplitude(0.3); // over BARGE_IN_AMPLITUDE_THRESHOLD
+      pushSustainedAmplitude(capture, 0.3); // over the threshold
     });
     expect(h.client.interruptCount).toBe(1);
     expect(h.player.isPlaying).toBe(false);
@@ -596,7 +663,7 @@ describe("full-duplex", () => {
     expect(h.view.result.current.state).toBe("speaking");
 
     act(() => {
-      h.getCapture().pushAmplitude(0.2); // over BARGE_IN_AMPLITUDE_THRESHOLD
+      pushSustainedAmplitude(h.getCapture(), 0.2); // over the threshold
     });
 
     // Playback stopped, one interrupt sent, and — unlike half-duplex — the

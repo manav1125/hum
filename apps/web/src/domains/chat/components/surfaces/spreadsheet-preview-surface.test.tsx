@@ -48,15 +48,24 @@ describe("SpreadsheetPreviewSurface", () => {
     expect(html).toContain('role="button"');
   });
 
-  test("is not clickable without an open handler or attachment id", () => {
-    const noHandler = renderToStaticMarkup(
+  test("is still a button without the open handler — it falls back to the viewer store", () => {
+    // `onOpenSpreadsheet` used to be required for the card to be clickable.
+    // On the live render path that prop was null, so clicking an .xlsx opened
+    // a Download modal instead of the native grid; the card now opens the
+    // viewer through the store and treats the prop as an optional fast path.
+    // What matters is that having an attachment is what makes it openable.
+    const html = renderToStaticMarkup(
       <SpreadsheetPreviewSurface
         surface={surface()}
         onAction={() => undefined}
       />,
     );
-    expect(noHandler).not.toContain('role="button"');
+    expect(html).toContain('role="button"');
+  });
 
+  test("is not clickable without an attachment id", () => {
+    // Nothing to open — the card must not present a button affordance it
+    // cannot honour.
     const noAttachment = renderToStaticMarkup(
       <SpreadsheetPreviewSurface
         surface={surface({ attachmentId: "" })}
@@ -65,6 +74,7 @@ describe("SpreadsheetPreviewSurface", () => {
       />,
     );
     expect(noAttachment).not.toContain('role="button"');
+    expect(noAttachment).not.toContain("cursor-pointer");
   });
 
   test("singularizes a single sheet / single formula", () => {

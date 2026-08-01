@@ -48,6 +48,15 @@ function quickStartCard(title: string): HTMLButtonElement {
   return button;
 }
 
+/** Switch the surface to a mode tab by its visible label. */
+function switchMode(label: string): void {
+  const tab = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('button[role="tab"]'),
+  ).find((b) => b.textContent?.trim() === label);
+  if (!tab) throw new Error(`no mode tab labelled "${label}"`);
+  fireEvent.click(tab);
+}
+
 describe("CreateView — client-side elicitation wiring", () => {
   test("clicking a template WITH elicit opens the question form before any run", () => {
     const { onRunPrompt } = renderView();
@@ -64,12 +73,15 @@ describe("CreateView — client-side elicitation wiring", () => {
 
   test("clicking a template WITHOUT elicit runs immediately", () => {
     const { onRunPrompt } = renderView();
-    // "Product launch deck" (product-launch) has no elicit → fires instantly.
-    fireEvent.click(quickStartCard("Product launch deck"));
+    // Every Slides template is input-dependent and now carries `elicit`
+    // (create-templates.test.ts pins that classification), so the stay-instant
+    // path is exercised from a creative mode: "Hero image" has no elicit.
+    switchMode("Images");
+    fireEvent.click(quickStartCard("Hero image"));
 
     expect(onRunPrompt).toHaveBeenCalledTimes(1);
     const sent = onRunPrompt.mock.calls[0][0] as string;
-    expect(sent.startsWith("Build a product launch presentation")).toBe(true);
+    expect(sent.startsWith("Generate a striking hero/banner image")).toBe(true);
   });
 
   test("answering the form composes the values into the sent prompt", () => {

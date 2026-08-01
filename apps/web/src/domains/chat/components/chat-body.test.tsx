@@ -13,8 +13,10 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ButtonHTMLAttributes, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 
 import type { ChatBodyProps } from "@/domains/chat/components/chat-body";
 
@@ -46,7 +48,15 @@ mock.module("@/domains/chat/components/chat-composer/chat-composer", () => ({
   ChatComposer: () => <div data-testid="composer">COMPOSER</div>,
 }));
 
+// Spread the real design library and override only the pieces this test
+// drives. Listing exports exhaustively is what broke this file: the tree
+// below `ChatBody` later began importing `MarkdownMessage` from here, the
+// hand-written mock did not have it, and the import threw at load — the
+// whole suite erroring before a single test ran.
+const designLibrary = await import("@vellumai/design-library");
+
 mock.module("@vellumai/design-library", () => ({
+  ...designLibrary,
   Button: ({
     children,
     iconOnly,
@@ -121,31 +131,47 @@ function withEmptyState(overrides: Partial<ChatBodyProps> = {}): ChatBodyProps {
   });
 }
 
+/**
+ * `ChatBody` mounts `SpawnedWorkSlot`, which reads react-query and renders
+ * react-router `Link`s. Neither is what this file asserts on, but both throw
+ * without their context, so every case renders through the same providers.
+ * Providers contribute no markup of their own, so the `toContain` and
+ * `indexOf` assertions below still see exactly `ChatBody`'s output.
+ */
+function renderBody(props: ChatBodyProps): string {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ChatBody {...props} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe("ChatBody — empty-state centering (LUM-1566)", () => {
   test("applies safe_center and overflow-y-auto when empty state is visible", () => {
-    const html = renderToStaticMarkup(<ChatBody {...withEmptyState()} />);
+    const html = renderBody(withEmptyState());
     expect(html).toContain("[justify-content:safe_center]");
     expect(html).toContain("overflow-y-auto");
   });
 
   test("does NOT apply safe_center or overflow-y-auto when empty state is hidden", () => {
-    const html = renderToStaticMarkup(<ChatBody {...baseProps()} />);
+    const html = renderBody(baseProps());
     expect(html).not.toContain("[justify-content:safe_center]");
     expect(html).not.toContain("overflow-y-auto");
   });
 
   test("uses flex-1 in outer class for main variant", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody {...baseProps({ variant: "main" })} />,
-    );
+    const html = renderBody(baseProps({ variant: "main" }));
     // The outer container class for the main variant.
     expect(html).toContain("relative flex min-h-0 flex-1 flex-col");
   });
 
   test("uses h-full in outer class for side-panel variant", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody {...baseProps({ variant: "side-panel" })} />,
-    );
+    const html = renderBody(baseProps({ variant: "side-panel" }));
     // The outer container class for the side-panel variant.
     expect(html).toContain("relative flex h-full min-h-0 flex-col");
   });
@@ -153,12 +179,10 @@ describe("ChatBody — empty-state centering (LUM-1566)", () => {
 
 describe("ChatBody — banner overlay suppression (LUM-1566)", () => {
   test("suppresses banner overlay on empty state to prevent greeting overlap", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody
-        {...withEmptyState({
-          bannerSlot: <div data-testid="banner">BANNER_CONTENT</div>,
-        })}
-      />,
+    const html = renderBody(
+      withEmptyState({
+        bannerSlot: <div data-testid="banner">BANNER_CONTENT</div>,
+      }),
     );
     // The banner node is passed but the overlay container should not
     // render it on the empty state — it would overlap the greeting.
@@ -166,12 +190,10 @@ describe("ChatBody — banner overlay suppression (LUM-1566)", () => {
   });
 
   test("renders banner overlay when empty state is hidden and bannerSlot is provided", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody
-        {...baseProps({
-          bannerSlot: <div data-testid="banner">BANNER_CONTENT</div>,
-        })}
-      />,
+    const html = renderBody(
+      baseProps({
+        bannerSlot: <div data-testid="banner">BANNER_CONTENT</div>,
+      }),
     );
     expect(html).toContain("BANNER_CONTENT");
   });
@@ -179,31 +201,27 @@ describe("ChatBody — banner overlay suppression (LUM-1566)", () => {
 
 describe("ChatBody — startersSlot rendering", () => {
   test("renders startersSlot content when provided", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody
-        {...withEmptyState({
-          startersSlot: <div data-testid="starters">STARTER_CHIPS</div>,
-        })}
-      />,
+    const html = renderBody(
+      withEmptyState({
+        startersSlot: <div data-testid="starters">STARTER_CHIPS</div>,
+      }),
     );
     expect(html).toContain("STARTER_CHIPS");
   });
 
   test("omits starters when startersSlot is undefined", () => {
-    const html = renderToStaticMarkup(<ChatBody {...withEmptyState()} />);
+    const html = renderBody(withEmptyState());
     expect(html).not.toContain("STARTER_CHIPS");
   });
 });
 
 describe("ChatBody — read-only cancellation", () => {
   test("renders the read-only banner without a stop control while idle", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody
-        {...baseProps({
-          isChannelReadonly: true,
-          composerProps: { onStopGenerating: noop } as never,
-        })}
-      />,
+    const html = renderBody(
+      baseProps({
+        isChannelReadonly: true,
+        composerProps: { onStopGenerating: noop } as never,
+      }),
     );
 
     expect(html).toContain("Read-only conversation");
@@ -212,14 +230,12 @@ describe("ChatBody — read-only cancellation", () => {
   });
 
   test("renders the stop control for an active read-only turn", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody
-        {...baseProps({
-          isChannelReadonly: true,
-          canStopGenerating: true,
-          composerProps: { onStopGenerating: noop } as never,
-        })}
-      />,
+    const html = renderBody(
+      baseProps({
+        isChannelReadonly: true,
+        canStopGenerating: true,
+        composerProps: { onStopGenerating: noop } as never,
+      }),
     );
 
     expect(html).toContain("Read-only conversation");
@@ -231,14 +247,12 @@ describe("ChatBody — read-only cancellation", () => {
 
 describe("ChatBody — channel footer slot", () => {
   test("renders channelFooterSlot immediately above the composer", () => {
-    const html = renderToStaticMarkup(
-      <ChatBody
-        {...baseProps({
-          channelFooterSlot: (
-            <div data-testid="channel-footer">CHANNEL_FOOTER</div>
-          ),
-        })}
-      />,
+    const html = renderBody(
+      baseProps({
+        channelFooterSlot: (
+          <div data-testid="channel-footer">CHANNEL_FOOTER</div>
+        ),
+      }),
     );
 
     expect(html).toContain("CHANNEL_FOOTER");

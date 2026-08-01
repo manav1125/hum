@@ -14,9 +14,10 @@ interface MessageAttachmentsProps {
   assistantId?: string | null;
   /**
    * Open the native in-Cue spreadsheet viewer for a persisted `.xlsx`
-   * attachment. When provided, clicking a viewable spreadsheet chip opens the
-   * viewer (the durable entry point that survives thread reloads) instead of
-   * the generic preview modal. Omitted → spreadsheets fall back to the modal.
+   * attachment. Optional fast path only: a viewable spreadsheet chip always
+   * opens the viewer (the durable entry point that survives thread reloads)
+   * rather than the generic preview modal — when this prop is absent the chip
+   * reaches the viewer store directly.
    */
   onOpenSpreadsheet?: (attachmentId: string, filename: string) => void;
 }

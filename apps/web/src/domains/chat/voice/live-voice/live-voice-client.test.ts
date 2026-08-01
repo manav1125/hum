@@ -18,6 +18,14 @@ let mintResult: Promise<{ token: string; expiresAt: string }> = Promise.resolve(
   { token: "tok-abc", expiresAt: "2026-06-01T00:05:00Z" },
 );
 
+/**
+ * The start frame carries the browser's IANA zone so the far side can answer
+ * "what time is it" in the user's local time. Derived here the same way the
+ * client derives it rather than hardcoded, so the assertion pins "the frame
+ * reports THIS browser's zone" instead of whichever zone CI happens to run in.
+ */
+const BROWSER_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 // The client resolves its transport URL via `resolveLiveVoiceWsUrl`. Mock it to
 // the cloud (velay) path: await `mintResult` (so the mint-failure test still
 // exercises a rejected resolve) and compose the genuine velay URL the client
@@ -194,6 +202,7 @@ describe("connect", () => {
         type: "start",
         audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
         conversationId: "conv-xyz",
+        timezone: BROWSER_TIMEZONE,
       },
     ]);
     expect(ws.sentBinary).toHaveLength(0);
@@ -205,6 +214,7 @@ describe("connect", () => {
     expect(ws.sentJson[0]).toEqual({
       type: "start",
       audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+      timezone: BROWSER_TIMEZONE,
     });
   });
 
@@ -442,6 +452,7 @@ describe("sendAudio", () => {
       {
         type: "start",
         audio: { mimeType: "audio/pcm", sampleRate: 16000, channels: 1 },
+        timezone: BROWSER_TIMEZONE,
       },
     ]);
   });

@@ -8,8 +8,10 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { createElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router";
 
 mock.module("@/hooks/use-is-mobile", () => ({
   useIsMobile: () => false,
@@ -17,10 +19,15 @@ mock.module("@/hooks/use-is-mobile", () => ({
   MOBILE_MEDIA_QUERY: "(max-width: 767px)",
 }));
 
-// The sidebar owns its Background/Scheduled lazy queries; stub both so static
-// SSR rendering resolves without a QueryClient. These tests pass the full
-// conversation list through `conversations` and assert the rendered buckets.
+// The sidebar owns its Background/Scheduled lazy queries; pin both to empty so
+// these tests assert only the buckets built from the `conversations` prop.
+// The real module is spread back in so that a hook added here later resolves
+// instead of throwing at import — an exhaustive hand-written list is exactly
+// what rots.
+const conversationQueries = await import("@/hooks/conversation-queries");
+
 mock.module("@/hooks/conversation-queries", () => ({
+  ...conversationQueries,
   useBackgroundConversationListQuery: () => ({
     conversations: [],
     isPending: false,
@@ -45,6 +52,25 @@ function makeConversation(overrides: Partial<Conversation>): Conversation {
   };
 }
 
+/**
+ * The menu calls `useNavigate` and its rows read react-query (the needs-you
+ * badge, channel presence), so it only mounts inside a router and a query
+ * client. Neither provider emits markup of its own, so the string assertions
+ * below still see exactly `AssistantSideMenu`'s output.
+ */
+function renderInRouter(element: ReactElement): string {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(MemoryRouter, null, element),
+    ),
+  );
+}
+
 function renderMenu(props: {
   conversations: Conversation[];
   activeConversationId?: string;
@@ -53,7 +79,7 @@ function renderMenu(props: {
   includeFooterAction?: boolean;
 }): string {
   const includeFooterAction = props.includeFooterAction ?? true;
-  return renderToStaticMarkup(
+  return renderInRouter(
     createElement(AssistantSideMenu, {
       assistantId: "asst-1",
       collapsed: props.collapsed ?? false,
@@ -271,7 +297,7 @@ describe("AssistantSideMenu · new conversation affordance", () => {
   };
 
   test("renders the new-conversation pencil button when onStartNewConversation is supplied", () => {
-    const html = renderToStaticMarkup(
+    const html = renderInRouter(
       createElement(AssistantSideMenu, {
         ...baseProps,
         onStartNewConversation: () => {},
@@ -284,7 +310,7 @@ describe("AssistantSideMenu · new conversation affordance", () => {
   });
 
   test("omits the new-conversation button when onStartNewConversation is absent", () => {
-    const html = renderToStaticMarkup(
+    const html = renderInRouter(
       createElement(AssistantSideMenu, { ...baseProps }),
     );
 

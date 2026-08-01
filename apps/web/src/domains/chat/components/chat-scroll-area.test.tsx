@@ -14,6 +14,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { ChatScrollAreaProps } from "@/domains/chat/components/chat-scroll-area";
+import { DEFAULT_EMPTY_STATE_GREETING } from "@/domains/chat/utils/empty-state-constants";
 
 // Stub heavy children that aren't relevant to the layout assertions.
 mock.module("@/domains/chat/transcript/transcript", () => ({
@@ -70,8 +71,12 @@ describe("ChatScrollArea — empty-state layout (LUM-1566)", () => {
     const html = renderToStaticMarkup(
       <ChatScrollArea {...baseProps({ showEmptyState: true })} />,
     );
-    // Default greeting from ChatEmptyState
-    expect(html).toContain("I&#x27;m here whenever you need me.");
+    // Default greeting from ChatEmptyState. Asserted through the shared
+    // constant rather than a copy-pasted string: the greeting is product copy
+    // and has been rewritten before (the literal this test used to hold went
+    // stale when the Cue greeting landed), but "the empty state renders the
+    // default greeting" is the behaviour worth pinning.
+    expect(html).toContain(DEFAULT_EMPTY_STATE_GREETING);
   });
 
   test("does not render ChatEmptyState when showEmptyState is false", () => {
@@ -80,6 +85,6 @@ describe("ChatScrollArea — empty-state layout (LUM-1566)", () => {
         {...baseProps({ showEmptyState: false, messageCount: 1 })}
       />,
     );
-    expect(html).not.toContain("I&#x27;m here whenever you need me.");
+    expect(html).not.toContain(DEFAULT_EMPTY_STATE_GREETING);
   });
 });

@@ -8,7 +8,16 @@ import { useStreamStore } from "@/domains/chat/stream-store";
 
 const handlerCalls: Array<{ kind: string; conversationId?: string }> = [];
 
+// Spread the real module and override only the handlers this test records.
+// Listing exports exhaustively is what broke this file: the guard later began
+// calling `resolveConversationId` from here, the hand-written mock did not
+// have it, and the import threw at load — the whole suite erroring before a
+// single test ran.
+const messageHandlers =
+  await import("@/domains/chat/utils/stream-handlers/message-handlers");
+
 mock.module("@/domains/chat/utils/stream-handlers/message-handlers", () => ({
+  ...messageHandlers,
   handleAssistantTextDelta: (event: { conversationId?: string }) => {
     handlerCalls.push({
       kind: "assistant_text_delta",
