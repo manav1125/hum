@@ -296,6 +296,8 @@ Day 200 looks like day 1 with more rows. Cue accumulates memory, receipts and tr
 | Watch-only | App-enforced starting mode, independent of OAuth scope. |
 | Recruit | A thing has `started: bool`; unstarted renders as parked `○`. |
 | Conversations | Belong to a thing (nullable). Long work spawns a task and returns a live line. |
+| **Paused interactions** | Surface as **needs-you items** (§13.2) — count in the badge and headline, sort above all other needs-you, glyph `⏸`, approve/decline inline. **Not a separate lane.** |
+| **Calendar** | Arrivals recorded, **never minted as work — except where they create a decision** (conflict, expiring hold, invite needing an answer). §13.3 |
 
 Everything else — grouping, collapse, filters, bulk, triage, census, rings — is **rendering over data you already have.**
 
@@ -400,7 +402,59 @@ Each had to earn its click beyond the rail's peek:
 
 ---
 
-## 12 · Precedence — which file wins
+## 13 · Three rulings back (2026-08-02, answering the build notes)
+
+### 13.1 · Mobile rail lines — **four is literal, and here's the rule that makes it non-arbitrary**
+
+You're right that "four Tier-3 lines" and "no Tier 2 at 390px" contradict as written. Taking the invariant over the frame was the correct instinct. But the fix isn't "fewer lanes on mobile" as a taste call — there's a real distinction we never named:
+
+> **A lane answers a standing question. An event either happened or it didn't.**
+> The never-silently-absent invariant applies to **lanes only.** An absent event carries no information, so reporting it is noise pretending to be honesty.
+
+Apply it:
+
+| | Standing question? | At 390px |
+|---|---|---|
+| Arrivals | "did anything come in?" | **line** |
+| Waiting | "is anything stuck on someone?" | **line** |
+| Rhythms | "is the recurring stuff running?" | **line** |
+| Pulse | "is Cue watching?" | **line** |
+| In-motion | already answered by the census bar ("9 doing") | **absorbed, not a line** |
+| Day | it's a 16px strip at the top — Tier 1 in its own form | **not a line** |
+| Life / Personal | its items appear in needs-you; the horizon peek is a card when non-empty | **not a line** |
+| Batch offer | *event.* Nobody wonders "was there a batch I missed?" | **absent when absent** |
+| Correction | *event.* Full takeover when it exists | **absent when absent** |
+
+**Four.** And the rule generalises to desktop, where it also removes two lanes that were only ever there because the tier table listed them.
+
+### 13.2 · Paused runs — **the lane shouldn't exist; these are needs-you items**
+
+Excellent find, and the fix is bigger than promoting the line.
+
+A pending interaction is *work stopped until a human decides*. Our one-number invariant says **"needs you" = things blocked on a human decision.** A paused run is the most literal instance of that definition in the entire product. Putting it in a separate, quieter lane doesn't under-rank it — **it violates the one-definition rule**, which is why the door ended up pointing at a destination that couldn't act.
+
+**Ruling:**
+1. **Paused interactions are needs-you items.** They appear in the needs-you list, count in the badge, count in the headline number. No separate lane.
+2. **They sort above everything else in needs-you**, because unlike a draft awaiting review, *nothing proceeds* until answered. Sort key: paused > hard deadline > blocking count > calendar fit > age.
+3. **They carry `⏸` rather than `‖`** — same amber, different glyph, because the honest difference is "a run is stopped", not "a thing is waiting". Sub-line names what's held: *"Ops is holding — send to Rachel."*
+4. **Approve/decline inline**, exactly as you built it. Never a card, never a separate destination.
+5. **Retire the "N more approvals are paused · Decide ›" line entirely.** A label promising something its destination can't do is worse than no label.
+
+You were right that it was "quieter than a newsletter digest". It should be the loudest thing on the deck — but as the top of an existing list, not a new one.
+
+### 13.3 · Findings — accepted, with one design consequence each
+
+**`direct_human` was the volume problem.** Confirms v7's diagnosis was only half right: it was chrome *and* one rule. Design consequence: **Watching's "What Cue skips" panel (v17 E3) must show the rules in Cue's words and let you inspect the last N decisions.** A filter you can't audit is a filter you can't trust — and this is the exact failure mode that would have surfaced it in a day.
+
+**Verb phrases now exist.** This unblocks v7 §B, which assumed them. Note the `⌗` un-comprehended state (v9 N1) is now the *real* fallback rather than a theoretical one — expect it to appear more than we'd like at first, and **its count in the Came-in header is the metric to watch.**
+
+**A calendar event is not a task — agreed, with one distinction to keep.** No frame should show a meeting as a work item; the day rail is where the calendar reaches the owner. **But a calendar *conflict* is work.** HQ's "Resolve dinner conflict — flight CX 784 overlaps" is correct and must survive: the event isn't the task, the *collision between two events* is. Rule: **calendar arrivals mint work only when they create a decision the owner has to make** — conflict, a hold that expires, an invite that needs an answer.
+
+**The `?` fix and the token slot** — both right. On the slot: **delete it.** Two neutral text values per theme, and anything needing to recede further does it by size or weight, never contrast.
+
+---
+
+## 14 · Precedence — which file wins
 
 1. **v17** — detail surfaces (thing detail, Skills, Watching, Files).
 2. **v16** — the three destinations at desktop size.
