@@ -798,7 +798,9 @@ export function dedupeWorkItems(): DedupeWorkItemsResult {
     // board (whose per-build sourceId changes) collapses to one row, matching
     // the live enqueue guard's channel+title fallback. Source-less items key
     // on title only.
-    const key = i.sourceType ? `s:${i.sourceType} ${title}` : `t:${title}`;
+    const key = i.sourceType
+      ? `s:${JSON.stringify([i.sourceType, title])}`
+      : `t:${title}`;
     const bucket = groups.get(key);
     if (bucket) bucket.push(i);
     else groups.set(key, [i]);
