@@ -225,7 +225,13 @@ async function scoreWithFlashLlm(
 ): Promise<AutoFileAssignment[] | null> {
   try {
     const provider = await getConfiguredProvider("conversationTitle");
-    if (!provider) return null;
+    if (!provider) {
+      log.warn(
+        { items: items.length },
+        "auto-file cannot score: no provider resolved for conversationTitle",
+      );
+      return null;
+    }
     const config = getConfig();
     const resolved = resolveCallSiteConfig("conversationTitle", config.llm);
     const result = await runBtwSidechain({
@@ -239,13 +245,32 @@ async function scoreWithFlashLlm(
       maxTokens: resolved.maxTokens,
       timeoutMs: AUTO_FILE_TIMEOUT_MS,
     });
-    return parseAutoFileResponse(
+    const parsed = parseAutoFileResponse(
       result.text,
       new Set(items.map((i) => i.id)),
       new Set(projects.map((p) => p.id)),
     );
+    if (parsed === null || parsed.length === 0) {
+      // The model answered and we could not use a word of it. Distinct from a
+      // thrown call and from "no provider", and it was previously silent —
+      // an empty parse looked exactly like a scorer that judged nothing.
+      log.warn(
+        { items: items.length, replyChars: result.text?.length ?? 0 },
+        "auto-file scored nothing usable from the model's reply",
+      );
+    }
+    return parsed;
   } catch (err) {
-    log.debug({ err: String(err) }, "auto-file flash scoring failed (skipped)");
+    // WARN, not debug. Production runs at info, so this line — the only one
+    // that says WHY filing stopped — was invisible. The sweep's own health
+    // reporting could say "filed nothing 9 times running" while the reason sat
+    // one level below the log floor. Making an outcome observable is not the
+    // same as making its cause observable, and this file is where that lesson
+    // was supposed to have landed.
+    log.warn(
+      { err: String(err), items: items.length },
+      "auto-file flash scoring failed",
+    );
     return null;
   }
 }
