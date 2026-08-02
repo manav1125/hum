@@ -3,12 +3,14 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  CreditCard,
   Gift,
   MessageSquareText,
   Settings as SettingsIcon,
   Shield,
-  SlidersHorizontal,
+  ShieldCheck,
   SunMoon,
+  User,
 } from "lucide-react";
 import { lazy, useState } from "react";
 import { useNavigate } from "react-router";
@@ -36,6 +38,7 @@ import { adminUrl, routes } from "@/utils/routes";
 import { isPointerCoarse } from "@/utils/pointer";
 
 import { CreditsCard } from "./credits-card";
+import { ownerLineText, useOwnerLine } from "./use-owner-line";
 
 // Modal only opens when the user clicks "Share Feedback" — defer loading
 // until then to keep the modal's form deps (markdown editor, etc.) out of
@@ -67,6 +70,7 @@ export function PreferencesMenu({
   const [isOpen, setIsOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isEarnCreditsOpen, setIsEarnCreditsOpen] = useState(false);
+  const ownerLine = useOwnerLine(assistantId);
 
   if (!isAuthenticated) {
     return null;
@@ -74,10 +78,22 @@ export function PreferencesMenu({
 
   const closeMenu = () => setIsOpen(false);
 
+  // `👤 Manav · Autonomous · $4.10`. Design's footer is the owner's NAME, the
+  // autonomy tier and the spend — the row that says whose workspace this is —
+  // acting as the door to Trust / Preferences / Billing. It was labelled
+  // "Preferences", which named the mechanism, and the owner read the settings
+  // pages as having been removed. Segments that cannot be read are dropped
+  // rather than defaulted; see `use-owner-line.ts`.
+  const line = ownerLineText(ownerLine);
+
   const trigger = (
     <SideMenu.Item
-      icon={SlidersHorizontal}
-      label="Preferences"
+      icon={User}
+      label={line}
+      // Collapsed, the rail suppresses the label and the icon is aria-hidden,
+      // so the row had no accessible name at all.
+      aria-label={`${line} — account, trust and preferences`}
+      tooltip={line}
       trailingIcon={isOpen ? ChevronDown : ChevronUp}
       active={isOpen}
     />
@@ -223,18 +239,44 @@ export function PreferencesMenuContent({
       ) : null}
 
       {/*
-        Guardrails and Usage used to have rows here, because at the time they
-        had no entry in ANY persistent desktop navigation — the rail was
-        surface-only and the Settings sidebar never listed them. Both are now
-        leaves in Your Cue (What it does alone → Guardrails; Running Cue →
-        Usage & spend), which is a permanent, findable home rather than a menu
-        you have to know to open.
+        Trust · Preferences · Billing.
 
-        They are NOT duplicated here. "No second nav path to the same
-        destination" is the rule this whole round is enforcing, and a menu row
-        beside a leaf row is exactly that — the thing this rail has already had
-        to clean up twice.
+        An earlier round removed these on "no second nav path to the same
+        destination". Design's ruling for the account row overrides that
+        specifically: the footer line IS the door to Trust, Preferences and
+        Billing, and it is the only door that reads as belonging to the person
+        rather than to the machine. The general rule still stands for the rail
+        itself — these three live behind a click on your own name, not as three
+        more permanent rows.
       */}
+      <PanelItem
+        icon={ShieldCheck}
+        label="Trust"
+        onSelect={() => {
+          onClose();
+          navigate(routes.guardrails);
+        }}
+      />
+
+      <PanelItem
+        icon={SettingsIcon}
+        label="Preferences"
+        onSelect={() => {
+          onClose();
+          navigate(routes.settings.general);
+        }}
+      />
+
+      {showBillingRows ? (
+        <PanelItem
+          icon={CreditCard}
+          label="Billing"
+          onSelect={() => {
+            onClose();
+            navigate(routes.settings.billing);
+          }}
+        />
+      ) : null}
 
       {(platformGate === "full" || isElectron()) && (
         <PanelItem

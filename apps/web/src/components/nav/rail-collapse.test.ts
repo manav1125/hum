@@ -15,6 +15,7 @@ import {
   RAIL_COLLAPSED_WIDTH,
   isConversationSurface,
   isRailCollapsed,
+  railToggleLabel,
   toggleRail,
 } from "./rail-collapse";
 
@@ -155,4 +156,46 @@ describe("what ◧ / ⌘\\ changes", () => {
 
 test("the strip is 52px", () => {
   expect(RAIL_COLLAPSED_WIDTH).toBe(52);
+});
+
+describe("the control says which of its two jobs it is doing", () => {
+  // Four of the owner's eight complaints traced to the auto-collapse, and the
+  // reason it read as breakage rather than as a feature is that the one way
+  // back was a button labelled "Toggle sidebar" — the mechanism, not the
+  // effect — with no shortcut printed and no mention of pinning.
+  test("in a conversation it is a pin", () => {
+    expect(railToggleLabel(true, true)).toBe("Pin the sidebar open (⌘\\)");
+    expect(railToggleLabel(false, true)).toContain("Unpin");
+  });
+
+  test("outside one it is a collapse", () => {
+    expect(railToggleLabel(false, false)).toBe("Collapse the sidebar (⌘\\)");
+    expect(railToggleLabel(true, false)).toBe("Expand the sidebar (⌘\\)");
+  });
+
+  test("every form prints the shortcut", () => {
+    for (const collapsed of [true, false]) {
+      for (const inConversation of [true, false]) {
+        expect(railToggleLabel(collapsed, inConversation)).toContain("⌘\\");
+      }
+    }
+  });
+
+  test("the label always matches what toggleRail would actually do", () => {
+    // The failure mode this guards: a label drifting from the branch it
+    // describes, which is how "Toggle sidebar" survived the pin/collapse split
+    // in the first place.
+    for (const preferenceCollapsed of [true, false]) {
+      for (const pinnedOpen of [true, false]) {
+        for (const inConversation of [true, false]) {
+          const inputs = { preferenceCollapsed, inConversation, pinnedOpen };
+          const collapsed = isRailCollapsed(inputs);
+          const after = isRailCollapsed({ ...inputs, ...toggleRail(inputs) });
+          const label = railToggleLabel(collapsed, inConversation);
+          const promisesOpen = /Pin|Expand/.test(label);
+          expect(after).toBe(!promisesOpen);
+        }
+      }
+    }
+  });
 });

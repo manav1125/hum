@@ -167,21 +167,42 @@ describe("PreferencesMenu", () => {
     expect(html).toBe("");
   });
 
-  test("renders a Preferences trigger when logged in", () => {
+  test("the trigger is the owner, not the machinery", () => {
+    // Design's footer is `👤 Manav · Autonomous · $4.10` — the person's NAME,
+    // acting as the door to Trust / Preferences / Billing. It shipped labelled
+    // "Preferences", and the owner read the settings pages as removed.
     const html = renderToStaticMarkup(createElement(PreferencesMenu));
-    expect(html).toContain("Preferences");
+    // The mocked user has no first name and no username, so the honest
+    // fallback is the local part of the email — never an invented name.
+    expect(html).toContain("user");
+    expect(html).not.toContain(">Preferences<");
+  });
+
+  test("the trigger carries an accessible name for the collapsed rail", () => {
+    // Collapsed, SideMenu.Item suppresses the label and the icon is
+    // aria-hidden — the row had no accessible name at all.
+    const html = renderToStaticMarkup(createElement(PreferencesMenu));
+    expect(html).toContain(
+      'aria-label="user — account, trust and preferences"',
+    );
   });
 
   test("desktop renders trigger (Popover surface)", () => {
     isMobileRef.value = false;
     const html = renderToStaticMarkup(createElement(PreferencesMenu));
-    expect(html).toContain("Preferences");
+    expect(html).toContain("popover-trigger");
   });
 
   test("mobile renders trigger (BottomSheet surface)", () => {
     isMobileRef.value = true;
     const html = renderToStaticMarkup(createElement(PreferencesMenu));
-    expect(html).toContain("Preferences");
+    expect(html).toContain("bottom-sheet-trigger");
+  });
+
+  test("a real first name wins over the email fallback", () => {
+    authRef.user = { ...authRef.user, firstName: "Manav" };
+    const html = renderToStaticMarkup(createElement(PreferencesMenu));
+    expect(html).toContain("Manav");
   });
 });
 
@@ -227,14 +248,37 @@ describe("PreferencesMenuContent", () => {
     expect(navigations).toContain("/assistant/your-cue");
   });
 
-  test("exactly ONE door — and no row beside a Your Cue leaf", () => {
+  test("exactly ONE door to the shell itself", () => {
     render(createElement(PreferencesMenuContent, contentProps));
     expect(screen.getAllByText("Your Cue")).toHaveLength(1);
-    // Both are leaves now. A row here as well is duplicate nav.
-    expect(screen.queryByText("Guardrails")).toBeNull();
-    expect(screen.queryByText("Usage")).toBeNull();
-    // And "Settings" is gone as a word — it is not a place any more.
+    // "Settings" is gone as a word — it is not a place any more.
     expect(screen.queryByText("Settings")).toBeNull();
+  });
+
+  /**
+   * Design's account row is *"the door to Trust/Preferences/Billing"*, and
+   * these three rows are that door. An earlier round removed them on "no
+   * second nav path"; this ruling is specifically about the row behind your own
+   * name, and it wins for these three only.
+   */
+  test("Trust is reachable from the owner's own row", () => {
+    render(createElement(PreferencesMenuContent, contentProps));
+    fireEvent.click(screen.getByText("Trust"));
+    expect(navigations).toContain("/assistant/guardrails");
+  });
+
+  test("Preferences is reachable, and lands on the leaf itself", () => {
+    // The leaf IS General — not `/assistant/settings`, which is a redirect.
+    render(createElement(PreferencesMenuContent, contentProps));
+    fireEvent.click(screen.getByText("Preferences"));
+    expect(navigations).toContain("/assistant/settings/general");
+  });
+
+  test("Billing stays out when the workspace is not platform-hosted", () => {
+    // A row that leads to a billing page this install does not have is worse
+    // than no row: `usePlatformGate` is mocked "gated" here.
+    render(createElement(PreferencesMenuContent, contentProps));
+    expect(screen.queryByText("Billing")).toBeNull();
   });
 
   test("a narrow MOUSE window keeps the segment", () => {

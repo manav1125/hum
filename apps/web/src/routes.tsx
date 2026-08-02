@@ -578,15 +578,22 @@ export const routeTree = [
                     },
                   },
                   {
-                    // Bare chats index (no id): the mobile v3 Chats screen
-                    // (spec frame 21) — the ⋯ overflow's "Chats" destination.
-                    // Desktop redirects to /assistant (the sidebar rail IS
-                    // the index there); previously this URL 404'd.
+                    // Bare chats index (no id). The phone gets the mobile v3
+                    // Chats screen (spec frame 21); desktop gets the real
+                    // "All conversations" index.
+                    //
+                    // It used to mount `ChatsIndexPage` directly, which
+                    // redirects to `/assistant` on desktop — correct when the
+                    // rail WAS the index, and the reason the rail's later
+                    // "All conversations ›" row shipped dead: from
+                    // `/assistant` the round trip ended where it started, so
+                    // the URL never changed. See
+                    // `domains/chat/conversations-index-page.tsx`.
                     path: "conversations",
                     lazy: {
                       Component: () =>
-                        import("@/mobile-v3/chats/chats-index-page").then(
-                          (m) => m.ChatsIndexPage,
+                        import("@/domains/chat/conversations-index-page").then(
+                          (m) => m.ConversationsIndexPage,
                         ),
                     },
                   },
@@ -1272,6 +1279,21 @@ export const routeTree = [
                               Component: () =>
                                 import("@/domains/intelligence/memories-page").then(
                                   (m) => m.MemoriesPage,
+                                ),
+                            },
+                          },
+                          {
+                            // People, as design's interim tab under Memory.
+                            // A CHILD of `/assistant/memory` so the Memory
+                            // leaf keeps lighting while you are here — a tab
+                            // under a leaf, not a nineteenth leaf. The
+                            // standalone `/assistant/people` surface is
+                            // unchanged and still resolves.
+                            path: "memory/people",
+                            lazy: {
+                              Component: () =>
+                                import("@/domains/intelligence/memory-people-page").then(
+                                  (m) => m.MemoryPeoplePage,
                                 ),
                             },
                           },

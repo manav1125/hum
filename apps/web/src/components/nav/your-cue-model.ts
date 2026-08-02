@@ -379,6 +379,45 @@ export const YOUR_CUE_SUBLEAVES: readonly YourCueSubLeaf[] = [
   },
 ] as const;
 
+/**
+ * The tabs under **Memory**.
+ *
+ * Design's sequencing for People: *"ship it inside `Your Cue → Memory` as an
+ * interim tab. Promote it to the sidebar when contact memories are non-zero
+ * and growing week-over-week."* The sidebar gate shipped; this half did not,
+ * so People had no door at all.
+ *
+ * Modelled exactly like {@link YOUR_CUE_SUBLEAVES}, and for the same reason:
+ * the **leaf itself is the first tab** (Memory → the memories list), so it is
+ * deliberately absent from this array. Listing it would put two rows one line
+ * apart pointing at the same page, which is the duplication this round exists
+ * to remove.
+ */
+export const YOUR_CUE_MEMORY_TABS: readonly YourCueSubLeaf[] = [
+  { key: "people", label: "People", to: routes.memoryPeople },
+] as const;
+
+const NO_PANELS: readonly YourCueSubLeaf[] = [];
+
+/** True while Memory or one of its tabs is open, so the tab row renders. */
+export function isMemoryPath(pathname: string): boolean {
+  const memory = YOUR_CUE_LEAVES.find((leaf) => leaf.key === "memory");
+  return memory?.match(pathname) ?? false;
+}
+
+/**
+ * The second-level rows to render beneath the active leaf, or an empty list.
+ *
+ * One function rather than a branch per leaf, so the shell renders sub-rows by
+ * ONE mechanism: today Preferences (nine panels) and Memory (People), and the
+ * next one costs an array rather than another special case in the layout.
+ */
+export function panelsForPath(pathname: string): readonly YourCueSubLeaf[] {
+  if (isPreferencesPath(pathname)) return YOUR_CUE_SUBLEAVES;
+  if (isMemoryPath(pathname)) return YOUR_CUE_MEMORY_TABS;
+  return NO_PANELS;
+}
+
 /** Every leaf, flattened, in strip order. */
 export const YOUR_CUE_LEAVES: readonly YourCueLeaf[] = YOUR_CUE_GROUPS.flatMap(
   (group) => group.leaves,

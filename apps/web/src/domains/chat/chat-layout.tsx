@@ -637,6 +637,10 @@ export function ChatLayout() {
       assistantId={assistantId ?? ""}
       assistantName={assistantName}
       collapsed={args.collapsed}
+      // `◧` on the rail itself. The overlay drawer has its own ✕ and is not
+      // collapsible, so only the rail gets the control.
+      inConversation={inConversation}
+      onToggleCollapsed={args.variant === "rail" ? toggleSidebar : undefined}
       variant={args.variant}
       width={args.width}
       onWidthChange={args.onWidthChange}
@@ -684,6 +688,7 @@ export function ChatLayout() {
           isMobile={isMobile}
           drawerOpen={drawerOpen}
           collapsed={collapsed}
+          inConversation={inConversation}
           sidebarWidth={sidebarWidth}
           toggleSidebar={toggleSidebar}
           topBarCenter={topBarCenter}

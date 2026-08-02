@@ -69,6 +69,31 @@ export function toggleRail(inputs: RailCollapseInputs): {
 }
 
 /**
+ * What `◧` / `⌘\` does from where you are, said in full.
+ *
+ * Lives beside {@link toggleRail} because it is the same branch: the control
+ * is a **pin** inside a conversation and a **collapse** everywhere else, and
+ * shipping one label for both ("Toggle sidebar") is what made the affordance
+ * something you had to already know about. Both the rail's own control and the
+ * top bar's button read this, so the two cannot describe it differently.
+ *
+ * The shortcut is printed because it is registered on every desktop surface
+ * this control renders on (`use-chat-layout-shortcuts.ts`) — unlike ⌘N, which
+ * the rail deliberately hides in a browser tab.
+ */
+export function railToggleLabel(
+  collapsed: boolean,
+  inConversation: boolean,
+): string {
+  if (inConversation) {
+    return collapsed
+      ? "Pin the sidebar open (⌘\\)"
+      : "Unpin the sidebar — it collapses in conversations (⌘\\)";
+  }
+  return collapsed ? "Expand the sidebar (⌘\\)" : "Collapse the sidebar (⌘\\)";
+}
+
+/**
  * Is a conversation transcript on screen?
  *
  * `/assistant/conversations/<id>` and the bare `/assistant` (which redirects

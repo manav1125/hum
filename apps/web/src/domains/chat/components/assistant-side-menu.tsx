@@ -5,6 +5,7 @@ import {
   Hash,
   LayoutGrid,
   LayoutList,
+  MessagesSquare,
   Pin,
   Rocket,
   Search,
@@ -57,6 +58,7 @@ import {
   type PrimaryNavKey,
 } from "@/components/nav/nav-model";
 import { usePeopleSignal } from "@/components/nav/use-people-signal";
+import { railToggleLabel } from "@/components/nav/rail-collapse";
 import { isElectron } from "@/runtime/is-electron";
 import { useNavCounts } from "@/components/nav/use-nav-counts";
 import { useRailPeek } from "@/components/nav/use-rail-peek";
@@ -68,6 +70,7 @@ import {
   ContextMenu,
   PanelItem,
   SideMenu,
+  Tooltip,
 } from "@vellumai/design-library";
 import { cn } from "@vellumai/design-library/utils/cn";
 
@@ -78,6 +81,17 @@ export const ASSISTANT_SIDE_MENU_CONVERSATION_LIMIT =
 export interface AssistantSideMenuProps extends UseSidebarStateParams {
   assistantName?: string | null;
   collapsed: boolean;
+  /**
+   * True while a conversation transcript is the surface on screen — which is
+   * when `◧` means *pin the rail open* rather than *collapse it*. The rail
+   * needs to know so its own control can say which of the two it does.
+   */
+  inConversation?: boolean;
+  /**
+   * `◧` / `⌘\`. Supplied by the layout, which owns the two flags the rule
+   * reads (see `rail-collapse.ts`). When omitted the control is not rendered.
+   */
+  onToggleCollapsed?: () => void;
   variant: "rail" | "overlay";
   width?: number;
   onWidthChange?: (width: number) => void;
@@ -252,9 +266,45 @@ const PEEK_UNREADABLE: Record<PeekSectionKey, string> = {
   work: "⚠ Couldn't read Work",
 };
 
+/**
+ * `◧` — the rail's own collapse/pin control.
+ *
+ * It lives ON the rail, not only in the top bar, because the top bar's button
+ * is the thing you have to already know about: entering a conversation shrinks
+ * the rail to a 52px strip with no visible way back, and "there is a control
+ * for this somewhere" is not discoverability. The glyph is design's, and it
+ * carries its meaning in text — nothing here is distinguished by colour.
+ */
+function RailToggle({
+  collapsed,
+  inConversation,
+  onToggle,
+}: {
+  collapsed: boolean;
+  inConversation: boolean;
+  onToggle: () => void;
+}) {
+  const label = railToggleLabel(collapsed, inConversation);
+  return (
+    <Tooltip content={label} side="right">
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={!collapsed}
+        onClick={onToggle}
+        className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent text-[13px] leading-none text-[color:var(--content-secondary)] outline-none transition-colors hover:bg-[var(--surface-hover)] hover:text-[color:var(--content-emphasised)] keyboard-focus:ring-2 keyboard-focus:ring-[var(--ring)]"
+      >
+        <span aria-hidden>◧</span>
+      </button>
+    </Tooltip>
+  );
+}
+
 export function AssistantSideMenu({
   assistantId,
   collapsed,
+  inConversation = false,
+  onToggleCollapsed,
   variant,
   width,
   onWidthChange,
@@ -589,21 +639,39 @@ export function AssistantSideMenu({
       className="h-full"
     >
       <SideMenu.Header>
+        {/*
+          `cue.                              ◧`
+
+          The `◧` is on the rail in BOTH states, which is the fix for the
+          complaint that four destinations "looked missing": entering a
+          conversation collapses the rail, and until now the only way back was
+          a top-bar button that says "Toggle sidebar" and never mentions the
+          shortcut. Collapsed, the mark and the control stack.
+        */}
         {variant !== "overlay" ? (
           <div
             className={cn(
-              "flex items-center gap-2.5 pb-2",
-              collapsed ? "justify-center px-0" : "px-2",
+              "flex pb-2",
+              collapsed
+                ? "flex-col items-center gap-1 px-0"
+                : "items-center gap-2.5 px-2",
             )}
           >
             <ApertureAvatar size={24} />
             {!collapsed ? (
               <span
-                className="select-none text-[19px] font-medium leading-none tracking-[-0.5px] text-[color:var(--content-emphasised)]"
+                className="flex-1 select-none text-[19px] font-medium leading-none tracking-[-0.5px] text-[color:var(--content-emphasised)]"
                 style={{ fontFamily: "var(--font-sans)" }}
               >
                 cue<span style={{ color: "var(--accent-cue)" }}>.</span>
               </span>
+            ) : null}
+            {onToggleCollapsed ? (
+              <RailToggle
+                collapsed={collapsed}
+                inConversation={inConversation}
+                onToggle={onToggleCollapsed}
+              />
             ) : null}
           </div>
         ) : null}
@@ -653,6 +721,11 @@ export function AssistantSideMenu({
                 icon={PRIMARY_ICON[destination.key]}
                 label={destination.label}
                 showCollapsedTooltip
+                // Collapsed, the label is not rendered and the icon is
+                // `aria-hidden`, so the row had NO accessible name — the
+                // styled tooltip only reaches a pointer. Every icon in the
+                // strip names itself now.
+                aria-label={destination.label}
                 emphasized
                 // ⌘N rides in the badge slot rather than as a second control —
                 // the row already IS the action. Shown only on the desktop
@@ -701,6 +774,14 @@ export function AssistantSideMenu({
                   icon={PRIMARY_ICON[destination.key]}
                   label={destination.label}
                   showCollapsedTooltip
+                  // The count rides in the name too: collapsed, the badge is
+                  // suppressed as well, so "HQ" alone would drop the one
+                  // number the strip is carrying.
+                  aria-label={
+                    count > 0
+                      ? `${destination.label} (${count})`
+                      : destination.label
+                  }
                   badge={count > 0 ? String(count) : undefined}
                   active={active}
                   className={collapsed ? undefined : "pr-8"}
@@ -839,6 +920,19 @@ export function AssistantSideMenu({
                 renderCollapsedGroupContent("Slack", sidebar.slack.all, close)
               }
             </CollapsedGroupIcon>
+            {/*
+              The collapsed strip used to drop this row entirely — and the
+              expanded one was dead (it redirected back where you came from),
+              so "All conversations" was reachable from nowhere at all.
+            */}
+            <SideMenu.Item
+              icon={MessagesSquare}
+              label="All conversations"
+              showCollapsedTooltip
+              aria-label="All conversations"
+              active={location.pathname === routes.conversations}
+              onSelect={() => cueNav(routes.conversations)}
+            />
           </div>
         ) : (
           <>
@@ -864,6 +958,7 @@ export function AssistantSideMenu({
                 size="compact"
                 emphasized
                 trailingIcon={ChevronRight}
+                aria-label="All conversations"
                 active={location.pathname === routes.conversations}
                 onSelect={() => cueNav(routes.conversations)}
               />
@@ -998,6 +1093,11 @@ export function AssistantSideMenu({
                 icon={SIDEBAR_ICON[destination.key]}
                 label={destination.label}
                 showCollapsedTooltip
+                aria-label={
+                  count && count > 0
+                    ? `${destination.label} (${count})`
+                    : destination.label
+                }
                 badge={count && count > 0 ? String(count) : undefined}
                 active={
                   isLibrary
@@ -1037,6 +1137,7 @@ export function AssistantSideMenu({
             icon={Settings2}
             label={YOUR_CUE_DOOR.label}
             showCollapsedTooltip
+            aria-label={YOUR_CUE_DOOR.label}
             active={YOUR_CUE_DOOR.match(location.pathname)}
             onSelect={() => cueNav(YOUR_CUE_DOOR.to)}
           />
@@ -1059,6 +1160,7 @@ export function AssistantSideMenu({
             icon={app.icon ?? Rocket}
             label={app.name}
             showCollapsedTooltip
+            aria-label={app.name}
             active={activeAppId === app.appId}
             onSelect={
               onOpenApp

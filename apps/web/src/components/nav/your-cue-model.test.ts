@@ -18,9 +18,12 @@ import { describe, expect, test } from "bun:test";
 import {
   YOUR_CUE_GROUPS,
   YOUR_CUE_LEAVES,
+  YOUR_CUE_MEMORY_TABS,
   YOUR_CUE_SUBLEAVES,
   activeYourCueLeaf,
+  isMemoryPath,
   isPreferencesPath,
+  panelsForPath,
 } from "./your-cue-model";
 import { routes } from "@/utils/routes";
 
@@ -276,5 +279,77 @@ describe("the Preferences sub-row", () => {
       (s) => s.key,
     );
     expect(dev).toEqual(["debug", "advanced", "developer"]);
+  });
+});
+
+describe("People's interim home under Memory", () => {
+  // Design's sequencing, verbatim: "ship it inside `Your Cue → Memory` as an
+  // interim tab. Promote it to the sidebar when contact memories are non-zero
+  // and growing." Only the sidebar-gate half shipped, so People existed
+  // nowhere you could reach it.
+  test("Memory carries exactly one tab, and it is People", () => {
+    expect(YOUR_CUE_MEMORY_TABS.map((t) => t.key)).toEqual(["people"]);
+    expect(YOUR_CUE_MEMORY_TABS[0]?.to).toBe("/assistant/memory/people");
+  });
+
+  test("the tab is a CHILD of the leaf, so Memory stays lit", () => {
+    const memory = YOUR_CUE_LEAVES.find((leaf) => leaf.key === "memory");
+    expect(memory?.match("/assistant/memory/people")).toBe(true);
+    expect(activeYourCueLeaf("/assistant/memory/people")?.key).toBe("memory");
+  });
+
+  test("Memory itself is not listed as a tab — the leaf IS the first tab", () => {
+    // The same rule that keeps General out of YOUR_CUE_SUBLEAVES. Two rows one
+    // line apart pointing at the same page is the duplication this round
+    // exists to remove.
+    expect(YOUR_CUE_MEMORY_TABS.some((t) => t.to === "/assistant/memory")).toBe(
+      false,
+    );
+  });
+
+  test("the tab is not a nineteenth leaf", () => {
+    expect(
+      YOUR_CUE_LEAVES.some((l) => l.to === "/assistant/memory/people"),
+    ).toBe(false);
+  });
+
+  test("no tab collides with a leaf or a Preferences panel", () => {
+    const taken = new Set([
+      ...YOUR_CUE_LEAVES.map((l) => l.to).filter(Boolean),
+      ...YOUR_CUE_SUBLEAVES.map((s) => s.to),
+    ]);
+    for (const tab of YOUR_CUE_MEMORY_TABS) {
+      expect(taken.has(tab.to)).toBe(false);
+    }
+  });
+});
+
+describe("one mechanism decides a leaf's sub-rows", () => {
+  test("Preferences pages get the nine panels", () => {
+    expect(panelsForPath("/assistant/settings/general")).toBe(
+      YOUR_CUE_SUBLEAVES,
+    );
+    expect(isPreferencesPath("/assistant/settings/notifications")).toBe(true);
+  });
+
+  test("Memory pages get the Memory tabs", () => {
+    expect(panelsForPath("/assistant/memory")).toBe(YOUR_CUE_MEMORY_TABS);
+    expect(panelsForPath("/assistant/memory/people")).toBe(
+      YOUR_CUE_MEMORY_TABS,
+    );
+    expect(isMemoryPath("/assistant/memory/people")).toBe(true);
+  });
+
+  test("every other leaf gets none", () => {
+    for (const path of [
+      "/assistant/identity",
+      "/assistant/skills",
+      "/assistant/guardrails",
+      // A settings path that is a leaf in its OWN right must not borrow the
+      // Preferences panels.
+      "/assistant/settings/budget",
+    ]) {
+      expect(panelsForPath(path)).toHaveLength(0);
+    }
   });
 });

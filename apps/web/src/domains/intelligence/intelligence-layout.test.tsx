@@ -17,7 +17,7 @@
  * satisfies the component's `useLocation`/`NavLink` usage.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 const isMobileRef = { value: false };
@@ -97,8 +97,8 @@ describe("the shell", () => {
   });
 });
 
-describe("the grouped strip", () => {
-  test("all six questions render", () => {
+describe("the left column", () => {
+  test("all six questions render as headings", () => {
     const { getByText } = renderLayout();
     for (const title of [
       "Who Cue is",
@@ -112,27 +112,59 @@ describe("the grouped strip", () => {
     }
   });
 
-  test("the active group is derived from the URL, not selected", () => {
-    // Landing on a deep link must open its group already — otherwise every
-    // bookmark costs a click it did not cost before.
-    const { getByLabelText } = renderLayout("/assistant/guardrails");
-    expect(getByLabelText("What it does alone sections")).toBeTruthy();
+  test("every leaf of every group is visible at once", () => {
+    // This is the whole reason the navigation moved left. The two stacked
+    // rows showed the leaves of the ONE group you were inside, so fourteen of
+    // eighteen surfaces were invisible from any given page — which is how
+    // People, All conversations, Your Cue and Preferences all came to read as
+    // "removed".
+    const column = renderLayout("/assistant/identity").getByLabelText(
+      "Your Cue",
+    );
+    for (const label of [
+      "Identity",
+      "Brand",
+      "Agents",
+      "Skills",
+      "Connectors",
+      "Channels",
+      "Agent network",
+      "Cue Live",
+      "Memory",
+      "Watching",
+      "Schedules",
+      "Automations",
+      "Guardrails",
+      "System access",
+      "Models",
+      "Usage & spend",
+      "Workspace",
+      "Preferences",
+    ]) {
+      expect(column.textContent).toContain(label);
+    }
   });
 
-  test("each group shows only its own leaves", () => {
-    const { getByLabelText } = renderLayout("/assistant/identity");
-    const strip = getByLabelText("Who Cue is sections");
-    expect(strip.textContent).toContain("Identity");
-    expect(strip.textContent).toContain("Brand");
-    // Skills belongs to a different group and must not leak into this row.
-    expect(strip.textContent).not.toContain("Skills");
+  test("the active leaf is marked, and not by colour alone", () => {
+    // Landing on a deep link must show you where you are without a click.
+    const { getByRole } = renderLayout("/assistant/guardrails");
+    const active = getByRole("link", { current: "page" });
+    expect(active.textContent).toContain("Guardrails");
+    expect(active.textContent).toContain("▸");
+  });
+
+  test("a leaf navigates when clicked", () => {
+    const { getByText, container } = renderLayout("/assistant/identity");
+    fireEvent.click(getByText("Workspace"));
+    expect(
+      container.querySelector('[aria-current="page"]')?.textContent,
+    ).toContain("Workspace");
   });
 
   test("the four look-alikes are four separate leaves", () => {
     flagsRef.externalPlugins = true;
     flagsRef.marketplace = true;
-    const { getByLabelText } = renderLayout("/assistant/skills");
-    const strip = getByLabelText("Who works for you sections");
+    const column = renderLayout("/assistant/skills").getByLabelText("Your Cue");
     for (const label of [
       "Agents",
       "Skills",
@@ -140,15 +172,22 @@ describe("the grouped strip", () => {
       "Marketplace",
       "Connectors",
     ]) {
-      expect(strip.textContent).toContain(label);
+      expect(column.textContent).toContain(label);
     }
   });
 
   test("flag-gated leaves stay out until their flag is on", () => {
-    const { getByLabelText } = renderLayout("/assistant/skills");
-    const strip = getByLabelText("Who works for you sections");
-    expect(strip.textContent).not.toContain("Plugins");
-    expect(strip.textContent).not.toContain("Marketplace");
+    const column = renderLayout("/assistant/skills").getByLabelText("Your Cue");
+    expect(column.textContent).not.toContain("Plugins");
+    expect(column.textContent).not.toContain("Marketplace");
+  });
+
+  test("a group heading is a heading, not a second way to reach its first leaf", () => {
+    // It used to be a button that navigated. A row one line below already goes
+    // there, and "no second nav path to the same destination" is the rule this
+    // round is enforcing.
+    const { getByText } = renderLayout("/assistant/identity");
+    expect(getByText("Running Cue").closest("button")).toBeNull();
   });
 
   test("Watching renders disabled and says why — it never points at a lookalike", () => {
@@ -161,8 +200,8 @@ describe("the grouped strip", () => {
   });
 });
 
-describe("the Preferences sub-row", () => {
-  test("renders on a Preferences page", () => {
+describe("sub-rows", () => {
+  test("Preferences' panels render beneath it on a Preferences page", () => {
     const { getByLabelText } = renderLayout("/assistant/settings/general");
     const row = getByLabelText("Preferences panels");
     expect(row.textContent).toContain("Notifications");
@@ -189,6 +228,37 @@ describe("the Preferences sub-row", () => {
     expect(second.getByLabelText("Preferences panels").textContent).toContain(
       "Developer",
     );
+  });
+
+  test("Memory carries People — design's interim home for the relationship surface", () => {
+    // The sidebar gate says People has not earned a rail row yet. Design's
+    // sequencing says ship it HERE meanwhile; only the gate half shipped, so
+    // People existed nowhere.
+    const { getByLabelText } = renderLayout("/assistant/memory");
+    expect(getByLabelText("Memory panels").textContent).toContain("People");
+  });
+
+  test("Memory's People tab keeps the Memory leaf lit", () => {
+    // A tab under a leaf, not a nineteenth leaf: the column must not lose its
+    // place when you switch to it. The leaf stays marked; only the deepest
+    // match claims `aria-current="page"`.
+    const { container, getByRole } = renderLayout("/assistant/memory/people");
+    expect(
+      container.querySelector('[data-active="true"]')?.textContent,
+    ).toContain("Memory");
+    expect(getByRole("link", { current: "page" }).textContent).toContain(
+      "People",
+    );
+  });
+
+  test("a Memory tab navigates when clicked", () => {
+    const { getByText, getByLabelText } = renderLayout("/assistant/memory");
+    fireEvent.click(getByLabelText("Memory panels").querySelector("a")!);
+    expect(getByText("People").getAttribute("class")).toBeTruthy();
+    expect(
+      getByLabelText("Memory panels").querySelector('[aria-current="page"]')
+        ?.textContent,
+    ).toContain("People");
   });
 });
 

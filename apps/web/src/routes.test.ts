@@ -74,6 +74,22 @@ describe("chats index route", () => {
     expect(leafIsNotFound("/assistant/conversations")).toBe(false);
   });
 
+  test("it is the conversations INDEX, not the mobile screen that redirects", () => {
+    // The regression this guards: the route mounted `ChatsIndexPage`, whose
+    // very first desktop statement is `<Navigate to="/assistant" replace />`.
+    // The rail's "All conversations ›" row then pointed at a URL that bounced
+    // straight back to where you came from — so the row rendered, was
+    // clickable, called `navigate()`, and did nothing. A component name is the
+    // only thing a route table can assert here; the click itself is covered by
+    // `assistant-side-menu.click-through.test.tsx`.
+    const matches = matchRoutes(routeTree as never, "/assistant/conversations");
+    const leaf = matches?.[matches.length - 1]?.route as
+      { lazy?: { Component?: () => Promise<unknown> } } | undefined;
+    expect(typeof leaf?.lazy?.Component).toBe("function");
+    // …and it is not a `<Navigate>` leaf.
+    expect(redirectTarget("/assistant/conversations")).toBeNull();
+  });
+
   test.each(["/assistant/system-events", "/emails", "/assistant/nope"])(
     "%s falls to the NotFound catch-all",
     (path) => {
@@ -316,6 +332,8 @@ describe("every leaf renders in the same shell", () => {
     "/assistant/agent-network",
     "/assistant/cue-live",
     "/assistant/memory",
+    // People's interim home. A CHILD of memory so the Memory leaf stays lit.
+    "/assistant/memory/people",
     "/assistant/settings/schedules",
     "/assistant/automations",
     "/assistant/settings/privacy",

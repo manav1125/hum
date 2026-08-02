@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, type ReactNode } from "react";
 
+import { railToggleLabel } from "@/components/nav/rail-collapse";
 import { isElectron } from "@/runtime/is-electron";
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
 import { useTitleBarStore } from "@/stores/title-bar-store";
@@ -26,6 +27,11 @@ export interface ChatLayoutHeaderProps {
   isMobile: boolean;
   drawerOpen: boolean;
   collapsed: boolean;
+  /**
+   * True while a transcript is on screen — where `◧` / `⌘\` means *pin the
+   * rail open* rather than *collapse it*. See `rail-collapse.ts`.
+   */
+  inConversation?: boolean;
   sidebarWidth?: number;
   toggleSidebar: () => void;
   topBarCenter?: ReactNode;
@@ -40,6 +46,7 @@ export function ChatLayoutHeader({
   isMobile,
   drawerOpen,
   collapsed,
+  inConversation = false,
   sidebarWidth,
   toggleSidebar,
   topBarCenter,
@@ -115,13 +122,17 @@ export function ChatLayoutHeader({
             onClick={toggleSidebar}
           />
         ) : (
+          // "Toggle sidebar" named the mechanism, not the effect, and never
+          // mentioned the shortcut — so the one control that undoes the
+          // auto-collapse was something you had to already know about. Both
+          // this and the rail's own `◧` read the same label helper.
           <Button
             variant="ghost"
             iconOnly={<PanelLeft />}
-            aria-label="Toggle sidebar"
+            aria-label={railToggleLabel(collapsed, inConversation)}
             aria-expanded={!collapsed}
             aria-controls="chat-side-menu"
-            tooltip="Toggle sidebar"
+            tooltip={railToggleLabel(collapsed, inConversation)}
             onClick={toggleSidebar}
           />
         )}

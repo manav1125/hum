@@ -205,6 +205,20 @@ export const routes = {
   // is gated by the `marketplace` assistant feature flag.
   marketplace: r("/assistant/marketplace"),
   memory: r("/assistant/memory"),
+  /**
+   * People, as an interim tab under Memory.
+   *
+   * Design's sequencing, verbatim: *"ship it inside `Your Cue → Memory` as an
+   * interim tab. Promote it to the sidebar when contact memories are non-zero
+   * and growing."* The sidebar gate (`shouldShowPeopleRow`) was built and this
+   * half was not, so People existed nowhere you could reach.
+   *
+   * A CHILD of `/assistant/memory` on purpose: the Memory leaf's `match` is a
+   * prefix test, so the left column keeps lighting Memory while you are here —
+   * a tab under a leaf, not a nineteenth leaf. The standalone relationship
+   * surface at {@link routes.people} is unchanged and still resolves.
+   */
+  memoryPeople: r("/assistant/memory/people"),
   workspace: r("/assistant/workspace"),
   library: {
     root: r("/assistant/library"),

@@ -6,9 +6,8 @@ import { Typography, cn } from "@vellumai/design-library";
 import { useChatLayoutSlotsStore } from "@/components/layout/chat-layout-slots-store";
 import {
   YOUR_CUE_GROUPS,
-  YOUR_CUE_SUBLEAVES,
   activeYourCueLeaf,
-  isPreferencesPath,
+  panelsForPath,
   type YourCueGroup,
   type YourCueLeaf,
 } from "@/components/nav/your-cue-model";
@@ -26,22 +25,40 @@ import { routes } from "@/utils/routes";
  * eleven panels that used to live behind their own SidebarShell render here,
  * with this strip above them, at unchanged URLs.
  *
- * ## Two rows, not eighteen tabs
+ * ## A left column, not two rows on top
  *
- * The strip is the same mechanism it always was — the base design asked me not
- * to rebuild — but eighteen leaves laid end to end is a horizontal scroll nobody
- * can scan. So the strip is grouped: a row of the six questions, then the
- * leaves of whichever one you are inside. Deep links are unaffected, because
- * the active group is *derived* from the active leaf rather than selected: you
- * never pay the second click unless you are browsing.
+ * The shipped build put the six group names across the top and a *second*
+ * horizontal row of leaves beneath them — the owner's words were "top down
+ * with second / third nav". Design (v19 frame N3, and §3 of the final brief)
+ * draws **left-hand tabs, grouped by the question each answers**:
  *
- *   Who Cue is · Who works for you · How Cue reaches you · What Cue knows &
- *   sees · What it does alone · Running Cue
+ *   WHO CUE IS              Identity · Brand
+ *   WHO WORKS FOR YOU       Agents · Skills · Plugins · Marketplace · Connectors
+ *   HOW CUE REACHES YOU     Channels · Agent network · Cue Live
+ *   WHAT CUE KNOWS & SEES   Memory · Watching
+ *   WHAT IT DOES ALONE      Schedules · Automations · Guardrails · System access
+ *   RUNNING CUE             Models · Usage & spend · Workspace · Preferences
  *
- * A third row appears under Preferences alone, carrying the panels that are
- * genuinely "set once" (Notifications, Sounds, Voice, Keyboard, Self-hosted,
- * Billing, Archive, and the developer panels). It is not a second nav path:
- * none of those rows exists anywhere else.
+ * This is not a style preference. Stacked horizontal rows cost two lines of
+ * chrome above every one of eighteen surfaces, put the group and the leaf on
+ * different axes, and — the reason it kept mattering — hid every leaf of every
+ * group you were not currently in. A column shows all eighteen at once, which
+ * is the point of collapsing two navigations into one destination.
+ *
+ * The grouping and the URLs are unchanged: this moves where the model is
+ * drawn, not what it says.
+ *
+ * ## Sub-rows
+ *
+ * Two leaves have a second level, rendered indented beneath them and only while
+ * you are inside them (`panelsForPath`):
+ *
+ *   · **Preferences** — the nine "set once" panels (Notifications, Sounds,
+ *     Voice, Keyboard, Self-hosted, Billing, Archive, developer).
+ *   · **Memory** — People, design's interim home for the relationship surface.
+ *
+ * Neither is a second nav path: in both cases the leaf itself is the first tab,
+ * and no sub-row is reachable from anywhere else.
  *
  * ## Every leaf, same shell
  *
@@ -97,13 +114,12 @@ export function IntelligenceLayout() {
   })).filter((group) => group.leaves.length > 0);
 
   const activeLeaf = activeYourCueLeaf(pathname);
-  const activeGroup =
-    groups.find((group) =>
-      group.leaves.some((leaf) => leaf.key === activeLeaf?.key),
-    ) ?? groups[0];
 
-  const showPreferenceRow = isPreferencesPath(pathname);
-  const subLeaves = YOUR_CUE_SUBLEAVES.filter(
+  // The sub-rows for whichever leaf owns this path — Preferences' nine panels
+  // or Memory's People tab — filtered by developer mode. One mechanism for
+  // both, so the next leaf that grows a second level costs an array rather
+  // than another branch here.
+  const panels = panelsForPath(pathname).filter(
     (sub) => !sub.developerOnly || settingsDeveloperNav,
   );
 
@@ -193,114 +209,76 @@ export function IntelligenceLayout() {
         </div>
       ) : null}
 
-      {isMobile ? null : (
-        <div className="mb-4 flex shrink-0 flex-col max-md:mb-0">
-          {/* Row 1 — the six questions. */}
-          <nav
-            className="flex items-center gap-1 overflow-x-auto"
-            style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
-            aria-label="Your Cue groups"
-          >
-            {groups.map((group) => {
-              const isActive = group.key === activeGroup?.key;
-              const first = group.leaves.find((leaf) => leaf.to !== null);
-              return (
-                <button
-                  key={group.key}
-                  type="button"
-                  aria-current={isActive ? "true" : undefined}
-                  onClick={() => {
-                    if (first?.to) navigate(first.to);
-                  }}
-                  className={cn(
-                    "cursor-pointer whitespace-nowrap rounded-[6px] border-none bg-transparent px-2.5 py-1.5",
-                    "text-body-small-default uppercase tracking-[0.06em]",
-                    // Recede by weight, never by contrast: the inactive groups
-                    // sit on `--content-secondary`, which clears 4.5:1 on this
-                    // ground. Nothing here is distinguished by colour alone —
-                    // the active group also carries the ▸ leaf row beneath it.
-                    "text-[var(--content-secondary)] transition-colors",
-                    "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
-                    "hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)]",
-                    isActive &&
-                      "bg-[var(--surface-hover)] font-medium text-[var(--content-default)]",
-                  )}
-                >
-                  {group.title}
-                </button>
-              );
-            })}
-          </nav>
+      {/*
+        DESKTOP: the column on the left, the surface on the right.
 
-          {/* Row 2 — the active group's leaves. */}
+        `min-h-0` on the row and on both children is load-bearing — without it
+        the flex children take their content height and the page grows a second
+        scrollbar instead of scrolling the column and the surface separately.
+      */}
+      <div className="flex min-h-0 flex-1 gap-6 max-md:gap-0">
+        {isMobile ? null : (
           <nav
-            className="-mb-px flex items-center overflow-x-auto border-b border-[var(--border-base)]"
-            style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
-            aria-label={`${activeGroup?.title ?? "Your Cue"} sections`}
+            aria-label="Your Cue"
+            className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-base)] pr-3"
           >
-            {(activeGroup?.leaves ?? []).map((leaf) => (
-              <LeafTab key={leaf.key} leaf={leaf} pathname={pathname} />
+            {groups.map((group) => (
+              <div key={group.key} className="mb-4 last:mb-0">
+                {/* The question the leaves under it answer. A heading, not a
+                    control: clicking a group used to navigate to its first
+                    leaf, which is a second way to reach a page that is already
+                    one row below. */}
+                <h2 className="px-2 pb-1 text-body-small-default uppercase tracking-[0.06em] text-[var(--content-secondary)]">
+                  {group.title}
+                </h2>
+                <div className="flex flex-col gap-[1px]">
+                  {group.leaves.map((leaf) => (
+                    <LeafRow
+                      key={leaf.key}
+                      leaf={leaf}
+                      pathname={pathname}
+                      panels={activeLeaf?.key === leaf.key ? panels : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </nav>
-
-          {/* Row 3 — Preferences only. */}
-          {showPreferenceRow ? (
-            <nav
-              className="flex items-center gap-1 overflow-x-auto pt-2"
-              style={{
-                scrollbarWidth: "none",
-                WebkitOverflowScrolling: "touch",
-              }}
-              aria-label="Preferences panels"
-            >
-              {subLeaves.map(({ key, label, to }) => {
-                const isActive =
-                  pathname === to || pathname.startsWith(to + "/");
-                return (
-                  <NavLink
-                    key={key}
-                    to={to}
-                    className={cn(
-                      "cursor-pointer whitespace-nowrap rounded-[6px] px-2 py-1",
-                      "text-body-small-default text-[var(--content-secondary)] transition-colors",
-                      "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
-                      "hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)]",
-                      isActive &&
-                        "bg-[var(--surface-hover)] font-medium text-[var(--content-default)]",
-                    )}
-                  >
-                    {label}
-                  </NavLink>
-                );
-              })}
-            </nav>
-          ) : null}
-        </div>
-      )}
-
-      <div
-        className={cn(
-          "flex min-h-0 flex-1 flex-col overflow-y-auto",
-          !isFullBleedMobileTab && !isSelfCanvas && "max-md:px-4 max-md:py-3",
         )}
-      >
-        <Outlet />
+
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto",
+            !isFullBleedMobileTab && !isSelfCanvas && "max-md:px-4 max-md:py-3",
+          )}
+        >
+          <Outlet />
+        </div>
       </div>
     </PageShell>
   );
 }
 
 /**
- * One leaf in the strip.
+ * One leaf in the left column, plus its sub-rows when it is the active one.
  *
- * A leaf with `to: null` renders disabled and says why. That is the honest
- * state for Watching, which v17 specifies and nothing implements — and it
- * carries a `⊘` glyph rather than relying on the dimmed tint, because no state
- * in this app is allowed to be colour-only.
+ * A leaf with `to: null` renders disabled and says why — the honest state for
+ * Watching, which v17 specifies and nothing implements. It carries a `⊘` glyph
+ * rather than relying on a dimmed tint, and the active row carries a `▸`,
+ * because no state in this app is allowed to be colour-only.
  */
-function LeafTab({ leaf, pathname }: { leaf: YourCueLeaf; pathname: string }) {
+function LeafRow({
+  leaf,
+  pathname,
+  panels,
+}: {
+  leaf: YourCueLeaf;
+  pathname: string;
+  /** The leaf's second level, when this is the leaf you are inside. */
+  panels?: readonly { key: string; label: string; to: string }[];
+}) {
   const base =
-    "relative -mb-px inline-flex items-center gap-1.5 border-b-2 border-transparent bg-transparent px-2.5 py-[7px] text-body-medium-default whitespace-nowrap transition-colors outline-none";
+    "flex w-full items-center gap-1.5 rounded-[6px] px-2 py-[6px] text-left text-body-medium-default transition-colors outline-none";
 
   if (leaf.to === null) {
     return (
@@ -310,26 +288,78 @@ function LeafTab({ leaf, pathname }: { leaf: YourCueLeaf; pathname: string }) {
         className={cn(base, "cursor-default text-[var(--content-secondary)]")}
       >
         <span aria-hidden>⊘</span>
-        {leaf.label}
+        <span className="min-w-0 flex-1 truncate">{leaf.label}</span>
         <span className="sr-only"> — {leaf.unavailableReason}</span>
       </span>
     );
   }
 
   const isActive = leaf.match(pathname);
+  // A sub-row can be the page while its leaf is merely the section you are in.
+  // Only the deepest match claims `aria-current="page"` — two "current page"
+  // markers in one column is noise a screen reader has to disambiguate.
+  const panelIsPage = (panels ?? []).some(
+    (panel) => pathname === panel.to || pathname.startsWith(panel.to + "/"),
+  );
   return (
-    <NavLink
-      to={leaf.to}
-      className={cn(
-        base,
-        "cursor-pointer text-[var(--content-secondary)]",
-        "focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
-        "hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)]",
-        isActive &&
-          "border-[var(--border-active)] font-medium text-[var(--primary-active)] hover:bg-transparent",
-      )}
-    >
-      {leaf.label}
-    </NavLink>
+    <>
+      <NavLink
+        to={leaf.to}
+        data-active={isActive ? "true" : undefined}
+        aria-current={isActive ? (panelIsPage ? "true" : "page") : undefined}
+        className={cn(
+          base,
+          "cursor-pointer text-[var(--content-secondary)]",
+          "focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+          "hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)]",
+          isActive &&
+            "bg-[var(--surface-active)] font-medium text-[var(--content-emphasised)]",
+        )}
+      >
+        <span
+          aria-hidden
+          className={cn("w-[8px] shrink-0", !isActive && "opacity-0")}
+        >
+          ▸
+        </span>
+        <span className="min-w-0 flex-1 truncate">{leaf.label}</span>
+      </NavLink>
+      {panels && panels.length > 0 ? (
+        <div
+          role="group"
+          aria-label={`${leaf.label} panels`}
+          className="mb-1 flex flex-col gap-[1px]"
+        >
+          {panels.map(({ key, label, to }) => {
+            const subActive = pathname === to || pathname.startsWith(to + "/");
+            return (
+              <NavLink
+                key={key}
+                to={to}
+                aria-current={subActive ? "page" : undefined}
+                className={cn(
+                  // Indented, and quieter by SIZE rather than by contrast —
+                  // `--content-secondary` clears 4.5:1 on this ground.
+                  "flex items-center gap-1.5 rounded-[6px] py-[4px] pl-[26px] pr-2",
+                  "text-body-small-default text-[var(--content-secondary)] transition-colors",
+                  "outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                  "hover:bg-[var(--surface-hover)] hover:text-[var(--content-default)]",
+                  subActive &&
+                    "bg-[var(--surface-hover)] font-medium text-[var(--content-default)]",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn("w-[6px] shrink-0", !subActive && "opacity-0")}
+                >
+                  ·
+                </span>
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+              </NavLink>
+            );
+          })}
+        </div>
+      ) : null}
+    </>
   );
 }
