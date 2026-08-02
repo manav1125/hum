@@ -20,8 +20,10 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  type AutoFileParseStats,
   MAX_ITEMS_PER_SWEEP,
   MISSES_BEFORE_ROTATE,
+  parseAutoFileResponse,
   sweepWindow,
 } from "../work-item-auto-file.js";
 
@@ -119,5 +121,111 @@ describe("the batch size is sized off measured behaviour", () => {
     // introduced, and the number was chosen from synthetic data that answered
     // in eight seconds.
     expect(MAX_ITEMS_PER_SWEEP).toBeLessThanOrEqual(10);
+  });
+});
+
+describe("the parse says which kind of nothing it produced", () => {
+  /**
+   * The scorer's failure log carried the reply length and nothing else, and
+   * "we could use none of it" is true of four different defects: a reply that
+   * never came, one that would not parse, one that was not an array, and one
+   * that parsed perfectly into entries naming ids we never asked about. Each
+   * needs a different fix, and narrowing between them cost a round trip to
+   * production every time.
+   */
+
+  const ids = (...v: string[]) => new Set(v);
+  const fresh = (): AutoFileParseStats => ({
+    entries: 0,
+    unknownIds: 0,
+    malformed: 0,
+    duplicates: 0,
+    outcome: "ok",
+  });
+
+  test("a fluent answer about the wrong items is not an empty answer", () => {
+    // The case that mattered: eight well-formed entries, zero recognised.
+    const stats = fresh();
+    const reply = JSON.stringify([
+      { id: "not-in-batch-1", projectId: null, confidence: 0 },
+      { id: "not-in-batch-2", projectId: null, confidence: 0 },
+    ]);
+    const out = parseAutoFileResponse(reply, ids("real-1"), ids(), stats);
+    expect(out).toEqual([]);
+    expect(stats.outcome).toBe("ok");
+    expect(stats.entries).toBe(2);
+    expect(stats.unknownIds).toBe(2);
+  });
+
+  test("no array at all is distinguishable from an empty one", () => {
+    const stats = fresh();
+    expect(
+      parseAutoFileResponse(
+        "I'm sorry, I can't help with that.",
+        ids(),
+        ids(),
+        stats,
+      ),
+    ).toBeNull();
+    expect(stats.outcome).toBe("no_array");
+    expect(stats.entries).toBe(0);
+  });
+
+  test("a reply cut off mid-array is truncated, not absent", () => {
+    // A cut-off reply has no closing bracket, so the array regex finds
+    // nothing — and calling that "no array" points the reader at the prompt
+    // when the fault is the token budget. The distinction is the difference
+    // between "the model refused" and "we did not let it finish".
+    const stats = fresh();
+    expect(
+      parseAutoFileResponse(
+        '[{"id": "a", "projectId": nul',
+        ids("a"),
+        ids(),
+        stats,
+      ),
+    ).toBeNull();
+    expect(stats.outcome).toBe("truncated");
+  });
+
+  test("a closed array with broken JSON inside is unparseable", () => {
+    const stats = fresh();
+    expect(
+      parseAutoFileResponse('[{"id": "a",,}]', ids("a"), ids(), stats),
+    ).toBeNull();
+    expect(stats.outcome).toBe("unparseable");
+  });
+
+  test("malformed and duplicate entries are counted apart from unknown ids", () => {
+    const stats = fresh();
+    const reply = JSON.stringify([
+      "just a string",
+      { projectId: null, confidence: 0 },
+      { id: "a", projectId: null, confidence: 0.5 },
+      { id: "a", projectId: null, confidence: 0.9 },
+      { id: "zz", projectId: null, confidence: 0 },
+    ]);
+    const out = parseAutoFileResponse(reply, ids("a"), ids(), stats);
+    expect(out).toHaveLength(1);
+    expect(stats.entries).toBe(5);
+    expect(stats.malformed).toBe(2);
+    expect(stats.duplicates).toBe(1);
+    expect(stats.unknownIds).toBe(1);
+  });
+
+  test("a healthy parse reports ok and leaves the counters at zero", () => {
+    const stats = fresh();
+    const reply = JSON.stringify([
+      { id: "a", projectId: "p", confidence: 0.9 },
+    ]);
+    const out = parseAutoFileResponse(reply, ids("a"), ids("p"), stats);
+    expect(out).toEqual([{ id: "a", projectId: "p", confidence: 0.9 }]);
+    expect(stats).toEqual({
+      entries: 1,
+      unknownIds: 0,
+      malformed: 0,
+      duplicates: 0,
+      outcome: "ok",
+    });
   });
 });

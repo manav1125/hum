@@ -185,36 +185,95 @@ export interface AutoFileAssignment {
 }
 
 /**
+ * Why a parse produced fewer assignments than the model produced entries.
+ *
+ * Every field here exists because its absence cost a debugging cycle. The
+ * failure log said "scored nothing usable" and carried the reply length, which
+ * is equally true of a reply the model never sent, a reply that would not
+ * parse, and a reply that parsed perfectly into eight entries naming eight ids
+ * we did not recognise. Those need different fixes, and the log could not tell
+ * them apart, so each round of narrowing cost a trip to production.
+ */
+export interface AutoFileParseStats {
+  /** Entries in the array the model returned, before any filtering. */
+  entries: number;
+  /** Entries dropped because their `id` was not in this batch. */
+  unknownIds: number;
+  /** Entries dropped because they were not objects with a string `id`. */
+  malformed: number;
+  /** Entries dropped as repeats of an id already taken. */
+  duplicates: number;
+  /** How the parse ended, for the case where nothing came back at all. */
+  outcome: "ok" | "no_array" | "truncated" | "unparseable" | "not_an_array";
+}
+
+/**
  * Parse the model's JSON-array reply. Defensive by design: entries with
  * unknown item ids are dropped, hallucinated project ids are treated as
  * "leave unfiled", and confidence is clamped to [0, 1]. Returns null when no
  * parseable array is present (the sweep then files nothing).
+ *
+ * `stats` is an optional out-parameter rather than a changed return type: both
+ * callers want the assignments, and only the failure path wants the arithmetic
+ * behind them.
  */
 export function parseAutoFileResponse(
   text: string,
   validItemIds: ReadonlySet<string>,
   validProjectIds: ReadonlySet<string>,
+  stats?: AutoFileParseStats,
 ): AutoFileAssignment[] | null {
+  if (stats) {
+    stats.entries = 0;
+    stats.unknownIds = 0;
+    stats.malformed = 0;
+    stats.duplicates = 0;
+    stats.outcome = "ok";
+  }
   const match = text.match(/\[[\s\S]*\]/);
-  if (!match) return null;
+  if (!match) {
+    // A reply that opens an array and never closes it was CUT OFF, which is a
+    // budget problem; a reply with no bracket at all is the model declining or
+    // wandering off-format, which is a prompt problem. Reporting both as "no
+    // array" is how a truncation hides behind a refusal.
+    if (stats) stats.outcome = text.includes("[") ? "truncated" : "no_array";
+    return null;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(match[0]);
   } catch {
+    if (stats) stats.outcome = "unparseable";
     return null;
   }
-  if (!Array.isArray(parsed)) return null;
+  if (!Array.isArray(parsed)) {
+    if (stats) stats.outcome = "not_an_array";
+    return null;
+  }
+  if (stats) stats.entries = parsed.length;
 
   const assignments: AutoFileAssignment[] = [];
   const seen = new Set<string>();
   for (const entry of parsed) {
-    if (typeof entry !== "object" || entry === null) continue;
+    if (typeof entry !== "object" || entry === null) {
+      if (stats) stats.malformed++;
+      continue;
+    }
     const { id, projectId, confidence } = entry as {
       id?: unknown;
       projectId?: unknown;
       confidence?: unknown;
     };
-    if (typeof id !== "string" || !validItemIds.has(id) || seen.has(id)) {
+    if (typeof id !== "string") {
+      if (stats) stats.malformed++;
+      continue;
+    }
+    if (!validItemIds.has(id)) {
+      if (stats) stats.unknownIds++;
+      continue;
+    }
+    if (seen.has(id)) {
+      if (stats) stats.duplicates++;
       continue;
     }
     seen.add(id);
@@ -278,10 +337,18 @@ async function scoreWithFlashLlm(
       maxTokens: resolved.maxTokens,
       timeoutMs: AUTO_FILE_TIMEOUT_MS,
     });
+    const stats: AutoFileParseStats = {
+      entries: 0,
+      unknownIds: 0,
+      malformed: 0,
+      duplicates: 0,
+      outcome: "ok",
+    };
     const parsed = parseAutoFileResponse(
       result.text,
       new Set(items.map((i) => i.id)),
       new Set(projects.map((p) => p.id)),
+      stats,
     );
     if (parsed === null || parsed.length === 0) {
       // The model answered and we could not use a word of it. Distinct from a
@@ -307,6 +374,15 @@ async function scoreWithFlashLlm(
           maxTokens: resolved.maxTokens,
           outputTokens: result.response?.usage?.outputTokens ?? null,
           reasoningTokens: result.response?.usage?.reasoningTokens ?? null,
+          // Which KIND of nothing. `entries > 0` with `unknownIds === entries`
+          // means the model answered fluently about items that were not the
+          // ones we asked about — a completely different defect from a reply
+          // that never arrived, and one the old log could not distinguish.
+          parseOutcome: stats.outcome,
+          entriesReturned: stats.entries,
+          unknownIds: stats.unknownIds,
+          malformedEntries: stats.malformed,
+          duplicateIds: stats.duplicates,
         },
         "auto-file scored nothing usable from the model's reply",
       );
