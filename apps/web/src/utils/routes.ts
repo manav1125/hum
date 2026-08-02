@@ -83,6 +83,13 @@ export const routes = {
   reviewTerms: r("/assistant/review-terms"),
 
   onboarding: {
+    /**
+     * The self-host first-run intro (you're in → consent → names). Not part
+     * of the platform funnel below and deliberately outside its
+     * completed-onboarding middleware: a gateway session has its assistant
+     * already and must never be routed into `hatching`.
+     */
+    hello: r("/assistant/onboarding/hello"),
     hosting: r("/assistant/onboarding/hosting"),
     apiKey: r("/assistant/onboarding/api-key"),
     privacy: r("/assistant/onboarding/privacy"),

@@ -417,6 +417,19 @@ export const routeTree = [
                 ),
             },
           },
+          // Self-host first-run intro. Deliberately OUTSIDE the funnel's
+          // `onboardingCompletedMiddleware` group below: that middleware
+          // guards the platform hatch arc, whose terminus provisions an
+          // assistant — which a gateway session already has.
+          {
+            path: "onboarding/hello",
+            lazy: {
+              Component: () =>
+                import("@/domains/onboarding/signon/self-host-intro").then(
+                  (m) => m.SelfHostIntro,
+                ),
+            },
+          },
 
           // Onboarding funnel — new-user setup flow (privacy → prechat → hatching).
           {

@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 
 import { AppProviders } from "@/components/providers";
+import { ConnectingOverlay } from "@/domains/onboarding/signon/connecting-overlay";
 import { WindowDragRegion } from "@/components/window-drag-region";
 import { isChunkLoadError } from "@/lib/chunk-errors";
 import { isLocalMode, loadLockfile } from "@/lib/local-mode";
@@ -83,6 +84,11 @@ async function boot() {
             in the desktop app; this offers the trip back. Renders nothing
             inside Electron or on an ordinary page load. */}
         <DesktopHandoffBanner />
+        {/* Screen C of the sign-on pack. Renders nothing unless THIS load
+            redeemed a `?cueToken=` link, and removes itself on a timer, on
+            click and on Escape — it sits on top of the boot, it never gates
+            it. */}
+        <ConnectingOverlay />
         <RouterProvider
           router={router}
           onError={(error) => {

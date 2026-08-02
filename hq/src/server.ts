@@ -173,9 +173,36 @@ const APP_ORIGINS = new Set([
   "https://localhost",
 ]);
 
+/**
+ * Customer instances are the OTHER app origin: `https://<name>.justcue.app`.
+ * The instance SPA now carries the sign-in form itself rather than bouncing
+ * the user to justcue.ai, so its POST to `/signin` is cross-origin and needs
+ * the same allowance the mobile shell already has.
+ *
+ * Still not `*`: only https, only a single label under the instance domain,
+ * and still only on the sign-in surface. The domain is read from
+ * `HQ_INSTANCE_DOMAIN` (already the source of truth for the canonical-host
+ * exemption) so a deployment that does not set it allows nothing extra.
+ */
+function isInstanceOrigin(origin: string): boolean {
+  const domain = (process.env.HQ_INSTANCE_DOMAIN ?? "").trim().toLowerCase();
+  if (!domain) return false;
+  let host: string;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:") return false;
+    host = url.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (!host.endsWith(`.${domain}`)) return false;
+  const label = host.slice(0, -(domain.length + 1));
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(label);
+}
+
 function appCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") ?? "";
-  if (!APP_ORIGINS.has(origin)) return {};
+  if (!APP_ORIGINS.has(origin) && !isInstanceOrigin(origin)) return {};
   return {
     "Access-Control-Allow-Origin": origin,
     Vary: "Origin",

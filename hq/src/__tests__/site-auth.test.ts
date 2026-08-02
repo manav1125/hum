@@ -55,9 +55,15 @@ function outboundMock() {
         form: new URLSearchParams(String(init?.body)),
       });
       if (url.includes("billing_portal")) {
-        return Response.json({ id: "bps_1", url: "https://billing.stripe.com/p/session_1" });
+        return Response.json({
+          id: "bps_1",
+          url: "https://billing.stripe.com/p/session_1",
+        });
       }
-      return Response.json({ id: "cs_topup_1", url: "https://checkout.stripe.com/c/pay/cs_topup_1" });
+      return Response.json({
+        id: "cs_topup_1",
+        url: "https://checkout.stripe.com/c/pay/cs_topup_1",
+      });
     }
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
@@ -67,11 +73,20 @@ function outboundMock() {
 function setup() {
   const db = new HqDb(":memory:");
   const { fetchImpl, resendCalls, stripeCalls } = outboundMock();
-  const handle = createHandler({ db, driver: new MockDriver(), adminToken: "t", fetchImpl });
+  const handle = createHandler({
+    db,
+    driver: new MockDriver(),
+    adminToken: "t",
+    fetchImpl,
+  });
   return { db, handle, resendCalls, stripeCalls };
 }
 
-function jsonReq(path: string, body: unknown, headers: Record<string, string> = {}) {
+function jsonReq(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
   return new Request(`http://hq.local${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
@@ -104,9 +119,13 @@ describe("signin token lifecycle", () => {
     process.env.RESEND_API_KEY = "re_test";
     process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
     const { db, handle, resendCalls } = setup();
-    const c = db.createCustomer({ email: "maya@x.io", name: "Maya Chen", plan: "chief_of_staff" });
+    const c = db.createCustomer({
+      email: "maya@example.com",
+      name: "Maya Chen",
+      plan: "chief_of_staff",
+    });
 
-    const res = await handle(jsonReq("/signin", { email: "maya@x.io" }));
+    const res = await handle(jsonReq("/signin", { email: "maya@example.com" }));
     expect(res.status).toBe(200);
     expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
     expect(resendCalls.length).toBe(1);
@@ -117,7 +136,9 @@ describe("signin token lifecycle", () => {
 
     // Consume the link: 302 → /account (no live instance to land in) with
     // the session cookie set.
-    const auth = await handle(new Request(`http://hq.local/auth?token=${rawToken}`));
+    const auth = await handle(
+      new Request(`http://hq.local/auth?token=${rawToken}`),
+    );
     expect(auth.status).toBe(302);
     expect(auth.headers.get("location")).toBe("/account");
     const setCookie = auth.headers.get("set-cookie") ?? "";
@@ -136,7 +157,9 @@ describe("signin token lifecycle", () => {
     expect(summary.status).toBe(200);
 
     // Replay: the token was consumed — no cookie the second time.
-    const replay = await handle(new Request(`http://hq.local/auth?token=${rawToken}`));
+    const replay = await handle(
+      new Request(`http://hq.local/auth?token=${rawToken}`),
+    );
     expect(replay.status).toBe(302);
     expect(replay.headers.get("location")).toBe("/signin?error=link_expired");
     expect(replay.headers.get("set-cookie")).toBeNull();
@@ -145,7 +168,9 @@ describe("signin token lifecycle", () => {
   test("unknown email answers ok:true and sends nothing (no existence leak)", async () => {
     process.env.RESEND_API_KEY = "re_test";
     const { handle, resendCalls } = setup();
-    const res = await handle(jsonReq("/signin", { email: "stranger@x.io" }));
+    const res = await handle(
+      jsonReq("/signin", { email: "stranger@example.com" }),
+    );
     expect(res.status).toBe(200);
     expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
     expect(resendCalls.length).toBe(0);
@@ -153,7 +178,7 @@ describe("signin token lifecycle", () => {
 
   test("expired tokens cannot be consumed", () => {
     const { db } = setup();
-    const c = db.createCustomer({ email: "e@x.io", name: "E" });
+    const c = db.createCustomer({ email: "e@example.com", name: "E" });
     db.createSigninToken({
       customerId: c.id,
       tokenHash: hashSigninToken("raw-expired"),
@@ -166,14 +191,16 @@ describe("signin token lifecycle", () => {
       tokenHash: hashSigninToken("raw-live"),
       ttlMs: 60_000,
     });
-    expect(db.consumeSigninToken(hashSigninToken("raw-live"))?.customerId).toBe(c.id);
+    expect(db.consumeSigninToken(hashSigninToken("raw-live"))?.customerId).toBe(
+      c.id,
+    );
     expect(db.consumeSigninToken(hashSigninToken("raw-live"))).toBeNull();
   });
 
   test("signin without HQ_SESSION_SECRET is 503", async () => {
     delete process.env.HQ_SESSION_SECRET;
     const { handle } = setup();
-    const res = await handle(jsonReq("/signin", { email: "a@x.io" }));
+    const res = await handle(jsonReq("/signin", { email: "a@example.com" }));
     expect(res.status).toBe(503);
   });
 
@@ -181,7 +208,11 @@ describe("signin token lifecycle", () => {
     process.env.RESEND_API_KEY = "re_test";
     process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
     const { db, handle, resendCalls } = setup();
-    const c = db.createCustomer({ email: "live@x.io", name: "Liv", plan: "chief_of_staff" });
+    const c = db.createCustomer({
+      email: "live@example.com",
+      name: "Liv",
+      plan: "chief_of_staff",
+    });
     const secrets = generateInstanceSecrets();
     secrets.guardianPrincipalId = "vellum-principal-live";
     const inst = db.createInstance({
@@ -193,8 +224,10 @@ describe("signin token lifecycle", () => {
     });
     db.transitionInstance(inst.id, "live");
 
-    await handle(jsonReq("/signin", { email: "live@x.io" }));
-    const match = /\/auth\?token=([0-9a-f]{64})/.exec(String(resendCalls[0].html));
+    await handle(jsonReq("/signin", { email: "live@example.com" }));
+    const match = /\/auth\?token=([0-9a-f]{64})/.exec(
+      String(resendCalls[0].html),
+    );
     const auth = await handle(
       new Request(`http://hq.local/auth?token=${match![1]}`),
     );
@@ -216,7 +249,11 @@ describe("signin token lifecycle", () => {
     process.env.RESEND_API_KEY = "re_test";
     process.env.HQ_PUBLIC_SITE_URL = "http://hq.local";
     const { db, handle, resendCalls } = setup();
-    const c = db.createCustomer({ email: "nat@example.com", name: "Nat Rivera", plan: "chief_of_staff" });
+    const c = db.createCustomer({
+      email: "nat@example.com",
+      name: "Nat Rivera",
+      plan: "chief_of_staff",
+    });
     const secrets = generateInstanceSecrets();
     secrets.guardianPrincipalId = "vellum-principal-nat";
     const inst = db.createInstance({
@@ -229,7 +266,9 @@ describe("signin token lifecycle", () => {
     db.transitionInstance(inst.id, "live");
 
     await handle(jsonReq("/signin", { email: "nat@example.com" }));
-    const raw = /\/auth\?token=([0-9a-f]{64})/.exec(String(resendCalls[0].html))![1];
+    const raw = /\/auth\?token=([0-9a-f]{64})/.exec(
+      String(resendCalls[0].html),
+    )![1];
     const res = await handle(
       new Request(`http://hq.local/auth?token=${raw}&native=1`),
     );
@@ -293,6 +332,86 @@ describe("signin token lifecycle", () => {
     expect(evil.headers.get("access-control-allow-origin")).toBeNull();
   });
 
+  // The instance SPA now carries the sign-in form itself instead of bouncing
+  // the user to justcue.ai, so its POST to /signin is cross-origin. Without
+  // this grant the browser blocks it and the user sees a generic network
+  // failure on the very first screen of the product.
+  describe("customer instances are app origins too", () => {
+    const withDomain = async (
+      fn: (handle: (req: Request) => Promise<Response>) => Promise<void>,
+    ) => {
+      const previous = process.env.HQ_INSTANCE_DOMAIN;
+      process.env.HQ_INSTANCE_DOMAIN = "justcue.app";
+      try {
+        await fn(setup().handle);
+      } finally {
+        if (previous === undefined) delete process.env.HQ_INSTANCE_DOMAIN;
+        else process.env.HQ_INSTANCE_DOMAIN = previous;
+      }
+    };
+
+    const signin = (
+      handle: (req: Request) => Promise<Response>,
+      origin: string,
+    ) =>
+      handle(
+        new Request("http://hq.local/signin", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin },
+          body: JSON.stringify({ email: "who@example.com" }),
+        }),
+      );
+
+    test("an https instance subdomain is granted CORS", async () => {
+      await withDomain(async (handle) => {
+        const res = await signin(handle, "https://cue-ada.justcue.app");
+        expect(res.headers.get("access-control-allow-origin")).toBe(
+          "https://cue-ada.justcue.app",
+        );
+        expect(res.headers.get("vary")).toBe("Origin");
+      });
+    });
+
+    test("the preflight is answered for an instance too", async () => {
+      await withDomain(async (handle) => {
+        const pre = await handle(
+          new Request("http://hq.local/signin", {
+            method: "OPTIONS",
+            headers: { origin: "https://cue-ada.justcue.app" },
+          }),
+        );
+        expect(pre.status).toBe(204);
+        expect(pre.headers.get("access-control-allow-origin")).toBe(
+          "https://cue-ada.justcue.app",
+        );
+      });
+    });
+
+    test.each([
+      ["http://cue-ada.justcue.app", "plain http"],
+      ["https://cue-ada.justcue.app.evil.com", "a suffix lookalike"],
+      ["https://a.b.justcue.app", "a nested label"],
+      ["https://justcue.app", "the bare domain"],
+      ["https://cue-ada.justcue.io", "a different domain"],
+    ])("%s is refused (%s)", async (origin) => {
+      await withDomain(async (handle) => {
+        const res = await signin(handle, origin);
+        expect(res.headers.get("access-control-allow-origin")).toBeNull();
+      });
+    });
+
+    test("with HQ_INSTANCE_DOMAIN unset nothing extra is allowed", async () => {
+      const previous = process.env.HQ_INSTANCE_DOMAIN;
+      delete process.env.HQ_INSTANCE_DOMAIN;
+      try {
+        const res = await signin(setup().handle, "https://cue-ada.justcue.app");
+        expect(res.headers.get("access-control-allow-origin")).toBeNull();
+      } finally {
+        if (previous !== undefined) process.env.HQ_INSTANCE_DOMAIN = previous;
+      }
+    });
+  });
+
   test("serves the Apple app-site-association so the app claims the link", async () => {
     const { handle } = setup();
     const res = await handle(
@@ -312,7 +431,11 @@ describe("signin token lifecycle", () => {
 
 describe("/account", () => {
   function authedCustomer(db: HqDb) {
-    const c = db.createCustomer({ email: "acct@x.io", name: "Acct", plan: "chief_of_staff" });
+    const c = db.createCustomer({
+      email: "acct@example.com",
+      name: "Acct",
+      plan: "chief_of_staff",
+    });
     db.upsertSubscription({
       customerId: c.id,
       stripeCustomerId: "cus_acct",
@@ -334,9 +457,24 @@ describe("/account", () => {
   test("summary shape: plan, credits cycle math, 30 usage days", async () => {
     const { db, handle } = setup();
     const { c, cookie } = authedCustomer(db);
-    db.appendCreditEntry({ customerId: c.id, delta: 10000, kind: "grant", note: "grant sub_acct@1" });
-    db.appendCreditEntry({ customerId: c.id, delta: -1200, kind: "usage_sync", note: "usage_sync i 0c→300c" });
-    db.appendCreditEntry({ customerId: c.id, delta: 500, kind: "topup", note: "topup t1" });
+    db.appendCreditEntry({
+      customerId: c.id,
+      delta: 10000,
+      kind: "grant",
+      note: "grant sub_acct@1",
+    });
+    db.appendCreditEntry({
+      customerId: c.id,
+      delta: -1200,
+      kind: "usage_sync",
+      note: "usage_sync i 0c→300c",
+    });
+    db.appendCreditEntry({
+      customerId: c.id,
+      delta: 500,
+      kind: "topup",
+      note: "topup t1",
+    });
 
     const res = await handle(
       new Request("http://hq.local/account/summary", { headers: { cookie } }),
@@ -345,13 +483,23 @@ describe("/account", () => {
     const body = (await res.json()) as {
       ok: boolean;
       email: string;
-      plan: { id: string; name: string; priceUsd: number; monthlyCredits: number };
+      plan: {
+        id: string;
+        name: string;
+        priceUsd: number;
+        monthlyCredits: number;
+      };
       renewalDate: string | null;
-      credits: { balance: number; grantedThisCycle: number; usedThisCycle: number; refreshDate: string | null };
+      credits: {
+        balance: number;
+        grantedThisCycle: number;
+        usedThisCycle: number;
+        refreshDate: string | null;
+      };
       usage: { days: { date: string; credits: number }[] };
     };
     expect(body.ok).toBe(true);
-    expect(body.email).toBe("acct@x.io");
+    expect(body.email).toBe("acct@example.com");
     expect(body.plan).toEqual({
       id: "chief_of_staff",
       name: "Chief of Staff",
@@ -371,19 +519,29 @@ describe("/account", () => {
     const { db, handle, stripeCalls } = setup();
     const { cookie } = authedCustomer(db);
 
-    const bad = await handle(jsonReq("/account/topup", { pack: "mega" }, { cookie }));
+    const bad = await handle(
+      jsonReq("/account/topup", { pack: "mega" }, { cookie }),
+    );
     expect(bad.status).toBe(400);
 
     // Stripe unconfigured → redeem-style honest null.
-    const degraded = await handle(jsonReq("/account/topup", { pack: "topup_1000" }, { cookie }));
+    const degraded = await handle(
+      jsonReq("/account/topup", { pack: "topup_1000" }, { cookie }),
+    );
     expect(degraded.status).toBe(200);
-    const dBody = (await degraded.json()) as { ok: boolean; checkoutUrl: null; reason: string };
+    const dBody = (await degraded.json()) as {
+      ok: boolean;
+      checkoutUrl: null;
+      reason: string;
+    };
     expect(dBody.checkoutUrl).toBeNull();
     expect(dBody.reason).toBe("stripe_not_configured");
 
     process.env.STRIPE_SECRET_KEY = "sk_test";
     process.env.STRIPE_PRICE_TOPUP_1000 = "price_topup_1000";
-    const ok = await handle(jsonReq("/account/topup", { pack: "1000" }, { cookie }));
+    const ok = await handle(
+      jsonReq("/account/topup", { pack: "1000" }, { cookie }),
+    );
     expect(ok.status).toBe(200);
     const okBody = (await ok.json()) as { checkoutUrl: string };
     expect(okBody.checkoutUrl).toContain("checkout.stripe.com");
@@ -397,12 +555,20 @@ describe("/account", () => {
     const { db, handle } = setup();
     const { cookie } = authedCustomer(db);
     const res = await handle(
-      jsonReq("/account/topup", { pack: "topup_1000" }, { cookie, origin: "https://evil.example" }),
+      jsonReq(
+        "/account/topup",
+        { pack: "topup_1000" },
+        { cookie, origin: "https://evil.example" },
+      ),
     );
     expect(res.status).toBe(403);
     // Matching origin passes the guard.
     const ok = await handle(
-      jsonReq("/account/topup", { pack: "topup_1000" }, { cookie, origin: "http://hq.local" }),
+      jsonReq(
+        "/account/topup",
+        { pack: "topup_1000" },
+        { cookie, origin: "http://hq.local" },
+      ),
     );
     expect(ok.status).toBe(200);
   });
@@ -420,7 +586,9 @@ describe("/account", () => {
       new Request("http://hq.local/account/portal", { headers: { cookie } }),
     );
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("https://billing.stripe.com/p/session_1");
+    expect(res.headers.get("location")).toBe(
+      "https://billing.stripe.com/p/session_1",
+    );
   });
 
   test("open: 302 to a fresh magic link; no instance → quiet fallback; anon → /signin", async () => {

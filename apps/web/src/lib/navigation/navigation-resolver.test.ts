@@ -16,6 +16,7 @@ const base: NavigationState = {
   platformSession: "present",
   tosAccepted: true,
   aiDataConsent: true,
+  selfHostIntroComplete: true,
 };
 
 function s(overrides: Partial<NavigationState>): NavigationState {
@@ -41,6 +42,54 @@ describe("resolveNavigation", () => {
       expect(guard(s({ isGatewayAuth: true, isAuthenticated: false }))).toEqual(
         ALLOW,
       );
+    });
+
+    // -- self-host first-run intro ---------------------------------------
+    //
+    // Gateway sessions skip the entire funnel below, which silently meant a
+    // self-host user was never introduced, never asked for consent and never
+    // asked their name. The intro step runs AHEAD of that short-circuit.
+
+    describe("self-host intro", () => {
+      const fresh = { isGatewayAuth: true, selfHostIntroComplete: false };
+      const HELLO: NavigationDecision = {
+        action: "redirect",
+        to: "/assistant/onboarding/hello",
+      };
+
+      test.each(["/assistant", "/assistant/home", "/assistant/hq"])(
+        "a first-run gateway session landing on %s is introduced first",
+        (path) => {
+          expect(guard(s(fresh), path)).toEqual(HELLO);
+        },
+      );
+
+      test("the intro route itself is reachable (no redirect loop)", () => {
+        expect(guard(s(fresh), "/assistant/onboarding/hello")).toEqual(ALLOW);
+      });
+
+      test("once complete, the landing routes are untouched", () => {
+        expect(
+          guard(s({ isGatewayAuth: true, selfHostIntroComplete: true })),
+        ).toEqual(ALLOW);
+      });
+
+      // The gate is scoped to the landing paths precisely so a flag that
+      // never writes cannot lock anyone out of their own instance. Every
+      // other route keeps working even mid-intro.
+      test.each([
+        "/assistant/settings",
+        "/assistant/chats/abc",
+        "/assistant/logs",
+      ])("%s is never gated, even before the intro is done", (path) => {
+        expect(guard(s(fresh), path)).toEqual(ALLOW);
+      });
+
+      test("it does not touch platform (non-gateway) sessions", () => {
+        expect(
+          guard(s({ isGatewayAuth: false, selfHostIntroComplete: false })),
+        ).toEqual(ALLOW);
+      });
     });
 
     // -- unauthenticated --------------------------------------------------

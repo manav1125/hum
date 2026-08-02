@@ -15,6 +15,14 @@ export interface NavigationState {
   platformSession: PlatformSessionStatus;
   tosAccepted: boolean;
   aiDataConsent: boolean;
+  /**
+   * Whether this device has been through the self-host first-run intro.
+   * Gateway (self-host) sessions bypass the whole platform funnel below, so
+   * without this they were never introduced to Cue, never asked for consent
+   * and never asked their name — they landed in a bare chat. Defaults to
+   * `true` so any state built without it behaves exactly as before.
+   */
+  selfHostIntroComplete: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +159,7 @@ type RouteGuardStep = (
 
 const ROUTE_GUARD_PIPELINE: RouteGuardStep[] = [
   waitForSession,
+  requireSelfHostIntro,
   allowGatewayAuth,
   requireAuth,
   enforceModeBoundary,
@@ -176,6 +185,43 @@ function resolveRouteGuard(
 
 function waitForSession(state: NavigationState): NavigationDecision | null {
   return state.sessionSettled ? null : { action: "wait" };
+}
+
+/**
+ * The landing paths a freshly signed-in self-host user actually arrives on.
+ *
+ * The gate is scoped to exactly these — NOT to "every path" — on purpose. A
+ * broad gate in front of every route is the kind of thing that, if its
+ * completion flag ever fails to write, locks a user out of their own instance
+ * entirely. Scoped this way the worst possible failure is that someone sees
+ * the intro twice, or never; either beats a locked door on launch day.
+ */
+const SELF_HOST_INTRO_ENTRY_PATHS = new Set<string>([
+  routes.assistant,
+  routes.home,
+  routes.hq,
+]);
+
+/**
+ * Send a first-run gateway session through the self-host intro before it
+ * lands. Gateway sessions skip the platform funnel entirely (see
+ * `allowGatewayAuth`, the very next step), which silently meant a self-host
+ * user was never introduced, never asked for terms or AI-data consent, and
+ * never asked what to call them.
+ *
+ * Runs BEFORE `allowGatewayAuth` because that step's whole job is to
+ * short-circuit — anything that must apply to gateway sessions has to be
+ * ahead of it.
+ */
+function requireSelfHostIntro(
+  state: NavigationState,
+  path: string,
+): NavigationDecision | null {
+  if (!state.isGatewayAuth) return null;
+  if (state.selfHostIntroComplete) return null;
+  if (path === routes.onboarding.hello) return null;
+  if (!SELF_HOST_INTRO_ENTRY_PATHS.has(path)) return null;
+  return { action: "redirect", to: routes.onboarding.hello };
 }
 
 function allowGatewayAuth(state: NavigationState): NavigationDecision | null {

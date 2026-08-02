@@ -3,6 +3,7 @@ import { isSessionSettled, isAuthenticated } from "@/stores/session-status";
 import { isGatewayAuthMode } from "@/lib/auth/gateway-session";
 import { isLocalMode } from "@/lib/local-mode";
 import { readTosAccepted, readAiDataConsent } from "@/domains/onboarding/prefs";
+import { isSelfHostIntroComplete } from "@/domains/onboarding/signon/intro-state";
 import { useResolvedAssistantsStore } from "@/stores/resolved-assistants-store";
 import type { NavigationState } from "./navigation-resolver";
 
@@ -19,6 +20,7 @@ export function buildNavigationState(
     platformSession,
     tosAccepted: readTosAccepted(),
     aiDataConsent: readAiDataConsent(),
+    selfHostIntroComplete: isSelfHostIntroComplete(),
     ...overrides,
   };
 }
