@@ -16,7 +16,9 @@ export type SurfaceType =
   | "document_preview"
   | "spreadsheet_preview"
   | "task_preferences"
-  | "work_result";
+  | "work_result"
+  | "artefact"
+  | "adjacent_offer";
 
 export const INTERACTIVE_SURFACE_TYPES: SurfaceType[] = [
   "choice",
@@ -383,6 +385,31 @@ export interface UiSurfaceShowWorkResult extends UiSurfaceShowBase {
   data: WorkResultSurfaceData;
 }
 
+/**
+ * Anything sendable, savable or schedulable. The client renders it as a card
+ * with the verb on it rather than leaving prose to be copied out of a message.
+ *
+ * Deliberately NOT in {@link INTERACTIVE_SURFACE_TYPES}: an artefact must not
+ * park the turn in `awaiting_user_input`. The conversation never blocks, and a
+ * draft the owner has not looked at yet is not a question being asked of them.
+ * Its consequential actions are gated by the execution layer when pressed, not
+ * by holding the turn open.
+ */
+export interface UiSurfaceShowArtefact extends UiSurfaceShowBase {
+  surfaceType: "artefact";
+  data: Record<string, unknown>;
+}
+
+/**
+ * At most one per turn, and only about something the turn actually touched.
+ * Also non-interactive, for the same reason: an offer the owner ignores must
+ * not leave the conversation waiting on them.
+ */
+export interface UiSurfaceShowAdjacentOffer extends UiSurfaceShowBase {
+  surfaceType: "adjacent_offer";
+  data: Record<string, unknown>;
+}
+
 export type UiSurfaceShow =
   | UiSurfaceShowCard
   | UiSurfaceShowChoice
@@ -396,7 +423,9 @@ export type UiSurfaceShow =
   | UiSurfaceShowFileUpload
   | UiSurfaceShowDocumentPreview
   | UiSurfaceShowSpreadsheetPreview
-  | UiSurfaceShowWorkResult;
+  | UiSurfaceShowWorkResult
+  | UiSurfaceShowArtefact
+  | UiSurfaceShowAdjacentOffer;
 
 export interface UiSurfaceUpdate {
   type: "ui_surface_update";
