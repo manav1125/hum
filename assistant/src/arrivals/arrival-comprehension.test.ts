@@ -78,6 +78,42 @@ describe("parseDueDate", () => {
     expect(d.getUTCHours()).toBe(23);
   });
 
+  test("end of day means end of day WHERE THE OWNER IS", () => {
+    // The bug this pins: anchoring to UTC puts a Hong Kong deadline at 07:59
+    // the following morning, so every extracted date renders a day late — and
+    // late in the direction that reads as an extra day on a real obligation.
+    const at = parseDueDate("2026-09-30", NOW, "Asia/Hong_Kong");
+    expect(at).not.toBeNull();
+    const local = new Date(at!).toLocaleString("en-CA", {
+      timeZone: "Asia/Hong_Kong",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+    });
+    expect(local.startsWith("2026-09-30")).toBe(true);
+    expect(local).toContain("23");
+  });
+
+  test("a zone behind UTC lands on the right day too", () => {
+    const at = parseDueDate("2026-09-30", NOW, "America/Los_Angeles");
+    const local = new Date(at!).toLocaleString("en-CA", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    expect(local).toBe("2026-09-30");
+  });
+
+  test("an unknown zone degrades to UTC rather than throwing", () => {
+    // A malformed zone must not cost the deadline entirely — a slightly-off
+    // date beats dropping a real obligation on the floor.
+    const at = parseDueDate("2026-09-30", NOW, "Mars/Olympus_Mons");
+    expect(at).toBe(parseDueDate("2026-09-30", NOW));
+  });
+
   test("rejects anything that is not an ISO date", () => {
     expect(parseDueDate("next Tuesday", NOW)).toBeNull();
     expect(parseDueDate("30/09/2026", NOW)).toBeNull();

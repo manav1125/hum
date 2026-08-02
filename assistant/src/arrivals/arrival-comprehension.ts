@@ -237,14 +237,58 @@ export function isGroundedIn(
 /**
  * Turn an ISO `YYYY-MM-DD` into an epoch-ms deadline, or null.
  *
- * End of that day in UTC rather than midnight, so "due 30 September" is not
- * already overdue the moment it is extracted. Dates outside a plausible window
- * are rejected outright: a 1970 or 2190 deadline is a parsing artefact, and a
- * confident artefact is the thing we are most trying to avoid.
+ * End of that day **in the owner's timezone** rather than midnight, so "due 30
+ * September" is not already overdue the moment it is extracted.
+ *
+ * The timezone part is not a nicety. Anchoring end-of-day to UTC puts the
+ * deadline at 07:59 the following morning for an owner in Hong Kong, so every
+ * extracted date renders a day late — and late in the dangerous direction,
+ * because it reads as an extra day on a real obligation. The owner's zone is
+ * whatever `ui.userTimezone` says; the host zone is a poor fallback here since
+ * production runs UTC.
+ *
+ * Dates outside a plausible window are rejected outright: a 1970 or 2190
+ * deadline is a parsing artefact, and a confident artefact is the thing we are
+ * most trying to avoid.
  */
+/**
+ * How far `timeZone` is ahead of UTC at `atUtcMs`, in ms. DST-correct, because
+ * it asks Intl what the wall clock actually reads rather than assuming a fixed
+ * offset. An unknown or malformed zone yields 0 — treating it as UTC, which is
+ * the same answer as before this argument existed.
+ */
+function zoneOffsetMs(atUtcMs: number, timeZone?: string): number {
+  if (!timeZone) return 0;
+  try {
+    // `en-CA` renders as YYYY-MM-DD, which Date.parse reads unambiguously.
+    const wall = new Date(atUtcMs).toLocaleString("en-CA", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const asUtc = Date.parse(`${wall.replace(", ", "T")}Z`);
+    if (!Number.isFinite(asUtc)) return 0;
+    // Round to the minute. The formatted wall clock carries no milliseconds, so
+    // the raw difference is short by whatever ms `atUtcMs` held — and since we
+    // anchor to 23:59:59.999, that shortfall pushes the result one millisecond
+    // past midnight and reports the deadline as the NEXT day. Real zone offsets
+    // are always whole minutes, so rounding is exact rather than a fudge.
+    const MINUTE = 60_000;
+    return Math.round((asUtc - atUtcMs) / MINUTE) * MINUTE;
+  } catch {
+    return 0;
+  }
+}
+
 export function parseDueDate(
   raw: string | null | undefined,
   now: number,
+  timeZone?: string,
 ): number | null {
   if (!raw) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
@@ -254,9 +298,11 @@ export function parseDueDate(
   const month = Number(m);
   const day = Number(d);
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  const at = Date.UTC(year, month - 1, day, 23, 59, 59, 999);
+  const utcEndOfDay = Date.UTC(year, month - 1, day, 23, 59, 59, 999);
   // Round-trip guard: Date.UTC happily accepts 2026-02-31 and rolls it over.
-  const back = new Date(at);
+  // Run it on the UTC value, before any zone shift, so the check is about the
+  // calendar date the model gave us and nothing else.
+  const back = new Date(utcEndOfDay);
   if (
     back.getUTCFullYear() !== year ||
     back.getUTCMonth() !== month - 1 ||
@@ -264,6 +310,7 @@ export function parseDueDate(
   ) {
     return null;
   }
+  const at = utcEndOfDay - zoneOffsetMs(utcEndOfDay, timeZone);
   if (at < now - MAX_PAST_DUE_MS) return null;
   if (at > now + MAX_FUTURE_DUE_MS) return null;
   return at;
@@ -362,7 +409,7 @@ export interface ValidatedComprehension {
 export function validateComprehension(
   candidate: ComprehensionCandidate,
   raw: RawComprehension | undefined,
-  opts: { now: number; confidenceThreshold: number },
+  opts: { now: number; confidenceThreshold: number; timeZone?: string },
 ): ValidatedComprehension {
   const empty = {
     actionTitle: null,
@@ -408,7 +455,7 @@ export function validateComprehension(
   // unquoted or unfindable fact is dropped in silence-free fashion: it simply
   // stays null, which reads as "the message did not say".
   const dueAt = isGroundedIn(source, raw.dueQuote)
-    ? parseDueDate(raw.dueDate, opts.now)
+    ? parseDueDate(raw.dueDate, opts.now, opts.timeZone)
     : null;
   const amountText = isGroundedIn(source, raw.amountQuote) ? raw.amount : null;
   // "Who is asking" is legitimately the sender, so the sender's own name and
@@ -619,6 +666,11 @@ export async function comprehendArrivals(
 
   result.candidates = batch.length;
   const now = opts.now ?? Date.now();
+  // Deadlines are resolved to end-of-day in the OWNER's zone, not the host's.
+  // Production runs UTC, so falling back to the host would put a Hong Kong
+  // deadline at 08:00 the next morning — a day late on a real obligation.
+  const timeZone =
+    getConfig().ui.userTimezone ?? getConfig().ui.detectedTimezone ?? undefined;
   const raw = await raceDeadline(
     (opts.extractor ?? extractWithFlashLlm)(batch),
   );
@@ -631,6 +683,7 @@ export async function comprehendArrivals(
         byId.get(candidate.workItemId),
         {
           now,
+          timeZone,
           confidenceThreshold: cfg.confidenceThreshold,
         },
       );
