@@ -7,13 +7,17 @@
  * reach for occasionally:
  *
  *   ☰ top-left    — past conversations, search, batch capture.
- *   ◍ top-right   — the deeper surfaces (Agents · Rhythms · People · What Cue
- *                   does · Trust & guardrails) and the account cluster
- *                   (Brand · Connections · Appearance · Settings · Logs).
+ *   ◍ top-right   — the CUE group (Agents · Skills · Rhythms · Memory ·
+ *                   Library · Watching) and the account cluster (People ·
+ *                   Create · Brand · Connections · Trust · Appearance ·
+ *                   Settings · Logs).
  *
- * The right-hand menu reads its first five rows from `DEEPER_NAV`, the same
- * list the desktop sidebar renders under its "deeper" divider — so the two
- * platforms cannot drift about what counts as a deeper surface.
+ * The right-hand menu reads its first six rows from `CUE_NAV`, the same list
+ * the desktop sidebar renders under its **CUE** heading — so the two platforms
+ * cannot drift about what "what Cue is" contains. A row whose surface does not
+ * exist yet (`to: null`) is skipped here rather than rendered disabled: the
+ * desktop rail is a persistent map where an honest gap is worth a line, and a
+ * transient phone menu is not.
  *
  * Placement note: the right-hand button sits inboard of the true corner
  * because the HQ/Today header still paints its own decorative initial chip
@@ -26,7 +30,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 
-import { DEEPER_NAV } from "@/components/nav/nav-model";
+import { CUE_NAV } from "@/components/nav/nav-model";
 import { readStoredThemePreference } from "@/domains/settings/utils/theme-preferences";
 import { Mv3AddTasksSheet } from "@/pages/projects/mv3-add-tasks-sheet";
 import { useClientFeatureFlagStore } from "@/stores/client-feature-flag-store";
@@ -231,9 +235,11 @@ export function Mv3OverflowMenu() {
       : []),
   ];
 
-  // ◍ — the deeper surfaces, then the account cluster.
+  // ◍ — the CUE group, then the account cluster.
   const accountItems: MenuEntry[] = [
-    ...DEEPER_NAV.map((d) => ({
+    ...CUE_NAV.filter(
+      (d): d is typeof d & { to: string } => typeof d.to === "string",
+    ).map((d) => ({
       label: d.label,
       run: () => navigate(d.to),
     })),
@@ -244,6 +250,12 @@ export function Mv3OverflowMenu() {
         setCreateOpen(true);
       },
     },
+    // People and Trust are NOT in v15's six. They keep a row here rather than
+    // being dropped: both are live surfaces, and design has not yet said where
+    // People belongs. Reachable beats tidy while that is open.
+    { label: "People", run: () => navigate(routes.people) },
+    { label: "Trust & guardrails", run: () => navigate(routes.guardrails) },
+    { label: "What Cue does", run: () => navigate(routes.explore) },
     { label: "Brand kit", run: () => navigate(routes.brandKit) },
     { label: "Connections", run: () => navigate(routes.connectors) },
     {

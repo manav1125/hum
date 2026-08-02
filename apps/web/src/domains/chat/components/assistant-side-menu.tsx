@@ -1,27 +1,24 @@
 import {
   Bot,
+  Brain,
+  ChevronDown,
+  ChevronRight,
   Clock,
-  Compass,
+  Eye,
   Hash,
-  FolderKanban,
   LayoutGrid,
   LayoutList,
-  ListTree,
-  MessageCircle,
-  Mic,
+  Lock,
   Pin,
   Repeat,
   Rocket,
   Search,
-  ShieldCheck,
   Sparkles,
   SquarePen,
   Target,
-  Users,
-  Wand2,
   X,
 } from "lucide-react";
-import { Fragment, useCallback, type ReactNode } from "react";
+import { Fragment, useCallback, useId, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { useCommandPaletteStore } from "@/stores/command-palette-store";
@@ -56,13 +53,17 @@ import type { Conversation } from "@/types/conversation-types";
 import { canMarkRead, canMarkUnread } from "@/utils/conversation-predicates";
 import { useNeedsYouBadge } from "@/hooks/use-needs-you-badge";
 import {
-  DEEPER_NAV,
+  CUE_NAV,
   PRIMARY_NAV,
-  WORK_VIEWS,
-  readWorkView,
+  takePeek,
+  type PeekSectionKey,
   type PrimaryNavKey,
 } from "@/components/nav/nav-model";
+import { isElectron } from "@/runtime/is-electron";
 import { useNavCounts } from "@/components/nav/use-nav-counts";
+import { useRailPeek } from "@/components/nav/use-rail-peek";
+import { useRailPeekStore } from "@/components/nav/rail-peek-store";
+import { routes } from "@/utils/routes";
 import {
   ApertureAvatar,
   Button,
@@ -84,11 +85,26 @@ export interface AssistantSideMenuProps extends UseSidebarStateParams {
   onWidthChange?: (width: number) => void;
   activeConversationId?: string;
   onSelectConversation: (key: string) => void;
+  /**
+   * @deprecated v15 retired the Intelligence rail row — "Intelligence" named
+   * the machinery, and the thing you actually came to look at is Memory, which
+   * is now one of the CUE group's six. The hub itself still resolves at
+   * `/assistant/identity` and is reachable from ⌘K and from the tab strip that
+   * Skills and Memory land on. Accepted so `chat-layout` keeps compiling; the
+   * rail no longer reads either.
+   */
   isIntelligenceActive?: boolean;
+  /** @deprecated See {@link AssistantSideMenuProps.isIntelligenceActive}. */
   onOpenIntelligence?: () => void;
   isLibraryActive?: boolean;
   onOpenLibrary?: () => void;
+  /**
+   * @deprecated People is not in v15's six and design has not said where it
+   * belongs on desktop, so the rail does not guess. `/assistant/people` still
+   * resolves and the phone's ◍ menu still carries it.
+   */
   isContactsActive?: boolean;
+  /** @deprecated See {@link AssistantSideMenuProps.isContactsActive}. */
   onOpenContacts?: () => void;
   onOpenApp?: (appId: string) => void;
   activeAppId?: string;
@@ -142,41 +158,46 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
 }
 
 /**
- * Assistant sidebar content.
+ * Assistant sidebar content — the v15 rail.
  *
- * Structure (top → bottom):
+ * The brief was one sentence from the owner: *"the navigation got a bit crazy
+ * with so many things."* The rail carried thirteen entries. It now carries
+ * three Tier-1 rows, the conversation list, and a group of six.
  *
- *   Header · primary rail — the three destinations that exist on every
- *   platform, read from `components/nav/nav-model` so this rail and the
- *   phone's tab bar cannot describe different information models:
- *     • Talk to Cue → the conversation surface
- *     • HQ          → the deck that empties; cuts ACROSS all things and shows
- *                       only what is true today. Carries the app's one badge.
- *     • Work        → the list of things; cuts INTO one thing and never
- *                       empties. Two views, nested while Work is open:
- *                         · Things     — the containers
- *                         · Everything — the flat ledger (formerly "All work",
- *                                        which stopped being its own
- *                                        destination in v11)
- *     • ── deeper ── Agents · Rhythms · People · What Cue does ·
- *                       Trust & guardrails, then Create / Voice /
- *                       Intelligence / Library
- *     • channel-presence dots + pinned apps (rail affordances)
- *     • ───────────────
- *   Body · "Chat" section — the conversation-thread list
- *     • Pinned …       — pinned threads (when non-empty)
- *     • thread …       — recent conversations inline
- *     • Show more/less — page through recent conversations
- *     • Slack ▾        — collapsible category when Slack conversations exist
- *   Footer
- *     • ───────────────
- *     • caller-provided action (PreferencesMenu)
+ *   cue.
+ *   [ ✎ Talk to Cue          ⌘N ]   ← the filled row
+ *   ◈ HQ                      7 ▾   ← three most urgent, then "N more ›"
+ *   ▤ Work                    5 ▸   ← three with something live
+ *   PINNED / RECENT / All conversations ›
+ *   CUE   ◆ Agents · ✦ Skills · ↻ Rhythms · 🧠 Memory · ▦ Library · 👁 Watching
+ *   👤 avatar (Trust · Preferences · Billing live in here)
  *
- * Demoted from the rail but kept reachable: Memory (Intelligence tab),
- * Next moves (Home feed + /assistant/next-moves), Connections (Intelligence ›
- * Connectors), Meeting (Home record action + /assistant/meeting), People
- * (Contacts › "People · dossiers" + /assistant/people), Guardrails — the
- * evolved Trust console (/assistant/guardrails; /assistant/trust redirects).
+ * **Flat hierarchy — no indents.** Expanded peek rows are unindented too; the
+ * quieter type does the nesting that position used to. The `▾` sits on the
+ * right edge after the count so nothing shifts horizontally when a section
+ * opens.
+ *
+ * The expansion rule is the design, and it lives in three places on purpose:
+ *   · `RAIL_PEEK_LIMIT` + `takePeek` (nav-model) — three rows, always;
+ *   · `rail-peek-store` — one section open at a time, collapsed on first run,
+ *     and it remembers;
+ *   · `use-rail-peek` — HQ sorts by urgency, Work by liveness, and a lane that
+ *     cannot read its data says so instead of rendering a zero.
+ *
+ * Displaced, NOT deleted — every one of these still resolves:
+ *   · Trust & guardrails, Usage/Billing, Settings → the avatar menu below
+ *     (`PreferencesMenu`), which is the desktop counterpart of mobile's You.
+ *   · Work's Things/Everything views → the Work page's own sub-nav
+ *     (`pages/projects/work-views.tsx`). Nesting them here as well was a
+ *     second nav path to one destination.
+ *   · Intelligence (`/assistant/identity`) → ⌘K, and the tab strip that
+ *     Skills and Memory both land on.
+ *   · Channels, Connections, Cue Live, Workspace → that same tab strip.
+ *   · People (`/assistant/people`) → the phone's ◍ menu. Design has not said
+ *     where it belongs on desktop; see the report rather than a guess here.
+ *   · Create (`/assistant/create`) and Voice (`/assistant/voice`) → composer
+ *     affordances. Voice already has its mic + orb in the composer; Create's
+ *     desktop chip is not built yet.
  */
 /**
  * Rail iconography. Lives here rather than in `nav-model` so the model stays
@@ -184,22 +205,38 @@ function SearchButton({ onClose }: { onClose?: () => void }) {
  * the same destinations with its own stroke glyphs.
  */
 const PRIMARY_ICON: Record<PrimaryNavKey, typeof Target> = {
-  talk: MessageCircle,
+  // ✎ — the compose glyph, because this row is the destination AND the ⌘N
+  // action (v14: "the destination keeps the row, the action becomes the icon
+  // inside it"). One row where there used to be two.
+  talk: SquarePen,
   hq: Target,
   work: LayoutList,
 };
 
-const WORK_VIEW_ICON = {
-  things: FolderKanban,
-  everything: ListTree,
-} as const;
-
-const DEEPER_ICON: Record<string, typeof Target> = {
+const CUE_ICON: Record<string, typeof Target> = {
   agents: Bot,
+  skills: Sparkles,
   rhythms: Repeat,
-  people: Users,
-  explore: Compass,
-  guardrails: ShieldCheck,
+  memory: Brain,
+  library: LayoutGrid,
+  watching: Eye,
+};
+
+/** What each lane says when it is expanded and has nothing to show. */
+const PEEK_EMPTY: Record<PeekSectionKey, string> = {
+  hq: "Nothing needs you",
+  work: "Nothing live right now",
+};
+
+/**
+ * What a lane says when it could not read its data.
+ *
+ * Deliberately not an empty list: "nothing needs you" and "I could not ask"
+ * look identical at zero, and only one of them is safe to believe.
+ */
+const PEEK_UNREADABLE: Record<PeekSectionKey, string> = {
+  hq: "⚠ Couldn't read HQ",
+  work: "⚠ Couldn't read Work",
 };
 
 export function AssistantSideMenu({
@@ -211,12 +248,8 @@ export function AssistantSideMenu({
   conversations,
   activeConversationId,
   onSelectConversation,
-  isIntelligenceActive = false,
-  onOpenIntelligence,
   isLibraryActive = false,
   onOpenLibrary,
-  isContactsActive = false,
-  onOpenContacts,
   onOpenApp,
   activeAppId,
   onStartNewConversation,
@@ -252,7 +285,12 @@ export function AssistantSideMenu({
   // the Work surface itself reads, so the rail can never claim a count the
   // page then contradicts.
   const navCounts = useNavCounts(assistantId);
-  const activeWorkView = readWorkView(location.search);
+  // The peek. Reads the same two badge sources above, so the three titles and
+  // the "N more" under them can never disagree with the number beside HQ.
+  const peek = useRailPeek(assistantId);
+  const openSection = useRailPeekStore.use.openSection();
+  const togglePeek = useRailPeekStore.use.toggle();
+  const peekPanelId = useId();
   const cueNav = useCallback(
     (to: string) => {
       navigate(to);
@@ -565,202 +603,170 @@ export function AssistantSideMenu({
             <div className="flex items-center gap-2">{headerActions}</div>
           </div>
         ) : null}
-        {/* Start a new conversation. Sits above the rail rather than in it:
-            "Talk to Cue" below is the DESTINATION (the conversation surface),
-            this is the action that opens a blank one. Keeping them adjacent
-            but distinct is what stops the rail growing a second nav path to
-            the same place. */}
-        {onStartNewConversation ? (
-          <>
-            <SideMenu.Item
-              icon={SquarePen}
-              label="New conversation"
-              showCollapsedTooltip
-              emphasized
-              onSelect={() => {
-                onStartNewConversation();
-                onClose?.();
-              }}
-            />
-            <SideMenu.Separator />
-          </>
-        ) : null}
         {/*
-          The rail, reconciled with the phone (v11 finding C1).
+          Tier 1 — three rows, from `PRIMARY_NAV`, the same declaration the
+          phone's tab bar renders so the two platforms cannot describe
+          different information models (v11 finding C1):
 
-          v10's navigation model was drawn phone-only, so this rail still said
-          "Projects" while the phone had already moved to "Work" — the two
-          platforms describing different information models, which is worse
-          than either being wrong alone. The top three rows now come from
-          `PRIMARY_NAV`, the same declaration the tab bar renders, so the sets
-          cannot drift again:
+            ✎  Talk to Cue          ⌘N
+            ◈  HQ                    7 ▾
+            ▤  Work                  5 ▸
 
-            ◉  Talk to Cue
-            ◈  HQ                    <needs-you>
-            ▤  Work                  <things>
-                 Things
-                 Everything          <live tasks>
-               ── deeper ──
-            Agents · Rhythms · People · What Cue does · Trust & guardrails
-
-          The order differs from the phone on purpose: a vertical rail reads
-          top-down by frequency, while the phone centres the mark because the
-          centre slot is where the thumb rests. The SET is identical.
-
-          Work's two views are nested rather than listed as siblings — the
-          ledger stopped being its own destination in v11, and promoting it
-          back to the rail is exactly the duplicate-nav mistake this codebase
-          already had to clean up once.
-
-          Create / Voice / Intelligence / Library stay below the divider:
-          Voice is a mode rather than a place, and Intelligence / Library are
-          host-provided panels with no route of their own, so dropping their
-          rows would strand them entirely.
+          "New conversation" is no longer its own row. v13 was right that it
+          and "Talk to Cue" are one intent; v14 kept the collapse but inverted
+          which one survives — the NAME stays "Talk to Cue" (it names the
+          relationship) and the ✎ + ⌘N make it the compose row. Two rows became
+          one, and the surface itself is right below in RECENT / All
+          conversations, so nothing lost a door.
         */}
         {PRIMARY_NAV.map((destination) => {
           const active = destination.match(location.pathname);
-          const isWork = destination.key === "work";
-          return (
-            // A Fragment, not a wrapper div: `SideMenu.Header` is the flex
-            // column that supplies the rail's row spacing, so a wrapper would
-            // make Work's nested views sit flush while every sibling keeps its
-            // gap.
-            <Fragment key={destination.key}>
+          const section: PeekSectionKey | null =
+            destination.key === "hq"
+              ? "hq"
+              : destination.key === "work"
+                ? "work"
+                : null;
+
+          if (section === null) {
+            return (
               <SideMenu.Item
+                key={destination.key}
                 icon={PRIMARY_ICON[destination.key]}
                 label={destination.label}
                 showCollapsedTooltip
-                // HQ carries the only badge in the app: approvals parked
-                // mid-run plus finished runs nobody has reviewed. Cue works
-                // while you are away, so it has to be visible from anywhere —
-                // not only from inside HQ. Hidden at zero so it never nags.
-                // Work's trailing number is a count of things, not a demand.
+                emphasized
+                // ⌘N rides in the badge slot rather than as a second control —
+                // the row already IS the action. Shown only on the desktop
+                // app, which is the only place the accelerator is registered
+                // (`apps/macos/src/main/commands.ts`); printing a shortcut
+                // that does nothing in a browser tab is a small lie the rail
+                // does not need to tell.
                 badge={
-                  destination.key === "hq" && needsYouCount > 0
-                    ? String(needsYouCount)
-                    : isWork && navCounts.things > 0
-                      ? String(navCounts.things)
-                      : undefined
+                  onStartNewConversation && isElectron() ? "⌘N" : undefined
                 }
                 active={active}
-                onSelect={() => cueNav(destination.to)}
+                onSelect={() => {
+                  if (onStartNewConversation) {
+                    onStartNewConversation();
+                    onClose?.();
+                    return;
+                  }
+                  cueNav(destination.to);
+                }}
               />
-              {/* Work's two views. Shown only while Work is open — nesting
-                  them permanently would put three rail rows on one
-                  destination. Hidden in the collapsed rail, where an indented
-                  row has nothing to indent from. */}
-              {isWork && active && !collapsed
-                ? WORK_VIEWS.map((view) => (
+            );
+          }
+
+          const lane = section === "hq" ? peek.hq : peek.work;
+          const view = takePeek(lane);
+          const open = openSection === section && !collapsed;
+          const panelId = `${peekPanelId}-${section}`;
+          // HQ carries the app's one badge: approvals parked mid-run plus
+          // finished runs nobody has reviewed. Work's number is a count of
+          // things, not a demand. Both hide at zero so neither nags.
+          const count = section === "hq" ? needsYouCount : navCounts.things;
+
+          return (
+            // A Fragment, not a wrapper div: `SideMenu.Header` is the flex
+            // column that supplies the rail's row spacing, so wrapping the row
+            // AND its panel together would make the panel sit flush while
+            // every sibling keeps its gap.
+            <Fragment key={destination.key}>
+              {/* `relative` wraps the row ALONE so the ▾ can sit on the right
+                  edge without being nested inside the row's <button>. That
+                  matters twice: nested buttons are invalid, and the disclosure
+                  has to be its own hit target — clicking HQ must still go to
+                  HQ. */}
+              <div className="relative">
+                <SideMenu.Item
+                  icon={PRIMARY_ICON[destination.key]}
+                  label={destination.label}
+                  showCollapsedTooltip
+                  badge={count > 0 ? String(count) : undefined}
+                  active={active}
+                  className={collapsed ? undefined : "pr-8"}
+                  onSelect={() => cueNav(destination.to)}
+                />
+                {collapsed ? null : (
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-controls={open ? panelId : undefined}
+                    aria-label={
+                      open
+                        ? `Hide what's in ${destination.label}`
+                        : `Show what's in ${destination.label}`
+                    }
+                    onClick={() => togglePeek(section)}
+                    className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-[4px] text-[color:var(--content-tertiary)] outline-none hover:bg-[var(--surface-hover)] keyboard-focus:ring-2 keyboard-focus:ring-[var(--ring)]"
+                  >
+                    {open ? (
+                      <ChevronDown size={14} aria-hidden />
+                    ) : (
+                      <ChevronRight size={14} aria-hidden />
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* The peek. Three rows maximum, always — not "the first three
+                  that fit". Unindented, because quieter type does the nesting
+                  that position used to. Titles and a deadline, no buttons:
+                  acting happens on the surface. */}
+              {open ? (
+                <div id={panelId} className="flex flex-col gap-[2px]">
+                  {lane.status === "unreadable" ? (
                     <SideMenu.Item
-                      key={view.key}
-                      icon={WORK_VIEW_ICON[view.key]}
-                      label={view.label}
-                      indent
-                      badge={
-                        view.key === "everything" && navCounts.everything > 0
-                          ? String(navCounts.everything)
-                          : undefined
-                      }
-                      active={activeWorkView === view.key}
-                      onSelect={() => cueNav(view.to)}
+                      label={PEEK_UNREADABLE[section]}
+                      size="compact"
+                      className="text-[color:var(--content-tertiary)]"
                     />
-                  ))
-                : null}
+                  ) : lane.status === "loading" ? (
+                    <SideMenu.Item
+                      label="Checking…"
+                      size="compact"
+                      className="text-[color:var(--content-tertiary)]"
+                    />
+                  ) : view.shown.length === 0 && view.moreCount === 0 ? (
+                    <SideMenu.Item
+                      label={PEEK_EMPTY[section]}
+                      size="compact"
+                      className="text-[color:var(--content-tertiary)]"
+                    />
+                  ) : (
+                    <>
+                      {view.shown.map((item) => (
+                        <SideMenu.Item
+                          key={item.id}
+                          label={item.title}
+                          size="compact"
+                          badge={item.meta ?? undefined}
+                          className="text-[color:var(--content-tertiary)]"
+                          onSelect={() => cueNav(destination.to)}
+                        />
+                      ))}
+                      {view.moreCount > 0 ? (
+                        <SideMenu.Item
+                          label={
+                            view.shown.length === 0
+                              ? `${view.moreCount} in ${destination.label}`
+                              : `${view.moreCount} more in ${destination.label}`
+                          }
+                          size="compact"
+                          emphasized
+                          trailingIcon={ChevronRight}
+                          onSelect={() => cueNav(destination.to)}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
             </Fragment>
           );
         })}
 
-        <SideMenu.Separator />
-
-        {/* ── deeper ── the surfaces the phone reaches from its ◍ menu. Same
-            list, same order, one source (`DEEPER_NAV`). */}
-        {DEEPER_NAV.map((destination) => (
-          <SideMenu.Item
-            key={destination.key}
-            icon={DEEPER_ICON[destination.key] ?? Rocket}
-            label={destination.label}
-            showCollapsedTooltip
-            active={
-              destination.key === "people"
-                ? isContactsActive || destination.match(location.pathname)
-                : destination.match(location.pathname)
-            }
-            onSelect={
-              destination.key === "people" && onOpenContacts
-                ? () => {
-                    onOpenContacts();
-                    onClose?.();
-                  }
-                : () => cueNav(destination.to)
-            }
-          />
-        ))}
-        <SideMenu.Item
-          icon={Wand2}
-          label="Create"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/create")}
-          onSelect={() => cueNav("/assistant/create")}
-        />
-        <SideMenu.Item
-          icon={Mic}
-          label="Voice"
-          showCollapsedTooltip
-          active={location.pathname.endsWith("/voice")}
-          onSelect={() => cueNav("/assistant/voice")}
-        />
-        <SideMenu.Item
-          icon={Sparkles}
-          label="Intelligence"
-          showCollapsedTooltip
-          active={isIntelligenceActive}
-          onSelect={
-            onOpenIntelligence
-              ? () => {
-                  onOpenIntelligence();
-                  onClose?.();
-                }
-              : undefined
-          }
-        />
-        {onOpenLibrary ? (
-          <SideMenu.Item
-            icon={LayoutGrid}
-            label="Library"
-            showCollapsedTooltip
-            active={isLibraryActive}
-            onSelect={
-              onOpenLibrary
-                ? () => {
-                    onOpenLibrary();
-                    onClose?.();
-                  }
-                : undefined
-            }
-          />
-        ) : null}
-        {/* Channel presence — live readiness dots (one memory across channels). */}
-        <CueChannelPresence />
-        {pinnedApps.map((app) => (
-          <SideMenu.Item
-            key={app.appId}
-            // Apps source their icon as an emoji string on the manifest
-            // (`app.icon`). Fall back to the Rocket lucide glyph so unmojified
-            // apps still get a leading icon in the rail.
-            icon={app.icon ?? Rocket}
-            label={app.name}
-            showCollapsedTooltip
-            active={activeAppId === app.appId}
-            onSelect={
-              onOpenApp
-                ? () => {
-                    onOpenApp(app.appId);
-                    onClose?.();
-                  }
-                : undefined
-            }
-          />
-        ))}
         <SideMenu.Separator />
       </SideMenu.Header>
 
@@ -830,6 +836,19 @@ export function AssistantSideMenu({
               actions={variant === "overlay" ? undefined : headerActions}
             >
               {renderFlatList(sidebar.recents.items, sidebar.recents)}
+
+              {/* "All conversations ›" — the door to the full index. The rail
+                  shows five; finding the one you half-remember is a job for a
+                  page with quotes and thing-chips on it (v16 D3), not for an
+                  ever-growing list in a 260px column. */}
+              <SideMenu.Item
+                label="All conversations"
+                size="compact"
+                emphasized
+                trailingIcon={ChevronRight}
+                active={location.pathname === routes.conversations}
+                onSelect={() => cueNav(routes.conversations)}
+              />
 
               <CollapsibleNavSection.Root
                 type="multiple"
@@ -923,6 +942,103 @@ export function AssistantSideMenu({
             </SideMenu.Section>
           </>
         )}
+
+        {/*
+          CUE — Tier 2, "what Cue is". Six rows, and the array they come from
+          is capped at six: a seventh must DISPLACE one, not extend the list.
+          That cap, not the heading, is what stops thirteen happening again.
+
+          It sits BELOW the conversation list because it is the group you click
+          to explain the product, not the one you live in — and the list above
+          it is bounded at five plus a door, so this never lands off-screen.
+
+          Two columns when the rail is open (six rows of chrome under a short
+          conversation list is the density the drawing calls for); one column
+          of icons when it is collapsed, where a grid has nothing to align to.
+        */}
+        <SideMenu.Section title="Cue" className="mt-3 gap-1">
+          <div
+            className={cn(
+              "gap-x-1 gap-y-[2px]",
+              collapsed && variant === "rail"
+                ? "flex flex-col items-center"
+                : "grid grid-cols-2",
+            )}
+          >
+            {CUE_NAV.map((destination) => {
+              // Watching has no surface. Rather than pointing it at the
+              // nearest lookalike (Channels & Agents is where a source is
+              // CONNECTED, not what Cue did with what arrived), the row ships
+              // disabled and says why. A lock glyph carries the state, so it
+              // does not depend on the dimmed tint alone.
+              if (destination.to === null) {
+                return (
+                  <SideMenu.Item
+                    key={destination.key}
+                    icon={CUE_ICON[destination.key] ?? Rocket}
+                    label={destination.label}
+                    disabled
+                    trailingIcon={Lock}
+                    title={destination.unavailableReason}
+                    tooltip={destination.unavailableReason}
+                    className="cursor-default opacity-60 hover:bg-transparent"
+                  />
+                );
+              }
+              const to = destination.to;
+              const isLibrary = destination.key === "library";
+              return (
+                <SideMenu.Item
+                  key={destination.key}
+                  icon={CUE_ICON[destination.key] ?? Rocket}
+                  label={destination.label}
+                  showCollapsedTooltip
+                  active={
+                    isLibrary
+                      ? isLibraryActive || destination.match(location.pathname)
+                      : destination.match(location.pathname)
+                  }
+                  // Library's host callback navigates to the same route this
+                  // row would; prefer it so the layout keeps whatever panel
+                  // state it wants to set on the way.
+                  onSelect={
+                    isLibrary && onOpenLibrary
+                      ? () => {
+                          onOpenLibrary();
+                          onClose?.();
+                        }
+                      : () => cueNav(to)
+                  }
+                />
+              );
+            })}
+          </div>
+        </SideMenu.Section>
+
+        {/* Channel presence — live readiness dots (one memory across
+            channels). Not a destination; it belongs with the CUE group
+            because it answers the same question Watching will. */}
+        <CueChannelPresence />
+        {pinnedApps.map((app) => (
+          <SideMenu.Item
+            key={app.appId}
+            // Apps source their icon as an emoji string on the manifest
+            // (`app.icon`). Fall back to the Rocket lucide glyph so unmojified
+            // apps still get a leading icon in the rail.
+            icon={app.icon ?? Rocket}
+            label={app.name}
+            showCollapsedTooltip
+            active={activeAppId === app.appId}
+            onSelect={
+              onOpenApp
+                ? () => {
+                    onOpenApp(app.appId);
+                    onClose?.();
+                  }
+                : undefined
+            }
+          />
+        ))}
       </SideMenu.Body>
 
       {footerAction ? (

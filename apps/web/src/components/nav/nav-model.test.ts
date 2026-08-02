@@ -11,7 +11,8 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  DEEPER_NAV,
+  CUE_GROUP_CAP,
+  CUE_NAV,
   MOBILE_TAB_ORDER,
   PRIMARY_NAV,
   WORK_VIEWS,
@@ -140,34 +141,79 @@ describe("Work's two views are views, not destinations", () => {
   });
 });
 
-describe("deeper surfaces", () => {
-  test("the five the design names, in order", () => {
-    expect(DEEPER_NAV.map((d) => d.label)).toEqual([
+describe("the CUE group is closed at six", () => {
+  // This is the test the whole pass exists for. The rail carried THIRTEEN
+  // entries; a heading above them would not have helped, because a heading has
+  // no arity. Adding a seventh row must fail here so the author has to decide
+  // which of the six it displaces.
+  test("exactly six — a seventh must displace one, not extend the list", () => {
+    expect(CUE_NAV).toHaveLength(CUE_GROUP_CAP);
+    expect(CUE_GROUP_CAP).toBe(6);
+  });
+
+  test("the six the design names, in order", () => {
+    expect(CUE_NAV.map((d) => d.label)).toEqual([
       "Agents",
+      "Skills",
       "Rhythms",
-      "People",
-      "What Cue does",
-      "Trust & guardrails",
+      "Memory",
+      "Library",
+      "Watching",
     ]);
   });
 
-  test("every deeper surface points at a route that exists in the registry", () => {
+  test("Agents and Skills are adjacent — an agent's capabilities ARE its skills", () => {
+    const keys = CUE_NAV.map((d) => d.key);
+    expect(keys.indexOf("skills") - keys.indexOf("agents")).toBe(1);
+  });
+
+  test("every row with a destination points at a route in the registry", () => {
     const known = new Set<string>([
       routes.hqAgents,
+      routes.skills,
       routes.automations,
-      routes.people,
-      routes.explore,
-      routes.guardrails,
+      routes.memory,
+      routes.library.root,
     ]);
-    for (const destination of DEEPER_NAV) {
+    for (const destination of CUE_NAV) {
+      if (destination.to === null) continue;
       expect(known.has(destination.to)).toBe(true);
     }
   });
 
-  test("no deeper surface duplicates a primary destination", () => {
+  test("Agents points at the org chart, NOT the /assistant/agents redirect", () => {
+    // `routes.agentsAtWork` is a `<Navigate to={routes.hq}>`. A row labelled
+    // Agents that lands you on HQ is the exact failure this pass was told to
+    // avoid: an entry that lies about where it goes.
+    const agents = CUE_NAV.find((d) => d.key === "agents");
+    expect(agents?.to).toBe(routes.hqAgents);
+    expect(agents?.to).not.toBe(routes.agentsAtWork);
+  });
+
+  test("a row with no surface admits it instead of pointing somewhere plausible", () => {
+    // Watching is specified (v17 E3) and unbuilt. `to: null` + a reason is the
+    // honest state; aiming it at Channels & Agents would have looked finished
+    // and been wrong — that surface is where a source is CONNECTED, not what
+    // Cue did with what arrived.
+    for (const destination of CUE_NAV) {
+      if (destination.to !== null) continue;
+      expect(destination.unavailableReason?.length).toBeGreaterThan(0);
+      expect(destination.match("/assistant/channels")).toBe(false);
+    }
+  });
+
+  test("no CUE row duplicates a primary destination", () => {
     const primary = new Set(PRIMARY_NAV.map((d) => d.to));
-    for (const destination of DEEPER_NAV) {
+    for (const destination of CUE_NAV) {
+      if (destination.to === null) continue;
       expect(primary.has(destination.to)).toBe(false);
     }
+  });
+
+  test("no two CUE rows share a destination — one door per place", () => {
+    const targets = CUE_NAV.map((d) => d.to).filter(
+      (to): to is string => to !== null,
+    );
+    expect(new Set(targets).size).toBe(targets.length);
   });
 });

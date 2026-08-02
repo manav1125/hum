@@ -125,6 +125,16 @@ describe("the navigation rework leaves every old URL resolvable", () => {
     "/assistant/trust",
     "/assistant/automations",
     "/assistant/hq/agents",
+    // v15 displaced these out of the rail into the CUE group, the avatar
+    // menu, ⌘K or the Intelligence tab strip. Every one keeps its URL —
+    // subtraction in the chrome, never in the URL space.
+    "/assistant/skills",
+    "/assistant/memory",
+    "/assistant/library",
+    "/assistant/identity",
+    "/assistant/workspace",
+    "/assistant/cue-live",
+    "/assistant/contacts",
     "/assistant/brand",
     "/assistant/connectors",
     "/assistant/review-queue",

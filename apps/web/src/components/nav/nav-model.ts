@@ -10,8 +10,8 @@
  * destination cannot drift on one platform without moving on the other.
  *
  *   Phone   ◈ HQ · ◉ Talk to Cue · ▤ Work        (three tabs, mark centred)
- *   Desktop ◉ Talk to Cue · ◈ HQ · ▤ Work        (then Things/Everything,
- *                                                 then the deeper surfaces)
+ *   Desktop ✎ Talk to Cue · ◈ HQ · ▤ Work        (then conversations, then
+ *                                                 the CUE group's six)
  *
  * The ORDER differs by platform on purpose — the phone centres the mark
  * because the centre slot is the thumb's home and the mark is the fastest
@@ -167,52 +167,208 @@ export function readWorkView(search: string | URLSearchParams): WorkView {
   return params.get("view") === "everything" ? "everything" : "things";
 }
 
-// --- Deeper surfaces --------------------------------------------------------
+// --- The CUE group ----------------------------------------------------------
 
 /**
- * The surfaces below the "deeper" divider on desktop. On the phone these hang
- * off the avatar menu — the same set, one level down, reached at the same
- * cost on both platforms.
+ * The group under the **CUE** heading — Tier 2, "what Cue is".
+ *
+ * The owner's complaint about v13/v14 was that "the navigation got a bit crazy
+ * with so many things", and he was right: the rail carried thirteen entries.
+ * A heading alone would not have fixed that, because a heading has no arity.
+ * {@link CUE_GROUP_CAP} does: **a seventh item must DISPLACE one of these, not
+ * extend the list.** `nav-model.test.ts` fails if the array grows, which is the
+ * only mechanism that has ever stopped this list growing.
+ *
+ * Each row answers one part of *"what is this thing I'm using?"* — that shared
+ * sentence is the admission test, and it is why frequency alone (v13's test)
+ * was the wrong one:
+ *
+ *   ◆ Agents   — who works for you
+ *   ✦ Skills   — what they can do
+ *   ↻ Rhythms  — what runs without you
+ *   🧠 Memory  — what Cue knows
+ *   ▦ Library  — what Cue has made
+ *   👁 Watching — where it comes from
+ *
+ * Agents and Skills sit adjacent deliberately: an agent's capabilities *are*
+ * its skills, so the org chart and the marketplace belong together.
  */
-export interface DeeperDestination {
+export const CUE_GROUP_CAP = 6;
+
+export interface CueDestination {
   key: string;
   label: string;
-  to: string;
+  /**
+   * Where the row lands, or `null` when the surface does not exist yet.
+   *
+   * `null` is not a placeholder for "wire this up later" — it is the honest
+   * state, and the rail renders it as a disabled row carrying
+   * {@link CueDestination.unavailableReason}. Pointing a row at the nearest
+   * lookalike surface is the failure mode this field exists to prevent: an
+   * entry that lies about where it goes is worse than one that admits it has
+   * nowhere to go.
+   */
+  to: string | null;
+  /** Shown on a `to: null` row. Required for one, meaningless for the rest. */
+  unavailableReason?: string;
   match: (pathname: string) => boolean;
 }
 
-export const DEEPER_NAV: readonly DeeperDestination[] = [
+export const CUE_NAV: readonly CueDestination[] = [
   {
+    // The org chart lives at `/assistant/hq/agents`. NOT `routes.agentsAtWork`
+    // (`/assistant/agents`), which is a `<Navigate to={routes.hq}>` redirect —
+    // pointing the Agents row there would land the user on HQ under a label
+    // that promised the roster.
     key: "agents",
     label: "Agents",
     to: routes.hqAgents,
     match: (p) => p.includes("/hq/agents"),
   },
   {
+    key: "skills",
+    label: "Skills",
+    to: routes.skills,
+    match: (p) => p.includes("/skills") || p.includes("/marketplace"),
+  },
+  {
     // "Rhythms" is the design's word for recurring work. The surface that
-    // holds it today is Automations (Watchers + Playbooks) — the label moves
-    // now, the surface stays where it is.
+    // holds it today is Automations (Watchers + Playbooks) — the label moved,
+    // the surface did not.
     key: "rhythms",
     label: "Rhythms",
     to: routes.automations,
     match: (p) => p.includes("/automations"),
   },
   {
-    key: "people",
-    label: "People",
-    to: routes.people,
-    match: (p) => p.includes("/people") || p.includes("/contacts"),
+    // v14's one rename: "Intelligence" names the machinery, "Memory" names
+    // what you came to look at — and it is the word Cue itself uses.
+    key: "memory",
+    label: "Memory",
+    to: routes.memory,
+    match: (p) => p.includes("/memory"),
   },
   {
-    key: "explore",
-    label: "What Cue does",
-    to: routes.explore,
-    match: (p) => p.includes("/explore"),
+    key: "library",
+    label: "Library",
+    to: routes.library.root,
+    match: (p) => p.includes("/library"),
   },
   {
-    key: "guardrails",
-    label: "Trust & guardrails",
-    to: routes.guardrails,
-    match: (p) => p.includes("/guardrails") || p.includes("/trust"),
+    // The one real gap. v17 E3 specifies Watching — per-source "40 in — 31
+    // filed, 9 dropped, 0 needed you", the no-op card, "connected but not
+    // watched", "what Cue skips" — and none of it is built. Channels &
+    // Agents (`routes.channels`) is the closest existing surface and is NOT
+    // the same thing: it is where a source is CONNECTED, not what Cue did
+    // with what arrived. So the row ships disabled and says so, which keeps
+    // the group at its designed six without inventing a destination.
+    key: "watching",
+    label: "Watching",
+    to: null,
+    unavailableReason: "Not built yet — sources live under Skills › Channels",
+    match: () => false,
   },
 ] as const;
+
+// --- The peek ---------------------------------------------------------------
+
+/**
+ * How many rows a rail section may ever show. **Three. Not "the first three
+ * that fit".**
+ *
+ * This is the whole design. A rail that grows with workload recreates exactly
+ * the problem the calm page was built to solve: at three items or thirty, only
+ * the number in "N more ›" moves, and the rail's height does not. Raise this
+ * constant and `rail-peek.test.ts` fails — that is deliberate, because every
+ * previous cap in this codebase was a comment and every one of them drifted.
+ */
+export const RAIL_PEEK_LIMIT = 3;
+
+/** The two sections that can expand. Only ever one at a time. */
+export type PeekSectionKey = "hq" | "work";
+
+export interface PeekItem {
+  id: string;
+  title: string;
+  /**
+   * The one thing allowed on the right: a deadline for HQ, a live-state phrase
+   * for Work. Never a button — acting happens on the surface; the rail is a
+   * reminder, not a workspace.
+   */
+  meta: string | null;
+}
+
+/**
+ * A lane's readable state.
+ *
+ * `unreadable` exists because the alternative is worse: a lane that cannot
+ * reach its data rendering `0` is indistinguishable from a lane that
+ * legitimately has nothing, and "nothing needs you" is the single most
+ * expensive lie this rail could tell. A lane that cannot read says so.
+ */
+export type PeekStatus = "ready" | "loading" | "unreadable";
+
+export interface PeekLane {
+  status: PeekStatus;
+  /** Candidates, already sorted by the lane's own comparator. */
+  items: readonly PeekItem[];
+  /**
+   * The section's badge count — the SAME number the rail renders beside the
+   * label. "N more" is derived from this rather than from `items.length`, so
+   * the badge and the arithmetic under it cannot disagree. (They already did
+   * once: the HQ headline read 6 while the sidebar badge read 5.)
+   */
+  total: number;
+}
+
+export interface PeekView {
+  shown: readonly PeekItem[];
+  /** How many the peek is NOT showing. Never negative. */
+  moreCount: number;
+}
+
+/**
+ * Cap a lane at {@link RAIL_PEEK_LIMIT} and work out the remainder.
+ *
+ * `moreCount` comes off `total`, not off `items.length`: a lane may know its
+ * count without having fetched every row (HQ's badge counts parked approvals
+ * that carry no title), and under-reporting the remainder would make the rail
+ * quietly disagree with the badge two pixels above it.
+ */
+export function takePeek(lane: PeekLane): PeekView {
+  const shown =
+    lane.status === "ready" ? lane.items.slice(0, RAIL_PEEK_LIMIT) : [];
+  return {
+    shown,
+    moreCount: Math.max(0, lane.total - shown.length),
+  };
+}
+
+/**
+ * "10:30" · "Fri" · "31 Jul" · "overdue".
+ *
+ * Rail-local on purpose. The three formatters that already exist speak their
+ * own surface's dialect — mobile's `dueLabel` shouts `DUE 10:30`, activity's
+ * `relativeTime` says `in 2h` — and neither is the quiet right-aligned form
+ * the rail draws. Accepts seconds or milliseconds, because daemon timestamps
+ * are inconsistent about which they send.
+ */
+export function peekDeadline(
+  dueAt: number | null | undefined,
+  now: number,
+): string | null {
+  if (dueAt == null || !Number.isFinite(dueAt)) return null;
+  const ms = dueAt < 1e12 ? dueAt * 1000 : dueAt;
+  if (ms < now) return "overdue";
+  const due = new Date(ms);
+  if (new Date(now).toDateString() === due.toDateString()) {
+    return due.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  if (ms - now < 7 * 86_400_000) {
+    return due.toLocaleDateString(undefined, { weekday: "short" });
+  }
+  return due.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
