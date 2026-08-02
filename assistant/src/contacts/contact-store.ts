@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, like, sql } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 
 import { getDb } from "../memory/db-connection.js";
@@ -790,6 +790,47 @@ export function reconcileGuardianContacts(): number {
 /**
  * Find a contact by a specific channel address. Returns null if not found.
  */
+/**
+ * Find a contact the owner actually stood behind on this address.
+ *
+ * A plain {@link findContactByAddress} now matches contacts HARVESTED from
+ * inbound mail, because correspondence provisioning mints one per sender. That
+ * is right for People — you should be able to browse who writes to you — and
+ * wrong for anything that treats "is a contact" as evidence about the sender.
+ *
+ * It closed a loop in the arrival gate's safety floor: mail minted a contact,
+ * the contact satisfied the floor, the floor surfaced the mail, and the
+ * surfacing was then read back as evidence the sender was a person. Every turn
+ * of that made the next turn easier, and it had already fired once.
+ *
+ * A harvested channel is `unverified`. A channel the owner invited, verified or
+ * added by hand is not. That distinction is the whole difference between "I
+ * know this person" and "this address has written to me".
+ */
+export function findCuratedContactByAddress(
+  type: string,
+  address: string,
+): ContactWithChannels | null {
+  const db = getDb();
+  const channel = db
+    .select()
+    .from(contactChannels)
+    .where(
+      and(
+        eq(contactChannels.type, type),
+        eq(contactChannels.address, address.toLowerCase()),
+        // Anything but `unverified` means somebody deliberately did something
+        // about this address. Revoked and blocked are excluded too: a channel
+        // the owner turned off is not a person they want surfaced by it.
+        inArray(contactChannels.status, ["active", "pending"]),
+      ),
+    )
+    .get();
+
+  if (!channel) return null;
+  return getContactInternal(channel.contactId);
+}
+
 export function findContactByAddress(
   type: string,
   address: string,

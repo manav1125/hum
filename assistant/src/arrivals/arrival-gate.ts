@@ -32,7 +32,7 @@
 import { resolveCallSiteConfig } from "../config/llm-resolver.js";
 import { getConfig } from "../config/loader.js";
 import { RelevanceGateConfigSchema } from "../config/schemas/watchers.js";
-import { findContactByAddress } from "../contacts/contact-store.js";
+import { findCuratedContactByAddress } from "../contacts/contact-store.js";
 import { listMissions } from "../missions/mission-store.js";
 import { getConfiguredProvider } from "../providers/provider-send-message.js";
 import { runBtwSidechain } from "../runtime/btw-sidechain.js";
@@ -196,9 +196,17 @@ export function applySafetyFloor(
   ctx: FloorContext,
 ): FloorHit | null {
   // 1. A message from somebody the owner has deliberately saved as a contact.
-  //    Contacts in this system are curated (invites, channel verification,
-  //    explicit adds) rather than harvested from inbound mail, so this is a
-  //    real "I know this person" signal and not a sender-list.
+  //
+  //    This comment used to say contacts are curated rather than harvested
+  //    from inbound mail. That stopped being true the moment correspondence
+  //    provisioning shipped, and it closed a LOOP: mail mints a contact, the
+  //    contact satisfies this floor, the floor surfaces the mail, and the
+  //    surfacing is then read back as evidence the sender is a person. It had
+  //    already fired once. Self-reinforcing evidence is not evidence.
+  //
+  //    So the lookup now requires a channel the owner actually stood behind —
+  //    verified, invited or explicitly added. An auto-provisioned channel is
+  //    `unverified`, and being harvested is not the same as being known.
   if (signals.senderAddress) {
     const contactName = ctx.lookupContact(signals.senderAddress);
     if (contactName) {
@@ -295,7 +303,7 @@ export function buildFloorContext(): FloorContext {
   return {
     lookupContact: (address) => {
       try {
-        const contact = findContactByAddress("email", address);
+        const contact = findCuratedContactByAddress("email", address);
         return contact?.displayName ?? null;
       } catch (err) {
         // A contacts-table failure must NOT quietly demote a real person's
